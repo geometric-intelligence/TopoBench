@@ -1,5 +1,5 @@
 dataset='ZINC'
-project_name="TBX_GPSE_$dataset"
+project_name="TBX_GPSE_CELL_$dataset"
 # Define available GPUs
 gpus=(0 1 2 3)
 

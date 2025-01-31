@@ -1,5 +1,5 @@
 dataset='PROTEINS'
-project_name="TBX_GPSE_$dataset"
+project_name="TBX_GPSE_CELL_$dataset"
 
 CUDA=3
 seeds=(0 1 2 4)
@@ -10,8 +10,7 @@ do
     do
     python topobenchmarkx/run.py\
         dataset=graph/$dataset\
-        model=simplicial/sann\
-        model.domain=cellular\
+        model=cell/sann\
         model.backbone.n_layers=2,4\
         model.feature_encoder.proj_dropout=0.25\
         dataset.split_params.data_seed=$seed\
