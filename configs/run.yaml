@@ -4,8 +4,8 @@
 # order of defaults determines the order in which configs override each other
 defaults:
   - _self_
-  - dataset: graph/MUTAG
-  - model: simplicial/sann
+  - dataset: graph/ZINC
+  - model: cell/sann
   - transforms: ${get_default_transform:${dataset},${model}} #no_transform
   - optimizer: default
   - loss: default
