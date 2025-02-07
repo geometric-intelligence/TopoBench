@@ -45,7 +45,7 @@ done
 
 
 
-
+gpus=(4 5 6 7)
 # Distribute across 4 GPUs
 # Each GPU will handle one pretrain model
 for i in {0..3}; do

@@ -4,7 +4,7 @@ dataset='NCI1'
 project_name="TBX_GPSE_CELL_$dataset"
 
 # Define available GPUs
-gpus=(1 2 3 5)
+gpus=(0 1 2 3)
 
 # Define all pretrain models
 #seeds=()

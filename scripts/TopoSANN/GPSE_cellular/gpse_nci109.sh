@@ -3,7 +3,7 @@ project_name="TBX_GPSE_CELL_$dataset"
 #CUDA=2
 
 # Define available GPUs
-gpus=(2 3 5 6)
+gpus=(0 1 2 3)
 
 # Define all pretrain models
 #seeds=()
