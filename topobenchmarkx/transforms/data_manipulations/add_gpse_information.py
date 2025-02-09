@@ -39,7 +39,7 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         self.neighborhoods = kwargs["neighborhoods"]
 
         self.device = (
-            "cpu" if kwargs["device"] == "cpu" else f"cuda:{kwargs['cuda']}"
+            "cpu" if kwargs["device"] == "cpu" else f"cuda:{kwargs['cuda'][0]}"
         )
         self.init_config()
         self.model = create_model(

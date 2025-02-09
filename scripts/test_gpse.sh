@@ -1,5 +1,5 @@
 python topobenchmarkx/run.py \
-    dataset=graph/ZINC \
+    dataset=graph/PROTEINS \
     model=cell/sann \
     model.backbone.n_layers=4 \
     model.feature_encoder.out_channels=128\
