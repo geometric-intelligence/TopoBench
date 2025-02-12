@@ -106,14 +106,24 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         torch_geometric.data.Data
             The expanded batch of intrarank Hasse graphs for this route.
         """
-        nbhd_t = params[f"adjacency_{src_rank}"]
+
+        setattr(params, nbhd, getattr(params, nbhd).coalesce())
+
         batch_route = Data(
             x=getattr(params, f"x_{src_rank}"),
-            edge_index=nbhd_t.indices(),
-            edge_weight=nbhd_t.values().squeeze(),
-            edge_attr=nbhd_t.values().squeeze(),
+            edge_index=getattr(params, nbhd).indices(),
+            edge_weight=getattr(params, nbhd).values().squeeze(),
+            edge_attr=getattr(params, nbhd).values().squeeze(),
             requires_grad=True,
         )
+        # # nbhd_t = params[f"adjacency_{src_rank}"] # TODO:delete
+        # batch_route = Data(
+        #     x=getattr(params, f"x_{src_rank}"),
+        #     edge_index=nbhd_t.indices(),
+        #     edge_weight=nbhd_t.values().squeeze(),
+        #     edge_attr=nbhd_t.values().squeeze(),
+        #     requires_grad=True,
+        # )
 
         return batch_route
 
