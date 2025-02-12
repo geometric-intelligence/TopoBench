@@ -9,7 +9,7 @@ from torch_geometric.data import Data
 from torch_geometric.graphgym.config import cfg, load_cfg, set_cfg
 from torch_geometric.graphgym.model_builder import create_model
 
-from topobenchmarkx.data.utils import get_routes_from_neighborhoods_simplex
+from topobenchmarkx.data.utils import get_routes_from_neighborhoods
 
 
 class dotdict(dict):
@@ -56,6 +56,10 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         # model_state_dict['model_state'] = {k: v for k, v in model_state_dict['model_state'].items() if k not in remove_keys}
 
         self.model.load_state_dict(model_state_dict["model_state"])
+
+        self.counter = 0
+        self.counter2 = 0
+        self.counter3 = 0
 
     def init_config(self):
         """Initialize GraphGym configuration.
@@ -132,6 +136,12 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         torch_geometric.data.Data
             The expanded batch of interrank Hasse graphs for this route.
         """
+
+        if self.counter == 118:
+            pass
+        else:
+            self.counter += 1
+
         src_batch = params[f"x_{src_rank}"]
         dst_batch = params[f"x_{dst_rank}"]
         edge_index, edge_attr = nbhd_cache
@@ -241,6 +251,12 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         dict
             The neighborhood cache.
         """
+
+        if self.counter2 == 118:
+            pass
+        else:
+            pass
+
         nbhd_cache = {}
         for neighborhood, route in zip(
             self.neighborhoods, self.routes, strict=False
@@ -342,6 +358,10 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         data
             The data object with messages passed.
         """
+        if self.counter2 == 118:
+            pass
+        else:
+            pass
         # This has the boudary index
         nbhd = nbhd_cache[(src_rank, dst_rank)]
 
@@ -353,7 +373,10 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         input_nodes = torch.normal(
             0, 1, size=(batch_route.x.shape[0], cfg.dim_in), device=self.device
         )
-
+        if self.counter2 == 118:
+            pass
+        else:
+            self.counter2 += 1
         # Express everything in terms of an input graph
         input_graph = torch_geometric.data.Data(
             x=input_nodes,
@@ -397,8 +420,14 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
                 x_i = getattr(data, f"x_{i}").float().to(self.device)
                 setattr(data, f"x{i}_0", x_i)
 
-        self.routes = get_routes_from_neighborhoods_simplex(self.neighborhoods)
+        if self.counter2 == 118:
+            pass
+        else:
+            pass
 
+        self.routes = get_routes_from_neighborhoods(
+            self.neighborhoods
+        )  # get_routes_from_neighborhoods_simplex(self.neighborhoods)
         nbhd_cache = self.get_nbhd_cache(data)
 
         x_out_per_route = {}

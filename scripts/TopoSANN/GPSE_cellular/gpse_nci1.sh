@@ -34,7 +34,7 @@ for i in {0..3}; do
         optimizer.parameters.lr=0.01,0.001\
         trainer.max_epochs=500\
         trainer.min_epochs=50\
-        trainer=cpu\
+        trainer.devices=\[$CUDA\]\
         optimizer.scheduler=null\
         trainer.check_val_every_n_epoch=5\
         callbacks.early_stopping.patience=10\
