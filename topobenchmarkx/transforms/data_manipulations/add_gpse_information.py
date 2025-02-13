@@ -37,6 +37,9 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         self.max_rank = kwargs["max_rank"]
         self.copy_initial = kwargs["copy_initial"]
         self.neighborhoods = kwargs["neighborhoods"]
+        # TODO Add the posibility of having differet hops with shifted information ?
+        # self.hop_num = kwargs["hop_num"]
+        # self.shift = kwargs["shift"]
 
         self.device = (
             "cpu" if kwargs["device"] == "cpu" else f"cuda:{kwargs['cuda'][0]}"
@@ -49,6 +52,10 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
             f"{os.getcwd()}/data/pretrained_models/gpse_{self.parameters['pretrain_model'].lower()}.pt",
             map_location=torch.device(self.device),
         )
+        self.hidden_dim = (
+            self.parameters["dim_target_node"]
+            + self.parameters["dim_target_graph"]
+        )
 
         # remove_keys = [s for s in model_state_dict["model_state"] if s.startswith("model.post_mp")]
 
@@ -56,10 +63,6 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         # model_state_dict['model_state'] = {k: v for k, v in model_state_dict['model_state'].items() if k not in remove_keys}
 
         self.model.load_state_dict(model_state_dict["model_state"])
-
-        self.counter = 0
-        self.counter2 = 0
-        self.counter3 = 0
 
     def init_config(self):
         """Initialize GraphGym configuration.
@@ -116,14 +119,6 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
             edge_attr=getattr(params, nbhd).values().squeeze(),
             requires_grad=True,
         )
-        # # nbhd_t = params[f"adjacency_{src_rank}"] # TODO:delete
-        # batch_route = Data(
-        #     x=getattr(params, f"x_{src_rank}"),
-        #     edge_index=nbhd_t.indices(),
-        #     edge_weight=nbhd_t.values().squeeze(),
-        #     edge_attr=nbhd_t.values().squeeze(),
-        #     requires_grad=True,
-        # )
 
         return batch_route
 
@@ -146,12 +141,6 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         torch_geometric.data.Data
             The expanded batch of interrank Hasse graphs for this route.
         """
-
-        if self.counter == 118:
-            pass
-        else:
-            self.counter += 1
-
         src_batch = params[f"x_{src_rank}"]
         dst_batch = params[f"x_{dst_rank}"]
         edge_index, edge_attr = nbhd_cache
@@ -190,10 +179,10 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         x_out_per_rank = {}
         for route_index, (_, dst_rank) in enumerate(self.routes):
             if dst_rank not in x_out_per_rank:
-                # This happens when there are not destination cells for a route
-                # In this case, we do not need to aggregate
-                if route_index not in x_out_per_route:
-                    continue
+                # # This happens when there are not destination cells for a route
+                # # In this case, we do not need to aggregate
+                # if route_index not in x_out_per_route:
+                #     continue
                 x_out_per_rank[dst_rank] = x_out_per_route[route_index]
             else:
                 x_out_per_rank[dst_rank] += x_out_per_route[route_index]
@@ -261,12 +250,6 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         dict
             The neighborhood cache.
         """
-
-        if self.counter2 == 118:
-            pass
-        else:
-            pass
-
         nbhd_cache = {}
         for neighborhood, route in zip(
             self.neighborhoods, self.routes, strict=False
@@ -274,11 +257,11 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
             src_rank, dst_rank = route
             if src_rank != dst_rank and (src_rank, dst_rank) not in nbhd_cache:
                 n_dst_nodes = getattr(params, f"x_{dst_rank}").shape[0]
-                # If destination nodes is 0 then messages cannot be passed to
-                # non existent node
+
+                # There is no neighbourhood in question
                 if n_dst_nodes == 0:
-                    continue
-                if src_rank > dst_rank:
+                    nbhd_cache[(src_rank, dst_rank)] = None
+                elif src_rank > dst_rank:
                     boundary = getattr(params, neighborhood).coalesce()
                     nbhd_cache[(src_rank, dst_rank)] = (
                         interrank_boundary_index(
@@ -289,6 +272,15 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
                     )
                 elif src_rank < dst_rank:
                     coboundary = getattr(params, neighborhood).coalesce()
+                    # print(f'neighborhood: {neighborhood}')
+                    # print(f'src_rank: {src_rank}')
+                    # print(f'dst_rank: {dst_rank}')
+                    # x_src = getattr(params, f"x_{src_rank}")
+                    # x_dst = getattr(params, f"x_{dst_rank}")
+                    # print(f'x_src: {x_src.shape}')
+                    # print(f'x_dst: {x_dst.shape}')
+                    # print(f'neighborhood: {coboundary.shape}')
+                    # print(coboundary.to_dense().max())
                     nbhd_cache[(src_rank, dst_rank)] = (
                         interrank_boundary_index(
                             getattr(params, f"x_{src_rank}"),
@@ -320,32 +312,29 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         nbhd = self.neighborhoods[route_index]
         batch_route = self.intrarank_expand(data, src_rank, nbhd)
 
-        if batch_route.x.shape[0] < 2:
-            return batch_route["x"]
-        else:
-            input_nodes = torch.normal(
-                0,
-                1,
-                size=(batch_route.x.shape[0], cfg.dim_in),
+        input_nodes = torch.normal(
+            0,
+            1,
+            size=(batch_route.x.shape[0], cfg.dim_in),
+            device=self.device,
+        )
+        input_graph = torch_geometric.data.Data(
+            x=input_nodes,
+            edge_index=batch_route.edge_index,
+            y=torch.ones(batch_route.x.shape[0], 51, device=self.device),
+            y_graph=torch.ones(
+                1, self.parameters["dim_out"], device=self.device
+            ),
+            batch=torch.zeros(
+                batch_route.x.shape[0],
+                dtype=torch.int64,
                 device=self.device,
-            )
-            input_graph = torch_geometric.data.Data(
-                x=input_nodes,
-                edge_index=batch_route.edge_index,
-                y=torch.ones(batch_route.x.shape[0], 51, device=self.device),
-                y_graph=torch.ones(
-                    1, self.parameters["dim_out"], device=self.device
-                ),
-                batch=torch.zeros(
-                    batch_route.x.shape[0],
-                    dtype=torch.int64,
-                    device=self.device,
-                ),
-            ).to(self.device)
-            self.model.eval()
-            with torch.inference_mode():
-                x_out, _ = self.model(input_graph)
-            return x_out
+            ),
+        ).to(self.device)
+        self.model.eval()
+        with torch.inference_mode():
+            x_out, _ = self.model(input_graph)
+        return x_out
 
     def forward_interank(
         self, src_rank, dst_rank, nbhd_cache, data: torch_geometric.data.Data
@@ -368,10 +357,6 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         data
             The data object with messages passed.
         """
-        if self.counter2 == 118:
-            pass
-        else:
-            pass
         # This has the boudary index
         nbhd = nbhd_cache[(src_rank, dst_rank)]
 
@@ -383,10 +368,7 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         input_nodes = torch.normal(
             0, 1, size=(batch_route.x.shape[0], cfg.dim_in), device=self.device
         )
-        if self.counter2 == 118:
-            pass
-        else:
-            self.counter2 += 1
+
         # Express everything in terms of an input graph
         input_graph = torch_geometric.data.Data(
             x=input_nodes,
@@ -402,11 +384,9 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         self.model.eval()
         with torch.inference_mode():
             expanded_out, _ = self.model.forward(input_graph)
+
         # Only grab the cells we are interested in
-        if n_dst_cells == 0:
-            x_out = expanded_out
-        else:
-            x_out = expanded_out[:n_dst_cells]
+        x_out = expanded_out[:n_dst_cells]
 
         return x_out
 
@@ -428,16 +408,11 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         if self.copy_initial:
             for i in range(self.max_rank + 1):
                 x_i = getattr(data, f"x_{i}").float().to(self.device)
+                # print(f"x_{i}", x_i.shape)
+                # print(f"incidence_{i}", getattr(data, f"incidence_{i}").shape)
                 setattr(data, f"x{i}_0", x_i)
+        self.routes = get_routes_from_neighborhoods(self.neighborhoods)
 
-        if self.counter2 == 118:
-            pass
-        else:
-            pass
-
-        self.routes = get_routes_from_neighborhoods(
-            self.neighborhoods
-        )  # get_routes_from_neighborhoods_simplex(self.neighborhoods)
         nbhd_cache = self.get_nbhd_cache(data)
 
         x_out_per_route = {}
@@ -446,14 +421,34 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
             src_rank, dst_rank = route
 
             if src_rank == dst_rank:
+                # If there are no nodes in this rank, we skip
+                if getattr(data, f"x_{src_rank}").shape[0] == 0:
+                    x_out_per_route[route_index] = torch.zeros(
+                        (0, self.hidden_dim),
+                        dtype=torch.float,
+                        device=self.device,
+                    )
+                    continue
+                # We cannot use GPSE embeddings on single-node graphs
+                if getattr(data, f"x_{src_rank}").shape[0] == 1:
+                    x_out_per_route[route_index] = torch.zeros(
+                        (1, self.hidden_dim),
+                        dtype=torch.float,
+                        device=self.device,
+                    )
+                    continue
                 x_out = self.forward_intrarank(src_rank, route_index, data)
                 x_out_per_route[route_index] = x_out
 
             elif src_rank != dst_rank:
-                # If there are no destination cells, then there is no need to forward
-                if data[f"x_{dst_rank}"].shape[0] == 0:
+                # If there is no neighborhood, we skip
+                if nbhd_cache[(src_rank, dst_rank)] is None:
+                    x_out_per_route[route_index] = torch.zeros(
+                        (0, self.hidden_dim),
+                        dtype=torch.float,
+                        device=self.device,
+                    )
                     continue
-
                 x_out = self.forward_interank(
                     src_rank, dst_rank, nbhd_cache, data
                 )
@@ -467,15 +462,11 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
 
         # If no information was passed to a rank, then we initialize an empty vector
         # with the output dimension of the pre-trained model
-        # and set the features as 1
-        hidden_dim = (
-            self.parameters["dim_target_node"]
-            + self.parameters["dim_target_graph"]
-        )
+        # and set the features as 0
         for rank in range(self.max_rank + 1):
             if rank not in x_out_per_rank:
-                x_out_per_rank[rank] = torch.ones(
-                    (data[f"x_{rank}"].shape[0], hidden_dim),
+                x_out_per_rank[rank] = torch.zeros(
+                    (data[f"x_{rank}"].shape[0], self.hidden_dim),
                     dtype=torch.float,
                     device=self.device,
                 )
