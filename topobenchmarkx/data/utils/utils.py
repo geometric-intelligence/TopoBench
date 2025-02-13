@@ -55,11 +55,21 @@ def get_routes_from_neighborhoods(neighborhoods):
         split = neighborhood.split("-")
         src_rank = int(split[-1])
         r = int(split[0]) if len(split) == 3 else 1
-        route = (
-            [src_rank, src_rank - r]
-            if "down" in neighborhood
-            else [src_rank, src_rank + r]
-        )
+        if "incidence" in neighborhood:
+            route = (
+                [src_rank, src_rank - r]
+                if "down" in neighborhood
+                else [src_rank, src_rank + r]
+            )
+        elif "adjacency" in neighborhood:
+            route = (
+                [src_rank, src_rank]
+                if "up" in neighborhood
+                else [src_rank, src_rank - r]
+            )
+        else:
+            raise Exception(f"Invalid neighborhood {neighborhood}")
+
         routes.append(route)
     return routes
 
