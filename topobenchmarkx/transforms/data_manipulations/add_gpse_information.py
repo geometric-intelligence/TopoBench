@@ -408,8 +408,6 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         if self.copy_initial:
             for i in range(self.max_rank + 1):
                 x_i = getattr(data, f"x_{i}").float().to(self.device)
-                # print(f"x_{i}", x_i.shape)
-                # print(f"incidence_{i}", getattr(data, f"incidence_{i}").shape)
                 setattr(data, f"x{i}_0", x_i)
         self.routes = get_routes_from_neighborhoods(self.neighborhoods)
 
