@@ -10,6 +10,13 @@ from topobenchmark.transforms.liftings import (
 
 
 def create_test_graph():
+    """Create a simple test graph.
+    
+    Returns
+    -------
+    torch_geometric.data.Data
+        A simple test graph.
+    """
     num_nodes = 5
     x = [1] * num_nodes
     edge_index = [[0, 0, 1, 1, 2, 2, 3], [1, 4, 2, 3, 3, 4, 4]]
@@ -17,7 +24,7 @@ def create_test_graph():
 
     return torch_geometric.data.Data(
         x=torch.tensor(x).float().reshape(-1, 1),
-        edge_index=torch.Tensor(edge_index),
+        edge_index=torch.tensor(edge_index, dtype=torch.long),
         num_nodes=num_nodes,
         y=torch.tensor(y),
     )
@@ -27,6 +34,7 @@ class TestNeighborhoodComplexLifting:
     """Test the SimplicialCliqueLifting class."""
 
     def setup_method(self):
+        """Initialise the test class."""
         # Load the graph
         self.data = create_test_graph()  # load_manual_graph()
 
