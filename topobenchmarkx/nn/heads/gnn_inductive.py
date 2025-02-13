@@ -5,6 +5,7 @@ import torch.nn as nn
 from torch_geometric.graphgym.config import cfg
 from torch_geometric.graphgym.models.layer import MLP, new_layer_config
 from torch_geometric.graphgym.register import pooling_dict, register_head
+from torch_scatter import scatter
 
 
 def _pad_and_stack(x1: torch.Tensor, x2: torch.Tensor, pad1: int, pad2: int):
@@ -110,6 +111,7 @@ class GNNInductiveHybridMultiHead(nn.Module):
                 cfg=cfg,
             )
         )
+        self.counter = 0
 
     def forward(self, batch):
         """Forward pass for the GNNInductiveHybridMultiHead.
@@ -127,7 +129,11 @@ class GNNInductiveHybridMultiHead(nn.Module):
         batch.node_feature = torch.hstack(
             [m(batch.x) for m in self.node_post_mps]
         )
+        # if self.counter < 178:
+        #     self.counter += 1
         graph_emb = self.graph_pooling(batch.x, batch.batch)
+        # else:
+        #     pass
         batch.graph_feature = self.graph_post_mp(graph_emb)
         return _apply_index(
             batch,
