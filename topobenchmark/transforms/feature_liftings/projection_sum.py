@@ -1,69 +1,38 @@
 """ProjectionSum class."""
 
 import torch
-import torch_geometric
+
+from topobenchmark.transforms.feature_liftings.base import FeatureLiftingMap
 
 
-class ProjectionSum(torch_geometric.transforms.BaseTransform):
-    r"""Lift r-cell features to r+1-cells by projection.
+class ProjectionSum(FeatureLiftingMap):
+    r"""Lift r-cell features to r+1-cells by projection."""
 
-    Parameters
-    ----------
-    **kwargs : optional
-        Additional arguments for the class.
-    """
-
-    def __init__(self, **kwargs):
-        super().__init__()
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}()"
-
-    def lift_features(
-        self, data: torch_geometric.data.Data | dict
-    ) -> torch_geometric.data.Data | dict:
+    def lift_features(self, domain):
         r"""Project r-cell features of a graph to r+1-cell structures.
 
         Parameters
         ----------
-        data : torch_geometric.data.Data | dict
+        data : Data
             The input data to be lifted.
 
         Returns
         -------
-        torch_geometric.data.Data | dict
-            The data with the lifted features.
+        Data
+            Domain with the lifted features.
         """
-        keys = sorted(
-            [
-                key.split("_")[1]
-                for key in data
-                if ("incidence" in key and "-" not in key)
-            ]
-        )
-        for elem in keys:
-            if f"x_{elem}" not in data:
-                idx_to_project = 0 if elem == "hyperedges" else int(elem) - 1
-                data["x_" + elem] = torch.matmul(
-                    abs(data["incidence_" + elem].t()),
-                    data[f"x_{idx_to_project}"],
-                )
-        return data
+        for key, next_key in zip(
+            domain.rank_keys(), domain.rank_keys()[1:], strict=False
+        ):
+            if domain.features[next_key] is not None:
+                continue
 
-    def forward(
-        self, data: torch_geometric.data.Data | dict
-    ) -> torch_geometric.data.Data | dict:
-        r"""Apply the lifting to the input data.
+            domain.update_features(
+                next_key,
+                torch.matmul(
+                    torch.abs(domain.incidence[next_key].t()),
+                    domain.features[key],
+                ),
+            )
 
-        Parameters
-        ----------
-        data : torch_geometric.data.Data | dict
-            The input data to be lifted.
-
-        Returns
-        -------
-        torch_geometric.data.Data | dict
-            The lifted data.
-        """
-        data = self.lift_features(data)
-        return data
+        return domain

@@ -2,7 +2,8 @@
 
 import torch
 
-from topobenchmark.transforms.liftings.graph2simplicial import (
+from topobenchmark.transforms.liftings import (
+    Graph2SimplicialLiftingTransform,
     SimplicialCliqueLifting,
 )
 
@@ -13,13 +14,14 @@ class TestSetLifting:
     def setup_method(self):
         """Set up the test."""
         # Initialize a lifting class
-        self.lifting = SimplicialCliqueLifting(
-            feature_lifting="Set", complex_dim=3
+        self.lifting = Graph2SimplicialLiftingTransform(
+            lifting=SimplicialCliqueLifting(complex_dim=3),
+            feature_lifting="Set",
         )
 
     def test_lift_features(self, simple_graph_1):
         """Test the lift_features method.
-        
+
         Parameters
         ----------
         simple_graph_1 : torch_geometric.data.Data

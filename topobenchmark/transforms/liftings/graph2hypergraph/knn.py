@@ -3,12 +3,10 @@
 import torch
 import torch_geometric
 
-from topobenchmark.transforms.liftings.graph2hypergraph import (
-    Graph2HypergraphLifting,
-)
+from topobenchmark.transforms.liftings.base import LiftingMap
 
 
-class HypergraphKNNLifting(Graph2HypergraphLifting):
+class HypergraphKNNLifting(LiftingMap):
     r"""Lift graphs to hypergraph domain by considering k-nearest neighbors.
 
     Parameters
@@ -17,8 +15,6 @@ class HypergraphKNNLifting(Graph2HypergraphLifting):
         The number of nearest neighbors to consider. Must be positive. Default is 1.
     loop : bool, optional
         If True the hyperedges will contain the node they were created from.
-    **kwargs : optional
-        Additional arguments for the class.
 
     Raises
     ------
@@ -28,8 +24,8 @@ class HypergraphKNNLifting(Graph2HypergraphLifting):
         If k_value is not an integer or if loop is not a boolean.
     """
 
-    def __init__(self, k_value=1, loop=True, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, k_value=1, loop=True):
+        super().__init__()
 
         # Validate k_value
         if not isinstance(k_value, int):
@@ -41,11 +37,9 @@ class HypergraphKNNLifting(Graph2HypergraphLifting):
         if not isinstance(loop, bool):
             raise TypeError("loop must be a boolean")
 
-        self.k = k_value
-        self.loop = loop
-        self.transform = torch_geometric.transforms.KNNGraph(self.k, self.loop)
+        self.transform = torch_geometric.transforms.KNNGraph(k_value, loop)
 
-    def lift_topology(self, data: torch_geometric.data.Data) -> dict:
+    def lift(self, data: torch_geometric.data.Data) -> dict:
         r"""Lift a graph to hypergraph by considering k-nearest neighbors.
 
         Parameters
@@ -64,7 +58,7 @@ class HypergraphKNNLifting(Graph2HypergraphLifting):
         incidence_1 = torch.zeros(num_nodes, num_nodes)
         data_lifted = self.transform(data)
         # check for loops, since KNNGraph is inconsistent with nodes with equal features
-        if self.loop:
+        if self.transform.loop:
             for i in range(num_nodes):
                 if not torch.any(
                     torch.all(
