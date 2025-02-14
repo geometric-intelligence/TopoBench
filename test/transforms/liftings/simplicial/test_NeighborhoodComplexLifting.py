@@ -71,9 +71,9 @@ class TestNeighborhoodComplexLifting:
                     continue
                 for node in self.random_graph.nodes:
                     if self.random_graph.has_edge(
-                        simplex_point_a.item(), node
+                        simplex_point_a, node
                     ) and self.random_graph.has_edge(
-                        simplex_point_b.item(), node
+                        simplex_point_b, node
                     ):
                         return True
         return False
@@ -83,9 +83,7 @@ class TestNeighborhoodComplexLifting:
         graph = self.lifting_high.data2domain(self.random_data)
         simplicial_complex = self.lifting_high.lifting(graph)
 
-        for simplex_points in torch.tensor(
-            simplicial_complex.skeleton(simplicial_complex.dim)
-        ):
+        for simplex_points in simplicial_complex.skeleton(simplicial_complex.dim):
             share_neighbour = self._has_neighbour(simplex_points)
             assert share_neighbour, f"The simplex {simplex_points} does not have a common neighbour with all the nodes."
 
@@ -94,9 +92,7 @@ class TestNeighborhoodComplexLifting:
         graph = self.lifting_high.data2domain(self.star_data)
         simplicial_complex = self.lifting_high.lifting(graph)
 
-        for simplex_points in torch.tensor(
-            simplicial_complex.skeleton(simplicial_complex.dim)
-        ):
+        for simplex_points in simplicial_complex.skeleton(simplicial_complex.dim):
             share_neighbour = self._has_neighbour(simplex_points)
             assert share_neighbour, f"The simplex {simplex_points} does not have a common neighbour with all the nodes."
 
