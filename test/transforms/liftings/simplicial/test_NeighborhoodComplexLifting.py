@@ -42,7 +42,7 @@ class TestNeighborhoodComplexLifting:
         self.star_data = from_networkx(self.star_graph)
         self.star_data["x"] = torch.rand((6, 1))
 
-        self.random_graph = nx.fast_gnp_random_graph(5, 0.5)
+        self.random_graph = nx.fast_gnp_random_graph(5, 0.5, seed=0)
         self.random_data = from_networkx(self.random_graph)
         self.random_data["x"] = torch.rand((5, 1))
 
