@@ -1,0 +1,5 @@
+transform_type: 'lifting'
+transform_name: "CellCycleLifting"
+max_cell_length: null
+preserve_edge_attr: False
+feature_lifting: ProjectionSum
