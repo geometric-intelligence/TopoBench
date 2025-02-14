@@ -1,3 +1,4 @@
+""" Tests for the NeighborhoodComplexLifting class."""
 import networkx as nx
 import torch
 from torch_geometric.utils.convert import from_networkx
@@ -13,10 +14,9 @@ class TestNeighborhoodComplexLifting:
     """Test the NeighborhoodComplexLifting class."""
 
     def setup_method(self):
-        # Load the graph
+        """Setup the NeighborhoodComplexLifting tests."""
         self.data = load_manual_graph()
 
-        # Initialize the NeighborhoodComplexLifting class for dim=3
         self.lifting_signed = Graph2SimplicialLiftingTransform(
             NeighborhoodComplexLifting(complex_dim=3),
             signed=True,
@@ -34,17 +34,14 @@ class TestNeighborhoodComplexLifting:
             to_undirected=True,
         )
 
-        # Intialize an empty graph for testing purposes
         self.empty_graph = nx.empty_graph(10)
         self.empty_data = from_networkx(self.empty_graph)
         self.empty_data["x"] = torch.rand((10, 10))
 
-        # Intialize a start graph for testing
         self.star_graph = nx.star_graph(5)
         self.star_data = from_networkx(self.star_graph)
         self.star_data["x"] = torch.rand((6, 1))
 
-        # Intialize a random graph for testing purpouses
         self.random_graph = nx.fast_gnp_random_graph(5, 0.5)
         self.random_data = from_networkx(self.random_graph)
         self.random_data["x"] = torch.rand((5, 1))
@@ -52,18 +49,27 @@ class TestNeighborhoodComplexLifting:
     def _has_neighbour(
         self, simplex_points: list[set]
     ) -> tuple[bool, set[int]]:
-        """Verifies that the maximal simplices
+        """Check that the lifting works.
+        
+        Verify that the maximal simplices
         of Data representation of a simplicial complex
         share a neighbour.
+        
+        Parameters
+        ----------
+        simplex_points : list[set]
+            List of sets containing the points of the simplices.
+            
+        Returns
+        -------
+        bool
+            True if the simplices share a neighbour, False otherwise.
         """
         for simplex_point_a in simplex_points:
             for simplex_point_b in simplex_points:
-                # Same point
                 if simplex_point_a == simplex_point_b:
                     continue
-                # Search all nodes to check if they are c such that a and b share c as a neighbour
                 for node in self.random_graph.nodes:
-                    # They share a neighbour
                     if self.random_graph.has_edge(
                         simplex_point_a.item(), node
                     ) and self.random_graph.has_edge(
@@ -73,14 +79,10 @@ class TestNeighborhoodComplexLifting:
         return False
 
     def test_lift_topology_random_graph(self):
-        """Verifies that the lifting procedure works on
-        a random graph, that is, checks that the simplices
-        generated share a neighbour.
-        """
+        """Verify lifting procedure on a random graph."""
         graph = self.lifting_high.data2domain(self.random_data)
         simplicial_complex = self.lifting_high.lifting(graph)
 
-        # Go over each (max_dim)-simplex
         for simplex_points in torch.tensor(
             simplicial_complex.skeleton(simplicial_complex.dim)
         ):
@@ -88,14 +90,10 @@ class TestNeighborhoodComplexLifting:
             assert share_neighbour, f"The simplex {simplex_points} does not have a common neighbour with all the nodes."
 
     def test_lift_topology_star_graph(self):
-        """Verifies that the lifting procedure works on
-        a small star graph, that is, checks that the simplices
-        generated share a neighbour.
-        """
+        """Verify lifting procedure on a small star graph."""
         graph = self.lifting_high.data2domain(self.star_data)
         simplicial_complex = self.lifting_high.lifting(graph)
 
-        # Go over each (max_dim)-simplex
         for simplex_points in torch.tensor(
             simplicial_complex.skeleton(simplicial_complex.dim)
         ):
@@ -118,7 +116,6 @@ class TestNeighborhoodComplexLifting:
     def test_lift_topology(self):
         """Test the lift_topology method."""
 
-        # Test the lift_topology method
         lifted_data_signed = self.lifting_signed.forward(self.data.clone())
         lifted_data_unsigned = self.lifting_unsigned.forward(self.data.clone())
 
