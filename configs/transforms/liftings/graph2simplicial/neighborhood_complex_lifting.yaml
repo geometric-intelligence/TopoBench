@@ -1,0 +1,6 @@
+transform_type: 'lifting'
+transform_name: "NeighborhoodComplexLifting"
+preserve_edge_attr: False
+signed: True
+feature_lifting: ElementwiseMean
+complex_dim: 5

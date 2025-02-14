@@ -1,25 +1,27 @@
 """Configuration file for pytest."""
+
 import networkx as nx
 import pytest
 import torch
 import torch_geometric
-from topobenchmark.transforms.liftings.graph2simplicial import (
-    SimplicialCliqueLifting
-)
-from topobenchmark.transforms.liftings.graph2cell import (
-    CellCycleLifting
+
+from topobenchmark.transforms.liftings import (
+    CellCycleLifting,
+    Graph2CellLiftingTransform,
+    Graph2SimplicialLiftingTransform,
+    SimplicialCliqueLifting,
 )
 
 
 @pytest.fixture
 def mocker_fixture(mocker):
     """Return pytest mocker, used when one want to use mocker in setup_method.
-    
+
     Parameters
     ----------
     mocker : pytest_mock.plugin.MockerFixture
         A pytest mocker.
-        
+
     Returns
     -------
     pytest_mock.plugin.MockerFixture
@@ -31,7 +33,7 @@ def mocker_fixture(mocker):
 @pytest.fixture
 def simple_graph_0():
     """Create a manual graph for testing purposes.
-    
+
     Returns
     -------
     torch_geometric.data.Data
@@ -74,10 +76,11 @@ def simple_graph_0():
     )
     return data
 
+
 @pytest.fixture
 def simple_graph_1():
     """Create a manual graph for testing purposes.
-    
+
     Returns
     -------
     torch_geometric.data.Data
@@ -133,43 +136,43 @@ def simple_graph_1():
     return data
 
 
-
 @pytest.fixture
 def sg1_clique_lifted(simple_graph_1):
     """Return a simple graph with a clique lifting.
-    
+
     Parameters
     ----------
     simple_graph_1 : torch_geometric.data.Data
         A simple graph data object.
-    
+
     Returns
     -------
     torch_geometric.data.Data
         A simple graph data object with a clique lifting.
     """
-    lifting_signed = SimplicialCliqueLifting(
-                complex_dim=3, signed=True
-            )
+    lifting_signed = Graph2SimplicialLiftingTransform(
+        SimplicialCliqueLifting(complex_dim=3), signed=True
+    )
     data = lifting_signed(simple_graph_1)
     data.batch_0 = "null"
     return data
 
+
 @pytest.fixture
 def sg1_cell_lifted(simple_graph_1):
     """Return a simple graph with a cell lifting.
-    
+
     Parameters
     ----------
     simple_graph_1 : torch_geometric.data.Data
         A simple graph data object.
-        
+
     Returns
     -------
     torch_geometric.data.Data
         A simple graph data object with a cell lifting.
     """
-    lifting = CellCycleLifting()
+    lifting = Graph2CellLiftingTransform(CellCycleLifting())
     data = lifting(simple_graph_1)
     data.batch_0 = "null"
     return data
@@ -178,7 +181,7 @@ def sg1_cell_lifted(simple_graph_1):
 @pytest.fixture
 def simple_graph_2():
     """Create a manual graph for testing purposes.
-    
+
     Returns
     -------
     torch_geometric.data.Data
@@ -244,7 +247,7 @@ def simple_graph_2():
 @pytest.fixture
 def random_graph_input():
     """Create a random graph for testing purposes.
-    
+
     Returns
     -------
     torch.Tensor
@@ -261,13 +264,12 @@ def random_graph_input():
     num_nodes = 8
     d_feat = 12
     x = torch.randn(num_nodes, 12)
-    edges_1 = torch.randint(0, num_nodes, (2, num_nodes*2))
-    edges_2 = torch.randint(0, num_nodes, (2, num_nodes*2))
-    
+    edges_1 = torch.randint(0, num_nodes, (2, num_nodes * 2))
+    edges_2 = torch.randint(0, num_nodes, (2, num_nodes * 2))
+
     d_feat_1, d_feat_2 = 5, 17
 
-    x_1 = torch.randn(num_nodes*2, d_feat_1)
-    x_2 = torch.randn(num_nodes*2, d_feat_2)
+    x_1 = torch.randn(num_nodes * 2, d_feat_1)
+    x_2 = torch.randn(num_nodes * 2, d_feat_2)
 
     return x, x_1, x_2, edges_1, edges_2
-

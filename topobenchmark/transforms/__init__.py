@@ -1,32 +1,33 @@
 """This module contains the transforms for the topobenchmark package."""
 
-from typing import Any
-
-from topobenchmark.transforms.data_manipulations import DATA_MANIPULATIONS
-from topobenchmark.transforms.feature_liftings import FEATURE_LIFTINGS
-from topobenchmark.transforms.liftings.graph2cell import GRAPH2CELL_LIFTINGS
-from topobenchmark.transforms.liftings.graph2hypergraph import (
+from .data_manipulations import DATA_MANIPULATIONS
+from .feature_liftings import FEATURE_LIFTINGS
+from .liftings import (
+    GRAPH2CELL_LIFTINGS,
     GRAPH2HYPERGRAPH_LIFTINGS,
-)
-from topobenchmark.transforms.liftings.graph2simplicial import (
     GRAPH2SIMPLICIAL_LIFTINGS,
+    LIFTINGS,
 )
 
-LIFTINGS = {
-    **GRAPH2CELL_LIFTINGS,
-    **GRAPH2HYPERGRAPH_LIFTINGS,
-    **GRAPH2SIMPLICIAL_LIFTINGS,
-}
-
-TRANSFORMS: dict[Any, Any] = {
+TRANSFORMS = {
     **LIFTINGS,
     **FEATURE_LIFTINGS,
     **DATA_MANIPULATIONS,
 }
 
-__all__ = [
-    "DATA_MANIPULATIONS",
-    "FEATURE_LIFTINGS",
-    "LIFTINGS",
-    "TRANSFORMS",
-]
+
+_map_lifting_type_to_dict = {
+    "graph2cell": GRAPH2CELL_LIFTINGS,
+    "graph2hypergraph": GRAPH2HYPERGRAPH_LIFTINGS,
+    "graph2simplicial": GRAPH2SIMPLICIAL_LIFTINGS,
+}
+
+
+def add_lifting_map(LiftingMap, lifting_type, name=None):
+    if name is None:
+        name = LiftingMap.__name__
+
+    liftings_dict = _map_lifting_type_to_dict[lifting_type]
+
+    for dict_ in (liftings_dict, LIFTINGS, TRANSFORMS):
+        dict_[name] = LiftingMap
