@@ -146,11 +146,19 @@ class Complex2ComplexData(Adapter):
             "hodge_laplacian",
         ]
 
-        practical_shape = list(
-            np.pad(
-                list(domain.shape), (0, practical_dim + 1 - len(domain.shape))
+        # Solving the cases when 1.
+        missing_dims = practical_dim + 1 - len(domain.shape)
+        if missing_dims >= 0:
+            practical_shape = list(
+                np.pad(
+                    list(domain.shape),
+                    (0, practical_dim + 1 - len(domain.shape)),
+                )
             )
-        )
+        else:
+            practical_shape = list(domain.shape)  # [:practical_dim+1]
+
+            # practical_dim = len(domain.shape) - 1
         data = {
             connectivity_info: [] for connectivity_info in connectivity_infos
         }

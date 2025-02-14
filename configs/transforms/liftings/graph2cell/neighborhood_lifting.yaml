@@ -1,5 +1,6 @@
 transform_type: 'lifting'
-transform_name: "CellCycleLifting"
+transform_name: "NeighborhoodLifting"
 max_cell_length: null
 preserve_edge_attr: False
 feature_lifting: ProjectionSum
+complex_dim: ${oc.select:dataset.parameters.max_dim_if_lifted,3} # complex_dim=max_cell_rank + 1; this parameter defines how many feature encoders are used for cells.

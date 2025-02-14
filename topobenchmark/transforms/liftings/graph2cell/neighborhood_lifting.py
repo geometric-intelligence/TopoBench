@@ -67,4 +67,7 @@ class NeighborhoodLifting(LiftingMap):
                 else:
                     cell_complex.add_cell(two_cell, rank=2)
 
+        # If some graph does not have 2-cells we still want to specify that it is a cellular complex hence practical_dim=2
+        cell_complex.practical_dim = 2
+
         return cell_complex

@@ -4,9 +4,9 @@
 # order of defaults determines the order in which configs override each other
 defaults:
   - _self_
-  - dataset: simplicial/mantra_orientation
-  - model: simplicial/scn
-  - transforms: ${get_default_transform:${dataset},${model}} #no_transform
+  - dataset: graph/MUTAG
+  - model: cell/cwn
+  - transforms: graph2cell_neighborhood_lifting #${get_default_transform:${dataset},${model}} #no_transform
   - optimizer: default
   - loss: default
   - evaluator: default
