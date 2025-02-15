@@ -477,7 +477,7 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
 
         hop_num = int(self.copy_initial)
         for key, value in x_out_per_rank.items():
-            setattr(data, f"x{key}_{hop_num}", value.float())
+            setattr(data, f"x{key}_{hop_num}", value.float().to(self.device))
 
         return data
 
