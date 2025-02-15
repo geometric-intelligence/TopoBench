@@ -1,8 +1,44 @@
 """Configuration resolvers for the topobenchmarkx package."""
 
 import os
+from collections import defaultdict
 
 import numpy as np
+
+
+def get_routes_from_neighborhoods(neighborhoods):
+    """Get the routes from the neighborhoods.
+
+    Combination of src_rank, dst_rank. ex: [[0, 0], [1, 0], [1, 1], [1, 1], [2, 1]].
+
+    Parameters
+    ----------
+    neighborhoods : list
+        List of neighborhoods of interest.
+
+    Returns
+    -------
+    list
+        List of routes.
+    """
+    routes = []
+    for neighborhood in neighborhoods:
+        split = neighborhood.split("-")
+        src_rank = int(split[-1])
+        r = int(split[0]) if len(split) == 3 else 1
+        if "incidence" in neighborhood:
+            route = (
+                [src_rank, src_rank - r]
+                if "down" in neighborhood
+                else [src_rank, src_rank + r]
+            )
+        elif "adjacency" in neighborhood:
+            route = [src_rank, src_rank]
+        else:
+            raise Exception(f"Invalid neighborhood {neighborhood}")
+
+        routes.append(route)
+    return routes
 
 
 def get_default_transform(dataset, model):
@@ -399,6 +435,13 @@ def infer_in_hasse_graph_agg_dim(
         A 2D array where.
     """
     # TODO, to my understanding this should never change
+
+    neighbor_targets = defaultdict(int)
+    routes = get_routes_from_neighborhoods(neighborhoods)
+
+    for _s, t in routes:
+        neighbor_targets[t] += 1
+
     dim_hidden = dim_hidden_graph + dim_hidden_node
     hop_num = (
         int(copy_initial) + 1
@@ -408,10 +451,11 @@ def infer_in_hasse_graph_agg_dim(
         # First dimension is always the input dimension
         results.fill(dim_in)
 
-        for i in range(complex_dim + 1):
-            results[i][1] = dim_hidden
     else:
         results.fill(dim_hidden)
+
+    for i in range(complex_dim + 1):
+        results[i][hop_num - 1] = max(1, neighbor_targets[i]) * dim_hidden
 
     return results.astype(np.int32).tolist()
 

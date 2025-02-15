@@ -145,7 +145,9 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         dst_batch = params[f"x_{dst_rank}"]
         edge_index, edge_attr = nbhd_cache
         device = getattr(params, f"x_{src_rank}").device
-        feat_on_dst = torch.zeros_like(getattr(params, f"x_{dst_rank}"))
+        feat_on_dst = torch.zeros_like(
+            getattr(params, f"x_{dst_rank}"), device=self.device
+        )
         x_in = torch.vstack([feat_on_dst, getattr(params, f"x_{src_rank}")])
         batch_expanded = torch.cat([dst_batch, src_batch], dim=0)
 
@@ -185,7 +187,10 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
                 #     continue
                 x_out_per_rank[dst_rank] = x_out_per_route[route_index]
             else:
-                x_out_per_rank[dst_rank] += x_out_per_route[route_index]
+                x_out_per_rank[dst_rank] = torch.cat(
+                    [x_out_per_rank[dst_rank], x_out_per_route[route_index]],
+                    dim=1,
+                )
         return x_out_per_rank
 
     def interrank_boundary_index(x_src, boundary_index, n_dst_nodes):
@@ -408,11 +413,8 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         if self.copy_initial:
             for i in range(self.max_rank + 1):
                 x_i = getattr(data, f"x_{i}").float().to(self.device)
-                # print(f"x_{i}", x_i.shape)
-                # print(f"incidence_{i}", getattr(data, f"incidence_{i}").shape)
                 setattr(data, f"x{i}_0", x_i)
         self.routes = get_routes_from_neighborhoods(self.neighborhoods)
-
         nbhd_cache = self.get_nbhd_cache(data)
 
         x_out_per_route = {}
@@ -456,9 +458,7 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
                 x_out_per_route[route_index] = x_out
 
         # aggregate across neighborhoods
-        self.model.eval()
-        with torch.inference_mode():
-            x_out_per_rank = self.aggregate_inter_nbhd(x_out_per_route)
+        x_out_per_rank = self.aggregate_inter_nbhd(x_out_per_route)
 
         # If no information was passed to a rank, then we initialize an empty vector
         # with the output dimension of the pre-trained model

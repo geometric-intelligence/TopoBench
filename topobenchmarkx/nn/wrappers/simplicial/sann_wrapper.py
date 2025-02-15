@@ -4,7 +4,22 @@ from topobenchmarkx.nn.wrappers import AbstractWrapper
 
 
 class SANNWrapper(AbstractWrapper):
-    r"""Wrapper for the SANN."""
+    r"""Wrapper for the SANN.
+
+    Parameters
+    ----------
+    backbone : torch.nn.Module
+        Backbone model.
+    **kwargs : dict
+        Additional arguments for the class. It should contain the following keys:
+        - out_channels (int): Number of output channels.
+        - num_cell_dimensions (int): Number of cell dimensions.
+    """
+
+    def __init__(self, backbone, **kwargs):
+        super().__init__(backbone, **kwargs)
+        self.complex_dim = kwargs["complex_dim"]
+        self.max_hop = kwargs["max_hop"]
 
     def __call__(self, batch):
         r"""Forward pass for the model.
@@ -37,44 +52,27 @@ class SANNWrapper(AbstractWrapper):
         dict
             Dictionary containing the model output.
         """
-        hop_data_names = [
-            k
-            for k, v in batch
-            if k.startswith("x") and len(k.split("_")[0]) == 2
-        ]
-        max_simplex_dim = max(
-            [int(k.split("_")[0][1]) for k in hop_data_names]
-        )
-        max_hop_dim = max([int(k.split("_")[1][0]) for k in hop_data_names])
-
         # Prepare the input data for the backbone
         # by aggregating the data in a dictionary
         # (source_simplex_dim, (target_simplex_dim, torch.Tensor with embeddings))
         x_all = tuple(
-            tuple(batch[f"x{i}_{j}"] for j in range(max_hop_dim + 1))
-            for i in range(max_simplex_dim + 1)
+            tuple(batch[f"x{i}_{j}"] for j in range(self.max_hop))
+            for i in range(self.complex_dim + 1)
         )
 
         x_out = self.backbone(x_all)
 
+        # Get all the batch tensors according to the max_simplex_dim
         model_out = {
-            "labels": batch.y,
-            "batch_0": batch.batch_0,
-            "batch_1": batch.batch_1,
-            "batch_2": batch.batch_2,
+            f"batch_{i}": batch[f"batch_{i}"]
+            for i in range(self.complex_dim + 1)
         }
+        # Add the target labels
+        model_out["labels"] = batch.y
 
-        for cell_idx in range(max_simplex_dim + 1):
+        for cell_idx in range(self.complex_dim + 1):
             for hop_idx in range(
-                max_hop_dim + 1
+                self.max_hop
             ):  # when I run sann_classic range(max_hop_dim) but when I run sann_zero range(max_hop_dim + 1)
-                model_out[f"x_{cell_idx}_{hop_idx}"] = x_out[cell_idx][hop_idx]
-
-        # model_out['max_simplex_dim'] = max_simplex_dim
-        # model_out['max_hop_dim'] = max_hop_dim
-
-        # model_out["x_0"] = x_out[0]
-        # model_out["x_1"] = x_out[1]
-        # model_out["x_2"] = x_out[2]
-
+                model_out[f"x{cell_idx}_{hop_idx}"] = x_out[cell_idx][hop_idx]
         return model_out

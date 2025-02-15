@@ -84,12 +84,8 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
         torch_geometric.data.Data
             Output data object with updated x_{i} features.
         """
-        last_size = -1
         for i in self.dimensions:
             batch = getattr(data, f"batch_{i}")
-            if last_size == -1:
-                last_size = batch.max()
-
             for j in range(self.hops):
                 data[f"x{i}_{j}"] = getattr(self, f"encoder_{i}_{j}")(
                     data[f"x{i}_{j}"], batch

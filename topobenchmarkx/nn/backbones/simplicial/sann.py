@@ -264,12 +264,6 @@ class SANNLayer(torch.nn.Module):
             for i in range(self.max_hop)
         }
 
-        # TODO Check aggregation as list of ys
-        # Need to check that this einsums are correct
-        # y_0 = torch.einsum("nik,iok->no", x_0_all, self.weight_0)
-        # y_1 = torch.einsum("nik,iok->no", x_1_all, self.weight_1)
-        # y_2 = torch.einsum("nik,iok->no", x_2_all, self.weight_2)
-
         if self.update_func is None:
             return tuple(y_k_t.values())
 
