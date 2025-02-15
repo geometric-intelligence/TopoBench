@@ -144,7 +144,11 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         src_batch = params[f"x_{src_rank}"]
         dst_batch = params[f"x_{dst_rank}"]
         edge_index, edge_attr = nbhd_cache
-        device = getattr(params, f"x_{src_rank}").device
+        setattr(
+            params,
+            f"x_{src_rank}",
+            getattr(params, f"x_{src_rank}").to(self.device),
+        )
         feat_on_dst = torch.zeros_like(
             getattr(params, f"x_{dst_rank}"), device=self.device
         )
@@ -152,11 +156,11 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         batch_expanded = torch.cat([dst_batch, src_batch], dim=0)
 
         batch_route = Data(
-            x=x_in.to(device),
-            edge_index=edge_index.to(device),
-            edge_attr=edge_attr.to(device),
-            edge_weight=edge_attr.to(device),
-            batch=batch_expanded.to(device),
+            x=x_in.to(self.device),
+            edge_index=edge_index.to(self.device),
+            edge_attr=edge_attr.to(self.device),
+            edge_weight=edge_attr.to(self.device),
+            batch=batch_expanded.to(self.device),
         )
 
         return batch_route
