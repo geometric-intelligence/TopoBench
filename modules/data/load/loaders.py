@@ -301,7 +301,7 @@ class PointCloudLoader(AbstractLoader):
         elif self.parameters.data_name == "toy_point_cloud":
             data = load_point_cloud(
                 num_classes=self.parameters["num_classes"],
-                num_points=self.parameters["num_samples"],
+                num_samples=self.parameters["num_samples"],
             )
         elif self.parameters.data_name == "manual_points":
             data = load_manual_points()
