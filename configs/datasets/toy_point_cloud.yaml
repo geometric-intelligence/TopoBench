@@ -1,0 +1,12 @@
+data_domain: point_cloud
+data_type: toy_dataset
+data_name: toy_point_cloud
+data_dir: datasets/${data_domain}/${data_type}
+
+# Dataset parameters
+num_samples: 8
+num_classes: 2
+
+num_features: 1
+task: classification
+loss_type: cross_entropy
