@@ -91,11 +91,7 @@ def get_routes_from_neighborhoods(neighborhoods):
                 else [src_rank, src_rank + r]
             )
         elif "adjacency" in neighborhood:
-            route = (
-                [src_rank, src_rank]
-                if "up" in neighborhood
-                else [src_rank, src_rank - r]
-            )
+            route = [src_rank, src_rank]
         else:
             raise Exception(f"Invalid neighborhood {neighborhood}")
 
