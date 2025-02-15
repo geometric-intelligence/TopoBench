@@ -146,8 +146,8 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         edge_index, edge_attr = nbhd_cache
         setattr(
             params,
-            f"x_{src_rank}",
-            getattr(params, f"x_{src_rank}").to(self.device),
+            f"x_{src_rank}".to(self.device),
+            getattr(params, f"x_{src_rank}"),
         )
         feat_on_dst = torch.zeros_like(
             getattr(params, f"x_{dst_rank}"), device=self.device
