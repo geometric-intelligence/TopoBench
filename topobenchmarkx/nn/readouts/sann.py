@@ -267,5 +267,7 @@ class SANNReadout(AbstractZeroCellReadOut):
                 torch.nn.Sequential(
                     torch.nn.Linear(self.max_hop * hidden_dim, hidden_dim),
                     torch.nn.LeakyReLU(),
+                    torch.nn.Linear(hidden_dim, hidden_dim),
+                    torch.nn.LeakyReLU(),
                 ),
             )
