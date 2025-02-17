@@ -1,5 +1,5 @@
 dataset='ZINC'
-project_name="TBX_GPSE_CELLTEST3_$dataset"
+project_name="TBX_GPSE_CELLTEST_LAYERNORM_$dataset"
 
 # =====================
 # DATA
@@ -9,20 +9,20 @@ DATA_SEEDS=(0) #3 5 7 9
 # =====================
 # MODEL PARAMETERS
 # =====================
-N_LAYERS=(2 4)
-OUT_CHANNELS=(128 256)
+N_LAYERS=(2 4 6)
+OUT_CHANNELS=(128 256 512)
 
 # =====================
 # OPTIMIZATION PARAMETERS
 # =====================
-LEARNING_RATES=(0.01 0.001)
-PROJECTION_DROPOUTS=(0.25 0.5)
-WEIGHT_DECAYS=(0 0.0001)
+LEARNING_RATES=(0.001)
+PROJECTION_DROPOUTS=(0.25)
+WEIGHT_DECAYS=(0.0001 0.001 0.01)
 
 # =====================
 # PRETRAINED MODELS
 # =====================
-PRETRAIN_MODELS=('ZINC' 'GEOM' 'MOLPCBA' 'PCQM4MV2')
+PRETRAIN_MODELS=('ZINC' 'PCQM4MV2') # 'GEOM' 'MOLPCBA'
 
 
 # =====================
@@ -39,8 +39,8 @@ PRETRAIN_MODELS_STR=$(IFS=,; echo "${PRETRAIN_MODELS[*]}")  # Convert to comma-s
 # =====================
 # PARAMETERS OVER WHICH WE PERFORM PARALLEL RUNS
 # =====================
-batch_sizes=(128 256)
-learning_rates=(0.01 0.001)
+batch_sizes=(128 256 512)
+learning_rates=(0.001)
 neighborhoods=(
     # adjacency 
     "['up_adjacency-0']"

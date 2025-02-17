@@ -149,7 +149,7 @@ class SANNLayer(torch.nn.Module):
         in_channels,
         out_channels,
         max_hop,
-        aggr_norm: bool = False,
+        aggr_norm: bool = True,
         update_func=None,
         initialization: str = "xavier_normal",
     ) -> None:
@@ -192,6 +192,10 @@ class SANNLayer(torch.nn.Module):
                 )
                 for i in range(max_hop)
             ]
+        )
+
+        self.LN = torch.nn.ModuleList(
+            torch.nn.LayerNorm(self.out_channels[i]) for i in range(max_hop)
         )
 
         self.reset_parameters()
@@ -256,6 +260,7 @@ class SANNLayer(torch.nn.Module):
         torch.Tensor
             Output tensors for each 2-cell.
         """
+        x_all_0 = [x.clone() for x in x_all]
         # Extract all cells to all cells
         x_k_t = {i: x_all[i] for i in range(self.max_hop)}
 
@@ -267,4 +272,14 @@ class SANNLayer(torch.nn.Module):
         if self.update_func is None:
             return tuple(y_k_t.values())
 
-        return tuple([self.update(y_t) for y_t in y_k_t.values()])
+        # Maybe add skip-connections here: x = LN(x + x_0)
+        # x_all
+        x_all = tuple([self.update(y_t) for y_t in y_k_t.values()])
+
+        x_out = []
+        for i, xs in enumerate(zip(x_all_0, x_all)):
+            x_0, x = xs
+            x_out.append(self.LN[i](x + x_0))
+            # x_out.append(x)
+
+        return tuple(x_out)

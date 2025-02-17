@@ -138,6 +138,8 @@ class SANNReadout(AbstractZeroCellReadOut):
                     x_out[f"x_{i}"]
                 )
 
+                # model_out_up[f"x{i}_{j}"] = x_out[f"x_{i}"] + model_out[f"x{i}_{j}"]
+
                 # This is pooling per r
                 x_out[f"x_{i}"] = scatter(
                     x_out[f"x_{i}"],
@@ -146,54 +148,10 @@ class SANNReadout(AbstractZeroCellReadOut):
                     reduce=self.pooling_type,
                     dim_size=batch.batch_0.max() + 1,
                 )
-                # x_i_all = getattr(self, f"linear_rank_{i}")(
-                #     x_i_concat
-                # )
-                # x_i_all = getattr(self, f"ln_{i}")(x_i_all)
-
-                # # Perform scatter operation (basically sums the k-hops)
-                # x_i_all_cat = scatter(
-                #     x_i_concat,
-                #     batch_concat,
-                #     dim=0,
-                #     reduce=self.pooling_type,
-                # )
-
-                # for j in range(self.max_hop):
-                #     x_i_j_batched = scatter(
-                #         model_out[f"x{i}_{j}"],
-                #         batch[f"batch_{i}"],
-                #         dim=0,
-                #         reduce=self.pooling_type,
-                #     )
-                #     x_i_all.append(x_i_j_batched)
-                # x_i_all_cat = torch.cat(x_i_all, dim=1)
-                # x_all.append(x_i_all)
-
-            # # TODO: Is this fix valid ?
-            # lengths = set([x_i_all.shape[0] for x_i_all in x_all])
-            # if len(lengths) > 1:
-            #     x_all[-1] = torch.nn.functional.pad(
-            #         x_all[-1], (0, 0, 0, max(lengths) - x_all[-1].shape[0])
-            #     )
-
-            # Iterate over all of 1 -> k cells
-            # for k in range(1, self.complex_dim+1):
-            #     l = x_out[f'x_{k}'].shape[0]
-            #     # If the k-cell has a batch of less than the 0-cell batch
-            #     if l < x_out[f"x_0"].shape[0]:
-            #         # Create new empty cells
-            #         new_x = torch.zeros(x_out[f"x_0"].shape[0], x_out[f"x_{k}"].shape[1])
-            #         # Get batches with k-cells
-            #         idx = torch.unique(batch[f"batch_{k}"])
-            #         # Assign batches with cells to corresponding
-            #         new_x[idx] = x_out[f"x_{k}"]
-            #         x_out[f'x_{k}'] = new_x
 
             x_all_cat = torch.cat(
                 [x_out[f"x_{i}"] for i in range(self.complex_dim + 1)], dim=1
             )
-            # x_all_cat = torch.cat(x_all, dim=0)
 
         elif self.task_level == "node":
             for i in self.dimensions:
@@ -207,19 +165,6 @@ class SANNReadout(AbstractZeroCellReadOut):
                     )
 
             x_all_cat = model_out["x0_0"]
-
-            # x_all = []
-            # # For i-cells
-            # for i in range(max_dim):
-            #     # For j-hops
-            #     x_i_all = []
-            #     for j in range(max_hop):
-            #         x_i_all.append(model_out[f"x_{i}_{j}"])
-
-            #     x_i_all_cat = torch.cat(x_i_all, dim=1)
-            #     x_all.append(x_i_all_cat)
-
-            # x_all_cat = torch.cat(x_all, dim=1)
 
         model_out["x_all"] = x_all_cat  # model_out[f"x_0_0"]
 
