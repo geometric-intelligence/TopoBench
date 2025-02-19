@@ -433,6 +433,7 @@ def make_hash(o):
     # Convert the hex back to int and restrict it to the relevant int range
     return int(hash_as_hex, 16) % 4294967295
 
+
 def load_point_cloud(
     num_classes: int = 2, num_samples: int = 18, seed: int = 42
 ):
