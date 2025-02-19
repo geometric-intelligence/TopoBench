@@ -64,7 +64,9 @@ class PipelineTimer(pl.Callback):
                         self.sums[stage][self.skip_first_n :]
                     )
                 else:
-                    avg_times[f"AvgTime/{stage}_mean"] = self.sums[stage]
+                    avg_times[f"AvgTime/{stage}_mean"] = np.mean(
+                        self.sums[stage]
+                    )
                     avg_times[f"AvgTime/{stage}_std"] = 0.0
 
         if trainer.logger:
