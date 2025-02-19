@@ -1,4 +1,4 @@
-"""TopobenchmarkX: A library for benchmarking of topological models."""
+"""Topobenchmark: A library for benchmarking of topological models."""
 
 # Import submodules
 from . import (
