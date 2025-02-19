@@ -1,7 +1,7 @@
 import torch
 
-from modules.data.utils.utils import load_point_cloud
-from modules.transforms.liftings.pointcloud2simplicial.delaunay_lifting import (
+from topobenchmark.data.utils.utils import load_point_cloud
+from topobenchmark.transforms.liftings.pointcloud2simplicial.delaunay_lifting import (
     DelaunayLifting,
 )
 

@@ -1,4 +1,4 @@
-from modules.transforms.liftings.lifting import PointCloudLifting
+from topobenchmark.transforms.liftings.lifting import PointCloudLifting
 
 
 class PointCloud2CellLifting(PointCloudLifting):

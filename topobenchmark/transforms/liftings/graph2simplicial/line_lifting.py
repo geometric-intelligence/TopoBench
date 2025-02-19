@@ -2,7 +2,7 @@ import networkx as nx
 import torch_geometric
 from toponetx.classes import SimplicialComplex
 
-from modules.transforms.liftings.graph2simplicial.base import (
+from topobenchmark.transforms.liftings.graph2simplicial.base import (
     Graph2SimplicialLifting,
 )
 

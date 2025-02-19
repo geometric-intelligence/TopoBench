@@ -432,3 +432,19 @@ def make_hash(o):
     hash_as_hex = sha1.hexdigest()
     # Convert the hex back to int and restrict it to the relevant int range
     return int(hash_as_hex, 16) % 4294967295
+
+def load_point_cloud(
+    num_classes: int = 2, num_samples: int = 18, seed: int = 42
+):
+    """Create a toy point cloud dataset"""
+    rng = np.random.default_rng(seed)
+
+    points = torch.tensor(rng.random((num_samples, 2)), dtype=torch.float)
+    classes = torch.tensor(
+        rng.integers(num_classes, size=num_samples), dtype=torch.long
+    )
+    features = torch.tensor(
+        rng.integers(3, size=(num_samples, 1)), dtype=torch.float
+    )
+
+    return torch_geometric.data.Data(x=features, y=classes, pos=points)

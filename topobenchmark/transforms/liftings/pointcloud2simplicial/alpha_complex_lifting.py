@@ -2,7 +2,7 @@ import gudhi
 import torch_geometric
 from toponetx.classes import SimplicialComplex
 
-from modules.transforms.liftings.pointcloud2simplicial.base import (
+from topobenchmark.transforms.liftings.pointcloud2simplicial.base import (
     PointCloud2SimplicialLifting,
 )
 

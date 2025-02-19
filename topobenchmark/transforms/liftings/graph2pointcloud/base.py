@@ -1,4 +1,4 @@
-from modules.transforms.liftings.lifting import GraphLifting
+from topobenchmark.transforms.liftings.lifting import GraphLifting
 
 
 class Graph2PointcloudLifting(GraphLifting):

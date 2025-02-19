@@ -3,8 +3,8 @@ import torch_geometric
 from scipy.spatial import Delaunay
 from toponetx.classes import SimplicialComplex
 
-from modules.data.utils.utils import get_complex_connectivity
-from modules.transforms.liftings.pointcloud2simplicial.base import (
+from topobenchmark.data.utils.utils import get_complex_connectivity
+from topobenchmark.transforms.liftings.pointcloud2simplicial.base import (
     PointCloud2SimplicialLifting,
 )
 
