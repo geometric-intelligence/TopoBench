@@ -1,4 +1,4 @@
-neighborhood="['up_adjacency-0','up_adjacency-1','down_adjacency-1','down_adjacency-2','up_incidence-0','up_incidence-1','down_incidence-1','down_incidence-2']"  #"['up_adjacency-0','up_adjacency-1','down_adjacency-2','down_adjacency-1','up_incidence-0','up_incidence-1']" #'['0-virtualnode_incidence-0','up_incidence-0','up_adjacency-0','up_incidence-1']'
+neighborhood="['up_adjacency-0','up_adjacency-1','2-up_adjacency-0','down_adjacency-1','down_adjacency-2','2-down_adjacency-2']"  #"['up_adjacency-0','up_adjacency-1','down_adjacency-2','down_adjacency-1','up_incidence-0','up_incidence-1']" #'['0-virtualnode_incidence-0','up_incidence-0','up_adjacency-0','up_incidence-1']'
 python topobenchmarkx/run.py \
     dataset=graph/ZINC \
     model=cell/sann \
