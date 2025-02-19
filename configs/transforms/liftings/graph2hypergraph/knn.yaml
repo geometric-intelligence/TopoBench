@@ -1,3 +1,4 @@
+_target_: topobenchmark.transforms.data_transform.DataTransform
 transform_type: 'lifting'
 transform_name: "HypergraphKNNLifting"
 k_value: 3

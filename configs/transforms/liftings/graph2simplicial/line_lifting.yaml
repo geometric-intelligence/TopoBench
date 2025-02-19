@@ -1,0 +1,5 @@
+_target_: topobenchmark.transforms.data_transform.DataTransform
+transform_type: "lifting"
+transform_name: "SimplicialLineLifting"
+feature_lifting: ProjectionSum
+complex_dim: 2
