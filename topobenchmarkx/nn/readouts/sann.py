@@ -188,7 +188,7 @@ class SANNReadout(AbstractZeroCellReadOut):
                 ),
             )
 
-            # setattr(self, f"ln_{i}", torch.nn.LayerNorm(hidden_dim))
+            setattr(self, f"ln_{i}", torch.nn.LayerNorm(hidden_dim))
 
             setattr(
                 self,

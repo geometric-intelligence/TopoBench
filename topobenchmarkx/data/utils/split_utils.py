@@ -265,6 +265,10 @@ def load_transductive_splits(dataset, parameters):
     data.val_mask = torch.from_numpy(splits["valid"])
     data.test_mask = torch.from_numpy(splits["test"])
 
+    assert data.x.shape[0] > 0
+    assert data.x[data.train_mask].shape[0] > 0
+    assert data.y.shape[0] > 0
+
     if parameters.get("standardize", False):
         # Standardize the node features respecting train mask
         data.x = (data.x - data.x[data.train_mask].mean(0)) / data.x[
