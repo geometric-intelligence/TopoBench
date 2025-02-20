@@ -409,6 +409,7 @@ def infer_in_hasse_graph_agg_dim(
     dim_hidden_graph,
     dim_hidden_node,
     copy_initial,
+    use_edge_attr,
 ):
     """Compute which input dimensions need to changed based on if they are the output of a neighborhood.
 
@@ -428,6 +429,8 @@ def infer_in_hasse_graph_agg_dim(
         The output hidden dimension of the GNN over the Hasse Graph for each node.
     copy_initial : bool
         If the initial features should be copied as the 0-th hop.
+    use_edge_attr : bool
+        If the edge attributes are used as features in the 1-cells and should be considered for channel inference.
 
     Returns
     -------
@@ -453,6 +456,11 @@ def infer_in_hasse_graph_agg_dim(
             results.fill(dim_in)
         else:
             results.fill(dim_in[0])
+
+        # If edge_attr is used, set those dimensions
+        if use_edge_attr:
+            for i in range(1, len(dim_in)):
+                results[i][0] = dim_in[i]
 
     else:
         results.fill(dim_hidden)
