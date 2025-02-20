@@ -449,7 +449,10 @@ def infer_in_hasse_graph_agg_dim(
     results = np.zeros(shape=(complex_dim + 1, hop_num))
     if copy_initial:
         # First dimension is always the input dimension
-        results.fill(dim_in)
+        if isinstance(dim_in, int):
+            results.fill(dim_in)
+        else:
+            results.fill(dim_in[0])
 
     else:
         results.fill(dim_hidden)

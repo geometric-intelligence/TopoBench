@@ -1,6 +1,7 @@
 """Topobenchmark: A library for benchmarking topological models."""
 
 import time
+
 import lightning.pytorch as pl
 import numpy as np
 

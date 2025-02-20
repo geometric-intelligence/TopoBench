@@ -277,7 +277,7 @@ class SANNLayer(torch.nn.Module):
         x_all = tuple([self.update(y_t) for y_t in y_k_t.values()])
 
         x_out = []
-        for i, xs in enumerate(zip(x_all_0, x_all)):
+        for i, xs in enumerate(zip(x_all_0, x_all, strict=False)):
             x_0, x = xs
             x_out.append(self.LN[i](x + x_0))
             # x_out.append(x)
