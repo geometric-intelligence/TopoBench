@@ -1,4 +1,4 @@
-dataset='PROTEINS'
+dataset='cocitation_cora'
 project_name="main_exp_GPSE_$dataset"
 
 # =====================

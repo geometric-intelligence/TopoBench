@@ -1,6 +1,6 @@
 neighborhood="['up_adjacency-0','up_adjacency-1','down_adjacency-2']" #'['0-virtualnode_incidence-0','up_incidence-0','up_adjacency-0','up_incidence-1']'
 python topobenchmarkx/run.py \
-    dataset=graph/ZINC \
+    dataset=graph/MUTAG \
     model=cell/sann \
     model.backbone.n_layers=2 \
     model.feature_encoder.out_channels=128\

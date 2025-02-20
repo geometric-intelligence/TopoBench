@@ -5,7 +5,7 @@
 defaults:
   - _self_
   - dataset: graph/PROTEINS
-  - model: graph/gin
+  - model: graph/gcn
   - transforms: ${get_default_transform:${dataset},${model}} #no_transform
   - optimizer: default
   - loss: default
