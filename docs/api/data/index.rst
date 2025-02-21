@@ -12,35 +12,35 @@ The `data` module of `TopoBenchmarkX` consists of several submodules:
 Datasets
 --------
 
-.. automodule:: topobenchmarkx.data.datasets.us_county_demos_dataset
+.. automodule:: topobenchmark.data.datasets.us_county_demos_dataset
     :members:
     
 
 Load
 ----
 
-.. automodule:: topobenchmarkx.data.loaders.base
+.. automodule:: topobenchmark.data.loaders.base
     :members:
 
-.. automodule:: topobenchmarkx.data.loaders.loaders
+.. automodule:: topobenchmark.data.loaders.loaders
     :members:
 
 
 Preprocess
 ----------
 
-.. automodule:: topobenchmarkx.data.preprocessor.preprocessor
+.. automodule:: topobenchmark.data.preprocessor.preprocessor
     :members:
 
 
 Utils
 -----
 
-.. automodule:: topobenchmarkx.data.utils.io_utils
+.. automodule:: topobenchmark.data.utils.io_utils
     :members:
 
-.. automodule:: topobenchmarkx.data.utils.split_utils
+.. automodule:: topobenchmark.data.utils.split_utils
     :members:
 
-.. automodule:: topobenchmarkx.data.utils.utils
+.. automodule:: topobenchmark.data.utils.utils
     :members:

@@ -1,10 +1,10 @@
-_target_: topobenchmarkx.model.TBXModel
+_target_: topobenchmark.model.TBModel
 
 model_name: sann
 model_domain: simplicial
 
 feature_encoder:
-  _target_: topobenchmarkx.nn.encoders.${model.feature_encoder.encoder_name}
+  _target_: topobenchmark.nn.encoders.${model.feature_encoder.encoder_name}
   encoder_name: SANNFeatureEncoder
   dataset_in_channels: ${infer_in_channels:${dataset},${oc.select:transforms,null}}
   in_channels: ${transforms.sann_encoding.in_channels} 
@@ -19,7 +19,7 @@ feature_encoder:
   all_ones: true
 
 backbone:
-  _target_: topobenchmarkx.nn.backbones.simplicial.sann.SANN
+  _target_: topobenchmark.nn.backbones.simplicial.sann.SANN
   in_channels: ${model.backbone.hidden_channels}
   n_layers: 2
   max_hop: ${transforms.sann_encoding.max_hop} 
@@ -27,22 +27,24 @@ backbone:
   update_func: "lrelu"
 
 backbone_wrapper:
-  _target_: topobenchmarkx.nn.wrappers.SANNWrapper
+  _target_: topobenchmark.nn.wrappers.simplicial.SANNWrapper
   _partial_: true
   wrapper_name: SANNWrapper
   out_channels: ${model.feature_encoder.out_channels}
-  num_cell_dimensions: ${infere_num_cell_dimensions:${oc.select:model.feature_encoder.selected_dimensions,null},${model.feature_encoder.in_channels}}
+  max_hop: ${transforms.sann_encoding.max_hop}
+  complex_dim: ${transforms.sann_encoding.max_rank}
+  num_cell_dimensions: ${infer_num_cell_dimensions:${oc.select:model.feature_encoder.selected_dimensions,null},${model.feature_encoder.in_channels}}
 
 readout:
-  _target_: topobenchmarkx.nn.readouts.${model.readout.readout_name}
+  _target_: topobenchmark.nn.readouts.${model.readout.readout_name}
   readout_name: SANNReadout  #  Use <NoReadOut> in case readout is not needed Options: PropagateSignalDown
   max_hop: ${transforms.sann_encoding.max_hop}
-  num_cell_dimensions: ${infere_num_cell_dimensions:${oc.select:model.feature_encoder.selected_dimensions,null},${model.feature_encoder.in_channels}} # The highest order of cell dimensions to consider
+  num_cell_dimensions: ${infer_num_cell_dimensions:${oc.select:model.feature_encoder.selected_dimensions,null},${model.feature_encoder.in_channels}} # The highest order of cell dimensions to consider
   hidden_dim: ${model.feature_encoder.out_channels}
   out_channels: ${dataset.parameters.num_classes}
   task_level: ${dataset.parameters.task_level}
   pooling_type: sum
-  complex_dim: ${oc.select:dataset.parameters.max_dim_if_lifted,3}
+  complex_dim: ${transforms.sann_encoding.max_rank}
 
 # compile model for faster training with pytorch 2.0
 compile: false

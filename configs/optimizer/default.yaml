@@ -1,4 +1,4 @@
-_target_: topobenchmarkx.optimizer.TBXOptimizer
+_target_: topobenchmark.optimizer.TBOptimizer
 # Full compatibility with all available torch optimizers and schedulers
 
 optimizer_id: Adam # torch id of the optimizer
@@ -7,7 +7,7 @@ parameters:
   lr: 0.001
   weight_decay: 0.0
 
-scheduler:  # Comment or delete these lines to disable the scheduler
+scheduler: # Comment or delete these lines to disable the scheduler
   scheduler_id: StepLR # torch id of the scheduler. Set to null to disable.
   # scheduler params
   scheduler_params:

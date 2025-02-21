@@ -5,7 +5,7 @@ import hydra
 from omegaconf import OmegaConf, DictConfig
 import torch
 from unittest.mock import MagicMock
-from topobenchmarkx.utils.utils import extras, get_metric_value, task_wrapper
+from topobenchmark.utils.utils import extras, get_metric_value, task_wrapper
 
 # initialize(config_path="../../configs", job_name="job")
 

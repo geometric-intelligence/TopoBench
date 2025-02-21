@@ -4,12 +4,11 @@ import torch
 from torch_geometric.utils import get_laplacian
 from ...._utils.nn_module_auto_test import NNModuleAutoTest
 from ...._utils.flow_mocker import FlowMocker
-from topobenchmarkx.nn.backbones.simplicial import SCCNNCustom
-from topobenchmarkx.nn.backbones.simplicial import SANN
+from topobenchmark.nn.backbones.simplicial import SCCNNCustom
 from topomodelx.nn.simplicial.san import SAN
 from topomodelx.nn.simplicial.scn2 import SCN2
 from topomodelx.nn.simplicial.sccn import SCCN
-from topobenchmarkx.nn.wrappers import (
+from topobenchmark.nn.wrappers import (
     SCCNWrapper,
     SCCNNWrapper,
     SANWrapper,

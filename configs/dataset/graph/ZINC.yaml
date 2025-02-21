@@ -2,7 +2,7 @@
 
 # Dataset loader config
 loader:
-  _target_: topobenchmarkx.data.loaders.MoleculeDatasetLoader
+  _target_: topobenchmark.data.loaders.MoleculeDatasetLoader
   parameters: 
     data_domain: graph
     data_type: ZINC

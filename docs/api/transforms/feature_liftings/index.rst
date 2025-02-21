@@ -2,14 +2,14 @@
 Feature Liftings
 ****************
 
-.. automodule:: topobenchmarkx.transforms.feature_liftings.concatenation
+.. automodule:: topobenchmark.transforms.feature_liftings.concatenation
     :members:
 
-.. automodule:: topobenchmarkx.transforms.feature_liftings.identity
+.. automodule:: topobenchmark.transforms.feature_liftings.identity
     :members:
 
-.. automodule:: topobenchmarkx.transforms.feature_liftings.projection_sum
+.. automodule:: topobenchmark.transforms.feature_liftings.projection_sum
     :members:
 
-.. automodule:: topobenchmarkx.transforms.feature_liftings.set
+.. automodule:: topobenchmark.transforms.feature_liftings.set
     :members:

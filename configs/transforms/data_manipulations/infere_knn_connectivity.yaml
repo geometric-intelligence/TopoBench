@@ -1,8 +1,7 @@
-_target_: topobenchmarkx.transforms.data_transform.DataTransform
+_target_: topobenchmark.transforms.data_transform.DataTransform
 transform_name: "InfereKNNConnectivity"
 transform_type: "data manipulation"
 args:
-  k: 5 # Number of nearest neighbors to consider
+  k: 40 # Number of nearest neighbors to consider
   cosine: false # If true, will use the cosine distance instead of euclidean distance to find nearest neighbors. (Note: option equal to true gives an error)
   loop: false # If True, the graph will contain self-loops. Note: using true and then siplicial lifting leads to an error because there are selfedges that cause simplex to have duplicated node.
-

@@ -3,11 +3,11 @@
 import pytest
 import torch
 
-from topobenchmarkx.optimizer import TBXOptimizer
+from topobenchmark.optimizer import TBOptimizer
 
 
-class TestTBXOptimizer:
-    """Test the TBXOptimizer class."""
+class TestTBOptimizer:
+    """Test the TBOptimizer class."""
     
     def setup_method(self):
         """Setup method."""
@@ -25,13 +25,13 @@ class TestTBXOptimizer:
     def test_configure_optimizer(self):
         """Test the configure_optimizer method."""
         # Check with scheduler
-        optimizer = TBXOptimizer(**self.optimizer_config_with_scheduler)
+        optimizer = TBOptimizer(**self.optimizer_config_with_scheduler)
         out = optimizer.configure_optimizer(self.params)
         assert "optimizer" in out
         assert "lr_scheduler" in out
         
         # Check without scheduler
-        optimizer = TBXOptimizer(**self.optimizer_config_without_scheduler)
+        optimizer = TBOptimizer(**self.optimizer_config_without_scheduler)
         out = optimizer.configure_optimizer(self.params)
         assert "optimizer" in out
         assert "lr_scheduler" not in out

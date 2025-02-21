@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "TopoBenchmark"
 dynamic = ["version"]
 authors = [
-    {name = "PyT-Team Authors", email = "tlscabinet@gmail.com"}
+    {name = "Topological Intelligence Team Authors", email = "tlscabinet@gmail.com"}
 ]
 readme = "README.md"
 description = "Topological Deep Learning"
@@ -48,8 +48,8 @@ dependencies=[
     "jupyterlab",
     "rich",
     "rootutils",
-    "toponetx @ git+https://github.com/pyt-team/TopoNetX.git",
     "topomodelx @ git+https://github.com/pyt-team/TopoModelX.git",
+    "toponetx @ git+https://github.com/pyt-team/TopoNetX.git",
     "lightning==2.4.0",
 ]
 
@@ -132,14 +132,15 @@ convention = "numpy"
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F403"]
+"tests/*" = ["D"]
 
 [tool.setuptools.dynamic]
-version = {attr = "topobenchmarkx.__version__"}
+version = {attr = "topobenchmark.__version__"}
 
 [tool.setuptools.packages.find]
 include = [
-    "topobenchmarkx",
-    "topobenchmarkx.*"
+    "topobenchmark",
+    "topobenchmark.*"
 ]
 
 [tool.mypy]

@@ -2,11 +2,11 @@
 Backbones
 *********
 
-.. automodule:: topobenchmarkx.nn.backbones.cell.cccn
+.. automodule:: topobenchmark.nn.backbones.cell.cccn
     :members:
 
-.. automodule:: topobenchmarkx.nn.backbones.hypergraph.edgnn
+.. automodule:: topobenchmark.nn.backbones.hypergraph.edgnn
     :members:
 
-.. automodule:: topobenchmarkx.nn.backbones.simplicial.sccnn
+.. automodule:: topobenchmark.nn.backbones.simplicial.sccnn
     :members:

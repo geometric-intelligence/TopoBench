@@ -3,7 +3,7 @@
 import pytest
 import torch
 from torch_geometric.data import Data
-from topobenchmarkx.transforms.liftings import AbstractLifting
+from topobenchmark.transforms.liftings import AbstractLifting
 
 class TestAbstractLifting:
     """Test the AbstractLifting class."""

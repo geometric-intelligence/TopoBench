@@ -6,7 +6,7 @@ from ...._utils.nn_module_auto_test import NNModuleAutoTest
 from ...._utils.flow_mocker import FlowMocker
 from unittest.mock import MagicMock
 
-from topobenchmarkx.nn.wrappers import (
+from topobenchmark.nn.wrappers import (
     AbstractWrapper,
     CCCNWrapper,
     CANWrapper,
@@ -16,7 +16,7 @@ from topobenchmarkx.nn.wrappers import (
 from topomodelx.nn.cell.can import CAN
 from topomodelx.nn.cell.ccxn import CCXN
 from topomodelx.nn.cell.cwn import CWN
-from topobenchmarkx.nn.backbones.cell.cccn import CCCN
+from topobenchmark.nn.backbones.cell.cccn import CCCN
 from unittest.mock import MagicMock
 
 

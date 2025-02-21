@@ -3,7 +3,7 @@
 import pytest
 import torch
 from torch_geometric.data import Data
-from topobenchmarkx.transforms.data_manipulations import EqualGausFeatures
+from topobenchmark.transforms.data_manipulations import EqualGausFeatures
 
 
 class TestEqualGausFeatures:

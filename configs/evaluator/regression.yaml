@@ -1,4 +1,4 @@
-_target_: topobenchmarkx.evaluator.evaluator.TBXEvaluator
+_target_: topobenchmark.evaluator.evaluator.TBEvaluator
 task: ${dataset.parameters.task}
 task_level: ${dataset.parameters.task_level}
 num_classes: ${dataset.parameters.num_classes}

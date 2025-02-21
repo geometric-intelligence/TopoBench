@@ -1,4 +1,4 @@
-_target_: topobenchmarkx.transforms.data_transform.DataTransform
+_target_: topobenchmark.transforms.data_transform.DataTransform
 transform_name: "RemoveExtraFeatureFromProteins"
 transform_type: "data manipulation"
 remove_first_n_features: 1

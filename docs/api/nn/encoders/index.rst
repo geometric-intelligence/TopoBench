@@ -2,8 +2,8 @@
 Encoders
 ********
 
-.. automodule:: topobenchmarkx.nn.encoders.base
+.. automodule:: topobenchmark.nn.encoders.base
     :members:
 
-.. automodule:: topobenchmarkx.nn.encoders.all_cell_encoder
+.. automodule:: topobenchmark.nn.encoders.all_cell_encoder
     :members:

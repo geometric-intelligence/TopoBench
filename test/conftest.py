@@ -3,10 +3,10 @@ import networkx as nx
 import pytest
 import torch
 import torch_geometric
-from topobenchmarkx.transforms.liftings.graph2simplicial import (
+from topobenchmark.transforms.liftings.graph2simplicial import (
     SimplicialCliqueLifting
 )
-from topobenchmarkx.transforms.liftings.graph2cell import (
+from topobenchmark.transforms.liftings.graph2cell import (
     CellCycleLifting
 )
 from topobenchmarkx.transforms.data_manipulations.precompute_khop_features import (

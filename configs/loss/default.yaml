@@ -1,7 +1,9 @@
-_target_: topobenchmarkx.loss.TBXLoss
+_target_: topobenchmark.loss.TBLoss
+
 dataset_loss:
   task: ${dataset.parameters.task}
   loss_type: ${dataset.parameters.loss_type}
+
 modules_losses: # Collect model losses
   feature_encoder: ${oc.select:model.feature_encoder.loss,null}
   backbone: ${oc.select:model.backbone.loss,null}
