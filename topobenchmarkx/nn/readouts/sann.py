@@ -138,8 +138,6 @@ class SANNReadout(AbstractZeroCellReadOut):
                     x_out[f"x_{i}"]
                 )
 
-                # model_out_up[f"x{i}_{j}"] = x_out[f"x_{i}"] + model_out[f"x{i}_{j}"]
-
                 # This is pooling per r
                 x_out[f"x_{i}"] = scatter(
                     x_out[f"x_{i}"],
@@ -166,7 +164,7 @@ class SANNReadout(AbstractZeroCellReadOut):
 
             x_all_cat = model_out["x0_0"]
 
-        model_out["x_all"] = x_all_cat  # model_out[f"x_0_0"]
+        model_out["x_all"] = x_all_cat
 
         return model_out
 
