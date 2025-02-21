@@ -1,6 +1,6 @@
 # Dataset loader config
 loader:
-  _target_: topobenchmarkx.data.loaders.TUDatasetLoader
+  _target_: topobenchmark.data.loaders.TUDatasetLoader
   parameters: 
     data_domain: graph
     data_type: TUDataset

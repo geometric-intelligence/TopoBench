@@ -4,9 +4,9 @@ Evaluator
 
 This module implements custom Python classes to evaluate performances of models in `TopoBenchmarkX`.
 
-.. automodule:: topobenchmarkx.evaluator.base
+.. automodule:: topobenchmark.evaluator.base
     :members:
 
 
-.. automodule:: topobenchmarkx.evaluator.evaluator
+.. automodule:: topobenchmark.evaluator.evaluator
     :members:

@@ -1,0 +1,2 @@
+defaults:
+  - /transforms/data_manipulations@knn: infer_knn_connectivity

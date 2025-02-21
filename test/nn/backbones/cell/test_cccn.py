@@ -2,7 +2,7 @@
 
 import torch
 from ...._utils.nn_module_auto_test import NNModuleAutoTest
-from topobenchmarkx.nn.backbones.cell.cccn import CCCN
+from topobenchmark.nn.backbones.cell.cccn import CCCN
 
 
 def test_cccn(random_graph_input):

@@ -1,11 +1,11 @@
 # SCCN
-python -m topobenchmarkx \
+python -m topobenchmark \
     dataset=graph/MUTAG \
     model=simplicial/topotune_onehasse,simplicial/topotune \
     model.feature_encoder.out_channels=128 \
     model.tune_gnn=GCN,GIN,GAT,GraphSAGE \
     model.backbone.GNN.num_layers=1 \
-    model.backbone.routes=\[\[\[0,0\],up_laplacian\],\[\[0,1\],coboundary\],\[\[1,0\],boundary\],\[\[1,1\],down_laplacian\],\[\[1,1\],up_laplacian\],\[\[1,2\],coboundary\],\[\[2,1\],boundary\],\[\[2,2\],down_laplacian\]\] \
+    model.backbone.neighborhoods=\[1-up_laplacian-0,1-up_incidence-0,1-down_incidence-1,1-down_laplacian-1,1-up_laplacian-1,1-up_incidence-1,1-down_incidence-2,1-down_laplacian-2\] \
     model.backbone.layers=3 \
     dataset.split_params.data_seed=1,3,5,7,9 \
     model.readout.readout_name=NoReadOut \
@@ -22,13 +22,13 @@ python -m topobenchmarkx \
     --multirun &
 
 
-python -m topobenchmarkx \
+python -m topobenchmark \
     dataset=graph/NCI1 \
     model=simplicial/topotune_onehasse,simplicial/topotune \
     model.feature_encoder.out_channels=64 \
     model.backbone.GNN.num_layers=1 \
     model.tune_gnn=GCN,GIN,GAT,GraphSAGE \
-    model.backbone.routes=\[\[\[0,0\],up_laplacian\],\[\[0,1\],coboundary\],\[\[1,0\],boundary\],\[\[1,1\],down_laplacian\],\[\[1,1\],up_laplacian\],\[\[1,2\],coboundary\],\[\[2,1\],boundary\],\[\[2,2\],down_laplacian\]\] \
+    model.backbone.neighborhoods=\[1-up_laplacian-0,1-up_incidence-0,1-down_incidence-1,1-down_laplacian-1,1-up_laplacian-1,1-up_incidence-1,1-down_incidence-2,1-down_laplacian-2\] \
     model.backbone.layers=3 \
     model.feature_encoder.proj_dropout=0.5 \
     model.readout.readout_name=PropagateSignalDown \
@@ -45,13 +45,13 @@ python -m topobenchmarkx \
     --multirun &
 
 
-python -m topobenchmarkx \
+python -m topobenchmark \
     dataset=graph/NCI109 \
     model=simplicial/topotune_onehasse,simplicial/topotune \
     model.feature_encoder.out_channels=64 \
     model.backbone.GNN.num_layers=1 \
     model.tune_gnn=GCN,GIN,GAT,GraphSAGE \
-    model.backbone.routes=\[\[\[0,0\],up_laplacian\],\[\[0,1\],coboundary\],\[\[1,0\],boundary\],\[\[1,1\],down_laplacian\],\[\[1,1\],up_laplacian\],\[\[1,2\],coboundary\],\[\[2,1\],boundary\],\[\[2,2\],down_laplacian\]\] \
+    model.backbone.neighborhoods=\[1-up_laplacian-0,1-up_incidence-0,1-down_incidence-1,1-down_laplacian-1,1-up_laplacian-1,1-up_incidence-1,1-down_incidence-2,1-down_laplacian-2\] \
     model.backbone.layers=4 \
     model.readout.readout_name=NoReadOut \
     transforms.graph2simplicial_lifting.signed=True \
@@ -69,10 +69,10 @@ python -m topobenchmarkx \
 
 
 
-python -m topobenchmarkx \
+python -m topobenchmark \
     model=simplicial/topotune_onehasse,simplicial/topotune \
     model.tune_gnn=GCN,GIN,GAT,GraphSAGE \
-    model.backbone.routes=\[\[\[0,0\],up_laplacian\],\[\[0,1\],coboundary\],\[\[1,0\],boundary\],\[\[1,1\],down_laplacian\],\[\[1,1\],up_laplacian\],\[\[1,2\],coboundary\],\[\[2,1\],boundary\],\[\[2,2\],down_laplacian\]\] \
+    model.backbone.neighborhoods=\[1-up_laplacian-0,1-up_incidence-0,1-down_incidence-1,1-down_laplacian-1,1-up_laplacian-1,1-up_incidence-1,1-down_incidence-2,1-down_laplacian-2\] \
     dataset=graph/PROTEINS \
     optimizer.parameters.lr=0.01 \
     model.feature_encoder.out_channels=128 \
@@ -91,11 +91,11 @@ python -m topobenchmarkx \
     --multirun &
 
 
-python -m topobenchmarkx \
+python -m topobenchmark \
     model=simplicial/topotune_onehasse,simplicial/topotune \
     dataset=graph/ZINC \
     model.tune_gnn=GCN,GIN,GAT,GraphSAGE \
-    model.backbone.routes=\[\[\[0,0\],up_laplacian\],\[\[0,1\],coboundary\],\[\[1,0\],boundary\],\[\[1,1\],down_laplacian\],\[\[1,1\],up_laplacian\],\[\[1,2\],coboundary\],\[\[2,1\],boundary\],\[\[2,2\],down_laplacian\]\] \
+    model.backbone.neighborhoods=\[1-up_laplacian-0,1-up_incidence-0,1-down_incidence-1,1-down_laplacian-1,1-up_laplacian-1,1-up_incidence-1,1-down_incidence-2,1-down_laplacian-2\] \
     optimizer.parameters.lr=0.001 \
     model.feature_encoder.out_channels=128 \
     model.backbone.layers=4 \
@@ -114,10 +114,10 @@ python -m topobenchmarkx \
     trainer.devices=\[0\] \
     --multirun &
 
-python -m topobenchmarkx \
+python -m topobenchmark \
     model=simplicial/topotune_onehasse,simplicial/topotune \
     model.tune_gnn=GCN,GIN,GAT,GraphSAGE \
-    model.backbone.routes=\[\[\[0,0\],up_laplacian\],\[\[0,1\],coboundary\],\[\[1,0\],boundary\],\[\[1,1\],down_laplacian\],\[\[1,1\],up_laplacian\],\[\[1,2\],coboundary\],\[\[2,1\],boundary\],\[\[2,2\],down_laplacian\]\] \
+    model.backbone.neighborhoods=\[1-up_laplacian-0,1-up_incidence-0,1-down_incidence-1,1-down_laplacian-1,1-up_laplacian-1,1-up_incidence-1,1-down_incidence-2,1-down_laplacian-2\] \
     dataset=graph/cocitation_citeseer \
     optimizer.parameters.lr=0.01 \
     model.feature_encoder.out_channels=64 \
@@ -135,11 +135,11 @@ python -m topobenchmarkx \
     trainer.devices=\[0\] \
     --multirun &
 
-python -m topobenchmarkx \
+python -m topobenchmark \
     model=simplicial/topotune_onehasse,simplicial/topotune \
     model.tune_gnn=GCN,GIN,GAT,GraphSAGE \
-    model.backbone.GNN._target_=topobenchmarkx.nn.backbones.graph.IdentityGCN \
-    model.backbone.routes=\[\[\[0,0\],up_laplacian\],\[\[0,1\],coboundary\],\[\[1,0\],boundary\],\[\[1,1\],down_laplacian\],\[\[1,1\],up_laplacian\],\[\[1,2\],coboundary\],\[\[2,1\],boundary\],\[\[2,2\],down_laplacian\]\] \
+    model.backbone.GNN._target_=topobenchmark.nn.backbones.graph.IdentityGCN \
+    model.backbone.neighborhoods=\[1-up_laplacian-0,1-up_incidence-0,1-down_incidence-1,1-down_laplacian-1,1-up_laplacian-1,1-up_incidence-1,1-down_incidence-2,1-down_laplacian-2\] \
     dataset=graph/cocitation_cora \
     optimizer.parameters.lr=0.01 \
     model.feature_encoder.out_channels=32 \
@@ -157,10 +157,10 @@ python -m topobenchmarkx \
     trainer.devices=\[1\] \
     --multirun &
 
-python -m topobenchmarkx \
+python -m topobenchmark \
     model=simplicial/topotune_onehasse,simplicial/topotune \
     model.tune_gnn=GCN,GIN,GAT,GraphSAGE \
-    model.backbone.routes=\[\[\[0,0\],up_laplacian\],\[\[0,1\],coboundary\],\[\[1,0\],boundary\],\[\[1,1\],down_laplacian\],\[\[1,1\],up_laplacian\],\[\[1,2\],coboundary\],\[\[2,1\],boundary\],\[\[2,2\],down_laplacian\]\] \
+    model.backbone.neighborhoods=\[1-up_laplacian-0,1-up_incidence-0,1-down_incidence-1,1-down_laplacian-1,1-up_laplacian-1,1-up_incidence-1,1-down_incidence-2,1-down_laplacian-2\] \
     dataset=graph/cocitation_pubmed \
     optimizer.parameters.lr=0.01 \
     model.feature_encoder.out_channels=64 \

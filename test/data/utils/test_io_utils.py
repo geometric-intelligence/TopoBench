@@ -1,6 +1,6 @@
 import pytest
 
-from topobenchmarkx.data.utils.io_utils import *
+from topobenchmark.data.utils.io_utils import *
 
 
 def test_get_file_id_from_url():

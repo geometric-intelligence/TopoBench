@@ -1,4 +1,4 @@
-_target_: topobenchmarkx.optimizer.TBXOptimizer
+_target_: topobenchmark.optimizer.TBOptimizer
 # Full compatibility with all available torch optimizers and schedulers
 
 optimizer_id: Adam # torch id of the optimizer

@@ -3,7 +3,7 @@
 import pytest
 import torch
 from torch_geometric.data import Data
-from topobenchmarkx.transforms.data_manipulations import GroupCombinatorialHomophily
+from topobenchmark.transforms.data_manipulations import GroupCombinatorialHomophily
 
 
 class TestGroupCombinatorialHomophily:

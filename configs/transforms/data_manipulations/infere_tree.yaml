@@ -1,0 +1,3 @@
+_target_: topobenchmark.transforms.data_transform.DataTransform
+transform_name: "InferTreeConnectivity"
+#split_params: ${dataset.split_params}

@@ -1,7 +1,7 @@
 import torch
 from torch_geometric.data import Data
 
-from topobenchmarkx.dataloader import DataloadDataset
+from topobenchmark.dataloader import DataloadDataset
 
 
 class TestDataloadDataset:

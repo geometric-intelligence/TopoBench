@@ -2,5 +2,5 @@
 Data Transform
 **************
 
-.. automodule:: topobenchmarkx.transforms.data_transform
+.. automodule:: topobenchmark.transforms.data_transform
     :members:

@@ -1,4 +1,4 @@
-_target_: topobenchmarkx.evaluator.evaluator.TBXEvaluator
+_target_: topobenchmark.evaluator.evaluator.TBEvaluator
 task: ${dataset.parameters.task}
 task_level: ${dataset.parameters.task_level}
 num_classes: ${dataset.parameters.num_classes}
@@ -6,5 +6,5 @@ num_classes: ${dataset.parameters.num_classes}
 # Automatically selects the default metrics depending on the task
 # Classification: [accuracy, precision, recall, auroc]
 # Regression: [mae, mse]
-metrics: ${get_default_metrics:${evaluator.task}}
+metrics: ${get_default_metrics:${evaluator.task},${oc.select:dataset.parameters.metrics,null}}
 # Select classification/regression config files to manually define the metrics

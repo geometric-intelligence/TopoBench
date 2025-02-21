@@ -4,13 +4,13 @@ import hydra
 import rootutils
 import torch
 
-from topobenchmarkx.data.preprocessor import PreProcessor
-from topobenchmarkx.dataloader import TBXDataloader
-from topobenchmarkx.dataloader.utils import to_data_list
+from topobenchmark.data.preprocessor import PreProcessor
+from topobenchmark.dataloader import TBDataloader
+from topobenchmark.dataloader.utils import to_data_list
 
 from omegaconf import OmegaConf
 import os
-from topobenchmarkx.run import initialize_hydra
+from topobenchmark.run import initialize_hydra
 
 # rootutils.setup_root("./", indicator=".project-root", pythonpath=True)
 
@@ -35,7 +35,7 @@ class TestCollateFunction:
         )
 
         self.batch_size = 2
-        datamodule = TBXDataloader(
+        datamodule = TBDataloader(
             dataset_train=dataset_train,
             dataset_val=dataset_val,
             dataset_test=dataset_test,
@@ -47,7 +47,7 @@ class TestCollateFunction:
     def test_lift_features(self):
         """Test the collate funciton.
 
-        To test the collate function we use the TBXDataloader class to create a dataloader that uses the collate function. 
+        To test the collate function we use the TBDataloader class to create a dataloader that uses the collate function. 
         We then first check that the batched data has the expected shape. We then convert the batched data back to a list and check that the data in the list is the same as the original data.
         """
 

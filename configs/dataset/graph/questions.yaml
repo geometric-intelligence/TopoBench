@@ -1,5 +1,5 @@
 loader:
-  _target_: topobenchmarkx.data.loaders.HeterophilousGraphDatasetLoader
+  _target_: topobenchmark.data.loaders.HeterophilousGraphDatasetLoader
   parameters: 
     data_domain: graph
     data_type: heterophilic
