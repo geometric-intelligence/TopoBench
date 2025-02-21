@@ -1,4 +1,4 @@
-"""TopoBenchmarkX.__main__ module."""
+"""TopoBenchmark.__main__ module."""
 
 from .run import main
 

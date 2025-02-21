@@ -9,7 +9,7 @@ from torch_geometric.data import Data
 from torch_geometric.graphgym.config import cfg, load_cfg, set_cfg
 from torch_geometric.graphgym.model_builder import create_model
 
-from topobenchmarkx.data.utils import get_routes_from_neighborhoods
+from topobenchmark.data.utils import get_routes_from_neighborhoods
 
 
 class dotdict(dict):

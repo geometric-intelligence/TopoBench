@@ -18,6 +18,8 @@ from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig, OmegaConf
 
 from topobenchmark.data.preprocessor import PreProcessor
+from topobenchmark.nn.heads.gnn_inductive import *
+from topobenchmark.nn.layers.gated_gcn import *
 from topobenchmark.dataloader import TBDataloader
 from topobenchmark.utils import (
     RankedLogger,

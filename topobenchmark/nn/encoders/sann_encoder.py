@@ -3,7 +3,7 @@
 import torch
 import torch_geometric
 
-from topobenchmarkx.nn.encoders.base import AbstractFeatureEncoder
+from topobenchmark.nn.encoders.base import AbstractFeatureEncoder
 
 
 class SANNFeatureEncoder(AbstractFeatureEncoder):
