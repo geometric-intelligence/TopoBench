@@ -1,4 +1,4 @@
-_target_: topobenchmark.model.TBXModel
+_target_: topobenchmark.model.TBModel
 
 model_name: sann
 model_domain: cell
@@ -27,7 +27,7 @@ backbone:
   update_func: "lrelu"
 
 backbone_wrapper:
-  _target_: topobenchmark.nn.wrappers.SANNWrapper
+  _target_: topobenchmark.nn.wrappers.simplicial.SANNWrapper
   _partial_: true
   wrapper_name: SANNWrapper
   out_channels: ${model.feature_encoder.out_channels}
