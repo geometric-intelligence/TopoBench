@@ -1,6 +1,6 @@
 neighborhood="['up_adjacency-0','up_adjacency-1','down_adjacency-2']" #'['0-virtualnode_incidence-0','up_incidence-0','up_adjacency-0','up_incidence-1']'
 python topobenchmark/run.py \
-    dataset=graph/ZINC \
+    dataset=graph/MUTAG \
     model=cell/sann \
     model.backbone.n_layers=2 \
     model.feature_encoder.out_channels=128\
@@ -14,7 +14,7 @@ python topobenchmark/run.py \
     optimizer.parameters.lr=0.001 \
     optimizer.parameters.weight_decay=0.0001\
     callbacks.early_stopping.patience=10 \
-    transforms=ZINC_sann_experiment \
+    transforms=MUTAG_sann_experiment \
     transforms.graph2cell_lifting.max_cell_length=10 \
     transforms/data_manipulations@transforms.sann_encoding=add_gpse_information \
     transforms.sann_encoding.pretrain_model=ZINC \
