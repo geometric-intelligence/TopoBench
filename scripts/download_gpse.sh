@@ -1,7 +1,8 @@
 # Train rest of the TU graph datasets
 if [ ! -d "data/pretrained_models" ]; then
-    mkdir data/pretrained_models
+    mkdir -p data/pretrained_models
 fi
+
 if [ ! -f "data/pretrained_models/gpse_zinc.pt" ]; then
     wget https://zenodo.org/record/8145095/files/gpse_model_zinc_1.0.pt -O data/pretrained_models/gpse_zinc.pt
 fi
