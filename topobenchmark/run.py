@@ -230,7 +230,6 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
         )
 
     train_metrics = trainer.callback_metrics
-    print("ckpt_path: ", cfg.ckpt_path)
     if cfg.get("test"):
         log.info("Starting testing!")
         test_best_model_path = True
@@ -262,7 +261,6 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
 
         # Get the directory containing the checkpoint
         # Remove saved model (useful with sweeps)
-        print("ckpt_path: ", ckpt_path)
 
         def handle_remove_readonly(func, path, exc_info):
             """Handle read-only files by changing their permissions."""
