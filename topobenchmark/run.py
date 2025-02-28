@@ -230,7 +230,6 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
         )
 
     train_metrics = trainer.callback_metrics
-
     if cfg.get("test"):
         log.info("Starting testing!")
         test_best_model_path = True
@@ -260,18 +259,17 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
                 model=model, datamodule=datamodule, ckpt_path=ckpt_path
             )
 
-        # Remove saved model (useful with sweeps)
-
         # Get the directory containing the checkpoint
+        # Remove saved model (useful with sweeps)
 
         def handle_remove_readonly(func, path, exc_info):
             """Handle read-only files by changing their permissions."""
             os.chmod(path, stat.S_IWRITE)
             func(path)
 
-        ckpt_folder_path = os.path.dirname(ckpt_path)
-        if os.path.exists(ckpt_folder_path):
-            shutil.rmtree(ckpt_folder_path, onerror=handle_remove_readonly)
+        # Check if the file exists and delete it
+        if os.path.exists(ckpt_path):
+            os.remove(ckpt_path)
 
     test_metrics = trainer.callback_metrics
 
