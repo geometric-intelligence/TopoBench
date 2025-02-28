@@ -6,7 +6,7 @@ import pytest
 import torch_geometric
 from omegaconf import DictConfig
 
-from topobenchmarkx.data.preprocessor import PreProcessor
+from topobenchmark.data.preprocessor import PreProcessor
 
 from ..._utils.flow_mocker import FlowMocker
 
@@ -115,7 +115,7 @@ class TestPreProcessor:
         )
         self.flow_mocker.assert_all(self.preprocessor_with_tranform)
 
-    @patch("topobenchmarkx.data.preprocessor.preprocessor.load_inductive_splits")
+    @patch("topobenchmark.data.preprocessor.preprocessor.load_inductive_splits")
     def test_load_dataset_splits_inductive(self, mock_load_inductive_splits):
         """Test loading dataset splits for inductive learning.
         
@@ -131,7 +131,7 @@ class TestPreProcessor:
         )
 
     @patch(
-        "topobenchmarkx.data.preprocessor.preprocessor.load_transductive_splits"
+        "topobenchmark.data.preprocessor.preprocessor.load_transductive_splits"
     )
     def test_load_dataset_splits_transductive(
         self, mock_load_transductive_splits

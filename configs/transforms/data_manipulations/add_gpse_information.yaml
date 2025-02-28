@@ -1,4 +1,4 @@
-_target_: topobenchmarkx.transforms.data_transform.DataTransform
+_target_: topobenchmark.transforms.data_transform.DataTransform
 transform_name: "AddGPSEInformation"
 transform_type: "data manipulation"
 max_rank: 2
@@ -10,7 +10,7 @@ max_hop: ${get_hop_num_gpse:${.copy_initial}}
 dim_target_node: 51
 dim_target_graph: 11
 pretrain_model: PCQM4MV2
-in_channels: ${infer_in_hasse_graph_agg_dim:${.neighborhoods}, ${.max_rank},${oc.select:dataset.parameters.num_features},${.dim_target_graph}, ${.dim_target_node}, ${.copy_initial}}
+in_channels: ${infer_in_hasse_graph_agg_dim:${.neighborhoods}, ${.max_rank},${oc.select:dataset.parameters.num_features},${.dim_target_graph}, ${.dim_target_node}, ${.copy_initial}, ${oc.select:dataset.parameters.preserve_edge_attr_if_lifted}}
 device: ${trainer.accelerator}
 cuda: ${trainer.devices}
 #complex_dim: ${oc.select:dataset.parameters.max_dim_if_lifted,3}

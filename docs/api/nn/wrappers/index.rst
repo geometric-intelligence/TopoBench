@@ -2,35 +2,35 @@
 Wrappers
 ********
 
-.. automodule:: topobenchmarkx.nn.wrappers.base
+.. automodule:: topobenchmark.nn.wrappers.base
     :members:
 
-.. automodule:: topobenchmarkx.nn.wrappers.cell.can_wrapper
+.. automodule:: topobenchmark.nn.wrappers.cell.can_wrapper
     :members:
 
-.. automodule:: topobenchmarkx.nn.wrappers.cell.cccn_wrapper
+.. automodule:: topobenchmark.nn.wrappers.cell.cccn_wrapper
     :members:
 
-.. automodule:: topobenchmarkx.nn.wrappers.cell.ccxn_wrapper
+.. automodule:: topobenchmark.nn.wrappers.cell.ccxn_wrapper
     :members:
 
-.. automodule:: topobenchmarkx.nn.wrappers.cell.cwn_wrapper
+.. automodule:: topobenchmark.nn.wrappers.cell.cwn_wrapper
     :members:
 
-.. automodule:: topobenchmarkx.nn.wrappers.graph.gnn_wrapper
+.. automodule:: topobenchmark.nn.wrappers.graph.gnn_wrapper
     :members:
 
-.. automodule:: topobenchmarkx.nn.wrappers.hypergraph.hypergraph_wrapper
+.. automodule:: topobenchmark.nn.wrappers.hypergraph.hypergraph_wrapper
     :members:
 
-.. automodule:: topobenchmarkx.nn.wrappers.simplicial.san_wrapper
+.. automodule:: topobenchmark.nn.wrappers.simplicial.san_wrapper
     :members:
 
-.. automodule:: topobenchmarkx.nn.wrappers.simplicial.sccn_wrapper
+.. automodule:: topobenchmark.nn.wrappers.simplicial.sccn_wrapper
     :members:
 
-.. automodule:: topobenchmarkx.nn.wrappers.simplicial.sccnn_wrapper
+.. automodule:: topobenchmark.nn.wrappers.simplicial.sccnn_wrapper
     :members:
 
-.. automodule:: topobenchmarkx.nn.wrappers.simplicial.scn_wrapper
+.. automodule:: topobenchmark.nn.wrappers.simplicial.scn_wrapper
     :members:

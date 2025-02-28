@@ -2,7 +2,7 @@
 
 import torch
 from torch_geometric.data import Data
-from topobenchmarkx.transforms.data_manipulations import KeepSelectedDataFields
+from topobenchmark.transforms.data_manipulations import KeepSelectedDataFields
 
 
 class TestDataFieldTransforms:

@@ -1,4 +1,4 @@
-_target_: topobenchmarkx.transforms.data_transform.DataTransform
+_target_: topobenchmark.transforms.data_transform.DataTransform
 transform_type: 'lifting'
 transform_name: "HypergraphKHopLifting"
 k_value: 1

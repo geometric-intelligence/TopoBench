@@ -1,4 +1,4 @@
-# USE python -m topobenchmarkx transforms.one_hot_node_degree_features.degrees_fields=x to run this config
+# USE python -m topobenchmark transforms.one_hot_node_degree_features.degrees_fields=x to run this config
 defaults:
   - data_manipulations: node_degrees
   - data_manipulations@one_hot_node_degree_features: one_hot_node_degree_features

@@ -1,12 +1,12 @@
-""" Test the TBXEvaluator class."""
+""" Test the TBEvaluator class."""
 import pytest
 import torch
 import torch_geometric
 
-from topobenchmarkx.loss.dataset import DatasetLoss
+from topobenchmark.loss.dataset import DatasetLoss
 
 class TestDatasetLoss:
-    """ Test the TBXEvaluator class."""
+    """ Test the TBEvaluator class."""
     
     def setup_method(self):
         """ Setup the test."""

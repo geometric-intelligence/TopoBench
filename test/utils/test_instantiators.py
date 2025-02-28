@@ -2,7 +2,7 @@
 
 import pytest
 from omegaconf import OmegaConf, DictConfig
-from topobenchmarkx.utils.instantiators import (
+from topobenchmark.utils.instantiators import (
     instantiate_callbacks,
     instantiate_loggers
 )

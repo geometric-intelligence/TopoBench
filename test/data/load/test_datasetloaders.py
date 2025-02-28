@@ -36,11 +36,15 @@ class TestLoaders:
         """
         config_files = []
         config_base_dir = base_dir / "configs/dataset"
+        # Below the datasets that have some default transforms manually overriten with no_transform,
         exclude_datasets = {"karate_club.yaml",
                             # Below the datasets that have some default transforms with we manually overriten with no_transform,
                             # due to lack of default transform for domain2domain
                             "REDDIT-BINARY.yaml", "IMDB-MULTI.yaml", "IMDB-BINARY.yaml", #"ZINC.yaml"
                             }
+        
+        # Below the datasets that takes quite some time to load and process                            
+        self.long_running_datasets = {"mantra_name.yaml", "mantra_orientation.yaml", "mantra_genus.yaml", "mantra_betti_numbers.yaml",}
 
         
         for dir_path in config_base_dir.iterdir():
@@ -76,12 +80,16 @@ class TestLoaders:
             parameters = hydra.compose(
                 config_name="run.yaml",
                 overrides=[f"dataset={data_domain}/{config_file}", f"model=graph/gat"], 
-                return_hydra_config=True
-                
+                return_hydra_config=True, 
             )
             dataset_loader = hydra.utils.instantiate(parameters.dataset.loader)
             print(repr(dataset_loader))
-            return dataset_loader.load()
+
+            if config_file in self.long_running_datasets:
+                dataset, data_dir = dataset_loader.load(slice=100)
+            else:
+                dataset, data_dir = dataset_loader.load()
+            return dataset, data_dir
 
     def test_dataset_loading_states(self):
         """Test different states and scenarios during dataset loading."""

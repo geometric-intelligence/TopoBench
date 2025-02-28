@@ -1,4 +1,4 @@
-_target_: topobenchmarkx.transforms.data_transform.DataTransform
+_target_: topobenchmark.transforms.data_transform.DataTransform
 transform_name: "InfereRadiusConnectivity"
 transform_type: "data manipulation"
 args:

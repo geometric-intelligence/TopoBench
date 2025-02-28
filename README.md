@@ -15,7 +15,7 @@ Assess how your model compares against state-of-the-art topological neural netwo
 [![Lint](https://github.com/geometric-intelligence/TopoBenchmark/actions/workflows/lint.yml/badge.svg)](https://github.com/geometric-intelligence/TopoBenchmark/actions/workflows/lint.yml)
 [![Test](https://github.com/geometric-intelligence/TopoBenchmark/actions/workflows/test.yml/badge.svg)](https://github.com/geometric-intelligence/TopoBenchmark/actions/workflows/test.yml)
 [![Codecov](https://codecov.io/gh/geometric-intelligence/TopoBenchmark/branch/main/graph/badge.svg)](https://app.codecov.io/gh/geometric-intelligence/TopoBenchmark)
-[![Docs](https://img.shields.io/badge/docs-website-brightgreen)](https://geometric-intelligence.github.io/topobenchmarkx/index.html)
+[![Docs](https://img.shields.io/badge/docs-website-brightgreen)](https://geometric-intelligence.github.io/topobenchmark/index.html)
 [![Python](https://img.shields.io/badge/python-3.10+-blue?logo=python)](https://www.python.org/)
 [![license](https://badgen.net/github/license/geometric-intelligence/TopoBenchmark?color=green)](https://github.com/geometric-intelligence/TopoBenchmark/blob/main/LICENSE)
 [![slack](https://img.shields.io/badge/chat-on%20slack-purple?logo=slack)](https://join.slack.com/t/geometric-intelligenceworkspace/shared_invite/zt-2k63sv99s-jbFMLtwzUCc8nt3sIRWjEw)
@@ -53,12 +53,12 @@ Additionally, the library offers the ability to transform, i.e. _lift_, each dat
 
 If you do not have conda on your machine, please follow [their guide](https://docs.anaconda.com/free/miniconda/miniconda-install/) to install it. 
 
-First, clone the `TopoBenchmark` repository and set up a conda environment `tbx` with python 3.11.3. 
+First, clone the `TopoBenchmark` repository and set up a conda environment `tb` with python 3.11.3. 
 
 ```
-git clone git@github.com:geometric-intelligence/topobenchmarkx.git
+git clone git@github.com:geometric-intelligence/topobenchmark.git
 cd TopoBenchmark
-conda create -n tbx python=3.11.3
+conda create -n tb python=3.11.3
 ```
 
 Next, check the CUDA version of your machine:
@@ -79,18 +79,20 @@ This command installs the `TopoBenchmark` library and its dependencies.
 Next, train the neural networks by running the following command:
 
 ```
-python -m topobenchmarkx 
+python -m topobenchmark 
 ```
 
 Thanks to `hydra` implementation, one can easily override the default experiment configuration through the command line. For instance, the model and dataset can be selected as:
 
 ```
-python -m topobenchmarkx model=cell/cwn dataset=graph/MUTAG
+python -m topobenchmark model=cell/cwn dataset=graph/MUTAG
 ```
 
 **Remark:** By default, our pipeline identifies the source and destination topological domains, and applies a default lifting between them if required.
 
 The same CLI override mechanism also applies when modifying more finer configurations within a `CONFIG GROUP`. Please, refer to the official [`hydra`documentation](https://hydra.cc/docs/intro/) for further details.
+
+
 
 ## :bike: Experiments Reproducibility
 To reproduce Table 1 from the [`TopoBenchmark: A Framework for Benchmarking Topological Deep Learning`](https://arxiv.org/pdf/2406.06642) paper, please run the following command:
@@ -116,6 +118,7 @@ We list the neural networks trained and evaluated by `TopoBenchmark`, organized 
 | GAT | [Graph Attention Networks](https://openreview.net/pdf?id=rJXMpikCZ) |
 | GIN | [How Powerful are Graph Neural Networks?](https://openreview.net/pdf?id=ryGs6iA5Km) |
 | GCN | [Semi-Supervised Classification with Graph Convolutional Networks](https://arxiv.org/pdf/1609.02907v4) |
+| GraphMLP | [Graph-MLP: Node Classification without Message Passing in Graph](https://arxiv.org/pdf/2106.04051) |
 
 ### Simplicial complexes
 | Model | Reference |
@@ -145,7 +148,7 @@ We list the neural networks trained and evaluated by `TopoBenchmark`, organized 
 ### Combinatorial complexes
 | Model | Reference |
 | --- | --- |
-| GCCN | [Generalized Combinatorial Complex Neural Networks](https://arxiv.org/pdf/2410.06530) |
+| GCCN | [TopoTune: A Framework for Generalized Combinatorial Complex Neural Networks](https://arxiv.org/pdf/2410.06530) |
 
 ## :bulb: TopoTune
 
@@ -160,13 +163,13 @@ To implement and train a GCCN, run the following command line with the desired c
 
 
 ```
-python -m topobenchmarkx \
+python -m topobenchmark \
     dataset=graph/PROTEINS \
     dataset.split_params.data_seed=1 \
     model=cell/topotune\
     model.tune_gnn=GCN \
     model.backbone.GNN.num_layers=2 \
-    model.backbone.routes=\[\[\[0,0\],up_laplacian\],\[\[2,1\],boundary\]\] \
+    model.backbone.neighborhoods=\[1-up_laplacian-0,1-down_incidence-2\] \
     model.backbone.layers=4 \
     model.feature_encoder.out_channels=32 \
     model.feature_encoder.proj_dropout=0.3 \
@@ -178,12 +181,17 @@ python -m topobenchmarkx \
 
 To use a single augmented Hasse graph expansion, use `model={domain}/topotune_onehasse` instead of `model={domain}/topotune`.
 
-To specify a set of neighborhoods (routes) on the complex, use a list of neighborhoods each specified as `\[\[{source_rank}, {destination_rank}\], {neighborhood}\]`. Currently, the following options for `{neighborhood}` are supported:
-- `up_laplacian`, from rank $r$ to $r$
-- `down_laplacian`, from rank $r$ to $r$
-- `boundary`, from rank $r$ to $r-1$
-- `coboundary`, from rank $r$ to $r+1$
-- `adjacency`, from rank $r$ to $r$ (stand-in for `up_adjacency`, as `down_adjacency` not yet supported in TopoBenchmark)
+To specify a set of neighborhoods on the complex, use a list of neighborhoods each specified as a string of the form 
+`r-{neighborhood}-k`, where $k$ represents the source cell rank, and $r$ is the number of ranks up or down that the selected `{neighborhood}` considers. Currently, the following options for `{neighborhood}` are supported:
+- `up_laplacian`, between cells of rank $k$ through $k+r$ cells.
+- `down_laplacian`, between cells of rank $k$ through $k-r$ cells.
+- `hodge_laplacian`, between cells of rank $k$ through both $k-r$ and $k+r$ cells.
+- `up_adjacency`, between cells of rank $k$ through $k+r$ cells.
+- `down_adjacency`, between cells of rank $k$ through $k-r$ cells.
+- `up_incidence`, from rank $k$ to $k+r$.
+- `down_incidence`, from rank $k$ to $k-r$.
+
+The number $r$ can be omitted, in which case $r=1$ by default (e.g. `up_incidence-k` represents the incidence from rank $k$ to $k+1$).
 
 
 ### Using backbone models from any package
@@ -235,16 +243,18 @@ We list the liftings used in `TopoBenchmark` to transform datasets. Here, a _lif
 
 </details>
 
-## Data Transformations
+<details>
+  <summary><b> Data Transformations <b></summary>
 
 | Transform | Description | Reference |
 | --- | --- | --- |
 | Message Passing Homophily | Higher-order homophily measure for hypergraphs | [Source](https://arxiv.org/abs/2310.07684) |
 | Group Homophily | Higher-order homophily measure for hypergraphs that considers groups of predefined sizes  | [Source](https://arxiv.org/abs/2103.11818) |
+</details>
 
 ## :books: Datasets
 
-
+### Graphs
 | Dataset | Task | Description | Reference |
 | --- | --- | --- | --- |
 | Cora | Classification | Cocitation dataset. | [Source](https://link.springer.com/article/10.1023/A:1009953814988) |
@@ -264,48 +274,15 @@ We list the liftings used in `TopoBenchmark` to transform datasets. Here, a _lif
 | US-county-demos | Regression | In turn each node attribute is used as the target label. | [Source](https://arxiv.org/pdf/2002.08274) |
 | ZINC | Regression | Graph-level regression. | [Source](https://pubs.acs.org/doi/10.1021/ci3001277) |
 
+### Hypergraphs
+| Dataset | Task | Description | Reference |
+| --- | --- | --- | --- |
+| Cora-Cocitation | Classification | Cocitation dataset. | [Source](https://proceedings.neurips.cc/paper_files/paper/2019/file/1efa39bcaec6f3900149160693694536-Paper.pdf) |
+| Citeseer-Cocitation | Classification | Cocitation dataset. | [Source](https://proceedings.neurips.cc/paper_files/paper/2019/file/1efa39bcaec6f3900149160693694536-Paper.pdf) |
+| PubMed-Cocitation | Classification | Cocitation dataset. | [Source](https://proceedings.neurips.cc/paper_files/paper/2019/file/1efa39bcaec6f3900149160693694536-Paper.pdf) |
+| Cora-Coauthorship | Classification | Cocitation dataset. | [Source](https://proceedings.neurips.cc/paper_files/paper/2019/file/1efa39bcaec6f3900149160693694536-Paper.pdf) |
+| DBLP-Coauthorship | Classification | Cocitation dataset. | [Source](https://proceedings.neurips.cc/paper_files/paper/2019/file/1efa39bcaec6f3900149160693694536-Paper.pdf) |
 
-
-
-## :hammer_and_wrench: Development
-
-To join the development of `TopoBenchmark`, you should install the library in dev mode. 
-
-For this, you can create an environment using either conda or docker. Both options are detailed below.
-
-### :snake: Using Conda Environment
-
-Follow the steps in <a href="#jigsaw-get-started">:jigsaw: Get Started</a>.
-
-
-### :whale: Using Docker
-
-For ease of use, TopoBenchmark employs <img src="https://github.com/wesbos/Font-Awesome-Docker-Icon/blob/master/docker-white.svg" width="20" height="20"> [Docker](https://www.docker.com/). To set it up on your system you can follow [their guide](https://docs.docker.com/get-docker/). once installed, please follow the next steps:
-
-First, clone the repository and navigate to the correct folder.
-```
-git clone git@github.com:geometric-intelligence/topobenchmarkx.git
-cd TopoBenchmark
-```
-
-Then, build the Docker image.
-```
-docker build -t topobenchmarkx:new .
-```
-
-Depending if you want to use GPUs or not, these are the commands to run the Docker image and mount the current directory.
-
-With GPUs
-```
-docker run -it -d --gpus all --volume $(pwd):/TopoBenchmark topobenchmarkx:new
-```
-
-With CPU
-```
-docker run -it -d --volume $(pwd):/TopoBenchmark topobenchmarkx:new
-```
-
-Happy development!
 
 
 ## :mag: References ##

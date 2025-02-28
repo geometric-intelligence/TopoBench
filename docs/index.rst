@@ -1,16 +1,16 @@
-🌐 TopoBenchmarkX (TBX) 🍩
+🌐 TopoBenchmark (TB) 🍩
 ==========================
 
-.. figure:: https://github.com/pyt-team/TopoBenchmarkX/raw/main/resources/logo.jpeg
-   :alt: topobenchmarkx
+.. figure:: https://github.com/geometric-intelligence/TopoBenchmark/raw/main/resources/logo.jpg
+   :alt: topobenchmark
    :class: with-shadow
    :width: 1000px
 
-`TopoBenchmarkX` (TBX) is a modular Python library designed to standardize benchmarking and accelerate research in Topological Deep Learning (TDL). 
-In particular, TBX allows to train and compare the performances of all sorts of Topological Neural Networks (TNNs) across the different topological domains, 
+`TopoBenchmark` (TB) is a modular Python library designed to standardize benchmarking and accelerate research in Topological Deep Learning (TDL). 
+In particular, TB allows to train and compare the performances of all sorts of Topological Neural Networks (TNNs) across the different topological domains, 
 where by *topological domain* we refer to a graph, a simplicial complex, a cellular complex, or a hypergraph.
 
-.. figure:: https://github.com/pyt-team/TopoBenchmarkX/raw/main/resources/workflow.jpg
+.. figure:: https://github.com/geometric-intelligence/TopoBenchmark/raw/main/resources/workflow.jpg
    :alt: workflow
    :class: with-shadow
    :width: 1000px
@@ -29,7 +29,7 @@ Additionally, the library offers the ability to transform, i.e., *lift*, each da
 ⚙ Neural Networks
 -----------------
 
-We list the neural networks trained and evaluated by `TopoBenchmarkX`, organized by the topological domain over which they operate: graph, simplicial complex, cellular complex or hypergraph. Many of these neural networks were originally implemented in `TopoModelX <https://github.com/pyt-team/TopoModelX>`_.
+We list the neural networks trained and evaluated by `TopoBenchmark`, organized by the topological domain over which they operate: graph, simplicial complex, cellular complex or hypergraph. Many of these neural networks were originally implemented in `TopoModelX <https://github.com/pyt-team/TopoModelX>`_.
 
 
 Graphs
@@ -106,7 +106,7 @@ Hypergraphs
 🚀 Liftings
 -----------
 
-We list the liftings used in `TopoBenchmarkX` to transform datasets. Here, a *lifting* refers to a function that transforms a dataset defined on a topological domain (*e.g.*, on a graph) into the same dataset but supported on a different topological domain (*e.g.*, on a simplicial complex).
+We list the liftings used in `TopoBenchmark` to transform datasets. Here, a *lifting* refers to a function that transforms a dataset defined on a topological domain (*e.g.*, on a graph) into the same dataset but supported on a different topological domain (*e.g.*, on a simplicial complex).
 
 Graph2Simplicial
 ****************
@@ -237,12 +237,12 @@ Graph2Hypergraph
 🔍 References
 -------------
 
-To learn more about `TopoBenchmarkX`, we invite you to read the paper:
+To learn more about `TopoBenchmark`, we invite you to read the paper:
 
 .. code-block:: BibTeX
 
-    @misc{topobenchmarkx2024,
-            title={TopoBenchmarkX},
+    @misc{topobenchmark2024,
+            title={TopoBenchmark},
             author={PyT-Team},
             year={2024},
             eprint={TBD},
@@ -250,12 +250,12 @@ To learn more about `TopoBenchmarkX`, we invite you to read the paper:
             primaryClass={cs.LG}
     }
 
-If you find `TopoBenchmarkX` useful, we would appreciate if you cite us!
+If you find `TopoBenchmark` useful, we would appreciate if you cite us!
 
 🦾 Getting Started
 ------------------
 
-Check out our `tutorials <https://github.com/pyt-team/TopoBenchmarkX/tree/main/tutorials>`_ to get started!
+Check out our `tutorials <https://github.com/geometric-intelligence/TopoBenchmark/tree/main/tutorials>`_ to get started!
 
 
 .. toctree::

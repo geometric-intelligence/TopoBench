@@ -1,15 +1,15 @@
 """Unit tests for rich_utils."""
 import pytest
 from unittest.mock import MagicMock, patch
-from topobenchmarkx.utils.rich_utils import enforce_tags, print_config_tree
+from topobenchmark.utils.rich_utils import enforce_tags, print_config_tree
 from omegaconf import DictConfig
 
-@patch("topobenchmarkx.utils.rich_utils.pylogger.RankedLogger.info")
-@patch("topobenchmarkx.utils.rich_utils.rich.tree.Tree")
-@patch("topobenchmarkx.utils.rich_utils.rich.syntax.Syntax")
-@patch("topobenchmarkx.utils.rich_utils.rich.print")
-@patch("topobenchmarkx.utils.rich_utils.Path.write_text")
-@patch("topobenchmarkx.utils.rich_utils.HydraConfig.get")
+@patch("topobenchmark.utils.rich_utils.pylogger.RankedLogger.info")
+@patch("topobenchmark.utils.rich_utils.rich.tree.Tree")
+@patch("topobenchmark.utils.rich_utils.rich.syntax.Syntax")
+@patch("topobenchmark.utils.rich_utils.rich.print")
+@patch("topobenchmark.utils.rich_utils.Path.write_text")
+@patch("topobenchmark.utils.rich_utils.HydraConfig.get")
 def test_print_config_tree(mock_hydra_config_get, mock_write_text, mock_rich_print, mock_syntax, mock_tree, mock_info):
     '''Test the print_config_tree function.
     
@@ -56,11 +56,11 @@ def test_print_config_tree(mock_hydra_config_get, mock_write_text, mock_rich_pri
         print_config_tree(mock_cfg, save_to_file=True)
         
 
-@patch("topobenchmarkx.utils.rich_utils.HydraConfig")
-@patch("topobenchmarkx.utils.rich_utils.Prompt.ask")
-@patch("topobenchmarkx.utils.rich_utils.pylogger.RankedLogger.warning")
-@patch("topobenchmarkx.utils.rich_utils.pylogger.RankedLogger.info")
-@patch("topobenchmarkx.utils.rich_utils.rich.print")
+@patch("topobenchmark.utils.rich_utils.HydraConfig")
+@patch("topobenchmark.utils.rich_utils.Prompt.ask")
+@patch("topobenchmark.utils.rich_utils.pylogger.RankedLogger.warning")
+@patch("topobenchmark.utils.rich_utils.pylogger.RankedLogger.info")
+@patch("topobenchmark.utils.rich_utils.rich.print")
 def test_enforce_tags_no_tags(mock_rich_print, mock_info, mock_warning, mock_prompt_ask, mock_hydra_config):
     """Test the enforce_tags function when no tags are provided in the config.
     

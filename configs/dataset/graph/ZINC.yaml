@@ -2,7 +2,7 @@
 
 # Dataset loader config
 loader:
-  _target_: topobenchmarkx.data.loaders.MoleculeDatasetLoader
+  _target_: topobenchmark.data.loaders.MoleculeDatasetLoader
   parameters: 
     data_domain: graph
     data_type: ZINC
@@ -11,7 +11,7 @@ loader:
 
 # Dataset parameters
 parameters:
-  num_features: 1 # torch_geometric ZINC dataset has 21 atom types
+  num_features: 21 # torch_geometric ZINC dataset has 21 atom types
   max_node_degree: 20 # Use it to one_hot encode node degrees. Additional parameter to run dataset.transforms.one_hot_node_degree_features.degrees_fields=x
   num_classes: 1
   task: regression
