@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 
+import torch
 from ogb.graphproppred import PygGraphPropPredDataset
 from omegaconf import DictConfig
 from torch_geometric.data import Dataset
@@ -40,39 +41,16 @@ class OGBGDatasetLoader(AbstractLoader):
             If dataset loading fails.
         """
 
-        split_idx = self._load_splits()
-        combined_dataset = self._combine_splits()
-        combined_dataset.split_idx = split_idx
-        return combined_dataset
-
-    def _load_splits(self) -> None:
-        """Load the dataset splits for the specified dataset.
-
-        Returns
-        -------
-        dict
-            The split indices for the dataset.
-        """
         dataset = PygGraphPropPredDataset(
-            name="ogbg-" + self.parameters.data_name.lower()
+            name=self.parameters.data_name, root=self.root_data_dir
         )
-        split_idx = dataset.get_idx_split()
+        # Conver attributes to float
+        dataset._data.x = dataset._data.x.to(torch.float)
+        # Squeeze the target tensor
+        dataset._data.y = dataset._data.y.squeeze(1)
+        dataset.split_idx = dataset.get_idx_split()
 
-        for split in ["train", "valid", "test"]:
-            ds = dataset[split_idx[split]]
-            ds.x = ds.x.long()
-            self.datasets.append(ds)
-        return split_idx
-
-    def _combine_splits(self) -> Dataset:
-        """Combine the dataset splits into a single dataset.
-
-        Returns
-        -------
-        Dataset
-            The combined dataset containing all splits.
-        """
-        return self.datasets[0] + self.datasets[1] + self.datasets[2]
+        return dataset
 
     def get_data_dir(self) -> Path:
         """Get the data directory.
