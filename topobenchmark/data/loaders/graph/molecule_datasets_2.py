@@ -40,12 +40,12 @@ class MoleculeDatasetLoader2(AbstractLoader):
         if self.parameters.data_name == "QM9":
             dataset = QM9(
                 root=str(self.root_data_dir),
-            )  # .index_select([i for i in range(0, 300)]) #TODO UNcomment
+            )
         elif self.parameters.data_name == "QM9Custom":
             dataset = QM9Custom(
                 root=str(self.root_data_dir),
                 max_ring_size=self.parameters.max_ring_size,
-            ).index_select([i for i in range(300)])  # TODO UNcomment
+            )
         else:
             raise ValueError(f"Unknown dataset: {self.parameters.data_name}")
 

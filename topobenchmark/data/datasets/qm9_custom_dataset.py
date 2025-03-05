@@ -313,9 +313,11 @@ class QM9Custom(InMemoryDataset):
             rings_list = []
             # Check if there is a ring in here
             if mol.GetRingInfo().NumRings() > 0:
-                for ring in mol.GetRingInfo().AtomRings():
-                    if len(ring) <= self.max_ring_size:
-                        rings_list.append(list(ring))
+                rings_list = [
+                    list(ring)
+                    for ring in mol.GetRingInfo().AtomRings()
+                    if len(ring) <= self.max_ring_size
+                ]
 
             if len(rings_list) == 0:
                 rings = torch.zeros((0, self.max_ring_size), dtype=torch.long)
