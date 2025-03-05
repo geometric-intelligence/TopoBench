@@ -11,7 +11,7 @@ loader:
 parameters:
   num_features: 9
   num_classes: 2
-  task: classification
+  task: classification # multilabel-
   loss_type: cross_entropy
   monitor_metric: accuracy
   task_level: graph

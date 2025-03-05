@@ -11,8 +11,8 @@ loader:
 parameters:
   num_features: 9
   num_classes: 128
-  task: classification
-  loss_type: bce
+  task: multilabel classification
+  loss_type: BCE
   monitor_metric: accuracy
   task_level: graph
 

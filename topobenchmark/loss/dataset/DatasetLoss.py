@@ -21,12 +21,15 @@ class DatasetLoss(AbstractLoss):
         self.loss_type = dataset_loss["loss_type"]
         # Dataset loss
         if self.task == "classification":
-            if self.loss_type == "bce":
-                self.criterion = torch.nn.BCEWithLogitsLoss()
-            elif self.loss_type == "cross_entropy":
-                self.criterion = torch.nn.CrossEntropyLoss()
-            else:
-                raise Exception("Loss is not defined")
+            assert (
+                self.loss_type == "cross_entropy"
+            ), "Invalid loss type for classification task,TB supports only cross_entropy loss for classification task"
+            self.criterion = torch.nn.CrossEntropyLoss()
+        elif self.task == "multilabel classification":
+            assert (
+                self.loss_type == "BCE"
+            ), "Invalid loss type for classification task,TB supports only BCE for multilabel classification task"
+            self.criterion = torch.nn.BCEWithLogitsLoss(reduction="none")
         elif self.task == "regression" and self.loss_type == "mse":
             self.criterion = torch.nn.MSELoss()
         elif self.task == "regression" and self.loss_type == "mae":
@@ -58,14 +61,41 @@ class DatasetLoss(AbstractLoss):
         if self.task == "regression":
             target = target.unsqueeze(1)
 
-        mask = ~torch.isnan(target)
-        if mask.sum() == 0:
+        return self.forward_criterion(logits, target)
+
+    def forward_criterion(self, logits, target):
+        r"""Forward pass of the loss function.
+
+        Parameters
+        ----------
+        logits : torch.Tensor
+            Model predictions.
+        target : torch.Tensor
+            Ground truth labels.
+
+        Returns
+        -------
+        torch.Tensor
+            Loss value.
+        """
+        if self.task == "regression":
+            target = target.unsqueeze(1)
             dataset_loss = self.criterion(logits, target)
-        else:
+
+        elif self.task == "classification":
+            dataset_loss = self.criterion(logits, target)
+
+        elif self.task == "multilabel classification":
+            mask = ~torch.isnan(target)
+            # Avoid NaN values in the target
             target = torch.where(mask, target, torch.zeros_like(target))
             loss = self.criterion(logits, target)
             # Mask out the loss for NaN values
             loss = loss * mask
             # Take out average
-            dataset_loss = loss.sum() / mask.sum()
+            dataset_loss = (loss.sum(dim=-1) / mask.sum(dim=-1)).mean()
+
+        else:
+            raise Exception("Loss is not defined")
+
         return dataset_loss
