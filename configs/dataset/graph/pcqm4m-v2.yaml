@@ -5,8 +5,8 @@ loader:
   _target_: topobenchmark.data.loaders.MoleculeDatasetLoader
   parameters: 
     data_domain: graph
-    data_type: PCQM4Mv2
-    data_name: PCQM4Mv2
+    data_type: pcqm4m-v2
+    data_name: pcqm4m-v2
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
 
 # Dataset parameters

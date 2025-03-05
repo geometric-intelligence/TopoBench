@@ -65,12 +65,16 @@ class MoleculeDatasetLoader(AbstractLoader):
                         split=split,
                     )
                 )
-            elif self.parameters.data_name == "PCQM4Mv2":
+            elif self.parameters.data_name == "pcqm4m-v2":
                 self.datasets.append(
                     PCQM4Mv2(
                         root=str(self.root_data_dir),
                         split=split,
                     )
+                )
+            else:
+                raise ValueError(
+                    f"Invalid dataset name {self.parameters.data}"
                 )
 
     def _prepare_split_idx(self) -> dict[str, np.ndarray]:
