@@ -83,7 +83,11 @@ def get_monitor_metric(task, metric):
     ValueError
         If the task is invalid.
     """
-    if task == "classification" or task == "regression":
+    if (
+        task == "classification"
+        or task == "regression"
+        or task == "multilabel classification"
+    ):
         return f"val/{metric}"
     else:
         raise ValueError(f"Invalid task {task}")
@@ -109,8 +113,13 @@ def get_monitor_mode(task):
     """
     if task == "classification":
         return "max"
+
+    elif task == "multilabel classification":
+        return "max"
+
     elif task == "regression":
         return "min"
+
     else:
         raise ValueError(f"Invalid task {task}")
 

@@ -47,6 +47,7 @@ dependencies=[
     "notebook",
     "jupyterlab",
     "rich",
+    "ogb",
     "rootutils",
     "topomodelx @ git+https://github.com/pyt-team/TopoModelX.git",
     "toponetx @ git+https://github.com/pyt-team/TopoNetX.git",
