@@ -20,8 +20,13 @@ class DatasetLoss(AbstractLoss):
         self.task = dataset_loss["task"]
         self.loss_type = dataset_loss["loss_type"]
         # Dataset loss
-        if self.task == "classification" and self.loss_type == "cross_entropy":
-            self.criterion = torch.nn.CrossEntropyLoss()
+        if self.task == "classification":
+            if self.loss_type == "bce":
+                self.criterion = torch.nn.BCEWithLogitsLoss()
+            elif self.loss_type == "cross_entropy":
+                self.criterion = torch.nn.CrossEntropyLoss()
+            else:
+                raise Exception("Loss is not defined")
         elif self.task == "regression" and self.loss_type == "mse":
             self.criterion = torch.nn.MSELoss()
         elif self.task == "regression" and self.loss_type == "mae":
@@ -53,6 +58,14 @@ class DatasetLoss(AbstractLoss):
         if self.task == "regression":
             target = target.unsqueeze(1)
 
-        dataset_loss = self.criterion(logits, target)
-
+        mask = ~torch.isnan(target)
+        if mask.sum() == 0:
+            dataset_loss = self.criterion(logits, target)
+        else:
+            target = torch.where(mask, target, torch.zeros_like(target))
+            loss = self.criterion(logits, target)
+            # Mask out the loss for NaN values
+            loss = loss * mask
+            # Take out average
+            dataset_loss = loss.sum() / mask.sum()
         return dataset_loss
