@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 from omegaconf import DictConfig
 from torch_geometric.data import Dataset
-from torch_geometric.datasets import AQSOL, ZINC
+from torch_geometric.datasets import AQSOL, ZINC, PCQM4Mv2
 
 from topobenchmark.data.loaders.base import AbstractLoader
 
@@ -61,6 +61,13 @@ class MoleculeDatasetLoader(AbstractLoader):
             elif self.parameters.data_name == "AQSOL":
                 self.datasets.append(
                     AQSOL(
+                        root=str(self.root_data_dir),
+                        split=split,
+                    )
+                )
+            elif self.parameters.data_name == "PCQM4Mv2":
+                self.datasets.append(
+                    PCQM4Mv2(
                         root=str(self.root_data_dir),
                         split=split,
                     )
