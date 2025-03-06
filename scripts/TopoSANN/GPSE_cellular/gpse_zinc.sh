@@ -86,7 +86,7 @@ for i in {0..7}; do
                 optimizer.parameters.lr=$LEARNING_RATES_STR\
                 optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
                 callbacks.early_stopping.patience=10\
-                transforms=ZINC_sann_experiment \
+                transforms=ZINC_sann_experiment\
                 transforms.graph2cell_lifting.max_cell_length=10\
                 transforms/data_manipulations@transforms.sann_encoding=add_gpse_information\
                 transforms.sann_encoding.pretrain_model=$PRETRAIN_MODELS_STR\
