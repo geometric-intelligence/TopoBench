@@ -111,10 +111,7 @@ def get_monitor_mode(task):
     ValueError
         If the task is invalid.
     """
-    if task == "classification":
-        return "max"
-
-    elif task == "multilabel classification":
+    if task == "classification" or task == "multilabel classification":
         return "max"
 
     elif task == "regression":

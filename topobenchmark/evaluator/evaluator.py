@@ -1,6 +1,5 @@
 """This module contains the Evaluator class that is responsible for computing the metrics."""
 
-import torch
 from torchmetrics import MetricCollection
 
 from topobenchmark.evaluator import METRICS, AbstractEvaluator
