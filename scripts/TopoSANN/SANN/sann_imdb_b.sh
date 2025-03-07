@@ -61,6 +61,7 @@ do
         optimizer.parameters.lr=0.001\
         optimizer.parameters.weight_decay=0.01\
         callbacks.early_stopping.patience=1\
+        transforms=ZINC_sann_experiment_simplicial\
         transforms.sann_encoding.max_hop=$max_hop\
         transforms.sann_encoding.complex_dim=3\
         --multirun &
@@ -68,7 +69,6 @@ do
 done
 
 wait 
-sleep 10
 
 gpus=(0 1 2 3 4 5 6 7)
 for i in {0..4}; do 
@@ -95,6 +95,7 @@ for i in {0..4}; do
                 optimizer.parameters.lr=$LEARNING_RATES_STR\
                 optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
                 callbacks.early_stopping.patience=10\
+                transforms=ZINC_sann_experiment_simplicial\
                 transforms.sann_encoding.max_hop=$max_hop\
                 transforms.sann_encoding.complex_dim=3\
                 --multirun &
