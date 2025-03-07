@@ -68,7 +68,7 @@ for i in {0..7}; do
     do
         for lr in ${learning_rates[*]}
         do
-            python topobenchmarkx/run.py\
+            python topobenchmark/run.py\
                 dataset=graph/$dataset\
                 model=cell/sann\
                 model.backbone.n_layers=$N_LAYERS_STR\
