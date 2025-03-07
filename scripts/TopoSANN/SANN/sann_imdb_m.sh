@@ -1,4 +1,4 @@
-dataset='IMDB-BINARY'
+dataset='IMDB-MULTI'
 project_name="main_exp_SANN_$dataset"
 
 # =====================
