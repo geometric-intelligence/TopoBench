@@ -2,6 +2,7 @@
 
 from toponetx.classes import SimplicialComplex
 from torch_geometric.data import Data
+from torch_geometric.utils import to_undirected
 
 from topobench.transforms.liftings.graph2simplicial.base import (
     Graph2SimplicialLifting,
@@ -33,28 +34,18 @@ class NeighborhoodComplexLifting(Graph2SimplicialLifting):
         dict
             The lifted topology.
         """
+        data.edge_index = to_undirected(data.edge_index)
         graph = self._generate_graph_from_data(data)
-        graph = graph.to_undirected()
         simplicial_complex = SimplicialComplex(simplices=graph)
 
         # For every node u
         for u in graph.nodes:
             neighbourhood_complex = set()
             neighbourhood_complex.add(u)
-            # Check it's neighbours
-            for v in graph.neighbors(u):
-                # For every other node w != u ^ w != v
-                for w in graph.nodes:
-                    # w == u
-                    if w == u:
-                        continue
-                    # w == v
-                    if w == v:
-                        continue
-
-                    # w and u share v as it's neighbour
-                    if v in graph.neighbors(w):
-                        neighbourhood_complex.add(w)
+            first_neighbors = set(graph.neighbors(u))
+            for v in first_neighbors:
+                neighbourhood_complex.update(list(graph.neighbors(v)))
+            neighbourhood_complex -= first_neighbors
             # Do not add 0-simplices
             if len(neighbourhood_complex) < 2:
                 continue
