@@ -41,7 +41,7 @@ class LatentCliqueLifting(Graph2SimplicialLifting):
         self,
         edge_prob_mean: float = 0.9,
         edge_prob_var: float = 0.05,
-        it=None,
+        it=100,
         init="edges",
         **kwargs,
     ):
@@ -53,7 +53,7 @@ class LatentCliqueLifting(Graph2SimplicialLifting):
         self.init = init
 
     def lift_topology(
-        self, data: torch_geometric.data.Data, verbose: bool = False
+        self, data: torch_geometric.data.Data, verbose: bool = True
     ) -> dict:
         r"""Find the cycles of a graph and lifts them to 2-cells.
 
@@ -89,7 +89,9 @@ class LatentCliqueLifting(Graph2SimplicialLifting):
         )
 
         # # Translate fitted model to a new topology
-        cic = mod.Z.T @ mod.Z
+        Zs = torch.from_numpy(mod.Z).to_sparse().float()
+        cic_torch = torch.sparse.mm(Zs.T, Zs)
+        cic = cic_torch.to_dense().numpy()
         adj = np.minimum(cic - np.diag(np.diag(cic)), 1)
         edges = np.array(np.where(adj == 1))
         edges = torch.LongTensor(edges).to(data.edge_index.device)
@@ -242,7 +244,7 @@ class _LatentCliqueModel:
     def sample(
         self,
         num_iters=1000,
-        num_sm=10,
+        num_sm=5,
         sample_hypers=True,
         do_gibbs=False,
         verbose=False,
@@ -254,7 +256,7 @@ class _LatentCliqueModel:
         num_iters : int, optional
             Number of iterations, by default 1000.
         num_sm : int, optional
-            Number of split-merge steps, by default 20.
+            Number of split-merge steps, by default 5.
         sample_hypers : bool, optional
             Whether to sample hyperparameters, by default True.
         do_gibbs : bool, optional
@@ -277,7 +279,6 @@ class _LatentCliqueModel:
 
             for _ in range(num_sm):
                 self.splitmerge()
-
             pbar.set_description(f"#cliques={self.K}")
 
     def log_lik(
@@ -517,12 +518,22 @@ class _LatentCliqueModel:
             Z = self.Z
         if pie is None:
             pie = self.edge_prob
-        cic = np.dot(Z.T, Z)
-        cic = cic - np.diag(np.diag(cic))
+        Zs = torch.from_numpy(Z).to_sparse().float()
+        cic = torch.sparse.mm(Zs.T, Zs)
+        diag_idxs = torch.where(cic.indices()[0, :] == cic.indices()[1, :])[0]
+        new_idxs = cic.indices()[:, diag_idxs]
+        new_values = cic.values()[diag_idxs]
+        size = cic.size()
+        cic_diag = torch.sparse_coo_tensor(
+            indices=new_idxs, values=new_values, size=size
+        )
+        cic = cic - cic_diag
+        cic = cic.coalesce()
+        cic_numpy = cic.to_dense().numpy()
 
-        zero_check = (1 - np.minimum(cic, 1)) * self.adj
-        if np.sum(zero_check) == 0:
-            p0 = (1 - pie) ** cic
+        zero_check = (1 - np.minimum(cic_numpy, 1)) * self.adj
+        if np.any(zero_check != 0):
+            p0 = (1 - pie) ** cic_numpy
             p1 = 1 - p0
             network_mask = self.adj + 1
             network_mask = np.triu(network_mask, 1) - 1
