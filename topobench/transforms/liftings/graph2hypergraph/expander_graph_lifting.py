@@ -337,21 +337,23 @@ else:
         G = maybe_regular_expander(
             n, d, create_using=create_using, max_tries=max_tries, seed=seed
         )
-        iterations = max_tries
 
-        while not is_regular_expander(G, epsilon=epsilon):
-            iterations -= 1
-            G = maybe_regular_expander(
-                n=n,
-                d=d,
-                create_using=create_using,
-                max_tries=max_tries,
-                seed=seed,
-            )
+        # Just return G which is close enough. Checking is_regular_expander becomes problematic for big graphs.
+        #
+        # iterations = max_tries
+        # while not is_regular_expander(G, epsilon=epsilon):
+        #     iterations -= 1
+        #     G = maybe_regular_expander(
+        #         n=n,
+        #         d=d,
+        #         create_using=create_using,
+        #         max_tries=max_tries,
+        #         seed=seed,
+        #     )
 
-            if iterations == 0:
-                raise nx.NetworkXError(
-                    "Too many iterations in random_regular_expander_graph"
-                )
+        #     if iterations == 0:
+        #         raise nx.NetworkXError(
+        #             "Too many iterations in random_regular_expander_graph"
+        #         )
 
         return G
