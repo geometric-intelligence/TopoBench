@@ -41,7 +41,7 @@ class LatentCliqueLifting(Graph2SimplicialLifting):
         self,
         edge_prob_mean: float = 0.9,
         edge_prob_var: float = 0.05,
-        it=100,
+        it=20,
         init="edges",
         **kwargs,
     ):
@@ -91,12 +91,14 @@ class LatentCliqueLifting(Graph2SimplicialLifting):
         # # Translate fitted model to a new topology
         Zs = torch.from_numpy(mod.Z).to_sparse().float()
         cic_torch = torch.sparse.mm(Zs.T, Zs)
-        cic = cic_torch.to_dense().numpy()
+        cic = cic_torch.to_dense().numpy().astype(int)
         adj = np.minimum(cic - np.diag(np.diag(cic)), 1)
         edges = np.array(np.where(adj == 1))
         edges = torch.LongTensor(edges).to(data.edge_index.device)
         new_data = torch_geometric.data.Data(x=data.x, edge_index=edges)
-        return SimplicialCliqueLifting().lift_topology(new_data)
+        return SimplicialCliqueLifting(
+            complex_dim=self.complex_dim
+        ).lift_topology(new_data)
 
 
 class _LatentCliqueModel:
@@ -264,11 +266,15 @@ class _LatentCliqueModel:
         verbose : bool, optional
             Whether to display a progress bar, by default False.
         """
+        if self.num_nodes < 500:
+            num_sm = (
+                20  # Increase number of split-merge steps for small graphs
+            )
         pbar = tqdm(
             range(num_iters),
             desc=f"#cliques={self.K}",
             leave=False,
-            disable=not verbose,
+            disable=not verbose or self.num_nodes < 500,
         )
         for _ in pbar:
             if sample_hypers:
@@ -529,11 +535,46 @@ class _LatentCliqueModel:
         )
         cic = cic - cic_diag
         cic = cic.coalesce()
-        cic_numpy = cic.to_dense().numpy()
+        cic_numpy = cic.to_dense().numpy().astype(int)
 
         zero_check = (1 - np.minimum(cic_numpy, 1)) * self.adj
-        if np.any(zero_check != 0):
+        if np.sum(zero_check) == 0:
             p0 = (1 - pie) ** cic_numpy
+            p1 = 1 - p0
+            network_mask = self.adj + 1
+            network_mask = np.triu(network_mask, 1) - 1
+            lp_0 = np.sum(np.log(1e-6 + p0[np.where(network_mask == 0)]))
+            lp_1 = np.sum(np.log(1e-6 + p1[np.where(network_mask == 1)]))
+            lp = lp_0 + lp_1
+        else:
+            lp = -np.inf
+        return lp
+
+    def loglikZ2(self, Z=None, pie=None):
+        """Compute the log-likelihood of the current state Z.
+
+        Parameters
+        ----------
+        Z : np.ndarray, optional
+            Clique cover matrix, by default None.
+        pie : float, optional
+            Parameter for the model, by default None.
+
+        Returns
+        -------
+        float
+            Log-likelihood value.
+        """
+        if Z is None:
+            Z = self.Z
+        if pie is None:
+            pie = self.edge_prob
+        cic = np.dot(Z.T, Z)
+        cic = cic - np.diag(np.diag(cic))
+
+        zero_check = (1 - np.minimum(cic, 1)) * self.adj
+        if np.sum(zero_check) == 0:
+            p0 = (1 - pie) ** cic
             p1 = 1 - p0
             network_mask = self.adj + 1
             network_mask = np.triu(network_mask, 1) - 1
