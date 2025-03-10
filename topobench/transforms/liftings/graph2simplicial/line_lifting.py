@@ -29,7 +29,7 @@ class SimplicialLineLifting(Graph2SimplicialLifting):
         super().__init__(**kwargs)
 
     def lift_topology(
-        self, data: torch_geometric.data.Data, max_simplices=100
+        self, data: torch_geometric.data.Data, max_simplices=25
     ) -> dict:
         r"""Lift topology of a graph to simplicial domain via line simplicial complex construction.
 
