@@ -6,6 +6,7 @@ from typing import Any
 
 import torch_geometric
 from toponetx.classes import SimplicialComplex
+from tqdm import tqdm
 
 from topobench.transforms.liftings.graph2simplicial.base import (
     Graph2SimplicialLifting,
@@ -24,12 +25,12 @@ class SimplicialKHopLifting(Graph2SimplicialLifting):
     Parameters
     ----------
     max_k_simplices : int, optional
-        The maximum number of k-simplices to consider. Default is 5000.
+        The maximum number of k-simplices to consider. Default is 25.
     **kwargs : optional
         Additional arguments for the class.
     """
 
-    def __init__(self, max_k_simplices=5000, **kwargs):
+    def __init__(self, max_k_simplices=25, **kwargs):
         super().__init__(**kwargs)
         self.max_k_simplices = max_k_simplices
 
@@ -56,8 +57,8 @@ class SimplicialKHopLifting(Graph2SimplicialLifting):
         simplices: list[set[tuple[Any, ...]]] = [
             set() for _ in range(2, self.complex_dim + 1)
         ]
-
-        for n in range(graph.number_of_nodes()):
+        disable = graph.number_of_nodes() < 1000
+        for n in tqdm(range(graph.number_of_nodes()), disable=disable):
             # Find 1-hop node n neighbors
             neighbors, _, _, _ = torch_geometric.utils.k_hop_subgraph(
                 n, 1, edge_index
@@ -65,14 +66,14 @@ class SimplicialKHopLifting(Graph2SimplicialLifting):
             if n not in neighbors:
                 neighbors.append(n)
             neighbors = neighbors.numpy()
-            neighbors = set(neighbors)
-            for i in range(1, self.complex_dim):
-                for c in combinations(neighbors, i + 1):
-                    simplices[i - 1].add(tuple(c))
+            neighbors = list(set(neighbors))
+            random.shuffle(neighbors)
+            for i in range(2, self.complex_dim + 1):
+                for num_c, c in enumerate(combinations(neighbors, i + 1)):
+                    simplices[i - 2].add(tuple(c))
+                    if num_c >= self.max_k_simplices:
+                        break
         for set_k_simplices in simplices:
-            list_k_simplices = list(set_k_simplices)
-            if len(set_k_simplices) > self.max_k_simplices:
-                random.shuffle(list_k_simplices)
-                list_k_simplices = list_k_simplices[: self.max_k_simplices]
-            simplicial_complex.add_simplices_from(list_k_simplices)
+            simplicial_complex.add_simplices_from(list(set_k_simplices))
+
         return self._get_lifted_topology(simplicial_complex, graph)
