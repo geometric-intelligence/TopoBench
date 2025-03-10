@@ -24,7 +24,7 @@ class SimplicialDnDLifting(Graph2SimplicialLifting):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-    def lift_topology(self, data: Data, max_simplices=100) -> dict:
+    def lift_topology(self, data: Data, max_simplices=10) -> dict:
         r"""Lift the topology of a graph to a simplicial complex using Dungeons & Dragons (D&D) inspired mechanics.
 
         Parameters
