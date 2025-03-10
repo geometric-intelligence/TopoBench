@@ -25,7 +25,7 @@ class SimplicialVietorisRipsLifting(Graph2SimplicialLifting):
         Additional arguments for the class.
     """
 
-    def __init__(self, distance_threshold=1.0, max_simplices=10, **kwargs):
+    def __init__(self, distance_threshold=1.0, max_simplices=5, **kwargs):
         super().__init__(**kwargs)
         self.distance_threshold = distance_threshold
         self.max_simplices = max_simplices
@@ -52,7 +52,12 @@ class SimplicialVietorisRipsLifting(Graph2SimplicialLifting):
         path_lengths = dict(nx.all_pairs_shortest_path_length(graph))
 
         for k in range(2, self.complex_dim + 1):
-            for node in tqdm(all_nodes, desc=f"Adding simplices of rank {k}"):
+            disable = len(all_nodes) < 1000
+            for node in tqdm(
+                all_nodes,
+                desc=f"Adding simplices of rank {k}",
+                disable=disable,
+            ):
                 added_simplices = 0
                 connected_nodes = [
                     n
