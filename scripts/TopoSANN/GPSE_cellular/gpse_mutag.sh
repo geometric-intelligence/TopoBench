@@ -64,6 +64,39 @@ for i in {0..7}; do
     CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
     neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
 
+    for pret_model in ${PRETRAIN_MODELS[*]}
+    do
+        python topobenchmark/run.py\
+            dataset=graph/$dataset\
+            model=cell/sann\
+            model.backbone.n_layers=1\
+            model.feature_encoder.out_channels=128\
+            model.feature_encoder.proj_dropout=0.25\
+            dataset.split_params.data_seed=0\
+            dataset.dataloader_params.batch_size=128\
+            trainer.max_epochs=5\
+            trainer.min_epochs=1\
+            trainer.devices=\[$CUDA\]\
+            trainer.check_val_every_n_epoch=1\
+            logger.wandb.project='prerun'\
+            optimizer.parameters.lr=0.01\
+            optimizer.parameters.weight_decay=0.25\
+            callbacks.early_stopping.patience=10\
+            transforms=MUTAG_sann_experiment\
+            transforms/data_manipulations@transforms.sann_encoding=add_gpse_information\
+            transforms.sann_encoding.pretrain_model=$pret_model\
+            transforms.sann_encoding.copy_initial=True \
+            transforms.sann_encoding.neighborhoods=$neighborhood\
+            transforms.graph2cell_lifting.neighborhoods=$neighborhood\
+            --multirun &
+    done
+done
+wait
+
+for i in {0..7}; do 
+    CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
+    neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
+
     for batch_size in ${batch_sizes[*]}
     do
         for lr in ${learning_rates[*]}
