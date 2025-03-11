@@ -5,4 +5,4 @@ coverage:
   precision: 2
 ignore:
   - "test/"
-  - "topobenchmark/run.py"
+  - "topobench/run.py"

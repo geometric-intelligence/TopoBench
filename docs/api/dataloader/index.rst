@@ -4,11 +4,11 @@ DataLoader
 
 The `dataloader` module implements custom dataloaders for training.
 
-.. automodule:: topobenchmark.dataloader.dataload_dataset
+.. automodule:: topobench.dataloader.dataload_dataset
     :members:
 
-.. automodule:: topobenchmark.dataloader.dataloader
+.. automodule:: topobench.dataloader.dataloader
     :members:
 
-.. automodule:: topobenchmark.dataloader.utils
+.. automodule:: topobench.dataloader.utils
     :members:

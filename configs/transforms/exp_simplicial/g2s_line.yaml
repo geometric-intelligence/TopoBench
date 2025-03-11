@@ -1,0 +1,2 @@
+defaults:
+  - /transforms/liftings/graph2simplicial@graph2simplicial_lifting: line

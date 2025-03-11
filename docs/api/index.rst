@@ -2,7 +2,7 @@
 API Reference
 =============
 
-The API reference gives an overview of `TopoBenchmarkX`, which consists of several modules:
+The API reference gives an overview of `TopoBenchX`, which consists of several modules:
 
 - `data` implements the utilities to download  load, and preprocess data, among other functionalities.
 - `dataloader` implements custom dataloaders to generate batches from topological data.

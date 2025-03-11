@@ -2,9 +2,9 @@
 
 import torch
 import torch_geometric
-from topobenchmark.nn.backbones.graph import GraphMLP
-from topobenchmark.nn.wrappers.graph import GraphMLPWrapper
-from topobenchmark.loss.model import GraphMLPLoss
+from topobench.nn.backbones.graph import GraphMLP
+from topobench.nn.wrappers.graph import GraphMLPWrapper
+from topobench.loss.model import GraphMLPLoss
 
 def testGraphMLP(random_graph_input):
     """ Unit test for GraphMLP.

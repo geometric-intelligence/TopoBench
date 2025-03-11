@@ -1,0 +1,2 @@
+defaults:
+  - /transforms/liftings/pointcloud2simplicial@pointcloud2simplicial_lifting: alpha_complex

@@ -1,10 +1,10 @@
 """Unit tests for logging utils."""
 import pytest
 from unittest.mock import MagicMock, patch
-from topobenchmark.utils import log_hyperparameters
+from topobench.utils import log_hyperparameters
 
-@patch("topobenchmark.utils.logging_utils.pylogger.RankedLogger.warning")
-@patch("topobenchmark.utils.logging_utils.OmegaConf.to_container")
+@patch("topobench.utils.logging_utils.pylogger.RankedLogger.warning")
+@patch("topobench.utils.logging_utils.OmegaConf.to_container")
 def test_log_hyperparameters(mock_to_container, mock_warning):
     """Test the log_hyperparameters function.
     

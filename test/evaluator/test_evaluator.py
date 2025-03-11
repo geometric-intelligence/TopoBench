@@ -1,7 +1,7 @@
 """ Test the TBEvaluator class."""
 import pytest
 import torch
-from topobenchmark.evaluator import TBEvaluator
+from topobench.evaluator import TBEvaluator
 
 class TestTBEvaluator:
     """ Test the TBXEvaluator class."""

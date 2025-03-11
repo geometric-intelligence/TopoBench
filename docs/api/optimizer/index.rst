@@ -2,10 +2,10 @@
 Optimizer
 *********
 
-This module implements a custom Python class to manage `PyTorch` optimizers and learning rate schedulers in `TopoBenchmarkX`.
+This module implements a custom Python class to manage `PyTorch` optimizers and learning rate schedulers in `TopoBenchX`.
 
-.. automodule:: topobenchmark.optimizer.base
+.. automodule:: topobench.optimizer.base
     :members:
 
-.. automodule:: topobenchmark.optimizer.optimizer
+.. automodule:: topobench.optimizer.optimizer
     :members:

@@ -1,4 +1,4 @@
-python -m topobenchmark \
+python -m topobench \
     dataset=graph/NCI109 \
     model=cell/topotune,cell/topotune_onehasse \
     model.feature_encoder.out_channels=32 \
@@ -18,7 +18,7 @@ python -m topobenchmark \
     tags="[FirstExperiments]" \
     --multirun &
 
-python -m topobenchmark \
+python -m topobench \
     dataset=graph/cocitation_cora \
     model=cell/topotune,cell/topotune_onehasse \
     model.feature_encoder.out_channels=32 \
@@ -38,7 +38,7 @@ python -m topobenchmark \
     tags="[FirstExperiments]" \
     --multirun &
 
-python -m topobenchmark \
+python -m topobench \
     dataset=graph/PROTEINS \
     model=cell/topotune,cell/topotune_onehasse \
     model.feature_encoder.out_channels=32 \
@@ -58,7 +58,7 @@ python -m topobenchmark \
     tags="[FirstExperiments]" \
     --multirun &
 
-python -m topobenchmark \
+python -m topobench \
     dataset=graph/MUTAG \
     model=cell/topotune,cell/topotune_onehasse \
     model.feature_encoder.out_channels=32 \
@@ -78,7 +78,7 @@ python -m topobenchmark \
     tags="[FirstExperiments]" \
     --multirun &
 
-python -m topobenchmark \
+python -m topobench \
     dataset=graph/ZINC \
     model=cell/topotune,cell/topotune_onehasse \
     model.feature_encoder.out_channels=32 \
@@ -99,7 +99,7 @@ python -m topobenchmark \
     tags="[FirstExperiments]" \
     --multirun &
 
-python -m topobenchmark \
+python -m topobench \
     dataset=graph/cocitation_citeseer \
     model=cell/topotune,cell/topotune_onehasse \
     model.feature_encoder.out_channels=32 \
@@ -119,7 +119,7 @@ python -m topobenchmark \
     tags="[FirstExperiments]" \
     --multirun &
 
-python -m topobenchmark \
+python -m topobench \
     dataset=graph/NCI1 \
     model=cell/topotune,cell/topotune_onehasse \
     model.feature_encoder.out_channels=32 \
@@ -139,7 +139,7 @@ python -m topobenchmark \
     tags="[FirstExperiments]" \
     --multirun &
 
-python -m topobenchmark \
+python -m topobench \
     dataset=graph/cocitation_pubmed \
     model=cell/topotune,cell/topotune_onehasse \
     model.feature_encoder.out_channels=32 \
@@ -159,7 +159,7 @@ python -m topobenchmark \
     tags="[FirstExperiments]" \
     --multirun &
 
-python -m topobenchmark \
+python -m topobench \
     dataset=graph/NCI109 \
     model=cell/topotune,cell/topotune_onehasse \
     model.feature_encoder.out_channels=32 \
@@ -179,7 +179,7 @@ python -m topobenchmark \
     tags="[FirstExperiments]" \
     --multirun &
 
-python -m topobenchmark \
+python -m topobench \
     dataset=graph/cocitation_cora \
     model=cell/topotune,cell/topotune_onehasse \
     model.feature_encoder.out_channels=32 \
@@ -199,7 +199,7 @@ python -m topobenchmark \
     tags="[FirstExperiments]" \
     --multirun &
 
-python -m topobenchmark \
+python -m topobench \
     dataset=graph/PROTEINS \
     model=cell/topotune,cell/topotune_onehasse \
     model.feature_encoder.out_channels=32 \
@@ -219,7 +219,7 @@ python -m topobenchmark \
     tags="[FirstExperiments]" \
     --multirun &
 
-python -m topobenchmark \
+python -m topobench \
     dataset=graph/MUTAG \
     model=cell/topotune,cell/topotune_onehasse \
     model.feature_encoder.out_channels=32 \
@@ -239,7 +239,7 @@ python -m topobenchmark \
     tags="[FirstExperiments]" \
     --multirun &
 
-python -m topobenchmark \
+python -m topobench \
     dataset=graph/cocitation_citeseer \
     model=cell/topotune,cell/topotune_onehasse \
     model.feature_encoder.out_channels=32 \
@@ -259,7 +259,7 @@ python -m topobenchmark \
     tags="[FirstExperiments]" \
     --multirun &
 
-python -m topobenchmark \
+python -m topobench \
     dataset=graph/NCI1 \
     model=cell/topotune,cell/topotune_onehasse \
     model.feature_encoder.out_channels=32 \
@@ -279,7 +279,7 @@ python -m topobenchmark \
     tags="[FirstExperiments]" \
     --multirun &
 
-python -m topobenchmark \
+python -m topobench \
     dataset=graph/cocitation_pubmed \
     model=cell/topotune,cell/topotune_onehasse \
     model.feature_encoder.out_channels=32 \

@@ -1,0 +1,6 @@
+_target_: topobench.transforms.data_transform.DataTransform
+transform_type: "lifting"
+transform_name: "UniversalStrictLifting"
+neighborhoods: ${oc.select:model.backbone.neighborhoods,null}
+complex_dim: 5
+

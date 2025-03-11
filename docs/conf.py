@@ -3,7 +3,7 @@
 import os
 import shutil
 
-project = "TopoBenchmark"
+project = "TopoBench"
 copyright = "2022-2023, PyT-Team, Inc."
 author = "PyT-Team Authors"
 
@@ -57,8 +57,8 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**.ipynb_checkpoints"]
 pygments_style = None
 
 html_theme = "pydata_sphinx_theme"
-html_baseurl = "https://geometric-intelligence.github.io/topobenchmark"
-htmlhelp_basename = "topobenchmarkdoc"
+html_baseurl = "https://geometric-intelligence.github.io/topobench"
+htmlhelp_basename = "topobenchdoc"
 html_last_updated_fmt = "%c"
 
 latex_elements = {}
@@ -67,24 +67,24 @@ latex_elements = {}
 latex_documents = [
     (
         master_doc,
-        "topobenchmark.tex",
-        "TopoBenchmarkX Documentation",
+        "topobench.tex",
+        "TopoBenchX Documentation",
         "PyT-Team",
         "manual",
     ),
 ]
 
 man_pages = [
-    (master_doc, "topobenchmark", "TopoBenchmarkX Documentation", [author], 1)
+    (master_doc, "topobench", "TopoBenchX Documentation", [author], 1)
 ]
 
 texinfo_documents = [
     (
         master_doc,
-        "topobenchmark",
-        "TopoBenchmarkX Documentation",
+        "topobench",
+        "TopoBenchX Documentation",
         author,
-        "topobenchmark",
+        "topobench",
         "One line description of project.",
         "Miscellaneous",
     ),

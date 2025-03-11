@@ -2,11 +2,11 @@
 Readouts
 ********
 
-.. automodule:: topobenchmark.nn.readouts.base
+.. automodule:: topobench.nn.readouts.base
     :members:
 
-.. automodule:: topobenchmark.nn.readouts.identical
+.. automodule:: topobench.nn.readouts.identical
     :members:
 
-.. automodule:: topobenchmark.nn.readouts.propagate_signal_down
+.. automodule:: topobench.nn.readouts.propagate_signal_down
     :members:

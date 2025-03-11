@@ -1,2 +1,0 @@
-defaults:
-  - /transforms/data_manipulations@tree: infer_tree
