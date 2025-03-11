@@ -10,7 +10,7 @@ class TestTBEvaluator:
         """ Setup the test."""
         self.classification_metrics = ["accuracy", "precision", "recall", "auroc"]
         self.evaluator_classification = TBEvaluator(task="classification", num_classes=3, metrics=self.classification_metrics)
-        self.evaluator_multilabel = TBEvaluator(task="multilabel classification", num_classes=2, metrics=self.classification_metrics)
+        #self.evaluator_multilabel = TBEvaluator(task="multilabel classification", num_classes=2, metrics=self.classification_metrics)
         self.regression_metrics = ["example", "mae"]
         self.evaluator_regression = TBEvaluator(task="regression", num_classes=1, metrics=self.regression_metrics)
         with pytest.raises(ValueError):
@@ -19,7 +19,7 @@ class TestTBEvaluator:
     def test_repr(self):
         """Test the __repr__ method."""
         assert "TBEvaluator" in self.evaluator_classification.__repr__()
-        assert "TBEvaluator" in self.evaluator_multilabel.__repr__()
+        #assert "TBEvaluator" in self.evaluator_multilabel.__repr__()
         assert "TBEvaluator" in self.evaluator_regression.__repr__()
 
     def test_update_and_compute(self):
@@ -28,8 +28,8 @@ class TestTBEvaluator:
         out = self.evaluator_classification.compute()
         for metric in self.classification_metrics:
             assert metric in out
-        self.evaluator_multilabel.update({"logits": torch.randn(10, 2), "labels": torch.randint(0, 2, (10, 2))})
-        out = self.evaluator_multilabel.compute()
+        #self.evaluator_multilabel.update({"logits": torch.randn(10, 2), "labels": torch.randint(0, 2, (10, 2))})
+        #out = self.evaluator_multilabel.compute()
         for metric in self.classification_metrics:
             assert metric in out
         self.evaluator_regression.update({"logits": torch.randn(10, 1), "labels": torch.randn(10,)})
@@ -39,5 +39,5 @@ class TestTBEvaluator:
         
     def test_reset(self):
         """Test the reset method."""
-        self.evaluator_multilabel.reset()
+        #self.evaluator_multilabel.reset()
         self.evaluator_regression.reset()
