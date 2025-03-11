@@ -13,8 +13,7 @@ class TestTBEvaluator:
         #self.evaluator_multilabel = TBEvaluator(task="multilabel classification", num_classes=2, metrics=self.classification_metrics)
         self.regression_metrics = ["example", "mae"]
         self.evaluator_regression = TBEvaluator(task="regression", num_classes=1, metrics=self.regression_metrics)
-        with pytest.raises(ValueError):
-            TBEvaluator(task="wrong", num_classes=2, metrics=self.classification_metrics)
+       
         
     def test_repr(self):
         """Test the __repr__ method."""
@@ -36,6 +35,16 @@ class TestTBEvaluator:
         out = self.evaluator_regression.compute()
         for metric in self.regression_metrics:
             assert metric in out
+    
+    def test_not_implemented(self):
+        """Test not implemented methods."""
+        with pytest.raises(ValueError):
+            TBEvaluator(task="wrong", num_classes=2, metrics=self.classification_metrics)
+        
+        evaluator = TBEvaluator(task="multilabel classification", num_classes=3, metrics=self.classification_metrics)
+        with pytest.raises(NotImplementedError):
+            evaluator.update({"logits": torch.tensor([[1,0,0], [0,1,1]]), "labels": torch.tensor([[1,1,0]])})
+
         
     def test_reset(self):
         """Test the reset method."""
