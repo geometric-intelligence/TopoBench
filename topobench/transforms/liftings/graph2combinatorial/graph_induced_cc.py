@@ -1,11 +1,10 @@
 """GraphInducedCC lifting of graphs to combinatorial complexes."""
 
-from itertools import combinations
 from collections import defaultdict
-from typing import Any
+from itertools import combinations
 
-import torch
 import networkx as nx
+import torch
 import torch_geometric
 from toponetx.classes import CombinatorialComplex
 
@@ -43,7 +42,7 @@ class GraphTriangleInducedCC(Graph2CombinatorialLifting):
         """
 
         graph = self._generate_graph_from_data(data)
-        assert graph.is_directed() == False, (
+        assert not graph.is_directed(), (
             "Graph supposed to be undirected for this lifting"
         )
         cliques = nx.find_cliques(graph)
@@ -139,51 +138,83 @@ class GraphTriangleInducedCC(Graph2CombinatorialLifting):
 
 
 def build_paths(overlap_pairs):
-        """Find overlapint sequesnces.
+    """Find overlapint sequesnces.
 
-        Parametes
-        ---------
-        overlap_pairs : list
-            List of overlaping triangles.
-        
+    Parameters
+    ----------
+    overlap_pairs : list
+        List of pairs of overlapping triangles.
+
+    Returns
+    -------
+    list
+        List of sequences of overlaping triangles.
+    """
+    parent = {}
+
+    def find(x):
+        """Find parent of x.
+
+        Parameters
+        ----------
+        x : int
+            Find parent.
+
         Returns
         -------
         list
-            List of sequences of overlaping triangles.
+            Union of two lists.
         """
-        parent = {}
+        if parent[x] != x:
+            parent[x] = find(parent[x])
+        return parent[x]
 
-        def find(x):
-            if parent[x] != x:
-                parent[x] = find(parent[x])
-            return parent[x]
+    def union(x, y):
+        """Union.
 
-        def union(x, y):
-            root_x = find(x)
-            root_y = find(y)
-            if root_x != root_y:
-                parent[root_y] = root_x
+        Parameters
+        ----------
+        x : list
+            List.
+        y : list
+            List.
 
-        for a, b in overlap_pairs:
-            if a not in parent:
-                parent[a] = a
-            if b not in parent:
-                parent[b] = b
-            union(a, b)
+        Return
+        ------
+        list
+            Union of two lists.
+        """
+        root_x = find(x)
+        root_y = find(y)
+        if root_x != root_y:
+            parent[root_y] = root_x
 
-        groups = defaultdict(set)
-        for node in parent:
-            groups[find(node)].add(node)
+    for a, b in overlap_pairs:
+        if a not in parent:
+            parent[a] = a
+        if b not in parent:
+            parent[b] = b
+        union(a, b)
 
-        return [tuple(sorted(group)) for group in groups.values()]
+    groups = defaultdict(set)
+    for node in parent:
+        groups[find(node)].add(node)
+
+    return [tuple(sorted(group)) for group in groups.values()]
+
 
 def find_overlapping_paths(lists):
-    """Find ovelaping triabgles and their seuqences
-    
+    """Find ovelaping triabgles and their seuqences.
+
     Parameters
     ----------
-    
-    
+    lists : list
+        List of triangles.
+
+    Returns
+    -------
+    list
+        List of sequences of overlaping triangles.
     """
     one_element_overlap = []
     two_elements_overlap = []

@@ -5,14 +5,14 @@ from typing import Any
 from topobench.transforms.data_manipulations import DATA_MANIPULATIONS
 from topobench.transforms.feature_liftings import FEATURE_LIFTINGS
 from topobench.transforms.liftings.graph2cell import GRAPH2CELL_LIFTINGS
+from topobench.transforms.liftings.graph2combinatorial import (
+    GRAPH2COMBINATORIAL_LIFTINGS,
+)
 from topobench.transforms.liftings.graph2hypergraph import (
     GRAPH2HYPERGRAPH_LIFTINGS,
 )
 from topobench.transforms.liftings.graph2simplicial import (
     GRAPH2SIMPLICIAL_LIFTINGS,
-)
-from topobench.transforms.liftings.graph2combinatorial import (
-    GRAPH2COMBINATORIAL_LIFTINGS,
 )
 from topobench.transforms.liftings.hypergraph2combinatorial import (
     HYPERGRAPH2COMBINATORIAL_LIFTINGS,
