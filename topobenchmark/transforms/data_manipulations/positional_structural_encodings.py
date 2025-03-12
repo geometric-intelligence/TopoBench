@@ -85,15 +85,6 @@ class DerivePS(torch_geometric.transforms.BaseTransform):
         
         return data
 
-# def _check_all_types(se_types: List[str]):
-#     wrong_types = []
-#     for t in se_types:
-#         if t not in ALL_ENC_TYPES:
-#             wrong_types.append(t)
-#     if wrong_types:
-#         raise ValueError("Unexpected P/SE encoding selections: "
-#                          f"{wrong_types} in {se_types}")
-
 
 def compute_posenc_stats(data, pe_types, cfg, **kwargs):
     """Precompute positional encodings for the given graph.
@@ -151,12 +142,7 @@ def compute_posenc_stats(data, pe_types, cfg, **kwargs):
             eigvec_norm = kwargs.get("posenc_LapPE_eigen_eigvec_norm", None) 
             skip_zero_freq = kwargs.get("posenc_LapPE_eigen_skip_zero_freq", True) 
             eigvec_abs = kwargs.get("posenc_LapPE_eigen_eigvec_abs", True) 
-        # elif 'EquivStableLapPE' in pe_types:
-        #     max_freqs = kwargs.get("posenc_LapPE_eigen_max_freqs", None)
-        #     eigvec_norm = kwargs.get("posenc_LapPE_eigen_eigvec_norm", None)
-        #     skip_zero_freq = kwargs.get("posenc_LapPE_eigen_skip_zero_freq", True)
-        #     eigvec_abs =  kwargs.get("posenc_LapPE_eigen_eigvec_abs", True)
-
+        
         EigVals, EigVecs = get_lap_decomp_stats(
             evals=evals, evects=evects,
             max_freqs=max_freqs,
@@ -164,25 +150,7 @@ def compute_posenc_stats(data, pe_types, cfg, **kwargs):
             skip_zero_freq=skip_zero_freq,
             eigvec_abs=eigvec_abs)
         # hstack
-        output_pe[""] = torch.hstack((EigVals, EigVecs))
-
-    if 'SignNet' in pe_types:
-        # Eigen-decomposition with numpy for SignNet.
-        norm_type = cfg.posenc_SignNet.eigen.laplacian_norm.lower()
-        if norm_type == 'none':
-            norm_type = None
-        L = to_scipy_sparse_matrix(
-            *get_laplacian(undir_edge_index, normalization=norm_type,
-                           num_nodes=N)
-        )
-        evals_sn, evects_sn = np.linalg.eigh(L.toarray())
-        data.eigvals_sn, data.eigvecs_sn = get_lap_decomp_stats(
-            evals=evals_sn, evects=evects_sn,
-            max_freqs=cfg.posenc_SignNet.eigen.max_freqs,
-            eigvec_norm=cfg.posenc_SignNet.eigen.eigvec_norm,
-            skip_zero_freq=cfg.posenc_SignNet.eigen.skip_zero_freq,
-            eigvec_abs=cfg.posenc_SignNet.eigen.eigvec_abs)
-        data.EigVals = data.eigvals_sn
+        output_pe["LapPE"] = torch.hstack((EigVals, EigVecs))
 
     # Random Walks. 
     if 'RWSE' in pe_types:
@@ -195,19 +163,22 @@ def compute_posenc_stats(data, pe_types, cfg, **kwargs):
         # check that obtained pe are not all zeros
         if np.all(rw_landing == 0):
             raise ValueError("RWSE is all zeros")
+        
         output_pe["RWSE"] = rw_landing
         
     # Electrostatic interaction inspired kernel.
     if 'ElstaticPE' in pe_types:
         elstatic = get_electrostatic_function_encoding(undir_edge_index, N)
-        output_pe["ElstaticPE"] = rw_landing
+        output_pe["ElstaticPE"] = elstatic
     
     if 'CycleGE' in pe_types:
-        kernel_param_times = range(2,9) #cfg.graphenc_CycleGE.kernel
-        data.gestat_CycleGE = count_cycles(kernel_param_times, data)
+        start, end = kwargs['kernel_param_CycleGE'][0], kwargs['kernel_param_CycleGE'][1]
+        kernel_param_times = range(start, end) #cfg.graphenc_CycleGE.kernel
+        cycle_se = count_cycles(kernel_param_times, data)
+        output_pe["CycleGE"] = cycle_se
 
     # Heat Kernels.
-    if 'HKdiagSE' in pe_types or 'HKfullPE' in pe_types:
+    if 'HKdiagSE' in pe_types:
         # Get the eigenvalues and eigenvectors of the regular Laplacian,
         # if they have not yet been computed for 'eigen'.
         if laplacian_norm_type is not None or evals is None or evects is None:
@@ -220,45 +191,20 @@ def compute_posenc_stats(data, pe_types, cfg, **kwargs):
         evals_heat = torch.from_numpy(evals_heat)
         evects_heat = torch.from_numpy(evects_heat)
 
-        # Get the full heat kernels.
-        if 'HKfullPE' in pe_types:
-            # The heat kernels can't be stored in the Data object without
-            # additional padding because in PyG's collation of the graphs the
-            # sizes of tensors must match except in dimension 0. Do this when
-            # the full heat kernels are actually used downstream by an Encoder.
-            raise NotImplementedError()
-            # heat_kernels, hk_diag = get_heat_kernels(evects_heat, evals_heat,
-            #                                   kernel_times=kernel_param_times)
-            # data.pestat_HKdiagSE = hk_diag
-        # Get heat kernel diagonals in more efficient way.
         if 'HKdiagSE' in pe_types:
-            kernel_param_times = range(1,21)
+            start, end = kwargs['kernel_param_HKdiagSE'][0], kwargs['kernel_param_HKdiagSE'][1]
+            kernel_param_times = range(start, end)
+            
             if len(kernel_param_times) == 0:
                 raise ValueError("Diffusion times are required for heat kernel")
+            
             hk_diag = get_heat_kernels_diag(evects_heat, evals_heat,
                                             kernel_times=kernel_param_times,
                                             space_dim=0)
-            data.pestat_HKdiagSE = hk_diag
+            
+            output_pe["HKdiagSE"] = hk_diag
 
-    
-
-    
-
-    # if 'NormalFixedRE' in pe_types:
-    #     shape = (data.num_nodes, cfg.posenc_NormalFixedRE.dim_pe)
-    #     data.pestat_NormalFixedRE = torch.normal(0, 1, shape)
-
-    # # Set up PE tasks if the input and output PEs are defined
-    # in_node_encs = cfg.dataset.input_node_encoders
-    # out_node_encs = cfg.dataset.output_node_encoders
-    # out_graph_encs = cfg.dataset.output_graph_encoders
-    
-    # # Combine encodings if multiple encoding types are specified, sep by '+'
-    # if not all(item in ["none", "NormalSE", "UniformSE", "BernoulliSE"]
-    #            for item in list(in_node_encs) + list(out_node_encs)):
-    #     _combine_encs(data, in_node_encs, out_node_encs, out_graph_encs, cfg)
-
-    return data
+    return output_pe
 
 
 def get_lap_decomp_stats(evals, evects, max_freqs, eigvec_norm='L2',

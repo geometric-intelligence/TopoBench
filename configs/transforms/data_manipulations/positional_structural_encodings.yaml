@@ -13,3 +13,8 @@ posenc_LapPE_eigen_eigvec_abs: True
 # RWSE config
 kernel_param_times: [2,30]
 
+# Cycle SE config
+kernel_param_CycleGE: [2,9] # min/max cycles counts to consider
+
+# HKdiagSE config
+kernel_param_HKdiagSE: [1,21]
