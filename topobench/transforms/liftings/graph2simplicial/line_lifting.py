@@ -21,24 +21,23 @@ class SimplicialLineLifting(Graph2SimplicialLifting):
 
     Parameters
     ----------
+    max_simplices : int
+        Max simplices to add for each clique given a rank.
     **kwargs : optional
         Additional arguments for the class.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, max_simplices=25, **kwargs):
         super().__init__(**kwargs)
+        self.max_simplices = max_simplices
 
-    def lift_topology(
-        self, data: torch_geometric.data.Data, max_simplices=25
-    ) -> dict:
+    def lift_topology(self, data: torch_geometric.data.Data) -> dict:
         r"""Lift topology of a graph to simplicial domain via line simplicial complex construction.
 
         Parameters
         ----------
         data : torch_geometric.data.Data
             The input data to be lifted.
-        max_simplices : int
-            Max simplices to add for each clique given a rank.
 
         Returns
         ----------
@@ -84,7 +83,7 @@ class SimplicialLineLifting(Graph2SimplicialLifting):
             for i in range(1, self.complex_dim + 1):
                 for n_simplices, c in enumerate(combinations(clique, i + 1)):
                     simplices[i - 2].add(tuple(c))
-                    if n_simplices >= max_simplices:
+                    if n_simplices >= self.max_simplices:
                         break
 
         for set_k_simplices in simplices:
