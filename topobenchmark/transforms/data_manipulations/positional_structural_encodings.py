@@ -57,7 +57,7 @@ class DerivePS(torch_geometric.transforms.BaseTransform):
 
     def __init__(self, **kwargs):
         super().__init__()
-        self.type = "map_node_features_to_float"
+        self.type = "derive_positional_structural_encodings"
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(type={self.type!r})"
@@ -85,81 +85,17 @@ class DerivePS(torch_geometric.transforms.BaseTransform):
         
         return data
 
-def _check_all_types(se_types: List[str]):
-    wrong_types = []
-    for t in se_types:
-        if t not in ALL_ENC_TYPES:
-            wrong_types.append(t)
-    if wrong_types:
-        raise ValueError("Unexpected P/SE encoding selections: "
-                         f"{wrong_types} in {se_types}")
+# def _check_all_types(se_types: List[str]):
+#     wrong_types = []
+#     for t in se_types:
+#         if t not in ALL_ENC_TYPES:
+#             wrong_types.append(t)
+#     if wrong_types:
+#         raise ValueError("Unexpected P/SE encoding selections: "
+#                          f"{wrong_types} in {se_types}")
 
 
-def _combine_encs(
-    data,
-    in_node_encs: List[str],
-    out_node_encs: List[str],
-    out_graph_encs: List[str],
-    cfg,
-):
-    combined_stats = []
-
-    for name, pes in zip(["x", "y"], [in_node_encs, out_node_encs]):
-        if pes == "none":
-            continue
-
-        _check_all_types(pe_types := pes.split("+"))
-        pe_list: List[torch.Tensor] = []
-
-        for pe_type in pe_types:
-            if pe_type in ["LapPE", "EquivStableLapPE"]:
-                if cfg[f"posenc_{pe_type}"].eigen.stack_eigval:
-                    pe = torch.hstack((data.EigVecs, data.EigVals.squeeze(-1)))
-                else:
-                    pe = data.EigVecs
-            elif pe_type == "SignNet":
-                pe = torch.hstack((data.eigvecs_sn,
-                                   data.eigvals_sn.squeeze(-1)))
-            elif pe_type in RANDSE_TYPES:
-                pe = getattr(data, name)
-            else:
-                pe = getattr(data, f"pestat_{pe_type}")
-            pe_list.append(pe)
-
-        combined_node_pe = torch.nan_to_num(torch.hstack(pe_list))
-
-        if (name == "y") and cfg.dataset.combine_output_pestat:
-            combined_stats.append(combined_node_pe)
-        else:
-            setattr(data, name, combined_node_pe)
-
-    # Graph level encoding targets
-    if out_graph_encs != "none":
-        enc_list: List[torch.Tensor] = []
-        _check_all_types(enc_types := out_graph_encs.split("+"))
-        for enc_type in enc_types:
-            if enc_type == "EigVals":
-                enc = data.EigVals[0].T
-            elif enc_type == "RWGE":
-                enc = data.pestat_RWSE.mean(0, keepdim=True)
-            else:
-                enc = getattr(data, f"gestat_{enc_type}")
-            enc_list.append(enc)
-
-        combined_graph_pe = torch.nan_to_num(torch.hstack(enc_list))
-
-        if cfg.dataset.combine_output_pestat:
-            combined_stats.append(combined_graph_pe.repeat(data.x.shape[0], 1))
-        else:
-            data.y_graph = combined_graph_pe
-
-    # Combined pestat
-    if cfg.dataset.combine_output_pestat:
-        data.pestat_CombinedPSE = torch.hstack(combined_stats)
-        cfg.posenc_CombinedPSE._raw_dim = data.pestat_CombinedPSE.shape[1]
-
-
-def compute_posenc_stats(data, pe_types, is_undirected, cfg, **kwargs):
+def compute_posenc_stats(data, pe_types, cfg, **kwargs):
     """Precompute positional encodings for the given graph.
 
     Supported PE statistics to precompute, selected by `pe_types`:
@@ -179,17 +115,19 @@ def compute_posenc_stats(data, pe_types, is_undirected, cfg, **kwargs):
     Returns:
         Extended PyG Data object.
     """
-    _check_all_types(pe_types)
-
+    # _check_all_types(pe_types)
+    output_pe = {}
     # Basic preprocessing of the input graph.
-    if hasattr(data, 'num_nodes'):
-        N = data.num_nodes  # Explicitly given number of nodes, e.g. ogbg-ppa
-    else:
-        N = data.x.shape[0]  # Number of nodes, including disconnected nodes.
-    laplacian_norm_type = 'sym' #cfg.posenc_LapPE.eigen.laplacian_norm.lower()
+    
+    N = data.x.shape[0]  # Number of nodes, including disconnected nodes.
+    assert N > 0, "Graph must have at least one node."
+
+    laplacian_norm_type = kwargs['laplacian_norm_type'] 
     if laplacian_norm_type == 'none':
         laplacian_norm_type = None
-    if is_undirected:
+    
+    # PE works with undirected graphs
+    if data.is_undirected():
         undir_edge_index = data.edge_index
     else:
         undir_edge_index = to_undirected(data.edge_index)
@@ -213,18 +151,20 @@ def compute_posenc_stats(data, pe_types, is_undirected, cfg, **kwargs):
             eigvec_norm = kwargs.get("posenc_LapPE_eigen_eigvec_norm", None) 
             skip_zero_freq = kwargs.get("posenc_LapPE_eigen_skip_zero_freq", True) 
             eigvec_abs = kwargs.get("posenc_LapPE_eigen_eigvec_abs", True) 
-        elif 'EquivStableLapPE' in pe_types:
-            max_freqs = kwargs.get("posenc_LapPE_eigen_max_freqs", None)
-            eigvec_norm = kwargs.get("posenc_LapPE_eigen_eigvec_norm", None)
-            skip_zero_freq = kwargs.get("posenc_LapPE_eigen_skip_zero_freq", True)
-            eigvec_abs =  kwargs.get("posenc_LapPE_eigen_eigvec_abs", True)
+        # elif 'EquivStableLapPE' in pe_types:
+        #     max_freqs = kwargs.get("posenc_LapPE_eigen_max_freqs", None)
+        #     eigvec_norm = kwargs.get("posenc_LapPE_eigen_eigvec_norm", None)
+        #     skip_zero_freq = kwargs.get("posenc_LapPE_eigen_skip_zero_freq", True)
+        #     eigvec_abs =  kwargs.get("posenc_LapPE_eigen_eigvec_abs", True)
 
-        data.EigVals, data.EigVecs = get_lap_decomp_stats(
+        EigVals, EigVecs = get_lap_decomp_stats(
             evals=evals, evects=evects,
             max_freqs=max_freqs,
             eigvec_norm=eigvec_norm,
             skip_zero_freq=skip_zero_freq,
             eigvec_abs=eigvec_abs)
+        # hstack
+        output_pe[""] = torch.hstack((EigVals, EigVecs))
 
     if 'SignNet' in pe_types:
         # Eigen-decomposition with numpy for SignNet.
@@ -244,21 +184,23 @@ def compute_posenc_stats(data, pe_types, is_undirected, cfg, **kwargs):
             eigvec_abs=cfg.posenc_SignNet.eigen.eigvec_abs)
         data.EigVals = data.eigvals_sn
 
-    # Random Walks. (WORKS)
+    # Random Walks. 
     if 'RWSE' in pe_types:
-        kernel_param_times = range(2,22)  # if no self-loop, then RWSE1 will be all zeros #cfg.posenc_RWSE.kernel
+        kernel_param_times = range(kwargs[kernel_param_times][0],kwargs[kernel_param_times][1])  # if no self-loop, then RWSE1 will be all zeros #cfg.posenc_RWSE.kernel
         if len(kernel_param_times) == 0:
             raise ValueError("List of kernel times required for RW")
         rw_landing = get_rw_landing_probs(ksteps=kernel_param_times,
                                           edge_index=data.edge_index,
                                           num_nodes=N)
-        # Workout saving var
-        data.pestat_RWSE = rw_landing
-    
+        # check that obtained pe are not all zeros
+        if np.all(rw_landing == 0):
+            raise ValueError("RWSE is all zeros")
+        output_pe["RWSE"] = rw_landing
+        
     # Electrostatic interaction inspired kernel.
     if 'ElstaticPE' in pe_types:
         elstatic = get_electrostatic_function_encoding(undir_edge_index, N)
-        data.pestat_ElstaticPE = elstatic
+        output_pe["ElstaticPE"] = rw_landing
     
     if 'CycleGE' in pe_types:
         kernel_param_times = range(2,9) #cfg.graphenc_CycleGE.kernel
@@ -302,19 +244,19 @@ def compute_posenc_stats(data, pe_types, is_undirected, cfg, **kwargs):
 
     
 
-    if 'NormalFixedRE' in pe_types:
-        shape = (data.num_nodes, cfg.posenc_NormalFixedRE.dim_pe)
-        data.pestat_NormalFixedRE = torch.normal(0, 1, shape)
+    # if 'NormalFixedRE' in pe_types:
+    #     shape = (data.num_nodes, cfg.posenc_NormalFixedRE.dim_pe)
+    #     data.pestat_NormalFixedRE = torch.normal(0, 1, shape)
 
-    # Set up PE tasks if the input and output PEs are defined
-    in_node_encs = cfg.dataset.input_node_encoders
-    out_node_encs = cfg.dataset.output_node_encoders
-    out_graph_encs = cfg.dataset.output_graph_encoders
+    # # Set up PE tasks if the input and output PEs are defined
+    # in_node_encs = cfg.dataset.input_node_encoders
+    # out_node_encs = cfg.dataset.output_node_encoders
+    # out_graph_encs = cfg.dataset.output_graph_encoders
     
-    # Combine encodings if multiple encoding types are specified, sep by '+'
-    if not all(item in ["none", "NormalSE", "UniformSE", "BernoulliSE"]
-               for item in list(in_node_encs) + list(out_node_encs)):
-        _combine_encs(data, in_node_encs, out_node_encs, out_graph_encs, cfg)
+    # # Combine encodings if multiple encoding types are specified, sep by '+'
+    # if not all(item in ["none", "NormalSE", "UniformSE", "BernoulliSE"]
+    #            for item in list(in_node_encs) + list(out_node_encs)):
+    #     _combine_encs(data, in_node_encs, out_node_encs, out_graph_encs, cfg)
 
     return data
 
@@ -801,3 +743,67 @@ def count_cycles(k_list: List[int], data):
     cycle_counts = [count_dict[k] for k in k_list]
 
     return torch.FloatTensor(cycle_counts).unsqueeze(0)
+
+
+# def _combine_encs(
+#     data,
+#     in_node_encs: List[str],
+#     out_node_encs: List[str],
+#     out_graph_encs: List[str],
+#     cfg,
+# ):
+#     combined_stats = []
+
+#     for name, pes in zip(["x", "y"], [in_node_encs, out_node_encs]):
+#         if pes == "none":
+#             continue
+
+#         _check_all_types(pe_types := pes.split("+"))
+#         pe_list: List[torch.Tensor] = []
+
+#         for pe_type in pe_types:
+#             if pe_type in ["LapPE", "EquivStableLapPE"]:
+#                 if cfg[f"posenc_{pe_type}"].eigen.stack_eigval:
+#                     pe = torch.hstack((data.EigVecs, data.EigVals.squeeze(-1)))
+#                 else:
+#                     pe = data.EigVecs
+#             elif pe_type == "SignNet":
+#                 pe = torch.hstack((data.eigvecs_sn,
+#                                    data.eigvals_sn.squeeze(-1)))
+#             elif pe_type in RANDSE_TYPES:
+#                 pe = getattr(data, name)
+#             else:
+#                 pe = getattr(data, f"pestat_{pe_type}")
+#             pe_list.append(pe)
+
+#         combined_node_pe = torch.nan_to_num(torch.hstack(pe_list))
+
+#         if (name == "y") and cfg.dataset.combine_output_pestat:
+#             combined_stats.append(combined_node_pe)
+#         else:
+#             setattr(data, name, combined_node_pe)
+
+#     # Graph level encoding targets
+#     if out_graph_encs != "none":
+#         enc_list: List[torch.Tensor] = []
+#         _check_all_types(enc_types := out_graph_encs.split("+"))
+#         for enc_type in enc_types:
+#             if enc_type == "EigVals":
+#                 enc = data.EigVals[0].T
+#             elif enc_type == "RWGE":
+#                 enc = data.pestat_RWSE.mean(0, keepdim=True)
+#             else:
+#                 enc = getattr(data, f"gestat_{enc_type}")
+#             enc_list.append(enc)
+
+#         combined_graph_pe = torch.nan_to_num(torch.hstack(enc_list))
+
+#         if cfg.dataset.combine_output_pestat:
+#             combined_stats.append(combined_graph_pe.repeat(data.x.shape[0], 1))
+#         else:
+#             data.y_graph = combined_graph_pe
+
+#     # Combined pestat
+#     if cfg.dataset.combine_output_pestat:
+#         data.pestat_CombinedPSE = torch.hstack(combined_stats)
+#         cfg.posenc_CombinedPSE._raw_dim = data.pestat_CombinedPSE.shape[1]
