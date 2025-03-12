@@ -66,7 +66,6 @@ do
         --multirun &
         
 done
-
 wait 
 sleep 10
 

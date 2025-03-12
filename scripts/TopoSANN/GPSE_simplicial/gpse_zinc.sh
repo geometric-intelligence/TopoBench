@@ -1,6 +1,6 @@
 dataset='ZINC'
 
-project_name="main_exp_GPSE_$dataset"
+project_name="main_exp_simplicial_GPSE_$dataset"
 
 # =====================
 # DATA
@@ -86,20 +86,17 @@ for i in {0..7}; do
             optimizer.parameters.weight_decay=0.25\
             callbacks.early_stopping.patience=10\
             transforms=ZINC_sann_experiment_simplicial\
-            transforms.graph2cell_lifting.max_cell_length=10\
             transforms/data_manipulations@transforms.sann_encoding=add_gpse_information\
             transforms.sann_encoding.pretrain_model=$pret_model\
             transforms.sann_encoding.copy_initial=True \
-            transforms.sann_encoding.neighborhoods=$neighborhood\
-            transforms.graph2cell_lifting.neighborhoods=$neighborhood\
+            transforms.sann_encoding.complex_dim=3\
             --multirun &
-            wait
     done
     wait
 done
 wait
 
-# TODO: fix bug with transforms.one_hot_node_degree_features.degrees_fields=x\
+
 gpus=(0 1 2 3 4 5 6 7)
 for i in {0..7}; do 
     CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
@@ -126,12 +123,9 @@ for i in {0..7}; do
                 optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
                 callbacks.early_stopping.patience=10\
                 transforms=ZINC_sann_experiment_simplicial\
-                transforms.graph2cell_lifting.max_cell_length=10\
                 transforms/data_manipulations@transforms.sann_encoding=add_gpse_information\
                 transforms.sann_encoding.pretrain_model=$PRETRAIN_MODELS_STR\
                 transforms.sann_encoding.copy_initial=True \
-                transforms.sann_encoding.neighborhoods=$neighborhood\
-                transforms.graph2cell_lifting.neighborhoods=$neighborhood\
                 --multirun &
         done
     done
