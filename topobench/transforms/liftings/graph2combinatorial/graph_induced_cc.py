@@ -53,7 +53,7 @@ class GraphTriangleInducedCC(Graph2CombinatorialLifting):
             find_overlapping_paths(cliques)
         )
 
-        combinatorial_complex = CombinatorialComplex()
+        combinatorial_complex = CombinatorialComplex(graph)
         two_cells, three_cells = [], []
 
         # Case when at exactly one element is shared
@@ -79,15 +79,15 @@ class GraphTriangleInducedCC(Graph2CombinatorialLifting):
                 temp.extend(cliques[idx])
             temp = set(temp)
             three_cells.append(temp)
-        # Construct a combinatorial complex
-        for node in graph.nodes:
-            combinatorial_complex.add_cell(set([node]), 0)
+        # # Construct a combinatorial complex
+        # for node in graph.nodes:
+        #     combinatorial_complex.add_cell(set([node]), 0)
 
-        for edge in graph.edges():
-            combinatorial_complex.add_cell(edge, 1)
+        # for edge in graph.edges():
+        #     combinatorial_complex.add_cell(edge, 1)
 
-        for node in graph.nodes:
-            combinatorial_complex.add_cell(node, 0)
+        # for node in graph.nodes:
+        #     combinatorial_complex.add_cell(node, 0)
 
         for cells in two_cells:
             combinatorial_complex.add_cell(cells, 2)
@@ -95,7 +95,9 @@ class GraphTriangleInducedCC(Graph2CombinatorialLifting):
         for cells in three_cells:
             combinatorial_complex.add_cell(cells, 3)
 
-        lifted_topology = self._get_lifted_topology(combinatorial_complex)
+        lifted_topology = self._get_lifted_topology(
+            combinatorial_complex, graph
+        )
 
         # Feature liftings
         lifted_topology["x_0"] = data.x
