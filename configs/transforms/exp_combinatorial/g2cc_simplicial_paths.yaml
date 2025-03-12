@@ -1,2 +1,0 @@
-defaults:
-  - /transforms/liftings/graph2combinatorial@graph2combinatorial_lifting: simplicial_paths

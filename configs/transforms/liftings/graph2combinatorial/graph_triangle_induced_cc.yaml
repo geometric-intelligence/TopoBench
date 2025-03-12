@@ -1,0 +1,8 @@
+_target_: topobench.transforms.data_transform.DataTransform
+transform_type: 'lifting'
+transform_name: "GraphTriangleInducedCC"
+
+complex_dim: 3
+preserve_edge_attr: False
+feature_lifting: ProjectionSum
+neighborhoods: ${oc.select:model.backbone.neighborhoods,null}
