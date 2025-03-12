@@ -129,23 +129,21 @@ def nodes_search(
             if node not in nodes:
                 new_node = node
                 break
-    if new_node is not None:
-        nodes.append(new_node)
-        new_connected_nodes = set(
-            [
-                n
-                for n in list(path_lengths[new_node].keys())[1:]
-                if path_lengths[new_node][n] <= distance_threshold
-            ]
-        )
-        intersection = list(set(intersection) & set(new_connected_nodes))
-        random.shuffle(intersection)
-        return nodes_search(
-            nodes,
-            max_num_nodes,
-            None,
-            path_lengths,
-            intersection,
-            distance_threshold,
-        )
-    return None
+    nodes.append(new_node)
+    new_connected_nodes = set(
+        [
+            n
+            for n in list(path_lengths[new_node].keys())[1:]
+            if path_lengths[new_node][n] <= distance_threshold
+        ]
+    )
+    intersection = list(set(intersection) & set(new_connected_nodes))
+    random.shuffle(intersection)
+    return nodes_search(
+        nodes,
+        max_num_nodes,
+        None,
+        path_lengths,
+        intersection,
+        distance_threshold,
+    )

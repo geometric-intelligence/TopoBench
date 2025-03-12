@@ -4,7 +4,6 @@ import numpy as np
 import torch
 import torch_geometric
 from scipy import stats
-from scipy.sparse import csr_matrix
 from scipy.special import gammaln, logsumexp
 from tqdm.auto import tqdm
 
@@ -33,6 +32,8 @@ class LatentCliqueLifting(Graph2SimplicialLifting):
         Number of iterations for sampling, by default None.
     init : str, optional
         Initialization method for the clique cover matrix, by default "edges".
+    do_gibbs : bool, optional
+        Whether to perform Gibbs sampling, by default False.
     **kwargs : optional
         Additional arguments for the class.
     """
@@ -43,6 +44,7 @@ class LatentCliqueLifting(Graph2SimplicialLifting):
         edge_prob_var: float = 0.05,
         it=20,
         init="edges",
+        do_gibbs=False,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -51,6 +53,7 @@ class LatentCliqueLifting(Graph2SimplicialLifting):
         self.edge_prob_var = min(edge_prob_var, 0.5 * min_var)
         self.it = it
         self.init = init
+        self.do_gibbs = do_gibbs
 
     def lift_topology(
         self, data: torch_geometric.data.Data, verbose: bool = True
@@ -85,7 +88,10 @@ class LatentCliqueLifting(Graph2SimplicialLifting):
         )
         it = self.it if self.it is not None else data.num_edges
         mod.sample(
-            sample_hypers=True, num_iters=it, do_gibbs=False, verbose=verbose
+            sample_hypers=True,
+            num_iters=it,
+            do_gibbs=self.do_gibbs,
+            verbose=verbose,
         )
 
         # # Translate fitted model to a new topology
@@ -550,41 +556,6 @@ class _LatentCliqueModel:
             lp = -np.inf
         return lp
 
-    def loglikZ2(self, Z=None, pie=None):
-        """Compute the log-likelihood of the current state Z.
-
-        Parameters
-        ----------
-        Z : np.ndarray, optional
-            Clique cover matrix, by default None.
-        pie : float, optional
-            Parameter for the model, by default None.
-
-        Returns
-        -------
-        float
-            Log-likelihood value.
-        """
-        if Z is None:
-            Z = self.Z
-        if pie is None:
-            pie = self.edge_prob
-        cic = np.dot(Z.T, Z)
-        cic = cic - np.diag(np.diag(cic))
-
-        zero_check = (1 - np.minimum(cic, 1)) * self.adj
-        if np.sum(zero_check) == 0:
-            p0 = (1 - pie) ** cic
-            p1 = 1 - p0
-            network_mask = self.adj + 1
-            network_mask = np.triu(network_mask, 1) - 1
-            lp_0 = np.sum(np.log(1e-6 + p0[np.where(network_mask == 0)]))
-            lp_1 = np.sum(np.log(1e-6 + p1[np.where(network_mask == 1)]))
-            lp = lp_0 + lp_1
-        else:
-            lp = -np.inf
-        return lp
-
     def loglikZn(self, node, Z=None):
         """Compute the log-likelihood of node-specific Z.
 
@@ -822,69 +793,69 @@ def _get_beta_params(mean, var):
     return a, b
 
 
-def _sample_from_ibp(K, alpha, sigma, c, seed=None):
-    """
-    Auxiliary function to sample from the Indian Buffet Process.
+# def _sample_from_ibp(K, alpha, sigma, c, seed=None):
+#     """
+#     Auxiliary function to sample from the Indian Buffet Process.
 
-    Parameters
-    ----------
-    K : int
-        Number of random cliques.
-    alpha : float
-        Alpha parameter of the IBP.
-    sigma : float
-        Sigma parameter of the IBP.
-    c : float
-        Parameter of the IBP.
-    seed : int, optional
-        Random seed, by default None.
+#     Parameters
+#     ----------
+#     K : int
+#         Number of random cliques.
+#     alpha : float
+#         Alpha parameter of the IBP.
+#     sigma : float
+#         Sigma parameter of the IBP.
+#     c : float
+#         Parameter of the IBP.
+#     seed : int, optional
+#         Random seed, by default None.
 
-    Returns
-    -------
-    csr_matrix
-        A sparse matrix, compressed by rows, representing the clique membership matrix.
-        Recover the adjacency matrix with min(Z'Z, 1).
-    """
-    rng = np.random.default_rng(seed)
+#     Returns
+#     -------
+#     csr_matrix
+#         A sparse matrix, compressed by rows, representing the clique membership matrix.
+#         Recover the adjacency matrix with min(Z'Z, 1).
+#     """
+#     rng = np.random.default_rng(seed)
 
-    k_seq = np.arange(K, dtype=float)
-    lpp = (
-        np.log(alpha)
-        + gammaln(1.0 + c)
-        - gammaln(c + sigma)
-        + gammaln(k_seq + c + sigma)
-        - gammaln(k_seq + 1.0 + c)
-    )
-    pp = np.exp(lpp)
-    new_nodes = rng.poisson(pp)
-    Ncols = new_nodes.sum()
-    node_count = np.zeros(Ncols)
+#     k_seq = np.arange(K, dtype=float)
+#     lpp = (
+#         np.log(alpha)
+#         + gammaln(1.0 + c)
+#         - gammaln(c + sigma)
+#         + gammaln(k_seq + c + sigma)
+#         - gammaln(k_seq + 1.0 + c)
+#     )
+#     pp = np.exp(lpp)
+#     new_nodes = rng.poisson(pp)
+#     Ncols = new_nodes.sum()
+#     node_count = np.zeros(Ncols)
 
-    colidx = []
-    rowidx = []
-    rightmost_node = 0
+#     colidx = []
+#     rowidx = []
+#     rightmost_node = 0
 
-    for n in range(K):
-        for k in range(rightmost_node):
-            prob_repeat = (node_count[k] - sigma) / (n + c)
-            if rng.random() < prob_repeat:
-                rowidx.append(n)
-                colidx.append(k)
-                node_count[k] += 1
+#     for n in range(K):
+#         for k in range(rightmost_node):
+#             prob_repeat = (node_count[k] - sigma) / (n + c)
+#             if rng.random() < prob_repeat:
+#                 rowidx.append(n)
+#                 colidx.append(k)
+#                 node_count[k] += 1
 
-        for k in range(rightmost_node, rightmost_node + new_nodes[n]):
-            rowidx.append(n)
-            colidx.append(k)
-            node_count[k] += 1
+#         for k in range(rightmost_node, rightmost_node + new_nodes[n]):
+#             rowidx.append(n)
+#             colidx.append(k)
+#             node_count[k] += 1
 
-        rightmost_node += new_nodes[n]
+#         rightmost_node += new_nodes[n]
 
-    data = np.ones(len(rowidx), int)
-    shape = (K, Ncols)
-    Z = csr_matrix((data, (rowidx, colidx)), shape).todense()
+#     data = np.ones(len(rowidx), int)
+#     shape = (K, Ncols)
+#     Z = csr_matrix((data, (rowidx, colidx)), shape).todense()
 
-    # delte empty cliques
-    return Z[np.where(Z.sum(1) > 1)[0]]
+#     # delte empty cliques
+#     return Z[np.where(Z.sum(1) > 1)[0]]
 
 
 # if __name__ == "__main__":
