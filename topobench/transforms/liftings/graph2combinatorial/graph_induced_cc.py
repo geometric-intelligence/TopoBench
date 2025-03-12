@@ -138,11 +138,9 @@ class GraphTriangleInducedCC(Graph2CombinatorialLifting):
         return indices
 
 
-def find_overlapping_paths(lists):
-    """Find ovelaping triabgles and their seuqences"""
-    def build_paths(overlap_pairs):
+def build_paths(overlap_pairs):
         """Find overlapint sequesnces.
-        
+
         Parametes
         ---------
         overlap_pairs : list
@@ -151,7 +149,7 @@ def find_overlapping_paths(lists):
         Returns
         -------
         list
-            List of sequences of overlaping triangles
+            List of sequences of overlaping triangles.
         """
         parent = {}
 
@@ -179,6 +177,14 @@ def find_overlapping_paths(lists):
 
         return [tuple(sorted(group)) for group in groups.values()]
 
+def find_overlapping_paths(lists):
+    """Find ovelaping triabgles and their seuqences
+    
+    Parameters
+    ----------
+    
+    
+    """
     one_element_overlap = []
     two_elements_overlap = []
     at_least_one_overlap = []
