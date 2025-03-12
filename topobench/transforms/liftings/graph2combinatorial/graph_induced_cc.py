@@ -1,4 +1,4 @@
-"""GraphInducedCC lifting of hypergraphs to combinatorial complexes."""
+"""GraphInducedCC lifting of graphs to combinatorial complexes."""
 
 from itertools import combinations
 from collections import defaultdict
@@ -15,8 +15,7 @@ from topobench.transforms.liftings.graph2combinatorial.base import (
 
 
 class GraphTriangleInducedCC(Graph2CombinatorialLifting):
-    r"""Lift hypergraphs to combinatorial complexes.
-
+    r"""Lift graph to combinatorial complexes.
 
     Parameters
     ----------
@@ -30,9 +29,7 @@ class GraphTriangleInducedCC(Graph2CombinatorialLifting):
     def lift_topology(
         self, data: torch_geometric.data.Data
     ) -> torch_geometric.data.Data | dict:
-        r"""Lift the topology of a hypergraph to a combinatorial complex.
-
-
+        r"""Lift the topology of a graph to a combinatorial complex.
 
         Parameters
         ----------
@@ -44,31 +41,6 @@ class GraphTriangleInducedCC(Graph2CombinatorialLifting):
         dict
             The lifted topology.
         """
-        # edges = [
-        #     (0,1),
-        #     (1,2),
-        #     (2,3),
-        #     (3,0),
-        #     (3,4),
-        #     (3,6),
-        #     (3,9),
-        #     (4,5),
-        #     (4,6),
-        #     (4,7),
-        #     (5,0),
-        #     (5,7),
-        #     (5,10),
-        #     (5,11),
-        #     (6,9),
-        #     (7,8),
-        #     (8,6),
-        #     (10,11),
-        #     ]
-        # nodes = [0,1,2,3,4,5,6,7,8,9,10,11]
-        # graph = nx.Graph()
-        # graph.add_nodes_from(nodes)
-        # graph.add_edges_from(edges)
-        # graph = graph.to_undirected()
 
         graph = self._generate_graph_from_data(data)
         assert graph.is_directed() == False, (
@@ -167,7 +139,20 @@ class GraphTriangleInducedCC(Graph2CombinatorialLifting):
 
 
 def find_overlapping_paths(lists):
+    """Find ovelaping triabgles and their seuqences"""
     def build_paths(overlap_pairs):
+        """Find overlapint sequesnces.
+        
+        Parametes
+        ---------
+        overlap_pairs : list
+            List of overlaping triangles.
+        
+        Returns
+        -------
+        list
+            List of sequences of overlaping triangles
+        """
         parent = {}
 
         def find(x):
@@ -217,6 +202,32 @@ def find_overlapping_paths(lists):
         build_paths(at_least_one_overlap),
     )
 
+
+# edges = [
+#     (0,1),
+#     (1,2),
+#     (2,3),
+#     (3,0),
+#     (3,4),
+#     (3,6),
+#     (3,9),
+#     (4,5),
+#     (4,6),
+#     (4,7),
+#     (5,0),
+#     (5,7),
+#     (5,10),
+#     (5,11),
+#     (6,9),
+#     (7,8),
+#     (8,6),
+#     (10,11),
+#     ]
+# nodes = [0,1,2,3,4,5,6,7,8,9,10,11]
+# graph = nx.Graph()
+# graph.add_nodes_from(nodes)
+# graph.add_edges_from(edges)
+# graph = graph.to_undirected()
 
 # lists = [[3, 6, 9], [3, 4, 6], [5, 10, 11], [4, 5, 7]]
 
