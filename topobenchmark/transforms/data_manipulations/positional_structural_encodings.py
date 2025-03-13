@@ -160,7 +160,7 @@ def compute_posenc_stats(data, pe_types, **kwargs):
                            num_nodes=N)
         )
         # if cfg.dataset.name.startswith("ogbn"):
-        if (kwargs.get("posenc_LapPE_eigen_max_freqs", None) is not None) and (kwargs["posenc_LapPE_eigen_max_freqs"] > L.shape[0]):
+        if (kwargs.get("posenc_LapPE_eigen_max_freqs", None) is not None) and (kwargs["posenc_LapPE_eigen_max_freqs"] < L.shape[0]):
             evals, evects = scipy.sparse.linalg.eigsh(L, k=kwargs["posenc_LapPE_eigen_max_freqs"], which='SM')
         else:
             evals, evects = np.linalg.eigh(L.toarray())
@@ -205,7 +205,8 @@ def compute_posenc_stats(data, pe_types, **kwargs):
     if 'ElstaticPE' in pe_types:
         elstatic = get_electrostatic_function_encoding(undir_edge_index, N)
         
-        if torch.all(elstatic==0) == True:
+        # TODO: some corner case when N=2 on MUTAG
+        if torch.all(elstatic==0) == True and N>2:
             raise ValueError("ElstaticPE is all zeros")
         
         if torch.any(torch.isnan(elstatic)) == True: 
@@ -254,7 +255,8 @@ def compute_posenc_stats(data, pe_types, **kwargs):
                                             kernel_times=kernel_param_times,
                                             space_dim=0)
             
-            if torch.all(hk_diag==0) == True:
+            # TODO: some corner case when N=2 on MUTAG
+            if torch.all(hk_diag==0) == True and N>2:
                 raise ValueError("HKdiagSE is all zeros")
             
             if torch.any(torch.isnan(hk_diag)) == True:

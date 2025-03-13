@@ -4,7 +4,12 @@ transform_type: "data manipulation"
 max_rank: 2
 copy_initial: True
 neighborhoods:  
-  - 'incidence_1'
+  - 'up_adjacency-0'
+  - 'up_adjacency-1'
+  - 'up_incidence-1' # issue when there is not targer to 2 
+  #- 'down_adjacency-1'
+  #- 'down_adjacency-2'
+
 dim_target_node: ${.target_pe_dim} #51
 max_hop: 1 # num_ps 
 in_channels: ${infer_in_hasse_graph_agg_dim_positional_encodings:${.neighborhoods}, ${.max_rank}, ${.max_hop}, ${oc.select:dataset.parameters.num_features}, ${.dim_target_node}, ${.copy_initial}, ${oc.select:dataset.parameters.preserve_edge_attr_if_lifted}}
@@ -15,17 +20,17 @@ cuda: ${trainer.devices}
 
 pe_types: 
   - 'RWSE' 
-  #- 'ElstaticPE'
-  #- 'LapPE'
+  # - 'ElstaticPE'
   #- 'HKdiagSE'
+  # - 'LapPE'
   # - 'CycleGE'
 
 # Different PS have different sizes, need to unify them. 
-target_pe_dim: 100
+target_pe_dim: 10
 
 # LapPE config
 laplacian_norm_type: 'sym'
-posenc_LapPE_eigen_max_freqs: 100
+posenc_LapPE_eigen_max_freqs: 4
 posenc_LapPE_eigen_eigvec_norm: 'L2'
 posenc_LapPE_eigen_skip_zero_freq: True
 posenc_LapPE_eigen_eigvec_abs: True
@@ -33,7 +38,7 @@ posenc_LapPE_eigen_eigvec_abs: True
 # RWSE config
 kernel_param_RWSE: 
   - 2
-  - 3
+  - 10
 
 # Cycle SE config 
 kernel_param_CycleGE:
@@ -43,7 +48,7 @@ kernel_param_CycleGE:
 # HKdiagSE config
 kernel_param_HKdiagSE: 
   - 1
-  - 100
+  - 22
 
 # Other configs
 is_undirected: True

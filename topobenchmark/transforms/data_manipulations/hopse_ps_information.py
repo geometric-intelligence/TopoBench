@@ -390,15 +390,15 @@ class HOPSE_PE_Information(torch_geometric.transforms.BaseTransform):
                 # If there are no nodes in this rank, we skip
                 if getattr(data, f"x_{src_rank}").shape[0] == 0:
                     x_out_per_route[route_index] = torch.zeros(
-                        (0, self.hidden_dim),
+                        (self.num_pe_considered, 0, self.hidden_dim),
                         dtype=torch.float,
                         device=self.device,
                     )
                     continue
-                # We cannot use GPSE embeddings on single-node graphs
+                # We cannot use PE embeddings on single-node graphs
                 if getattr(data, f"x_{src_rank}").shape[0] == 1:
                     x_out_per_route[route_index] = torch.zeros(
-                        (1, self.hidden_dim),
+                        (self.num_pe_considered, 1, self.hidden_dim),
                         dtype=torch.float,
                         device=self.device,
                     )
@@ -410,7 +410,7 @@ class HOPSE_PE_Information(torch_geometric.transforms.BaseTransform):
                 # If there is no neighborhood, we skip
                 if nbhd_cache[(src_rank, dst_rank)] is None:
                     x_out_per_route[route_index] = torch.zeros(
-                        (0, self.hidden_dim),
+                        (self.num_pe_considered, 0, self.hidden_dim),
                         dtype=torch.float,
                         device=self.device,
                     )
