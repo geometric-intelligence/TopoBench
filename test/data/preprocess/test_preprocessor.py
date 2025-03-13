@@ -95,7 +95,6 @@ class TestPreProcessor:
     def teardown_method(self):
         """Test teardown."""
         del self.preprocessor
-        del self.preprocessor2
         del self.flow_mocker
 
     def test_init(self):
