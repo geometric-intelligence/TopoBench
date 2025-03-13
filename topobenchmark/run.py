@@ -39,6 +39,7 @@ from topobenchmark.utils.config_resolvers import (
     get_required_lifting,
     infer_in_channels,
     infer_in_hasse_graph_agg_dim,
+    infer_in_hasse_graph_agg_dim_positional_encodings,
     infer_in_khop_feature_dim,
     infer_num_cell_dimensions,
     set_preserve_edge_attr,
@@ -98,6 +99,12 @@ OmegaConf.register_new_resolver(
 OmegaConf.register_new_resolver(
     "infer_in_hasse_graph_agg_dim",
     infer_in_hasse_graph_agg_dim,
+    replace=True,
+)
+
+OmegaConf.register_new_resolver(
+    "infer_in_hasse_graph_agg_dim_positional_encodings",
+    infer_in_hasse_graph_agg_dim_positional_encodings,
     replace=True,
 )
 OmegaConf.register_new_resolver(

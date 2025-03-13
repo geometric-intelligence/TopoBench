@@ -1,0 +1,50 @@
+_target_: topobenchmark.transforms.data_transform.DataTransform
+transform_name: "HOPSE_PE_Information"
+transform_type: "data manipulation"
+max_rank: 2
+copy_initial: True
+neighborhoods:  
+  - 'incidence_1'
+dim_target_node: ${.target_pe_dim} #51
+max_hop: 1 # num_ps 
+in_channels: ${infer_in_hasse_graph_agg_dim_positional_encodings:${.neighborhoods}, ${.max_rank}, ${.max_hop}, ${oc.select:dataset.parameters.num_features}, ${.dim_target_node}, ${.copy_initial}, ${oc.select:dataset.parameters.preserve_edge_attr_if_lifted}}
+device: ${trainer.accelerator}
+cuda: ${trainer.devices}
+
+# Information regarding the positional and structural encodings
+
+pe_types: 
+  - 'RWSE' 
+  #- 'ElstaticPE'
+  #- 'LapPE'
+  #- 'HKdiagSE'
+  # - 'CycleGE'
+
+# Different PS have different sizes, need to unify them. 
+target_pe_dim: 100
+
+# LapPE config
+laplacian_norm_type: 'sym'
+posenc_LapPE_eigen_max_freqs: 100
+posenc_LapPE_eigen_eigvec_norm: 'L2'
+posenc_LapPE_eigen_skip_zero_freq: True
+posenc_LapPE_eigen_eigvec_abs: True
+
+# RWSE config
+kernel_param_RWSE: 
+  - 2
+  - 3
+
+# Cycle SE config 
+kernel_param_CycleGE:
+  - 2
+  - 9 # min/max cycles counts to consider
+
+# HKdiagSE config
+kernel_param_HKdiagSE: 
+  - 1
+  - 100
+
+# Other configs
+is_undirected: True
+

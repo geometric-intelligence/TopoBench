@@ -11,6 +11,7 @@ from torch_geometric.utils import (get_laplacian, to_scipy_sparse_matrix,
                                    to_undirected, to_dense_adj)
 from torch_geometric.utils.num_nodes import maybe_num_nodes
 from torch_scatter import scatter_add
+import networkx as nx
 
 #from graphgym.transform.cycle_counts import count_cycles
 
@@ -58,6 +59,10 @@ class DerivePS(torch_geometric.transforms.BaseTransform):
     def __init__(self, **kwargs):
         super().__init__()
         self.type = "derive_positional_structural_encodings"
+        self.kwargs = kwargs
+        self.device = (
+            "cpu" if kwargs["device"] == "cpu" else f"cuda:{kwargs['cuda'][0]}"
+        )
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(type={self.type!r})"
@@ -77,16 +82,39 @@ class DerivePS(torch_geometric.transforms.BaseTransform):
         """
         # Working RWSE, ElstaticPE, 'LapPE', HKdiagSE
         # Graph level working: CycleGE
-        kwargs = {'posenc_LapPE_eigen_max_freqs':4,
-                  "posenc_LapPE_eigen_eigvec_norm": "L2",
-                  "posenc_LapPE_eigen_skip_zero_freq": True,
-                  "posenc_LapPE_eigen_eigvec_abs": True}
-        a = compute_posenc_stats(data, pe_types=['HKdiagSE'], cfg=None, is_undirected=True, **kwargs)
+        # kwargs = {'posenc_LapPE_eigen_max_freqs':4,
+        #           "posenc_LapPE_eigen_eigvec_norm": "L2",
+        #           "posenc_LapPE_eigen_skip_zero_freq": True,
+        #           "posenc_LapPE_eigen_eigvec_abs": True}
         
-        return data
+        output_pe = compute_posenc_stats(data=data, **self.kwargs)
+        pes = [output_pe[key].to(self.device) for key in self.kwargs['pe_types']]
+        pes = [self.pad_sequence(seq, target_dim=self.kwargs['target_pe_dim']) for seq in pes]
+        pes = torch.stack(pes, dim=0)
+        return pes
+    def pad_sequence(self, sequence, target_dim, pad_value=0):
+        """
+        Pads a sequence of vectors along the second dimension to the desired size.
+        
+        Args:
+            sequence (torch.Tensor): The input tensor of shape (17, current_dim).
+            target_dim (int): The desired size of the second dimension.
+            pad_value (float, optional): The value to use for padding. Default is 0.
+
+        Returns:
+            torch.Tensor: The padded tensor.
+        """
+        current_dim = sequence.size(1)
+        if current_dim >= target_dim:
+            return sequence[:target_dim]
+        
+        pad_size = [sequence.size(0), target_dim - current_dim]
+        pad_tensor = torch.full(pad_size, pad_value, dtype=sequence.dtype, device=self.device)
+        
+        return torch.cat([sequence, pad_tensor], dim=1)
 
 
-def compute_posenc_stats(data, pe_types, cfg, **kwargs):
+def compute_posenc_stats(data, pe_types, **kwargs):
     """Precompute positional encodings for the given graph.
 
     Supported PE statistics to precompute, selected by `pe_types`:
@@ -132,10 +160,11 @@ def compute_posenc_stats(data, pe_types, cfg, **kwargs):
                            num_nodes=N)
         )
         # if cfg.dataset.name.startswith("ogbn"):
-        if kwargs.get("posenc_LapPE_eigen_max_freqs", None) is not None:
+        if (kwargs.get("posenc_LapPE_eigen_max_freqs", None) is not None) and (kwargs["posenc_LapPE_eigen_max_freqs"] > L.shape[0]):
             evals, evects = scipy.sparse.linalg.eigsh(L, k=kwargs["posenc_LapPE_eigen_max_freqs"], which='SM')
         else:
             evals, evects = np.linalg.eigh(L.toarray())
+            
 
         if 'LapPE' in pe_types:
             max_freqs = kwargs.get("posenc_LapPE_eigen_max_freqs", None)
@@ -150,31 +179,54 @@ def compute_posenc_stats(data, pe_types, cfg, **kwargs):
             skip_zero_freq=skip_zero_freq,
             eigvec_abs=eigvec_abs)
         # hstack
-        output_pe["LapPE"] = torch.hstack((EigVals, EigVecs))
+        output_pe["LapPE"] = torch.hstack((EigVals.squeeze(-1), EigVecs))
 
     # Random Walks. 
     if 'RWSE' in pe_types:
-        kernel_param_times = range(kwargs[kernel_param_times][0],kwargs[kernel_param_times][1])  # if no self-loop, then RWSE1 will be all zeros #cfg.posenc_RWSE.kernel
+        kernel_param_times = range(kwargs["kernel_param_RWSE"][0],kwargs["kernel_param_RWSE"][1])  # if no self-loop, then RWSE1 will be all zeros #cfg.posenc_RWSE.kernel
         if len(kernel_param_times) == 0:
             raise ValueError("List of kernel times required for RW")
+        #TODO: Add self-loops to data.edge_index to avoid zeros in rw_landing (issue for interrank case!)
+        edge_index = torch_geometric.utils.add_remaining_self_loops(data.edge_index)[0]
+
         rw_landing = get_rw_landing_probs(ksteps=kernel_param_times,
-                                          edge_index=data.edge_index,
+                                          edge_index=edge_index,#data.edge_index,
                                           num_nodes=N)
         # check that obtained pe are not all zeros
-        if np.all(rw_landing == 0):
+        if torch.all(rw_landing==0) == True:
             raise ValueError("RWSE is all zeros")
+        
+        if torch.any(torch.isnan(rw_landing)) == True:
+            raise ValueError("RWSE contains NaNs")
         
         output_pe["RWSE"] = rw_landing
         
     # Electrostatic interaction inspired kernel.
     if 'ElstaticPE' in pe_types:
         elstatic = get_electrostatic_function_encoding(undir_edge_index, N)
+        
+        if torch.all(elstatic==0) == True:
+            raise ValueError("ElstaticPE is all zeros")
+        
+        if torch.any(torch.isnan(elstatic)) == True: 
+            raise ValueError("ElstaticPE contains NaNs")
         output_pe["ElstaticPE"] = elstatic
     
     if 'CycleGE' in pe_types:
         start, end = kwargs['kernel_param_CycleGE'][0], kwargs['kernel_param_CycleGE'][1]
-        kernel_param_times = range(start, end) #cfg.graphenc_CycleGE.kernel
-        cycle_se = count_cycles(kernel_param_times, data)
+        kernel_param_times = list(range(start, end)) #cfg.graphenc_CycleGE.kernel
+        cycle_se = count_cycles(data.edge_index, data.num_nodes,kernel_param_times)
+        try:
+            cycle_se_original = count_cycles_original(kernel_param_times, data)
+            assert cycle_se_original==cycle_se
+        except:
+            pass
+    
+        if torch.all(cycle_se==0) == True:
+            raise ValueError("CycleGE is all zeros")
+        
+        if torch.any(torch.isnan(cycle_se)) == True:
+            raise ValueError("CycleGE contains NaNs")
         output_pe["CycleGE"] = cycle_se
 
     # Heat Kernels.
@@ -202,6 +254,12 @@ def compute_posenc_stats(data, pe_types, cfg, **kwargs):
                                             kernel_times=kernel_param_times,
                                             space_dim=0)
             
+            if torch.all(hk_diag==0) == True:
+                raise ValueError("HKdiagSE is all zeros")
+            
+            if torch.any(torch.isnan(hk_diag)) == True:
+                raise ValueError("HKdiagSE contains NaNs")
+
             output_pe["HKdiagSE"] = hk_diag
 
     return output_pe
@@ -395,7 +453,7 @@ def get_electrostatic_function_encoding(edge_index, num_nodes):
         *get_laplacian(edge_index, normalization=None, num_nodes=num_nodes)
     ).todense()
     L = torch.as_tensor(L)
-    Dinv = torch.eye(L.shape[0]) * (L.diag() ** -1)
+    Dinv = torch.eye(L.shape[0]) * ((L.diag()+1e-6) ** -1)
     A = deepcopy(L).abs()
     A.fill_diagonal_(0)
     DinvA = Dinv.matmul(A)
@@ -673,7 +731,7 @@ def dfs_k_hamcycles(
     return _paths
 
 
-def count_cycles(k_list: List[int], data):
+def count_cycles_original(k_list: List[int], data):
     """Count all cycles of length exactly k for k provided in the list."""
     if not isinstance(k_list, list) or not k_list:
         raise ValueError("k_list must be a non-empty list of integers, "
@@ -690,6 +748,45 @@ def count_cycles(k_list: List[int], data):
 
     return torch.FloatTensor(cycle_counts).unsqueeze(0)
 
+
+
+def count_cycles(edge_index, num_nodes, cycle_lengths):
+
+    G = nx.Graph()
+    G.add_nodes_from(range(num_nodes))
+    G.add_edges_from(edge_index.detach().clone().cpu().T.numpy())
+    def normalize_cycle(cycle):
+        """Normalize cycle to account for shift and reflection invariance."""
+        n = len(cycle)
+        cycle_variants = [
+            tuple(cycle[i:] + cycle[:i]) for i in range(n)
+        ] + [
+            tuple(cycle[i:] + cycle[:i])[::-1] for i in range(n)
+        ]
+        return min(cycle_variants)
+
+    def find_cycles(v, visited, path, start, length):
+        if length == 0:
+            if start in G[v]:
+                cycle = normalize_cycle(path + [start])
+                unique_cycles.add(cycle)
+            return
+
+        visited.add(v)
+        path.append(v)
+        for neighbor in G[v]:
+            if neighbor not in visited or (neighbor == start and length == 1):
+                find_cycles(neighbor, visited.copy(), path.copy(), start, length - 1)
+
+    cycle_counts = {length: 0 for length in cycle_lengths}
+
+    for length in cycle_lengths:
+        unique_cycles = set()
+        for node in G:
+            find_cycles(node, set(), [], node, length)
+        cycle_counts[length] = len(unique_cycles)
+
+    return torch.tensor([cycle_counts[length] for length in cycle_lengths]).float().unsqueeze(0)
 
 # def _combine_encs(
 #     data,
