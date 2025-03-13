@@ -95,6 +95,7 @@ class TestPreProcessor:
     def teardown_method(self):
         """Test teardown."""
         del self.preprocessor
+        del self.preprocessor2
         del self.flow_mocker
 
     def test_init(self):
@@ -148,6 +149,11 @@ class TestPreProcessor:
             self.dataset, self.data_dir, self.transforms_config
         )
         self.flow_mocker.assert_all(self.preprocessor_with_tranform)
+        
+        transforms_config_liftings = DictConfig(
+            {"liftings": {"transform": {"transform_name": "CellCycleLifting"}}}
+        )
+        _ = self.preprocessor.instantiate_pre_transform(self.data_dir, transforms_config_liftings)
 
     @patch("topobench.data.preprocessor.preprocessor.load_inductive_splits")
     def test_load_dataset_splits_inductive(self, mock_load_inductive_splits):
