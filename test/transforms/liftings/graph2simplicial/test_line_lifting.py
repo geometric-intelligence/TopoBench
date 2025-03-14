@@ -42,6 +42,9 @@ class TestSimplicialLineLifting:
         # Initialise the SimplicialCliqueLifting class
         self.lifting_signed = SimplicialLineLifting(signed=True)
         self.lifting_unsigned = SimplicialLineLifting(signed=False)
+        self.lifting_unsigned_max_simplices = SimplicialLineLifting(
+            signed=False, max_simplices=1
+        )
 
     def test_lift_topology(self):
         """Test the lift_topology method."""
@@ -90,3 +93,18 @@ class TestSimplicialLineLifting:
         assert (
             expected_incidence_2 == lifted_data_signed.incidence_2.to_dense()
         ).all(), "Something is wrong with signed incidence_2 (edges to triangles)."
+        
+        lifted_data = self.lifting_unsigned_max_simplices.forward(self.data.clone())
+        
+        expected_incidence = torch.tensor(
+            [[1., 1., 1., 1., 0., 0., 0., 0., 0.],
+             [1., 0., 0., 0., 1., 1., 0., 0., 0.],
+             [0., 1., 0., 0., 1., 0., 1., 0., 0.],
+             [0., 0., 1., 0., 0., 0., 0., 1., 1.],
+             [0., 0., 0., 0., 0., 1., 0., 1., 0.],
+             [0., 0., 0., 1., 0., 0., 1., 0., 1.]]
+        )
+
+        assert (
+            abs(expected_incidence) == lifted_data.incidence_1.to_dense()
+        ).all(), "Something is wrong with incidence (triangles to tetrahedrons)."

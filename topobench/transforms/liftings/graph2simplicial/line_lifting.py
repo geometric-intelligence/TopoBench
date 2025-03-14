@@ -1,5 +1,8 @@
 """This module implements the SimplicialLineLifting class, which lifts graphs to simplicial complexes."""
 
+from itertools import combinations
+from typing import Any
+
 import networkx as nx
 import torch_geometric
 from toponetx.classes import SimplicialComplex
@@ -18,12 +21,15 @@ class SimplicialLineLifting(Graph2SimplicialLifting):
 
     Parameters
     ----------
+    max_simplices : int
+        Max simplices to add for each clique given a rank.
     **kwargs : optional
         Additional arguments for the class.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, max_simplices=25, **kwargs):
         super().__init__(**kwargs)
+        self.max_simplices = max_simplices
 
     def lift_topology(self, data: torch_geometric.data.Data) -> dict:
         r"""Lift topology of a graph to simplicial domain via line simplicial complex construction.
@@ -48,7 +54,6 @@ class SimplicialLineLifting(Graph2SimplicialLifting):
         }
 
         cliques = nx.find_cliques(line_graph)
-        simplices = list(cliques)  # list(map(lambda x: set(x), cliques))
 
         # we need to rename simplices here since now vertices are named as pairs
         self.rename_vertices_dict = {
@@ -60,19 +65,29 @@ class SimplicialLineLifting(Graph2SimplicialLifting):
         renamed_line_graph = nx.relabel_nodes(
             line_graph, self.rename_vertices_dict
         )
-
-        renamed_simplices = [
+        renamed_cliques = [
             {self.rename_vertices_dict[vertex] for vertex in simplex}
-            for simplex in simplices
+            for simplex in cliques
         ]
-
         renamed_node_features = {
             self.rename_vertices_dict[node]: value
             for node, value in node_features.items()
         }
 
-        simplicial_complex = SimplicialComplex(simplices=renamed_simplices)
-        self.complex_dim = simplicial_complex.dim
+        simplicial_complex = SimplicialComplex()
+
+        simplices: list[set[tuple[Any, ...]]] = [
+            set() for _ in range(1, self.complex_dim + 1)
+        ]
+        for clique in renamed_cliques:
+            for i in range(1, self.complex_dim + 1):
+                for n_simplices, c in enumerate(combinations(clique, i + 1)):
+                    simplices[i - 2].add(tuple(c))
+                    if n_simplices >= self.max_simplices:
+                        break
+
+        for set_k_simplices in simplices:
+            simplicial_complex.add_simplices_from(list(set_k_simplices))
 
         simplicial_complex.set_simplex_attributes(
             renamed_node_features, name="features"

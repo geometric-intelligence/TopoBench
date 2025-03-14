@@ -128,7 +128,11 @@ def get_combinatorial_complex_connectivity(
     for rank_idx in range(max_rank + 1):
         for connectivity_info in [
             "incidence",
+            "down_laplacian",
+            "up_laplacian",
             "adjacency",
+            "coadjacency",
+            "hodge_laplacian",
         ]:
             try:
                 if connectivity_info == "adjacency":
@@ -466,6 +470,65 @@ def load_manual_graph():
         num_nodes=len(vertices),
         y=torch.tensor(y),
     )
+
+
+def load_manual_graph_second_structure():
+    """Create a manual graph for testing purposes with updated edges and node features.
+
+    Returns
+    -------
+    torch_geometric.data.Data
+        A simple graph data object.
+    """
+    # Define the vertices (12 vertices, based on the highest index in edges)
+    vertices = [i for i in range(12)]
+    y = [0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0]
+
+    # Updated edges
+    edges = [
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 0),
+        (3, 4),
+        (3, 6),
+        (3, 9),
+        (4, 5),
+        (4, 6),
+        (4, 7),
+        (5, 0),
+        (5, 7),
+        (5, 10),
+        (5, 11),
+        (6, 9),
+        (7, 8),
+        (8, 6),
+        (10, 11),
+    ]
+
+    # Create a graph
+    G = nx.Graph()
+
+    # Add vertices and edges
+    G.add_nodes_from(vertices)
+    G.add_edges_from(edges)
+    G.to_undirected()
+    edge_list = torch.Tensor(list(G.edges())).T.long()
+
+    # Generate updated features (example features for 12 nodes)
+    x = (
+        torch.tensor([1, 5, 10, 50, 100, 500, 1000, 5000, 200, 300, 400, 600])
+        .unsqueeze(1)
+        .float()
+    )
+
+    data = torch_geometric.data.Data(
+        x=x,
+        edge_index=edge_list,
+        num_nodes=len(vertices),
+        y=torch.tensor(y),
+    )
+    return data
 
 
 def ensure_serializable(obj):

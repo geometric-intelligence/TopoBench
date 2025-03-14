@@ -53,6 +53,7 @@ class TestLatentCliqueCoverLifting:
         # Initialise the SimplicialCliqueLifting class
         self.lifting_edge_prob_one = LatentCliqueLifting(edge_prob_mean=1)
         self.lifting_edge_prob_any = LatentCliqueLifting(edge_prob=random.uniform(0, 1))
+        self.lifting = LatentCliqueLifting(init="single", do_gibbs=True)
 
     def test_lift_topology(self):
         """Test the lift_topology method."""
@@ -64,6 +65,7 @@ class TestLatentCliqueCoverLifting:
         edge_prob_any_adj = self.lifting_edge_prob_any.forward(
             self.data_test_two.clone()
         ).adjacency_0
+        edge_prob_single_adj = self.lifting.forward(self.data_test_one.clone()).adjacency_0
 
         ### TEST #1 ###
         # if edge_prob == 1 and a the input graph has a single clique,
@@ -106,3 +108,4 @@ class TestLatentCliqueCoverLifting:
         assert input_edge_set.issubset(
             latent_edge_set
         ), "the set of 0-simplices of the inferred latent SC is not contained the set of edges of the input graph"
+

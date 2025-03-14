@@ -1,7 +1,13 @@
 """This module implements the NeighborhoodComplexLifting class, which lifts graphs to simplicial complexes."""
 
+import random
+from itertools import combinations
+from typing import Any
+
 from toponetx.classes import SimplicialComplex
 from torch_geometric.data import Data
+from torch_geometric.utils import to_undirected
+from tqdm import tqdm
 
 from topobench.transforms.liftings.graph2simplicial.base import (
     Graph2SimplicialLifting,
@@ -13,12 +19,15 @@ class NeighborhoodComplexLifting(Graph2SimplicialLifting):
 
     Parameters
     ----------
+    max_simplices : int, optional
+        The maximum number of simplices to be added to the simplicial complex for each node. Default is 50.
     **kwargs : optional
         Additional arguments for the class.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, max_simplices=10, **kwargs):
         super().__init__(**kwargs)
+        self.max_simplices = max_simplices
 
     def lift_topology(self, data: Data) -> dict:
         r"""Lift the topology of a graph to a simplicial complex.
@@ -33,35 +42,32 @@ class NeighborhoodComplexLifting(Graph2SimplicialLifting):
         dict
             The lifted topology.
         """
+        data.edge_index = to_undirected(data.edge_index)
         graph = self._generate_graph_from_data(data)
-        graph = graph.to_undirected()
         simplicial_complex = SimplicialComplex(simplices=graph)
-
+        simplices: list[set[tuple[Any, ...]]] = [
+            set() for _ in range(2, self.complex_dim + 1)
+        ]
         # For every node u
-        for u in graph.nodes:
+        disable = len(graph.nodes) < 500
+        for u in tqdm(graph.nodes, desc="Adding simplices", disable=disable):
             neighbourhood_complex = set()
             neighbourhood_complex.add(u)
-            # Check it's neighbours
-            for v in graph.neighbors(u):
-                # For every other node w != u ^ w != v
-                for w in graph.nodes:
-                    # w == u
-                    if w == u:
-                        continue
-                    # w == v
-                    if w == v:
-                        continue
+            first_neighbors = set(graph.neighbors(u))
+            for v in first_neighbors:
+                neighbourhood_complex.update(list(graph.neighbors(v)))
+            neighbourhood_complex -= first_neighbors
+            random.shuffle(list(neighbourhood_complex))
+            for i in range(2, self.complex_dim + 1):
+                for num_c, c in enumerate(
+                    combinations(neighbourhood_complex, i + 1)
+                ):
+                    simplices[i - 2].add(tuple(c))
+                    if num_c >= self.max_simplices:
+                        break
 
-                    # w and u share v as it's neighbour
-                    if v in graph.neighbors(w):
-                        neighbourhood_complex.add(w)
-            # Do not add 0-simplices
-            if len(neighbourhood_complex) < 2:
-                continue
-            # Do not add i-simplices if the maximum dimension is lower
-            if len(neighbourhood_complex) > self.complex_dim + 1:
-                continue
-            simplicial_complex.add_simplex(neighbourhood_complex)
+        for set_k_simplices in simplices:
+            simplicial_complex.add_simplices_from(list(set_k_simplices))
 
         feature_dict = {i: f for i, f in enumerate(data["x"])}
 
