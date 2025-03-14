@@ -16,6 +16,7 @@ from topobenchmark.nn.wrappers.simplicial import (
     SCCNWrapper,
     SCNWrapper,
 )
+from topobenchmark.nn.wrappers.no_topology import MLPWrapper
 
 # ... import other readout classes here
 # For example:
@@ -39,6 +40,7 @@ __all__ = [
     "SCCNWrapper",
     "SCNWrapper",
     "TuneWrapper",
+    "MLPWrapper",
     # "OtherWrapper1",
     # "OtherWrapper2",
     # ... add other readout classes here

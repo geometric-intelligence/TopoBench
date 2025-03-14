@@ -5,11 +5,11 @@ max_rank: 2
 copy_initial: True
 neighborhoods:  
   - 'up_adjacency-0'
-  - 'up_adjacency-1'
-  - 'down_adjacency-1'
-  - 'down_adjacency-2'
-  - 'up_incidence-0'
-  - 'up_incidence-1'
+  # - 'up_adjacency-1'
+  # - 'down_adjacency-1'
+  # - 'down_adjacency-2'
+  # - 'up_incidence-0'
+  # - 'up_incidence-1'
   - 'down_incidence-1'
   - 'down_incidence-2'
 
@@ -30,11 +30,11 @@ pe_types:
   # - 'CycleGE'
 
 # Different PS have different sizes, need to unify them. 
-target_pe_dim: 10
+target_pe_dim: 80
 
 # LapPE config
 laplacian_norm_type: 'sym'
-posenc_LapPE_eigen_max_freqs: 4
+posenc_LapPE_eigen_max_freqs: 15
 posenc_LapPE_eigen_eigvec_norm: 'L2'
 posenc_LapPE_eigen_skip_zero_freq: True
 posenc_LapPE_eigen_eigvec_abs: True
@@ -42,7 +42,7 @@ posenc_LapPE_eigen_eigvec_abs: True
 # RWSE config
 kernel_param_RWSE: 
   - 2
-  - 10
+  - 50
 
 # Cycle SE config 
 kernel_param_CycleGE:

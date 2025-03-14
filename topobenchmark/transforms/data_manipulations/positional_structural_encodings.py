@@ -161,8 +161,16 @@ def compute_posenc_stats(data, pe_types, **kwargs):
                            num_nodes=N)
         )
         # if cfg.dataset.name.startswith("ogbn"):
+        
         if (kwargs.get("posenc_LapPE_eigen_max_freqs", None) is not None) and (kwargs["posenc_LapPE_eigen_max_freqs"] < L.shape[0]):
-            evals, evects = scipy.sparse.linalg.eigsh(L, k=kwargs["posenc_LapPE_eigen_max_freqs"], which='SM', tol=0.001)
+            try:
+                evals, evects = scipy.sparse.linalg.eigsh(L, k=kwargs["posenc_LapPE_eigen_max_freqs"], which='SM', tol=0.001)
+            except: 
+                # IMDB-BINARY has some issue with scipy.sparse.linalg.eigsh deep in scipy library.
+                k = kwargs["posenc_LapPE_eigen_max_freqs"]
+                evals, evects = np.linalg.eigh(L.toarray())
+                evals, evects = evals[:k], evects[:,:k]
+            
         else:
             evals, evects = np.linalg.eigh(L.toarray())
             
@@ -183,15 +191,22 @@ def compute_posenc_stats(data, pe_types, **kwargs):
         if len(kernel_param_times) == 0:
             raise ValueError("List of kernel times required for RW")
         #TODO: Add self-loops to data.edge_index to avoid zeros in rw_landing (issue for interrank case!)
-        edge_index = torch_geometric.utils.add_remaining_self_loops(data.edge_index)[0]
-
-        rw_landing = get_rw_landing_probs(ksteps=kernel_param_times,
-                                          edge_index=edge_index,#data.edge_index,
-                                          num_nodes=N)
+        
+        # Inefficient but works
+        # edge_index = torch_geometric.utils.add_remaining_self_loops(data.edge_index)[0]
+        # rw_landing = get_rw_landing_probs(ksteps=kernel_param_times,
+        #                                   edge_index=edge_index,#data.edge_index,
+        #                                   num_nodes=N)
+        
+        a = torch_geometric.transforms.AddRandomWalkPE(walk_length=kwargs["kernel_param_RWSE"][1])
+        data2 = data.clone()
+        data2.edge_index = torch_geometric.utils.add_remaining_self_loops(data2.edge_index)[0]
+        rw_landing = a(data2).random_walk_pe
+        
         # check that obtained pe are not all zeros
         if torch.all(rw_landing==0) == True:
             # Case when there is no connectivity
-            if list(edge_index.cpu().shape) == [2,0]:
+            if list(data2.edege_index.cpu().shape) == [2,0]:
                 # Case when there is no connectivity in edge_index
                 pass
             else:
