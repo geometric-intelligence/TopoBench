@@ -91,6 +91,7 @@ class DerivePS(torch_geometric.transforms.BaseTransform):
         pes = [output_pe[key].to(self.device) for key in self.kwargs['pe_types']]
         pes = [self.pad_sequence(seq, target_dim=self.kwargs['target_pe_dim']) for seq in pes]
         pes = torch.stack(pes, dim=0)
+
         return pes
     def pad_sequence(self, sequence, target_dim, pad_value=0):
         """
@@ -104,9 +105,9 @@ class DerivePS(torch_geometric.transforms.BaseTransform):
         Returns:
             torch.Tensor: The padded tensor.
         """
-        current_dim = sequence.size(1)
+        num_nodes, current_dim = sequence.shape
         if current_dim >= target_dim:
-            return sequence[:target_dim]
+            return sequence[:, :target_dim]
         
         pad_size = [sequence.size(0), target_dim - current_dim]
         pad_tensor = torch.full(pad_size, pad_value, dtype=sequence.dtype, device=self.device)
@@ -153,7 +154,7 @@ def compute_posenc_stats(data, pe_types, **kwargs):
 
     # Eigen values and vectors.
     evals, evects = None, None
-    if 'LapPE' in pe_types or 'EquivStableLapPE' in pe_types:
+    if 'LapPE' in pe_types:
         # Eigen-decomposition with numpy, can be reused for Heat kernels.
         L = to_scipy_sparse_matrix(
             *get_laplacian(undir_edge_index, normalization=laplacian_norm_type,
@@ -161,23 +162,18 @@ def compute_posenc_stats(data, pe_types, **kwargs):
         )
         # if cfg.dataset.name.startswith("ogbn"):
         if (kwargs.get("posenc_LapPE_eigen_max_freqs", None) is not None) and (kwargs["posenc_LapPE_eigen_max_freqs"] < L.shape[0]):
-            evals, evects = scipy.sparse.linalg.eigsh(L, k=kwargs["posenc_LapPE_eigen_max_freqs"], which='SM')
+            evals, evects = scipy.sparse.linalg.eigsh(L, k=kwargs["posenc_LapPE_eigen_max_freqs"], which='SM', tol=0.001)
         else:
             evals, evects = np.linalg.eigh(L.toarray())
             
-
-        if 'LapPE' in pe_types:
-            max_freqs = kwargs.get("posenc_LapPE_eigen_max_freqs", None)
-            eigvec_norm = kwargs.get("posenc_LapPE_eigen_eigvec_norm", None) 
-            skip_zero_freq = kwargs.get("posenc_LapPE_eigen_skip_zero_freq", True) 
-            eigvec_abs = kwargs.get("posenc_LapPE_eigen_eigvec_abs", True) 
         
         EigVals, EigVecs = get_lap_decomp_stats(
             evals=evals, evects=evects,
-            max_freqs=max_freqs,
-            eigvec_norm=eigvec_norm,
-            skip_zero_freq=skip_zero_freq,
-            eigvec_abs=eigvec_abs)
+            max_freqs=kwargs.get("posenc_LapPE_eigen_max_freqs", None),
+            eigvec_norm=kwargs.get("posenc_LapPE_eigen_eigvec_norm", None),
+            skip_zero_freq=kwargs.get("posenc_LapPE_eigen_skip_zero_freq", True),
+            eigvec_abs= kwargs.get("posenc_LapPE_eigen_eigvec_abs", True) 
+            )
         # hstack
         output_pe["LapPE"] = torch.hstack((EigVals.squeeze(-1), EigVecs))
 
@@ -194,10 +190,18 @@ def compute_posenc_stats(data, pe_types, **kwargs):
                                           num_nodes=N)
         # check that obtained pe are not all zeros
         if torch.all(rw_landing==0) == True:
-            raise ValueError("RWSE is all zeros")
+            # Case when there is no connectivity
+            if list(edge_index.cpu().shape) == [2,0]:
+                # Case when there is no connectivity in edge_index
+                pass
+            else:
+                raise ValueError("RWSE is all zeros")
         
         if torch.any(torch.isnan(rw_landing)) == True:
             raise ValueError("RWSE contains NaNs")
+
+        if torch.any(torch.isnan(rw_landing)) == True:
+                raise ValueError("RWSE contains NaNs")
         
         output_pe["RWSE"] = rw_landing
         
@@ -207,7 +211,11 @@ def compute_posenc_stats(data, pe_types, **kwargs):
         
         # TODO: some corner case when N=2 on MUTAG
         if torch.all(elstatic==0) == True and N>2:
-            raise ValueError("ElstaticPE is all zeros")
+            if list(torch_geometric.utils.remove_self_loops(undir_edge_index)[0].cpu().shape) == [2,0]:
+                # Case when there is no connectivity
+                pass
+            else:
+                raise ValueError("ElstaticPE is all zeros")
         
         if torch.any(torch.isnan(elstatic)) == True: 
             raise ValueError("ElstaticPE contains NaNs")
@@ -256,12 +264,18 @@ def compute_posenc_stats(data, pe_types, **kwargs):
                                             space_dim=0)
             
             # TODO: some corner case when N=2 on MUTAG
-            if torch.all(hk_diag==0) == True and N>2:
-                raise ValueError("HKdiagSE is all zeros")
+            if (torch.all(hk_diag==0)) == True and (N>2):
+                # Case when there is no connectivity
+                if list(torch_geometric.utils.remove_self_loops(undir_edge_index)[0].cpu().shape) == [2,0]:
+                    pass
+                else:
+                    raise ValueError("HKdiagSE is all zeros")
+
             
             if torch.any(torch.isnan(hk_diag)) == True:
                 raise ValueError("HKdiagSE contains NaNs")
-
+            
+            
             output_pe["HKdiagSE"] = hk_diag
 
     return output_pe

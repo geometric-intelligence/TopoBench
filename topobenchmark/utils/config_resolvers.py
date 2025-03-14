@@ -330,6 +330,21 @@ def infer_num_cell_dimensions(selected_dimensions, in_channels):
     else:
         return len(in_channels)
 
+def infer_list_length(list):
+    r"""Infer the length of a list.
+
+    Parameters
+    ----------
+    list : list
+        List.
+
+    Returns
+    -------
+    int
+        Length of the input list.
+    """
+    return len(list)
+
 
 def get_default_metrics(task, metrics=None):
     r"""Get default metrics for a given task.
