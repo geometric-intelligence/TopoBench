@@ -68,7 +68,7 @@ for i in {0..7}; do
 
     for pret_model in ${PRETRAIN_MODELS[*]}
     do
-        python topobenchmark/run.py\
+        python topobench/run.py\
             dataset=graph/$dataset\
             model=cell/sann\
             model.backbone.n_layers=1\
@@ -106,7 +106,7 @@ for i in {0..7}; do
     do
         for pd in ${PROJECTION_DROPOUTS[*]}
         do
-            python topobenchmark/run.py\
+            python topobench/run.py\
                 dataset=graph/$dataset\
                 model=cell/sann\
                 model.backbone.n_layers=$N_LAYERS_STR\

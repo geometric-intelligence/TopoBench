@@ -20,7 +20,7 @@ for i in {0..3}; do
     
     for batch_size in ${batch_sizes[*]}
     do
-    python topobenchmarkx/run.py\
+    python topobenchx/run.py\
         dataset=graph/$dataset\
         model=simplicial/sann\
         model.backbone.n_layers=2,4\

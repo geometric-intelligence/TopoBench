@@ -237,7 +237,7 @@ def compute_posenc_stats(data, pe_types, **kwargs):
         # check that obtained pe are not all zeros
         if torch.all(rw_landing == 0) == True:
             # Case when there is no connectivity
-            if list(data2.edege_index.cpu().shape) == [2, 0]:
+            if list(data2.edge_index.cpu().shape) == [2, 0]:
                 # Case when there is no connectivity in edge_index
                 pass
             else:

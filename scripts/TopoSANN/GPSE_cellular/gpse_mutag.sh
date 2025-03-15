@@ -66,7 +66,7 @@ for i in {0..7}; do
 
     for pret_model in ${PRETRAIN_MODELS[*]}
     do
-        python topobenchmark/run.py\
+        python topobench/run.py\
             dataset=graph/$dataset\
             model=cell/sann\
             model.backbone.n_layers=1\
@@ -101,7 +101,7 @@ for i in {0..7}; do
     do
         for lr in ${learning_rates[*]}
         do
-            python topobenchmark/run.py\
+            python topobench/run.py\
                 dataset=graph/$dataset\
                 model=cell/sann\
                 model.backbone.n_layers=$N_LAYERS_STR\

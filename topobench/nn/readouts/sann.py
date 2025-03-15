@@ -5,7 +5,7 @@ import torch
 import torch_geometric
 from torch_scatter import scatter
 
-from topobenchmark.nn.readouts.base import AbstractZeroCellReadOut
+from topobench.nn.readouts.base import AbstractZeroCellReadOut
 
 
 class SANNReadout(AbstractZeroCellReadOut):

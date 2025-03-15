@@ -16,7 +16,7 @@ from topobench.nn.wrappers.simplicial import (
     SCCNWrapper,
     SCNWrapper,
 )
-from topobenchmark.nn.wrappers.no_topology import MLPWrapper
+# from topobenchmark.nn.wrappers.no_topology import MLPWrapper
 
 # ... import other readout classes here
 # For example:

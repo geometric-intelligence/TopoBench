@@ -1,6 +1,6 @@
 """Wrapper for the SANN model."""
 
-from topobenchmark.nn.wrappers import AbstractWrapper
+from topobench.nn.wrappers import AbstractWrapper
 
 
 class SANNWrapper(AbstractWrapper):

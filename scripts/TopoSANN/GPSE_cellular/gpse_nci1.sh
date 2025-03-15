@@ -70,7 +70,7 @@ for i in {0..7}; do
     for pretrain_model in ${PRETRAIN_MODELS[*]}
     do
         
-        python topobenchmark/run.py\
+        python topobench/run.py\
             dataset=graph/$dataset\
             model=cell/sann\
             model.backbone.n_layers=$N_LAYERS_STR\

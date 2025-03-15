@@ -13,7 +13,7 @@ from .graph import (
 )
 from .hypergraph import EDGNN
 from .simplicial import SCCNNCustom
-from .no_topology import MLP
+# from .no_topology import MLP
 
 __all__ = [
     "CCCN",

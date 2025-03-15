@@ -45,7 +45,7 @@ BATCH_SIZES_STR=$(IFS=,; echo "${BATCH_SIZES[*]}")
 for max_hop in ${MAX_HOPS[*]}
 do
         
-    python topobenchmark/run.py\
+    python topobench/run.py\
         dataset=graph/$dataset\
         model=simplicial/sann\
         model.backbone.n_layers=1\
@@ -79,7 +79,7 @@ for i in {0..4}; do
     do
         for batch_size in ${BATCH_SIZES[*]}
         do
-            python topobenchmark/run.py\
+            python topobench/run.py\
                 dataset=graph/$dataset\
                 model=simplicial/sann\
                 model.backbone.n_layers=$N_LAYERS_STR\
@@ -117,7 +117,7 @@ for i in {0..4}; do
     do
         for batch_size in ${BATCH_SIZES[*]}
         do
-            python topobenchmark/run.py\
+            python topobench/run.py\
                 dataset=graph/$dataset\
                 model=simplicial/sann\
                 model.backbone.n_layers=$N_LAYERS_STR\

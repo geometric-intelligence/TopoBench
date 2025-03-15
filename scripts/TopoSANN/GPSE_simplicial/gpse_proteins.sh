@@ -8,7 +8,7 @@ for pretrain_model in ${pretrain_models[*]}
 do
     for seed in ${seeds[*]}
     do
-    python topobenchmarkx/run.py\
+    python topobenchx/run.py\
         dataset=graph/$dataset\
         model=simplicial/sann\
         model.backbone.n_layers=2,4\
@@ -40,7 +40,7 @@ for pretrain_model in ${pretrain_models_2[*]}
 do
     for seed in ${seeds[*]}
     do
-    python topobenchmarkx/run.py\
+    python topobenchx/run.py\
         dataset=graph/$dataset\
         model=simplicial/sann\
         model.backbone.n_layers=2,4\
