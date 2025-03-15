@@ -13,6 +13,7 @@ from .graph import (
 )
 from .hypergraph import EDGNN
 from .simplicial import SCCNNCustom
+from .no_topology import MLP
 
 __all__ = [
     "CCCN",
@@ -25,4 +26,5 @@ __all__ = [
     "SCCNNCustom",
     "TopoTune",
     "TopoTune_OneHasse",
+    "MLP"
 ]

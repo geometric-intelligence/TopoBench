@@ -330,6 +330,21 @@ def infer_num_cell_dimensions(selected_dimensions, in_channels):
     else:
         return len(in_channels)
 
+def infer_list_length(list):
+    r"""Infer the length of a list.
+
+    Parameters
+    ----------
+    list : list
+        List.
+
+    Returns
+    -------
+    int
+        Length of the input list.
+    """
+    return len(list)
+
 
 def get_default_metrics(task, metrics=None):
     r"""Get default metrics for a given task.
@@ -502,6 +517,77 @@ def infer_in_hasse_graph_agg_dim(
 
     for i in range(complex_dim + 1):
         results[i][hop_num - 1] = max(1, neighbor_targets[i]) * dim_hidden
+
+    return results.astype(np.int32).tolist()
+
+
+def infer_in_hasse_graph_agg_dim_positional_encodings(
+    neighborhoods,
+    complex_dim,
+    max_hop,
+    dim_in,
+    dim_hidden_node,
+    copy_initial,
+    use_edge_attr,
+):
+    """Compute which input dimensions need to changed based on if they are the output of a neighborhood.
+
+    Set the list of dimensions as outputs to the hasse graph as a GNN
+
+    Parameters
+    ----------
+    neighborhoods : List[str]
+        List of strings representing the neighborhood.
+    complex_dim : int
+        Maximum dimension of the complex.
+    dim_in : int
+        The dataset feature input dimension.
+    dim_hidden_graph : int
+        The output hidden dimension of the GNN over the Hasse Graph aggregation.
+    dim_hidden_node : int
+        The output hidden dimension of the GNN over the Hasse Graph for each node.
+    copy_initial : bool
+        If the initial features should be copied as the 0-th hop.
+    use_edge_attr : bool
+        If the edge attributes are used as features in the 1-cells and should be considered for channel inference.
+
+    Returns
+    -------
+    np.ndarray
+        A 2D array where.
+    """
+    # TODO, to my understanding this should never change
+
+    neighbor_targets = defaultdict(int)
+    routes = get_routes_from_neighborhoods(neighborhoods)
+
+    for _s, t in routes:
+        neighbor_targets[t] += 1
+
+    dim_hidden = dim_hidden_node
+    hop_num = (
+        int(copy_initial) + max_hop
+    )  # If copy_intial the there are two hops, else just 1
+
+    results = np.zeros(shape=(complex_dim + 1, hop_num))
+    if copy_initial:
+        # First dimension is always the input dimension
+        if isinstance(dim_in, int):
+            results.fill(dim_in)
+        else:
+            results.fill(dim_in[0])
+
+        # If edge_attr is used, set those dimensions
+        if use_edge_attr:
+            for i in range(1, len(dim_in)):
+                results[i][0] = dim_in[i]
+
+    else:
+        results.fill(dim_hidden)
+
+    for i in range(complex_dim + 1):
+        for j in range(1, hop_num):
+            results[i][j] = max(1, neighbor_targets[i]) * dim_hidden
 
     return results.astype(np.int32).tolist()
 

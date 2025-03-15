@@ -39,9 +39,11 @@ from topobenchmark.utils.config_resolvers import (
     get_required_lifting,
     infer_in_channels,
     infer_in_hasse_graph_agg_dim,
+    infer_in_hasse_graph_agg_dim_positional_encodings,
     infer_in_khop_feature_dim,
     infer_num_cell_dimensions,
     set_preserve_edge_attr,
+    infer_list_length,
 )
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
@@ -100,6 +102,12 @@ OmegaConf.register_new_resolver(
     infer_in_hasse_graph_agg_dim,
     replace=True,
 )
+
+OmegaConf.register_new_resolver(
+    "infer_in_hasse_graph_agg_dim_positional_encodings",
+    infer_in_hasse_graph_agg_dim_positional_encodings,
+    replace=True,
+)
 OmegaConf.register_new_resolver(
     "get_hop_num_gpse",
     lambda x: int(x)
@@ -110,6 +118,11 @@ OmegaConf.register_new_resolver(
 OmegaConf.register_new_resolver(
     "set_preserve_edge_attr",
     set_preserve_edge_attr,
+    replace=True,
+)
+OmegaConf.register_new_resolver(
+    "infer_list_length",
+    infer_list_length,
     replace=True,
 )
 

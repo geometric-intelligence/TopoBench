@@ -206,9 +206,23 @@ def read_ndim_manifolds(path, dim, y_val="betti_numbers", slice=None):
             f"x_{i}": torch.ones(len(sc.skeleton(i)), 1)
             for i in range(dim + 1)
         }
-
+        # neighborhoods = [
+        #     'up_adjacency-0',
+        #     'up_adjacency-1',
+        #     'down_adjacency-1',
+        #     'down_adjacency-2',
+        #     'up_incidence-0',
+        #     'up_incidence-1',
+        #     'down_incidence-1',
+        #     'down_incidence-2',
+        #     "down_laplacian-1",
+        #     "down_laplacian-2",
+        #     "up_laplacian-1",
+        #     "up_laplacian-2",
+        #     "hodge_laplacian-0"
+        #     ]
         # Construct the connectivity matrices
-        inc_dict = get_complex_connectivity(sc, dim, signed=False)
+        inc_dict = get_complex_connectivity(sc, dim, signed=False) #neighborhoods=neighborhoods)
 
         data = Data(x=x, y=y, **x_i, **inc_dict)
         data_list.append(data)
