@@ -15,7 +15,7 @@ OUT_CHANNELS=(128 256)
 # =====================
 # OPTIMIZATION PARAMETERS
 # =====================
-LEARNING_RATES=(0.010.001)
+LEARNING_RATES=(0.01 0.001)
 PROJECTION_DROPOUTS=(0.25 0.5)
 WEIGHT_DECAYS=(0 0.0001)
 
@@ -95,7 +95,7 @@ for i in {0..7}; do
 done
 wait
 
-
+PRETRAIN_MODELS=('ZINC' 'GEOM')
 gpus=(0 1 2 3 4 5 6 7)
 for i in {0..7}; do 
     CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
@@ -131,3 +131,5 @@ for i in {0..7}; do
     done
 done
 wait
+
+PRETRAIN_MODELS=('MOLPCBA' 'PCQM4MV2')
