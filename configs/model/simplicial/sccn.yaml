@@ -1,10 +1,10 @@
-_target_: topobenchmark.model.TBModel
+_target_: topobench.model.TBModel
 
 model_name: sccn
 model_domain: simplicial
 
 feature_encoder:
-  _target_: topobenchmark.nn.encoders.${model.feature_encoder.encoder_name}
+  _target_: topobench.nn.encoders.${model.feature_encoder.encoder_name}
   encoder_name: AllCellFeatureEncoder
   in_channels: ${infer_in_channels:${dataset},${oc.select:transforms,null}}
   out_channels: 32
@@ -18,14 +18,14 @@ backbone:
   update_func: "sigmoid"
 
 backbone_wrapper:
-  _target_: topobenchmark.nn.wrappers.SCCNWrapper
+  _target_: topobench.nn.wrappers.SCCNWrapper
   _partial_: true
   wrapper_name: SCCNWrapper
   out_channels: ${model.feature_encoder.out_channels}
   num_cell_dimensions: ${infer_num_cell_dimensions:${oc.select:model.feature_encoder.selected_dimensions,null},${model.feature_encoder.in_channels}}
 
 readout:
-  _target_: topobenchmark.nn.readouts.${model.readout.readout_name}
+  _target_: topobench.nn.readouts.${model.readout.readout_name}
   readout_name: PropagateSignalDown #  Use <NoReadOut> in case readout is not needed Options: PropagateSignalDown
   num_cell_dimensions: ${infer_num_cell_dimensions:${oc.select:model.feature_encoder.selected_dimensions,null},${model.feature_encoder.in_channels}} # The highest order of cell dimensions to consider
   hidden_dim: ${model.feature_encoder.out_channels}

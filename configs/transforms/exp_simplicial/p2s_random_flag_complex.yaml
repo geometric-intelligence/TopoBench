@@ -1,0 +1,2 @@
+defaults:
+  - /transforms/liftings/pointcloud2simplicial@pointcloud2simplicial_lifting: random_flag_complex

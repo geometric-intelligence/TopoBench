@@ -1,0 +1,11 @@
+_target_: topobench.transforms.data_transform.DataTransform
+transform_type: 'lifting'
+transform_name: "LatentCliqueLifting"
+edge_prob_mean: 0.95  # Mean of the prior distribution of pie ~ Beta where edge_prob_mean must be in (0, 1). When edge_prob_mean is one, the value of edge_prob is fixed and not sampled.
+edge_prob_var: 0.0001 # Uncertainty of the prior distribution of pie ~ Beta(a, b) where edge_prob_var must be in [0, inf). When edge_prob_var is zero, the value of edge_prob is fixed and not sampled. It is require dthat edge_prob_var < edge_prob_mean * (1 - edge_prob_mean). When this is not the case the value of edge_prob_var is set to edge_prob_mean * (1 - edge_prob_mean) - 1e-6.
+signed: True
+preserve_edge_attr: False # This lifting do not explicitly preserves the graph structure, hence it is necessary to set preserve_edge_attr to False or modify the lifting source code.
+feature_lifting: ProjectionSum
+# Required for all liftings to make the pipeline executable 
+complex_dim: ${oc.select:dataset.parameters.max_dim_if_lifted,3}
+neighborhoods: ${oc.select:model.backbone.neighborhoods,null}

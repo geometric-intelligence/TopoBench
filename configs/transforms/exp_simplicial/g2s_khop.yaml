@@ -1,0 +1,6 @@
+defaults:
+  - /transforms/liftings/graph2simplicial@graph2simplicial_lifting: khop
+
+graph2simplicial_lifting:
+  # This lifting do not explicitly preserves the graph structure, hence it is necessary to set preserve_edge_attr to False or modify the lifting source code.
+  preserve_edge_attr: False

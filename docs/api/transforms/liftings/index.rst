@@ -2,32 +2,32 @@
 Liftings
 ********
 
-.. automodule:: topobenchmark.transforms.liftings.base
+.. automodule:: topobench.transforms.liftings.base
     :members:
 
-.. automodule:: topobenchmark.transforms.liftings
+.. automodule:: topobench.transforms.liftings
     :members:
 
-.. automodule:: topobenchmark.transforms.liftings.graph2cell.base
+.. automodule:: topobench.transforms.liftings.graph2cell.base
     :members:
 
-.. automodule:: topobenchmark.transforms.liftings.graph2cell.cycle
+.. automodule:: topobench.transforms.liftings.graph2cell.cycle
     :members:
 
-.. automodule:: topobenchmark.transforms.liftings.graph2hypergraph.base
+.. automodule:: topobench.transforms.liftings.graph2hypergraph.base
     :members:
 
-.. automodule:: topobenchmark.transforms.liftings.graph2hypergraph.khop
+.. automodule:: topobench.transforms.liftings.graph2hypergraph.khop
     :members:
 
-.. automodule:: topobenchmark.transforms.liftings.graph2hypergraph.knn
+.. automodule:: topobench.transforms.liftings.graph2hypergraph.knn
     :members:
 
-.. automodule:: topobenchmark.transforms.liftings.graph2simplicial.base
+.. automodule:: topobench.transforms.liftings.graph2simplicial.base
     :members:
 
-.. automodule:: topobenchmark.transforms.liftings.graph2simplicial.clique
+.. automodule:: topobench.transforms.liftings.graph2simplicial.clique
     :members:
 
-.. automodule:: topobenchmark.transforms.liftings.graph2simplicial.khop
+.. automodule:: topobench.transforms.liftings.graph2simplicial.khop
     :members:

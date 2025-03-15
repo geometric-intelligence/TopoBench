@@ -2,7 +2,7 @@
 Neural Networks
 ***************
 
-The `nn` module of `TopoBenchmarkX` consists of several submodules:
+The `nn` module of `TopoBenchX` consists of several submodules:
 
 1. :doc:`backbones <backbones/index>`
 2. :doc:`encoders <encoders/index>`

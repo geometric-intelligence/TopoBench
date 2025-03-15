@@ -2,10 +2,10 @@
 Loss
 ****
 
-This module implements custom Python classes to compute losses in `TopoBenchmarkX`.
+This module implements custom Python classes to compute losses in `TopoBenchX`.
 
-.. automodule:: topobenchmark.loss.base
+.. automodule:: topobench.loss.base
     :members:
 
-.. automodule:: topobenchmark.loss.loss
+.. automodule:: topobench.loss.loss
     :members:

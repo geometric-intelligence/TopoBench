@@ -1,0 +1,8 @@
+_target_: topobench.transforms.data_transform.DataTransform
+transform_type: 'lifting'
+transform_name: "AlphaComplexLifting"
+complex_dim: 3
+alpha: -1 # -1 means infinite radius
+preserve_edge_attr: False
+signed: True
+feature_lifting: ProjectionSum

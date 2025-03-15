@@ -2,7 +2,7 @@
 Transforms
 **********
 
-The `transforms` module of `TopoBenchmarkX`` consists of several submodules:
+The `transforms` module of `TopoBenchX`` consists of several submodules:
 
 1. :doc:`data_manipulations <data_manipulations/index>`
 2. :doc:`feature_liftings <feature_liftings/index>`

@@ -1,15 +1,49 @@
-"""Test the GraphLoader class."""
-
-from unittest.mock import ANY, MagicMock, patch
+""" Test the PreProcessor class."""
 
 import pytest
-import torch_geometric
+from unittest.mock import MagicMock, patch, ANY, PropertyMock
+import torch
+import torch_geometric.data
 from omegaconf import DictConfig
 
-from topobenchmark.data.preprocessor import PreProcessor
-
+from topobench.data.preprocessor.preprocessor import PreProcessor
 from ..._utils.flow_mocker import FlowMocker
 
+class MockTorchDataset(torch.utils.data.Dataset):
+    """A mock of the torch.utils.data.Dataset class.
+    
+    Parameters
+    ----------
+    data : Any
+        The data to store in the dataset.
+    """
+    def __init__(self, data):
+        self.data = data
+
+    def __len__(self):
+        """Return the length of the data.
+        
+        Returns
+        -------
+        int
+            The length of the data.
+        """
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        """Return the data at the given index.
+        
+        Parameters
+        ----------
+        idx : int
+            The index of the data to return.
+        
+        Returns
+        -------
+        Any
+            The data at the given index.
+        """
+        return self.data[idx]
 
 @pytest.mark.usefixtures("mocker_fixture")
 class TestPreProcessor:
@@ -57,7 +91,7 @@ class TestPreProcessor:
 
         # Initialize PreProcessor
         self.preprocessor = PreProcessor(self.dataset, self.data_dir, None)
-
+        
     def teardown_method(self):
         """Test teardown."""
         del self.preprocessor
@@ -115,7 +149,7 @@ class TestPreProcessor:
         )
         self.flow_mocker.assert_all(self.preprocessor_with_tranform)
 
-    @patch("topobenchmark.data.preprocessor.preprocessor.load_inductive_splits")
+    @patch("topobench.data.preprocessor.preprocessor.load_inductive_splits")
     def test_load_dataset_splits_inductive(self, mock_load_inductive_splits):
         """Test loading dataset splits for inductive learning.
         
@@ -131,7 +165,7 @@ class TestPreProcessor:
         )
 
     @patch(
-        "topobenchmark.data.preprocessor.preprocessor.load_transductive_splits"
+        "topobench.data.preprocessor.preprocessor.load_transductive_splits"
     )
     def test_load_dataset_splits_transductive(
         self, mock_load_transductive_splits
@@ -154,3 +188,38 @@ class TestPreProcessor:
         split_params = DictConfig({"learning_setting": "invalid"})
         with pytest.raises(ValueError):
             self.preprocessor.load_dataset_splits(split_params)
+
+    def test_process_torch_utils_dataset(self):
+        """Test the process method with torch.utils.data.Dataset."""
+        mock_data = [1, 2, 3]
+        mock_dataset = MockTorchDataset(mock_data)
+        self.preprocessor.dataset = mock_dataset
+        self.preprocessor.pre_transform = None
+        self.preprocessor.collate = MagicMock(return_value=(torch_geometric.data.Data(), MagicMock())) # Corrected line
+        self.preprocessor.save = MagicMock()
+
+        # Mock the processed_paths property
+        with patch.object(PreProcessor, 'processed_paths', new_callable=PropertyMock) as mock_processed_paths:
+            mock_processed_paths.return_value = ["/fake/path"]
+            self.preprocessor.process()
+
+        assert self.preprocessor.data_list == mock_data
+        self.preprocessor.collate.assert_called_once_with(mock_data)
+        self.preprocessor.save.assert_called_once()
+
+    def test_process_torch_geometric_data_data(self):
+        """Test the process method with torch_geometric.data.Data."""
+        mock_data = torch_geometric.data.Data()
+        self.preprocessor.dataset = mock_data
+        self.preprocessor.pre_transform = None
+        self.preprocessor.collate = MagicMock(return_value=(torch_geometric.data.Data(), MagicMock())) # Corrected line
+        self.preprocessor.save = MagicMock()
+
+        # Mock the processed_paths property
+        with patch.object(PreProcessor, 'processed_paths', new_callable=PropertyMock) as mock_processed_paths:
+            mock_processed_paths.return_value = ["/fake/path"]
+            self.preprocessor.process()
+
+        assert self.preprocessor.data_list == [mock_data]
+        self.preprocessor.collate.assert_called_once_with([mock_data])
+        self.preprocessor.save.assert_called_once()

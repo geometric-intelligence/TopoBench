@@ -4,20 +4,20 @@ Utils
 
 This module implements implements additional utilities to handle the training process.
 
-.. automodule:: topobenchmark.utils.config_resolvers
+.. automodule:: topobench.utils.config_resolvers
     :members:
 
-.. automodule:: topobenchmark.utils.instantiators
+.. automodule:: topobench.utils.instantiators
     :members:
 
-.. automodule:: topobenchmark.utils.logging_utils
+.. automodule:: topobench.utils.logging_utils
     :members:
 
-.. automodule:: topobenchmark.utils.pylogger
+.. automodule:: topobench.utils.pylogger
     :members:
 
-.. automodule:: topobenchmark.utils.rich_utils
+.. automodule:: topobench.utils.rich_utils
     :members:
 
-.. automodule:: topobenchmark.utils.utils
+.. automodule:: topobench.utils.utils
     :members:

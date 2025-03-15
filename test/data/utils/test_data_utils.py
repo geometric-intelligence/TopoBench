@@ -4,7 +4,7 @@ import omegaconf
 import pytest
 import torch_geometric
 import torch
-from topobenchmark.data.utils import *
+from topobench.data.utils import *
 import toponetx as tnx
 from toponetx.classes import CellComplex
 
@@ -23,8 +23,13 @@ class TestDataUtils:
         
     def test_get_complex_connectivity(self):
         """Test get_complex_connectivity."""
-        out = get_complex_connectivity(self.complex, 2, neighborhoods=self.neighborhoods2)
+        out = get_complex_connectivity(self.complex, 3, neighborhoods=self.neighborhoods2)
         assert 'up_laplacian-0' in out.keys()
+        
+    def test_get_combinatorial_complex_connectivity(self):
+        """Test get_complex_connectivity."""
+        out = get_combinatorial_complex_connectivity(self.complex, 3)
+        assert 'adjacency_0' in out.keys()
         
     def test_select_neighborhoods_of_interest(self):
         """Test select_neighborhoods_of_interest."""

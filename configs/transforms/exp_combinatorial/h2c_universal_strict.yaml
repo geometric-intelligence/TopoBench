@@ -1,0 +1,2 @@
+defaults:
+  - /transforms/liftings/hypergraph2combinatorial@hypergraph2combinatorial_lifting: universal_strict

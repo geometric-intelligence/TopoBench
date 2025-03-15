@@ -1,23 +1,22 @@
-"""
-Class for automated testing of neural network modules.
-"""
+"""Class for automated testing of neural network topobench."""
 
 import torch
 import copy
 
 class NNModuleAutoTest:
-    r"""Test the following cases.
-
-    1) Assert if the module return at least one tensor
+    r"""Test the neural network module.
+    
+    Test the following cases:
+    1) Assert if the module return at least one tensor.
     2) Reproducibility. Assert that the module return the same output when called with the same data
-    Additionally 
+    Additionally .
     3) Assert returned shape. 
         Important! If module returns multiple tensor. The shapes for assertion must be in list() not (!!!) tuple().
-
+        
     Parameters
     ----------
-    params : list of dict
-        List of dictionaries with parameters.
+    params : list
+        List of dictionaries with the following keys.
     """
     SEED = 0
 
@@ -25,8 +24,7 @@ class NNModuleAutoTest:
         self.params = params
 
     def run(self):
-        r"""Run the test.
-        """
+        """Run the tests."""
         for param in self.params:
             assert "module" in param and "init" in param and "forward" in param
             module = self.exec_func(param["module"], param["init"])
@@ -48,21 +46,23 @@ class NNModuleAutoTest:
                 self.assert_shape(result, param["assert_shape"])
 
     def exec_twice(self, module, inp_1, inp_2):
-        """ Execute the module twice with different inputs.
-
-            Parameters
-            ----------
-            module : torch.nn.Module
-                Module to be tested.
-            inp_1 : tuple or dict
-                Input for the module.
-            inp_2 : tuple or dict
-                Input for the module.
-
-            Returns
-            -------
-            tuple
-                Output of the module for the first input.
+        """Execute the module twice with different data.
+        
+        Parameters
+        ----------
+        module : torch.nn.Module
+            Module to test.
+        inp_1 : tuple or dict
+            Input arguments.
+        inp_2 : tuple or dict
+            Input arguments.
+            
+        Returns
+        -------
+        tuple
+            Output tensors.
+        tuple
+            Output tensors.
         """
         torch.manual_seed(self.SEED)
         result = self.exec_func(module, inp_1)
@@ -73,19 +73,24 @@ class NNModuleAutoTest:
         return result, result_2
 
     def exec_func(self, func, args):
-        """ Execute the function with the arguments.
-            
-            Parameters
-            ----------
-            func : function
-                Function to be executed.
-            args : tuple or dict
-                Arguments for the function.
-            
-            Returns
-            -------
-            any
-                Output of the function.
+        """Execute function with arguments.
+        
+        Parameters
+        ----------
+        func : function
+            Function to execute.
+        args : tuple or dict
+            Arguments for the function.
+        
+        Returns
+        -------
+        any
+            Output of the function.
+        
+        Raises
+        ------
+        TypeError
+            If the type of the arguments is not tuple or dict.
         """
         if type(args) == tuple:
             return func(*args)
@@ -95,17 +100,17 @@ class NNModuleAutoTest:
             raise TypeError(f"{type(args)} is not correct type for funnction arguments.")
         
     def clone_input(self, args):
-        """ Clone the input arguments.
-
-            Parameters
-            ----------
-            args : tuple or dict
-                Arguments to be cloned.
+        """Clone input arguments.
+        
+        Parameters
+        ----------
+        args : tuple or dict
+            Input arguments.
             
-            Returns
-            -------
-            tuple or dict
-                Cloned arguments.
+        Returns
+        -------
+        tuple or dict
+            Cloned input arguments.
         """
         if type(args) == tuple:
             return tuple(self.clone_object(a) for a in args)
@@ -113,17 +118,17 @@ class NNModuleAutoTest:
             return {k: self.clone_object(v) for k, v in args.items()}
 
     def clone_object(self, obj):
-        """ Clone the object.
-
-            Parameters
-            ----------
-            obj : any
-                Object to be cloned.
-
-            Returns
-            -------
-            any
-                Cloned object.
+        """Clone object.
+        
+        Parameters
+        ----------
+        obj : any
+            Object to clone.
+            
+        Returns
+        -------
+        any
+            Cloned object.
         """
         if hasattr(obj, "clone"):
             return obj.clone()
@@ -131,29 +136,26 @@ class NNModuleAutoTest:
             return copy.deepcopy(obj)
         
     def assert_return_tensor(self, result):
-        """ Assert if the module return at least one tensor.
-
-            Parameters
-            ----------
-            result : any
-                Output of the module.
+        """Assert if the module return at least one tensor.
+        
+        Parameters
+        ----------
+        result : tuple
+            Output tensors.
         """
-        if all(isinstance(r, tuple) for r in result):
-            assert any([all([isinstance(r, torch.Tensor) for r in tup]) for tup in result])
-        else:
-            assert any(isinstance(r, torch.Tensor)  for r in result)
+        assert any(isinstance(r, torch.Tensor)  for r in result)
 
-    def assert_equal_output(self, module, result, result_2):    
-        """ Assert that the module return the same output when called with the same data.
-
-            Parameters
-            ----------
-            module : torch.nn.Module
-                Module to be tested.
-            result : any
-                Output of the module for the first input.
-            result_2 : any
-                Output of the module for the second input.
+    def assert_equal_output(self, module, result, result_2):
+        """Assert if the output of the module is the same when called with the same data.
+        
+        Parameters
+        ----------
+        module : torch.nn.Module
+            Module to test.
+        result : tuple
+            Output tensors.
+        result_2 : tuple
+            Output tensors.
         """
         assert len(result) == len(result_2)
         
@@ -171,14 +173,14 @@ class NNModuleAutoTest:
                 assert r1 == r2
 
     def assert_shape(self, result, shapes):
-        """ Assert returned shape.
-
-            Parameters
-            ----------
-            result : any
-                Output of the module.
-            shapes : list
-                List of shapes to be asserted.
+        """Assert shapes of the output tensors.
+        
+        Parameters
+        ----------
+        result : tuple
+            Output tensors.
+        shapes : list
+            List of expected shapes.
         """
         i = 0
         for t in result:
