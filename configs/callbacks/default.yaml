@@ -3,7 +3,6 @@ defaults:
   - early_stopping
   - model_summary
   - model_timer
-  #- rich_progress_bar
   - _self_
 
 model_checkpoint:
