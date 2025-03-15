@@ -13,7 +13,7 @@ loader:
 # Data definition
 parameters:
   # In the case of higher-order datasets we have multiple feature dimentions 
-  num_features: [1,1,1]
+  num_features: [1,1,1] # [1,1,1]
   num_classes: 2 # Num classes depents on the task_variable
 
   # Dataset parameters
@@ -34,7 +34,7 @@ split_params:
 
 # Dataloader parameters
 dataloader_params:
-  batch_size: 5
+  batch_size: 256
   num_workers: 0
   pin_memory: False
   persistent_workers: False
