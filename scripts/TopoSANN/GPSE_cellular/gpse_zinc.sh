@@ -92,8 +92,8 @@ for i in {0..7}; do
             transforms.sann_encoding.neighborhoods=$neighborhood\
             transforms.graph2cell_lifting.neighborhoods=$neighborhood\
             --multirun &
+            sleep 5
     done
-    wait
 done
 wait
 

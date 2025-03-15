@@ -88,8 +88,9 @@ for i in {0..7}; do
             transforms=ZINC_sann_experiment_simplicial\
             transforms/data_manipulations@transforms.sann_encoding=add_gpse_information\
             transforms.sann_encoding.pretrain_model=$pret_model\
-            transforms.sann_encoding.copy_initial=True \
-            transforms.sann_encoding.complex_dim=3\
+            transforms.sann_encoding.copy_initial=True\
+            transforms.sann_encoding.neighborhoods=$neighborhood\
+            transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
             --multirun &
     done
     wait
@@ -125,7 +126,9 @@ for i in {0..7}; do
                 transforms=ZINC_sann_experiment_simplicial\
                 transforms/data_manipulations@transforms.sann_encoding=add_gpse_information\
                 transforms.sann_encoding.pretrain_model=$PRETRAIN_MODELS_STR\
-                transforms.sann_encoding.copy_initial=True \
+                transforms.sann_encoding.copy_initial=True\
+                transforms.sann_encoding.neighborhoods=$neighborhood\
+                transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
                 --multirun &
         done
     done
