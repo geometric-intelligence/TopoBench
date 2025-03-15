@@ -1,11 +1,8 @@
-# bash ./scripts/TopoSANN/SANN/sann_imdb_b.sh
-# wait
-
-# bash ./scripts/TopoSANN/SANN/sann_imdb_m.sh
-# wait
-
-bash ./scripts/TopoSANN/SANN/sann_proteins.sh
+bash ./scripts/TopoSANN/GPSE_simplicial/gpse_nci1.sh
 wait
 
-bash ./scripts/TopoSANN/SANN/sann_mutag.sh
+bash ./scripts/TopoSANN/GPSE_simplicial/gpse_nci109.sh
+wait
+
+bash ./scripts/TopoSANN/GPSE_simplicial/gpse_proteins.sh
 wait
