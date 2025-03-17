@@ -46,6 +46,7 @@ class WrapperExportsManager:
         wrappers = {}
         package_dir = Path(package_path).parent
 
+        # Discover wrappers in subdirectories (subpackages)
         for subpackage in package_dir.iterdir():
             if subpackage.is_dir() and (subpackage / "__init__.py").exists():
                 for file_path in subpackage.glob("*.py"):
@@ -66,6 +67,27 @@ class WrapperExportsManager:
                             and not name.startswith("_")
                         }
                         wrappers.update(new_wrappers)
+
+        # Discover wrappers in standalone .py files (e.g., base.py) at the root level
+        for file_path in package_dir.glob("*.py"):
+            if file_path.stem == "__init__":
+                continue
+
+            module_name = file_path.stem
+            spec = util.spec_from_file_location(module_name, file_path)
+            if spec and spec.loader:
+                module = util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+
+                new_wrappers = {
+                    name: obj
+                    for name, obj in inspect.getmembers(module)
+                    if inspect.isclass(obj)
+                    and obj.__module__ == module.__name__
+                    and not name.startswith("_")
+                }
+                wrappers.update(new_wrappers)
+
         return wrappers
 
 
