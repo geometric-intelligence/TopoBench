@@ -687,3 +687,19 @@ def load_manual_simplicial_complex():
         num_nodes=len(one_cells),
         y=torch.tensor(y),
     )
+
+
+def data2simplicial(data):
+    # Find incidences
+    incidence_keys = sorted(
+        [
+            key
+            for key in data.keys()
+            if ("incidence_" in key and key != "incidence_0")
+        ]
+    )
+
+    num_nodes = data["incidence_0"].shape[0]
+
+    simplices = []
+    return simplices

@@ -1,0 +1,3 @@
+_target_: topobench.transforms.data_transform.DataTransform
+transform_name: "Identity"
+transform_type: null
