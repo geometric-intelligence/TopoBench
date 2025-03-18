@@ -8,6 +8,8 @@ import omegaconf
 import torch
 import torch_geometric
 from topomodelx.utils.sparse import from_sparse
+from toponetx.classes import SimplicialComplex
+
 
 
 def get_routes_from_neighborhoods(neighborhoods):
@@ -690,16 +692,31 @@ def load_manual_simplicial_complex():
 
 
 def data2simplicial(data):
-    # Find incidences
-    incidence_keys = sorted(
-        [
-            key
-            for key in data.keys()
-            if ("incidence_" in key and key != "incidence_0")
-        ]
-    )
+    sc = SimplicialComplex()
+    nodes = [list([i]) for i in range(0, data['incidence_0'].shape[1])]
 
-    num_nodes = data["incidence_0"].shape[0]
+    # Convert to list of lists
+    edges = [ i for i in torch_geometric.utils.remove_self_loops(data['adjacency_0'].indices())[0].T.tolist()]
 
-    simplices = []
-    return simplices
+
+    tringles = (data["incidence_1"]@data["incidence_2"]).indices()
+    unique_tringles = torch.unique(tringles[1])
+    if tringles.size(0)>0:
+        triangles = []
+        for i in unique_tringles:
+            tr = tringles[0][torch.where(tringles[1]==i)[0]]
+            triangles.append([j.item() for j in tr])
+    
+    # tetrahedronds = (data["incidence_2"]@data["incidence_3"]).indices()[1]
+    # if tetrahedronds.size(0)>0:
+    #     tetrahedronds = tetrahedronds.reshape(-1,4)
+    #     tetrahedronds = [list(i) for i in list(tetrahedronds.cpu().numpy())]
+    
+    
+    sc.add_simplices_from(nodes)
+    sc.add_simplices_from(edges)
+    sc.add_simplices_from(triangles)
+    #sc.add_simplices_from(tetrahedronds)
+    
+    
+    return sc

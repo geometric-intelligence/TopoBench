@@ -12,7 +12,7 @@ from .utils import (
     make_hash,  # noqa: F401
     select_neighborhoods_of_interest,  # noqa: F401
     data2simplicial,  # noqa: F401
-    # import function here, add # noqa: F401 for PR
+    # import function here, add noqa: F401 for PR
 )
 
 utils_functions = [
@@ -34,7 +34,7 @@ from .split_utils import (  # noqa: E402
     load_coauthorship_hypergraph_splits,  # noqa: F401
     load_inductive_splits,  # noqa: F401
     load_transductive_splits,  # noqa: F401
-    # import function here, add # noqa: F401 for PR
+    # import function here, add noqa: F401 for PR
 )
 
 split_helper_functions = [
@@ -50,7 +50,7 @@ from .io_utils import (  # noqa: E402
     load_hypergraph_pickle_dataset,  # noqa: F401
     read_ndim_manifolds,  # noqa: F401
     read_us_county_demos,  # noqa: F401
-    # import function here, add # noqa: F401 for PR
+    # import function here, add noqa: F401 for PR
 )
 
 io_helper_functions = [
