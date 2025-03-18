@@ -208,7 +208,13 @@ def read_ndim_manifolds(path, dim, y_val="betti_numbers", slice=None):
         }
 
         # Construct the connectivity matrices
-        inc_dict = get_complex_connectivity(sc, dim, signed=False)
+        if dim == 2:
+            inc_dict = get_complex_connectivity(sc, dim + 1, signed=False)
+            assert inc_dict["incidence_3"].size(1) == 0, (
+                "For 2-dim manifolds there shouldn't be any tetrahedrons."
+            )
+        else:
+            inc_dict = get_complex_connectivity(sc, dim, signed=False)
 
         data = Data(x=x, y=y, **x_i, **inc_dict)
         data_list.append(data)
