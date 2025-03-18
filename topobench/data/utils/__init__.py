@@ -1,6 +1,8 @@
 """Init file for data/utils module."""
 
 from .utils import (
+    data2simplicial,  # noqa: F401
+    # import function here, add noqa: F401 for PR
     ensure_serializable,  # noqa: F401
     generate_zero_sparse_connectivity,  # noqa: F401
     get_combinatorial_complex_connectivity,  # noqa: F401
@@ -11,8 +13,6 @@ from .utils import (
     load_simplicial_dataset,  # noqa: F401
     make_hash,  # noqa: F401
     select_neighborhoods_of_interest,  # noqa: F401
-    data2simplicial,  # noqa: F401
-    # import function here, add noqa: F401 for PR
 )
 
 utils_functions = [

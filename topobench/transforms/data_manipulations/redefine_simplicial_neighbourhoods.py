@@ -1,8 +1,10 @@
 """An transform that redifines simplicial complex neighbourhood."""
 
 import torch_geometric
+
 from topobench.data.utils import data2simplicial
 from topobench.data.utils.utils import get_complex_connectivity
+
 
 class RedefineSimplicialNeighbourhoods(
     torch_geometric.transforms.BaseTransform
@@ -37,21 +39,23 @@ class RedefineSimplicialNeighbourhoods(
             The same data.
         """
 
-        keys_to_keep = ['x', 'x_0', 'x_1', 'x_2', 'y']
+        keys_to_keep = ["x", "x_0", "x_1", "x_2", "y"]
         simplicial_complex = data2simplicial(data)
 
-        lifted_topology = get_complex_connectivity(simplicial_complex,
+        lifted_topology = get_complex_connectivity(
+            simplicial_complex,
             self.parameters["complex_dim"],
             neighborhoods=self.parameters["neighborhoods"],
-            signed=self.parameters["signed"])
-        
+            signed=self.parameters["signed"],
+        )
+
         # Get rid of the old keys
-        for key in data.keys():
+        for key in data:
             if key not in keys_to_keep:
                 data.pop(key)
-        
+
         # Assign new topology
-        for key in lifted_topology.keys():
+        for key in lifted_topology:
             data[key] = lifted_topology[key]
 
         return data
