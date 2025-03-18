@@ -13,7 +13,6 @@ import torch_geometric
 from toponetx.classes import SimplicialComplex
 from torch_geometric.data import Data
 from torch_sparse import coalesce
-from topomodelx.utils.sparse import from_sparse
 
 from topobench.data.utils import get_complex_connectivity
 
@@ -133,7 +132,7 @@ def read_ndim_manifolds(
     slice : int, optional
         Slice of the dataset to load. If None, load the entire dataset (default: None). Used for testing.
     load_as_graph : bool
-        load Mantra dataset as graph. Useful when arbitrary graph lifting need to be used.
+        Load mantra dataset as graph. Useful when arbitrary graph lifting need to be used.
 
     Returns
     -------
@@ -212,7 +211,7 @@ def read_ndim_manifolds(
             for i in range(dim + 1)
         }
 
-        if load_as_graph == False:
+        if not load_as_graph:
             # Construct the connectivity matrices
             if dim == 2:
                 inc_dict = get_complex_connectivity(sc, dim + 1, signed=False)
@@ -223,22 +222,6 @@ def read_ndim_manifolds(
                 inc_dict = get_complex_connectivity(sc, dim, signed=False)
 
             data = Data(x=x, y=y, **x_i, **inc_dict)
-
-        elif load_as_graph == True:
-            edge_index = from_sparse(
-                getattr(sc, f"adjacency_matrix")(rank=0, signed=False)
-            ).indices()
-
-            edge_index = torch_geometric.utils.remove_self_loops(edge_index)[0]
-
-            if dim == 2:
-                x_i.pop("x_2")
-            elif dim == 3:
-                x_i.pop("x_3")
-            else:
-                raise ValueError("Soemthing wrong with x_i")
-
-            data = Data(x=x, y=y, edge_index=edge_index)
 
         else:
             raise ValueError("Define if load_as_graph or not")
