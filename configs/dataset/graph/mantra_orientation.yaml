@@ -1,21 +1,21 @@
 loader:
   _target_: topobench.data.loaders.MantraSimplicialDatasetLoader
   parameters: 
-    data_domain: simplicial
+    data_domain: graph # MANTRA per se is simplicial dataset, however in some cases we want to use MANTRA as a graph to perform custome liftings
     data_type: topological 
     data_name: MANTRA
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+    load_as_graph: True 
     manifold_dim: 2
     version: "v0.0.5"
-    load_as_graph: False
-    task_variable: "genus" # Options: ['name', 'genus', 'orientable'] To use 'torsion_coefficients', 'betti_numbers' fix multilabel multiclass issue
+    task_variable: "orientable" # Options: ['name', 'genus', 'orientable'] To use 'torsion_coefficients', 'betti_numbers' fix multilabel multiclass issue
     model_domain: ${model.model_domain}
 
 # Data definition
 parameters:
   # In the case of higher-order datasets we have multiple feature dimentions 
-  num_features: [1,1,1]
-  num_classes: 8 # Num classes depents on the task_variable
+  num_features: 1
+  num_classes: 2 # Num classes depents on the task_variable
 
   # Dataset parameters
   task: classification
@@ -23,6 +23,8 @@ parameters:
   monitor_metric: accuracy
   task_level: graph 
   data_seed: 0
+  max_dim_if_lifted: 2
+  preserve_edge_attr_if_lifted: False # The edge attributes are generated ones hence no need to keep them 
 
 #splits
 split_params:

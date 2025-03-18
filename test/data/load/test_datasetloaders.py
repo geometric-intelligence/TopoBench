@@ -6,7 +6,7 @@ import hydra
 from pathlib import Path
 from typing import List, Tuple, Dict, Any
 from omegaconf import DictConfig
-
+from topobench.data.preprocessor.preprocessor import PreProcessor
 class TestLoaders:
     """Comprehensive test suite for all dataset loaders."""
     
@@ -41,7 +41,7 @@ class TestLoaders:
                             # Below the datasets that have some default transforms with we manually overriten with no_transform,
                             # due to lack of default transform for domain2domain
                             "REDDIT-BINARY.yaml", "IMDB-MULTI.yaml", "IMDB-BINARY.yaml", #"ZINC.yaml"
-                            "ogbg-molpcba.yaml", # "ogbg-molhiv.yaml"
+                            "ogbg-molpcba.yaml", "manual_dataset.yaml" # "ogbg-molhiv.yaml"
                             }
         
         # Below the datasets that takes quite some time to load and process                            
@@ -118,6 +118,45 @@ class TestLoaders:
             #     assert torch.max(dataset.data.y) < dataset.num_classes
 
             repr(dataset)
+    
+    def test_mantra_graph_and_simplicial(self):
+        with hydra.initialize(
+            version_base="1.3",
+            config_path=self.relative_config_dir,
+            job_name="run"
+        ):
+            parameters = hydra.compose(
+                config_name="run.yaml",
+                overrides=["dataset=graph/mantra_orientation", f"model=simplicial/scn"], 
+                return_hydra_config=True, 
+            )
+            graph_loader = hydra.utils.instantiate(parameters.dataset.loader)
+            
+
+            
+        graph_dataset, data_dir = graph_loader.load(slice=100)
+        # parameters.transforms['graph2simplicial_lifting']['neighborhoods'] = ["incidence", "down_laplacian", "up_laplacian", "adjacency", "coadjacency", "hodge_laplacian"]
+        processed_graph2simplicial_dataset = PreProcessor(graph_dataset, data_dir, parameters.transforms)
+            
+        simplicial_dataset, _ = self._load_dataset(data_domain='simplicial', config_file='mantra_orientation')
+
+        # Neighbourhoods to compare:
+        keys_to_check = ['hodge_laplacian_2', 'coadjacency_1', 'incidence_0', 'adjacency_1', 'up_laplacian_2', 'incidence_1', 'adjacency_0', 'incidence_2', 'coadjacency_0', 'adjacency_2', 'down_laplacian_2', 'hodge_laplacian_0', 'down_laplacian_0', 'up_laplacian_0', 'down_laplacian_1',  'up_laplacian_1', 'hodge_laplacian_1', 'coadjacency_2']
+        for index, a in enumerate(zip(processed_graph2simplicial_dataset, simplicial_dataset)):
+            graph, simplex = a
+            neigh_check_bool = []
+            for key in keys_to_check:
+                try:
+                    neigh_check_bool.append(torch.all(graph[key].indices() == simplex[key].indices()))
+                except:
+                    pass
+            
+            neigh_check_bool = torch.all(torch.Tensor(neigh_check_bool))
+            assert neigh_check_bool==True, "Some neighboruhood do not coincide"
+            assert graph['y'] == simplex['y'], "Targers do not match"
+        
+       
+
 
     
                 
