@@ -138,7 +138,7 @@ def infer_in_channels(dataset, transforms):
     """
 
     # Make it possible to pass lifting configuration as file path
-    if transforms.keys() == {"liftings"}:
+    if transforms is not None and transforms.keys() == {"liftings"}:
         transforms = transforms.liftings
 
     def find_complex_lifting(transforms):
