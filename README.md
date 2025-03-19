@@ -89,84 +89,69 @@ python -m topobench
 ---
 
 ### Customizing Experiment Configuration
+Transforms allow you to modify your data before processing. There are two main ways to configure transforms: individual transforms and transform groups.
 
-Thanks to `hydra` implementation, one can easily override the default experiment configuration through the command line.  
-For instance, the model and dataset can be selected as:
+<details>
+<summary><strong>Configuring Individual Transforms</strong></summary>
+
+When configuring a single transform, follow these steps:
+
+1. Choose a desired transform (e.g., a lifting transform).
+2. Identify the relative path to the transform configuration.
+
+The folder structure for transforms is as follows:
+
+```
+├── configs
+│ ├── data_manipulations
+│ ├── transforms
+│ │ └── liftings
+│ │   ├── graph2cell
+│ │   ├── graph2hypergraph
+│ │   └── graph2simplicial
+```
+
+To override the default transform, use the following command structure:
 
 ```bash
-python -m topobench model=cell/cwn dataset=graph/MUTAG
+python -m topobench model=<model_type>/<model_name> dataset=<data_type>/<dataset_name> transforms=[<transform_path>/<transform_name>]
 ```
-<details>
-<summary>Configure transforms</summary>
 
-Here we describe the case when transforms are configured only with **one** transform. We provide an example considering override of the default lifting. To do so it is required to choose a desired lifting (which can be found in [section on available liftings](#structural_liftings)) and identify the relative path to it.
-
-Below you can see a snapshot of folders structure. 
-```
-├── configs                   <- Hydra configs
-│   ├── data_manipulations       <- Data manipulations 
-│   ├── transforms               <- Data transformation configs
-│   │   └── liftings                 <- Lifting transforms
-│   │       ├── graph2cell               <- Graph to cell lifting transforms
-│   │       ├── graph2hypergraph         <- Graph to hypergraph lifting transforms
-│   │       ├── graph2simplicial         <- Graph to simplicial lifting transforms
-```
-Assuming we want to use cell `cell/cwn` model as in previous example and we want to use `discrete_configuration_complex` lifting which `yaml` configuration is in `liftings/graph2cell/` folder. Then to override transforms we should add `transforms=[liftings/graph2cell/discrete_configuration_complex]`, hence the final command will look as: 
+For example, to use the `discrete_configuration_complex` lifting with the `cell/cwn` model:
 
 ```bash
 python -m topobench model=cell/cwn dataset=graph/MUTAG transforms=[liftings/graph2cell/discrete_configuration_complex]
 ```
 
-Next in the case we want to additionally perform some transformations on the lifted data we can compose transforms within the CLI
- ```bash
-python -m topobench model=cell/cwn dataset=graph/MUTAG transforms=[liftings/graph2cell/discrete_configuration_complex, data_manipulations/<transformation_name>]
-```
-In the case when we want to first perform data transformation and then lift the data we should compose the transforms correspondingly as:
-```bash
-python -m topobench model=cell/cwn dataset=graph/MUTAG transforms=[data_manipulations/<transformation_name>, liftings/graph2cell/discrete_configuration_complex]
-```
-
-However due to the `hydra` and current repository structure it is not possible to directly compose multiple data_manipulations. For example, in the case of ZINC dataset, the pipeline is composed of two data trasformations and then lifting procedure, hence explicitly name list the transformations and lifting as transforms=[data_manipulations/<transformation_name1>,data_manipulations/<transformation_name2>, liftings/graph2cell/<lifting_name>] **will not work**.  Please see the `Configure transform groups` toggle to solve this case.
-
 </details>
-
 <details>
-<summary>Configure transform groups</summary>
-In the cases when we want to combine multiple data manipulation transformations it is required to use *transform groups*.
+<summary><strong>Configuring Transform Groups</strong></summary>
 
-To use multiple different data manipulations it is required to create new corresponding configuration files.
+For more complex scenarios, such as combining multiple data manipulations, use transform groups:
 
-```
-├── configs                   <- Hydra configs
-│   ├── data_manipulations       <- Data manipulations 
-│   ├── transforms               <- Data transformation configs
-│   │   └── liftings                 <- Lifting transforms
-│   │       ├── graph2cell               <- Graph to cell lifting transforms
-│   │       ├── graph2hypergraph         <- Graph to hypergraph lifting transforms
-│   │       ├── graph2simplicial         <- Graph to simplicial lifting transforms
-│   │       ├── custom_example.yaml       <- Custom example transform config
-```
-In the structure outline above you can see the `custom_example.yaml` file that essentially a placeholder for the updates. The custom_example.yaml is composed of three data manipulation transforms and a lifting to cell domaim
+1. Create a new configuration file in the `configs/transforms` directory (e.g., `custom_example.yaml`).
+2. Define the transform group in the YAML file:
 
 ```yaml
 defaults:
-  - data_manipulations@data_transform_1: identity
-  - data_manipulations@data_transform_2: node_degrees
-  - data_manipulations@data_transform_3: one_hot_node_degree_features
-  - liftings/graph2cell@graph2cell_lifting: cycle
+- data_manipulations@data_transform_1: identity
+- data_manipulations@data_transform_2: node_degrees
+- data_manipulations@data_transform_3: one_hot_node_degree_features
+- liftings/graph2cell@graph2cell_lifting: cycle
 ```
 
-This configuration firts applies three data manipulation transforms: `identity`, `node_degrees`, `one_hot_node_degree_features` and then `discrete_configuration_complex` liftings. 
+**Important:** When composing multiple data manipulations, use the `@` operator to assign unique names to each transform.
 
-As you can in the `yaml` file we have `data_manipulations@data_transform_1`,`data_manipulations@data_transform_2` and `data_manipulations@data_transform_3`. Here important feature is that when we want to compose multiple data manipulation it **is required** to uses `@` operator, which assigns a unique name to each transform, with unique names afterwards (in the example case it is `data_transform_1`, `data_transform_2`, `data_transform_3`). 
-
-When the `yaml` file is configured to run pipeline with it just need to assign the transform file name `custom_example` to transforms in the run.yaml file or explicitly write the CLI command as: 
+3. Run the experiment with the custom transform group:
 
 ```bash
 python -m topobench model=cell/cwn dataset=graph/ZINC transforms=custom_example
 ```
 
+This approach allows you to create complex transform pipelines, including multiple data manipulations and liftings, in a single configuration file.
+
 </details>
+By mastering these configuration options, you can easily customize your experiments to suit your specific needs, from simple model and dataset selections to complex data transformation pipelines.
 ---
 
 ### Additional Notes
