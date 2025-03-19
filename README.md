@@ -89,8 +89,15 @@ python -m topobench
 ---
 
 ### Customizing Experiment Configuration
-Transforms allow you to modify your data before processing. There are two main ways to configure transforms: individual transforms and transform groups.
+Thanks to `hydra` implementation, one can easily override the default experiment configuration through the command line. For instance, the model and dataset can be selected as:
 
+```
+python -m topobench model=cell/cwn dataset=graph/MUTAG
+```
+**Remark:** By default, our pipeline identifies the source and destination topological domains, and applies a default lifting between them if required.
+
+
+Transforms allow you to modify your data before processing. There are two main ways to configure transforms: individual transforms and transform groups.
 <details>
 <summary><strong>Configuring Individual Transforms</strong></summary>
 
