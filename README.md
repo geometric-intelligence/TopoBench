@@ -134,8 +134,37 @@ However due to the `hydra` and current repository structure it is not possible t
 <summary>Configure transform groups</summary>
 In the cases when we want to combine multiple data manipulation transformations it is required to use *transform groups*.
 
+To use multiple different data manipulations it is required to create new corresponding configuration files.
 
+```
+├── configs                   <- Hydra configs
+│   ├── data_manipulations       <- Data manipulations 
+│   ├── transforms               <- Data transformation configs
+│   │   └── liftings                 <- Lifting transforms
+│   │       ├── graph2cell               <- Graph to cell lifting transforms
+│   │       ├── graph2hypergraph         <- Graph to hypergraph lifting transforms
+│   │       ├── graph2simplicial         <- Graph to simplicial lifting transforms
+│   │       ├── custom_example.yaml       <- Custom example transform config
+```
+In the structure outline above you can see the `custom_example.yaml` file that essentially a placeholder for the updates. The custom_example.yaml is composed of three data manipulation transforms and a lifting to cell domaim
 
+```yaml
+defaults:
+  - data_manipulations@data_transform_1: identity
+  - data_manipulations@data_transform_2: node_degrees
+  - data_manipulations@data_transform_3: one_hot_node_degree_features
+  - liftings/graph2cell@graph2cell_lifting: cycle
+```
+
+This configuration firts applies three data manipulation transforms: `identity`, `node_degrees`, `one_hot_node_degree_features` and then `discrete_configuration_complex` liftings. 
+
+As you can in the `yaml` file we have `data_manipulations@data_transform_1`,`data_manipulations@data_transform_2` and `data_manipulations@data_transform_3`. Here important feature is that when we want to compose multiple data manipulation it **is required** to uses `@` operator, which assigns a unique name to each transform, with unique names afterwards (in the example case it is `data_transform_1`, `data_transform_2`, `data_transform_3`). 
+
+When the `yaml` file is configured to run pipeline with it just need to assign the transform file name `custom_example` to transforms in the run.yaml file or explicitly write the CLI command as: 
+
+```bash
+python -m topobench model=cell/cwn dataset=graph/ZINC transforms=custom_example
+```
 
 </details>
 ---
