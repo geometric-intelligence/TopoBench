@@ -48,26 +48,32 @@ The main pipeline trains and evaluates a wide range of state-of-the-art TNNs and
 ## :jigsaw: Get Started
 
 ### Create Environment
-
-If you do not have conda on your machine, please follow [their guide](https://docs.anaconda.com/free/miniconda/miniconda-install/) to install it. 
-
-First, clone the `TopoBench` repository and set up a conda environment `tb` with python 3.11.3. 
-
-```
+First, clone and navigate to the `TopoBench` repository  
+```bash
 git clone git@github.com:geometric-intelligence/topobench.git
 cd TopoBench
+```
+
+
+Ensure `conda` is installed:  
+```bash
+conda --version || echo "Conda not found! Please install it from https://docs.anaconda.com/free/miniconda/miniconda-install/"
+```
+
+Next, set up and activate a conda environment `tb` with Python 3.11.3:
+```bash
 conda create -n tb python=3.11.3
+conda activate tb
 ```
 
 Next, check the CUDA version of your machine:
-```
-/usr/local/cuda/bin/nvcc --version
+```bash
+which nvcc && nvcc --version
 ```
 and ensure that it matches the CUDA version specified in the `env_setup.sh` file (`CUDA=cu121` by default). If it does not match, update `env_setup.sh` accordingly by changing both the `CUDA` and `TORCH` environment variables to compatible values as specified on [this website](https://github.com/pyg-team/pyg-lib).
 
 Next, set up the environment with the following command.
-
-```
+```bash
 source env_setup.sh
 ```
 This command installs the `TopoBench` library and its dependencies. 
@@ -76,26 +82,77 @@ This command installs the `TopoBench` library and its dependencies.
 
 Next, train the neural networks by running the following command:
 
-```
+```bash
 python -m topobench 
 ```
 
-Thanks to `hydra` implementation, one can easily override the default experiment configuration through the command line. For instance, the model and dataset can be selected as:
+---
 
-```
+### Customizing Experiment Configuration
+
+Thanks to `hydra` implementation, one can easily override the default experiment configuration through the command line.  
+For instance, the model and dataset can be selected as:
+
+```bash
 python -m topobench model=cell/cwn dataset=graph/MUTAG
 ```
+<details>
+<summary>Configure transforms</summary>
 
-**Remark:** By default, our pipeline identifies the source and destination topological domains, and applies a default lifting between them if required.
+Here we describe the case when transforms are configured only with **one** transform. We provide an example considering override of the default lifting. To do so it is required to choose a desired lifting (which can be found in [section on available liftings](#structural_liftings)) and identify the relative path to it.
 
-The same CLI override mechanism also applies when modifying more finer configurations within a `CONFIG GROUP`. Please, refer to the official [`hydra`documentation](https://hydra.cc/docs/intro/) for further details.
+Below you can see a snapshot of folders structure. 
+```
+├── configs                   <- Hydra configs
+│   ├── data_manipulations       <- Data manipulations 
+│   ├── transforms               <- Data transformation configs
+│   │   └── liftings                 <- Lifting transforms
+│   │       ├── graph2cell               <- Graph to cell lifting transforms
+│   │       ├── graph2hypergraph         <- Graph to hypergraph lifting transforms
+│   │       ├── graph2simplicial         <- Graph to simplicial lifting transforms
+```
+Assuming we want to use cell `cell/cwn` model as in previous example and we want to use `discrete_configuration_complex` lifting which `yaml` configuration is in `liftings/graph2cell/` folder. Then to override transforms we should add `transforms=[liftings/graph2cell/discrete_configuration_complex]`, hence the final command will look as: 
+
+```bash
+python -m topobench model=cell/cwn dataset=graph/MUTAG transforms=[liftings/graph2cell/discrete_configuration_complex]
+```
+
+Next in the case we want to additionally perform some transformations on the lifted data we can compose transforms within the CLI
+ ```bash
+python -m topobench model=cell/cwn dataset=graph/MUTAG transforms=[liftings/graph2cell/discrete_configuration_complex, data_manipulations/<transformation_name>]
+```
+In the case when we want to first perform data transformation and then lift the data we should compose the transforms correspondingly as:
+```bash
+python -m topobench model=cell/cwn dataset=graph/MUTAG transforms=[data_manipulations/<transformation_name>, liftings/graph2cell/discrete_configuration_complex]
+```
+
+However due to the `hydra` and current repository structure it is not possible to directly compose multiple data_manipulations. For example, in the case of ZINC dataset, the pipeline is composed of two data trasformations and then lifting procedure, hence explicitly name list the transformations and lifting as transforms=[data_manipulations/<transformation_name1>,data_manipulations/<transformation_name2>, liftings/graph2cell/<lifting_name>] **will not work**.  Please see the `Configure transform groups` toggle to solve this case.
+
+</details>
+
+<details>
+<summary>Configure transform groups</summary>
+In the cases when we want to combine multiple data manipulation transformations it is required to use *transform groups*.
+
+
+
+
+</details>
+---
+
+### Additional Notes
+
+- **Automatic Lifting:** By default, our pipeline identifies the source and destination topological domains and applies a default lifting between them if required.  
+- **Fine-Grained Configuration:** The same CLI override mechanism applies when modifying finer configurations within a `CONFIG GROUP`.  
+  Please refer to the official [`hydra` documentation](https://hydra.cc/docs/intro/) for further details.
+
 
 
 
 ## :bike: Experiments Reproducibility
 To reproduce Table 1 from the [`TopoBench: A Framework for Benchmarking Topological Deep Learning`](https://arxiv.org/pdf/2406.06642) paper, please run the following command:
 
-```
+```bash
 bash scripts/reproduce.sh
 ```
 **Remark:** We have additionally provided a public [W&B (Weights & Biases) project](https://wandb.ai/telyatnikov_sap/TopoBenchmark_main?nw=nwusertelyatnikov_sap) with logs for the corresponding runs (updated on June 11, 2024).
@@ -155,7 +212,7 @@ We list the neural networks trained and evaluated by `TopoBench`, organized by t
 
 We list the liftings used in `TopoBench` to transform datasets. Here, a _lifting_ refers to a function that transforms a dataset defined on a topological domain (_e.g._, on a graph) into the same dataset but supported on a different topological domain (_e.g._, on a simplicial complex). 
 
-### Structural Liftings
+### <a name="structural_liftings"></a> Structural Liftings
 
 The structural lifting is responsible for the transformation of the underlying relationships or elements of the data. For instance, it might determine how nodes and edges in a graph are mapped into triangles and tetrahedra in a simplicial complex. This structural transformation can be further categorized into connectivity-based, where the mapping relies solely on the existing connections within the data, and feature-based, where the data's inherent properties or features guide the new structure.
 
