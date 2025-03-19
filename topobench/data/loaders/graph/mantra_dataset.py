@@ -1,4 +1,4 @@
-"""Loaders for Mantra dataset as simplicial."""
+"""Loaders for Mantra dataset as graph."""
 
 from omegaconf import DictConfig
 
@@ -66,5 +66,6 @@ class MantraSimplicialDatasetLoader(AbstractLoader):
             root=str(self.root_data_dir),
             name=self.parameters.data_name,
             parameters=self.parameters,
+            load_as_graph=True,
             **kwargs,
         )

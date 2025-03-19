@@ -180,6 +180,7 @@ cython_debug/
 notebooks/tmp
 *.pickle
 /tutorials/data/
+/tutorials/datasets/
 /tutorials/lightning_logs/
 /tutorials/datasets/
 # wandb

@@ -153,7 +153,7 @@ def collate_fn(batch):
     if (batch.get("batch") is not None) and (batch.get("batch_0") is not None):
         # Back compatiility check
         assert torch.all(batch["batch_0"].cpu() == batch.pop("batch").cpu()), (
-            "batch['batch_0'] and batch['batch] should match in the number of nodes"
+            "batch['batch_0'] and batch['batch'] should match in the number of nodes"
         )
 
     if (batch.get("batch") is not None) and (batch.get("batch_0") is None):

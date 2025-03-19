@@ -1,0 +1,5 @@
+defaults:
+  - data_manipulations@data_transform_1: identity
+  - data_manipulations@data_transform_2: node_degrees
+  - data_manipulations@data_transform_3: one_hot_node_degree_features
+  - liftings/graph2cell@graph2cell_lifting: cycle
