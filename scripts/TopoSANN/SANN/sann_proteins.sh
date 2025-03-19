@@ -19,10 +19,12 @@ LEARNING_RATES=(0.01 0.001)
 PROJECTION_DROPOUTS=(0.25 0.5)
 WEIGHT_DECAYS=(0 0.0001)
 BATCH_SIZES=(128 256)
+
 # =====================
 # MAX_HOPS
 # =====================
 MAX_HOPS=(1 2 3)
+
 # =====================
 # CONVERT TO STRINGS
 # =====================
@@ -32,13 +34,6 @@ LEARNING_RATES_STR=$(IFS=,; echo "${LEARNING_RATES[*]}")  # Convert to comma-sep
 PROJECTION_DROPOUTS_STR=$(IFS=,; echo "${PROJECTION_DROPOUTS[*]}")  # Convert to comma-separated string
 WEIGHT_DECAYS_STR=$(IFS=,; echo "${WEIGHT_DECAYS[*]}")  # Convert to comma-separated string
 BATCH_SIZES_STR=$(IFS=,; echo "${BATCH_SIZES[*]}")
-
-# =====================
-# PARAMETERS OVER WHICH WE PERFORM PARALLEL RUNS
-# =====================
-# batch_sizes=(128 256)
-# learning_rates=(0.01 0.001)
-
 
 # PRERUN to create datasets
 

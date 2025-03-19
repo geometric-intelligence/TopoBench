@@ -24,7 +24,7 @@ WEIGHT_DECAYS=(0 0.0001)
 # =====================
 # PRETRAINED MODELS
 # =====================
-PRETRAIN_MODELS=('ZINC' 'GEOM')
+PRETRAIN_MODELS=('ZINC' 'GEOM' 'MOLPCBA' 'PCQM4MV2')
 
 
 # =====================
@@ -95,7 +95,7 @@ neighborhoods=(
 # done
 # wait
 
-
+batch_sizes=(128)
 gpus=(0 1 2 3 4 5 6 7)
 for i in {0..7}; do 
     CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
@@ -132,9 +132,7 @@ for i in {0..7}; do
 done
 wait
 
-
-PRETRAIN_MODELS=('MOLPCBA' 'PCQM4MV2')
-
+batch_sizes=(256)
 for i in {0..7}; do 
     CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
     neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
