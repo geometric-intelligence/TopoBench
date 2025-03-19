@@ -50,7 +50,7 @@ class RedefineSimplicialNeighbourhoods(
         )
 
         # Get rid of the old keys
-        for key in data:
+        for key, _ in data:
             if key not in keys_to_keep:
                 data.pop(key)
 
