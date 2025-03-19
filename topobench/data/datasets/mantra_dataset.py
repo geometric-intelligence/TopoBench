@@ -58,6 +58,7 @@ class MantraDataset(InMemoryDataset):
         self.manifold_dim = parameters.manifold_dim
         self.version = parameters.version
         self.task_variable = parameters.task_variable
+        self.load_as_graph = parameters.load_as_graph
         self.name = "_".join(
             [name, str(self.version), f"manifold_dim_{self.manifold_dim}"]
         )
@@ -190,6 +191,7 @@ class MantraDataset(InMemoryDataset):
             self.manifold_dim,
             self.task_variable,
             self.slice,
+            self.load_as_graph,
         )
 
         data_list = data
