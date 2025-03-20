@@ -24,7 +24,7 @@ WEIGHT_DECAYS=(0 0.0001)
 # =====================
 PRETRAIN_MODELS=('ZINC' 'GEOM' 'MOLPCBA' 'PCQM4MV2')
 
-
+# seed=42,3,5,23,150
 # =====================
 # CONVERT TO STRINGS
 # =====================

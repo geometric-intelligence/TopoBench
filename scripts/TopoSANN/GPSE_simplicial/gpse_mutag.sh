@@ -84,7 +84,7 @@ for i in {0..7}; do
             optimizer.parameters.lr=0.01\
             optimizer.parameters.weight_decay=0.25\
             callbacks.early_stopping.patience=10\
-            transforms=GPSE_simplicial_degree\
+            transforms=GPSE_simplicial\
             transforms.sann_encoding.pretrain_model=$pret_model\
             transforms.sann_encoding.copy_initial=True\
             transforms.sann_encoding.neighborhoods=$neighborhood\
@@ -121,7 +121,7 @@ for i in {0..7}; do
                 optimizer.parameters.lr=$LEARNING_RATES_STR\
                 optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
                 callbacks.early_stopping.patience=10\
-                transforms=GPSE_simplicial_degree\
+                transforms=GPSE_simplicial\
                 transforms.sann_encoding.pretrain_model=$PRETRAIN_MODELS_STR\
                 transforms.sann_encoding.copy_initial=True\
                 transforms.sann_encoding.neighborhoods=$neighborhood\
