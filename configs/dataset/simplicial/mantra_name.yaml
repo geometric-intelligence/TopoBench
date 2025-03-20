@@ -10,12 +10,12 @@ loader:
     load_as_graph: False
     task_variable: "name" # Options: ['name', 'genus', 'orientable'] To use 'torsion_coefficients', 'betti_numbers' fix multilabel multiclass issue
     model_domain: ${model.model_domain}
-    slice: True
+    slice: False
 
 # Data definition
 parameters:
   # In the case of higher-order datasets we have multiple feature dimentions 
-  num_features: [1,1,1]
+  num_features: [10,3,4]
   num_classes: 5 # In case of manifold_dim==2 num classes is 5 {'': 0, 'Klein bottle': 1, 'RP^2': 2, 'S^2': 3, 'T^2': 4,}
 
   # Dataset parameters
@@ -36,7 +36,7 @@ split_params:
 
 # Dataloader parameters
 dataloader_params:
-  batch_size: 5
+  batch_size: 256
   num_workers: 0
   pin_memory: False
   persistent_workers: False

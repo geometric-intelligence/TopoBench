@@ -11,13 +11,20 @@ node_degrees:
   stat_vars: [ "0_cell_degrees_up", "1_cell_degrees_up", "2_cell_degrees_down"]
 
 one_hot_1:
-  features_fields: "0_cell_degrees_up"
-  max_degree: 100
+  degrees_field: "0_cell_degrees_up"
+  features_field: "x_0"
+  max_degree: 9
 
 one_hot_2:
-  features_fields: "1_cell_degrees_up"
-  max_degree: 100
+  degrees_field: "1_cell_degrees_up"
+  features_field: "x_1"
+  max_degree: 2
 
 one_hot_3:
-  features_fields: "2_cell_degrees_up"
-  max_degree: 100
+  degrees_field: "2_cell_degrees_down"
+  features_field: "x_2"
+  max_degree: 3
+
+# rename_fields:
+#   init_field_name: ["0_cell_degrees_up", "1_cell_degrees_up", "2_cell_degrees_up"]
+#   new_field_name: ["x_0", "x_1", "x_2"]
