@@ -194,7 +194,7 @@ def read_ndim_manifolds(
         elif y_val == "name":
             y = torch.tensor(
                 [HOMEO_NAME_TO_IDX[y_value]], dtype=torch.long
-            ).unsqueeze(0)
+            ).squeeze(0)
         elif y_val == "orientable":
             y = torch.tensor([y_value], dtype=torch.long).squeeze()
         else:
@@ -214,12 +214,12 @@ def read_ndim_manifolds(
         if not load_as_graph:
             # Construct the connectivity matrices
             if dim == 2:
-                inc_dict = get_complex_connectivity(sc, dim + 1, signed=False)
+                inc_dict = get_complex_connectivity(sc, dim + 1, signed=True)
                 assert inc_dict["incidence_3"].size(1) == 0, (
                     "For 2-dim manifolds there shouldn't be any tetrahedrons."
                 )
             else:
-                inc_dict = get_complex_connectivity(sc, dim, signed=False)
+                inc_dict = get_complex_connectivity(sc, dim, signed=True)
 
             data = Data(x=x, y=y, **x_i, **inc_dict)
 

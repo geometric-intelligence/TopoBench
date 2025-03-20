@@ -1,5 +1,6 @@
 _target_: topobench.transforms.data_transform.DataTransform
 transform_name: "NodeDegrees"
 transform_type: "data manipulation"
-selected_fields: ["edge_index"] # "incidence"
-
+selected_fields: ["edge_index"] # "incidence_{i}" # Example: ["edge_index", "up_cell_degree", "up_cell_degree", "down_cell_degree"]
+degrees_types: ["up_cell_degree"] # "up_cell_degree", "down_cell_degree" in a list; Example: ["up_cell_degree","up_cell_degree", "up_cell_degree", "down_cell_degree"]. For "edge_index" it is "up_cell_degree" and for "incidence" it is either "up_cell_degree" or "down_cell_degree"
+stat_vars: ["node_degrees"] # Example: ["node_degrees", "1_cell_degrees_up", "2_cell_degrees_up", "3_cell_degrees_down"]

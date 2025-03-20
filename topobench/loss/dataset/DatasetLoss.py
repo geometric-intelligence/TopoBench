@@ -89,7 +89,7 @@ class DatasetLoss(AbstractLoss):
             mask = ~torch.isnan(target)
             # Avoid NaN values in the target
             target = torch.where(mask, target, torch.zeros_like(target))
-            loss = self.criterion(logits, target)
+            loss = self.criterion(logits, target.float())
             # Mask out the loss for NaN values
             loss = loss * mask
             # Take out average

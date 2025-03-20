@@ -66,5 +66,6 @@ class MantraSimplicialDatasetLoader(AbstractLoader):
             root=str(self.root_data_dir),
             name=self.parameters.data_name,
             parameters=self.parameters,
+            slice=self.parameters.get("slice", False),
             **kwargs,
         )

@@ -63,6 +63,9 @@ class MantraDataset(InMemoryDataset):
             [name, str(self.version), f"manifold_dim_{self.manifold_dim}"]
         )
         if kwargs.get("slice"):
+            print(
+                "Slicing MANTRA dataset to 100 samples. Useful for debugging and testing purposes."
+            )
             self.slice = 100
         else:
             self.slice = None

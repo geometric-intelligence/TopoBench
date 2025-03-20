@@ -3,19 +3,20 @@ loader:
   parameters: 
     data_domain: simplicial
     data_type: topological 
-    data_name: MANTRA
+    data_name: MANTRA_name
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
     manifold_dim: 2
     version: "v0.0.5"
     load_as_graph: False
     task_variable: "name" # Options: ['name', 'genus', 'orientable'] To use 'torsion_coefficients', 'betti_numbers' fix multilabel multiclass issue
     model_domain: ${model.model_domain}
+    slice: True
 
 # Data definition
 parameters:
   # In the case of higher-order datasets we have multiple feature dimentions 
   num_features: [1,1,1]
-  num_classes: 8 # Num classes depents on the task_variable
+  num_classes: 5 # In case of manifold_dim==2 num classes is 5 {'': 0, 'Klein bottle': 1, 'RP^2': 2, 'S^2': 3, 'T^2': 4,}
 
   # Dataset parameters
   task: classification

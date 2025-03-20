@@ -87,10 +87,11 @@ class TBEvaluator(AbstractEvaluator):
             self.metrics.update(preds, target)
 
         elif self.task == "multilabel classification":
+            self.metrics.update(preds, target)
             # Raise not supported error
-            raise NotImplementedError(
-                "Multilabel classification is not supported yet"
-            )
+            # raise NotImplementedError(
+            #     "Multilabel classification is not supported yet"
+            # )
 
         else:
             raise ValueError(f"Invalid task {self.task}")
