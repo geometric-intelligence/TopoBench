@@ -5,7 +5,7 @@
 defaults:
   - _self_
   - dataset: simplicial/mantra_name #simplicial/mantra_orientation
-  - model: simplicial/sccnn_custom #simplicial/sccnn_custom
+  - model: graph/gcn #simplicial/sccnn_custom
   - transforms: ${get_default_transform:${dataset},${model}} #no_transform
   - optimizer: default
   - loss: default

@@ -15,6 +15,7 @@ from torch_geometric.data import Data
 from torch_sparse import coalesce
 
 from topobench.data.utils import get_complex_connectivity
+from topomodelx.utils.sparse import from_sparse
 
 
 def get_file_id_from_url(url):
@@ -221,6 +222,9 @@ def read_ndim_manifolds(
             else:
                 inc_dict = get_complex_connectivity(sc, dim, signed=True)
 
+            inc_dict["edge_index"] = torch.Tensor(
+                from_sparse(sc.adjacency_matrix(rank=0)).indices()
+            )
             data = Data(x=x, y=y, **x_i, **inc_dict)
 
         else:
