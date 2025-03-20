@@ -98,6 +98,8 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         torch_geometric.transforms.Compose
             Pre-transform object.
         """
+        if transforms_config.keys() == {"liftings"}:
+            transforms_config = transforms_config.liftings
         pre_transforms_dict = hydra.utils.instantiate(transforms_config)
         pre_transforms_dict = {
             key: DataTransform(**value)

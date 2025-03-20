@@ -27,7 +27,7 @@ backbone:
   update_func: "lrelu"
 
 backbone_wrapper:
-  _target_: topobench.nn.wrappers.simplicial.SANNWrapper
+  _target_: topobench.nn.wrappers.SANNWrapper
   _partial_: true
   wrapper_name: SANNWrapper
   out_channels: ${model.feature_encoder.out_channels}

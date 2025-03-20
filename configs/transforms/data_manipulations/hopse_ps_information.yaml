@@ -23,11 +23,11 @@ cuda: ${trainer.devices}
 # Information regarding the positional and structural encodings
 
 pe_types: 
-  - 'RWSE' 
-  - 'ElstaticPE'
-  - 'HKdiagSE'
-  - 'LapPE'
-  # - 'CycleGE'
+  # - 'RWSE' 
+  # - 'ElstaticPE'
+  # - 'HKdiagSE'
+  # - 'LapPE'
+  - 'CycleGE'
 
 # Different PS have different sizes, need to unify them. 
 target_pe_dim: 80
@@ -42,12 +42,12 @@ posenc_LapPE_eigen_eigvec_abs: True
 # RWSE config
 kernel_param_RWSE: 
   - 2
-  - 50
+  - 3
 
 # Cycle SE config 
 kernel_param_CycleGE:
   - 2
-  - 9 # min/max cycles counts to consider
+  - 4 # min/max cycles counts to consider
 
 # HKdiagSE config
 kernel_param_HKdiagSE: 
