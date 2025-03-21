@@ -21,9 +21,10 @@ parameters:
   # Dataset parameters
   task: classification
   loss_type: cross_entropy
-  monitor_metric: accuracy
+  monitor_metric: f1
   task_level: graph 
   data_seed: 0
+  metrics: [accuracy, precision, recall, auroc, f1] # Available options: accuracy, auroc, precision, recall, f1
 
 #splits
 split_params:

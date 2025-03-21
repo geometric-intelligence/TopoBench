@@ -9,7 +9,7 @@ from topobench.transforms.liftings.graph2simplicial import (
 from topobench.transforms.liftings.graph2cell import (
     CellCycleLifting
 )
-from topobenchmarkx.transforms.data_manipulations.precompute_khop_features import (
+from topobench.transforms.data_manipulations.precompute_khop_features import (
     PrecomputeKHopFeatures
 )
 

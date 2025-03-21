@@ -1,3 +1,11 @@
+defaults:
+  - data_manipulations@redefine_simplicial_neighbourhoods: redefine_simplicial_neighbourhoods
+
+redefine_simplicial_neighbourhoods:
+  signed: False
+
+
+#-------
 # defaults:
 #   - data_manipulations@node_degrees: node_degrees
 #   # - data_manipulations@one_hot_1: one_hot_node_degree_features
