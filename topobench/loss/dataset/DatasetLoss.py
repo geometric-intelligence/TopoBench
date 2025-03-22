@@ -58,9 +58,6 @@ class DatasetLoss(AbstractLoss):
         logits = model_out["logits"]
         target = model_out["labels"]
 
-        if self.task == "regression":
-            target = target.unsqueeze(1)
-
         return self.forward_criterion(logits, target)
 
     def forward_criterion(self, logits, target):
