@@ -281,7 +281,11 @@ def compute_posenc_stats(data, pe_types, **kwargs):
         )
 
         if torch.all(cycles_per_node == 0) == True:
-            if list(data.edge_index.cpu().shape) == [2, 0]:
+            if list(
+                torch_geometric.utils.remove_self_loops(data.edge_index.cpu())[
+                    0
+                ].shape
+            ) == [2, 0]:
                 # Case when there is no connectivity in edge_index
                 pass
             else:
