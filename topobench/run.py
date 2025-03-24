@@ -199,14 +199,6 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
 
     # Model for us is Network + logic: inputs backbone, readout, losses
     log.info(f"Instantiating model <{cfg.model._target_}>")
-    # Set seed for random number generators in pytorch, numpy and python.random before instantiating the model
-    L.seed_everything(cfg.seed, workers=True)
-    # Seed for torch
-    torch.manual_seed(cfg.seed)
-    # Seed for numpy
-    np.random.seed(cfg.seed)
-    # Seed for python random
-    random.seed(cfg.seed)
     model: LightningModule = hydra.utils.instantiate(
         cfg.model,
         evaluator=cfg.evaluator,

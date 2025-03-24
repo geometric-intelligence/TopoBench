@@ -1,4 +1,4 @@
-dataset='mantra_name'
+dataset='mantra_orientation'
 project_name="SCCNN_$dataset"
 
 
@@ -39,30 +39,30 @@ INDICENCE_SIGNED_STR=$(IFS=,; echo "${INDICENCE_SIGNED[*]}")  # Convert to comma
 
 
         
-# python topobench/run.py\
-#     dataset=simplicial/mantra_name \
-#     model=simplicial/sccnn_custom \
-#     model.backbone.n_layers=1\
-#     model.feature_encoder.out_channels=128\
-#     model.feature_encoder.proj_dropout=0.25\
-#     dataset.split_params.data_seed=0\
-#     dataset.dataloader_params.batch_size=128\
-#     model.readout.readout_name=NoReadOut\
-#     trainer.max_epochs=5\
-#     trainer.min_epochs=1\
-#     trainer.devices=\[0\]\
-#     trainer.check_val_every_n_epoch=1\
-#     logger.wandb.project=prerun\
-#     transforms=MANTRA_name_dataset_default\
-#     transforms.redefine_simplicial_neighbourhoods.signed=False,True\
-#     optimizer.parameters.lr=0.001\
-#     optimizer.parameters.weight_decay=0.01\
-#     callbacks.early_stopping.patience=1\
-#     --multirun &
-# wait 
-# sleep 5
+python topobench/run.py\
+    dataset=simplicial/mantra_orientation \
+    model=simplicial/sccnn_custom \
+    model.backbone.n_layers=1\
+    model.feature_encoder.out_channels=128\
+    model.feature_encoder.proj_dropout=0.25\
+    dataset.split_params.data_seed=0\
+    dataset.dataloader_params.batch_size=128\
+    model.readout.readout_name=NoReadOut\
+    trainer.max_epochs=5\
+    trainer.min_epochs=1\
+    trainer.devices=\[0\]\
+    trainer.check_val_every_n_epoch=1\
+    logger.wandb.project=prerun\
+    transforms=MANTRA_name_dataset_default\
+    transforms.redefine_simplicial_neighbourhoods.signed=False,True\
+    optimizer.parameters.lr=0.001\
+    optimizer.parameters.weight_decay=0.01\
+    callbacks.early_stopping.patience=1\
+    --multirun &
+wait 
+sleep 5
 
-#python topobench/run.py dataset=simplicial/mantra_name model=simplicial/sccnn_custom model.backbone.n_layers=4 model.feature_encoder.out_channels=128 model.feature_encoder.proj_dropout=0.25 dataset.split_params.data_seed=0 dataset.dataloader_params.batch_size=256 model.readout.readout_name=PropagateSignalDown trainer.max_epochs=50 trainer.min_epochs=1 trainer.devices=[0] trainer.check_val_every_n_epoch=5 logger.wandb.project=prerun optimizer.parameters.lr=0.001 optimizer.parameters.weight_decay=0.01 callbacks.early_stopping.patience=1
+#python topobench/run.py dataset=simplicial/mantra_orientation model=simplicial/sccnn_custom model.backbone.n_layers=4 model.feature_encoder.out_channels=128 model.feature_encoder.proj_dropout=0.25 dataset.split_params.data_seed=0 dataset.dataloader_params.batch_size=256 model.readout.readout_name=PropagateSignalDown trainer.max_epochs=50 trainer.min_epochs=1 trainer.devices=[0] trainer.check_val_every_n_epoch=5 logger.wandb.project=prerun optimizer.parameters.lr=0.001 optimizer.parameters.weight_decay=0.01 callbacks.early_stopping.patience=1
 
 #Maybe with it: dataset.transforms.graph2simplicial_lifting.signed=True \
 # =====================
