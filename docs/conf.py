@@ -4,8 +4,8 @@ import os
 import shutil
 
 project = "TopoBench"
-copyright = "2025, PyT-Team, Inc."
-author = "PyT-Team Authors"
+copyright = "2025, Topological-Intelligence Team, Inc."
+author = "Topological-Intelligence Team Authors"
 
 extensions = [
     "nbsphinx",
@@ -69,7 +69,6 @@ latex_documents = [
         master_doc,
         "topobench.tex",
         "TopoBench Documentation",
-        "PyT-Team",
         "manual",
     ),
 ]
@@ -109,7 +108,7 @@ def copy_thumbnails():
             full_filename = root + "/" + png
             all_thumbnails.append(full_filename)
 
-    os.mkdir("./_build")
+    os.makedirs("./_build", exist_ok=True)  # os.mkdir("./_build")
     os.mkdir(des_directory)
 
     for thumbnail in all_thumbnails:
