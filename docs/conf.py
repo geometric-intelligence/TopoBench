@@ -4,7 +4,7 @@ import os
 import shutil
 
 project = "TopoBench"
-copyright = "2022-2023, PyT-Team, Inc."
+copyright = "2025, PyT-Team, Inc."
 author = "PyT-Team Authors"
 
 extensions = [
@@ -68,21 +68,19 @@ latex_documents = [
     (
         master_doc,
         "topobench.tex",
-        "TopoBenchX Documentation",
+        "TopoBench Documentation",
         "PyT-Team",
         "manual",
     ),
 ]
 
-man_pages = [
-    (master_doc, "topobench", "TopoBenchX Documentation", [author], 1)
-]
+man_pages = [(master_doc, "topobench", "TopoBench Documentation", [author], 1)]
 
 texinfo_documents = [
     (
         master_doc,
         "topobench",
-        "TopoBenchX Documentation",
+        "TopoBench Documentation",
         author,
         "topobench",
         "One line description of project.",
