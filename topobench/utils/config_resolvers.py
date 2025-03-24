@@ -137,6 +137,10 @@ def infer_in_channels(dataset, transforms):
         List with dimensions of the input channels.
     """
 
+    # Make it possible to pass lifting configuration as file path
+    if transforms is not None and transforms.keys() == {"liftings"}:
+        transforms = transforms.liftings
+
     def find_complex_lifting(transforms):
         r"""Find if there is a complex lifting in the complex_transforms.
 
@@ -152,9 +156,11 @@ def infer_in_channels(dataset, transforms):
         str
             Name of the complex lifting, if it exists.
         """
+
         if transforms is None:
             return False, None
         complex_transforms = [
+            # Default liftig configurations
             "graph2cell_lifting",
             "graph2simplicial_lifting",
             "graph2combinatorial_lifting",
@@ -165,6 +171,17 @@ def infer_in_channels(dataset, transforms):
             "pointcloud2hypergraph_lifting",
             "pointcloud2cell_lifting",
             "hypergraph2combinatorial_lifting",
+            # Make it possible to run directly from the folder
+            "graph2cell",
+            "graph2simplicial",
+            "graph2combinatorial",
+            "graph2hypergraph",
+            "pointcloud2graph",
+            "pointcloud2simplicial",
+            "pointcloud2combinatorial",
+            "pointcloud2hypergraph",
+            "pointcloud2cell",
+            "hypergraph2combinatorial",
         ]
         for t in complex_transforms:
             if t in transforms:

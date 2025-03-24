@@ -1,6 +1,8 @@
 """Init file for data/utils module."""
 
 from .utils import (
+    data2simplicial,  # noqa: F401
+    # import function here, add noqa: F401 for PR
     ensure_serializable,  # noqa: F401
     generate_zero_sparse_connectivity,  # noqa: F401
     get_combinatorial_complex_connectivity,  # noqa: F401
@@ -24,18 +26,22 @@ utils_functions = [
     "make_hash",
     "ensure_serializable",
     "select_neighborhoods_of_interest",
+    "data2simplicial",
+    # add function name here
 ]
 
 from .split_utils import (  # noqa: E402
     load_coauthorship_hypergraph_splits,  # noqa: F401
     load_inductive_splits,  # noqa: F401
     load_transductive_splits,  # noqa: F401
+    # import function here, add noqa: F401 for PR
 )
 
 split_helper_functions = [
     "load_coauthorship_hypergraph_splits",
     "load_inductive_splits",
     "load_transductive_splits",
+    # add function name here
 ]
 
 from .io_utils import (  # noqa: E402
@@ -44,12 +50,14 @@ from .io_utils import (  # noqa: E402
     load_hypergraph_pickle_dataset,  # noqa: F401
     read_ndim_manifolds,  # noqa: F401
     read_us_county_demos,  # noqa: F401
+    # import function here, add noqa: F401 for PR
 )
 
 io_helper_functions = [
     "load_hypergraph_pickle_dataset",
     "read_us_county_demos",
     "download_file_from_drive",
+    # add function name here
 ]
 
 __all__ = utils_functions + split_helper_functions + io_helper_functions
