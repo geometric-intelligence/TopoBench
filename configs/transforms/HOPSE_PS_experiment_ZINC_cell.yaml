@@ -18,11 +18,11 @@ sann_encoding:
    
 
   # Different PS have different sizes, need to unify them. 
-  target_pe_dim: 51
+  target_pe_dim: 10
 
   # LapPE config
   laplacian_norm_type: 'sym'
-  posenc_LapPE_eigen_max_freqs: 45
+  posenc_LapPE_eigen_max_freqs: 9
   posenc_LapPE_eigen_eigvec_norm: 'L2'
   posenc_LapPE_eigen_skip_zero_freq: True
   posenc_LapPE_eigen_eigvec_abs: True
@@ -30,13 +30,12 @@ sann_encoding:
   # RWSE config
   kernel_param_RWSE: 
     - 2
-    - 50
-
+    - 10
 
   # HKdiagSE config
   kernel_param_HKdiagSE: 
     - 1
-    - 50
+    - 22
   
   # # Cycle SE config 
   # kernel_param_CycleGE:
