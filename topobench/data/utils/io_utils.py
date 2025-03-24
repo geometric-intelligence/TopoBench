@@ -15,6 +15,7 @@ from torch_geometric.data import Data
 from torch_sparse import coalesce
 
 from topobench.data.utils import get_complex_connectivity
+from topomodelx.utils.sparse import from_sparse
 
 
 def get_file_id_from_url(url):
@@ -115,7 +116,9 @@ def download_file_from_link(
         print("Failed to download the file.")
 
 
-def read_ndim_manifolds(path, dim, y_val="betti_numbers", slice=None):
+def read_ndim_manifolds(
+    path, dim, y_val="betti_numbers", slice=None, load_as_graph=False
+):
     """Load MANTRA dataset.
 
     Parameters
@@ -129,6 +132,8 @@ def read_ndim_manifolds(path, dim, y_val="betti_numbers", slice=None):
         'name', 'genus', 'orientable'] (default: "orientable").
     slice : int, optional
         Slice of the dataset to load. If None, load the entire dataset (default: None). Used for testing.
+    load_as_graph : bool
+        Load mantra dataset as graph. Useful when arbitrary graph lifting need to be used.
 
     Returns
     -------
@@ -190,7 +195,7 @@ def read_ndim_manifolds(path, dim, y_val="betti_numbers", slice=None):
         elif y_val == "name":
             y = torch.tensor(
                 [HOMEO_NAME_TO_IDX[y_value]], dtype=torch.long
-            ).unsqueeze(0)
+            ).squeeze(0)
         elif y_val == "orientable":
             y = torch.tensor([y_value], dtype=torch.long).squeeze()
         else:
@@ -206,27 +211,25 @@ def read_ndim_manifolds(path, dim, y_val="betti_numbers", slice=None):
             f"x_{i}": torch.ones(len(sc.skeleton(i)), 1)
             for i in range(dim + 1)
         }
-        # neighborhoods = [
-        #     'up_adjacency-0',
-        #     'up_adjacency-1',
-        #     'down_adjacency-1',
-        #     'down_adjacency-2',
-        #     'up_incidence-0',
-        #     'up_incidence-1',
-        #     'down_incidence-1',
-        #     'down_incidence-2',
-        #     "down_laplacian-1",
-        #     "down_laplacian-2",
-        #     "up_laplacian-1",
-        #     "up_laplacian-2",
-        #     "hodge_laplacian-0"
-        #     ]
-        # Construct the connectivity matrices
-        inc_dict = get_complex_connectivity(
-            sc, dim, signed=False
-        )  # neighborhoods=neighborhoods)
 
-        data = Data(x=x, y=y, **x_i, **inc_dict)
+        if not load_as_graph:
+            # Construct the connectivity matrices
+            if dim == 2:
+                inc_dict = get_complex_connectivity(sc, dim + 1, signed=True)
+                assert inc_dict["incidence_3"].size(1) == 0, (
+                    "For 2-dim manifolds there shouldn't be any tetrahedrons."
+                )
+            else:
+                inc_dict = get_complex_connectivity(sc, dim, signed=True)
+
+            inc_dict["edge_index"] = torch.Tensor(
+                from_sparse(sc.adjacency_matrix(rank=0)).indices()
+            )
+            data = Data(x=x, y=y, **x_i, **inc_dict)
+
+        else:
+            raise ValueError("Define if load_as_graph or not")
+
         data_list.append(data)
     return data_list
 

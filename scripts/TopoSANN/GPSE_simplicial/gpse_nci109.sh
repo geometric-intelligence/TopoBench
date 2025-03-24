@@ -61,41 +61,41 @@ neighborhoods=(
 )
 
 # TODO: fix bug with transforms.one_hot_node_degree_features.degrees_fields=x\
-gpus=(0 1 2 3 4 5 6 7)
-for i in {0..7}; do 
-    CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
-    neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
+# gpus=(0 1 2 3 4 5 6 7)
+# for i in {0..7}; do 
+#     CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
+#     neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
 
-    for pret_model in ${PRETRAIN_MODELS[*]}
-    do
-        python topobench/run.py\
-            dataset=graph/$dataset\
-            model=simplicial/sann\
-            model.backbone.n_layers=1\
-            model.feature_encoder.out_channels=128\
-            model.feature_encoder.proj_dropout=0.25\
-            dataset.split_params.data_seed=0\
-            dataset.dataloader_params.batch_size=128\
-            trainer.max_epochs=5\
-            trainer.min_epochs=1\
-            trainer.devices=\[$CUDA\]\
-            trainer.check_val_every_n_epoch=1\
-            logger.wandb.project='prerun'\
-            optimizer.parameters.lr=0.01\
-            optimizer.parameters.weight_decay=0.25\
-            callbacks.early_stopping.patience=10\
-            transforms=GPSE_simplicial\
-            transforms.sann_encoding.pretrain_model=$pret_model\
-            transforms.sann_encoding.copy_initial=True\
-            transforms.sann_encoding.neighborhoods=$neighborhood\
-            transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
-            --multirun &
-    done
-    wait
-done
-wait
+#     for pret_model in ${PRETRAIN_MODELS[*]}
+#     do
+#         python topobench/run.py\
+#             dataset=graph/$dataset\
+#             model=simplicial/sann\
+#             model.backbone.n_layers=1\
+#             model.feature_encoder.out_channels=128\
+#             model.feature_encoder.proj_dropout=0.25\
+#             dataset.split_params.data_seed=0\
+#             dataset.dataloader_params.batch_size=128\
+#             trainer.max_epochs=5\
+#             trainer.min_epochs=1\
+#             trainer.devices=\[$CUDA\]\
+#             trainer.check_val_every_n_epoch=1\
+#             logger.wandb.project='prerun'\
+#             optimizer.parameters.lr=0.01\
+#             optimizer.parameters.weight_decay=0.25\
+#             callbacks.early_stopping.patience=10\
+#             transforms=GPSE_simplicial\
+#             transforms.sann_encoding.pretrain_model=$pret_model\
+#             transforms.sann_encoding.copy_initial=True\
+#             transforms.sann_encoding.neighborhoods=$neighborhood\
+#             transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
+#             --multirun &
+#     done
+#     wait
+# done
+# wait
 
-PRETRAIN_MODELS=('ZINC' 'GEOM')
+
 gpus=(0 1 2 3 4 5 6 7)
 for i in {0..7}; do 
     CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
@@ -121,7 +121,7 @@ for i in {0..7}; do
                 optimizer.parameters.lr=$LEARNING_RATES_STR\
                 optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
                 callbacks.early_stopping.patience=10\
-                transforms/data_manipulations@transforms.sann_encoding=add_gpse_information\
+                transforms=GPSE_simplicial\
                 transforms.sann_encoding.pretrain_model=$PRETRAIN_MODELS_STR\
                 transforms.sann_encoding.copy_initial=True\
                 transforms.sann_encoding.neighborhoods=$neighborhood\
@@ -132,4 +132,38 @@ for i in {0..7}; do
 done
 wait
 
-PRETRAIN_MODELS=('MOLPCBA' 'PCQM4MV2')
+# batch_sizes=(256)
+# for i in {0..7}; do 
+#     CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
+#     neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
+
+#     for batch_size in ${batch_sizes[*]}
+#     do
+#         for pd in ${PROJECTION_DROPOUTS[*]}
+#         do
+#             python topobench/run.py\
+#                 dataset=graph/$dataset\
+#                 model=simplicial/sann\
+#                 model.backbone.n_layers=$N_LAYERS_STR\
+#                 model.feature_encoder.out_channels=$OUT_CHANNELS_STR\
+#                 model.feature_encoder.proj_dropout=$pd\
+#                 dataset.split_params.data_seed=$DATA_SEEDS_STR\
+#                 dataset.dataloader_params.batch_size=$batch_size\
+#                 trainer.max_epochs=500\
+#                 trainer.min_epochs=50\
+#                 trainer.devices=\[$CUDA\]\
+#                 trainer.check_val_every_n_epoch=5\
+#                 logger.wandb.project=$project_name\
+#                 optimizer.parameters.lr=$LEARNING_RATES_STR\
+#                 optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
+#                 callbacks.early_stopping.patience=10\
+#                 transforms=GPSE_simplicial\
+#                 transforms.sann_encoding.pretrain_model=$PRETRAIN_MODELS_STR\
+#                 transforms.sann_encoding.copy_initial=True\
+#                 transforms.sann_encoding.neighborhoods=$neighborhood\
+#                 transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
+#                 --multirun &
+#         done
+#     done
+# done
+# wait

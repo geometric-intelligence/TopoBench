@@ -27,14 +27,14 @@ pe_types:
   - 'ElstaticPE'
   - 'HKdiagSE'
   - 'LapPE'
-  # - 'CycleGE'
+  #- 'CycleGE'
 
 # Different PS have different sizes, need to unify them. 
-target_pe_dim: 80
+target_pe_dim: 64
 
 # LapPE config
 laplacian_norm_type: 'sym'
-posenc_LapPE_eigen_max_freqs: 15
+posenc_LapPE_eigen_max_freqs: 50
 posenc_LapPE_eigen_eigvec_norm: 'L2'
 posenc_LapPE_eigen_skip_zero_freq: True
 posenc_LapPE_eigen_eigvec_abs: True
@@ -42,17 +42,18 @@ posenc_LapPE_eigen_eigvec_abs: True
 # RWSE config
 kernel_param_RWSE: 
   - 2
-  - 50
+  - 60
 
-# Cycle SE config 
-kernel_param_CycleGE:
-  - 2
-  - 9 # min/max cycles counts to consider
 
 # HKdiagSE config
 kernel_param_HKdiagSE: 
   - 1
-  - 22
+  - 60
+
+# Cycle SE config 
+kernel_param_CycleGE:
+  - 2
+  - 4 # min/max cycles counts to consider
 
 # Other configs
 is_undirected: True

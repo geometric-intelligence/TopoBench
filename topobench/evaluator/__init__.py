@@ -1,6 +1,12 @@
 """Evaluators for model evaluation."""
 
-from torchmetrics.classification import AUROC, Accuracy, Precision, Recall
+from torchmetrics.classification import (
+    AUROC,
+    Accuracy,
+    Precision,
+    Recall,
+    F1Score,
+)
 from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError
 
 from .metrics import ExampleRegressionMetric
@@ -10,6 +16,7 @@ METRICS = {
     "accuracy": Accuracy,
     "precision": Precision,
     "recall": Recall,
+    "f1": F1Score,
     "auroc": AUROC,
     "mae": MeanAbsoluteError,
     "mse": MeanSquaredError,

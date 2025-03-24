@@ -166,7 +166,6 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
         A tuple with metrics and dict with all instantiated objects.
     """
     # Set seed for random number generators in pytorch, numpy and python.random
-    # if cfg.get("seed"):
     L.seed_everything(cfg.seed, workers=True)
     # Seed for torch
     torch.manual_seed(cfg.seed)

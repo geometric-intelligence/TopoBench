@@ -58,9 +58,6 @@ class DatasetLoss(AbstractLoss):
         logits = model_out["logits"]
         target = model_out["labels"]
 
-        if self.task == "regression":
-            target = target.unsqueeze(1)
-
         return self.forward_criterion(logits, target)
 
     def forward_criterion(self, logits, target):
@@ -89,7 +86,7 @@ class DatasetLoss(AbstractLoss):
             mask = ~torch.isnan(target)
             # Avoid NaN values in the target
             target = torch.where(mask, target, torch.zeros_like(target))
-            loss = self.criterion(logits, target)
+            loss = self.criterion(logits, target.float())
             # Mask out the loss for NaN values
             loss = loss * mask
             # Take out average

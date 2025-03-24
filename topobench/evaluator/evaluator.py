@@ -33,6 +33,7 @@ class TBEvaluator(AbstractEvaluator):
             parameters = {"num_classes": kwargs["num_classes"]}
             parameters["task"] = "multiclass"
             metric_names = kwargs["metrics"]
+
         elif self.task == "multilabel classification":
             parameters = {"num_classes": kwargs["num_classes"]}
             parameters["task"] = "multilabel"
@@ -48,7 +49,7 @@ class TBEvaluator(AbstractEvaluator):
 
         metrics = {}
         for name in metric_names:
-            if name in ["recall", "precision", "auroc"]:
+            if name in ["recall", "precision", "auroc", "f1"]:
                 metrics[name] = METRICS[name](average="macro", **parameters)
 
             else:
@@ -87,9 +88,10 @@ class TBEvaluator(AbstractEvaluator):
             self.metrics.update(preds, target)
 
         elif self.task == "multilabel classification":
+            self.metrics.update(preds, target)
             # Raise not supported error
             raise NotImplementedError(
-                "Multilabel classification is not supported yet"
+                "Multilabel classification evaluator is not supported yet"
             )
 
         else:

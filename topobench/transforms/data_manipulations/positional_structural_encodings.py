@@ -17,6 +17,8 @@ from torch_geometric.utils import (
 from torch_geometric.utils.num_nodes import maybe_num_nodes
 from torch_scatter import scatter_add
 import networkx as nx
+from typing import List, Tuple, Dict
+
 
 # from graphgym.transform.cycle_counts import count_cycles
 
@@ -85,12 +87,6 @@ class DerivePS(torch_geometric.transforms.BaseTransform):
         torch_geometric.data.Data
             The transformed data.
         """
-        # Working RWSE, ElstaticPE, 'LapPE', HKdiagSE
-        # Graph level working: CycleGE
-        # kwargs = {'posenc_LapPE_eigen_max_freqs':4,
-        #           "posenc_LapPE_eigen_eigvec_norm": "L2",
-        #           "posenc_LapPE_eigen_skip_zero_freq": True,
-        #           "posenc_LapPE_eigen_eigvec_abs": True}
 
         output_pe = compute_posenc_stats(data=data, **self.kwargs)
         pes = [
@@ -279,21 +275,25 @@ def compute_posenc_stats(data, pe_types, **kwargs):
         kernel_param_times = list(
             range(start, end)
         )  # cfg.graphenc_CycleGE.kernel
-        cycle_se = count_cycles(
+
+        cycles_per_node = count_cycles_per_node_optimized(
             data.edge_index, data.num_nodes, kernel_param_times
         )
-        try:
-            cycle_se_original = count_cycles_original(kernel_param_times, data)
-            assert cycle_se_original == cycle_se
-        except:
-            pass
 
-        if torch.all(cycle_se == 0) == True:
-            raise ValueError("CycleGE is all zeros")
+        if torch.all(cycles_per_node == 0) == True:
+            if list(
+                torch_geometric.utils.remove_self_loops(data.edge_index.cpu())[
+                    0
+                ].shape
+            ) == [2, 0]:
+                # Case when there is no connectivity in edge_index
+                pass
+            else:
+                raise ValueError("CycleGE is all zeros")
 
-        if torch.any(torch.isnan(cycle_se)) == True:
+        if torch.any(torch.isnan(cycles_per_node)) == True:
             raise ValueError("CycleGE contains NaNs")
-        output_pe["CycleGE"] = cycle_se
+        output_pe["CycleGE"] = cycles_per_node
 
     # Heat Kernels.
     if "HKdiagSE" in pe_types:
@@ -677,320 +677,57 @@ def normalizer(x: torch.Tensor, normalization: str = "L2", eps: float = 1e-12):
     return x / denom.clamp_min(eps).expand_as(x)
 
 
-## Count cycles from graphgym
-import logging
-from typing import List, Optional, Set, Tuple
+def normalize_cycle(cycle: List[int]) -> Tuple[int, ...]:
+    """Normalize a cycle by considering shift and reflection invariance."""
+    n = len(cycle)
+    cycle_variants = [tuple(cycle[i:] + cycle[:i]) for i in range(n)] + [
+        tuple(cycle[i:] + cycle[:i])[::-1] for i in range(n)
+    ]
+    return min(cycle_variants)
 
-import networkx as nx
-import torch
-from torch import Tensor
 
-
-class HamiltonianCycle:
-    """Hamiltonian cycle object for that considers invariances of cycles.
-
-    The main goal of this object is to reduce a set of Hamiltonian cycles, each
-    in the form of a list of unique node indices, into a unique set of
-    Hamiltonian cycles. In particular, there are two types of invariances to be
-    considered:
-
-        1. Shift invariance. For example, [0, 1, 2, 3] is considered the same
-           as [1, 2, 3, 0].
-        2. Reflection invariance. For example, [0, 1, 2, 3] is considered the
-           the same as [0, 3, 2, 1].
-
-    To efficiently deal with these two invariances, the :obj:`HamiltonianCycle`
-    object stores the path list in a reduced format that follows the following
-    two conventions:
-
-        1. The first node index must be the smallest among all indices in the
-           path list. If not, we apply a shift operation so that the path list
-           start with the smallest node index.
-        2. The second node index must be no smaller than the last node index.
-           If not, we apply a reflection operation so that the second node
-           index in the path list is no smaller than the last node index.
-
-    Example:
-
-        >>> path_list = [10, 4, 1, 6, 2]
-        >>> print(HamiltonianCycle(path_list))
-        (1, 4, 10, 2, 6)
-
+def count_cycles_per_node_optimized(
+    edge_index: torch.Tensor, num_nodes: int, cycle_lengths: List[int]
+) -> Tuple[int, torch.Tensor]:
     """
-
-    def __init__(self, path: List[int]):
-        self.data = path
-
-    @property
-    def reduced_repr(self) -> Tuple[int]:
-        return self._reduced_repr
-
-    @property
-    def data(self) -> List[int]:
-        return self._data
-
-    @data.setter
-    def data(self, val: List[int]):
-        if not isinstance(val, list):
-            raise TypeError(
-                f"path must be a list of integers, got {type(val)}"
-            )
-        elif len(set(val)) != len(val):
-            raise ValueError(f"path must contain unique elements, got {val}")
-        elif len(val) < 2:
-            raise ValueError(f"path must be at least of size two, got {val}")
-        else:
-            self._data = val
-            self._reduced_repr = self._get_reduced_repr(val)
-
-    @staticmethod
-    def _get_reduced_repr(path: List[int]) -> Tuple[int]:
-        min_val = min(path)
-        min_val_idx = path.index(min_val)
-
-        path = path[min_val_idx:] + path[:min_val_idx]
-
-        if path[-1] < path[1]:
-            path = path[:1] + path[-1:0:-1]
-
-        return tuple(path)
-
-    def __len__(self) -> int:
-        return len(self._reduced_repr)
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}{self.__str__()}"
-
-    def __str__(self) -> str:
-        return str(self._reduced_repr)
-
-    def __hash__(self) -> int:
-        return hash(self._reduced_repr)
-
-    def __eq__(self, other) -> bool:
-        if not isinstance(other, HamiltonianCycle):
-            raise TypeError(
-                "A HamiltonianCycle object can only be compared "
-                "against another HamiltonianCycle object, got "
-                f"{type(other)}"
-            )
-        return self._reduced_repr == other._reduced_repr
-
-    def __ne__(self, other) -> bool:
-        return not self._reduced_repr.__eq__(other._reduced_repr)
-
-
-def get_all_k_hamcycles(
-    edge_index: Tensor,
-    num_nodes: int,
-    k: int,
-    exact: bool = True,
-) -> Set[HamiltonianCycle]:
-    """Get unique length k Hamiltonian cycles in the graph.
-
-    Args:
-        edge_index: COO representation of the adjacency matrix.
-        num_nodes: Total number of nodes in the graph.
-        k: Target length of the Hamitonian cycles.
-        exact: If set to :obj:`True`, then only return Hamiltonian cycles
-            *exactly* of length :obj:`k`. Otherwise, return all Hamiltonian
-            cycles round the seed node up to, and including, length :obj:`k`.
-            Note that computaiton complexities are exactly the same regardless
-            of whether :obj:`exact` is set to :obj:`True` or :obj:`False`.
-
+    Efficiently counts the number of cycles each node belongs to for multiple cycle lengths.
     """
-    # NOTE: force graph to be undirected.
-    g = nx.Graph()
-    g.add_nodes_from(range(num_nodes))
-    g.add_edges_from(edge_index.detach().clone().cpu().T.numpy())
+    G = {i: set() for i in range(num_nodes)}  # Adjacency list
+    edges = edge_index.detach().clone().cpu().T.numpy()
+    for u, v in edges:
+        G[u].add(v)
+        G[v].add(u)  # Undirected graph
 
-    all_k_hamcycles = set()
-    for vi in range(num_nodes):
-        k_hamcycles_around_vi = dfs_k_hamcycles(g, k, vi, exact=exact)
-        all_k_hamcycles.update(k_hamcycles_around_vi)
-
-    return all_k_hamcycles
-
-
-def dfs_k_hamcycles(
-    g: nx.Graph,
-    k: int,
-    seed: int,
-    *,
-    exact: bool = True,
-    _cur_depth: int = 0,
-    _cur_path: Optional[List[int]] = None,
-    _paths: Optional[Set[HamiltonianCycle]] = None,
-) -> Set[HamiltonianCycle]:
-    """DFS all Hamiltonian cycles up to length k starting from the seed node.
-
-    Args:
-        g: Input graph (node id are assumed to be of type integer, representing
-            their corresponding node indices).
-        k: Target length of the Hamitonian cycles.
-        seed: Seed node id.
-        exact: If set to :obj:`True`, then only return Hamiltonian cycles
-            *exactly* of length :obj:`k`. Otherwise, return all Hamiltonian
-            cycles round the seed node up to, and including, length :obj:`k`.
-            Note that computaiton complexities are exactly the same regardless
-            of whether :obj:`exact` is set to :obj:`True` or :obj:`False`.
-
-    Returns:
-        Set[HamiltonianCycle]: A set of unique Hamiltonian cycles of length k
-            around the seed node.
-
-    """
-    if (not isinstance(k, int)) or (k < 2):
-        raise ValueError(f"k (target depth) must be an int > 1, got {k=!r}")
-
-    _cur_path = _cur_path if _cur_path is not None else []
-    _paths = _paths if _paths is not None else set()
-    logging.debug(f"{_paths=}, {_cur_depth=}, {_cur_path=}, {seed=}")
-
-    if _cur_path and (seed == _cur_path[0]):
-        if (_cur_depth == k) or (not exact):
-            _paths.add(HamiltonianCycle(_cur_path))
-
-    elif (_cur_depth < k) and (seed not in _cur_path):
-        next_depth = _cur_depth + 1
-        next_path = _cur_path + [seed]
-
-        for next_seed in g[seed]:
-            dfs_k_hamcycles(
-                g,
-                k,
-                next_seed,
-                exact=exact,
-                _cur_depth=next_depth,
-                _cur_path=next_path,
-                _paths=_paths,
-            )
-
-    return _paths
-
-
-def count_cycles_original(k_list: List[int], data):
-    """Count all cycles of length exactly k for k provided in the list."""
-    if not isinstance(k_list, list) or not k_list:
-        raise ValueError(
-            f"k_list must be a non-empty list of integers, got {k_list=!r}"
-        )
-
-    hamcycles = get_all_k_hamcycles(
-        data.edge_index, data.num_nodes, max(k_list), False
+    max_length = max(cycle_lengths)
+    length_indices = {length: i for i, length in enumerate(cycle_lengths)}
+    cycle_counts_per_node = torch.zeros(
+        (num_nodes, len(cycle_lengths)), dtype=torch.float32
     )
+    visited_cycles = set()
 
-    count_dict = {k: 0 for k in k_list}
-    for hc in hamcycles:
-        if (size := len(hc)) in count_dict:
-            count_dict[size] += 1
-    cycle_counts = [count_dict[k] for k in k_list]
-
-    return torch.FloatTensor(cycle_counts).unsqueeze(0)
-
-
-def count_cycles(edge_index, num_nodes, cycle_lengths):
-    G = nx.Graph()
-    G.add_nodes_from(range(num_nodes))
-    G.add_edges_from(edge_index.detach().clone().cpu().T.numpy())
-
-    def normalize_cycle(cycle):
-        """Normalize cycle to account for shift and reflection invariance."""
-        n = len(cycle)
-        cycle_variants = [tuple(cycle[i:] + cycle[:i]) for i in range(n)] + [
-            tuple(cycle[i:] + cycle[:i])[::-1] for i in range(n)
-        ]
-        return min(cycle_variants)
-
-    def find_cycles(v, visited, path, start, length):
-        if length == 0:
-            if start in G[v]:
-                cycle = normalize_cycle(path + [start])
-                unique_cycles.add(cycle)
+    def find_cycles(
+        start: int, path: List[int], visited: Dict[int, int]
+    ) -> None:
+        v = path[-1]
+        if len(path) > max_length:
             return
-
-        visited.add(v)
-        path.append(v)
         for neighbor in G[v]:
-            if neighbor not in visited or (neighbor == start and length == 1):
-                find_cycles(
-                    neighbor, visited.copy(), path.copy(), start, length - 1
-                )
+            if neighbor == start and len(path) in length_indices:
+                norm_cycle = normalize_cycle(path)
+                if norm_cycle not in visited_cycles:
+                    visited_cycles.add(norm_cycle)
+                    for node in path:
+                        cycle_counts_per_node[
+                            node, length_indices[len(path)]
+                        ] += 1
+            elif neighbor not in visited:
+                visited[neighbor] = True
+                find_cycles(start, path + [neighbor], visited)
+                del visited[neighbor]
 
-    cycle_counts = {length: 0 for length in cycle_lengths}
-
-    for length in cycle_lengths:
-        unique_cycles = set()
-        for node in G:
-            find_cycles(node, set(), [], node, length)
-        cycle_counts[length] = len(unique_cycles)
-
-    return (
-        torch.tensor([cycle_counts[length] for length in cycle_lengths])
-        .float()
-        .unsqueeze(0)
+    for node in G:
+        find_cycles(node, [node], {node: True})
+    assert num_nodes == cycle_counts_per_node.shape[0], (
+        "Number of nodes does not match the shape of cycle counts per node"
     )
-
-
-# def _combine_encs(
-#     data,
-#     in_node_encs: List[str],
-#     out_node_encs: List[str],
-#     out_graph_encs: List[str],
-#     cfg,
-# ):
-#     combined_stats = []
-
-#     for name, pes in zip(["x", "y"], [in_node_encs, out_node_encs]):
-#         if pes == "none":
-#             continue
-
-#         _check_all_types(pe_types := pes.split("+"))
-#         pe_list: List[torch.Tensor] = []
-
-#         for pe_type in pe_types:
-#             if pe_type in ["LapPE", "EquivStableLapPE"]:
-#                 if cfg[f"posenc_{pe_type}"].eigen.stack_eigval:
-#                     pe = torch.hstack((data.EigVecs, data.EigVals.squeeze(-1)))
-#                 else:
-#                     pe = data.EigVecs
-#             elif pe_type == "SignNet":
-#                 pe = torch.hstack((data.eigvecs_sn,
-#                                    data.eigvals_sn.squeeze(-1)))
-#             elif pe_type in RANDSE_TYPES:
-#                 pe = getattr(data, name)
-#             else:
-#                 pe = getattr(data, f"pestat_{pe_type}")
-#             pe_list.append(pe)
-
-#         combined_node_pe = torch.nan_to_num(torch.hstack(pe_list))
-
-#         if (name == "y") and cfg.dataset.combine_output_pestat:
-#             combined_stats.append(combined_node_pe)
-#         else:
-#             setattr(data, name, combined_node_pe)
-
-#     # Graph level encoding targets
-#     if out_graph_encs != "none":
-#         enc_list: List[torch.Tensor] = []
-#         _check_all_types(enc_types := out_graph_encs.split("+"))
-#         for enc_type in enc_types:
-#             if enc_type == "EigVals":
-#                 enc = data.EigVals[0].T
-#             elif enc_type == "RWGE":
-#                 enc = data.pestat_RWSE.mean(0, keepdim=True)
-#             else:
-#                 enc = getattr(data, f"gestat_{enc_type}")
-#             enc_list.append(enc)
-
-#         combined_graph_pe = torch.nan_to_num(torch.hstack(enc_list))
-
-#         if cfg.dataset.combine_output_pestat:
-#             combined_stats.append(combined_graph_pe.repeat(data.x.shape[0], 1))
-#         else:
-#             data.y_graph = combined_graph_pe
-
-#     # Combined pestat
-#     if cfg.dataset.combine_output_pestat:
-#         data.pestat_CombinedPSE = torch.hstack(combined_stats)
-#         cfg.posenc_CombinedPSE._raw_dim = data.pestat_CombinedPSE.shape[1]
+    return cycle_counts_per_node
