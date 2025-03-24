@@ -448,8 +448,9 @@ If you find `TopoBench` useful, we would appreciate if you cite us!
 
 ### 📢 Get in Touch!
 
-We are always open to collaborations and discussions on topological intelligence and AI research.  
-Feel free to reach out via email or check out our YouTube channel for more insights and updates.  
+We are always open to collaborations and discussions on TDL research.  
+Feel free to reach out via email if you want to collaborate, do your thesis with our team, or open a discussion for various opportunities.  
 
 📧 **Contact Email:** [topological.intelligence@gmail.com](mailto:topological.intelligence@gmail.com)  
 ▶️ **YouTube Channel:** [Topological Intelligence](https://www.youtube.com/@TopologicalIntelligence)
+
