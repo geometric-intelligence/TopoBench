@@ -228,9 +228,9 @@ def infer_in_channels(dataset, transforms):
 
             else:
                 # ProjectionSum feature lifting by default
-                return [dataset.parameters.num_features] * transforms[
-                    lifting
-                ].complex_dim
+                return [dataset.parameters.num_features] * (
+                    transforms[lifting].complex_dim + 1
+                )
         # Case when the dataset has edge attributes (cells attributes)
         else:
             assert (

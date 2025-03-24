@@ -68,7 +68,7 @@ for model in models:
                         "trainer.min_epochs=50",
                         "trainer.check_val_every_n_epoch=5",
                         "callbacks.early_stopping.patience=10",
-                        "logger.wandb.project=hypergraph_liftings",
+                        "logger.wandb.project=test",
                         "--multirun",
                     ]
                     # cmd = f'python -m topobench model={model} dataset={dataset} optimizer.parameters.lr={lr} model.feature_encoder.out_channels={h} model.backbone.n_layers=2 model.readout.readout_name=PropagateSignalDown model.feature_encoder.proj_dropout=0.5 dataset.dataloader_params.batch_size=256 transforms={lifting} dataset.split_params.data_seed=0,3,5,7,9 trainer.max_epochs=500 trainer.min_epochs=50 trainer.check_val_every_n_epoch=5 callbacks.early_stopping.patience=10 logger.wandb.project=hypergraph_liftings --multirun'
