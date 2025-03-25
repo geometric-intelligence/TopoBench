@@ -2,6 +2,10 @@
 
 import os
 import shutil
+import sys
+
+sys.path.insert(0, os.path.abspath("../topobench"))
+
 
 project = "TopoBench"
 copyright = "2025, Topological-Intelligence Team, Inc."
