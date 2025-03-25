@@ -46,7 +46,7 @@ templates_path = ["_templates"]
 
 source_suffix = [".rst"]
 
-master_doc = "README"
+master_doc = "index"
 
 language = "en"
 
