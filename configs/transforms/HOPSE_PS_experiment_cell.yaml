@@ -1,13 +1,6 @@
 defaults:
-  #- data_manipulations: node_degrees
-  - data_manipulations@one_hot_node_degree_features: one_hot_node_degree_features
   - liftings@_here_: graph2cell_default
   - data_manipulations@sann_encoding: hopse_ps_information
-
-
-one_hot_node_degree_features: 
-  degrees_field: x
-  features_field: x
 
 sann_encoding:
   pe_types: 
@@ -37,8 +30,3 @@ sann_encoding:
   kernel_param_HKdiagSE: 
     - 1
     - 22
-  
-  # # Cycle SE config 
-  # kernel_param_CycleGE:
-  # - 2
-  # - 4 # min/max cycles counts to consider
