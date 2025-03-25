@@ -62,7 +62,8 @@ doc = [
     "numpydoc",
     "sphinx",
     "sphinx_gallery",
-    "pydata-sphinx-theme"
+    "pydata-sphinx-theme",
+    "myst_parser"
 ]
 lint = [
     "pre-commit",
