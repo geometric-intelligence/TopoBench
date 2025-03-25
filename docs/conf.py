@@ -24,6 +24,8 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
     "sphinx_gallery.load_style",
+    "sphinx.ext.autosummary",
+    "myst_parser",
 ]
 
 # Configure nbsphinx for notebook execution
@@ -44,7 +46,7 @@ templates_path = ["_templates"]
 
 source_suffix = [".rst"]
 
-master_doc = "index"
+master_doc = "README"
 
 language = "en"
 
