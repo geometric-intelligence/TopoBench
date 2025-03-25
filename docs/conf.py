@@ -2,10 +2,6 @@
 
 import os
 import shutil
-import sys
-
-sys.path.insert(0, os.path.abspath("../topobench"))
-
 
 project = "TopoBench"
 copyright = "2025, Topological-Intelligence Team, Inc."
@@ -24,8 +20,6 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
     "sphinx_gallery.load_style",
-    "sphinx.ext.autosummary",
-    "myst_parser",
 ]
 
 # Configure nbsphinx for notebook execution
@@ -46,7 +40,7 @@ templates_path = ["_templates"]
 
 source_suffix = [".rst"]
 
-master_doc = "README"
+master_doc = "index"
 
 language = "en"
 
