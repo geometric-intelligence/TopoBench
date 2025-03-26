@@ -3,6 +3,18 @@
 import os
 
 import omegaconf
+import torch
+
+
+def get_default_trainer():
+    r"""Get default trainer configuration.
+
+    Returns
+    -------
+    str
+        Default trainer configuration file name.
+    """
+    return "gpu" if torch.cuda.is_available() else "cpu"
 
 
 def get_default_transform(dataset, model):

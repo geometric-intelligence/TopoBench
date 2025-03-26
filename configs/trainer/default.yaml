@@ -7,7 +7,7 @@ max_epochs: 300
 #accumulate_grad_batches: 1 #${dataset.parameters.batch_size}
 
 accelerator: gpu
-devices: [5]
+devices: [0]
 
 # mixed precision for extra speed-up
 # precision: 16
