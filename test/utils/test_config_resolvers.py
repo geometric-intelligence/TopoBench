@@ -7,6 +7,7 @@ from topobench.utils.config_resolvers import (
     infer_in_channels,
     infer_num_cell_dimensions,
     get_default_metrics,
+    get_default_trainer,
     get_default_transform,
     get_monitor_metric,
     get_monitor_mode,
@@ -24,6 +25,11 @@ class TestConfigResolvers:
         self.cliq_lift_transform = OmegaConf.load("configs/transforms/liftings/graph2simplicial/clique.yaml")
         self.feature_lift_transform = OmegaConf.load("configs/transforms/feature_liftings/concatenate.yaml")
         hydra.initialize(version_base="1.3", config_path="../../configs", job_name="job")
+        
+    def test_get_default_trainer(self):
+        """Test get_default_trainer."""
+        out = get_default_trainer()
+        assert isinstance(out, str)
         
     def test_get_default_metrics(self):
         """Test get_default_metrics."""
