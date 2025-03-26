@@ -48,18 +48,18 @@ The main pipeline trains and evaluates a wide range of state-of-the-art TNNs and
 ## :jigsaw: Get Started
 
 ### Create Environment
-First, clone and navigate to the `TopoBench` repository  
-```bash
-git clone git@github.com:geometric-intelligence/topobench.git
-cd TopoBench
-```
 
-
-Ensure `conda` is installed:  
+First, ensure `conda` is installed:  
 ```bash
 conda --version
 ```
 If not, we recommend intalling Miniconda [following the official command line instructions](https://www.anaconda.com/docs/getting-started/miniconda/install).
+
+Then, clone and navigate to the `TopoBench` repository  
+```bash
+git clone git@github.com:geometric-intelligence/topobench.git
+cd TopoBench
+```
 
 Next, set up and activate a conda environment `tb` with Python 3.11.3:
 ```bash
@@ -71,7 +71,7 @@ If working with GPUs, check the CUDA version of your machine:
 ```bash
 which nvcc && nvcc --version
 ```
-and ensure that it matches the CUDA version specified in the `env_setup.sh` file (`CUDA=cu118` by default). If it does not match, update `env_setup.sh` accordingly by changing both the `CUDA` and `TORCH` environment variables to compatible values as specified on [this website](https://github.com/pyg-team/pyg-lib).
+and ensure that it matches the CUDA version specified in the `env_setup.sh` file (`CUDA=cpu` by default for a broader compatibility). If it does not match, update `env_setup.sh` accordingly by changing both the `CUDA` and `TORCH` environment variables to compatible values as specified on [this website](https://github.com/pyg-team/pyg-lib).
 
 Next, set up the environment with the following command.
 ```bash
