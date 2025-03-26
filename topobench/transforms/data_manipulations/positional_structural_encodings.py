@@ -573,7 +573,16 @@ def get_electrostatic_function_encoding(edge_index, num_nodes):
     A.fill_diagonal_(0)
     DinvA = Dinv.matmul(A)
 
-    evals, evecs = torch.linalg.eigh(L)
+    # evals, evecs = torch.linalg.eigh(L)
+    try:
+        evals, evecs = torch.linalg.eigh(L)
+    except:
+        # IMDB-BINARY has some issue with scipy.sparse.linalg.eigsh deep in scipy library.
+        evals, evecs = np.linalg.eigh(L.numpy())
+        # back to torch
+        evals = torch.from_numpy(evals)
+        evecs = torch.from_numpy(evecs)
+
     offset = (evals < EPS).sum().item()
     if offset == num_nodes:
         return torch.zeros(num_nodes, 7, dtype=torch.float32)
