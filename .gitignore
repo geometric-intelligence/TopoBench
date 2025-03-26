@@ -87,7 +87,7 @@ tutorials/data/
 tutorials/data/*
 tutorials/lightning_logs/
 tutorials/lightning_logs/*
-
+tutorials/*.csv
 # IPython
 profile_default/
 ipython_config.py

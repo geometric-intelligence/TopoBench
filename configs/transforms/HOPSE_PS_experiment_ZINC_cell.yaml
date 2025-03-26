@@ -37,8 +37,3 @@ sann_encoding:
   kernel_param_HKdiagSE: 
     - 1
     - 22
-  
-  # # Cycle SE config 
-  # kernel_param_CycleGE:
-  # - 2
-  # - 4 # min/max cycles counts to consider
