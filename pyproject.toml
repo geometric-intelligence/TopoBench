@@ -41,6 +41,7 @@ dependencies=[
     "hydra-colorlog==1.2.0",
     "hydra-optuna-sweeper==1.2.0",
     "wandb",
+    "tensorboard",
     "einops==0.7.0",
     "tabulate",
     "ipykernel",
