@@ -1,46 +1,19 @@
-.. raw:: html
+🌐 TopoBench (TB) 🍩
+==========================
 
-   <h2 align="center">
+.. figure:: https://github.com/geometric-intelligence/TopoBench/raw/main/resources/logo.jpg
+   :alt: topobench
+   :class: with-shadow
+   :width: 1000px
 
-.. raw:: html
+`TopoBench` (TB) is a modular Python library designed to standardize benchmarking and accelerate research in Topological Deep Learning (TDL). 
+In particular, TB allows to train and compare the performances of all sorts of Topological Neural Networks (TNNs) across the different topological domains, 
+where by *topological domain* we refer to a graph, a simplicial complex, a cellular complex, or a hypergraph.
 
-   </h2>
-
-.. raw:: html
-
-   <h3 align="center">
-
-A Comprehensive Benchmark Suite for Topological Deep Learning
-
-.. raw:: html
-
-   </h3>
-
-.. raw:: html
-
-   <p align="center">
-
-Assess how your model compares against state-of-the-art topological
-neural networks.
-
-.. raw:: html
-
-   </p>
-
-.. container::
-
-   |Lint| |Test| |Codecov| |Docs| |Python| |license| |slack|
-
-.. raw:: html
-
-   <p align="center">
-
-Overview • Get Started • Tutorials • Neural Networks • Liftings •
-Datasets • References
-
-.. raw:: html
-
-   </p>
+.. figure:: https://github.com/geometric-intelligence/TopoBench/raw/main/resources/workflow.jpg
+   :alt: workflow
+   :class: with-shadow
+   :width: 1000px
 
 :pushpin: Overview
 ------------------
