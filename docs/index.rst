@@ -125,6 +125,7 @@ transform groups.
    <details>
 
 Configuring Individual Transforms
+---------------------------------
 
 When configuring a single transform, follow these steps:
 
@@ -133,7 +134,7 @@ When configuring a single transform, follow these steps:
 
 The folder structure for transforms is as follows:
 
-::
+.. code-block:: none
 
    ├── configs
    │ ├── data_manipulations
@@ -145,26 +146,19 @@ The folder structure for transforms is as follows:
 
 To override the default transform, use the following command structure:
 
-.. code:: bash
+.. code-block:: bash
 
    python -m topobench model=<model_type>/<model_name> dataset=<data_type>/<dataset_name> transforms=[<transform_path>/<transform_name>]
 
 For example, to use the ``discrete_configuration_complex`` lifting with
 the ``cell/cwn`` model:
 
-.. code:: bash
+.. code-block:: bash
 
    python -m topobench model=cell/cwn dataset=graph/MUTAG transforms=[liftings/graph2cell/discrete_configuration_complex]
 
-.. raw:: html
-
-   </details>
-
-.. raw:: html
-
-   <details>
-
 Configuring Transform Groups
+----------------------------
 
 For more complex scenarios, such as combining multiple data
 manipulations, use transform groups:
@@ -173,7 +167,7 @@ manipulations, use transform groups:
    directory (e.g., ``custom_example.yaml``).
 2. Define the transform group in the YAML file:
 
-.. code:: yaml
+.. code-block:: yaml
 
    defaults:
    - data_manipulations@data_transform_1: identity
@@ -186,7 +180,7 @@ operator to assign unique names to each transform.
 
 3. Run the experiment with the custom transform group:
 
-.. code:: bash
+.. code-block:: bash
 
    python -m topobench model=cell/cwn dataset=graph/ZINC transforms=custom_example
 
@@ -194,15 +188,8 @@ This approach allows you to create complex transform pipelines,
 including multiple data manipulations and liftings, in a single
 configuration file.
 
-.. raw:: html
-
-   </details>
-
-By mastering these configuration options, you can easily customize your experiments to suit your specific needs, from simple model and dataset selections to complex data transformation pipelines.
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
 Additional Notes
-~~~~~~~~~~~~~~~~
+----------------
 
 -  **Automatic Lifting:** By default, our pipeline identifies the source
    and destination topological domains and applies a default lifting
@@ -210,8 +197,11 @@ Additional Notes
 -  **Fine-Grained Configuration:** The same CLI override mechanism
    applies when modifying finer configurations within a
    ``CONFIG GROUP``.
-   Please refer to the official ```hydra``
-   documentation <https://hydra.cc/docs/intro/>`__ for further details.
+   Please refer to the official `hydra documentation <https://hydra.cc/docs/intro/>`__
+   for further details.
+
+By mastering these configuration options, you can easily customize your experiments to suit your specific needs, from simple model and dataset selections to complex data transformation pipelines.
+
 
 :bike: Experiments Reproducibility
 ----------------------------------
@@ -238,7 +228,8 @@ for further details on how to add new datasets, transforms/liftings, and
 benchmark tasks.
 
 :gear: Neural Networks
-----------------------
+~~~~~~~~~~~~~~~~~~~~~~
+
 
 We list the neural networks trained and evaluated by ``TopoBench``,
 organized by the topological domain over which they operate: graph,
@@ -247,7 +238,7 @@ networks were originally implemented in
 ```TopoModelX`` <https://github.com/pyt-team/TopoModelX>`__.
 
 Graphs
-~~~~~~
+------
 
 +----------+----------------------------------------------------------+
 | Model    | Reference                                                |
@@ -266,7 +257,7 @@ Graphs
 +----------+----------------------------------------------------------+
 
 Simplicial complexes
-~~~~~~~~~~~~~~~~~~~~
+--------------------
 
 +-----------------------------------+-----------------------------------+
 | Model                             | Reference                         |
@@ -292,7 +283,7 @@ Simplicial complexes
 +-----------------------------------+-----------------------------------+
 
 Cellular complexes
-~~~~~~~~~~~~~~~~~~
+------------------
 
 +-----------------------------------+-----------------------------------+
 | Model                             | Reference                         |
@@ -323,7 +314,7 @@ Cellular complexes
 +-----------------------------------+-----------------------------------+
 
 Hypergraphs
-~~~~~~~~~~~
+-----------
 
 +-----------------------------------+-----------------------------------+
 | Model                             | Reference                         |
@@ -357,7 +348,7 @@ Hypergraphs
 +-----------------------------------+-----------------------------------+
 
 Combinatorial complexes
-~~~~~~~~~~~~~~~~~~~~~~~
+-----------------------
 
 +-----------------------------------+-----------------------------------+
 | Model                             | Reference                         |
@@ -379,7 +370,7 @@ for further details on how to leverage this framework to define and
 train customized topological neural network architectures.
 
 :rocket: Liftings & Transforms
-------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 We list the liftings used in ``TopoBench`` to transform datasets. Here,
 a *lifting* refers to a function that transforms a dataset defined on a
@@ -387,8 +378,10 @@ topological domain (*e.g.*, on a graph) into the same dataset but
 supported on a different topological domain (*e.g.*, on a simplicial
 complex).
 
- Structural Liftings
-~~~~~~~~~~~~~~~~~~~
+Structural Liftings
+-------------------
+
+
 
 The structural lifting is responsible for the transformation of the
 underlying relationships or elements of the data. For instance, it might
@@ -412,7 +405,7 @@ wiki <https://github.com/geometric-intelligence/TopoBench/wiki/Structural-Liftin
 for a complete list of compatible liftings.
 
 Graph to Simplicial Complex
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
+---------------------------
 
 +----------------------+----------------------+----------------------+
 | Name                 | Type                 | Description          |
@@ -491,7 +484,7 @@ Graph to Simplicial Complex
 +----------------------+----------------------+----------------------+
 
 Graph to Cell Complex
-^^^^^^^^^^^^^^^^^^^^^
+---------------------
 
 +-----------------------+--------------------+-----------------------+
 | Name                  | Type               | Description           |
@@ -513,7 +506,7 @@ Graph to Cell Complex
 +-----------------------+--------------------+-----------------------+
 
 Graph to Hypergraph
-^^^^^^^^^^^^^^^^^^^
+-------------------
 
 +-----------------------+-----------------------+-----------------------+
 | Name                  | Type                  | Description           |
@@ -565,7 +558,7 @@ Graph to Hypergraph
 +-----------------------+-----------------------+-----------------------+
 
 Pointcloud to Simplicial
-^^^^^^^^^^^^^^^^^^^^^^^^
+------------------------
 
 +---------------------+---------------+------------------------------+
 | Name                | Type          | Description                  |
@@ -585,7 +578,7 @@ Pointcloud to Simplicial
 +---------------------+---------------+------------------------------+
 
 Pointcloud to Hypergraph
-^^^^^^^^^^^^^^^^^^^^^^^^
+------------------------
 
 +-------------------------+---------------+-------------------------+
 | Name                    | Type          | Description             |
@@ -627,7 +620,7 @@ Simplicial to Combinatorial
 +----------------+--------------------+------------------------------+
 
 Hypergraph to Combinatorial
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
+---------------------------
 
 +-----------------------+--------------------+-----------------------+
 | Name                  | Type               | Description           |
@@ -642,7 +635,7 @@ Hypergraph to Combinatorial
 +-----------------------+--------------------+-----------------------+
 
 Feature Liftings
-~~~~~~~~~~~~~~~~
+----------------
 
 Feature liftings address the transfer of data attributes or features
 during mapping, ensuring that the properties associated with the data
@@ -708,10 +701,11 @@ manipulations currently implemented in ``TopoBench``:
    </details>
 
 :books: Datasets
-----------------
+~~~~~~~~~~~~~~~~
+
 
 Graph
-~~~~~
+-----
 
 +-----------------+-----------------+-----------------+-----------------+
 | Dataset         | Task            | Description     | Reference       |
@@ -803,7 +797,7 @@ Graph
 +-----------------+-----------------+-----------------+-----------------+
 
 Simplicial
-~~~~~~~~~~
+----------
 
 +-----------------+-----------------+-----------------+-----------------+
 | Dataset         | Task            | Description     | Reference       |
@@ -816,7 +810,7 @@ Simplicial
 +-----------------+-----------------+-----------------+-----------------+
 
 Hypergraph
-~~~~~~~~~~
+----------
 
 +----------------+----------------+----------------+----------------+
 | Dataset        | Task           | Description    | Reference      |
@@ -873,7 +867,7 @@ Hypergraph
 +----------------+----------------+----------------+----------------+
 
 :mag: References
-----------------
+~~~~~~~~~~~~~~~~
 
 To learn more about ``TopoBench``, we invite you to read the paper:
 
@@ -892,7 +886,7 @@ To learn more about ``TopoBench``, we invite you to read the paper:
 If you find ``TopoBench`` useful, we would appreciate if you cite us!
 
 :mouse: Additional Details
---------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. raw:: html
 
