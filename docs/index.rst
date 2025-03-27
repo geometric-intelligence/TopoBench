@@ -1,46 +1,19 @@
-.. raw:: html
+🌐 TopoBench (TB) 🍩
+==========================
 
-   <h2 align="center">
+.. figure:: https://github.com/geometric-intelligence/TopoBench/raw/main/resources/logo.jpg
+   :alt: topobench
+   :class: with-shadow
+   :width: 1000px
 
-.. raw:: html
+`TopoBench` (TB) is a modular Python library designed to standardize benchmarking and accelerate research in Topological Deep Learning (TDL). 
+In particular, TB allows to train and compare the performances of all sorts of Topological Neural Networks (TNNs) across the different topological domains, 
+where by *topological domain* we refer to a graph, a simplicial complex, a cellular complex, or a hypergraph.
 
-   </h2>
-
-.. raw:: html
-
-   <h3 align="center">
-
-A Comprehensive Benchmark Suite for Topological Deep Learning
-
-.. raw:: html
-
-   </h3>
-
-.. raw:: html
-
-   <p align="center">
-
-Assess how your model compares against state-of-the-art topological
-neural networks.
-
-.. raw:: html
-
-   </p>
-
-.. container::
-
-   |Lint| |Test| |Codecov| |Docs| |Python| |license| |slack|
-
-.. raw:: html
-
-   <p align="center">
-
-Overview • Get Started • Tutorials • Neural Networks • Liftings •
-Datasets • References
-
-.. raw:: html
-
-   </p>
+.. figure:: https://github.com/geometric-intelligence/TopoBench/raw/main/resources/workflow.jpg
+   :alt: workflow
+   :class: with-shadow
+   :width: 1000px
 
 :pushpin: Overview
 ------------------
@@ -126,8 +99,6 @@ Next, train the neural networks by running the following command:
 
    python -m topobench 
 
---------------
-
 Customizing Experiment Configuration
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -147,11 +118,9 @@ Transforms allow you to modify your data before processing. There are
 two main ways to configure transforms: individual transforms and
 transform groups.
 
-.. raw:: html
-
-   <details>
 
 Configuring Individual Transforms
+---------------------------------
 
 When configuring a single transform, follow these steps:
 
@@ -160,7 +129,7 @@ When configuring a single transform, follow these steps:
 
 The folder structure for transforms is as follows:
 
-::
+.. code-block:: none
 
    ├── configs
    │ ├── data_manipulations
@@ -172,26 +141,19 @@ The folder structure for transforms is as follows:
 
 To override the default transform, use the following command structure:
 
-.. code:: bash
+.. code-block:: bash
 
    python -m topobench model=<model_type>/<model_name> dataset=<data_type>/<dataset_name> transforms=[<transform_path>/<transform_name>]
 
 For example, to use the ``discrete_configuration_complex`` lifting with
 the ``cell/cwn`` model:
 
-.. code:: bash
+.. code-block:: bash
 
    python -m topobench model=cell/cwn dataset=graph/MUTAG transforms=[liftings/graph2cell/discrete_configuration_complex]
 
-.. raw:: html
-
-   </details>
-
-.. raw:: html
-
-   <details>
-
 Configuring Transform Groups
+----------------------------
 
 For more complex scenarios, such as combining multiple data
 manipulations, use transform groups:
@@ -200,7 +162,7 @@ manipulations, use transform groups:
    directory (e.g., ``custom_example.yaml``).
 2. Define the transform group in the YAML file:
 
-.. code:: yaml
+.. code-block:: yaml
 
    defaults:
    - data_manipulations@data_transform_1: identity
@@ -213,7 +175,7 @@ operator to assign unique names to each transform.
 
 3. Run the experiment with the custom transform group:
 
-.. code:: bash
+.. code-block:: bash
 
    python -m topobench model=cell/cwn dataset=graph/ZINC transforms=custom_example
 
@@ -221,15 +183,8 @@ This approach allows you to create complex transform pipelines,
 including multiple data manipulations and liftings, in a single
 configuration file.
 
-.. raw:: html
-
-   </details>
-
-By mastering these configuration options, you can easily customize your experiments to suit your specific needs, from simple model and dataset selections to complex data transformation pipelines.
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
 Additional Notes
-~~~~~~~~~~~~~~~~
+----------------
 
 -  **Automatic Lifting:** By default, our pipeline identifies the source
    and destination topological domains and applies a default lifting
@@ -237,14 +192,17 @@ Additional Notes
 -  **Fine-Grained Configuration:** The same CLI override mechanism
    applies when modifying finer configurations within a
    ``CONFIG GROUP``.
-   Please refer to the official ```hydra``
-   documentation <https://hydra.cc/docs/intro/>`__ for further details.
+   Please refer to the official `hydra documentation <https://hydra.cc/docs/intro/>`__
+   for further details.
 
-:bike: Experiments Reproducibility
-----------------------------------
+By mastering these configuration options, you can easily customize your experiments to suit your specific needs, from simple model and dataset selections to complex data transformation pipelines.
+
+
+Experiments Reproducibility
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 To reproduce Table 1 from the
-```TopoBench: A Framework for Benchmarking Topological Deep Learning`` <https://arxiv.org/pdf/2406.06642>`__
+`TopoBench: A Framework for Benchmarking Topological Deep Learning <https://arxiv.org/pdf/2406.06642>`__
 paper, please run the following command:
 
 .. code:: bash
@@ -256,16 +214,17 @@ Biases)
 project <https://wandb.ai/telyatnikov_sap/TopoBenchmark_main?nw=nwusertelyatnikov_sap>`__
 with logs for the corresponding runs (updated on June 11, 2024).
 
-:anchor: Tutorials
-------------------
+Tutorials
+~~~~~~~~~~~~~~~~~~
 
 Explore our
 `tutorials <https://github.com/geometric-intelligence/TopoBench/tree/main/tutorials>`__
 for further details on how to add new datasets, transforms/liftings, and
 benchmark tasks.
 
-:gear: Neural Networks
-----------------------
+Neural Networks
+~~~~~~~~~~~~~~~~~~~~~~
+
 
 We list the neural networks trained and evaluated by ``TopoBench``,
 organized by the topological domain over which they operate: graph,
@@ -274,7 +233,7 @@ networks were originally implemented in
 ```TopoModelX`` <https://github.com/pyt-team/TopoModelX>`__.
 
 Graphs
-~~~~~~
+------
 
 +----------+----------------------------------------------------------+
 | Model    | Reference                                                |
@@ -293,7 +252,7 @@ Graphs
 +----------+----------------------------------------------------------+
 
 Simplicial complexes
-~~~~~~~~~~~~~~~~~~~~
+--------------------
 
 +-----------------------------------+-----------------------------------+
 | Model                             | Reference                         |
@@ -319,7 +278,7 @@ Simplicial complexes
 +-----------------------------------+-----------------------------------+
 
 Cellular complexes
-~~~~~~~~~~~~~~~~~~
+------------------
 
 +-----------------------------------+-----------------------------------+
 | Model                             | Reference                         |
@@ -350,7 +309,7 @@ Cellular complexes
 +-----------------------------------+-----------------------------------+
 
 Hypergraphs
-~~~~~~~~~~~
+-----------
 
 +-----------------------------------+-----------------------------------+
 | Model                             | Reference                         |
@@ -384,7 +343,7 @@ Hypergraphs
 +-----------------------------------+-----------------------------------+
 
 Combinatorial complexes
-~~~~~~~~~~~~~~~~~~~~~~~
+-----------------------
 
 +-----------------------------------+-----------------------------------+
 | Model                             | Reference                         |
@@ -405,8 +364,8 @@ page <https://github.com/geometric-intelligence/TopoBench/wiki/TopoTune>`__
 for further details on how to leverage this framework to define and
 train customized topological neural network architectures.
 
-:rocket: Liftings & Transforms
-------------------------------
+Liftings & Transforms
+~~~~~~~~~~~~~~~~~~~~~~
 
 We list the liftings used in ``TopoBench`` to transform datasets. Here,
 a *lifting* refers to a function that transforms a dataset defined on a
@@ -414,8 +373,10 @@ topological domain (*e.g.*, on a graph) into the same dataset but
 supported on a different topological domain (*e.g.*, on a simplicial
 complex).
 
- Structural Liftings
-~~~~~~~~~~~~~~~~~~~
+Structural Liftings
+-------------------
+
+
 
 The structural lifting is responsible for the transformation of the
 underlying relationships or elements of the data. For instance, it might
@@ -592,7 +553,7 @@ Graph to Hypergraph
 +-----------------------+-----------------------+-----------------------+
 
 Pointcloud to Simplicial
-^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
 +---------------------+---------------+------------------------------+
 | Name                | Type          | Description                  |
@@ -669,7 +630,7 @@ Hypergraph to Combinatorial
 +-----------------------+--------------------+-----------------------+
 
 Feature Liftings
-~~~~~~~~~~~~~~~~
+----------------
 
 Feature liftings address the transfer of data attributes or features
 during mapping, ensuring that the properties associated with the data
@@ -735,10 +696,11 @@ manipulations currently implemented in ``TopoBench``:
    </details>
 
 :books: Datasets
-----------------
+~~~~~~~~~~~~~~~~
+
 
 Graph
-~~~~~
+-----
 
 +-----------------+-----------------+-----------------+-----------------+
 | Dataset         | Task            | Description     | Reference       |
@@ -830,7 +792,7 @@ Graph
 +-----------------+-----------------+-----------------+-----------------+
 
 Simplicial
-~~~~~~~~~~
+----------
 
 +-----------------+-----------------+-----------------+-----------------+
 | Dataset         | Task            | Description     | Reference       |
@@ -843,7 +805,7 @@ Simplicial
 +-----------------+-----------------+-----------------+-----------------+
 
 Hypergraph
-~~~~~~~~~~
+----------
 
 +----------------+----------------+----------------+----------------+
 | Dataset        | Task           | Description    | Reference      |
@@ -899,8 +861,8 @@ Hypergraph
 |                |                |                | -Paper.pdf>`__ |
 +----------------+----------------+----------------+----------------+
 
-:mag: References
-----------------
+References
+~~~~~~~~~~~~~~~~
 
 To learn more about ``TopoBench``, we invite you to read the paper:
 
@@ -918,8 +880,8 @@ To learn more about ``TopoBench``, we invite you to read the paper:
 
 If you find ``TopoBench`` useful, we would appreciate if you cite us!
 
-:mouse: Additional Details
---------------------------
+Additional Details
+~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. raw:: html
 
