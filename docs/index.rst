@@ -204,7 +204,7 @@ By mastering these configuration options, you can easily customize your experime
 
 
 :bike: Experiments Reproducibility
-----------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 To reproduce Table 1 from the
 ```TopoBench: A Framework for Benchmarking Topological Deep Learning`` <https://arxiv.org/pdf/2406.06642>`__
@@ -220,7 +220,7 @@ project <https://wandb.ai/telyatnikov_sap/TopoBenchmark_main?nw=nwusertelyatniko
 with logs for the corresponding runs (updated on June 11, 2024).
 
 :anchor: Tutorials
-------------------
+~~~~~~~~~~~~~~~~~~
 
 Explore our
 `tutorials <https://github.com/geometric-intelligence/TopoBench/tree/main/tutorials>`__
