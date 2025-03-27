@@ -99,8 +99,6 @@ Next, train the neural networks by running the following command:
 
    python -m topobench 
 
---------------
-
 Customizing Experiment Configuration
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -120,9 +118,6 @@ Transforms allow you to modify your data before processing. There are
 two main ways to configure transforms: individual transforms and
 transform groups.
 
-.. raw:: html
-
-   <details>
 
 Configuring Individual Transforms
 ---------------------------------
@@ -203,11 +198,11 @@ Additional Notes
 By mastering these configuration options, you can easily customize your experiments to suit your specific needs, from simple model and dataset selections to complex data transformation pipelines.
 
 
-:bike: Experiments Reproducibility
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Experiments Reproducibility
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 To reproduce Table 1 from the
-```TopoBench: A Framework for Benchmarking Topological Deep Learning`` <https://arxiv.org/pdf/2406.06642>`__
+`TopoBench: A Framework for Benchmarking Topological Deep Learning <https://arxiv.org/pdf/2406.06642>`__
 paper, please run the following command:
 
 .. code:: bash
@@ -219,7 +214,7 @@ Biases)
 project <https://wandb.ai/telyatnikov_sap/TopoBenchmark_main?nw=nwusertelyatnikov_sap>`__
 with logs for the corresponding runs (updated on June 11, 2024).
 
-:anchor: Tutorials
+Tutorials
 ~~~~~~~~~~~~~~~~~~
 
 Explore our
@@ -227,7 +222,7 @@ Explore our
 for further details on how to add new datasets, transforms/liftings, and
 benchmark tasks.
 
-:gear: Neural Networks
+Neural Networks
 ~~~~~~~~~~~~~~~~~~~~~~
 
 
@@ -369,8 +364,8 @@ page <https://github.com/geometric-intelligence/TopoBench/wiki/TopoTune>`__
 for further details on how to leverage this framework to define and
 train customized topological neural network architectures.
 
-:rocket: Liftings & Transforms
-==============================
+Liftings & Transforms
+~~~~~~~~~~~~~~~~~~~~~~
 
 We list the liftings used in ``TopoBench`` to transform datasets. Here,
 a *lifting* refers to a function that transforms a dataset defined on a
@@ -405,7 +400,7 @@ wiki <https://github.com/geometric-intelligence/TopoBench/wiki/Structural-Liftin
 for a complete list of compatible liftings.
 
 Graph to Simplicial Complex
----------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 +----------------------+----------------------+----------------------+
 | Name                 | Type                 | Description          |
@@ -484,7 +479,7 @@ Graph to Simplicial Complex
 +----------------------+----------------------+----------------------+
 
 Graph to Cell Complex
----------------------
+^^^^^^^^^^^^^^^^^^^^^
 
 +-----------------------+--------------------+-----------------------+
 | Name                  | Type               | Description           |
@@ -506,7 +501,7 @@ Graph to Cell Complex
 +-----------------------+--------------------+-----------------------+
 
 Graph to Hypergraph
--------------------
+^^^^^^^^^^^^^^^^^^^
 
 +-----------------------+-----------------------+-----------------------+
 | Name                  | Type                  | Description           |
@@ -558,7 +553,7 @@ Graph to Hypergraph
 +-----------------------+-----------------------+-----------------------+
 
 Pointcloud to Simplicial
-------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^
 
 +---------------------+---------------+------------------------------+
 | Name                | Type          | Description                  |
@@ -578,7 +573,7 @@ Pointcloud to Simplicial
 +---------------------+---------------+------------------------------+
 
 Pointcloud to Hypergraph
-------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^
 
 +-------------------------+---------------+-------------------------+
 | Name                    | Type          | Description             |
@@ -620,7 +615,7 @@ Simplicial to Combinatorial
 +----------------+--------------------+------------------------------+
 
 Hypergraph to Combinatorial
----------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 +-----------------------+--------------------+-----------------------+
 | Name                  | Type               | Description           |
@@ -866,7 +861,7 @@ Hypergraph
 |                |                |                | -Paper.pdf>`__ |
 +----------------+----------------+----------------+----------------+
 
-:mag: References
+References
 ~~~~~~~~~~~~~~~~
 
 To learn more about ``TopoBench``, we invite you to read the paper:
@@ -885,7 +880,7 @@ To learn more about ``TopoBench``, we invite you to read the paper:
 
 If you find ``TopoBench`` useful, we would appreciate if you cite us!
 
-:mouse: Additional Details
+Additional Details
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. raw:: html
