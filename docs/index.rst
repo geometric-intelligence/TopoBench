@@ -370,7 +370,7 @@ for further details on how to leverage this framework to define and
 train customized topological neural network architectures.
 
 :rocket: Liftings & Transforms
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+==============================
 
 We list the liftings used in ``TopoBench`` to transform datasets. Here,
 a *lifting* refers to a function that transforms a dataset defined on a
