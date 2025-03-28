@@ -24,7 +24,7 @@ from torch_geometric.sampler import (
 )
 from torch_geometric.typing import InputNodes, OptTensor
 
-from topobenchmark.data.batching.utils import filter_data
+from topobench.data.batching.utils import filter_data
 
 
 class CellLoader(

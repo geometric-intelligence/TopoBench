@@ -7,9 +7,9 @@ from torch_geometric.sampler import NeighborSampler
 from torch_geometric.sampler.base import SubgraphType
 from torch_geometric.typing import EdgeType, InputNodes, OptTensor
 
-from topobenchmark.data.batching.cell_loader import CellLoader
-from topobenchmark.data.batching.utils import get_sampled_neighborhood
-from topobenchmark.dataloader import DataloadDataset
+from topobench.data.batching.cell_loader import CellLoader
+from topobench.data.batching.utils import get_sampled_neighborhood
+from topobench.dataloader import DataloadDataset
 
 
 class NeighborCellsLoader(CellLoader):
