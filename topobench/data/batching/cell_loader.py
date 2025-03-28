@@ -123,6 +123,7 @@ class CellLoader(
         self.custom_cls = custom_cls
         self.input_id = input_id
 
+        # What is it? Do we delete these two?
         kwargs.pop("dataset", None)
         kwargs.pop("collate_fn", None)
 
@@ -213,6 +214,19 @@ class CellLoader(
                 f"'{self.__class__.__name__}'' found invalid "
                 f"type: '{type(data)}'"
             )
+
+        # Add batch_i to the data object to be used in the encoder
+        keys = sorted([key for key in data.keys() if "x_" in key])  # Noqa: SIM118
+
+        for key in keys:
+            cell_idx = int(key.split("_")[1])
+            current_number_of_cells = data[key].shape[0]
+            data[f"batch_{cell_idx}"] = torch.zeros(
+                current_number_of_cells
+            ).long()  # torch.tensor([[0] * current_number_of_cells]).squeeze(0)
+
+            if key == "x_0":
+                data["batch"] = data[f"batch_{cell_idx}"].clone()
 
         return data if self.transform is None else self.transform(data)
 
