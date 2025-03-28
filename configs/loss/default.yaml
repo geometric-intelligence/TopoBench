@@ -1,4 +1,4 @@
-_target_: topobenchmark.loss.TBLoss
+_target_: topobench.loss.TBLoss
 
 dataset_loss:
   task: ${dataset.parameters.task}

@@ -1,5 +1,5 @@
 loader:
-  _target_: topobenchmark.data.loaders.MantraSimplicialDatasetLoader
+  _target_: topobench.data.loaders.MantraSimplicialDatasetLoader
   parameters: 
     data_domain: simplicial
     data_type: topological 
@@ -7,6 +7,7 @@ loader:
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
     manifold_dim: 2
     version: "v0.0.5"
+    load_as_graph: False
     task_variable: "genus" # Options: ['name', 'genus', 'orientable'] To use 'torsion_coefficients', 'betti_numbers' fix multilabel multiclass issue
     model_domain: ${model.model_domain}
 

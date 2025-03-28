@@ -2,10 +2,14 @@
 
 import os
 import shutil
+import sys
 
-project = "TopoBenchmark"
-copyright = "2022-2023, PyT-Team, Inc."
-author = "PyT-Team Authors"
+sys.path.insert(0, os.path.abspath("../topobench"))
+
+
+project = "TopoBench"
+copyright = "2025, Topological-Intelligence Team, Inc."
+author = "Topological-Intelligence Team Authors"
 
 extensions = [
     "nbsphinx",
@@ -20,6 +24,8 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
     "sphinx_gallery.load_style",
+    "sphinx.ext.autosummary",
+    "myst_parser",
 ]
 
 # Configure nbsphinx for notebook execution
@@ -57,8 +63,8 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**.ipynb_checkpoints"]
 pygments_style = None
 
 html_theme = "pydata_sphinx_theme"
-html_baseurl = "https://geometric-intelligence.github.io/topobenchmark"
-htmlhelp_basename = "topobenchmarkdoc"
+html_baseurl = "https://geometric-intelligence.github.io/topobench"
+htmlhelp_basename = "topobenchdoc"
 html_last_updated_fmt = "%c"
 
 latex_elements = {}
@@ -67,24 +73,21 @@ latex_elements = {}
 latex_documents = [
     (
         master_doc,
-        "topobenchmark.tex",
-        "TopoBenchmarkX Documentation",
-        "PyT-Team",
+        "topobench.tex",
+        "TopoBench Documentation",
         "manual",
     ),
 ]
 
-man_pages = [
-    (master_doc, "topobenchmark", "TopoBenchmarkX Documentation", [author], 1)
-]
+man_pages = [(master_doc, "topobench", "TopoBench Documentation", [author], 1)]
 
 texinfo_documents = [
     (
         master_doc,
-        "topobenchmark",
-        "TopoBenchmarkX Documentation",
+        "topobench",
+        "TopoBench Documentation",
         author,
-        "topobenchmark",
+        "topobench",
         "One line description of project.",
         "Miscellaneous",
     ),
@@ -111,7 +114,7 @@ def copy_thumbnails():
             full_filename = root + "/" + png
             all_thumbnails.append(full_filename)
 
-    os.mkdir("./_build")
+    os.makedirs("./_build", exist_ok=True)  # os.mkdir("./_build")
     os.mkdir(des_directory)
 
     for thumbnail in all_thumbnails:

@@ -1,0 +1,15 @@
+# Defines the default parameters of the implemented transform.
+_target_: topobench.transforms.data_transform.DataTransform
+transform_type: 'lifting'
+transform_name: "SimplicialPathsLifting"
+d1: 2
+d2: 2
+q: 1
+i: 1
+j: 2
+complex_dim: 2
+chunk_size: 1024
+threshold: 1
+# Required for all liftings to make the pipeline executable 
+preserve_edge_attr: False
+neighborhoods: ${oc.select:model.backbone.neighborhoods,null}

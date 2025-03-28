@@ -178,7 +178,10 @@ cython_debug/
 /notebooks/*.csv
 notebooks/tmp
 *.pickle
-
+/tutorials/data/
+/tutorials/datasets/
+/tutorials/lightning_logs/
+/tutorials/datasets/
 # wandb
 wandb/
 

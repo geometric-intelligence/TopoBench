@@ -12,12 +12,12 @@ Assess how your model compares against state-of-the-art topological neural netwo
 
 <div align="center">
 
-[![Lint](https://github.com/geometric-intelligence/TopoBenchmark/actions/workflows/lint.yml/badge.svg)](https://github.com/geometric-intelligence/TopoBenchmark/actions/workflows/lint.yml)
-[![Test](https://github.com/geometric-intelligence/TopoBenchmark/actions/workflows/test.yml/badge.svg)](https://github.com/geometric-intelligence/TopoBenchmark/actions/workflows/test.yml)
-[![Codecov](https://codecov.io/gh/geometric-intelligence/TopoBenchmark/branch/main/graph/badge.svg)](https://app.codecov.io/gh/geometric-intelligence/TopoBenchmark)
-[![Docs](https://img.shields.io/badge/docs-website-brightgreen)](https://geometric-intelligence.github.io/topobenchmark/index.html)
+[![Lint](https://github.com/geometric-intelligence/TopoBench/actions/workflows/lint.yml/badge.svg)](https://github.com/geometric-intelligence/TopoBench/actions/workflows/lint.yml)
+[![Test](https://github.com/geometric-intelligence/TopoBench/actions/workflows/test.yml/badge.svg)](https://github.com/geometric-intelligence/TopoBench/actions/workflows/test.yml)
+[![Codecov](https://codecov.io/gh/geometric-intelligence/TopoBench/branch/main/graph/badge.svg)](https://app.codecov.io/gh/geometric-intelligence/TopoBench)
+[![Docs](https://img.shields.io/badge/docs-website-brightgreen)](https://geometric-intelligence.github.io/topobench/index.html)
 [![Python](https://img.shields.io/badge/python-3.10+-blue?logo=python)](https://www.python.org/)
-[![license](https://badgen.net/github/license/geometric-intelligence/TopoBenchmark?color=green)](https://github.com/geometric-intelligence/TopoBenchmark/blob/main/LICENSE)
+[![license](https://badgen.net/github/license/geometric-intelligence/TopoBench?color=green)](https://github.com/geometric-intelligence/TopoBench/blob/main/LICENSE)
 [![slack](https://img.shields.io/badge/chat-on%20slack-purple?logo=slack)](https://join.slack.com/t/geometric-intelligenceworkspace/shared_invite/zt-2k63sv99s-jbFMLtwzUCc8nt3sIRWjEw)
 
 
@@ -37,67 +37,144 @@ Assess how your model compares against state-of-the-art topological neural netwo
 
 ## :pushpin: Overview
 
-`TopoBenchmark` (TB) is a modular Python library designed to standardize benchmarking and accelerate research in Topological Deep Learning (TDL). In particular, TB allows to train and compare the performances of all sorts of Topological Neural Networks (TNNs) across the different topological domains, where by _topological domain_ we refer to a graph, a simplicial complex, a cellular complex, or a hypergraph. For detailed information, please refer to the [`TopoBenchmark: A Framework for Benchmarking Topological Deep Learning`](https://arxiv.org/pdf/2406.06642) paper.
+`TopoBench` (TB) is a modular Python library designed to standardize benchmarking and accelerate research in Topological Deep Learning (TDL). In particular, TB allows to train and compare the performances of all sorts of Topological Neural Networks (TNNs) across the different topological domains, where by _topological domain_ we refer to a graph, a simplicial complex, a cellular complex, or a hypergraph. For detailed information, please refer to the [`TopoBench: A Framework for Benchmarking Topological Deep Learning`](https://arxiv.org/pdf/2406.06642) paper.
 
 <p align="center">
   <img src="resources/workflow.jpg" width="700">
 </p>
 
-The main pipeline trains and evaluates a wide range of state-of-the-art TNNs and Graph Neural Networks (GNNs) (see <a href="#gear-neural-networks">:gear: Neural Networks</a>) on numerous and varied datasets and benchmark tasks (see <a href="#books-datasets">:books: Datasets</a> ). Through TopoTune (see <a href="#bulb-topotune">:bulb: TopoTune</a>), the library provides easy access to training and testing an entire landscape of graph-based TNNs, new or existing, on any topological domain.
-
-Additionally, the library offers the ability to transform, i.e. _lift_, each dataset from one topological domain to another (see <a href="#rocket-liftings">:rocket: Liftings</a>), enabling for the first time an exhaustive inter-domain comparison of TNNs.
+The main pipeline trains and evaluates a wide range of state-of-the-art TNNs and Graph Neural Networks (GNNs) (see <a href="#gear-neural-networks">:gear: Neural Networks</a>) on numerous and varied datasets and benchmark tasks (see <a href="#books-datasets">:books: Datasets</a> ). Additionally, the library offers the ability to transform, i.e. _lift_, each dataset from one topological domain to another (see <a href="#rocket-liftings">:rocket: Liftings</a>), enabling for the first time an exhaustive inter-domain comparison of TNNs.
 
 ## :jigsaw: Get Started
 
 ### Create Environment
 
-If you do not have conda on your machine, please follow [their guide](https://docs.anaconda.com/free/miniconda/miniconda-install/) to install it. 
-
-First, clone the `TopoBenchmark` repository and set up a conda environment `tb` with python 3.11.3. 
-
+First, ensure `conda` is installed:  
+```bash
+conda --version
 ```
-git clone git@github.com:geometric-intelligence/topobenchmark.git
-cd TopoBenchmark
+If not, we recommend intalling Miniconda [following the official command line instructions](https://www.anaconda.com/docs/getting-started/miniconda/install).
+
+Then, clone and navigate to the `TopoBench` repository  
+```bash
+git clone git@github.com:geometric-intelligence/topobench.git
+cd TopoBench
+```
+
+Next, set up and activate a conda environment `tb` with Python 3.11.3:
+```bash
 conda create -n tb python=3.11.3
+conda activate tb
 ```
 
-Next, check the CUDA version of your machine:
+If working with GPUs, check the CUDA version of your machine:
+```bash
+which nvcc && nvcc --version
 ```
-/usr/local/cuda/bin/nvcc --version
-```
-and ensure that it matches the CUDA version specified in the `env_setup.sh` file (`CUDA=cu121` by default). If it does not match, update `env_setup.sh` accordingly by changing both the `CUDA` and `TORCH` environment variables to compatible values as specified on [this website](https://github.com/pyg-team/pyg-lib).
+and ensure that it matches the CUDA version specified in the `env_setup.sh` file (`CUDA=cpu` by default for a broader compatibility). If it does not match, update `env_setup.sh` accordingly by changing both the `CUDA` and `TORCH` environment variables to compatible values as specified on [this website](https://github.com/pyg-team/pyg-lib).
 
 Next, set up the environment with the following command.
-
-```
+```bash
 source env_setup.sh
 ```
-This command installs the `TopoBenchmark` library and its dependencies. 
+This command installs the `TopoBench` library and its dependencies. 
 
 ### Run Training Pipeline
 
-Next, train the neural networks by running the following command:
+Once the setup is completed, train and evaluate a neural network by running the following command:
 
-```
-python -m topobenchmark 
+```bash
+python -m topobench 
 ```
 
+---
+
+### Customizing Experiment Configuration
 Thanks to `hydra` implementation, one can easily override the default experiment configuration through the command line. For instance, the model and dataset can be selected as:
 
 ```
-python -m topobenchmark model=cell/cwn dataset=graph/MUTAG
+python -m topobench model=cell/cwn dataset=graph/MUTAG
 ```
-
 **Remark:** By default, our pipeline identifies the source and destination topological domains, and applies a default lifting between them if required.
 
-The same CLI override mechanism also applies when modifying more finer configurations within a `CONFIG GROUP`. Please, refer to the official [`hydra`documentation](https://hydra.cc/docs/intro/) for further details.
+
+Transforms allow you to modify your data before processing. There are two main ways to configure transforms: individual transforms and transform groups.
+<details>
+<summary><strong>Configuring Individual Transforms</strong></summary>
+
+When configuring a single transform, follow these steps:
+
+1. Choose a desired transform (e.g., a lifting transform).
+2. Identify the relative path to the transform configuration.
+
+The folder structure for transforms is as follows:
+
+```
+├── configs
+│ ├── data_manipulations
+│ ├── transforms
+│ │ └── liftings
+│ │   ├── graph2cell
+│ │   ├── graph2hypergraph
+│ │   └── graph2simplicial
+```
+
+To override the default transform, use the following command structure:
+
+```bash
+python -m topobench model=<model_type>/<model_name> dataset=<data_type>/<dataset_name> transforms=[<transform_path>/<transform_name>]
+```
+
+For example, to use the `discrete_configuration_complex` lifting with the `cell/cwn` model:
+
+```bash
+python -m topobench model=cell/cwn dataset=graph/MUTAG transforms=[liftings/graph2cell/discrete_configuration_complex]
+```
+
+</details>
+<details>
+<summary><strong>Configuring Transform Groups</strong></summary>
+
+For more complex scenarios, such as combining multiple data manipulations, use transform groups:
+
+1. Create a new configuration file in the `configs/transforms` directory (e.g., `custom_example.yaml`).
+2. Define the transform group in the YAML file:
+
+```yaml
+defaults:
+- data_manipulations@data_transform_1: identity
+- data_manipulations@data_transform_2: node_degrees
+- data_manipulations@data_transform_3: one_hot_node_degree_features
+- liftings/graph2cell@graph2cell_lifting: cycle
+```
+
+**Important:** When composing multiple data manipulations, use the `@` operator to assign unique names to each transform.
+
+3. Run the experiment with the custom transform group:
+
+```bash
+python -m topobench model=cell/cwn dataset=graph/ZINC transforms=custom_example
+```
+
+This approach allows you to create complex transform pipelines, including multiple data manipulations and liftings, in a single configuration file.
+
+</details>
+By mastering these configuration options, you can easily customize your experiments to suit your specific needs, from simple model and dataset selections to complex data transformation pipelines.
+---
+
+### Additional Notes
+
+- **Automatic Lifting:** By default, our pipeline identifies the source and destination topological domains and applies a default lifting between them if required.  
+- **Fine-Grained Configuration:** The same CLI override mechanism applies when modifying finer configurations within a `CONFIG GROUP`.  
+  Please refer to the official [`hydra` documentation](https://hydra.cc/docs/intro/) for further details.
+
 
 
 
 ## :bike: Experiments Reproducibility
-To reproduce Table 1 from the [`TopoBenchmark: A Framework for Benchmarking Topological Deep Learning`](https://arxiv.org/pdf/2406.06642) paper, please run the following command:
+To reproduce Table 1 from the [`TopoBench: A Framework for Benchmarking Topological Deep Learning`](https://arxiv.org/pdf/2406.06642) paper, please run the following command:
 
-```
+```bash
 bash scripts/reproduce.sh
 ```
 **Remark:** We have additionally provided a public [W&B (Weights & Biases) project](https://wandb.ai/telyatnikov_sap/TopoBenchmark_main?nw=nwusertelyatnikov_sap) with logs for the corresponding runs (updated on June 11, 2024).
@@ -105,11 +182,11 @@ bash scripts/reproduce.sh
 
 ## :anchor: Tutorials
 
-Explore our [tutorials](https://github.com/geometric-intelligence/TopoBenchmark/tree/main/tutorials) for further details on how to add new datasets, transforms/liftings, and benchmark tasks. 
+Explore our [tutorials](https://github.com/geometric-intelligence/TopoBench/tree/main/tutorials) for further details on how to add new datasets, transforms/liftings, and benchmark tasks. 
 
 ## :gear: Neural Networks
 
-We list the neural networks trained and evaluated by `TopoBenchmark`, organized by the topological domain over which they operate: graph, simplicial complex, cellular complex or hypergraph. Many of these neural networks were originally implemented in [`TopoModelX`](https://github.com/pyt-team/TopoModelX).
+We list the neural networks trained and evaluated by `TopoBench`, organized by the topological domain over which they operate: graph, simplicial complex, cellular complex or hypergraph. Many of these neural networks were originally implemented in [`TopoModelX`](https://github.com/pyt-team/TopoModelX).
 
 
 ### Graphs
@@ -150,111 +227,107 @@ We list the neural networks trained and evaluated by `TopoBenchmark`, organized 
 | --- | --- |
 | GCCN | [TopoTune: A Framework for Generalized Combinatorial Complex Neural Networks](https://arxiv.org/pdf/2410.06530) |
 
-## :bulb: TopoTune
-
-We include TopoTune, a comprehensive framework for easily defining and training new, general TDL models on any domain using any (graph) neural network ω as a backbone. The pre-print detailing this framework is [TopoTune: A Framework for Generalized Combinatorial Complex Neural Networks](https://arxiv.org/pdf/2410.06530). In a GCCN (pictured below), the input complex is represented as an ensemble of strictly augmented Hasse graphs, one per neighborhood of the complex. Each of these Hasse graphs is processed by a sub model ω, and the outputs are rank-wise aggregated in between layers. 
-
-<p align="center">
-  <img src="resources/gccn.jpg" width="700">
-</p>
-
-### Defining and training a GCCN
-To implement and train a GCCN, run the following command line with the desired choice of dataset, lifting domain (ex: `cell`, `simplicial`), PyTorch Geometric backbone model (ex: `GCN`, `GIN`, `GAT`, `GraphSAGE`) and parameters (ex. `model.backbone.GNN.num_layers=2`), neighborhood structure (routes), and other hyperparameters.
+**Remark:** TopoBench includes [TopoTune](https://arxiv.org/pdf/2410.06530), a comprehensive framework for easily designing new, general TDL models on any domain using any (graph) neural network as a backbone. Please check out the extended [TopoTune wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/TopoTune) for further details on how to leverage this framework to define and train customized topological neural network architectures.
 
 
-```
-python -m topobenchmark \
-    dataset=graph/PROTEINS \
-    dataset.split_params.data_seed=1 \
-    model=cell/topotune\
-    model.tune_gnn=GCN \
-    model.backbone.GNN.num_layers=2 \
-    model.backbone.neighborhoods=\[1-up_laplacian-0,1-down_incidence-2\] \
-    model.backbone.layers=4 \
-    model.feature_encoder.out_channels=32 \
-    model.feature_encoder.proj_dropout=0.3 \
-    model.readout.readout_name=PropagateSignalDown \
-    logger.wandb.project=TopoTune_cell \
-    trainer.max_epochs=1000 \
-    callbacks.early_stopping.patience=50 \
-```
+## :rocket: Liftings & Transforms
 
-To use a single augmented Hasse graph expansion, use `model={domain}/topotune_onehasse` instead of `model={domain}/topotune`.
+We list the liftings used in `TopoBench` to transform datasets. Here, a _lifting_ refers to a function that transforms a dataset defined on a topological domain (_e.g._, on a graph) into the same dataset but supported on a different topological domain (_e.g._, on a simplicial complex). 
 
-To specify a set of neighborhoods on the complex, use a list of neighborhoods each specified as a string of the form 
-`r-{neighborhood}-k`, where $k$ represents the source cell rank, and $r$ is the number of ranks up or down that the selected `{neighborhood}` considers. Currently, the following options for `{neighborhood}` are supported:
-- `up_laplacian`, between cells of rank $k$ through $k+r$ cells.
-- `down_laplacian`, between cells of rank $k$ through $k-r$ cells.
-- `hodge_laplacian`, between cells of rank $k$ through both $k-r$ and $k+r$ cells.
-- `up_adjacency`, between cells of rank $k$ through $k+r$ cells.
-- `down_adjacency`, between cells of rank $k$ through $k-r$ cells.
-- `up_incidence`, from rank $k$ to $k+r$.
-- `down_incidence`, from rank $k$ to $k-r$.
+### <a name="structural_liftings"></a> Structural Liftings
 
-The number $r$ can be omitted, in which case $r=1$ by default (e.g. `up_incidence-k` represents the incidence from rank $k$ to $k+1$).
+The structural lifting is responsible for the transformation of the underlying relationships or elements of the data. For instance, it might determine how nodes and edges in a graph are mapped into triangles and tetrahedra in a simplicial complex. This structural transformation can be further categorized into connectivity-based, where the mapping relies solely on the existing connections within the data, and feature-based, where the data's inherent properties or features guide the new structure.
 
+We enumerate below the structural liftings currently implemented in `TopoBench`; please check out the provided description links for further details. 
 
-### Using backbone models from any package
-By default, backbone models are imported from `torch_geometric.nn.models`. To import and specify a backbone model from any other package, such as `torch.nn.Transformer` or `dgl.nn.GATConv`, it is sufficient to 1) make sure the package is installed and 2) specify in the command line:
+**Remark:**: Most of these liftings are adaptations of winner submissions of the ICML TDL Challenge 2024 ([paper](https://proceedings.mlr.press/v251/bernardez24a.html) | [repo](https://github.com/pyt-team/challenge-icml-2024)); see the [Structural Liftings wiki](https://github.com/geometric-intelligence/TopoBench/wiki/Structural-Liftings) for a complete list of compatible liftings.
 
-```
-model.tune_gnn = {backbone_model}
-model.backbone.GNN._target_={package}.{backbone_model}
-```
-
-### Reproducing experiments
-
-We provide scripts to reproduce experiments on a broad class of GCCNs in [`scripts/topotune`](scripts/topotune) and reproduce iterations of existing neural networks in [`scripts/topotune/existing_models`](scripts/topotune/existing_models), as previously reported in the [TopoTune paper](https://arxiv.org/pdf/2410.06530).
-
-We invite users interested in running extensive sweeps on new GCCNs to replicate the `--multirun` flag in the scripts. This is a shortcut for running every possible combination of the specified parameters in a single command.
-
-## :rocket: Liftings
-
-We list the liftings used in `TopoBenchmark` to transform datasets. Here, a _lifting_ refers to a function that transforms a dataset defined on a topological domain (_e.g._, on a graph) into the same dataset but supported on a different topological domain (_e.g._, on a simplicial complex).
-
-<details>
-<summary><b> Topology Liftings </b></summary>
-
-### Graph2Simplicial
-| Name | Description | Reference |
+#### Graph to Simplicial Complex
+| Name | Type | Description |
 | --- | --- | --- |
-| CliqueLifting | The algorithm finds the cliques in the graph and creates simplices. Given a clique the first simplex added is the one containing all the nodes of the clique, then the simplices composed of all the possible combinations with one node missing, then two nodes missing, and so on, until all the possible pairs are added. Then the method moves to the next clique. | [Simplicial Complexes](https://en.wikipedia.org/wiki/Clique_complex) |
-| KHopLifting | For each node in the graph, take the set of its neighbors, up to k distance, and the node itself. These sets are then treated as simplices. The dimension of each simplex depends on the degree of the nodes. For example, a node with d neighbors forms a d-simplex. | [Neighborhood Complexes](https://arxiv.org/pdf/math/0512077) |
+|   DnD Lifting  |   Feature-based  |  [Wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/DnD-Lifting-(Graph-to-Simplicial))   |
+|  Random Latent Clique Lifting   |   Connectivity-based  |   [Wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/Random-Latent-Clique-Lifting-(Graph-to-Simplicial))  |
+|  Line Lifting   |   Connectivity-based  |  [Wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/Line-Lifting-(Graph-to-Simplicial))   |
+|  Neighbourhood Complex Lifting   |   Connectivity-based  |   [Wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/Neighbourhood-Complex-Lifting-(Graph-to-Simplicial))  |
+|  Graph Induced Lifting   |   Connectivity-based  |  [Wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/Graph-Induced-Lifting-(Graph-to-Simplicial))   |
+|  Eccentricity Lifting  |  Connectivity-based  |  [Wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/Eccentricity-Lifting-(Graph-to-Simplicial))  |
+| Feature‐Based Rips Complex  | Both connectivity and feature-based  |  [Wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/Feature%E2%80%90Based-Rips-Complex-(Graph-to-Simplicial)) |
+| Clique Lifting | Connectivity-based | [Wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/Clique-Lifting-(Graph-to-Simplicial)) |
+| K-hop Lifting | Connectivity-based | [Wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/KHop-Lifting-(Graph-to-Simplicial)) |
 
-### Graph2Cell
-| Name | Description | Reference |
+#### Graph to Cell Complex
+| Name | Type | Description |
 | --- | --- | --- |
-| CellCycleLifting |To lift a graph to a cell complex (CC) we proceed as follows. First, we identify a finite set of cycles (closed loops) within the graph. Second, each identified cycle in the graph is associated to a 2-cell, such that the boundary of the 2-cell is the cycle. The nodes and edges of the cell complex are inherited from the graph. | [Appendix B](https://arxiv.org/abs/2206.00606) |
+|  Discrete Configuration Complex  | Connectivity-based  |  [Wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/Discrete-Configuration-Complex-(Graph-to-Cell))  |
+|  Cycle Lifting  | Connectivity-based  |  [Wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/Cycle-Lifting-(Graph-to-Cell))  |
 
-### Graph2Hypergraph
-| Name | Description | Reference |
+
+#### Graph to Hypergraph
+| Name | Type | Description |
 | --- | --- | --- |
-| KHopLifting | For each node in the graph, the algorithm finds the set of nodes that are at most k connections away from the initial node. This set is then used to create an hyperedge. The process is repeated for all nodes in the graph. | [Section 3.4](https://ieeexplore.ieee.org/abstract/document/9264674) |
-| KNearestNeighborsLifting | For each node in the graph, the method finds the k nearest nodes by using the Euclidean distance between the vectors of features. The set of k nodes found is considered as an hyperedge. The proces is repeated for all nodes in the graph. | [Section 3.1](https://ieeexplore.ieee.org/abstract/document/9264674) |
-</details>
+|  Expander Hypergraph Lifting  | Connectivity-based  |  [Wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/Expander-Hypergraph-Lifting-(Graph-to-Hypergraph))  |
+|  Kernel Lifting  | Both connectivity and feature-based  |  [Wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/Kernel-Lifting-(Graph-to-Hypergraph))  |
+|  Mapper Lifting  | Connectivity-based  |  [Wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/Mapper-Lifting-(Graph-to-Hypergraph))  |
+|  Forman‐Ricci Curvature Coarse Geometry Lifting  |  Connectivity-based |  [Wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/Forman%E2%80%90Ricci-Curvature-Coarse-Geometry-Lifting-(Graph-to-Hypergraph))  |
+|  KNN Lifting  | Feature-based  |  [Wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/KNN-Lifting-(Graph-to-Hypergraph))  |
+|  K-hop Lifting  |  Connectivity-based |  [Wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/KHop-Lifting-(Graph-to-Hypergraph))  |
 
-<details>
-  <summary><b> Feature Liftings <b></summary>
+
+#### Pointcloud to Simplicial
+| Name | Type | Description |
+| --- | --- | --- |
+|  Delaunay Lifting  | Feature-based  |  [Wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/Delaunay-Lifting-(Pointcloud-to-Simplicial))  |
+|  Random Flag Complex  |  Feature-based |  [Wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/Random-Flag-Complex-(Pointcloud-to-Simplicial))  |
+
+
+#### Pointcloud to Hypergraph
+| Name | Type | Description |
+| --- | --- | --- |
+|  Mixture of Gaussians MST lifting  |  Feature-based |  [Wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/Mixture-of-Gaussians---MST-lifting-(Pointcloud-to-Hypergraph))  |
+|  PointNet Lifting  | Feature-based  |  [Wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/PointNet--Lifting-(Pointcloud-to-Hypergraph))  |
+|  Voronoi Lifting  | Feature-based  |  [Wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/Voronoi-Lifting-(Pointcloud-to-Hypergraph))  |
+
+#### Simplicial to Combinatorial
+| Name | Type | Description |
+| --- | --- | --- |
+| Coface Lifting | Connectivity-based | [Wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/Coface-Lifting-(Simplicial-to-Combinatorial)) |
+
+#### Hypergraph to Combinatorial
+| Name | Type | Description |
+| --- | --- | --- |
+|  Universal Strict Lifting  | Connectivity-based  |  [Wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/Universal-Strict-Lifting-(Hypergraph-to-Combinatorial))  |
+
+### Feature Liftings
+
+Feature liftings address the transfer of data attributes or features during mapping, ensuring that the properties associated with the data elements are consistently preserved in the new representation.
 
 | Name                | Description                                                                 | Supported Domains |
 |---------------------|-----------------------------------------------------------------------------|-------------------|
-| ProjectionSum       | Projects r-cell features of a graph to r+1-cell structures utilizing incidence matrices \(B_{r}\). | Simplicial, Cell  |
+| ProjectionSum       | Projects r-cell features of a graph to r+1-cell structures utilizing incidence matrices \(B_{r}\). | All  |
 | ConcatenationLifting | Concatenate r-cell features to obtain r+1-cell features.                   | Simplicial        |
 
-</details>
+### Data Transformations 
 
-<details>
-  <summary><b> Data Transformations <b></summary>
+Specially useful in pre-processing steps, these are the general data manipulations currently implemented in `TopoBench`:
 
-| Transform | Description | Reference |
-| --- | --- | --- |
-| Message Passing Homophily | Higher-order homophily measure for hypergraphs | [Source](https://arxiv.org/abs/2310.07684) |
-| Group Homophily | Higher-order homophily measure for hypergraphs that considers groups of predefined sizes  | [Source](https://arxiv.org/abs/2103.11818) |
+| Transform | Description | 
+| --- | --- |
+| OneHotDegreeFeatures | Adds the node degree as one hot encodings to the node features. |
+|NodeFeaturesToFloat |Converts the node features of the input graph to float. |
+| NodeDegrees | Calculates the node degrees of the input graph.|
+| NodeDegrees | Keeps only the selected fields of the input data. |
+| KeepOnlyConnectedComponent | Keep only the largest connected components of the input graph. |
+| InfereRadiusConnectivity | Generates the radius connectivity of the input point cloud. |
+| InfereKNNConnectivity | Generates the k-nearest neighbor connectivity of the input point cloud. |
+| IdentityTransform | An identity transform that does nothing to the input data. |
+|  EqualGausFeatures | Generates equal Gaussian features for all nodes. |
+|  CalculateSimplicialCurvature |  Calculates the simplicial curvature of the input graph.  |
+
 </details>
 
 ## :books: Datasets
 
-### Graphs
+### Graph
 | Dataset | Task | Description | Reference |
 | --- | --- | --- | --- |
 | Cora | Classification | Cocitation dataset. | [Source](https://link.springer.com/article/10.1023/A:1009953814988) |
@@ -274,7 +347,13 @@ We list the liftings used in `TopoBenchmark` to transform datasets. Here, a _lif
 | US-county-demos | Regression | In turn each node attribute is used as the target label. | [Source](https://arxiv.org/pdf/2002.08274) |
 | ZINC | Regression | Graph-level regression. | [Source](https://pubs.acs.org/doi/10.1021/ci3001277) |
 
-### Hypergraphs
+
+### Simplicial
+| Dataset | Task | Description | Reference |
+| --- | --- | --- | --- |
+| Mantra |  Classification, Multi-label Classification  |  Predict topological attributes of manifold triangulations |  [Source](https://github.com/aidos-lab/MANTRA)  |
+
+### Hypergraph
 | Dataset | Task | Description | Reference |
 | --- | --- | --- | --- |
 | Cora-Cocitation | Classification | Cocitation dataset. | [Source](https://proceedings.neurips.cc/paper_files/paper/2019/file/1efa39bcaec6f3900149160693694536-Paper.pdf) |
@@ -287,11 +366,11 @@ We list the liftings used in `TopoBenchmark` to transform datasets. Here, a _lif
 
 ## :mag: References ##
 
-To learn more about `TopoBenchmark`, we invite you to read the paper:
+To learn more about `TopoBench`, we invite you to read the paper:
 
 ```
-@article{telyatnikov2024topobenchmark,
-      title={TopoBenchmark: A Framework for Benchmarking Topological Deep Learning}, 
+@article{telyatnikov2024topobench,
+      title={TopoBench: A Framework for Benchmarking Topological Deep Learning}, 
       author={Lev Telyatnikov and Guillermo Bernardez and Marco Montagna and Pavlo Vasylenko and Ghada Zamzmi and Mustafa Hajij and Michael T Schaub and Nina Miolane and Simone Scardapane and Theodore Papamarkou},
       year={2024},
       eprint={2406.06642},
@@ -300,7 +379,7 @@ To learn more about `TopoBenchmark`, we invite you to read the paper:
       url={https://arxiv.org/abs/2406.06642}, 
 }
 ```
-If you find `TopoBenchmark` useful, we would appreciate if you cite us!
+If you find `TopoBench` useful, we would appreciate if you cite us!
 
 
 
@@ -365,3 +444,14 @@ If you find `TopoBenchmark` useful, we would appreciate if you cite us!
   
   [TopoX: a suite of Python packages for machine learning on topological domains](https://arxiv.org/pdf/2402.02441)	
 </details>
+
+---
+
+### 📢 Get in Touch!
+
+We are always open to collaborations and discussions on TDL research.  
+Feel free to reach out via email if you want to collaborate, do your thesis with our team, or open a discussion for various opportunities.  
+
+📧 **Contact Email:** [topological.intelligence@gmail.com](mailto:topological.intelligence@gmail.com)  
+▶️ **YouTube Channel:** [Topological Intelligence](https://www.youtube.com/@TopologicalIntelligence)
+

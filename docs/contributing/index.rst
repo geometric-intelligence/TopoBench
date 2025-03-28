@@ -7,14 +7,14 @@ Contributing
 This guide aims to ease the contribution
 process for both novice and experienced contributors.
 
-`TopoBenchmarkX <https://github.com/pyt-team/TopoBenchmarkX>`_ is a
+`TopoBenchX <https://github.com/pyt-team/TopoBenchX>`_ is a
 community effort, and everyone is welcome to contribute.
 
 Making Changes
 --------------
 
-The preferred way to contribute to topobenchmark is to fork the `upstream
-repository <https://github.com/pyt-team/TopoBenchmarkX/>`__ and submit a "pull request" (PR).
+The preferred way to contribute to topobench is to fork the `upstream
+repository <https://github.com/pyt-team/TopoBenchX/>`__ and submit a "pull request" (PR).
 
 Follow these steps before submitting a PR:
 
@@ -85,7 +85,7 @@ Then run the test using:
 
       $ pytest test_add.py
 
-Verify that the code you have added does not break `TopoBenchmarkX` by running all the tests.
+Verify that the code you have added does not break `TopoBenchX` by running all the tests.
 
     .. code-block:: bash
 
@@ -107,7 +107,7 @@ A docstring is a well-formatted description of your function/class/module which 
 its purpose, usage, and other information.
 
 There are different markdown languages/formats used for docstrings in Python. The most common
-three are reStructuredText, numpy, and google docstring styles. For topobenchmark, we are
+three are reStructuredText, numpy, and google docstring styles. For topobench, we are
 using the numpy docstring standard.
 When writing up your docstrings, please review the `NumPy docstring guide <https://numpydoc.readthedocs.io/en/latest/format.html>`_
 to understand the role and syntax of each section. Following this syntax is important not only for readability,

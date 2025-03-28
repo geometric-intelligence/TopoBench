@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from topobenchmark.optimizer import TBOptimizer
+from topobench.optimizer import TBOptimizer
 
 
 class TestTBOptimizer:

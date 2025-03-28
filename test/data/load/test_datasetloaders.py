@@ -6,7 +6,7 @@ import hydra
 from pathlib import Path
 from typing import List, Tuple, Dict, Any
 from omegaconf import DictConfig
-
+from topobench.data.preprocessor.preprocessor import PreProcessor
 class TestLoaders:
     """Comprehensive test suite for all dataset loaders."""
     
@@ -41,10 +41,11 @@ class TestLoaders:
                             # Below the datasets that have some default transforms with we manually overriten with no_transform,
                             # due to lack of default transform for domain2domain
                             "REDDIT-BINARY.yaml", "IMDB-MULTI.yaml", "IMDB-BINARY.yaml", #"ZINC.yaml"
+                            "ogbg-molpcba.yaml", "manual_dataset.yaml" # "ogbg-molhiv.yaml"
                             }
         
         # Below the datasets that takes quite some time to load and process                            
-        self.long_running_datasets = {"mantra_name.yaml", "mantra_orientation.yaml", "mantra_genus.yaml", "mantra_betti_numbers.yaml",}
+        self.long_running_datasets = {"mantra_name.yaml", "mantra_orientation.yaml", "mantra_genus.yaml", "mantra_betti_numbers.yaml"}
 
         
         for dir_path in config_base_dir.iterdir():
@@ -117,6 +118,9 @@ class TestLoaders:
             #     assert torch.max(dataset.data.y) < dataset.num_classes
 
             repr(dataset)
+    
+       
+
 
     
                 

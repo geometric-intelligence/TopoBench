@@ -1,9 +1,12 @@
+"""Tests for the io_utils module."""
+
 import pytest
 
-from topobenchmark.data.utils.io_utils import *
+from topobench.data.utils.io_utils import *
 
 
 def test_get_file_id_from_url():
+    """Test get_file_id_from_url."""
     url_1 = "https://docs.google.com/file/d/SOME-FILE-ID-1"
     url_2 = "https://docs.google.com/?id=SOME-FILE-ID-2"
     url_3 = "https://docs.google.com/?arg1=9&id=SOME-FILE-ID-3"

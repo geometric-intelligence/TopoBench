@@ -4,7 +4,7 @@ import pytest
 import torch
 from torch_geometric.data import Data
 from test._utils.nn_module_auto_test import NNModuleAutoTest
-from topobenchmark.nn.backbones.combinatorial.gccn_onehasse import TopoTune_OneHasse, get_activation
+from topobench.nn.backbones.combinatorial.gccn_onehasse import TopoTune_OneHasse, get_activation
 from torch_geometric.nn import GCNConv
 from omegaconf import OmegaConf
 

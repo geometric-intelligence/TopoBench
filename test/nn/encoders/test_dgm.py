@@ -5,8 +5,8 @@ import torch
 import torch_geometric
 import numpy as np
 
-from topobenchmark.nn.encoders import DGMStructureFeatureEncoder
-from topobenchmark.nn.encoders.kdgm import DGM_d
+from topobench.nn.encoders import DGMStructureFeatureEncoder
+from topobench.nn.encoders.kdgm import DGM_d
 
 class TestDGMStructureFeatureEncoder:
     """Test suite for the DGMStructureFeatureEncoder class.

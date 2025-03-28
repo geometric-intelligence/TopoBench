@@ -1,0 +1,3 @@
+_target_: topobench.transforms.data_transform.DataTransform
+transform_name: "RedefineSimplicialNeighbourhoods"
+transform_type: null

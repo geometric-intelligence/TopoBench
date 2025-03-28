@@ -1,0 +1,7 @@
+_target_: topobench.transforms.data_transform.DataTransform
+transform_type: 'lifting'
+transform_name: "VoronoiLifting"
+support_ratio: 0.005
+feature_lifting: ProjectionSum
+preserve_edge_attr: False
+complex_dim: 1

@@ -1,7 +1,22 @@
+"""Utility for mocking flow of the test."""
+
 from unittest.mock import PropertyMock
 
 
 class FlowMocker:
+    """Flow mocker.
+    
+    Mocker for the flow of the test. It allows to create mock objects and assert them.
+    
+    Parameters
+    ----------
+    mocker : pytest_mock.plugin.MockerFixture
+        Mocker object.
+    params : list
+        List of parameters.
+    setup : bool, optional
+        If True, setup mocker.
+    """
     def __init__(self, mocker, params, setup=True):
         self.params = params
         self.mocker = mocker
@@ -10,12 +25,20 @@ class FlowMocker:
             self.setup()
 
     def parse_mock(self, params):
+        """Parse mock object from parameters.
+        
+        Parameters
+        ----------
+        params : dict
+            Parameters.
+        """
         for k in list(params.keys()):
             if "mock_" in k:
                 params["mock"] = params[k]
                 params["alias"] = k
 
     def setup(self):
+        """Setup mocker."""
         mocker = self.mocker
         self.mocks = dict()
 
@@ -49,10 +72,16 @@ class FlowMocker:
                     self.mocks[mock_alias] = self.mocks[patch_obj]
 
     def assert_all(self, tested_obj, params=None):
-        """Assert everything specified in assert_args either `params` or
-        self.params.
-
-        We can access mock object by its alias {"mock: "mock_alias_1", ...}
+        """Assert test.
+        
+        Assert that specified in assert_args either `params` or self.params. We can access mock object by its alias {"mock: "mock_alias_1", ...}.
+        
+        Parameters
+        ----------
+        tested_obj : any
+            Tested object.
+        params : list, optional
+            List of parameters to assert. If None, self.params will be used.
         """
         params = params if params is not None else self.params
 
@@ -75,4 +104,16 @@ class FlowMocker:
                     assert hasattr(tested_obj, func_params[0])
 
     def get(self, mock_key):
+        """Get mock object by its key.
+        
+        Parameters
+        ----------
+        mock_key : str
+            Key of the mock object.
+            
+        Returns
+        -------
+        any
+            Mock object.
+        """
         return self.mocks[mock_key]

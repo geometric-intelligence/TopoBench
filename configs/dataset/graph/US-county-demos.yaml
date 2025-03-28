@@ -1,6 +1,6 @@
 # Dataset loader config
 loader:
-  _target_: topobenchmark.data.loaders.USCountyDemosDatasetLoader
+  _target_: topobench.data.loaders.USCountyDemosDatasetLoader
   parameters: 
     data_domain: graph
     data_type: cornel

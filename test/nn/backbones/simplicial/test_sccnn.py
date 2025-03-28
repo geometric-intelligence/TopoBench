@@ -1,16 +1,23 @@
-"""Unit tests for SCCNN"""
+"""Unit tests for SCCNN."""
 
 import pytest
 import torch
 from torch_geometric.utils import get_laplacian
 from ...._utils.nn_module_auto_test import NNModuleAutoTest
-from topobenchmark.nn.backbones.simplicial import SCCNNCustom
-from topobenchmark.transforms.liftings.graph2simplicial import (
+from topobench.nn.backbones.simplicial import SCCNNCustom
+from topobench.transforms.liftings.graph2simplicial import (
     SimplicialCliqueLifting,
 )
 
 
 def test_SCCNNCustom(simple_graph_1):
+    """Test SCCNNCustom.
+    
+    Parameters
+    ----------
+    simple_graph_1 : torch_geometric.data.Data
+        Sample graph data.
+    """
     lifting_signed = SimplicialCliqueLifting(
             complex_dim=3, signed=True
         )
@@ -41,7 +48,13 @@ def test_SCCNNCustom(simple_graph_1):
 
 @pytest.fixture
 def create_sample_data():
-    # Create a small sample graph for testing
+    """Create sample data for testing.
+    
+    Returns
+    -------
+    dict
+        Sample data for testing.
+    """
     num_nodes = 5
     x = torch.randn(num_nodes, 3)  # 3 node features
     x_1 = torch.randn(8, 4)  # 8 edges with 4 features
@@ -111,7 +124,13 @@ def test_update_functions():
     assert model is not None
 
 def test_aggr_norm(create_sample_data):
-    """Test aggregation normalization functionality."""
+    """Test aggregation normalization functionality.
+    
+    Parameters
+    ----------
+    create_sample_data : dict
+        Sample data for testing.
+    """
     data = create_sample_data
     
     model = SCCNNCustom(
@@ -188,7 +207,13 @@ def test_different_sc_orders():
     assert model2 is not None
 
 def test_forward_shapes(create_sample_data):
-    """Test output shapes for different input configurations."""
+    """Test output shapes for different input configurations.
+    
+    Parameters
+    ----------
+    create_sample_data : dict
+        Sample data for testing.
+    """
     data = create_sample_data
     
     model = SCCNNCustom(

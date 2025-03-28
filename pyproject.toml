@@ -3,7 +3,7 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "TopoBenchmark"
+name = "TopoBench"
 dynamic = ["version"]
 authors = [
     {name = "Topological Intelligence Team Authors", email = "tlscabinet@gmail.com"}
@@ -41,12 +41,14 @@ dependencies=[
     "hydra-colorlog==1.2.0",
     "hydra-optuna-sweeper==1.2.0",
     "wandb",
+    "tensorboard",
     "einops==0.7.0",
     "tabulate",
     "ipykernel",
     "notebook",
     "jupyterlab",
     "rich",
+    "ogb",
     "rootutils",
     "topomodelx @ git+https://github.com/pyt-team/TopoModelX.git",
     "toponetx @ git+https://github.com/pyt-team/TopoNetX.git",
@@ -61,7 +63,8 @@ doc = [
     "numpydoc",
     "sphinx",
     "sphinx_gallery",
-    "pydata-sphinx-theme"
+    "pydata-sphinx-theme",
+    "myst_parser"
 ]
 lint = [
     "pre-commit",
@@ -76,12 +79,12 @@ test = [
     "pytest-mock"
 ]
 
-dev = ["TopoBenchmark[test, lint]"]
-all = ["TopoBenchmark[dev, doc]"]
+dev = ["TopoBench[test, lint]"]
+all = ["TopoBench[dev, doc]"]
 
 [project.urls]
-homepage="https://github.com/pyt-team/TopoBenchmarkX"
-repository="https://github.com/pyt-team/TopoBenchmarkX"
+homepage="https://geometric-intelligence.github.io/topobench/index.html"
+repository="https://github.com/geometric-intelligence/TopoBench"
 
 [tool.black]
 line-length = 79  # PEP 8 standard for maximum line length
@@ -135,12 +138,12 @@ convention = "numpy"
 "tests/*" = ["D"]
 
 [tool.setuptools.dynamic]
-version = {attr = "topobenchmark.__version__"}
+version = {attr = "topobench.__version__"}
 
 [tool.setuptools.packages.find]
 include = [
-    "topobenchmark",
-    "topobenchmark.*"
+    "topobench",
+    "topobench.*"
 ]
 
 [tool.mypy]
