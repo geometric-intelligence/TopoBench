@@ -4,7 +4,10 @@ import torch
 import torch_geometric
 
 from topobench.nn.encoders.base import AbstractFeatureEncoder
-from topobench.transforms.data_manipulations import AddGPSEInformation
+from topobench.transforms.data_manipulations import (
+    AddGPSEInformation,
+    HOPSE_PE_Information,
+)
 
 
 class SANNOnlineFeatureEncoder(AbstractFeatureEncoder):
@@ -72,21 +75,48 @@ class SANNOnlineFeatureEncoder(AbstractFeatureEncoder):
             "copy_initial": True,
             "neighborhoods": [
                 "up_adjacency-0",
-                "up_incidence-0",
-                "up_incidence-1",
-                "down_incidence-1",
-                "down_incidence-2",
+                "up_adjacency-1",
+                "down_adjacency-1",
+                "down_adjacency-2",
             ],
+            # [
+            #     "up_adjacency-0",
+            #     "up_incidence-0",
+            #     "up_incidence-1",
+            #     "down_incidence-1",
+            #     "down_incidence-2",
+            # ],
             "dim_out": 11,
             "max_hop": f"{max_hop}",
             "dim_target_node": 51,
             "dim_target_graph": 11,
-            "pretrain_model": "PCQM4MV2",
+            "pretrain_model": "ZINC",
             "in_channels": in_channels,
             "device": "cuda",  # Use the first encoder's input size for device
             "cuda": [0],
         }
         self.gpse = AddGPSEInformation(**config_dict)
+
+        # config_dict = {
+        #     "pe_types": ["RWSE", "ElstaticPE", "HKdiagSE", "LapPE"],
+
+        #     # Different PE have different sizes, need to unify them.
+        #     "target_pe_dim": 20,
+
+        #     # LapPE config
+        #     "laplacian_norm_type": "sym",
+        #     "posenc_LapPE_eigen_max_freqs": 18,
+        #     "posenc_LapPE_eigen_eigvec_norm": "L2",
+        #     "posenc_LapPE_eigen_skip_zero_freq": True,
+        #     "posenc_LapPE_eigen_eigvec_abs": True,
+
+        #     # RWSE config
+        #     "kernel_param_RWSE": [2, 20],
+
+        #     # HKdiagSE config
+        #     "kernel_param_HKdiagSE": [1, 22]
+        # }
+        # self.gpse = HOPSE_PE_Information(**config_dict)
 
     def __repr__(self):
         return f"{self.__class__.__name__}(in_channels={self.in_channels}, out_channels={self.out_channels}, dimensions={self.dimensions})"

@@ -174,10 +174,23 @@ def reduce_neighborhoods(batch, node, rank=0, remove_self_loops=True):
         batch,
         cells_ids,
         names=[
+            # TODO: quick fix here, commented initial neightbourhoods and substituted with some random guess
             "down_laplacian_",
             "up_laplacian_",
             "hodge_laplacian_",
             "adjacency_",
+            # added
+            "coadjacency_",
+            "up_adjacency-",
+            "down_adjacency-",
+            "up_incidence-",
+            "down_incidence-",
+            # "incidence",
+            # "down_laplacian",
+            # "up_laplacian",
+            # "adjacency",
+            # "coadjacency",
+            # "hodge_laplacian",
         ],
         max_rank=max_rank,
     )
@@ -189,8 +202,19 @@ def reduce_neighborhoods(batch, node, rank=0, remove_self_loops=True):
 
     # fix edge_index
     if not is_hypergraph:
-        adjacency_0 = batch.adjacency_0.coalesce()
-        edge_index = adjacency_0.indices()
+        # TODO: random quick fix here, rework
+        # Check if adjacency_0  exists and take the edge_index from there
+        if "adjacency_0" in batch.keys():
+            edge_index = batch.adjacency_0.coalesce().indices()
+        elif "up_adjacency-0" in batch.keys():
+            edge_index = batch["up_adjacency-0"].coalesce().indices()
+        else:
+            raise ValueError(
+                "Either adjacency_0 or up_adjacency-0 should exist in the batch."
+            )
+        # adjacency_0 = batch.adjacency_0.coalesce()
+        # edge_index = adjacency_0.indices()
+
         if remove_self_loops:
             edge_index = torch_geometric.utils.remove_self_loops(edge_index)[0]
         batch.edge_index = edge_index

@@ -69,6 +69,7 @@ class TBDataloader(LightningDataModule):
         self.num_neighbors = (
             num_neighbors if num_neighbors is not None else [-1]
         )
+
         if dataset_val is None and dataset_test is None:
             # Transductive setting
             self.dataset_val = dataset_train
@@ -77,6 +78,7 @@ class TBDataloader(LightningDataModule):
         else:
             self.dataset_val = dataset_val
             self.dataset_test = dataset_test
+
         self.num_workers = num_workers
         self.pin_memory = pin_memory
         self.persistent_workers = kwargs.get("persistent_workers", False)
@@ -100,8 +102,8 @@ class TBDataloader(LightningDataModule):
         """
         shuffle = split == "train"
 
-        if not self.transductive or self.batch_size == -1:
-            batch_size = self.batch_size if self.batch_size != -1 else 1
+        if not self.transductive or self.batch_size == "full":
+            batch_size = 1  # self.batch_size if self.batch_size != -1 else 1
 
             return DataLoader(
                 dataset=getattr(self, f"dataset_{split}"),

@@ -5,14 +5,14 @@
 defaults:
   - _self_
   - dataset: graph/cocitation_cora
-  - model: simplicial/scn
+  - model: cell/sann_online
   - transforms: ${get_default_transform:${dataset},${model}} #no_transform
   - optimizer: default
   - loss: default
   - evaluator: default
   - callbacks: default
   - logger: wandb # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
-  - trainer: ${get_default_trainer:} #default
+  - trainer: default
   - paths: default
   - extras: default
   - hydra: default
