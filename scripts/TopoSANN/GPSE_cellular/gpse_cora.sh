@@ -18,7 +18,7 @@ OUT_CHANNELS=(128 256)
 LEARNING_RATES=(0.01 0.001)
 PROJECTION_DROPOUTS=(0.25 0.5)
 WEIGHT_DECAYS=(0 0.0001)
-BATCH_SIZES=(-1)
+
 # =====================
 # PRETRAINED MODELS
 # =====================
@@ -35,7 +35,7 @@ LEARNING_RATES_STR=$(IFS=,; echo "${LEARNING_RATES[*]}")  # Convert to comma-sep
 PROJECTION_DROPOUTS_STR=$(IFS=,; echo "${PROJECTION_DROPOUTS[*]}")  # Convert to comma-separated string
 WEIGHT_DECAYS_STR=$(IFS=,; echo "${WEIGHT_DECAYS[*]}")  # Convert to comma-separated string
 PRETRAIN_MODELS_STR=$(IFS=,; echo "${PRETRAIN_MODELS[*]}")  # Convert to comma-separated string
-BATCH_SIZES_STR=$(IFS=,; echo "${BATCH_SIZES[*]}")
+
 
 # =====================
 # PARAMETERS OVER WHICH WE PERFORM PARALLEL RUNS
@@ -108,7 +108,7 @@ for i in {0..7}; do
             model.feature_encoder.out_channels=$OUT_CHANNELS_STR\
             model.feature_encoder.proj_dropout=$PROJECTION_DROPOUTS_STR\
             dataset.split_params.data_seed=$DATA_SEEDS_STR\
-            dataset.dataloader_params.batch_size=$BATCH_SIZES_STR\
+            dataset.dataloader_params.batch_size="full"\
             trainer.max_epochs=500\
             trainer.min_epochs=50\
             trainer.devices=\[$CUDA\]\
