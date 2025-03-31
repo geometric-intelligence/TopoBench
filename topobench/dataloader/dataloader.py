@@ -114,16 +114,17 @@ class TBDataloader(LightningDataModule):
                 **self.kwargs,
             )
 
-        # mask_idx = self.dataset_train[0][1].index(f"{split}_mask")
-        # mask = self.dataset_train[0][0][mask_idx]
+        mask_idx = self.dataset_train[0][1].index(f"{split}_mask")
+        mask = self.dataset_train[0][0][mask_idx]
 
         return NeighborCellsLoader(
             data=getattr(self, f"dataset_{split}"),
             rank=self.rank,
             num_neighbors=self.num_neighbors,
-            input_nodes=None,  # mask,
+            input_nodes=mask,  # We have to specify split mask as we have to provide node indices to be sampled
             batch_size=self.batch_size,
             shuffle=shuffle,
+            split=split,  # We need split to get the correct batch index mtching
             **self.kwargs,
         )
 

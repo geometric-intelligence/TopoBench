@@ -91,6 +91,10 @@ class CellLoader(
     input_id : torch.Tensor, optional
         The indices of the input cells in the original data object.
         (default: :obj:`None`).
+    split : str, optional
+        The split for which this loader is being instantiated (e.g., 'train', 'val', 'test').
+        This is used to determine the correct batch index matching for the loader.
+        This is particularly useful in transductive settings where the same dataset is used for training and testing.
     **kwargs : optional
         Additional arguments of :class:`torch.utils.data.DataLoader`, such as
         :obj:`batch_size`, :obj:`shuffle`, :obj:`drop_last` or
@@ -108,6 +112,7 @@ class CellLoader(
         filter_per_worker: bool | None = None,
         custom_cls: HeteroData | None = None,
         input_id: OptTensor = None,
+        split: str | None = None,
         **kwargs,
     ):
         if filter_per_worker is None:
@@ -122,6 +127,7 @@ class CellLoader(
         self.filter_per_worker = filter_per_worker
         self.custom_cls = custom_cls
         self.input_id = input_id
+        self.split = split
 
         # What is it? Do we delete these two?
         kwargs.pop("dataset", None)
@@ -183,6 +189,39 @@ class CellLoader(
         if self.filter_per_worker:  # Execute `filter_fn` in the worker process
             out = self.filter_fn(out)
 
+        # It is also required to filter the mask indexes
+        # data.n_id - contains all the node ids in the original graph
+        init_mask = getattr(
+            out, f"{self.split}_mask", None
+        )  # Ensure the mask is set for the split
+
+        assert init_mask is not None, (
+            f"Sampler output does not contain a mask for the split '{self.split}'"
+        )
+        assert torch.all(out.n_id[: len(index)] == input_data.node), (
+            "The sampled nodes do not match the input nodes"
+        )
+
+        # Reduce y, what if rank > 0?
+        if hasattr(out, "y") and self.rank == 0:
+            out.y = out.y[input_data.node]
+        else:
+            raise ValueError("Tis case has not been worked out yet.")
+
+        # Rewrite the mask for the pipeline:
+
+        # save old mask
+        out[f"{self.split}_mask_old"] = out[f"{self.split}_mask"].clone()
+
+        # Create new mask
+        # The even though x_0 can have more node representations
+        # We are interested only in those we sample for the current batch
+        # Mainly becasuse this way from these nodes we use right neighbourhoods.
+        # The range from 0 to len(index) will give us the correct mask for the current batch
+        # as sampler outputs input_data.node and then representations of neighbours.
+        out[f"{self.split}_mask"] = torch.range(0, len(index) - 1).long()
+        out["original_n_id"] = input_data.node
+
         return out
 
     def filter_fn(
@@ -219,7 +258,7 @@ class CellLoader(
         keys = sorted([key for key in data.keys() if "x_" in key])  # Noqa: SIM118
 
         for key in keys:
-            cell_idx = int(key.split("_")[1])
+            cell_idx = key.split("_")[1]
             current_number_of_cells = data[key].shape[0]
             data[f"batch_{cell_idx}"] = torch.zeros(
                 current_number_of_cells

@@ -152,9 +152,11 @@ class NeighborCellsLoader(CellLoader):
             data_obj, rank, n_hops, is_hypergraph
         )
         self.rank = rank
+
         if self.rank != 0:
             # When rank is different than 0 get_sampled_neighborhood connects cells that are up to n_hops away, meaning that the NeighborhoodSampler needs to consider only one hop.
             num_neighbors = [num_neighbors[0]]
+
         if neighbor_sampler is None:
             neighbor_sampler = NeighborSampler(
                 data_obj,

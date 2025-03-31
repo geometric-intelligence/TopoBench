@@ -200,8 +200,11 @@ def reduce_neighborhoods(batch, node, rank=0, remove_self_loops=True):
     if hasattr(batch, "num_nodes"):
         batch.num_nodes = batch.x.shape[0]
 
-    if hasattr(batch, "y"):
-        batch.y = batch.y[cells_ids[rank]]
+    # # Reduce y, what if rank > 0?
+    # if hasattr(batch, "y") and rank == 0:
+    #     batch.y = batch.y[cells_ids[rank]]
+    # else:
+    #     raise ValueError("Tis case has not been worked out yet.")
 
     batch.cells_ids = cells_ids
     return batch
