@@ -26,23 +26,23 @@ class PropagateSignalDown(AbstractZeroCellReadOut):
 
         self.name = kwargs["readout_name"]
         self.dimensions = range(kwargs["num_cell_dimensions"] - 1, 0, -1)
-        hidden_dim = kwargs["hidden_dim"]
+        self.hidden_dim = kwargs["hidden_dim"]
 
         for i in self.dimensions:
             setattr(
                 self,
                 f"agg_conv_{i}",
                 topomodelx.base.conv.Conv(
-                    hidden_dim, hidden_dim, aggr_norm=False
+                    self.hidden_dim, self.hidden_dim, aggr_norm=False
                 ),
             )
 
-            setattr(self, f"ln_{i}", torch.nn.LayerNorm(hidden_dim))
+            setattr(self, f"ln_{i}", torch.nn.LayerNorm(self.hidden_dim))
 
             setattr(
                 self,
                 f"projector_{i}",
-                torch.nn.Linear(2 * hidden_dim, hidden_dim),
+                torch.nn.Linear(2 * self.hidden_dim, self.hidden_dim),
             )
 
     def forward(self, model_out: dict, batch: torch_geometric.data.Data):

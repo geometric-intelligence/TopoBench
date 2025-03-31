@@ -2,10 +2,14 @@
 
 import os
 import shutil
+import sys
+
+sys.path.insert(0, os.path.abspath("../topobench"))
+
 
 project = "TopoBench"
-copyright = "2022-2023, PyT-Team, Inc."
-author = "PyT-Team Authors"
+copyright = "2025, Topological-Intelligence Team, Inc."
+author = "Topological-Intelligence Team Authors"
 
 extensions = [
     "nbsphinx",
@@ -20,6 +24,8 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
     "sphinx_gallery.load_style",
+    "sphinx.ext.autosummary",
+    "myst_parser",
 ]
 
 # Configure nbsphinx for notebook execution
@@ -68,21 +74,18 @@ latex_documents = [
     (
         master_doc,
         "topobench.tex",
-        "TopoBenchX Documentation",
-        "PyT-Team",
+        "TopoBench Documentation",
         "manual",
     ),
 ]
 
-man_pages = [
-    (master_doc, "topobench", "TopoBenchX Documentation", [author], 1)
-]
+man_pages = [(master_doc, "topobench", "TopoBench Documentation", [author], 1)]
 
 texinfo_documents = [
     (
         master_doc,
         "topobench",
-        "TopoBenchX Documentation",
+        "TopoBench Documentation",
         author,
         "topobench",
         "One line description of project.",
@@ -111,7 +114,7 @@ def copy_thumbnails():
             full_filename = root + "/" + png
             all_thumbnails.append(full_filename)
 
-    os.mkdir("./_build")
+    os.makedirs("./_build", exist_ok=True)  # os.mkdir("./_build")
     os.mkdir(des_directory)
 
     for thumbnail in all_thumbnails:

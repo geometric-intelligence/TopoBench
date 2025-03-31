@@ -42,6 +42,7 @@ dependencies=[
     "hydra-optuna-sweeper==1.2.0",
     "yacs==0.1.8",
     "wandb",
+    "tensorboard",
     "einops==0.7.0",
     "tabulate",
     "ipykernel",
@@ -63,7 +64,8 @@ doc = [
     "numpydoc",
     "sphinx",
     "sphinx_gallery",
-    "pydata-sphinx-theme"
+    "pydata-sphinx-theme",
+    "myst_parser"
 ]
 lint = [
     "pre-commit",

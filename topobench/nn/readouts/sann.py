@@ -153,11 +153,11 @@ class SANNReadout(AbstractZeroCellReadOut):
 
         elif self.task_level == "node":
             for i in self.dimensions:
-                for j in range(self.max_hop - 1, 0, -1):
+                for j in range(self.max_hop - 1, -1, -1):
                     x_i = getattr(self, f"agg_conv_{i}")(
                         model_out[f"x{i}_{j}"], batch[f"incidence_{i}"]
                     )
-                    x_i = getattr(self, f"ln_{i}")(x_i)
+                    # x_i = getattr(self, f"ln_{i}")(x_i)
                     model_out[f"x{i - 1}_{j}"] = getattr(
                         self, f"projector_{i}"
                     )(torch.cat([x_i, model_out[f"x{i - 1}_{j}"]], dim=1))
