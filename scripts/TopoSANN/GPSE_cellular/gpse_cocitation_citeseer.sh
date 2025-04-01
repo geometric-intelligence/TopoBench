@@ -127,3 +127,4 @@ for i in {0..7}; do
         
     done
 done
+wait
