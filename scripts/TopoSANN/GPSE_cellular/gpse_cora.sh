@@ -75,7 +75,7 @@ for i in {0..7}; do
             model.feature_encoder.out_channels=128\
             model.feature_encoder.proj_dropout=0.25\
             dataset.split_params.data_seed=0\
-            dataset.dataloader_params.batch_size=128\
+            dataset.dataloader_params.batch_size=-1\
             trainer.max_epochs=5\
             trainer.min_epochs=1\
             trainer.devices=\[$CUDA\]\
@@ -91,6 +91,7 @@ for i in {0..7}; do
             transforms.graph2cell_lifting.neighborhoods=$neighborhood\
             --multirun &
     done
+    wait
 done
 wait
 
