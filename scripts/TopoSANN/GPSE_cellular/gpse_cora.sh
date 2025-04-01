@@ -91,6 +91,7 @@ for i in {0..7}; do
             transforms.graph2cell_lifting.neighborhoods=$neighborhood\
             --multirun &
     done
+    wait
 done
 wait
 
