@@ -30,8 +30,8 @@ PROJECTION_DROPOUTS_STR=$(IFS=,; echo "${PROJECTION_DROPOUTS[*]}")  # Convert to
 WEIGHT_DECAYS_STR=$(IFS=,; echo "${WEIGHT_DECAYS[*]}")  # Convert to comma-separated string
 #BATCH_SIZES_STR=$(IFS=,; echo "${BATCH_SIZES[*]}")
 
-
-datasets=('roman_empire' 'cocitation_cora' 'cocitation_citeseer' 'cocitation_pubmed' 'amazon_ratings' 'roman_tolokers')
+# 'roman_empire' 'cocitation_cora' 'cocitation_citeseer'
+datasets=('roman_empire' 'minesweeper') # //'cocitation_pubmed' 'amazon_ratings' 'roman_tolokers')
 
 #dataset='NCI1'
 for dataset in ${datasets[*]}; do
