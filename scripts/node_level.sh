@@ -1,3 +1,9 @@
+bash scripts/TopoSANN/GPSE_cellular/gpse_cocitation_citeseer.sh
+wait
+
+bash scripts/TopoSANN/GPSE_cellular/gpse_cocitation_pubmed.sh
+wait
+
 bash scripts/TopoSANN/GPSE_cellular/gpse_roman.sh
 wait
 
