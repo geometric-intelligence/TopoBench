@@ -20,7 +20,7 @@ BATCH_SIZES=(256)
 # =====================
 # PRETRAINED MODELS
 # =====================
-# PRETRAIN_MODELS=('ZINC' 'GEOM' 'MOLPCBA' 'PCQM4MV2')
+PRETRAIN_MODELS=('PCQM4MV2') #'GEOM' 'MOLPCBA'
 
 # =====================
 # CONVERT TO STRINGS
@@ -83,6 +83,8 @@ gpus=(0 1 2 3 4 5 6 7)
             optimizer.parameters.weight_decay=0.25\
             callbacks.early_stopping.patience=10\
             transforms=GPSE_mantra\
+            transforms.sann_encoding.pretrain_model=$PRETRAIN_MODELS_STR\
+            transforms.sann_encoding.copy_initial=True\
             transforms.sann_encoding.neighborhoods=$neighborhood\
             transforms.redefine_simplicial_neighbourhoods.neighborhoods=$neighborhood\
             --multirun &
@@ -115,6 +117,8 @@ gpus=(0 1 2 3 4 5 6 7)
                     optimizer.parameters.weight_decay=$wd\
                     callbacks.early_stopping.patience=10\
                     transforms=GPSE_mantra\
+                    transforms.sann_encoding.pretrain_model=$PRETRAIN_MODELS_STR\
+                    transforms.sann_encoding.copy_initial=True\
                     transforms.sann_encoding.neighborhoods=$neighborhood\
                     transforms.redefine_simplicial_neighbourhoods.neighborhoods=$neighborhood\
                     --multirun &
