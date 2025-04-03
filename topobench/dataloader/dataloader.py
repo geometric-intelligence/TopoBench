@@ -103,7 +103,7 @@ class TBDataloader(LightningDataModule):
         shuffle = split == "train"
 
         if not self.transductive or self.batch_size == "full":
-            batch_size = 1  # self.batch_size if self.batch_size != -1 else 1
+            batch_size = self.batch_size if self.batch_size != "full" else 1
 
             return DataLoader(
                 dataset=getattr(self, f"dataset_{split}"),

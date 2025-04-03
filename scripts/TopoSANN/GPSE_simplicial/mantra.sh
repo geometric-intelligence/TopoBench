@@ -57,16 +57,15 @@ neighborhoods=(
 )
 
 datasets=('mantra_name' 'mantra_orientation')
+
 for dataset in ${datasets[*]}
-    do
-    project_name="GPSE_simplicial_$dataset"
-
-
-    gpus=(0 1 2 3 4 5 6 7)
+do
+project_name="GPSE_$dataset"
+gpus=(0 1 2 3 4 5 6 7)
     for i in {0..7}; do 
         CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
         neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
-        
+
         python topobench/run.py\
             dataset=simplicial/$dataset\
             model=simplicial/sann\
@@ -83,14 +82,14 @@ for dataset in ${datasets[*]}
             optimizer.parameters.lr=0.01\
             optimizer.parameters.weight_decay=0.25\
             callbacks.early_stopping.patience=10\
-            transforms=GPSE_MANTRA\
+            transforms=GPSE_mantra\
             transforms.sann_encoding.neighborhoods=$neighborhood\
             transforms.redefine_simplicial_neighbourhoods.neighborhoods=$neighborhood\
             --multirun &
-            sleep 5
     done
     wait
 
+    gpus=(0 1 2 3 4 5 6 7)
     for i in {0..7}; do 
         CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
         neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
@@ -115,7 +114,7 @@ for dataset in ${datasets[*]}
                     optimizer.parameters.lr=$lr\
                     optimizer.parameters.weight_decay=$wd\
                     callbacks.early_stopping.patience=10\
-                    transforms=GPSE_MANTRA\
+                    transforms=GPSE_mantra\
                     transforms.sann_encoding.neighborhoods=$neighborhood\
                     transforms.redefine_simplicial_neighbourhoods.neighborhoods=$neighborhood\
                     --multirun &
@@ -124,3 +123,4 @@ for dataset in ${datasets[*]}
     done
     wait
 done
+wait
