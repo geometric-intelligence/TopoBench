@@ -7,7 +7,7 @@ feature_encoder:
   _target_: topobench.nn.encoders.${model.feature_encoder.encoder_name}
   encoder_name: SANNOnlineFeatureEncoder
   dataset_in_channels: ${infer_in_channels:${dataset},${oc.select:transforms,null}}
-  in_channels: [[1433,62],[1433,124],[1433,62]]
+  in_channels: [[7,62],[7,124],[7,62]] #cocitation-cora: [[1433,62],[1433,124],[1433,62]]
   max_hop: 2
   out_channels: 64
   proj_dropout: 0.0

@@ -1,6 +1,7 @@
-dataset='cocitation_cora'
+dataset='us_country_demos'
+task_var='Election'
 project_name="GPSE_cell_$dataset"
-
+#
 # =====================
 # DATA
 # =====================
@@ -22,7 +23,7 @@ WEIGHT_DECAYS=(0 0.0001)
 # =====================
 # PRETRAINED MODELS
 # =====================
-PRETRAIN_MODELS=('ZINC' 'PCQM4MV2' 'GEOM' 'MOLPCBA') # 'PCQM4MV2' 'GEOM' 'MOLPCBA'
+PRETRAIN_MODELS=('ZINC' 'PCQM4MV2') # 'PCQM4MV2' 'GEOM' 'MOLPCBA' # 'PCQM4MV2' 'GEOM' 'MOLPCBA'
 
 
 # =====================
@@ -70,12 +71,13 @@ for i in {0..7}; do
     do
         python topobench/run.py\
             dataset=graph/$dataset\
+            dataset.parameters.task_variable=$task_variable\
             model=cell/sann\
             model.backbone.n_layers=1\
             model.feature_encoder.out_channels=128\
             model.feature_encoder.proj_dropout=0.25\
             dataset.split_params.data_seed=0\
-            dataset.dataloader_params.batch_size=full\
+            dataset.dataloader_params.batch_size=128\
             trainer.max_epochs=5\
             trainer.min_epochs=1\
             trainer.devices=\[$CUDA\]\
@@ -104,13 +106,14 @@ for i in {0..7}; do
         
         python topobench/run.py\
             dataset=graph/$dataset\
+            dataset.parameters.task_variable=$task_variable\
             model=cell/sann\
             model.backbone.n_layers=$N_LAYERS_STR\
             model.feature_encoder.out_channels=$OUT_CHANNELS_STR\
             model.feature_encoder.proj_dropout=$PROJECTION_DROPOUTS_STR\
             dataset.split_params.data_seed=$DATA_SEEDS_STR\
             dataset.dataloader_params.batch_size="full"\
-            trainer.max_epochs=500\
+            trainer.max_epochs=1000\
             trainer.min_epochs=50\
             trainer.devices=\[$CUDA\]\
             trainer.check_val_every_n_epoch=5\
@@ -127,3 +130,4 @@ for i in {0..7}; do
         
     done
 done
+wait

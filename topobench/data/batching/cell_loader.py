@@ -220,7 +220,7 @@ class CellLoader(
         # The range from 0 to len(index) will give us the correct mask for the current batch
         # as sampler outputs input_data.node and then representations of neighbours.
         out[f"{self.split}_mask"] = torch.range(0, len(index) - 1).long()
-        out["original_n_id"] = input_data.node
+        out["original_node_id"] = input_data.node
 
         return out
 

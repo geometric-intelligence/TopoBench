@@ -7,8 +7,8 @@ feature_encoder:
   _target_: topobench.nn.encoders.${model.feature_encoder.encoder_name}
   encoder_name: SANNOnlineFeatureEncoder
   dataset_in_channels: ${infer_in_channels:${dataset},${oc.select:transforms,null}}
-  in_channels: [[1433,62],[1433,124],[1433,62]]
-  max_hop: 2
+  in_channels: ${infer_in_hasse_graph_agg_dim:${.neighborhoods}, ${.max_rank},${oc.select:dataset.parameters.num_features},${.dim_target_graph}, ${.dim_target_node}, ${.copy_initial}, ${oc.select:dataset.parameters.preserve_edge_attr_if_lifted}}  #[[7,62],[7,124],[7,62]] #[[1433,62],[1433,124],[1433,62]]
+  max_hop: ${get_hop_num_gpse:${.copy_initial}}
   out_channels: 64
   proj_dropout: 0.0
   selected_dimensions:
@@ -17,6 +17,16 @@ feature_encoder:
     - 2
   feature_lifting: Duplicate
   all_ones: true
+  # GPSE parameters
+  copy_initial: True
+  neighborhoods: ["up_adjacency-0", "up_adjacency-1", "down_adjacency-1", "down_adjacency-2"]
+  dim_out: 11
+  max_rank: 2
+  dim_target_node: 51
+  dim_target_graph: 11
+  pretrain_model: "ZINC"
+  device: ${trainer.accelerator}
+  cuda: ${trainer.devices}
 
 backbone:
   _target_: topobench.nn.backbones.simplicial.sann.SANN
