@@ -143,6 +143,7 @@ def get_monitor_metric(task, metric):
     if (
         task == "classification"
         or task == "regression"
+        or task == "multivariate regression"
         or task == "multilabel classification"
     ):
         return f"val/{metric}"
@@ -171,7 +172,7 @@ def get_monitor_mode(task):
     if task == "classification" or task == "multilabel classification":
         return "max"
 
-    elif task == "regression":
+    elif task == "regression" or task == "multivariate regression":
         return "min"
 
     else:
