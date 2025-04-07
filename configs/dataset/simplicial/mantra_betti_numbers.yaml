@@ -5,7 +5,7 @@ loader:
     data_type: topological 
     data_name: MANTRA_betti_numbers
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
-    manifold_dim: 3
+    manifold_dim: 2
     version: "v0.0.5"
     load_as_graph: False
     task_variable: "betti_numbers" # Options: ['name', 'genus', 'orientable'] To use 'torsion_coefficients', 'betti_numbers' fix multilabel multiclass issue
@@ -16,7 +16,7 @@ loader:
 parameters:
   # In the case of higher-order datasets we have multiple feature dimentions 
   num_features: [1,1,1]
-  num_classes: 4 # Num classes depents on the task_variable
+  num_classes: 3 # In the case of 'betti_numbers', we have 3 types of betti numbers: [0, 1, 2], for  manifold_dim = 2
 
   # Dataset parameters
   task: multilabel classification     # TODO: adapt pipeline to support multilabel classification

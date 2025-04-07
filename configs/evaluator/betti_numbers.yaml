@@ -4,4 +4,4 @@ task_level: ${dataset.parameters.task_level}
 num_classes: ${dataset.parameters.num_classes}
 
 # Metrics
-metrics:  [accuracy_0, precision_0, recall_0, auroc_0, f1_0, accuracy_1, precision_1, recall_1, auroc_1, f1_1, accuracy_2, precision_2, recall_2, auroc_2, f1_2, accuracy_3, precision_3, recall_3, auroc_3, f1_3] 
+metrics:  [accuracy_0, precision_0, recall_0, auroc_0, f1_0, accuracy_1, precision_1, recall_1, auroc_1, f1_1, accuracy_2, precision_2, recall_2, auroc_2, f1_2] 
