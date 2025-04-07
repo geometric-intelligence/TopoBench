@@ -21,7 +21,7 @@ parameters:
   # Dataset parameters
   task: multilabel classification     # TODO: adapt pipeline to support multilabel classification
   loss_type: BCE # TODO: adapt pipeline to support multilabel classification
-  monitor_metric: accuracy # TODO: adapt pipeline to support multilabel classification
+  monitor_metric: loss # TODO: adapt pipeline to support multilabel classification
   task_level: graph 
   data_seed: 0
 
