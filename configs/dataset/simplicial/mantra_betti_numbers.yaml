@@ -17,10 +17,11 @@ parameters:
   # In the case of higher-order datasets we have multiple feature dimentions 
   num_features: [1,1,1]
   num_classes: 3 # In the case of 'betti_numbers', we have 3 types of betti numbers: [0, 1, 2], for  manifold_dim = 2
+  num_betti_numbers: [2,7,2] # Number of betti numbers to predict, this is important for the regression task
 
   # Dataset parameters
-  task: multilabel classification     # TODO: adapt pipeline to support multilabel classification
-  loss_type: BCE # TODO: adapt pipeline to support multilabel classification
+  task: multivariate regression     # TODO: adapt pipeline to support multilabel classification
+  loss_type: mse # TODO: adapt pipeline to support multilabel classification
   monitor_metric: loss # TODO: adapt pipeline to support multilabel classification
   task_level: graph 
   data_seed: 0
@@ -36,6 +37,6 @@ split_params:
 
 # Dataloader parameters
 dataloader_params:
-  batch_size: 5
+  batch_size: 256
   num_workers: 0
   pin_memory: False

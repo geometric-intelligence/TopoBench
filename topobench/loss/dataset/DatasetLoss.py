@@ -32,6 +32,12 @@ class DatasetLoss(AbstractLoss):
             self.criterion = torch.nn.BCEWithLogitsLoss(reduction="none")
         elif self.task == "regression" and self.loss_type == "mse":
             self.criterion = torch.nn.MSELoss()
+
+        elif (
+            self.task == "multivariate regression" and self.loss_type == "mse"
+        ):
+            self.criterion = torch.nn.MSELoss()
+
         elif self.task == "regression" and self.loss_type == "mae":
             self.criterion = torch.nn.L1Loss()
         else:
@@ -78,6 +84,9 @@ class DatasetLoss(AbstractLoss):
         if self.task == "regression":
             target = target.unsqueeze(1)
             dataset_loss = self.criterion(logits, target)
+
+        elif self.task == "multivariate regression":
+            dataset_loss = self.criterion(logits, target.float())
 
         elif self.task == "classification":
             dataset_loss = self.criterion(logits, target)

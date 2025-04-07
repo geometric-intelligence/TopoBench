@@ -2,6 +2,7 @@ _target_: topobench.evaluator.BettiEvaluator
 task: ${dataset.parameters.task}
 task_level: ${dataset.parameters.task_level}
 num_classes: ${dataset.parameters.num_classes}
+num_betti_numbers: ${dataset.parameters.num_betti_numbers}  # Only for regression task
 
 # Metrics
-metrics:  [accuracy_0, precision_0, recall_0, auroc_0, f1_0, accuracy_1, precision_1, recall_1, auroc_1, f1_1, accuracy_2, precision_2, recall_2, auroc_2, f1_2] 
+metrics:  [accuracy_0, precision_0, recall_0, f1_0, accuracy_1, precision_1, recall_1, f1_1, accuracy_2, precision_2, recall_2, f1_2] 
