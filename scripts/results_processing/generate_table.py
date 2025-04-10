@@ -1,47 +1,36 @@
 import pandas as pd
 
-from scripts.results_processing.constants import optimization_metrics
+from constants import optimization_metrics, keep_columns
+from preprocess import preprocess_df
+from generate_scores import gen_scores
 
 
 def parse_hopse_results(datasets, collect_subsets):
     df_dict = {
         "model": [],
-        "variant": [],
         "dataset": [],
         "mean": [],
         "std": [],
         "domain": [],
     }
-
     for dataset in datasets:
-        aggregated = collect_subsets[dataset].copy()
-        aggregated["variant"] = aggregated["model.model_name"].map(
-            lambda x: x.split("_")[-1] if "GPSE" in x else "-"
-        )
-        aggregated["model.model_name"] = aggregated["model.model_name"].map(
-            lambda x: "_".join(x.split("_")[:-1]) if "GPSE" in x else x
-        )
-        for m_name in aggregated["model.model_name"].unique():
-            agg_sub = aggregated[
-                aggregated["model.model_name"] == m_name
-            ].copy()
-            optim_metric = optimization_metrics[dataset]["optim_metric"]
-            eval_metric = optimization_metrics[dataset]["eval_metric"]
-            optim_dir = optimization_metrics[dataset]["direction"]
-            agg_sub.sort_values(
-                by=(optim_metric, "mean"),
-                ascending=(optim_dir == "min"),
-                inplace=True,
-            )
+        aggregated = collect_subsets[dataset]
+        for m_name in aggregated['model.model_name'].unique():
+            for domain in aggregated['model.model_domain'].unique():
+                agg_sub = aggregated[(aggregated['model.model_name']==m_name) & (aggregated['model.model_domain'] == domain)].copy()
+                if len(agg_sub) == 0:
+                    print(dataset, m_name, domain)
+                    continue
+                optim_metric = optimization_metrics[dataset]['optim_metric']
+                eval_metric = optimization_metrics[dataset]['eval_metric']
+                optim_dir = optimization_metrics[dataset]['direction']
+                agg_sub.sort_values(by=(optim_metric,'mean'), ascending=(optim_dir == 'min'), inplace=True)
 
-            df_dict["domain"].append(
-                agg_sub.iloc[0]["model.model_domain"].item()
-            )
-            df_dict["variant"].append(agg_sub.iloc[0]["variant"].item())
-            df_dict["model"].append(m_name)
-            df_dict["dataset"].append(dataset)
-            df_dict["mean"].append(agg_sub.iloc[0][(eval_metric, "mean")])
-            df_dict["std"].append(agg_sub.iloc[0][(eval_metric, "std")])
+                df_dict['domain'].append(domain)
+                df_dict['model'].append(m_name)
+                df_dict['dataset'].append(dataset)
+                df_dict['mean'].append(agg_sub.iloc[0][(eval_metric, 'mean')])
+                df_dict['std'].append(agg_sub.iloc[0][(eval_metric, 'std')])
     df_res = pd.DataFrame(df_dict)
     return df_res
 
@@ -858,14 +847,21 @@ def parse_tb_results():
 
 
 def parse_all_dfs(selected_datasets=[]):
-    df_hopse = parse_hopse_results()
+    df = pd.read_csv("merged_csv/merged_normalized.csv")
+    df = preprocess_df(df)
+    # Keep only relevant columns
+    df = df[keep_columns]
+    # Generate best scores per hyperparameter sweep
+    scores = gen_scores(df)
+
+    df_hopse = parse_hopse_results(selected_datasets, scores)
     df_topotune = parse_topotune_results()
     df_tb = parse_tb_results()
     cat_df = pd.concat([df_hopse, df_topotune, df_tb], ignore_index=True)
 
     # FIX Hopse naming
-    cat_df["model"][cat_df["model"] == "HOPSE_MANUAL_PE"] = "HOPSE-PE"
-    cat_df["model"][cat_df["model"] == "HOPSE_GPSE"] = "HOPSE-GPSE"
+    cat_df["model"][cat_df["model"] == "HOPSE_MANUAL_PE"] = "HOPSE-M"
+    cat_df["model"][cat_df["model"] == "HOPSE_GPSE"] = "HOPSE-G"
 
     # Only grab the datasets we are interested in
     filtered_df = cat_df[cat_df["dataset"].isin(selected_datasets)]
@@ -904,7 +900,6 @@ def generate_table(df, optimization_metrics):
       - \\usepackage[table]{xcolor} (for \\cellcolor)
     """
 
-    import pandas as pd
 
     # Make a copy to avoid altering the original DataFrame
     df = df.copy()
@@ -927,7 +922,7 @@ def generate_table(df, optimization_metrics):
     df_best = grouped.apply(pick_best_variant).reset_index(drop=True)
 
     # 3) Split into MANTRA vs. Other
-    mantra_dsets = ["MANTRA_name", "MANTRA_orientation"]
+    mantra_dsets = ["MANTRA_name", "MANTRA_orientation", "MANTRA_betti_numbers"]
     df_mantra = df_best[df_best["dataset"].isin(mantra_dsets)]
     df_other = df_best[~df_best["dataset"].isin(mantra_dsets)]
 
@@ -1006,10 +1001,10 @@ def generate_table(df, optimization_metrics):
 
             if is_best:
                 # best => gray + bold
-                return f"\\cellcolor{{gray!20}}\\textbf{{{content}}}"
+                return f"\\cellcolor{{bestgray}}\\textbf{{{content}}}"
             elif within_std:
                 # within std => blue
-                return f"\\cellcolor{{blue!20}}{content}"
+                return f"\\cellcolor{{stdblue}}{content}"
             else:
                 return content
 
@@ -1020,34 +1015,34 @@ def generate_table(df, optimization_metrics):
         latex_lines.append(r"\small")
 
         # columns: 1 for model + len(all_datasets)
-        col_spec = "l" + "c" * len(all_datasets)
+        col_spec = "@{}ll" + "c" * len(all_datasets) + "@{}"
+        latex_lines.append(r"\begin{adjustbox}{width=1.\textwidth}")
         latex_lines.append(r"\begin{tabular}{" + col_spec + "}")
         latex_lines.append(r"\toprule")
 
         # Header row: "Model" + each dataset with arrow
-        header_cells = [r"\textbf{Model}"]
+        header_cells = [r"& \textbf{Model}"]
         for dset in all_datasets:
             arrow = (
-                r"(\uparrow)" if directions[dset] == "max" else r"(\downarrow)"
+                r"($\uparrow$)" if directions[dset] == "max" else r"($\downarrow$)"
             )
             header_cells.append(r"\scriptsize " + dset + " " + arrow)
         latex_lines.append(" & ".join(header_cells) + r" \\")
-        latex_lines.append(r"\midrule")
 
         # sort domains to have consistent ordering
         all_domains = sorted(domain_groups.keys())
+        if len(all_domains) == 3:
+            all_domains = ["graph", "simplicial", "cell"]
 
         # For each domain, we do the "sandwiching" with midrules
         for dom in all_domains:
+            dom_df = domain_groups[dom]
+            dom_models = sorted(dom_df["model"].unique())
             # domain subtitle row
             latex_lines.append(r"\midrule")
             latex_lines.append(
-                rf"\multicolumn{{{1 + len(all_datasets)}}}{{l}}{{\textbf{{{dom.capitalize()}}}}} \\"
+                rf"\multirow{{{len(dom_models)}}}{{*}}{{\rotatebox[origin=c]{{90}}{{\textbf{{{dom.capitalize()}}}}}}}"
             )
-            latex_lines.append(r"\midrule")
-
-            dom_df = domain_groups[dom]
-            dom_models = sorted(dom_df["model"].unique())
 
             # each row => [Model, val(dset1), val(dset2), ...]
             for model in dom_models:
@@ -1058,16 +1053,18 @@ def generate_table(df, optimization_metrics):
                         & (dom_df["dataset"] == dset)
                     ]
                     if sel.empty:
+                        print(model, dset)
                         cell_val = "-"
                     else:
                         r = sel.iloc[0]
                         mn, st = r["mean"], r["std"]
                         cell_val = style_cell(mn, st, dset)
                     row_elems.append(cell_val)
-                latex_lines.append(" & ".join(row_elems) + r" \\")
+                latex_lines.append("& " + " & ".join(row_elems) + r" \\")
 
         latex_lines.append(r"\bottomrule")
         latex_lines.append(r"\end{tabular}")
+        latex_lines.append(r"\end{adjustbox}")
         latex_lines.append(r"\caption{" + caption_text + "}")
         latex_lines.append(r"\end{table}")
 
@@ -1076,7 +1073,7 @@ def generate_table(df, optimization_metrics):
     # Build the two separate tables
     latex_mantra = build_table(
         df_mantra,
-        "Results for MANTRA datasets (MANTRA\\_name, MANTRA\\_orientation).",
+        "Results for MANTRA datasets (MANTRA-N, MANTRA-O, MANTRA-BN).",
     )
     latex_others = build_table(df_other, "Results for all other datasets.")
 
@@ -1091,9 +1088,12 @@ if __name__ == "__main__":
         "PROTEINS",
         "NCI1",
         "NCI109",
-        "IMDB-BINARY",
-        "IMDB-MULTI",
+        # "IMDB-BINARY",
+        # "IMDB-MULTI",
         "ZINC",
+        "MANTRA_orientation",
+        "MANTRA_name",
+        "MANTRA_betti_numbers"
     ]
 
     # Parse the dataframes

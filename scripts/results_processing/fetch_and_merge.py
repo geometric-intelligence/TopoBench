@@ -143,8 +143,8 @@ if __name__ == "__main__":
     }
     MANTRA_EXP_DICT = {
         "PROJ_PREFIX": "",
-        "PROJ_TYPES": ["GRAPH", "SCCNN", "HOPSE_simplicial"],
-        "PROJ_DS": ["mantra_name", "mantra_orientation"],
+        "PROJ_TYPES": ["GRAPH", "SCCNN", "HOPSE_simplicial", "SCN", "GPSE", "SANN"],
+        "PROJ_DS": ["mantra_name", "mantra_orientation", "mantra_betti_numbers"],
     }
 
     EXPERIMENTS = [

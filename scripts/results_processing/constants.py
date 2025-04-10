@@ -100,6 +100,12 @@ optimization_metrics = {
         "direction": "max",
         "performance_columns": performance_classification_additional,
     },
+    "MANTRA_betti_numbers": {
+        "optim_metric": "val/f1",
+        "eval_metric": "test/f1",
+        "direction": "max",
+        "performance_columns": performance_classification_additional,
+    },
 }
 sweeped_columns = [
     "transforms.sann_encoding.max_hop",
@@ -125,7 +131,6 @@ sweeped_columns = [
     "transforms.sann_encoding.copy_initial",
     "transforms.graph2cell_lifting.max_cell_length",
     "transforms.sann_encoding.use_initial_features",
-    "transforms.sann_encoding.pe_types",
     "transforms.sann_encoding.is_undirected",
     "transforms.sann_encoding.target_pe_dim",
     "transforms.sann_encoding.laplacian_norm_type",
