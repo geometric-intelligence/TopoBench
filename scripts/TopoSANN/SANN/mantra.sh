@@ -38,7 +38,7 @@ INDICENCE_SIGNED_STR=$(IFS=,; echo "${INDICENCE_SIGNED[*]}")  # Convert to comma
 # batch_sizes=(128 256)
 # learning_rates=(0.01 0.001)
 
-datasets=('mantra_name' 'mantra_orientation' 'mantra_genus')
+datasets=('mantra_betti_numbers')
 for dataset in ${datasets[*]}
 do
     project_name="SANN_$dataset"
@@ -65,6 +65,7 @@ do
             transforms.sann_encoding.max_hop=$max_hop\
             transforms.sann_encoding.complex_dim=3\
             transforms=MANTRA_SANN\
+            evaluator=betti_numbers\
             --multirun &
             
     done
@@ -99,6 +100,7 @@ do
                     transforms.sann_encoding.max_hop=$max_hop\
                     transforms.sann_encoding.complex_dim=3\
                     transforms=MANTRA_SANN\
+                    evaluator=betti_numbers\
                     --multirun &
                 sleep 3
             done

@@ -1,4 +1,5 @@
 # python -m topobench model=simplicial/sccnn_custom dataset=simplicial/mantra_betti_numbers evaluator=betti_numbers model.readout.readout_name=PropagateSignalDown transforms=MANTRA_name_dataset_default transforms.redefine_simplicial_neighbourhoods.signed=True optimizer.parameters.lr=0.001 model.backbone.n_layers=2 trainer.devices=\[4\]
+# python -m topobench model=graph/gcn dataset=simplicial/mantra_betti_numbers evaluator=betti_numbers transforms=no_transform optimizer.parameters.lr=0.001 trainer.devices=\[4\]
 
 # =====================
 # DATA
