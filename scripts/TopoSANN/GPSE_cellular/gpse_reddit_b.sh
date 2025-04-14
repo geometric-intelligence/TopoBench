@@ -20,7 +20,7 @@ OUT_CHANNELS=(32 64)
 LEARNING_RATES=(0.01 0.001)
 PROJECTION_DROPOUTS=(0.5)
 WEIGHT_DECAYS=(0 0.0001)
-BATCH_SIZES=(32 64)
+BATCH_SIZES=(16 32)
 # =====================
 # PRETRAINED MODELS
 # =====================
@@ -77,7 +77,7 @@ for i in {0..7}; do
             model.feature_encoder.out_channels=64\
             model.feature_encoder.proj_dropout=0.25\
             dataset.split_params.data_seed=0\
-            dataset.dataloader_params.batch_size=64\
+            dataset.dataloader_params.batch_size=32\
             trainer.max_epochs=5\
             trainer.min_epochs=1\
             trainer.devices=\[$CUDA\]\
