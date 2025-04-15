@@ -4,7 +4,9 @@ from generate_scores import gen_scores
 from preprocess import preprocess_df
 
 
-def generate(df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9], cpu=False):
+def generate(
+    df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9], cpu=False
+):
     datasets = list(df["dataset.loader.parameters.data_name"].unique())
     # Get unique models
     models = list(df["model.model_name"].unique())
@@ -115,14 +117,13 @@ def generate(df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9], cp
                 # -----------------------------------------------------------------
                 param_strs = []
 
-                for key,val in best_params_dict.items():
+                for key, val in best_params_dict.items():
                     # Value is nan so not set
                     if pd.isna(val):
                         continue
                     if val == '"nan"':
                         continue
                     param_strs.append(f"{key}={val}")
-
 
                 additional_parameters = {}
 
@@ -136,11 +137,15 @@ def generate(df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9], cp
                     if model_domain_value == "cell":
                         additional_parameters[
                             "transforms.graph2cell_lifting.neighborhoods"
-                        ] = best_params_dict['transforms.sann_encoding.neighborhoods']
+                        ] = best_params_dict[
+                            "transforms.sann_encoding.neighborhoods"
+                        ]
                     else:
                         additional_parameters[
                             "transforms.graph2simplicial_lifting.neighborhoods"
-                        ] = best_params_dict['transforms.sann_encoding.neighborhoods']
+                        ] = best_params_dict[
+                            "transforms.sann_encoding.neighborhoods"
+                        ]
                 elif "HOPSE" in model:
                     additional_parameters[
                         "transforms/data_manipulations@transforms.sann_encoding"
@@ -148,11 +153,15 @@ def generate(df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9], cp
                     if model_domain_value == "cell":
                         additional_parameters[
                             "transforms.graph2cell_lifting.neighborhoods"
-                        ] = best_params_dict['transforms.sann_encoding.neighborhoods']
+                        ] = best_params_dict[
+                            "transforms.sann_encoding.neighborhoods"
+                        ]
                     else:
                         additional_parameters[
                             "transforms.graph2simplicial_lifting.neighborhoods"
-                        ] = best_params_dict['transforms.sann_encoding.neighborhoods']
+                        ] = best_params_dict[
+                            "transforms.sann_encoding.neighborhoods"
+                        ]
                         additional_parameters[
                             "transforms/data_manipulations@transforms.redefine_simplicial_neighborhoods"
                         ] = "redefine_simplicial_neighbourhoods"
@@ -161,10 +170,10 @@ def generate(df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9], cp
                         ] = True
                     additional_parameters[
                         "transforms.sann_encoding.kernel_param_HKdiagSE"
-                    ] = '[1,22]'
+                    ] = "[1,22]"
                     additional_parameters[
                         "transforms.sann_encoding.kernel_param_RWSE"
-                    ] = '[2,20]'
+                    ] = "[2,20]"
 
                     additional_parameters[
                         "transforms.sann_encoding.laplacian_norm_type"
@@ -215,7 +224,11 @@ def generate(df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9], cp
                 # We pass multiple seeds via multirun
                 # dataset.split_params.data_seed=0,1,2,...  plus --multirun
                 # -----------------------------------------------------------------
-                cpu_str = " " if not cpu else "trainer.accelerator=cpu trainer.devices=1 "
+                cpu_str = (
+                    " "
+                    if not cpu
+                    else "trainer.accelerator=cpu trainer.devices=1 "
+                )
                 cmd = (
                     "python -m topobench "
                     + dataset_str
