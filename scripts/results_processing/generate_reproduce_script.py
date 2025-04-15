@@ -4,7 +4,7 @@ from generate_scores import gen_scores
 from preprocess import preprocess_df
 
 
-def generate(df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9]):
+def generate(df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9], cpu=False):
     datasets = list(df["dataset.loader.parameters.data_name"].unique())
     # Get unique models
     models = list(df["model.model_name"].unique())
@@ -113,13 +113,20 @@ def generate(df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9]):
                 # CONVERT HYPERPARAMETERS TO key=value STRINGS
                 # e.g. "transforms.R.loops='2'" or "model.backbone.num_layers='3'"
                 # -----------------------------------------------------------------
-                param_strs = [
-                    f"{key}={val}" for key, val in best_params_dict.items()
-                ]
+                param_strs = []
+
+                for key,val in best_params_dict.items():
+                    # Value is nan so not set
+                    if pd.isna(val):
+                        continue
+                    if val == '"nan"':
+                        continue
+                    param_strs.append(f"{key}={val}")
+
 
                 additional_parameters = {}
 
-                if "GPSE" in model_name_mapping:
+                if "GPSE" in model:
                     additional_parameters[
                         "transforms/data_manipulations@transforms.sann_encoding"
                     ] = "add_gpse_information"
@@ -128,32 +135,24 @@ def generate(df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9]):
                     ] = True
                     if model_domain_value == "cell":
                         additional_parameters[
-                            "transforms.sann_encoding.transforms.graph2cell_lifting.neighborhoods"
-                        ] = model_agg[
-                            "transforms.sann_encoding.neighborhoods"
-                        ].item()
+                            "transforms.graph2cell_lifting.neighborhoods"
+                        ] = best_params_dict['transforms.sann_encoding.neighborhoods']
                     else:
                         additional_parameters[
                             "transforms.graph2simplicial_lifting.neighborhoods"
-                        ] = model_agg[
-                            "transforms.sann_encoding.neighborhoods"
-                        ].item()
-                elif "HOPSE" in model_name_mapping:
+                        ] = best_params_dict['transforms.sann_encoding.neighborhoods']
+                elif "HOPSE" in model:
                     additional_parameters[
                         "transforms/data_manipulations@transforms.sann_encoding"
                     ] = "hopse_ps_information"
                     if model_domain_value == "cell":
                         additional_parameters[
-                            "transforms.sann_encoding.transforms.graph2cell_lifting.neighborhoods"
-                        ] = model_agg[
-                            "transforms.sann_encoding.neighborhoods"
-                        ].item()
+                            "transforms.graph2cell_lifting.neighborhoods"
+                        ] = best_params_dict['transforms.sann_encoding.neighborhoods']
                     else:
                         additional_parameters[
                             "transforms.graph2simplicial_lifting.neighborhoods"
-                        ] = model_agg[
-                            "transforms.sann_encoding.neighborhoods"
-                        ].item()
+                        ] = best_params_dict['transforms.sann_encoding.neighborhoods']
                         additional_parameters[
                             "transforms/data_manipulations@transforms.redefine_simplicial_neighborhoods"
                         ] = "redefine_simplicial_neighbourhoods"
@@ -162,10 +161,10 @@ def generate(df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9]):
                         ] = True
                     additional_parameters[
                         "transforms.sann_encoding.kernel_param_HKdiagSE"
-                    ] = ["1", "22"]
+                    ] = '[1,22]'
                     additional_parameters[
                         "transforms.sann_encoding.kernel_param_RWSE"
-                    ] = ["2", "20"]
+                    ] = '[2,20]'
 
                     additional_parameters[
                         "transforms.sann_encoding.laplacian_norm_type"
@@ -187,7 +186,7 @@ def generate(df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9]):
                     ] = 20
                     additional_parameters[
                         "transforms.sann_encoding.pe_types"
-                    ] = ["RWSE", "ElstaticPE", "HKdiagSE", "LapPE"]
+                    ] = '["RWSE","ElstaticPE","HKdiagSE","LapPE"]'
                     if dataset == "ZINC":
                         additional_parameters[
                             "transforms/data_manipulations@one_hot_node_degree_features"
@@ -201,6 +200,10 @@ def generate(df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9]):
                         additional_parameters[
                             "transforms.one_hot_node_degree_features.features_field"
                         ] = "x"
+                elif "SANN" in model:
+                    additional_parameters[
+                        "transforms/data_manipulations@transforms.sann_encoding"
+                    ] = "precompute_khop_features"
 
                 additional_param_strs = [
                     f"{key}={val}"
@@ -212,6 +215,7 @@ def generate(df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9]):
                 # We pass multiple seeds via multirun
                 # dataset.split_params.data_seed=0,1,2,...  plus --multirun
                 # -----------------------------------------------------------------
+                cpu_str = " " if not cpu else "trainer.accelerator=cpu trainer.devices=1 "
                 cmd = (
                     "python -m topobench "
                     + dataset_str
@@ -223,6 +227,7 @@ def generate(df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9]):
                     + " ".join(additional_param_strs)
                     + " "
                     + f"dataset.split_params.data_seed={','.join([str(i) for i in all_seeds])} "
+                    + cpu_str
                     + "--multirun"
                 )
 
@@ -241,4 +246,4 @@ if __name__ == "__main__":
     scores = gen_scores(df)
 
     # Generate the best runs script
-    generate(df, scores, sweeped_columns)
+    generate(df, scores, sweeped_columns, cpu=True)

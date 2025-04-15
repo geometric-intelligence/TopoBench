@@ -15,22 +15,29 @@ def parse_hopse_results(datasets, collect_subsets):
     }
     for dataset in datasets:
         aggregated = collect_subsets[dataset]
-        for m_name in aggregated['model.model_name'].unique():
-            for domain in aggregated['model.model_domain'].unique():
-                agg_sub = aggregated[(aggregated['model.model_name']==m_name) & (aggregated['model.model_domain'] == domain)].copy()
+        for m_name in aggregated["model.model_name"].unique():
+            for domain in aggregated["model.model_domain"].unique():
+                agg_sub = aggregated[
+                    (aggregated["model.model_name"] == m_name)
+                    & (aggregated["model.model_domain"] == domain)
+                ].copy()
                 if len(agg_sub) == 0:
                     print(dataset, m_name, domain)
                     continue
-                optim_metric = optimization_metrics[dataset]['optim_metric']
-                eval_metric = optimization_metrics[dataset]['eval_metric']
-                optim_dir = optimization_metrics[dataset]['direction']
-                agg_sub.sort_values(by=(optim_metric,'mean'), ascending=(optim_dir == 'min'), inplace=True)
+                optim_metric = optimization_metrics[dataset]["optim_metric"]
+                eval_metric = optimization_metrics[dataset]["eval_metric"]
+                optim_dir = optimization_metrics[dataset]["direction"]
+                agg_sub.sort_values(
+                    by=(optim_metric, "mean"),
+                    ascending=(optim_dir == "min"),
+                    inplace=True,
+                )
 
-                df_dict['domain'].append(domain)
-                df_dict['model'].append(m_name)
-                df_dict['dataset'].append(dataset)
-                df_dict['mean'].append(agg_sub.iloc[0][(eval_metric, 'mean')])
-                df_dict['std'].append(agg_sub.iloc[0][(eval_metric, 'std')])
+                df_dict["domain"].append(domain)
+                df_dict["model"].append(m_name)
+                df_dict["dataset"].append(dataset)
+                df_dict["mean"].append(agg_sub.iloc[0][(eval_metric, "mean")])
+                df_dict["std"].append(agg_sub.iloc[0][(eval_metric, "std")])
     df_res = pd.DataFrame(df_dict)
     return df_res
 
@@ -900,7 +907,6 @@ def generate_table(df, optimization_metrics):
       - \\usepackage[table]{xcolor} (for \\cellcolor)
     """
 
-
     # Make a copy to avoid altering the original DataFrame
     df = df.copy()
 
@@ -922,7 +928,11 @@ def generate_table(df, optimization_metrics):
     df_best = grouped.apply(pick_best_variant).reset_index(drop=True)
 
     # 3) Split into MANTRA vs. Other
-    mantra_dsets = ["MANTRA_name", "MANTRA_orientation", "MANTRA_betti_numbers"]
+    mantra_dsets = [
+        "MANTRA_name",
+        "MANTRA_orientation",
+        "MANTRA_betti_numbers",
+    ]
     df_mantra = df_best[df_best["dataset"].isin(mantra_dsets)]
     df_other = df_best[~df_best["dataset"].isin(mantra_dsets)]
 
@@ -1024,7 +1034,9 @@ def generate_table(df, optimization_metrics):
         header_cells = [r"& \textbf{Model}"]
         for dset in all_datasets:
             arrow = (
-                r"($\uparrow$)" if directions[dset] == "max" else r"($\downarrow$)"
+                r"($\uparrow$)"
+                if directions[dset] == "max"
+                else r"($\downarrow$)"
             )
             header_cells.append(r"\scriptsize " + dset + " " + arrow)
         latex_lines.append(" & ".join(header_cells) + r" \\")
@@ -1093,7 +1105,7 @@ if __name__ == "__main__":
         "ZINC",
         "MANTRA_orientation",
         "MANTRA_name",
-        "MANTRA_betti_numbers"
+        "MANTRA_betti_numbers",
     ]
 
     # Parse the dataframes

@@ -17,9 +17,7 @@ def map_name(row):
 
 
 def preprocess_df(df):
-    columns_to_eval = [
-        "transforms.sann_encoding.pe_types"
-    ]
+    columns_to_eval = ["transforms.sann_encoding.pe_types"]
     for col in columns_to_eval:
         df[col] = df[col].apply(lambda x: str(x).replace("nan", "None"))
         df[col] = df[col].apply(literal_eval)
