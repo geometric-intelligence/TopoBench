@@ -32,4 +32,4 @@ dataloader_params:
   batch_size: 128
   num_workers: 0
   pin_memory: False
-  persistent_workers: False
+
