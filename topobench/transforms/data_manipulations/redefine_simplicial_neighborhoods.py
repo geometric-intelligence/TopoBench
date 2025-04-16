@@ -1,4 +1,4 @@
-"""An transform that redifines simplicial complex neighbourhood."""
+"""An transform that redifines simplicial complex neighborhood."""
 
 import torch
 import torch_geometric
@@ -7,10 +7,10 @@ from topobench.data.utils import data2simplicial
 from topobench.data.utils.utils import get_complex_connectivity
 
 
-class RedefineSimplicialNeighbourhoods(
+class RedefineSimplicialNeighborhoods(
     torch_geometric.transforms.BaseTransform
 ):
-    r"""An transform that redifines simplicial complex neighbourhood.
+    r"""An transform that redifines simplicial complex neighborhood.
 
     Parameters
     ----------
@@ -20,7 +20,7 @@ class RedefineSimplicialNeighbourhoods(
 
     def __init__(self, **kwargs):
         super().__init__()
-        self.type = "RedefineSimplicialNeighbourhoods"
+        self.type = "RedefineSimplicialNeighborhoods"
         self.parameters = kwargs
 
     def __repr__(self) -> str:
