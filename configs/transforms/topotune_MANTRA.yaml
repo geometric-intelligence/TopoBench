@@ -1,0 +1,5 @@
+defaults:
+  - data_manipulations@redefine_simplicial_neighbourhoods: redefine_simplicial_neighbourhoods
+
+redefine_simplicial_neighbourhoods:
+  signed: True
