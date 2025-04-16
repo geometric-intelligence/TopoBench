@@ -22,9 +22,32 @@ def generate(
         "SANN": "sann",
     }
 
+
     with open("scripts/best_runs.sh", "w") as f:
         # Shebang so we can run `./best_runs.sh` directly if desired
         f.write("#!/usr/bin/env bash\n\n")
+        f.write('# Define log files\n\n')
+        f.write('LOG_FILE="scripts/script_output.log"\n\n')
+        f.write('ERROR_LOG_FILE="scripts/script_error.log"\n\n')
+        f.write('FAILED_LOG_FILE="scripts/failed_runs.log"\n\n')
+
+        f.write('# Clear previous log files\n\n')
+        f.write('> $LOG_FILE\n')
+        f.write('> $ERROR_LOG_FILE\n')
+        f.write('> $FAILED_LOG_FILE\n\n')
+
+        f.write('# Function to run a command and check for failure\n\n')
+        f.write('run_command() {\n')
+        f.write('\tlocal cmd="$1"\n')
+        f.write('# Run the command and capture the output and error\n')
+        f.write('{ eval "$cmd" 2>&1 | tee -a "$LOG_FILE"; } 2>> "$ERROR_LOG_FILE"\n')
+        f.write('# Check if the command failed\n')
+        f.write('if [ ${PIPESTATUS[0]} -ne 0 ]; then\n')
+        f.write('\t\techo "Command failed: $cmd" >> "$FAILED_LOG_FILE"\n')
+        f.write('\t\techo "Check $ERROR_LOG_FILE for details." >> "$FAILED_LOG_FILE"\n')
+        f.write('\tfi\n')
+        f.write('}\n')
+        f.write('command=(\n')
 
         for dataset in datasets:
             # 'collect_subsets[dataset]' is the sorted, aggregated DataFrame
@@ -256,8 +279,10 @@ def generate(
                     else "trainer.accelerator=cpu trainer.devices=1 "
                 )
                 trainer_patience_str = "trainer.max_epochs=500 trainer.min_epochs=50 callbacks.early_stopping.patience=10"
+                model_tag = f"tags=[\"{model}\"]"
+                wandb_str = "logger.wandb.project=HOPSE_reproducibility"
                 cmd = (
-                    "python -m topobench "
+                    "\"python -m topobench "
                     + dataset_str
                     + " "
                     + model_str
@@ -273,10 +298,21 @@ def generate(
                     + cpu_str
                     + trainer_patience_str
                     + " "
-                    + "--multirun"
+                    + model_tag
+                    + " "
+                    + wandb_str
+                    + " " 
+                    + "--multirun \""
+                    + f" # {model},{dataset},{data_domain}"
                 )
 
                 f.write(cmd + "\n")
+        f.write(')\n\n')
+        f.write('# Iterate over the commands and run them\n')
+        f.write('for cmd in "${commands[@]}"; do\n')
+        f.write('\techo "Running: $cmd"\n')
+        f.write('\trun_command "$cmd"\n')
+        f.write('done\n')
 
     print("Done! The best runs have been saved to scripts/best_runs.sh.")
 
@@ -291,4 +327,4 @@ if __name__ == "__main__":
     scores = gen_scores(df)
 
     # Generate the best runs script
-    generate(df, scores, sweeped_columns, cpu=True)
+    generate(df, scores, sweeped_columns, cpu=False)

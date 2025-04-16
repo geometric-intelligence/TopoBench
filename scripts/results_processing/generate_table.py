@@ -5,6 +5,7 @@ from preprocess import preprocess_df
 from generate_scores import gen_scores
 
 
+
 def parse_hopse_results(datasets, collect_subsets):
     df_dict = {
         "model": [],
@@ -866,12 +867,25 @@ def parse_all_dfs(selected_datasets=[]):
     df_tb = parse_tb_results()
     cat_df = pd.concat([df_hopse, df_topotune, df_tb], ignore_index=True)
 
+
     # FIX Hopse naming
     cat_df["model"][cat_df["model"] == "HOPSE_MANUAL_PE"] = "HOPSE-M"
     cat_df["model"][cat_df["model"] == "HOPSE_GPSE"] = "HOPSE-G"
+    cat_df["model"][cat_df["model"] == "sccnn"] = "SCCNN"
+    cat_df["model"][cat_df["model"] == "gin"] = "gin"
+    cat_df["model"][cat_df["model"] == "gcn"] = "GCN"
+
+    filtered_df = cat_df[cat_df["dataset"].isin(selected_datasets)]
+
+    # FIX MAntra naming
+    filtered_df["dataset"][filtered_df["dataset"] == "MANTRA_betti_numbers_0"] = "MANTRA-BN-0"
+    filtered_df["dataset"][filtered_df["dataset"] == "MANTRA_betti_numbers_1"] = "MANTRA-BN-1"
+    filtered_df["dataset"][filtered_df["dataset"] == "MANTRA_betti_numbers_2"] = "MANTRA-BN-2"
+    filtered_df["dataset"][filtered_df["dataset"] == "MANTRA_name"] = "MANTRA-N"
+    filtered_df["dataset"][filtered_df["dataset"] == "MANTRA_orientation"] = "MANTRA-O"
+
 
     # Only grab the datasets we are interested in
-    filtered_df = cat_df[cat_df["dataset"].isin(selected_datasets)]
 
     return filtered_df
 
@@ -913,12 +927,16 @@ def generate_table(df, optimization_metrics):
     # 1) Escape underscores in model names
     df["model"] = df["model"].str.replace("_", r"\_", regex=False)
 
+    
+
     # 2) Among multiple variants for (domain, dataset, model), pick best according to direction
     def pick_best_variant(group):
         dataset = group["dataset"].iloc[0]
         direction = optimization_metrics.get(dataset, {}).get(
             "direction", "max"
         )
+        if 'BN' in dataset:
+            direction = 'max'
         if direction == "min":
             return group.loc[group["mean"].idxmin()]
         else:
@@ -929,9 +947,11 @@ def generate_table(df, optimization_metrics):
 
     # 3) Split into MANTRA vs. Other
     mantra_dsets = [
-        "MANTRA_name",
-        "MANTRA_orientation",
-        "MANTRA_betti_numbers",
+        "MANTRA-N",
+        "MANTRA-O",
+        "MANTRA-BN-0",
+        "MANTRA-BN-1",
+        "MANTRA-BN-2",
     ]
     df_mantra = df_best[df_best["dataset"].isin(mantra_dsets)]
     df_other = df_best[~df_best["dataset"].isin(mantra_dsets)]
@@ -1105,7 +1125,9 @@ if __name__ == "__main__":
         "ZINC",
         "MANTRA_orientation",
         "MANTRA_name",
-        "MANTRA_betti_numbers",
+        "MANTRA_betti_numbers_0",
+        "MANTRA_betti_numbers_1",
+        "MANTRA_betti_numbers_2",
     ]
 
     # Parse the dataframes
