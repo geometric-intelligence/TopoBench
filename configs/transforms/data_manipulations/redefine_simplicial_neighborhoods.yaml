@@ -1,5 +1,5 @@
 _target_: topobench.transforms.data_transform.DataTransform
-transform_name: "RedefineSimplicialNeighbourhoods"
+transform_name: "RedefineSimplicialNeighborhoods"
 transform_type: null
 
 keys_to_keep: ["x", "x_0", "x_1", "x_2", "y", "edge_index", "edge_attr", "shape"]

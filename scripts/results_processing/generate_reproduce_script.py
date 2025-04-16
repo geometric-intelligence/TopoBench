@@ -1,5 +1,5 @@
 import pandas as pd
-from constants import sweeped_columns
+from constants import sweeped_columns, optimization_metrics
 from generate_scores import gen_scores
 from preprocess import preprocess_df
 
@@ -29,6 +29,8 @@ def generate(
         for dataset in datasets:
             # 'collect_subsets[dataset]' is the sorted, aggregated DataFrame
             aggregated = collect_subsets[dataset]
+            direction = optimization_metrics[dataset]["direction"]
+            optim_metric = optimization_metrics[dataset]["optim_metric"]
 
             for model in models:
                 # Filter to rows for this model
@@ -36,6 +38,7 @@ def generate(
                 if len(model_agg) == 0:
                     continue
 
+                model_agg.sort_values(by=(optim_metric, 'mean'), ascending=(direction == "min"))
                 # Get the best row for this model
                 best_params_row = model_agg.iloc[0]
 
@@ -123,9 +126,24 @@ def generate(
                         continue
                     if val == '"nan"':
                         continue
+                    if 'neighbourhood' in key:
+                        key = key.replace('neighbourhood', 'neighborhood')
                     param_strs.append(f"{key}={val}")
 
                 additional_parameters = {}
+
+                dataset_additional_parameters = {}
+                if dataset == "ZINC":
+                    dataset_additional_parameters[
+                        "transforms.one_hot_node_degree_features.degrees_field"
+                    ] = "x"
+                    dataset_additional_parameters[
+                        "transforms.one_hot_node_degree_features.features_field"
+                    ] = "x"
+                if 'MANTRA' in dataset:
+                    dataset_additional_parameters[
+                        'dataset.loader.parameters.slice'
+                    ] = True
 
                 if "GPSE" in model:
                     additional_parameters[
@@ -134,37 +152,53 @@ def generate(
                     additional_parameters[
                         "transforms.sann_encoding.copy_initial"
                     ] = True
-                    if model_domain_value == "cell":
+                    if model_domain_value == "cell" and data_domain == "graph":
                         additional_parameters[
                             "transforms.graph2cell_lifting.neighborhoods"
                         ] = best_params_dict[
                             "transforms.sann_encoding.neighborhoods"
                         ]
-                    else:
+                    elif model_domain_value == "simplicial" and data_domain == "graph":
                         additional_parameters[
                             "transforms.graph2simplicial_lifting.neighborhoods"
                         ] = best_params_dict[
                             "transforms.sann_encoding.neighborhoods"
                         ]
+                    if model_domain_value == 'simplicial' and data_domain == "simplicial":
+                        additional_parameters[
+                            "transforms/data_manipulations@transforms.redefine_simplicial_neighborhoods"
+                        ] = "redefine_simplicial_neighborhoods"
+                        additional_parameters[
+                            "transforms.redefine_simplicial_neighborhoods.neighborhoods"
+                        ] = best_params_dict['transforms.sann_encoding.neighborhoods']
+                        additional_parameters[
+                            "transforms.redefine_simplicial_neighborhoods.signed"
+                        ] = True
+
                 elif "HOPSE" in model:
                     additional_parameters[
                         "transforms/data_manipulations@transforms.sann_encoding"
                     ] = "hopse_ps_information"
-                    if model_domain_value == "cell":
+                    if model_domain_value == "cell" and data_domain == "graph":
                         additional_parameters[
                             "transforms.graph2cell_lifting.neighborhoods"
                         ] = best_params_dict[
                             "transforms.sann_encoding.neighborhoods"
                         ]
-                    else:
+                    elif model_domain_value == "simplicial" and data_domain == "graph":
                         additional_parameters[
                             "transforms.graph2simplicial_lifting.neighborhoods"
                         ] = best_params_dict[
                             "transforms.sann_encoding.neighborhoods"
                         ]
+
+                    if model_domain_value == 'simplicial' and data_domain == "simplicial":
                         additional_parameters[
                             "transforms/data_manipulations@transforms.redefine_simplicial_neighborhoods"
-                        ] = "redefine_simplicial_neighbourhoods"
+                        ] = "redefine_simplicial_neighborhoods"
+                        additional_parameters[
+                            "transforms.redefine_simplicial_neighborhoods.neighborhoods"
+                        ] = best_params_dict['transforms.sann_encoding.neighborhoods']
                         additional_parameters[
                             "transforms.redefine_simplicial_neighborhoods.signed"
                         ] = True
@@ -196,27 +230,19 @@ def generate(
                     additional_parameters[
                         "transforms.sann_encoding.pe_types"
                     ] = '["RWSE","ElstaticPE","HKdiagSE","LapPE"]'
-                    if dataset == "ZINC":
-                        additional_parameters[
-                            "transforms/data_manipulations@one_hot_node_degree_features"
-                        ] = "one_hot_node_degree_features"
-                        additional_parameters[
-                            "transforms/data_manipulations"
-                        ] = "node_degrees"
-                        additional_parameters[
-                            "transforms.one_hot_node_degree_features.degrees_field"
-                        ] = "x"
-                        additional_parameters[
-                            "transforms.one_hot_node_degree_features.features_field"
-                        ] = "x"
                 elif "SANN" in model:
                     additional_parameters[
                         "transforms/data_manipulations@transforms.sann_encoding"
                     ] = "precompute_khop_features"
 
+
                 additional_param_strs = [
                     f"{key}={val}"
                     for key, val in additional_parameters.items()
+                ]
+                dataset_additional_param_strs = [
+                    f"{key}={val}"
+                    for key, val in dataset_additional_parameters.items()
                 ]
 
                 # -----------------------------------------------------------------
@@ -225,10 +251,11 @@ def generate(
                 # dataset.split_params.data_seed=0,1,2,...  plus --multirun
                 # -----------------------------------------------------------------
                 cpu_str = (
-                    " "
+                    ""
                     if not cpu
                     else "trainer.accelerator=cpu trainer.devices=1 "
                 )
+                trainer_patience_str = "trainer.max_epochs=500 trainer.min_epochs=50 callbacks.early_stopping.patience=10"
                 cmd = (
                     "python -m topobench "
                     + dataset_str
@@ -237,10 +264,15 @@ def generate(
                     + " "
                     + " ".join(param_strs)
                     + " "
+                    + " ".join(dataset_additional_param_strs)
+                    + " "
                     + " ".join(additional_param_strs)
                     + " "
-                    + f"dataset.split_params.data_seed={','.join([str(i) for i in all_seeds])} "
+                    + f"dataset.split_params.data_seed={','.join([str(i) for i in all_seeds])}"
+                    + " "
                     + cpu_str
+                    + trainer_patience_str
+                    + " "
                     + "--multirun"
                 )
 
