@@ -53,11 +53,11 @@ def gen_scores(df):
             print(aggregated[(eval_metric, "count")].unique())
             # print(aggregated['dataset.split_params.data_seed'].unique())
             print(
-                (aggregated[(eval_metric, "count")] >= 5).sum()
+                (aggregated[(eval_metric, "count")] >= 4).sum()
                 / len(aggregated)
                 * 100
             )
-            aggregated = aggregated[aggregated[(eval_metric, "count")] >= 5]
+            aggregated = aggregated[aggregated[(eval_metric, "count")] >= 4]
             # print(len(aggregated[aggregated['seed'] > 4]))
             aggregated = aggregated.sort_values(
                 by=(optim_metric, "mean"), ascending=(direction == "min")
