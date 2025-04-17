@@ -86,6 +86,7 @@ gpus=(0 1 2 3 4 5 6 7)
             transforms.redefine_simplicial_neighborhoods.neighborhoods=$neighborhood\
             model.backbone.neighborhoods=$neighborhood\
             --multirun &
+        wait
     done
     wait
 
