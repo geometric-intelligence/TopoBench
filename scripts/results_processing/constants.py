@@ -103,6 +103,7 @@ optimization_metrics = {
         "direction": "max",
         "performance_columns": performance_classification_additional,
     },
+    'MANTRA_betti_numbers': {'optim_metric': 'val/loss', 'eval_metric': 'val/loss', 'direction': 'min', 'performance_columns': performance_classification},
     'MANTRA_betti_numbers_0': {'optim_metric': 'val/loss', 'eval_metric': 'test/f1', 'direction': 'min', 'performance_columns': performance_classification},
     'MANTRA_betti_numbers_1': {'optim_metric': 'val/loss', 'eval_metric': 'test/f1', 'direction': 'min', 'performance_columns': performance_classification},
     'MANTRA_betti_numbers_2': {'optim_metric': 'val/loss', 'eval_metric': 'test/f1', 'direction': 'min', 'performance_columns': performance_classification},

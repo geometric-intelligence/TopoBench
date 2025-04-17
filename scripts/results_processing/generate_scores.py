@@ -37,7 +37,6 @@ def gen_scores(df):
                 + performance_columns
                 + run_columns
             ]
-            print(dataset, model)
             aggregated = subset.groupby(
                 sweeped_columns + ["model.model_name", "model.model_domain"],
                 dropna=False,

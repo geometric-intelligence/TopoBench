@@ -8,6 +8,7 @@ def generate(
     df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9], cpu=False
 ):
     datasets = list(df["dataset.loader.parameters.data_name"].unique())
+    print(datasets)
     # Get unique models
     models = list(df["model.model_name"].unique())
 
@@ -26,28 +27,28 @@ def generate(
     with open("scripts/best_runs.sh", "w") as f:
         # Shebang so we can run `./best_runs.sh` directly if desired
         f.write("#!/usr/bin/env bash\n\n")
-        f.write('# Define log files\n\n')
-        f.write('LOG_FILE="scripts/script_output.log"\n\n')
-        f.write('ERROR_LOG_FILE="scripts/script_error.log"\n\n')
+        f.write('# Define log files\n')
+        f.write('LOG_FILE="scripts/script_output.log"\n')
+        f.write('ERROR_LOG_FILE="scripts/script_error.log"\n')
         f.write('FAILED_LOG_FILE="scripts/failed_runs.log"\n\n')
 
-        f.write('# Clear previous log files\n\n')
-        f.write('> $LOG_FILE\n')
-        f.write('> $ERROR_LOG_FILE\n')
-        f.write('> $FAILED_LOG_FILE\n\n')
+        f.write('# Clear previous log files\n')
+        f.write('> "$LOG_FILE"\n')
+        f.write('> "$ERROR_LOG_FILE"\n')
+        f.write('> "$FAILED_LOG_FILE"\n\n')
 
-        f.write('# Function to run a command and check for failure\n\n')
+        f.write('# Function to run a command and check for failure\n')
         f.write('run_command() {\n')
         f.write('\tlocal cmd="$1"\n')
-        f.write('# Run the command and capture the output and error\n')
-        f.write('{ eval "$cmd" 2>&1 | tee -a "$LOG_FILE"; } 2>> "$ERROR_LOG_FILE"\n')
-        f.write('# Check if the command failed\n')
-        f.write('if [ ${PIPESTATUS[0]} -ne 0 ]; then\n')
+        f.write('\t# Run the command and capture the output and error\n')
+        f.write('\t{ eval "$cmd" 2>&1 | tee -a "$LOG_FILE"; } 2>> "$ERROR_LOG_FILE"\n')
+        f.write('\t# Check if the command failed\n')
+        f.write('\tif [ ${PIPESTATUS[0]} -ne 0 ]; then\n')
         f.write('\t\techo "Command failed: $cmd" >> "$FAILED_LOG_FILE"\n')
         f.write('\t\techo "Check $ERROR_LOG_FILE for details." >> "$FAILED_LOG_FILE"\n')
         f.write('\tfi\n')
-        f.write('}\n')
-        f.write('command=(\n')
+        f.write('}\n\n')
+        f.write('commands=(\n')
 
         for dataset in datasets:
             # 'collect_subsets[dataset]' is the sorted, aggregated DataFrame
@@ -121,10 +122,10 @@ def generate(
                             )  # float as plain number
                     elif isinstance(value, (list, tuple)):
                         # Convert list or tuple to a quoted string
-                        param_val = f'"{",".join(value)}"'
+                        param_val = f'{",".join(value)}'
                     else:
                         # For strings (or anything else), quote them
-                        param_val = f'"{str(value).replace(" ", "")}"'
+                        param_val = f'{str(value).replace(" ", "")}'
 
                     best_params_dict[col] = param_val
 
@@ -147,7 +148,7 @@ def generate(
                     # Value is nan so not set
                     if pd.isna(val):
                         continue
-                    if val == '"nan"':
+                    if val == 'nan':
                         continue
                     if 'neighbourhood' in key:
                         key = key.replace('neighbourhood', 'neighborhood')
@@ -274,15 +275,16 @@ def generate(
                 # dataset.split_params.data_seed=0,1,2,...  plus --multirun
                 # -----------------------------------------------------------------
                 cpu_str = (
-                    ""
+                    "trainer.devices=\\[6\\]"
                     if not cpu
-                    else "trainer.accelerator=cpu trainer.devices=1 "
+                    else "trainer.accelerator=cpu trainer.devices=1"
                 )
-                trainer_patience_str = "trainer.max_epochs=500 trainer.min_epochs=50 callbacks.early_stopping.patience=10"
-                model_tag = f"tags=[\"{model}\"]"
+                trainer_epochs_str =  "trainer.max_epochs=500 trainer.min_epochs=50"
+                trainer_patience_str = "callbacks.early_stopping.patience=10"
+                model_tag = f"tags=[\\\"{model}\\\"]"
                 wandb_str = "logger.wandb.project=HOPSE_reproducibility"
                 cmd = (
-                    "\"python -m topobench "
+                    "\'python -m topobench "
                     + dataset_str
                     + " "
                     + model_str
@@ -295,14 +297,17 @@ def generate(
                     + " "
                     + f"dataset.split_params.data_seed={','.join([str(i) for i in all_seeds])}"
                     + " "
+                    + trainer_epochs_str
+                    + " "
                     + cpu_str
+                    + " "
                     + trainer_patience_str
                     + " "
                     + model_tag
                     + " "
                     + wandb_str
                     + " " 
-                    + "--multirun \""
+                    + "--multirun\'"
                     + f" # {model},{dataset},{data_domain}"
                 )
 
@@ -320,7 +325,7 @@ def generate(
 if __name__ == "__main__":
     # Load merged normalized
     df = pd.read_csv("merged_csv/merged_normalized.csv")
-    df = preprocess_df(df)
+    df = preprocess_df(df, split_mantra=False)
     # Keep only relevant columns
     # df = df[keep_columns]
     # Generate best scores per hyperparameter sweep

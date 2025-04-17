@@ -31,7 +31,7 @@ def split_evaluation_metrics(df):
     df = df[df['dataset.loader.parameters.data_name'] != 'MANTRA_betti_numbers']
     return pd.concat([df, scores_df])
 
-def preprocess_df(df):
+def preprocess_df(df, split_mantra=True):
     columns_to_eval = ["transforms.sann_encoding.pe_types"]
     for col in columns_to_eval:
         df[col] = df[col].apply(lambda x: str(x).replace("nan", "None"))
@@ -40,7 +40,8 @@ def preprocess_df(df):
     df["transforms.sann_encoding.neighborhoods"] = df[
         "transforms.sann_encoding.neighborhoods"
     ].astype(str)
-    df = split_evaluation_metrics(df)
+    if split_mantra:
+        df = split_evaluation_metrics(df)
     # Remove rows with missing data_seed
     df = df[~(df["dataset.split_params.data_seed"].isna())]
     return df
