@@ -207,32 +207,86 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         else:
             self.data = data_cls.from_dict(data)
 
-    def load_dataset_splits(
-        self, split_params
-    ) -> tuple[
-        DataloadDataset, DataloadDataset | None, DataloadDataset | None
-    ]:
-        """Load the dataset splits.
+    # def load_dataset_splits(
+    #     self, split_params
+    # ) -> tuple[
+    #     DataloadDataset, DataloadDataset | None, DataloadDataset | None
+    # ]:
+    #     """Load the dataset splits.
 
-        Parameters
-        ----------
-        split_params : dict
-            Parameters for loading the dataset splits.
+    #     Parameters
+    #     ----------
+    #     split_params : dict
+    #         Parameters for loading the dataset splits.
 
-        Returns
-        -------
-        tuple
-            A tuple containing the train, validation, and test datasets.
-        """
-        if not split_params.get("learning_setting", False):
-            raise ValueError("No learning setting specified in split_params")
+    #     Returns
+    #     -------
+    #     tuple
+    #         A tuple containing the train, validation, and test datasets.
+    #     """
+    #     if not split_params.get("learning_setting", False):
+    #         raise ValueError("No learning setting specified in split_params")
 
-        if split_params.learning_setting == "inductive":
-            return load_inductive_splits(self, split_params)
-        elif split_params.learning_setting == "transductive":
-            return load_transductive_splits(self, split_params)
-        else:
-            raise ValueError(
-                f"Invalid '{split_params.learning_setting}' learning setting.\
-                Please define either 'inductive' or 'transductive'."
-            )
+    #     if split_params.learning_setting == "inductive":
+    #         return load_inductive_splits(self, split_params)
+    #     elif split_params.learning_setting == "transductive":
+    #         return load_transductive_splits(self, split_params)
+    #     else:
+    #         raise ValueError(
+    #             f"Invalid '{split_params.learning_setting}' learning setting.\
+    #             Please define either 'inductive' or 'transductive'."
+    #         )
+
+
+
+def load_dataset_splits(
+    dataset, split_params
+) -> tuple[DataloadDataset, DataloadDataset | None, DataloadDataset | None]:
+    """Load the dataset splits.
+
+    Parameters
+    ----------
+    split_params : dict
+        Parameters for loading the dataset splits.
+
+    Returns
+    -------
+    tuple
+        A tuple containing the train, validation, and test datasets.
+    """
+    if not split_params.get("learning_setting", False):
+        raise ValueError("No learning setting specified in split_params")
+
+    if split_params.learning_setting == "inductive":
+        dataset = load_inductive_splits(dataset, split_params)
+
+    elif split_params.learning_setting == "transductive":
+        dataset = load_transductive_splits(dataset, split_params)
+
+    else:
+        raise ValueError(
+            f"Invalid '{split_params.learning_setting}' learning setting.\
+            Please define either 'inductive' or 'transductive'."
+        )
+    return dataset
+
+def get_train_val_test_datasets(dataset):
+    """Get the train, validation, and test datasets."""
+    if len(dataset) == 1:
+        return DataloadDataset(dataset), None, None
+    else:
+        train, val, test = [], [], []
+        for data in dataset:
+            if data.train_mask == 1:
+                train.append(data)
+            elif data.val_mask == 1:
+                val.append(data)
+            elif data.test_mask == 1:
+                test.append(data)
+            else:
+                raise ValueError("Graph not in any split")
+        return (
+            DataloadDataset(train),
+            DataloadDataset(val),
+            DataloadDataset(test),
+        )

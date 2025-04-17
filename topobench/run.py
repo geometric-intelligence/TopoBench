@@ -18,7 +18,7 @@ from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig, OmegaConf
 
 
-from topobench.data.preprocessor import PreProcessor
+from topobench.data.preprocessor import (PreProcessor, load_dataset_splits, get_train_val_test_datasets)
 from topobench.dataloader import TBDataloader
 from topobench.utils import (
     RankedLogger,
@@ -185,10 +185,17 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
     # Preprocess dataset and load the splits
     log.info("Instantiating preprocessor...")
     transform_config = cfg.get("transforms", None)
+    dataset = load_dataset_splits(dataset, cfg.dataset.split_params)
+
     preprocessor = PreProcessor(dataset, dataset_dir, transform_config)
-    dataset_train, dataset_val, dataset_test = (
-        preprocessor.load_dataset_splits(cfg.dataset.split_params)
+    
+    dataset_train, dataset_val, dataset_test = get_train_val_test_datasets(
+        preprocessor
     )
+    
+    # dataset_train, dataset_val, dataset_test = (
+    #     preprocessor.load_dataset_splits(cfg.dataset.split_params)
+    # )
     # Prepare datamodule
     log.info("Instantiating datamodule...")
     if cfg.dataset.parameters.task_level in ["node", "graph"]:
