@@ -1,3 +1,0 @@
-defaults:
-  - liftings@_here_: graph2cell_default
-  - /transforms/data_manipulations@PS: hopse_ps_information
