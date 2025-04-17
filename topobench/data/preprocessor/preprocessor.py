@@ -172,6 +172,12 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             data_list = [self.dataset[idx] for idx in range(len(self.dataset))]
         elif isinstance(self.dataset, torch_geometric.data.Data):
             data_list = [self.dataset]
+        elif isinstance(self.dataset, list):
+            data_list = self.dataset
+        else:
+            raise ValueError(
+                "Dataset must be a torch_geometric.data.Dataset or a list of data objects"
+            )
 
         self.data_list = (
             [self.pre_transform(d) for d in data_list]
@@ -238,7 +244,6 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
     #         )
 
 
-
 def load_dataset_splits(
     dataset, split_params
 ) -> tuple[DataloadDataset, DataloadDataset | None, DataloadDataset | None]:
@@ -269,6 +274,7 @@ def load_dataset_splits(
             Please define either 'inductive' or 'transductive'."
         )
     return dataset
+
 
 def get_train_val_test_datasets(dataset):
     """Get the train, validation, and test datasets."""

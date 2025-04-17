@@ -266,8 +266,55 @@ def stratified_splitting(labels, parameters, global_data_seed=42):
     return split_idx
 
 
+# def assign_train_val_test_mask_to_graphs(dataset, split_idx):
+#     """Split the graph dataset into train, validation, and test datasets.
+
+#     Parameters
+#     ----------
+#     dataset : torch_geometric.data.Dataset
+#         Considered dataset.
+#     split_idx : dict
+#         Dictionary containing the train, validation, and test indices.
+
+#     Returns
+#     -------
+#     tuple:
+#         Tuple containing the train, validation, and test datasets.
+#     """
+
+#     data_train_lst, data_val_lst, data_test_lst = [], [], []
+
+#     # Assign masks directly by iterating over pre-split indices
+#     for i in split_idx["train"]:
+#         graph = dataset[i]
+#         graph.train_mask = torch.tensor([1], dtype=torch.long)
+#         graph.val_mask = torch.tensor([0], dtype=torch.long)
+#         graph.test_mask = torch.tensor([0], dtype=torch.long)
+#         data_train_lst.append(graph)
+
+#     for i in split_idx["valid"]:
+#         graph = dataset[i]
+#         graph.train_mask = torch.tensor([0], dtype=torch.long)
+#         graph.val_mask = torch.tensor([1], dtype=torch.long)
+#         graph.test_mask = torch.tensor([0], dtype=torch.long)
+#         data_val_lst.append(graph)
+
+#     for i in split_idx["test"]:
+#         graph = dataset[i]
+#         graph.train_mask = torch.tensor([0], dtype=torch.long)
+#         graph.val_mask = torch.tensor([0], dtype=torch.long)
+#         graph.test_mask = torch.tensor([1], dtype=torch.long)
+#         data_test_lst.append(graph)
+
+#     return (
+#         DataloadDataset(data_train_lst),
+#         DataloadDataset(data_val_lst),
+#         DataloadDataset(data_test_lst),
+#     )
+
+
 def assign_train_val_test_mask_to_graphs(dataset, split_idx):
-    """Split the graph dataset into train, validation, and test datasets.
+    r"""Split the graph dataset into train, validation, and test datasets.
 
     Parameters
     ----------
@@ -278,39 +325,39 @@ def assign_train_val_test_mask_to_graphs(dataset, split_idx):
 
     Returns
     -------
-    tuple:
-        Tuple containing the train, validation, and test datasets.
+    list:
+        List containing the train, validation, and test datasets.
     """
-
     data_train_lst, data_val_lst, data_test_lst = [], [], []
 
-    # Assign masks directly by iterating over pre-split indices
-    for i in split_idx["train"]:
+    # Go over each of the graph and assign correct label
+    for i in range(len(dataset)):
         graph = dataset[i]
-        graph.train_mask = torch.tensor([1], dtype=torch.long)
-        graph.val_mask = torch.tensor([0], dtype=torch.long)
-        graph.test_mask = torch.tensor([0], dtype=torch.long)
-        data_train_lst.append(graph)
+        assigned = False
+        if i in split_idx["train"]:
+            graph.train_mask = torch.Tensor([1]).long()
+            graph.val_mask = torch.Tensor([0]).long()
+            graph.test_mask = torch.Tensor([0]).long()
+            data_train_lst.append(graph)
+            assigned = True
 
-    for i in split_idx["valid"]:
-        graph = dataset[i]
-        graph.train_mask = torch.tensor([0], dtype=torch.long)
-        graph.val_mask = torch.tensor([1], dtype=torch.long)
-        graph.test_mask = torch.tensor([0], dtype=torch.long)
-        data_val_lst.append(graph)
+        if i in split_idx["valid"]:
+            graph.train_mask = torch.Tensor([0]).long()
+            graph.val_mask = torch.Tensor([1]).long()
+            graph.test_mask = torch.Tensor([0]).long()
+            data_val_lst.append(graph)
+            assigned = True
 
-    for i in split_idx["test"]:
-        graph = dataset[i]
-        graph.train_mask = torch.tensor([0], dtype=torch.long)
-        graph.val_mask = torch.tensor([0], dtype=torch.long)
-        graph.test_mask = torch.tensor([1], dtype=torch.long)
-        data_test_lst.append(graph)
+        if i in split_idx["test"]:
+            graph.train_mask = torch.Tensor([0]).long()
+            graph.val_mask = torch.Tensor([0]).long()
+            graph.test_mask = torch.Tensor([1]).long()
+            data_test_lst.append(graph)
+            assigned = True
+        if not assigned:
+            raise ValueError("Graph not in any split")
 
-    return (
-        DataloadDataset(data_train_lst),
-        DataloadDataset(data_val_lst),
-        DataloadDataset(data_test_lst),
-    )
+    return data_train_lst + data_train_lst + data_train_lst
 
 
 def load_transductive_splits(dataset, parameters):
@@ -393,9 +440,7 @@ def load_inductive_splits(dataset, parameters):
     assert len(dataset) > 1, (
         "Datasets should have more than one graph in an inductive setting."
     )
-    labels = np.array(
-        [data.y.squeeze(0).numpy() for data in dataset.data_list]
-    )
+    labels = np.array([data.y.squeeze(0).numpy() for data in dataset])
 
     if parameters.split_type == "random":
         split_idx = random_splitting(labels, parameters)
@@ -415,11 +460,52 @@ def load_inductive_splits(dataset, parameters):
             If 'fixed' is chosen, the dataset should have the attribute split_idx"
         )
 
-    train_dataset, val_dataset, test_dataset = (
-        assign_train_val_test_mask_to_graphs(dataset, split_idx)
-    )
+    dataset = assign_train_val_test_mask_to_graphs(dataset, split_idx)
 
-    return train_dataset, val_dataset, test_dataset
+    return dataset
+
+
+# def load_inductive_splits(dataset, parameters):
+#     r"""Load multiple-graph datasets with the specified split.
+
+#     Parameters
+#     ----------
+#     dataset : torch_geometric.data.Dataset
+#         Graph dataset.
+#     parameters : DictConfig
+#         Configuration parameters.
+
+#     Returns
+#     -------
+#     list:
+#         List containing the train, validation, and test splits.
+#     """
+#     # Extract labels from dataset object
+#     assert (
+#         len(dataset) > 1
+#     ), "Datasets should have more than one graph in an inductive setting."
+#     labels = np.array(
+#         [data.y.squeeze(0).numpy() for data in dataset.data_list]
+#     )
+
+#     if parameters.split_type == "random":
+#         split_idx = random_splitting(labels, parameters)
+
+#     elif parameters.split_type == "k-fold":
+#         split_idx = k_fold_split(labels, parameters)
+
+#     elif parameters.split_type == "fixed" and hasattr(dataset, "split_idx"):
+#         split_idx = dataset.split_idx
+
+#     else:
+#         raise NotImplementedError(
+#             f"split_type {parameters.split_type} not valid. Choose either 'random', 'k-fold' or 'fixed'.\
+#             If 'fixed' is chosen, the dataset should have the attribute split_idx"
+#         )
+
+#     dataset = assing_train_val_test_mask_to_graphs(dataset, split_idx)
+
+#     return dataset
 
 
 def load_coauthorship_hypergraph_splits(data, parameters, train_prop=0.5):
