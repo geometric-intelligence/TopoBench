@@ -2,7 +2,8 @@ defaults:
   - data_manipulations@barycentric_subdivision: barycentric_subdivision
 
 barycentric_subdivision:
-  signed: False
+  signed: True
+  subdivide_ranks: [2]
 
 
 #-------

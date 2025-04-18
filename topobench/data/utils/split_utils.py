@@ -356,8 +356,10 @@ def assign_train_val_test_mask_to_graphs(dataset, split_idx):
             assigned = True
         if not assigned:
             raise ValueError("Graph not in any split")
-
-    return data_train_lst + data_train_lst + data_train_lst
+    assert len(data_train_lst) + len(data_val_lst) + len(data_test_lst) == len(
+        dataset
+    ), "Not all graphs assigned to a split"
+    return data_train_lst + data_val_lst + data_test_lst
 
 
 def load_transductive_splits(dataset, parameters):

@@ -2,7 +2,7 @@ _target_: topobench.transforms.data_transform.DataTransform
 transform_name: "BarycentricSubdivisionTransform"
 transform_type: null
 
-keys_to_keep: ["y"]
+keys_to_keep: ["y", "train_mask", "val_mask", "test_mask"]
 complex_dim: ${oc.select:dataset.parameters.max_dim_if_lifted,3}
 neighborhoods: ${oc.select:model.backbone.neighborhoods,null}
 signed: False

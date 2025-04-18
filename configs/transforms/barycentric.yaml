@@ -1,0 +1,5 @@
+defaults:
+  - data_manipulations@barycentric_subdivision: barycentric_subdivision
+
+barycentric_subdivision:
+  signed: True
