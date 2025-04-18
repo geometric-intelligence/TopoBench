@@ -216,6 +216,16 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
     log.info("Instantiating loggers...")
     logger: list[Logger] = instantiate_loggers(cfg.get("logger"))
 
+    # Log to wandb preprocessor time
+    if logger:
+        for log_temp in logger:
+            if isinstance(log_temp, L.pytorch.loggers.wandb.WandbLogger):
+                log_temp.log_metrics(
+                    {
+                        "preprocessor_time": preprocessor.preprocessing_time,
+                    }
+                )
+
     log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
     trainer: Trainer = hydra.utils.instantiate(
         cfg.trainer,
