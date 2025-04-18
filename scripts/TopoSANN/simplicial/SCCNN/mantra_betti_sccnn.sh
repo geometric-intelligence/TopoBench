@@ -35,35 +35,35 @@ BATCH_SIZES_STR=$(IFS=,; echo "${BATCH_SIZES[*]}")
 READOUT_NAMES_STR=$(IFS=,; echo "${READOUT_NAMES[*]}")  # Convert to comma-separated string
 INDICENCE_SIGNED_STR=$(IFS=,; echo "${INDICENCE_SIGNED[*]}")  # Convert to comma-separated string
 
-gpus=(0 1 2 3 4 5 6 7)
+gpus=(4 5 6 7)
 datasets=('mantra_betti_numbers') #'mantra_orientation'
 
 for dataset in ${datasets[*]} 
 do
     project_name="SCCNN_$dataset"
             
-    python topobench/run.py\
-        dataset=simplicial/$dataset \
-        model=simplicial/sccnn_custom \
-        model.backbone.n_layers=1\
-        model.feature_encoder.out_channels=128\
-        model.feature_encoder.proj_dropout=0.25\
-        dataset.split_params.data_seed=0\
-        dataset.dataloader_params.batch_size=128\
-        model.readout.readout_name=NoReadOut\
-        trainer.max_epochs=5\
-        trainer.min_epochs=1\
-        trainer.devices=\[0\]\
-        trainer.check_val_every_n_epoch=1\
-        logger.wandb.project=prerun\
-        transforms=MANTRA_name_dataset_default\
-        transforms.redefine_simplicial_neighbourhoods.signed=False,True\
-        optimizer.parameters.lr=0.001\
-        optimizer.parameters.weight_decay=0.01\
-        callbacks.early_stopping.patience=1\
-        --multirun &
-    wait 
-    sleep 5
+    # python topobench/run.py\
+    #     dataset=simplicial/$dataset \
+    #     model=simplicial/sccnn_custom \
+    #     model.backbone.n_layers=1\
+    #     model.feature_encoder.out_channels=128\
+    #     model.feature_encoder.proj_dropout=0.25\
+    #     dataset.split_params.data_seed=0\
+    #     dataset.dataloader_params.batch_size=128\
+    #     model.readout.readout_name=NoReadOut\
+    #     trainer.max_epochs=5\
+    #     trainer.min_epochs=1\
+    #     trainer.devices=\[0\]\
+    #     trainer.check_val_every_n_epoch=1\
+    #     logger.wandb.project=prerun\
+    #     transforms=MANTRA_name_dataset_default\
+    #     transforms.redefine_simplicial_neighbourhoods.signed=True\
+    #     optimizer.parameters.lr=0.001\
+    #     optimizer.parameters.weight_decay=0.01\
+    #     callbacks.early_stopping.patience=1\
+    #     --multirun &
+    # wait 
+    # sleep 5
 
     # =====================
     for i in {0..4}; do 
@@ -92,6 +92,7 @@ do
                     optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
                     transforms=MANTRA_name_dataset_default\
                     transforms.redefine_simplicial_neighbourhoods.signed=$INDICENCE_SIGNED_STR\
+                    evaluator=betti_numbers\
                     logger.wandb.project=$project_name\
                     --multirun &
                 sleep 10
