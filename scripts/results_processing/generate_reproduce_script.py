@@ -8,7 +8,6 @@ def generate(
     df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9], cpu=False
 ):
     datasets = list(df["dataset.loader.parameters.data_name"].unique())
-    print(datasets)
     # Get unique models
     models = list(df["model.model_name"].unique())
     domains = list(df['model.model_domain'].unique())
@@ -100,6 +99,8 @@ def generate(
                     best_params_dict = {}
 
                     for col in sweeped_columns:
+                        if 'redefine' in col and (model == 'scn' or model == 'sccnn'):
+                            continue
                         value = best_params_row[col]
 
                         # If it’s a Pandas object, extract the scalar
@@ -152,6 +153,15 @@ def generate(
                     # CONVERT HYPERPARAMETERS TO key=value STRINGS
                     # e.g. "transforms.R.loops='2'" or "model.backbone.num_layers='3'"
                     # -----------------------------------------------------------------
+                    if 'sccnn' == model or 'scn' == model:
+                        if "transforms.redefine_simplicial_neighborhoods.signed" in best_params_dict:
+                            del best_params_dict[
+                                "transforms.redefine_simplicial_neighborhoods.signed"
+                            ]
+                        if "transforms.redefine_simplicial_neighborhoods.neighborhoods" in best_params_dict:
+                            del best_params_dict[
+                                "transforms.redefine_simplicial_neighborhoods.neighborhoods"
+                            ]
                     param_strs = []
 
                     for key, val in best_params_dict.items():
@@ -165,6 +175,7 @@ def generate(
                         param_strs.append(f"{key}={val}")
 
                     additional_parameters = {}
+                    unset_parameters = {}
 
                     dataset_additional_parameters = {}
                     if dataset == "ZINC":
@@ -175,7 +186,7 @@ def generate(
                             "transforms.one_hot_node_degree_features.features_field"
                         ] = "x"
                     # TODO Change to TRUE
-                    if 'MANTRA' in dataset:
+                    elif 'MANTRA' in dataset:
                         dataset_additional_parameters[
                             'dataset.loader.parameters.slice'
                         ] = False
@@ -203,6 +214,7 @@ def generate(
                                 "transforms.sann_encoding.neighborhoods"
                             ]
                         if model_domain_value == 'simplicial' and data_domain == "simplicial":
+                            assert model != 'sccnn'
                             additional_parameters[
                                 "transforms.redefine_simplicial_neighborhoods.neighborhoods"
                             ] = best_params_dict['transforms.sann_encoding.neighborhoods']
@@ -228,6 +240,7 @@ def generate(
                             ]
 
                         if model_domain_value == 'simplicial' and data_domain == "simplicial":
+                            assert model != 'sccnn'
                             additional_parameters[
                                 "transforms.redefine_simplicial_neighborhoods.neighborhoods"
                             ] = best_params_dict['transforms.sann_encoding.neighborhoods']
@@ -266,6 +279,10 @@ def generate(
                         additional_parameters[
                             "transforms/data_manipulations@transforms.sann_encoding"
                         ] = "precompute_khop_features"
+                        if 'MANTRA' in dataset:
+                            unset_parameters[
+                                "transforms/data_manipulations@transforms.redefine_simplicial_neighborhoods"
+                            ] = True
 
 
                     additional_param_strs = [
@@ -275,6 +292,10 @@ def generate(
                     dataset_additional_param_strs = [
                         f"{key}={val}"
                         for key, val in dataset_additional_parameters.items()
+                    ]
+                    unset_params_strs = [
+                        f"~{key}"
+                        for key, val in unset_parameters.items()
                     ]
 
                     # -----------------------------------------------------------------
@@ -304,6 +325,8 @@ def generate(
                         + " ".join(additional_param_strs)
                         + " "
                         + f"dataset.split_params.data_seed={','.join([str(i) for i in all_seeds])}"
+                        + " "
+                        + " ".join(unset_params_strs)
                         + " "
                         + trainer_epochs_str
                         + " "
@@ -340,4 +363,4 @@ if __name__ == "__main__":
     scores = gen_scores(df)
 
     # Generate the best runs script
-    generate(df, scores, sweeped_columns, cpu=True)
+    generate(df, scores, sweeped_columns, cpu=False)
