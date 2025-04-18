@@ -86,9 +86,9 @@ def get_default_transform(dataset, model):
     datasets_with_defaults = [
         f.split(".")[0] for f in os.listdir(dataset_configs_dir)
     ]
-    if model in model_defaults:
-        if f"{model}_{dataset}" in model_defaults:
-            return f"model_defaults/{model}_{dataset}"
+    if f"{model}_{dataset}" in model_defaults:
+        return f"model_defaults/{model}_{dataset}"
+    elif model in model_defaults:
         return f"model_defaults/{model}"
     elif dataset in datasets_with_defaults:
         return f"dataset_defaults/{dataset}"
