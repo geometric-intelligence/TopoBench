@@ -7,6 +7,9 @@ performance_classification = [
     "test/recall",
     "val/precision",
     "test/precision",
+    "val/loss",
+    "val/f1",
+    "test/f1"
 ]
 performance_classification_additional = [
     "val/accuracy",
@@ -100,6 +103,10 @@ optimization_metrics = {
         "direction": "max",
         "performance_columns": performance_classification_additional,
     },
+    'MANTRA_betti_numbers': {'optim_metric': 'val/loss', 'eval_metric': 'val/loss', 'direction': 'min', 'performance_columns': performance_classification},
+    'MANTRA_betti_numbers_0': {'optim_metric': 'val/loss', 'eval_metric': 'test/f1', 'direction': 'min', 'performance_columns': performance_classification},
+    'MANTRA_betti_numbers_1': {'optim_metric': 'val/loss', 'eval_metric': 'test/f1', 'direction': 'min', 'performance_columns': performance_classification},
+    'MANTRA_betti_numbers_2': {'optim_metric': 'val/loss', 'eval_metric': 'test/f1', 'direction': 'min', 'performance_columns': performance_classification},
 }
 sweeped_columns = [
     "transforms.sann_encoding.max_hop",
@@ -125,7 +132,6 @@ sweeped_columns = [
     "transforms.sann_encoding.copy_initial",
     "transforms.graph2cell_lifting.max_cell_length",
     "transforms.sann_encoding.use_initial_features",
-    "transforms.sann_encoding.pe_types",
     "transforms.sann_encoding.is_undirected",
     "transforms.sann_encoding.target_pe_dim",
     "transforms.sann_encoding.laplacian_norm_type",

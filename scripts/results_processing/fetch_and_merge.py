@@ -86,7 +86,8 @@ def merge(main_csv_path="csv", merge_csv_path="merged_csv"):
 
         # Merge the dicts in a vectorized way:
         merged_dicts = [
-            {**s, **c} for s, c in zip(df["summary"], df["config"], strict=False)
+            {**s, **c}
+            for s, c in zip(df["summary"], df["config"], strict=False)
         ]
 
         # Now expand them into a DataFrame:
@@ -143,8 +144,19 @@ if __name__ == "__main__":
     }
     MANTRA_EXP_DICT = {
         "PROJ_PREFIX": "",
-        "PROJ_TYPES": ["GRAPH", "SCCNN", "HOPSE_simplicial"],
-        "PROJ_DS": ["mantra_name", "mantra_orientation"],
+        "PROJ_TYPES": [
+            "GRAPH",
+            "SCCNN",
+            "HOPSE_simplicial",
+            "SCN",
+            "GPSE",
+            "SANN",
+        ],
+        "PROJ_DS": [
+            "mantra_name",
+            "mantra_orientation",
+            "mantra_betti_numbers",
+        ],
     }
 
     EXPERIMENTS = [

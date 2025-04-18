@@ -1,11 +1,14 @@
 import pandas as pd
-from constants import sweeped_columns
+from constants import sweeped_columns, optimization_metrics
 from generate_scores import gen_scores
 from preprocess import preprocess_df
 
 
-def generate(df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9]):
+def generate(
+    df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9], cpu=False
+):
     datasets = list(df["dataset.loader.parameters.data_name"].unique())
+    print(datasets)
     # Get unique models
     models = list(df["model.model_name"].unique())
 
@@ -20,13 +23,38 @@ def generate(df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9]):
         "SANN": "sann",
     }
 
+
     with open("scripts/best_runs.sh", "w") as f:
         # Shebang so we can run `./best_runs.sh` directly if desired
         f.write("#!/usr/bin/env bash\n\n")
+        f.write('# Define log files\n')
+        f.write('LOG_FILE="scripts/script_output.log"\n')
+        f.write('ERROR_LOG_FILE="scripts/script_error.log"\n')
+        f.write('FAILED_LOG_FILE="scripts/failed_runs.log"\n\n')
+
+        f.write('# Clear previous log files\n')
+        f.write('> "$LOG_FILE"\n')
+        f.write('> "$ERROR_LOG_FILE"\n')
+        f.write('> "$FAILED_LOG_FILE"\n\n')
+
+        f.write('# Function to run a command and check for failure\n')
+        f.write('run_command() {\n')
+        f.write('\tlocal cmd="$1"\n')
+        f.write('\t# Run the command and capture the output and error\n')
+        f.write('\t{ eval "$cmd" 2>&1 | tee -a "$LOG_FILE"; } 2>> "$ERROR_LOG_FILE"\n')
+        f.write('\t# Check if the command failed\n')
+        f.write('\tif [ ${PIPESTATUS[0]} -ne 0 ]; then\n')
+        f.write('\t\techo "Command failed: $cmd" >> "$FAILED_LOG_FILE"\n')
+        f.write('\t\techo "Check $ERROR_LOG_FILE for details." >> "$FAILED_LOG_FILE"\n')
+        f.write('\tfi\n')
+        f.write('}\n\n')
+        f.write('commands=(\n')
 
         for dataset in datasets:
             # 'collect_subsets[dataset]' is the sorted, aggregated DataFrame
             aggregated = collect_subsets[dataset]
+            direction = optimization_metrics[dataset]["direction"]
+            optim_metric = optimization_metrics[dataset]["optim_metric"]
 
             for model in models:
                 # Filter to rows for this model
@@ -34,6 +62,7 @@ def generate(df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9]):
                 if len(model_agg) == 0:
                     continue
 
+                model_agg.sort_values(by=(optim_metric, 'mean'), ascending=(direction == "min"))
                 # Get the best row for this model
                 best_params_row = model_agg.iloc[0]
 
@@ -93,10 +122,10 @@ def generate(df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9]):
                             )  # float as plain number
                     elif isinstance(value, (list, tuple)):
                         # Convert list or tuple to a quoted string
-                        param_val = f'"{",".join(value)}"'
+                        param_val = f'{",".join(value)}'
                     else:
                         # For strings (or anything else), quote them
-                        param_val = f'"{str(value).replace(" ", "")}"'
+                        param_val = f'{str(value).replace(" ", "")}'
 
                     best_params_dict[col] = param_val
 
@@ -113,59 +142,96 @@ def generate(df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9]):
                 # CONVERT HYPERPARAMETERS TO key=value STRINGS
                 # e.g. "transforms.R.loops='2'" or "model.backbone.num_layers='3'"
                 # -----------------------------------------------------------------
-                param_strs = [
-                    f"{key}={val}" for key, val in best_params_dict.items()
-                ]
+                param_strs = []
+
+                for key, val in best_params_dict.items():
+                    # Value is nan so not set
+                    if pd.isna(val):
+                        continue
+                    if val == 'nan':
+                        continue
+                    if 'neighbourhood' in key:
+                        key = key.replace('neighbourhood', 'neighborhood')
+                    param_strs.append(f"{key}={val}")
 
                 additional_parameters = {}
 
-                if "GPSE" in model_name_mapping:
+                dataset_additional_parameters = {}
+                if dataset == "ZINC":
+                    dataset_additional_parameters[
+                        "transforms.one_hot_node_degree_features.degrees_field"
+                    ] = "x"
+                    dataset_additional_parameters[
+                        "transforms.one_hot_node_degree_features.features_field"
+                    ] = "x"
+                if 'MANTRA' in dataset:
+                    dataset_additional_parameters[
+                        'dataset.loader.parameters.slice'
+                    ] = True
+
+                if "GPSE" in model:
                     additional_parameters[
                         "transforms/data_manipulations@transforms.sann_encoding"
                     ] = "add_gpse_information"
                     additional_parameters[
                         "transforms.sann_encoding.copy_initial"
                     ] = True
-                    if model_domain_value == "cell":
+                    if model_domain_value == "cell" and data_domain == "graph":
                         additional_parameters[
-                            "transforms.sann_encoding.transforms.graph2cell_lifting.neighborhoods"
-                        ] = model_agg[
+                            "transforms.graph2cell_lifting.neighborhoods"
+                        ] = best_params_dict[
                             "transforms.sann_encoding.neighborhoods"
-                        ].item()
-                    else:
+                        ]
+                    elif model_domain_value == "simplicial" and data_domain == "graph":
                         additional_parameters[
                             "transforms.graph2simplicial_lifting.neighborhoods"
-                        ] = model_agg[
+                        ] = best_params_dict[
                             "transforms.sann_encoding.neighborhoods"
-                        ].item()
-                elif "HOPSE" in model_name_mapping:
+                        ]
+                    if model_domain_value == 'simplicial' and data_domain == "simplicial":
+                        additional_parameters[
+                            "transforms/data_manipulations@transforms.redefine_simplicial_neighborhoods"
+                        ] = "redefine_simplicial_neighborhoods"
+                        additional_parameters[
+                            "transforms.redefine_simplicial_neighborhoods.neighborhoods"
+                        ] = best_params_dict['transforms.sann_encoding.neighborhoods']
+                        additional_parameters[
+                            "transforms.redefine_simplicial_neighborhoods.signed"
+                        ] = True
+
+                elif "HOPSE" in model:
                     additional_parameters[
                         "transforms/data_manipulations@transforms.sann_encoding"
                     ] = "hopse_ps_information"
-                    if model_domain_value == "cell":
+                    if model_domain_value == "cell" and data_domain == "graph":
                         additional_parameters[
-                            "transforms.sann_encoding.transforms.graph2cell_lifting.neighborhoods"
-                        ] = model_agg[
+                            "transforms.graph2cell_lifting.neighborhoods"
+                        ] = best_params_dict[
                             "transforms.sann_encoding.neighborhoods"
-                        ].item()
-                    else:
+                        ]
+                    elif model_domain_value == "simplicial" and data_domain == "graph":
                         additional_parameters[
                             "transforms.graph2simplicial_lifting.neighborhoods"
-                        ] = model_agg[
+                        ] = best_params_dict[
                             "transforms.sann_encoding.neighborhoods"
-                        ].item()
+                        ]
+
+                    if model_domain_value == 'simplicial' and data_domain == "simplicial":
                         additional_parameters[
                             "transforms/data_manipulations@transforms.redefine_simplicial_neighborhoods"
-                        ] = "redefine_simplicial_neighbourhoods"
+                        ] = "redefine_simplicial_neighborhoods"
+                        additional_parameters[
+                            "transforms.redefine_simplicial_neighborhoods.neighborhoods"
+                        ] = best_params_dict['transforms.sann_encoding.neighborhoods']
                         additional_parameters[
                             "transforms.redefine_simplicial_neighborhoods.signed"
                         ] = True
                     additional_parameters[
                         "transforms.sann_encoding.kernel_param_HKdiagSE"
-                    ] = ["1", "22"]
+                    ] = "[1,22]"
                     additional_parameters[
                         "transforms.sann_encoding.kernel_param_RWSE"
-                    ] = ["2", "20"]
+                    ] = "[2,20]"
 
                     additional_parameters[
                         "transforms.sann_encoding.laplacian_norm_type"
@@ -187,24 +253,20 @@ def generate(df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9]):
                     ] = 20
                     additional_parameters[
                         "transforms.sann_encoding.pe_types"
-                    ] = ["RWSE", "ElstaticPE", "HKdiagSE", "LapPE"]
-                    if dataset == "ZINC":
-                        additional_parameters[
-                            "transforms/data_manipulations@one_hot_node_degree_features"
-                        ] = "one_hot_node_degree_features"
-                        additional_parameters[
-                            "transforms/data_manipulations"
-                        ] = "node_degrees"
-                        additional_parameters[
-                            "transforms.one_hot_node_degree_features.degrees_field"
-                        ] = "x"
-                        additional_parameters[
-                            "transforms.one_hot_node_degree_features.features_field"
-                        ] = "x"
+                    ] = '["RWSE","ElstaticPE","HKdiagSE","LapPE"]'
+                elif "SANN" in model:
+                    additional_parameters[
+                        "transforms/data_manipulations@transforms.sann_encoding"
+                    ] = "precompute_khop_features"
+
 
                 additional_param_strs = [
                     f"{key}={val}"
                     for key, val in additional_parameters.items()
+                ]
+                dataset_additional_param_strs = [
+                    f"{key}={val}"
+                    for key, val in dataset_additional_parameters.items()
                 ]
 
                 # -----------------------------------------------------------------
@@ -212,21 +274,50 @@ def generate(df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9]):
                 # We pass multiple seeds via multirun
                 # dataset.split_params.data_seed=0,1,2,...  plus --multirun
                 # -----------------------------------------------------------------
+                cpu_str = (
+                    "trainer.devices=\\[6\\]"
+                    if not cpu
+                    else "trainer.accelerator=cpu trainer.devices=1"
+                )
+                trainer_epochs_str =  "trainer.max_epochs=500 trainer.min_epochs=50"
+                trainer_patience_str = "callbacks.early_stopping.patience=10"
+                model_tag = f"tags=[\\\"{model}\\\"]"
+                wandb_str = "logger.wandb.project=HOPSE_reproducibility"
                 cmd = (
-                    "python -m topobench "
+                    "\'python -m topobench "
                     + dataset_str
                     + " "
                     + model_str
                     + " "
                     + " ".join(param_strs)
                     + " "
+                    + " ".join(dataset_additional_param_strs)
+                    + " "
                     + " ".join(additional_param_strs)
                     + " "
-                    + f"dataset.split_params.data_seed={','.join([str(i) for i in all_seeds])} "
-                    + "--multirun"
+                    + f"dataset.split_params.data_seed={','.join([str(i) for i in all_seeds])}"
+                    + " "
+                    + trainer_epochs_str
+                    + " "
+                    + cpu_str
+                    + " "
+                    + trainer_patience_str
+                    + " "
+                    + model_tag
+                    + " "
+                    + wandb_str
+                    + " " 
+                    + "--multirun\'"
+                    + f" # {model},{dataset},{data_domain}"
                 )
 
                 f.write(cmd + "\n")
+        f.write(')\n\n')
+        f.write('# Iterate over the commands and run them\n')
+        f.write('for cmd in "${commands[@]}"; do\n')
+        f.write('\techo "Running: $cmd"\n')
+        f.write('\trun_command "$cmd"\n')
+        f.write('done\n')
 
     print("Done! The best runs have been saved to scripts/best_runs.sh.")
 
@@ -234,11 +325,11 @@ def generate(df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9]):
 if __name__ == "__main__":
     # Load merged normalized
     df = pd.read_csv("merged_csv/merged_normalized.csv")
-    df = preprocess_df(df)
+    df = preprocess_df(df, split_mantra=False)
     # Keep only relevant columns
     # df = df[keep_columns]
     # Generate best scores per hyperparameter sweep
     scores = gen_scores(df)
 
     # Generate the best runs script
-    generate(df, scores, sweeped_columns)
+    generate(df, scores, sweeped_columns, cpu=False)
