@@ -14,12 +14,12 @@ def generate(
 
     # 1) Dictionary mapping old model names to new ones (fill in as needed)
     model_name_mapping = {
-        "HOPSE_MANUAL_PE": "sann",
-        "HOPSE_GPSE": "sann",
-        "HOPSE_GPSE_PCQM4MV2": "sann",
-        "HOPSE_GPSE_GEOM": "sann",
-        "HOPSE_GPSE_ZINC": "sann",
-        "HOPSE_GPSE_MOLPCBA": "sann",
+        "HOPSE_MANUAL_PE": "hopse_m",
+        "HOPSE_GPSE": "hopse_g",
+        "HOPSE_GPSE_PCQM4MV2": "hopse_g",
+        "HOPSE_GPSE_GEOM": "hopse_g",
+        "HOPSE_GPSE_ZINC": "hopse_g",
+        "HOPSE_GPSE_MOLPCBA": "hopse_g",
         "SANN": "sann",
     }
 
@@ -175,7 +175,6 @@ def generate(
                         param_strs.append(f"{key}={val}")
 
                     additional_parameters = {}
-                    unset_parameters = {}
 
                     dataset_additional_parameters = {}
                     if dataset == "ZINC":
@@ -195,9 +194,6 @@ def generate(
 
 
                     if "GPSE" in model:
-                        additional_parameters[
-                            "transforms/data_manipulations@transforms.sann_encoding"
-                        ] = "add_gpse_information"
                         additional_parameters[
                             "transforms.sann_encoding.copy_initial"
                         ] = True
@@ -275,14 +271,6 @@ def generate(
                         additional_parameters[
                             "transforms.sann_encoding.pe_types"
                         ] = '["RWSE","ElstaticPE","HKdiagSE","LapPE"]'
-                    elif "SANN" in model:
-                        additional_parameters[
-                            "transforms/data_manipulations@transforms.sann_encoding"
-                        ] = "precompute_khop_features"
-                        if 'MANTRA' in dataset:
-                            unset_parameters[
-                                "transforms/data_manipulations@transforms.redefine_simplicial_neighborhoods"
-                            ] = True
 
 
                     additional_param_strs = [
@@ -292,10 +280,6 @@ def generate(
                     dataset_additional_param_strs = [
                         f"{key}={val}"
                         for key, val in dataset_additional_parameters.items()
-                    ]
-                    unset_params_strs = [
-                        f"~{key}"
-                        for key, val in unset_parameters.items()
                     ]
 
                     # -----------------------------------------------------------------
@@ -325,8 +309,6 @@ def generate(
                         + " ".join(additional_param_strs)
                         + " "
                         + f"dataset.split_params.data_seed={','.join([str(i) for i in all_seeds])}"
-                        + " "
-                        + " ".join(unset_params_strs)
                         + " "
                         + trainer_epochs_str
                         + " "

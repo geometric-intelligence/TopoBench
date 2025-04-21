@@ -1,0 +1,2 @@
+defaults:
+  - data_manipulations@sann_encoding: precompute_khop_features

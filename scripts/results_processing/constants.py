@@ -133,12 +133,6 @@ sweeped_columns = [
     "transforms.graph2cell_lifting.max_cell_length",
     "transforms.sann_encoding.use_initial_features",
     "transforms.sann_encoding.is_undirected",
-    "transforms.sann_encoding.target_pe_dim",
-    "transforms.sann_encoding.laplacian_norm_type",
-    "transforms.sann_encoding.posenc_LapPE_eigen_max_freqs",
-    "transforms.sann_encoding.posenc_LapPE_eigen_eigvec_abs",
-    "transforms.sann_encoding.posenc_LapPE_eigen_eigvec_norm",
-    "transforms.sann_encoding.posenc_LapPE_eigen_skip_zero_freq",
     "transforms.redefine_simplicial_neighbourhoods.signed",
     "transforms.redefine_simplicial_neighbourhoods.complex_dim",
 ]
