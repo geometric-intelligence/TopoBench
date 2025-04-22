@@ -1,4 +1,5 @@
 defaults:
+  - liftings@_here_: ${get_required_lifting:graph,${model}}
   - data_manipulations@sann_encoding: hopse_ps_information
 
 sann_encoding:

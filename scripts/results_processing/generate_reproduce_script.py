@@ -184,8 +184,8 @@ def generate(
                         dataset_additional_parameters[
                             "transforms.one_hot_node_degree_features.features_field"
                         ] = "x"
-                    # TODO Change to TRUE
-                    elif 'MANTRA' in dataset:
+                    elif 'MANTRA' in dataset and cpu:
+                        # TODO Change to TRUE
                         dataset_additional_parameters[
                             'dataset.loader.parameters.slice'
                         ] = False
@@ -219,9 +219,6 @@ def generate(
                             ] = True
 
                     elif "HOPSE" in model:
-                        additional_parameters[
-                            "transforms/data_manipulations@transforms.sann_encoding"
-                        ] = "hopse_ps_information"
                         if model_domain_value == "cell" and data_domain == "graph":
                             additional_parameters[
                                 "transforms.graph2cell_lifting.neighborhoods"
