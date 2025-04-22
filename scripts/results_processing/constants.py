@@ -123,6 +123,9 @@ sweeped_columns = [
     "model.backbone.sc_order",
     "model.backbone.conv_order",
     "model.readout.readout_name",
+    # Topotune
+    "model.backbone.GNN.num_layers",
+    "model.backbone.neighborhoods",
     # Others
     "optimizer.parameters.weight_decay",
     "optimizer.parameters.lr",

@@ -240,34 +240,13 @@ def generate(
                             additional_parameters[
                                 "transforms.redefine_simplicial_neighborhoods.signed"
                             ] = True
+                    if "topotune" in model:
                         additional_parameters[
-                            "transforms.sann_encoding.kernel_param_HKdiagSE"
-                        ] = "[1,22]"
+                            "model.tune_gnn"
+                        ] = "GIN"
                         additional_parameters[
-                            "transforms.sann_encoding.kernel_param_RWSE"
-                        ] = "[2,20]"
-
-                        additional_parameters[
-                            "transforms.sann_encoding.laplacian_norm_type"
-                        ] = "sym"
-                        additional_parameters[
-                            "transforms.sann_encoding.posenc_LapPE_eigen_max_freqs"
-                        ] = 18
-                        additional_parameters[
-                            "transforms.sann_encoding.posenc_LapPE_eigen_eigvec_norm"
-                        ] = "L2"
-                        additional_parameters[
-                            "transforms.sann_encoding.posenc_LapPE_eigen_skip_zero_freq"
+                            "transforms.redefine_simplicial_neighborhoods.signed"
                         ] = True
-                        additional_parameters[
-                            "transforms.sann_encoding.posenc_LapPE_eigen_eigvec_abs"
-                        ] = True
-                        additional_parameters[
-                            "transforms.sann_encoding.target_pe_dim"
-                        ] = 20
-                        additional_parameters[
-                            "transforms.sann_encoding.pe_types"
-                        ] = '["RWSE","ElstaticPE","HKdiagSE","LapPE"]'
 
 
                     additional_param_strs = [
