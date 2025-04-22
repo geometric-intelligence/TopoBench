@@ -1,4 +1,4 @@
 defaults:
-  - data_manipulations@one_hot_node_degree_features: one_hot_node_degree_features
+  - data_manipulations@one_hot_node_degree_features: one_hot_node_degree_features # Here we use the one_hot_node_degree_features to one-hot atoms types.
   - liftings@_here_: ${get_required_lifting:graph,${model}}
   - data_manipulations@sann_encoding: hopse_ps_information
