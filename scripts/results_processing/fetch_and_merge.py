@@ -117,7 +117,7 @@ if __name__ == "__main__":
         ],
     }
     MAIN_EXP_SIMP_DICT = {
-        "PROJ_PREFIX": "main_simplicial",
+        "PROJ_PREFIX": "main_exp_simplicial",
         "PROJ_TYPES": ["GPSE", "SANN"],
         "PROJ_DS": [
             "NCI1",

@@ -46,21 +46,22 @@ def gen_scores(df):
 
             # aggregated = subset.groupby(sweeped_columns, dropna=False).count()
 
+            n_count = 5 if "MANTRA" not in dataset else 4
             # Go from MultiIndex to Index
             aggregated = aggregated.reset_index()
             print(f"Dataset: {dataset}, Model: {model}")
             print(aggregated[(eval_metric, "count")].unique())
             # print(aggregated['dataset.split_params.data_seed'].unique())
             print(
-                (aggregated[(eval_metric, "count")] >= 4).sum()
+                (aggregated[(eval_metric, "count")] >= n_count).sum()
                 / len(aggregated)
                 * 100
             )
-            aggregated = aggregated[aggregated[(eval_metric, "count")] >= 4]
+            aggregated = aggregated[aggregated[(eval_metric, "count")] >= n_count]
             # print(len(aggregated[aggregated['seed'] > 4]))
-            aggregated = aggregated.sort_values(
-                by=(optim_metric, "mean"), ascending=(direction == "min")
-            )
+            # aggregated = aggregated.sort_values(
+            #     by=(optim_metric, "mean"), ascending=(direction == "min")
+            # )
 
             # Git percent in case of classification
             if "test/accuracy" in performance_columns:
