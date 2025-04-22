@@ -84,7 +84,6 @@ for i in {0..7}; do
         optimizer.parameters.weight_decay=0.25\
         callbacks.early_stopping.patience=10\
         transforms=HOPSE_PS_experiment_ZINC_simplicial\
-        transforms.graph2simplicial_lifting.max_simplicial_length=10\
         transforms.sann_encoding.neighborhoods=$neighborhood\
         transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
         --multirun &
@@ -118,7 +117,6 @@ for i in {0..7}; do
                 optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
                 callbacks.early_stopping.patience=10\
                 transforms=HOPSE_PS_experiment_ZINC_simplicial\
-                transforms.graph2simplicial_lifting.max_simplicial_length=10\
                 transforms.sann_encoding.neighborhoods=$neighborhood\
                 transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
                 --multirun &
