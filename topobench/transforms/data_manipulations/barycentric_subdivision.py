@@ -2,10 +2,11 @@
 
 import torch
 import torch_geometric
+from topomodelx.utils.sparse import from_sparse
 from toponetx import SimplicialComplex
+
 from topobench.data.utils import data2simplicial
 from topobench.data.utils.utils import get_complex_connectivity
-from topomodelx.utils.sparse import from_sparse
 
 
 class BarycentricSubdivisionTransform(
@@ -84,7 +85,7 @@ class BarycentricSubdivisionTransform(
         )
         for idx, n in enumerate(data["shape"]):
             if idx == 0:
-                data[f"x"] = torch.ones((n, 1))
+                data["x"] = torch.ones((n, 1))
             if n > 0:
                 data[f"x_{idx}"] = torch.ones((n, 1))
 

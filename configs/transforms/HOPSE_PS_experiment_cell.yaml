@@ -1,7 +1,7 @@
 defaults:
   - liftings@_here_: graph2cell_default
   - data_manipulations@sann_encoding: hopse_ps_information
-
+#liftings@_here_: ${get_required_lifting:graph,${model}}
 sann_encoding:
   pe_types: 
     - 'RWSE' 

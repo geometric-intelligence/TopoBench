@@ -2,7 +2,7 @@
 
 import json
 import os
-
+import time
 import hydra
 import torch
 import torch_geometric
@@ -35,14 +35,19 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
 
     def __init__(self, dataset, data_dir, transforms_config=None, **kwargs):
         self.dataset = dataset
+        self.preprocessing_time = 0
         if transforms_config is not None:
             self.transforms_applied = True
             pre_transform = self.instantiate_pre_transform(
                 data_dir, transforms_config
             )
+            # Record the time taken for preprocessing
+            start_time = time.time()
             super().__init__(
                 self.processed_data_dir, None, pre_transform, **kwargs
             )
+            end_time = time.time()
+            self.preprocessing_time = end_time - start_time
             self.save_transform_parameters()
             self.load(self.processed_paths[0])
         else:

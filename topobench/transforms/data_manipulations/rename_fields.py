@@ -1,7 +1,8 @@
 """RenameFields transform that does nothing to the input data."""
 
-import torch_geometric
 import warnings
+
+import torch_geometric
 
 
 class RenameFields(torch_geometric.transforms.BaseTransform):
@@ -47,7 +48,7 @@ class RenameFields(torch_geometric.transforms.BaseTransform):
             The modified data with renamed fields.
         """
         for old_name, new_name in zip(
-            self.init_field_name, self.new_field_name
+            self.init_field_name, self.new_field_name, strict=False
         ):
             if hasattr(data, old_name):
                 if hasattr(data, new_name):

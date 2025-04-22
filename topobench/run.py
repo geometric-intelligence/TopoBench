@@ -4,8 +4,6 @@ import os
 import random
 
 # shutil
-import shutil
-import stat
 from typing import Any
 
 import hydra
@@ -16,7 +14,6 @@ import torch
 from lightning import Callback, LightningModule, Trainer
 from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig, OmegaConf
-
 
 from topobench.data.preprocessor import PreProcessor
 from topobench.dataloader import TBDataloader
@@ -41,9 +38,9 @@ from topobench.utils.config_resolvers import (
     infer_in_hasse_graph_agg_dim,
     infer_in_hasse_graph_agg_dim_positional_encodings,
     infer_in_khop_feature_dim,
+    infer_list_length,
     infer_num_cell_dimensions,
     set_preserve_edge_attr,
-    infer_list_length,
 )
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
@@ -215,6 +212,16 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
 
     log.info("Instantiating loggers...")
     logger: list[Logger] = instantiate_loggers(cfg.get("logger"))
+
+    # Log to wandb preprocessor time
+    if logger:
+        for log_temp in logger:
+            if isinstance(log_temp, L.pytorch.loggers.wandb.WandbLogger):
+                log_temp.log_metrics(
+                    {
+                        "preprocessor_time": preprocessor.preprocessing_time,
+                    }
+                )
 
     log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
     trainer: Trainer = hydra.utils.instantiate(

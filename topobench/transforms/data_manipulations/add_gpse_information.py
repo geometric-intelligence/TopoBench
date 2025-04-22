@@ -536,7 +536,6 @@ def interrank_boundary_index(x_src, boundary_index, n_dst_nodes):
 
 """A transform that has the gated GConve layer model."""
 
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric.graphgym.register as register
@@ -896,9 +895,7 @@ class ResGatedGCNConvLayer(nn.Module):
 
 """A transform that has the GPSE_encoder model."""
 
-import torch
 import torch.nn as nn
-from torch_geometric.graphgym.config import cfg
 from torch_geometric.graphgym.models.layer import MLP, new_layer_config
 from torch_geometric.graphgym.register import pooling_dict, register_head
 
