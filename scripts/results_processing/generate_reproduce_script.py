@@ -119,9 +119,12 @@ def generate(
                             param_val = str(value)  # keep integer as plain number
                         elif isinstance(value, float):
                             if col.startswith("optimizer.parameters") and (
-                                "proj_dropout" in col
-                                or "lr" in col
+                                "lr" in col
                                 or "weight_decay"
+                            ):
+                                param_val = str(value)
+                            elif col.startswith("model.feature_encoder") and (
+                                "proj_dropout" in col
                             ):
                                 param_val = str(value)
                             else:
