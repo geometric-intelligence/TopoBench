@@ -297,6 +297,11 @@ def generate(
                         additional_parameters[
                             "transforms.redefine_simplicial_neighborhoods.signed"
                         ] = True
+                        additional_parameters[
+                            "transforms.redefine_simplicial_neighborhoods.neighborhoods"
+                        ] = best_params_dict[
+                            "model.backbone.neighborhoods"
+                        ]
 
                     additional_param_strs = [
                         f"{key}={val}"
