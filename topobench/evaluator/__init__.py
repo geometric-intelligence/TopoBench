@@ -3,9 +3,9 @@
 from torchmetrics.classification import (
     AUROC,
     Accuracy,
+    F1Score,
     Precision,
     Recall,
-    F1Score,
 )
 from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError
 

@@ -3,6 +3,7 @@ import glob
 from datetime import date
 
 import pandas as pd
+
 import wandb
 
 
@@ -151,7 +152,7 @@ if __name__ == "__main__":
             "SCN",
             "GPSE",
             "SANN",
-            "Topotune"
+            "Topotune",
         ],
         "PROJ_DS": [
             "mantra_name",
