@@ -360,3 +360,95 @@ class TBModel(LightningModule):
         )
 
         return optimizer_config
+
+
+class TBModelT(torch.nn.Module):
+    r"""A `LightningModule` to define a network.
+
+    Parameters
+    ----------
+    backbone : torch.nn.Module
+        The backbone model to train.
+    backbone_wrapper : torch.nn.Module
+        The backbone wrapper class.
+    readout : torch.nn.Module
+        The readout class.
+    loss : torch.nn.Module
+        The loss class.
+    feature_encoder : torch.nn.Module, optional
+        The feature encoder (default: None).
+    evaluator : Any, optional
+        The evaluator class (default: None).
+    optimizer : Any, optional
+        The optimizer class (default: None).
+    **kwargs : Any
+        Additional keyword arguments.
+    """
+
+    def __init__(
+        self,
+        backbone: torch.nn.Module,
+        backbone_wrapper: torch.nn.Module,
+        readout: torch.nn.Module,
+        feature_encoder: torch.nn.Module | None = None,
+        **kwargs,
+    ) -> None:
+        super().__init__()
+
+        self.feature_encoder = feature_encoder
+        if backbone_wrapper is None:
+            self.backbone = backbone
+        else:
+            self.backbone = backbone_wrapper(backbone)
+        self.readout = readout
+
+        self.task_level = self.readout.task_level
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(backbone={self.backbone}, readout={self.readout}, feature_encoder={self.feature_encoder})"
+
+    def forward(self, batch: Data) -> dict:
+        r"""Perform a single model step on a batch of data.
+
+        Parameters
+        ----------
+        batch : torch_geometric.data.Data
+            Batch object containing the batched data.
+
+        Returns
+        -------
+        dict
+            Dictionary containing the model output and the loss.
+        """
+        # Feature Encoder
+        model_out = self.feature_encoder(batch)
+
+        # Domain model
+        model_out = self.backbone(model_out)
+
+        # Readout
+        if self.readout is not None:
+            model_out = self.readout(model_out=model_out, batch=batch)
+
+        # Loss
+        model_out = self.process_outputs(model_out=model_out, batch=batch)
+
+        return model_out["logits"]
+
+    def process_outputs(self, model_out: dict, batch: Data) -> dict:
+        r"""Handle model outputs.
+
+        Parameters
+        ----------
+        model_out : dict
+            Dictionary containing the model output.
+        batch : torch_geometric.data.Data
+            Batch object containing the batched data.
+
+        Returns
+        -------
+        dict
+            Dictionary containing the updated model output.
+        """
+
+        return model_out

@@ -68,12 +68,12 @@ class BRECDataset(InMemoryDataset):
 
     def __init__(self, root: str, name: str, parameters: DictConfig, **kwargs):
         self.parameters = parameters
+        self.subset = parameters.subset
         self.name = name
         self.root = root
         super().__init__(
             root,
         )
-        print(self.processed_paths)
         out = fs.torch_load(self.processed_paths[0])
         assert len(out) == 3 or len(out) == 4
         data, self.slices, self.sizes, data_cls = out
@@ -107,10 +107,7 @@ class BRECDataset(InMemoryDataset):
         str
             Path to the processed directory.
         """
-        self.processed_root = osp.join(
-            self.root,
-            self.name,
-        )
+        self.processed_root = osp.join(self.root, self.name, self.subset)
         return osp.join(self.processed_root, "processed")
 
     @property
@@ -148,7 +145,7 @@ class BRECDataset(InMemoryDataset):
         # Step 1: Download data from the source
         self.url = self.URL
         self.file_format = self.FILE_FORMAT
-        dataset_name = "BREC"
+        dataset_name = self.name
 
         download_file_from_link(
             file_link=self.url,
@@ -179,7 +176,8 @@ class BRECDataset(InMemoryDataset):
         and converst the underlying graph6 format to PyTorch Geometric Data format.
         """
         file_name_path = osp.join(
-            self.raw_dir, self.raw_file_names[NAME_TO_FILE_IDX_MAP[self.name]]
+            self.raw_dir,
+            self.raw_file_names[NAME_TO_FILE_IDX_MAP[self.subset]],
         )
         data_list = np.load(file_name_path, allow_pickle=True)
         data_list = [graph6_to_pyg(data) for data in data_list]
