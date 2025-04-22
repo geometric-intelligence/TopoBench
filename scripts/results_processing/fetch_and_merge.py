@@ -3,6 +3,7 @@ import glob
 from datetime import date
 
 import pandas as pd
+
 import wandb
 
 
@@ -131,7 +132,7 @@ if __name__ == "__main__":
     }
     HOPSE_EXP_DICT = {
         "PROJ_PREFIX": "HOPSE",
-        "PROJ_TYPES": ["cell"],
+        "PROJ_TYPES": ["cell", "simplicial"],
         "PROJ_DS": [
             "NCI1",
             "NCI109",
@@ -151,6 +152,7 @@ if __name__ == "__main__":
             "SCN",
             "GPSE",
             "SANN",
+            "Topotune",
         ],
         "PROJ_DS": [
             "mantra_name",

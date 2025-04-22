@@ -1,24 +1,20 @@
 """A transform that allows to derive PE and Structural Encodings of the input graph with predefined neighbourhood."""
 
 from copy import deepcopy
-from typing import List
 
-import torch_geometric
 import numpy as np
 import scipy
 import torch
 import torch.nn.functional as F
+import torch_geometric
 from torch_geometric.utils import (
     get_laplacian,
+    to_dense_adj,
     to_scipy_sparse_matrix,
     to_undirected,
-    to_dense_adj,
 )
 from torch_geometric.utils.num_nodes import maybe_num_nodes
 from torch_scatter import scatter_add
-import networkx as nx
-from typing import List, Tuple, Dict
-
 
 # from graphgym.transform.cycle_counts import count_cycles
 
@@ -384,7 +380,7 @@ def get_lap_decomp_stats(
     # Normalize and pad eigen vectors.
     evects = torch.from_numpy(evects).float()
     evects = eigvec_normalizer(evects, evals, normalization=eigvec_norm)
-    if N < max_freqs + offset:
+    if max_freqs + offset > N:
         EigVecs = F.pad(
             evects, (0, max_freqs + offset - N), value=float("nan")
         )
@@ -392,7 +388,7 @@ def get_lap_decomp_stats(
         EigVecs = evects
 
     # Pad and save eigenvalues.
-    if N < max_freqs + offset:
+    if max_freqs + offset > N:
         EigVals = F.pad(
             evals, (0, max_freqs + offset - N), value=float("nan")
         ).unsqueeze(0)
@@ -686,7 +682,7 @@ def normalizer(x: torch.Tensor, normalization: str = "L2", eps: float = 1e-12):
     return x / denom.clamp_min(eps).expand_as(x)
 
 
-def normalize_cycle(cycle: List[int]) -> Tuple[int, ...]:
+def normalize_cycle(cycle: list[int]) -> tuple[int, ...]:
     """Normalize a cycle by considering shift and reflection invariance."""
     n = len(cycle)
     cycle_variants = [tuple(cycle[i:] + cycle[:i]) for i in range(n)] + [
@@ -696,8 +692,8 @@ def normalize_cycle(cycle: List[int]) -> Tuple[int, ...]:
 
 
 def count_cycles_per_node_optimized(
-    edge_index: torch.Tensor, num_nodes: int, cycle_lengths: List[int]
-) -> Tuple[int, torch.Tensor]:
+    edge_index: torch.Tensor, num_nodes: int, cycle_lengths: list[int]
+) -> tuple[int, torch.Tensor]:
     """
     Efficiently counts the number of cycles each node belongs to for multiple cycle lengths.
     """
@@ -715,7 +711,7 @@ def count_cycles_per_node_optimized(
     visited_cycles = set()
 
     def find_cycles(
-        start: int, path: List[int], visited: Dict[int, int]
+        start: int, path: list[int], visited: dict[int, int]
     ) -> None:
         v = path[-1]
         if len(path) > max_length:

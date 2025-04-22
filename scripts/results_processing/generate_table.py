@@ -1,9 +1,7 @@
 import pandas as pd
-
-from constants import optimization_metrics, keep_columns
-from preprocess import preprocess_df
+from constants import keep_columns, optimization_metrics
 from generate_scores import gen_scores
-
+from preprocess import preprocess_df
 
 
 def parse_hopse_results(datasets, collect_subsets):
@@ -867,7 +865,6 @@ def parse_all_dfs(selected_datasets=[]):
     df_tb = parse_tb_results()
     cat_df = pd.concat([df_hopse, df_topotune, df_tb], ignore_index=True)
 
-
     # FIX Hopse naming
     cat_df["model"][cat_df["model"] == "HOPSE_MANUAL_PE"] = "HOPSE-M"
     cat_df["model"][cat_df["model"] == "HOPSE_GPSE"] = "HOPSE-G"
@@ -878,12 +875,21 @@ def parse_all_dfs(selected_datasets=[]):
     filtered_df = cat_df[cat_df["dataset"].isin(selected_datasets)]
 
     # FIX MAntra naming
-    filtered_df["dataset"][filtered_df["dataset"] == "MANTRA_betti_numbers_0"] = "MANTRA-BN-0"
-    filtered_df["dataset"][filtered_df["dataset"] == "MANTRA_betti_numbers_1"] = "MANTRA-BN-1"
-    filtered_df["dataset"][filtered_df["dataset"] == "MANTRA_betti_numbers_2"] = "MANTRA-BN-2"
-    filtered_df["dataset"][filtered_df["dataset"] == "MANTRA_name"] = "MANTRA-N"
-    filtered_df["dataset"][filtered_df["dataset"] == "MANTRA_orientation"] = "MANTRA-O"
-
+    filtered_df["dataset"][
+        filtered_df["dataset"] == "MANTRA_betti_numbers_0"
+    ] = "MANTRA-BN-0"
+    filtered_df["dataset"][
+        filtered_df["dataset"] == "MANTRA_betti_numbers_1"
+    ] = "MANTRA-BN-1"
+    filtered_df["dataset"][
+        filtered_df["dataset"] == "MANTRA_betti_numbers_2"
+    ] = "MANTRA-BN-2"
+    filtered_df["dataset"][filtered_df["dataset"] == "MANTRA_name"] = (
+        "MANTRA-N"
+    )
+    filtered_df["dataset"][filtered_df["dataset"] == "MANTRA_orientation"] = (
+        "MANTRA-O"
+    )
 
     # Only grab the datasets we are interested in
 
@@ -927,16 +933,14 @@ def generate_table(df, optimization_metrics):
     # 1) Escape underscores in model names
     df["model"] = df["model"].str.replace("_", r"\_", regex=False)
 
-    
-
     # 2) Among multiple variants for (domain, dataset, model), pick best according to direction
     def pick_best_variant(group):
         dataset = group["dataset"].iloc[0]
         direction = optimization_metrics.get(dataset, {}).get(
             "direction", "max"
         )
-        if 'BN' in dataset:
-            direction = 'max'
+        if "BN" in dataset:
+            direction = "max"
         if direction == "min":
             return group.loc[group["mean"].idxmin()]
         else:

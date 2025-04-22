@@ -6,7 +6,6 @@ import torch_geometric
 from topobench.nn.encoders.base import AbstractFeatureEncoder
 from topobench.transforms.data_manipulations import (
     AddGPSEInformation,
-    HOPSE_PE_Information,
 )
 
 

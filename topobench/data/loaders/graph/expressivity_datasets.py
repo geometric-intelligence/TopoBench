@@ -1,15 +1,13 @@
-"""Loaders for Mantra dataset as graph."""
+"""Loaders for expressivity datasets."""
 
 from omegaconf import DictConfig
 
-from topobench.data.datasets import MantraDataset
+from topobench.data.datasets import BRECDataset
 from topobench.data.loaders.base import AbstractLoader
 
 
-class MantraSimplicialDatasetLoader(AbstractLoader):
-    """Load Mantra dataset with configurable parameters.
-
-     Note: for the simplicial datasets it is necessary to include DatasetLoader into the name of the class!
+class ExpressivityDatasetLoader(AbstractLoader):
+    """Load expressivity datasets (BREC) with configurable parameters.
 
      Parameters
      ----------
@@ -26,8 +24,8 @@ class MantraSimplicialDatasetLoader(AbstractLoader):
     def __init__(self, parameters: DictConfig, **kwargs) -> None:
         super().__init__(parameters, **kwargs)
 
-    def load_dataset(self, **kwargs) -> MantraDataset:
-        """Load the MANTRA dataset.
+    def load_dataset(self, **kwargs):
+        """Load the expressivity dataset dataset.
 
         Parameters
         ----------
@@ -49,8 +47,8 @@ class MantraSimplicialDatasetLoader(AbstractLoader):
         self.data_dir = self.get_data_dir()
         return dataset
 
-    def _initialize_dataset(self, **kwargs) -> MantraDataset:
-        """Initialize the MANTRA dataset.
+    def _initialize_dataset(self, **kwargs):
+        """Initialize the expressivity dataset.
 
         Parameters
         ----------
@@ -59,13 +57,18 @@ class MantraSimplicialDatasetLoader(AbstractLoader):
 
         Returns
         -------
-        MANTRADataset
+        ExpressivityDataset
             The initialized dataset instance.
         """
-        return MantraDataset(
-            root=str(self.root_data_dir),
-            name=self.parameters.data_name,
-            parameters=self.parameters,
-            load_as_graph=True,
-            **kwargs,
-        )
+        if self.parameters.data_name == "BREC":
+            return BRECDataset(
+                root=str(self.root_data_dir),
+                name=self.parameters.data_name,
+                parameters=self.parameters,
+                load_as_graph=True,
+                **kwargs,
+            )
+        else:
+            raise RuntimeError(
+                f"Dataset {self.parameters.data_name} not supported."
+            )
