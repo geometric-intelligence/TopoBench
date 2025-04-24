@@ -110,13 +110,13 @@ OUTPUT_DIM = 16
 EPSILON_MATRIX = 1e-7
 EPSILON_CMP = 1e-6
 SAMPLE_NUM = 400  # TODO Change
-EPOCH = 20
+EPOCH = 200
 MARGIN = 0.0
 LEARNING_RATE = 1e-4
 THRESHOLD = 72.34
-BATCH_SIZE = 16
+BATCH_SIZE = 32
 WEIGHT_DECAY = 1e-4
-LOSS_THRESHOLD = 0.2
+LOSS_THRESHOLD = 0.001
 SEED = 2023
 
 global_var = globals().copy()
@@ -127,8 +127,8 @@ for k, v in global_var.items():
 
 # part_dict: {graph generation type, range}
 part_dict = {
-    "Basic": (0, 60),
-    # "Regular": (60, 160),
+    # "Basic": (0, 60),
+    "Regular": (60, 160),
     # "Extension": (160, 260),
     # "CFI": (260, 360),
     # "4-Vertex_Condition": (360, 380),
@@ -289,14 +289,22 @@ def evaluation(dataset, model, path, device, cfg):
                 model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY
             )
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer)
+            if part_range[0] > 0: # TODO REMOVE
+                id -= part_range[0]
             dataset_traintest = dataset[
                 id * NUM_RELABEL * 2 : (id + 1) * NUM_RELABEL * 2
             ]
+            # dataset_reliability = dataset[
+            #     (id + SAMPLE_NUM) * NUM_RELABEL * 2 : (id + SAMPLE_NUM + 1)
+            #     * NUM_RELABEL
+            #     * 2
+            # ]
             dataset_reliability = dataset[
-                (id + SAMPLE_NUM) * NUM_RELABEL * 2 : (id + SAMPLE_NUM + 1)
+                (id + (part_range[1] - part_range[0])) * NUM_RELABEL * 2 : (id + (part_range[1] - part_range[0]) + 1)
                 * NUM_RELABEL
                 * 2
             ]
+
             model.train()
             for _ in range(EPOCH):
                 traintest_loader = torch.utils.data.DataLoader(
