@@ -24,7 +24,7 @@ BATCH_SIZES=(128 256)
 # =====================
 # PRETRAINED MODELS
 # =====================
-PRETRAIN_MODELS=('ZINC' 'GEOM' 'MOLPCBA' 'PCQM4MV2')
+PRETRAIN_MODELS=('ZINC') #  'GEOM' 'MOLPCBA' 'PCQM4MV2'
 
 
 # =====================
@@ -76,8 +76,6 @@ for i in {0..7}; do
             model.backbone.n_layers=1\
             model.feature_encoder.out_channels=128\
             model.feature_encoder.proj_dropout=0.0\
-            trainer.devices=1 \
-            trainer.accelerator=cpu \
             transforms/data_manipulations@transforms.sann_encoding=add_gpse_information\
             transforms.sann_encoding.pretrain_model=$pretrain_model\
             transforms.sann_encoding.copy_initial=True \
@@ -96,5 +94,4 @@ for i in {0..7}; do
             #callbacks.early_stopping.patience=10\
         break
     done
-    break
 done
