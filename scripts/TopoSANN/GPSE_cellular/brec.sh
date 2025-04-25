@@ -92,5 +92,7 @@ for i in {0..7}; do
             #optimizer.parameters.lr=$LEARNING_RATES_STR\
             #optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
             #callbacks.early_stopping.patience=10\
+        break
     done
+    break
 done
