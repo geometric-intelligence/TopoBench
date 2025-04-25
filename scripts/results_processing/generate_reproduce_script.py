@@ -297,6 +297,11 @@ def generate(
                         additional_parameters[
                             "transforms.redefine_simplicial_neighborhoods.signed"
                         ] = True
+                        additional_parameters[
+                            "transforms.redefine_simplicial_neighborhoods.neighborhoods"
+                        ] = best_params_dict[
+                            "model.backbone.neighborhoods"
+                        ]
 
                     additional_param_strs = [
                         f"{key}={val}"
@@ -317,7 +322,8 @@ def generate(
                         if not cpu
                         else "trainer.accelerator=cpu trainer.devices=1"
                     )
-                    trainer_epochs_str = "trainer.max_epochs=500 trainer.min_epochs=50 trainer.check_val_every_n_epoch=5"
+                    min_epoch_str = "trainer.min_epochs=250" if  'MANTRA' in dataset else "trainer.min_epochs=50"
+                    trainer_epochs_str = f"trainer.max_epochs=500 {min_epoch_str} trainer.check_val_every_n_epoch=5"
                     trainer_patience_str = (
                         "callbacks.early_stopping.patience=10"
                     )

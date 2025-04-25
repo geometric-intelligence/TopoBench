@@ -1,7 +1,7 @@
 _target_: topobench.model.TBModel
 
 model_name: hopse_g
-model_domain: cell
+model_domain: simplicial
 
 feature_encoder:
   _target_: topobench.nn.encoders.${model.feature_encoder.encoder_name}
