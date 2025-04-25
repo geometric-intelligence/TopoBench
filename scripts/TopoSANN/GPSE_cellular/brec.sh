@@ -83,7 +83,7 @@ for i in {0..7}; do
             transforms.sann_encoding.copy_initial=True \
             transforms.sann_encoding.neighborhoods=$neighborhood\
             transforms=GPSE_BREC\
-            transforms.graph2cell_lifting.neighborhoods=$neighborhood\
+            transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
             trainer.devices=\[$CUDA\]\
             #trainer.check_val_every_n_epoch=5\
             #dataset.split_params.data_seed=$DATA_SEEDS_STR\
