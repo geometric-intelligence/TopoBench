@@ -94,5 +94,4 @@ for i in {0..7}; do
             #callbacks.early_stopping.patience=10\
         break
     done
-    break
 done
