@@ -24,7 +24,7 @@ BATCH_SIZES=(128 256)
 # =====================
 # PRETRAINED MODELS
 # =====================
-PRETRAIN_MODELS=('ZINC' 'GEOM' 'MOLPCBA' 'PCQM4MV2')
+PRETRAIN_MODELS=('ZINC') #  'GEOM' 'MOLPCBA' 'PCQM4MV2'
 
 
 # =====================
