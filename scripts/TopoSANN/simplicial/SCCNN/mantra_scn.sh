@@ -33,7 +33,7 @@ BATCH_SIZES_STR=$(IFS=,; echo "${BATCH_SIZES[*]}")
 READOUT_NAMES_STR=$(IFS=,; echo "${READOUT_NAMES[*]}")  # Convert to comma-separated string
 INDICENCE_SIGNED_STR=$(IFS=,; echo "${INDICENCE_SIGNED[*]}")  # Convert to comma-separated string
 
-gpus=(0 1 2 3 4 5 6 7)
+gpus=(4 5 6 7)
 datasets=('mantra_name' 'mantra_orientation' 'mantra_genus') #'mantra_orientation'
 
 for dataset in ${datasets[*]} 
@@ -55,7 +55,7 @@ do
         trainer.check_val_every_n_epoch=1\
         logger.wandb.project=prerun\
         transforms=MANTRA_name_dataset_default\
-        transforms.redefine_simplicial_neighbourhoods.signed=False,True\
+        transforms.redefine_simplicial_neighbourhoods.signed=True\
         optimizer.parameters.lr=0.001\
         optimizer.parameters.weight_decay=0.01\
         callbacks.early_stopping.patience=1\

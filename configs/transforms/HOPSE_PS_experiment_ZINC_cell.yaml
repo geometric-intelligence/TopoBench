@@ -4,7 +4,6 @@ defaults:
   - liftings@_here_: graph2cell_default
   - data_manipulations@sann_encoding: hopse_ps_information
 
-
 one_hot_node_degree_features: 
   degrees_field: x
   features_field: x

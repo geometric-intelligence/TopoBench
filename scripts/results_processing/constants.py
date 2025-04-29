@@ -9,7 +9,7 @@ performance_classification = [
     "test/precision",
     "val/loss",
     "val/f1",
-    "test/f1"
+    "test/f1",
 ]
 performance_classification_additional = [
     "val/accuracy",
@@ -103,9 +103,30 @@ optimization_metrics = {
         "direction": "max",
         "performance_columns": performance_classification_additional,
     },
-    'MANTRA_betti_numbers_0': {'optim_metric': 'val/loss', 'eval_metric': 'test/f1', 'direction': 'min', 'performance_columns': performance_classification},
-    'MANTRA_betti_numbers_1': {'optim_metric': 'val/loss', 'eval_metric': 'test/f1', 'direction': 'min', 'performance_columns': performance_classification},
-    'MANTRA_betti_numbers_2': {'optim_metric': 'val/loss', 'eval_metric': 'test/f1', 'direction': 'min', 'performance_columns': performance_classification},
+    "MANTRA_betti_numbers": {
+        "optim_metric": "val/loss",
+        "eval_metric": "val/loss",
+        "direction": "min",
+        "performance_columns": performance_classification,
+    },
+    "MANTRA_betti_numbers_0": {
+        "optim_metric": "val/loss",
+        "eval_metric": "test/f1",
+        "direction": "min",
+        "performance_columns": performance_classification,
+    },
+    "MANTRA_betti_numbers_1": {
+        "optim_metric": "val/loss",
+        "eval_metric": "test/f1",
+        "direction": "min",
+        "performance_columns": performance_classification,
+    },
+    "MANTRA_betti_numbers_2": {
+        "optim_metric": "val/loss",
+        "eval_metric": "test/f1",
+        "direction": "min",
+        "performance_columns": performance_classification,
+    },
 }
 sweeped_columns = [
     "transforms.sann_encoding.max_hop",
@@ -122,6 +143,9 @@ sweeped_columns = [
     "model.backbone.sc_order",
     "model.backbone.conv_order",
     "model.readout.readout_name",
+    # Topotune
+    "model.backbone.GNN.num_layers",
+    "model.backbone.neighborhoods",
     # Others
     "optimizer.parameters.weight_decay",
     "optimizer.parameters.lr",
@@ -132,12 +156,6 @@ sweeped_columns = [
     "transforms.graph2cell_lifting.max_cell_length",
     "transforms.sann_encoding.use_initial_features",
     "transforms.sann_encoding.is_undirected",
-    "transforms.sann_encoding.target_pe_dim",
-    "transforms.sann_encoding.laplacian_norm_type",
-    "transforms.sann_encoding.posenc_LapPE_eigen_max_freqs",
-    "transforms.sann_encoding.posenc_LapPE_eigen_eigvec_abs",
-    "transforms.sann_encoding.posenc_LapPE_eigen_eigvec_norm",
-    "transforms.sann_encoding.posenc_LapPE_eigen_skip_zero_freq",
     "transforms.redefine_simplicial_neighbourhoods.signed",
     "transforms.redefine_simplicial_neighbourhoods.complex_dim",
 ]

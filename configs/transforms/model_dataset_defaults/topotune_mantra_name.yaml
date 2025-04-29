@@ -1,3 +1,5 @@
 defaults:
   - data_manipulations@redefine_simplicial_neighborhoods: redefine_simplicial_neighborhoods
-  - data_manipulations@sann_encoding: precompute_khop_features
+
+redefine_simplicial_neighborhoods:
+  signed: True

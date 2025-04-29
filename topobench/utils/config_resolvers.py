@@ -82,13 +82,19 @@ def get_default_transform(dataset, model):
     dataset_configs_dir = os.path.join(
         base_dir, "configs", "transforms", "dataset_defaults"
     )
+    model_dataset_configs_dir = os.path.join(
+        base_dir, "configs", "transforms", "model_dataset_defaults"
+    )
+    model_dataset_defaults = [
+        f.split(".")[0] for f in os.listdir(model_dataset_configs_dir)
+    ]
     model_defaults = [f.split(".")[0] for f in os.listdir(model_configs_dir)]
     datasets_with_defaults = [
         f.split(".")[0] for f in os.listdir(dataset_configs_dir)
     ]
-    if model in model_defaults:
-        if f"{model}_{dataset}" in model_defaults:
-            return f"model_defaults/{model}_{dataset}"
+    if f"{model}_{dataset}" in model_dataset_defaults:
+        return f"model_dataset_defaults/{model}_{dataset}"
+    elif model in model_defaults:
         return f"model_defaults/{model}"
     elif dataset in datasets_with_defaults:
         return f"dataset_defaults/{dataset}"
@@ -655,7 +661,7 @@ def set_preserve_edge_attr(model_name, default=True):
     bool
         Default if the model can preserve edge attributes, False otherwise.
     """
-    if model_name == "sann":
+    if model_name in ["sann", "hopse_m", "hopse_g"]:
         return False
     else:
         return default

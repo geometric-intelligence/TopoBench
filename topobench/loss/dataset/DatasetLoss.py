@@ -30,11 +30,13 @@ class DatasetLoss(AbstractLoss):
                 "Invalid loss type for classification task,TB supports only BCE for multilabel classification task"
             )
             self.criterion = torch.nn.BCEWithLogitsLoss(reduction="none")
-        elif self.task == "regression" and self.loss_type == "mse":
-            self.criterion = torch.nn.MSELoss()
-
         elif (
-            self.task == "multivariate regression" and self.loss_type == "mse"
+            self.task == "regression"
+            and self.loss_type == "mse"
+            or (
+                self.task == "multivariate regression"
+                and self.loss_type == "mse"
+            )
         ):
             self.criterion = torch.nn.MSELoss()
 
