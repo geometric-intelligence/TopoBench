@@ -31,7 +31,6 @@ def normalize_df(df, columns_to_normalize):
 
     return df
 
-
 if __name__ == "__main__":
     columns_to_normalize = [
         "model",

@@ -19,11 +19,20 @@ from topobench.data.utils import (
 
 torch_geometric.seed_everything(2022)
 
+part_dict = {
+    "Basic": (0, 60),
+    "Regular": (60, 160),
+    "Extension": (160, 260),
+    "CFI": (260, 360),
+    "4-Vertex_Condition": (360, 380),
+    "Distance_Regular": (380, 400),
+}
+
 
 NAME_TO_FILE_IDX_MAP = {
-    "full": 0,
-    "3wl": 1,
-    "cut": 2,
+    "3wl": 0,
+    "cut": 1,
+    "full": 2,
 }
 
 
@@ -41,6 +50,23 @@ def graph6_to_pyg(x):
         PyTorch Geometric Data object.
     """
     return from_networkx(nx.from_graph6_bytes(x))
+
+def get_ranges(subset_name):
+    r"""Get the range of indices for a given subset name.
+
+    Parameters
+    ----------
+    subset_name : str
+        Name of the subset.
+    Returns
+
+    """
+    NUM_RELABEL=32
+    SAMPLE_NUM=400
+    start, end  = part_dict[subset_name]
+    train_range = (start * NUM_RELABEL * 2, (end) * NUM_RELABEL * 2)
+    reliability_range = ((start+SAMPLE_NUM) * NUM_RELABEL * 2, (end+SAMPLE_NUM) * NUM_RELABEL * 2)
+    return train_range, reliability_range
 
 
 class BRECDataset(InMemoryDataset):
@@ -175,16 +201,27 @@ class BRECDataset(InMemoryDataset):
         This method loads the already processed variation of the BREC dataset
         and converst the underlying graph6 format to PyTorch Geometric Data format.
         """
+        chosen_subset = self.subset
+
+        if self.subset in [l for l in list(part_dict.keys())]:
+            chosen_subset = 'full'
         file_name_path = osp.join(
             self.raw_dir,
-            self.raw_file_names[NAME_TO_FILE_IDX_MAP[self.subset]],
+            self.raw_file_names[NAME_TO_FILE_IDX_MAP[chosen_subset]],
         )
+
         data_list = np.load(file_name_path, allow_pickle=True)
-        data_list = [graph6_to_pyg(data) for data in data_list]
+        if self.subset != chosen_subset:
+            train_range, reliability_range = get_ranges(self.subset)
+            data_list = [graph6_to_pyg(data) for data in data_list[train_range[0]:train_range[1]]] + [graph6_to_pyg(data) for data in data_list[reliability_range[0]:reliability_range[1]]]
+        else:
+            data_list = [graph6_to_pyg(data) for data in data_list]
 
         for idx, data in enumerate(data_list):
             data["y"] = torch.tensor([idx], dtype=torch.long)
-            data["x"] = torch.ones(1, dtype=torch.float)
+            data["x"] = torch.ones((data.num_nodes, 10), dtype=torch.float)
+            assert data.x.shape[1] == 10
+            assert data.x.shape[0] == data.num_nodes
 
         self.data, self.slices = self.collate(data_list)
         self._data_list = None  # Reset cache.
