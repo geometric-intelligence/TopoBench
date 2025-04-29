@@ -4,9 +4,19 @@ loader:
   parameters: 
     data_domain: graph
     data_type: expressivity
-    data_name: BREC 
-    data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}/${dataset.loader.parameters.subset}
-    subset: Regular # full, 3wl, cut
+    data_name: BREC_4vtx 
+    data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+    subset: 4vtx # basic, regular, str, extension, cfi, 4vtx, dr
+    num_relabel: 32
+# part_dict = {
+#     "basic": (0, 60),
+#     "regular": (60, 110),
+#     "str": (110, 160),
+#     "extension": (160, 260),
+#     "cfi": (260, 360),
+#     "4vtx": (360, 380),
+#     "dr": (380, 400),
+# }
 
 # Dataset parameters
 parameters:
