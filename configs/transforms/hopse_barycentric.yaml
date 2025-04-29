@@ -1,8 +1,12 @@
 defaults:
-  # - data_manipulations: node_degrees
-  # - data_manipulations@one_hot_node_degree_features: one_hot_node_degree_features
+  - data_manipulations@barycentric_subdivision: barycentric_subdivision
   - data_manipulations@redefine_simplicial_neighborhoods: redefine_simplicial_neighborhoods
   - data_manipulations@sann_encoding: hopse_ps_information
+
+barycentric_subdivision:
+  signed: True
+  subdivide_ranks: [2]
+  apply_to: ["test"]
 
 redefine_simplicial_neighborhoods:
   signed: True

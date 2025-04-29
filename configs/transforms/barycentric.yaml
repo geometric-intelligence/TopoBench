@@ -4,4 +4,4 @@ defaults:
 barycentric_subdivision:
   signed: True
   subdivide_ranks: [2]
-  apply_to: ["test"]
+  apply_to: ["val", "test"]

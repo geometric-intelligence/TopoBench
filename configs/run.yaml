@@ -5,7 +5,7 @@
 defaults:
   - _self_
   - dataset: graph/MUTAG
-  - model: simplicial/sann
+  - model: simplicial/sccnn_custom
   - transforms: ${get_default_transform:${dataset},${model}} #no_transform
   - optimizer: default
   - loss: default
