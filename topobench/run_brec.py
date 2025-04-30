@@ -306,13 +306,13 @@ def evaluation(dataset, model, path, device, cfg, logger):
     start = time.process_time()
 
     for id in tqdm(range(part_range[0], part_range[1])):
-        #logger.info(f"ID: {id}")
+        # logger.info(f"ID: {id}")
         model = get_model(device, cfg, logger)
         optimizer = torch.optim.Adam(
             model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY
         )
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer)
-        if part_range[0] > 0: # TODO REMOVE
+        if part_range[0] > 0:  # TODO REMOVE
             id -= part_range[0]
         dataset_traintest = dataset[
             id * NUM_RELABEL * 2 : (id + 1) * NUM_RELABEL * 2
@@ -388,7 +388,7 @@ def evaluation(dataset, model, path, device, cfg, logger):
                 f"correct_individual_{id}": int(isomorphic_flag),
                 f"fail_relability_individual_{id}": int(not reliability_flag),
                 f"corrent_cnt": cnt,
-                f"fail_relability_cnt": fail_in_reliability
+                f"fail_relability_cnt": fail_in_reliability,
             }
         )
 
@@ -400,7 +400,7 @@ def evaluation(dataset, model, path, device, cfg, logger):
             "correct_num": cnt,
             "fail_in_reliability": fail_in_reliability,
             "total_num": SAMPLE_NUM,
-            "accuracy": round(cnt / SAMPLE_NUM, 2)
+            "accuracy": round(cnt / SAMPLE_NUM, 2),
         }
     )
     time_end = time.process_time()
@@ -426,12 +426,20 @@ def evaluation(dataset, model, path, device, cfg, logger):
 )
 def main(cfg: DictConfig):
     extras(cfg)
-    device = torch.device(f"cuda:{cfg.trainer.devices}" if cfg.trainer.accelerator != "cpu" else "cpu")
+    device = torch.device(
+        f"cuda:{cfg.trainer.devices[0]}"
+        if cfg.trainer.accelerator != "cpu"
+        else "cpu"
+    )
     # device = torch.device("cpu")
 
     OUT_PATH = "result_BREC"
     NAME = cfg.model.model_name
-    DATASET_NAME = cfg.dataset.loader.parameters.data_name + "_" + cfg.dataset.loader.parameters.subset
+    DATASET_NAME = (
+        cfg.dataset.loader.parameters.data_name
+        + "_"
+        + cfg.dataset.loader.parameters.subset
+    )
     path = os.path.join(OUT_PATH, NAME)
     os.makedirs(path, exist_ok=True)
 
@@ -445,7 +453,9 @@ def main(cfg: DictConfig):
     # logger.info(args)
 
     pre_calculation()
-    dataset = get_dataset(name=DATASET_NAME, device=device, cfg=cfg, logger=logger)
+    dataset = get_dataset(
+        name=DATASET_NAME, device=device, cfg=cfg, logger=logger
+    )
     model = get_model(device, cfg, logger=logger)
     evaluation(dataset, model, OUT_PATH, device, cfg, logger=logger)
 
