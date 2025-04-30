@@ -3,101 +3,7 @@ from collections import defaultdict
 
 import pandas as pd
 from fetch_and_parse import main
-
-
-# def generate_times_dictionary(df):
-#     # Identify unique models in DataFrame
-#     unique_models = df["model.model_name"].unique()
-
-#     # Identify unique datasets in DataFrame
-#     unique_datasets = df["dataset.loader.parameters.data_name"].unique()
-
-#     collected_results_time = defaultdict(dict)
-#     collected_results_time_run = defaultdict(dict)
-
-#     collected_non_aggregated_results = defaultdict(dict)
-
-#     # Got over each dataset and model and find the best result
-#     for dataset in unique_datasets:
-#         for model in unique_models:
-#             # Get the subset of the DataFrame for the current dataset and model
-#             subset = df[
-#                 (df["dataset.loader.parameters.data_name"] == dataset)
-#                 & (df["model.model_name"] == model)
-#             ]
-
-#             if subset.empty:
-#                 print("---------")
-#                 print(f"No results for {model} on {dataset}")
-#                 print("---------")
-#                 continue
-#             # Suppress all warnings
-#             warnings.filterwarnings("ignore")
-#             subset["Model"] = model
-#             warnings.filterwarnings("default")
-
-#             # def get_metric(df):
-#             #     metric_ = df["callbacks.early_stopping.monitor"].unique()
-#             #     assert len(metric_) == 1, "There should be only one metric to optimize"
-#             #     metric = metric_[0]
-#             #     return metric.split("/")[-1]
-
-#             # # Cols to get statistics later
-#             # # TODO: log maximum validation value for optimized metric
-#             # performance_cols = [f"test/{get_metric(subset)}"]
-
-#             # Get the unique values for each config column
-#             unique_colums_values = {}
-#             for col in sweeped_columns:
-#                 try:
-#                     unique_colums_values[col] = subset[col].unique()
-#                 except:
-#                     print(
-#                         f"Attention the columns: {col}, has issues with unique values"
-#                     )
-
-#             # Keep only those keys that have more than one unique value
-#             unique_colums_values = {
-#                 k: v for k, v in unique_colums_values.items() if len(v) > 1
-#             }
-
-#             # Print the unique values for each config column
-
-#             # print(f"Unique values for each config column for {model} on {dataset}:")
-#             # for col, unique in unique_colums_values.items():
-#             #     print(f"{col}: {unique}")
-#             #     print()
-#             # print("---------")
-
-#             # Check if "special colums" are not in unique_colums_values
-#             # For example dataset.parameters.data_seed should not be in aggregation columns
-#             # If it is, then we should remove it from the list
-#             special_columns = ["dataset.parameters.data_seed"]
-
-#             for col in special_columns:
-#                 if col in unique_colums_values:
-#                     unique_colums_values.pop(col)
-
-#             # Obtain the aggregation columns
-#             aggregation_columns = ["Model"] + list(unique_colums_values.keys())
-
-#             collected_non_aggregated_results[dataset][model] = {
-#                 "df": subset.copy(),
-#                 "aggregation_columns": aggregation_columns,
-#                 # "performance_cols": performance_cols,
-#             }
-
-#             # Get average epoch run time
-#             collected_results_time[dataset][model] = {
-#                 "mean": subset["AvgTime/train_epoch_mean"].mean(),
-#                 "std": subset["AvgTime/train_epoch_mean"].std(),
-#             }
-
-#             collected_results_time_run[dataset][model] = {
-#                 "mean": subset["_runtime"].mean(),
-#                 "std": subset["_runtime"].std(),
-#             }
-#     return collected_results_time
+from constants import MODEL_ORDER, DATASET_ORDER
 
 PRETTY_MAP = {
     'preprocessor_time': 'Preprocessing Time',
@@ -105,55 +11,6 @@ PRETTY_MAP = {
     'AvgTime/val_batch_mean': 'Average Time per Batch',
     'AvgTime/val_epoch_mean': 'Average Time per Epoch',
 }
-def build_table(
-    collected_results_time,
-    time_column
-):
-    nested_dict = dict(collected_results_time)
-    result_dict = pd.DataFrame.from_dict(
-        {
-            (i, j): nested_dict[i][j]
-            for i in nested_dict
-            for j in nested_dict[i].keys()
-        },
-        orient="index",
-    )
-
-    if time_column != '_runtime':
-        result_dict = result_dict.round(2)
-    else:
-        result_dict = result_dict.round(0)
-
-    if time_column != 'preprocessor_time':
-        if time_column == '_runtime':
-            result_dict["performance"] = result_dict.apply(
-                lambda x: f"{x['mean']:.0f} ± {x['std']:.0f}", axis=1
-            )
-            result_dict = result_dict.drop(["mean", "std"], axis=1)
-        else:
-            result_dict["performance"] = result_dict.apply(
-                lambda x: f"{x['mean']} ± {x['std']}", axis=1
-            )
-            result_dict = result_dict.drop(["mean", "std"], axis=1)
-    else:
-        result_dict["performance"] = result_dict.apply(
-            lambda x: f"{x['max']}", axis=1
-        )
-        result_dict = result_dict.drop(["max"], axis=1)
-
-    # Reset multiindex
-    result_dict = result_dict.reset_index()
-    # rename columns
-    result_dict.columns = ["Dataset", "Model", PRETTY_MAP[time_column]]
-
-    table = result_dict.pivot_table(
-        index="Model",
-        columns="Dataset",
-        values=PRETTY_MAP[time_column],
-        aggfunc="first",
-    )
-    return table
-
 
 def fix_domain(row):
     if "transforms.graph2simplicial_lifting.transform_name" in row: 
@@ -168,96 +25,6 @@ def fix_domain(row):
     return row["model.model_domain"]
     
 
-def processing_times(df, selected_datasets=["MUTAG", "NCI1", "NCI109", "PROTEINS", "ZINC"]):
-    time_columns = [
-        'preprocessor_time',
-        '_runtime',
-        'AvgTime/val_batch_mean',
-        'AvgTime/val_epoch_mean',
-    ]
-    seed_column = "dataset.parameters.data_seed"
-    models = df["model.model_name"].unique()
-    datasets = df["dataset.loader.parameters.data_name"].unique()
-    domains = df["model.model_domain"].unique()
-
-    collected_results_time_preproc = defaultdict(dict)
-    collected_results_time_epoch = defaultdict(dict)
-    collected_results_time_batch = defaultdict(dict)
-    collected_results_time_total = defaultdict(dict)
-
-    df['model.model_domain'] = df.apply(fix_domain, axis=1)
-
-    for dataset in datasets:
-        if dataset not in selected_datasets:
-            continue
-        for model in models:
-            for domain in domains:
-                subset = df[
-                    (df["dataset.loader.parameters.data_name"] == dataset)
-                    & (df["model.model_name"] == model)
-                    & (df["model.model_domain"] == domain)
-                ]
-
-                if subset.empty:
-                    print("---------")
-                    print(f"No results for {model} on {dataset} of {domain}")
-                    print("---------")
-                    continue
-                # Suppress all warnings
-                warnings.filterwarnings("ignore")
-                subset["Model"] = model
-                warnings.filterwarnings("default")
-                agg_dict = {}
-                for col in time_columns:
-                    if col != 'preprocessor_time':
-                        agg_dict[col] = ["mean", "std"]
-                    else:
-                        agg_dict[col] = ["max"]
-                # aggregated = subset.groupby(["Model", "model.model_domain"]).agg(
-                #     agg_dict
-                # ).reset_index()
-                collected_results_time_batch[dataset][(model, domain)] = {
-                    "mean": subset["AvgTime/val_batch_mean"].mean(),
-                    "std": subset["AvgTime/val_batch_mean"].std(),
-                }
-
-                collected_results_time_epoch[dataset][(model, domain)] = {
-                    "mean": subset["AvgTime/val_epoch_mean"].mean(),
-                    "std": subset["AvgTime/val_epoch_mean"].std(),
-                }
-                collected_results_time_preproc[dataset][(model, domain)] = {
-                    "max": subset["preprocessor_time"].max(),
-                }
-                collected_results_time_total[dataset][(model, domain)] = {
-                    "mean": subset["_runtime"].mean(),
-                    "std": subset["_runtime"].std(),
-                }
-
-    for col in time_columns:
-        if col == 'preprocessor_time':
-            table = build_table(
-                collected_results_time_preproc,
-                col,
-            )
-        elif col == 'AvgTime/val_epoch_mean':
-            table = build_table(
-                collected_results_time_epoch,
-                col
-            )
-        elif col == 'AvgTime/val_batch_mean':
-            table = build_table(
-                collected_results_time_batch,
-                col
-            )
-        else:
-            table = build_table(
-                collected_results_time_total,
-                col
-            )
-        # print(f"Table for {col}:")
-        # print(table)
-        # print()
-    return collected_results_time_preproc, collected_results_time_epoch, collected_results_time_total
 def generate_table(df, time_column):
     df_best = df.copy()
 
@@ -279,8 +46,8 @@ def generate_table(df, time_column):
                 r"\end{table}"
                 "\n"
             )
-
-        all_datasets = sorted(subset_df["dataset"].unique())
+        unique_datasets = subset_df["dataset"].unique()
+        all_datasets = [d for d in DATASET_ORDER if d in unique_datasets]
         domain_groups = {}
         for _, row in subset_df.iterrows():
             dom = row["domain"]
@@ -290,9 +57,10 @@ def generate_table(df, time_column):
 
         directions = {dset: 'min' for dset in all_datasets}
 
+        val = 'mean' if time_column != 'preprocessor_time' else 'max'
         best_vals_by_domain = {
             dom: {
-                dset: dom_df[dom_df["dataset"] == dset]["mean"].min()
+                dset: dom_df[dom_df["dataset"] == dset][val].min()
                 for dset in all_datasets
                 if not dom_df[dom_df["dataset"] == dset].empty
             }
@@ -303,16 +71,20 @@ def generate_table(df, time_column):
             best_val = best_vals_by_domain[dom].get(dset, None)
             direction = directions[dset]
 
-            if time_column != '_runtime':
+            if time_column != 'preprocessor_time':
                 content = f"\\scriptsize {mn:.2f} $\\pm$ {st:.2f}"
             else:
-                content = f"\\scriptsize {mn:.0f} $\\pm$ {st:.0f}"
+                content = f"\\scriptsize {mn:.0f} "
 
             if best_val is None:
                 return content
 
-            is_best = abs(mn - best_val) < 1e-12
-            within_std = (mn - best_val) <= st if direction == "min" else (best_val - mn) <= st
+            if time_column != 'preprocessor_time':
+                is_best = abs(mn - best_val) < 1e-12
+                within_std = (mn - best_val) <= st if direction == "min" else (best_val - mn) <= st
+            else:
+                is_best = abs(mn - best_val) < 1e-12
+                within_std = False
 
             if is_best:
                 return f"\\cellcolor{{bestgray}}\\textbf{{{content}}}"
@@ -343,7 +115,6 @@ def generate_table(df, time_column):
 
         for dom in all_domains:
             dom_df = domain_groups[dom]
-            from constants import MODEL_ORDER
             dom_models = [m for m in MODEL_ORDER[dom] if m in dom_df["model"].unique()]
             latex_lines.append(r"\midrule")
             latex_lines.append(
@@ -358,7 +129,10 @@ def generate_table(df, time_column):
                         cell_val = "-"
                     else:
                         r = sel.iloc[0]
-                        mn, st = r["mean"], r["std"]
+                        if time_column != 'preprocessor_time':
+                            mn, st = r["mean"], r["std"]
+                        else:
+                            mn, st = r["max"], r["max"]
                         cell_val = style_cell(mn, st, dset, dom)
                     row_elems.append(cell_val)
                 latex_lines.append("& " + " & ".join(row_elems) + r" \\")
@@ -403,12 +177,19 @@ def parse_hops(time_column):
     df.loc[df["model"] == "topotune", "model"] = "GCCN"
 
     grouped = df.groupby(["domain", "dataset", "model"], group_keys=True)
-    df_best = grouped.agg({
-        time_column: ['mean', 'std']
-    }).reset_index(drop=False)
-    df_best['mean'] = df_best[(time_column, 'mean')]
-    df_best['std'] = df_best[(time_column, 'std')]
-    df_best.drop([(time_column, 'mean'), (time_column, 'std')], axis=1, inplace=True)
+    if time_column == 'preprocessor_time':
+        df_best = grouped.agg({
+            time_column: ['max']
+        }).reset_index(drop=False)
+        df_best['max'] = df_best[(time_column, 'max')]
+        df_best.drop([(time_column, 'max')], axis=1, inplace=True)
+    else:
+        df_best = grouped.agg({
+            time_column: ['mean', 'std']
+        }).reset_index(drop=False)
+        df_best['mean'] = df_best[(time_column, 'mean')]
+        df_best['std'] = df_best[(time_column, 'std')]
+        df_best.drop([(time_column, 'mean'), (time_column, 'std')], axis=1, inplace=True)
     df_best.columns = [col if isinstance(col, str) else col[0] for col in df_best.columns]
 
     return df_best
@@ -544,8 +325,8 @@ def parse_all_dfs(t_c):
 
 if __name__ == "__main__":
     time_columns = [
-        #'_runtime',
-        #'preprocessor_time',
+        # '_runtime',
+        # 'preprocessor_time',
         #'AvgTime/val_batch_mean',
         'AvgTime/val_epoch_mean',
     ]
