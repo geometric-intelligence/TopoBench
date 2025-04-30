@@ -1,6 +1,7 @@
 r"""Dataset class for BREC dataset."""
 
 import os
+import random
 import os.path as osp
 from typing import ClassVar
 
@@ -9,31 +10,15 @@ import numpy as np
 import torch
 import torch_geometric
 from omegaconf import DictConfig
-from torch_geometric.data import Data, InMemoryDataset, extract_zip
+from torch_geometric.data import Data, InMemoryDataset
 from torch_geometric.io import fs
-from torch_geometric.utils.convert import from_networkx
+from torch_geometric.utils.convert import from_networkx, to_networkx
 
 from topobench.data.utils import (
     download_file_from_link,
 )
 
 torch_geometric.seed_everything(2022)
-
-part_dict = {
-    "Basic": (0, 60),
-    "Regular": (60, 160),
-    "Extension": (160, 260),
-    "CFI": (260, 360),
-    "4-Vertex_Condition": (360, 380),
-    "Distance_Regular": (380, 400),
-}
-
-
-NAME_TO_FILE_IDX_MAP = {
-    "3wl": 0,
-    "cut": 1,
-    "full": 2,
-}
 
 
 def graph6_to_pyg(x):
@@ -51,22 +36,23 @@ def graph6_to_pyg(x):
     """
     return from_networkx(nx.from_graph6_bytes(x))
 
-def get_ranges(subset_name):
-    r"""Get the range of indices for a given subset name.
+# TODO change
+# def get_ranges(subset_name):
+#     r"""Get the range of indices for a given subset name.
 
-    Parameters
-    ----------
-    subset_name : str
-        Name of the subset.
-    Returns
+#     Parameters
+#     ----------
+#     subset_name : str
+#         Name of the subset.
+#     Returns
 
-    """
-    NUM_RELABEL=32
-    SAMPLE_NUM=400
-    start, end  = part_dict[subset_name]
-    train_range = (start * NUM_RELABEL * 2, (end) * NUM_RELABEL * 2)
-    reliability_range = ((start+SAMPLE_NUM) * NUM_RELABEL * 2, (end+SAMPLE_NUM) * NUM_RELABEL * 2)
-    return train_range, reliability_range
+#     """
+#     NUM_RELABEL=32
+#     SAMPLE_NUM=400
+#     start, end  = part_dict[subset_name]
+#     train_range = (start * NUM_RELABEL * 2, (end) * NUM_RELABEL * 2)
+#     reliability_range = ((start+SAMPLE_NUM) * NUM_RELABEL * 2, (end+SAMPLE_NUM) * NUM_RELABEL * 2)
+#     return train_range, reliability_range
 
 
 class BRECDataset(InMemoryDataset):
@@ -89,12 +75,13 @@ class BRECDataset(InMemoryDataset):
     FILE_FORMAT (dict): File format for the dataset.
     """
 
-    URL: ClassVar = "https://github.com/GraphPKU/BREC/raw/refs/heads/Release/BREC_data_all.zip"
-    FILE_FORMAT: ClassVar = "zip"
+    URL: ClassVar = "https://github.com/GraphPKU/BREC/raw/refs/heads/Release/customize/Data/raw/{subset_name}.npy"
+    FILE_FORMAT: ClassVar = "npy"
 
     def __init__(self, root: str, name: str, parameters: DictConfig, **kwargs):
         self.parameters = parameters
         self.subset = parameters.subset
+        self.num_relabel = parameters.num_relabel
         self.name = name
         self.root = root
         super().__init__(
@@ -133,7 +120,7 @@ class BRECDataset(InMemoryDataset):
         str
             Path to the processed directory.
         """
-        self.processed_root = osp.join(self.root, self.name, self.subset)
+        self.processed_root = osp.join(self.root, self.name)
         return osp.join(self.processed_root, "processed")
 
     @property
@@ -146,9 +133,7 @@ class BRECDataset(InMemoryDataset):
             List of raw file names.
         """
         return [
-            "brec_v3_3wl.npy",
-            "brec_v3_no4v_60cfi.npy",
-            "brec_v3.npy",
+            f"{self.subset}.npy",
         ]
 
     @property
@@ -169,9 +154,9 @@ class BRECDataset(InMemoryDataset):
             FileNotFoundError: If the dataset URL is not found.
         """
         # Step 1: Download data from the source
-        self.url = self.URL
+        self.url = self.URL.format(subset_name=self.subset)
         self.file_format = self.FILE_FORMAT
-        dataset_name = self.name
+        dataset_name = self.subset
 
         download_file_from_link(
             file_link=self.url,
@@ -180,14 +165,14 @@ class BRECDataset(InMemoryDataset):
             file_format=self.file_format,
         )
 
-        # Extract zip file
-        folder = self.raw_dir
-        filename = f"{dataset_name}.{self.file_format}"
-        path = osp.join(folder, filename)
-        extract_zip(path, folder)
+        # # Extract zip file
+        # folder = self.raw_dir
+        # filename = f"{dataset_name}.{self.file_format}"
+        # path = osp.join(folder, filename)
+        # extract_zip(path, folder)
 
-        # Delete zip file
-        os.unlink(path)
+        # # Delete zip file
+        # os.unlink(path)
 
         # # Move files from osp.join(folder, name_download) to folder
         # for file in os.listdir(osp.join(folder, self.name)):
@@ -201,21 +186,109 @@ class BRECDataset(InMemoryDataset):
         This method loads the already processed variation of the BREC dataset
         and converst the underlying graph6 format to PyTorch Geometric Data format.
         """
-        chosen_subset = self.subset
-
-        if self.subset in [l for l in list(part_dict.keys())]:
-            chosen_subset = 'full'
         file_name_path = osp.join(
             self.raw_dir,
-            self.raw_file_names[NAME_TO_FILE_IDX_MAP[chosen_subset]],
+            self.raw_file_names[0],
         )
 
-        data_list = np.load(file_name_path, allow_pickle=True)
-        if self.subset != chosen_subset:
-            train_range, reliability_range = get_ranges(self.subset)
-            data_list = [graph6_to_pyg(data) for data in data_list[train_range[0]:train_range[1]]] + [graph6_to_pyg(data) for data in data_list[reliability_range[0]:reliability_range[1]]]
+        g6_list = []
+
+        # Basic graphs: 0 - 60
+        if self.subset == 'basic':
+            basic = np.load(file_name_path)
+            for i in range(0, basic.size, 2):
+                g6_tuple = (basic[i].encode(), basic[i + 1].encode())
+                g6_relabel_tuple = (self.generate_relabel(g6_tuple[0]), self.generate_relabel(g6_tuple[1]))
+                g6_list.extend(self.reindex_to_interlacing(g6_relabel_tuple))
+
+            for i in range(0, basic.size, 2):
+                flag = random.randint(0, 1)
+                g6_tuple = (basic[i].encode(), basic[i + 1].encode())
+                g6_relabel = self.generate_relabel(g6_tuple[flag], num=self.num_relabel * 2)
+                g6_list.extend(g6_relabel)
+        # Simple regular graphs: 60 - 110
+        elif self.subset == 'regular':
+            regular = np.load(file_name_path)
+            for i in range(regular.size // 2):
+                g6_tuple = regular[i]
+                g6_relabel_tuple = (self.generate_relabel(g6_tuple[0]), self.generate_relabel(g6_tuple[1]))
+                g6_list.extend(self.reindex_to_interlacing(g6_relabel_tuple))
+
+            for i in range(regular.size // 2):
+                flag = random.randint(0, 1)
+                g6_tuple = regular[i]
+                g6_relabel = self.generate_relabel(g6_tuple[flag], num=self.num_relabel * 2)
+                g6_list.extend(g6_relabel)
+        # Strongly regular graphs: 110 - 160
+        elif self.subset == 'str':
+            strongly_regular = np.load(file_name_path)
+            for i in range(0, strongly_regular.size, 2):
+                g6_tuple = (strongly_regular[i].encode(), strongly_regular[i + 1].encode())
+                g6_relabel_tuple = (self.generate_relabel(g6_tuple[0]), self.generate_relabel(g6_tuple[1]))
+                g6_list.extend(self.reindex_to_interlacing(g6_relabel_tuple))
+
+            for i in range(0, strongly_regular.size, 2):
+                flag = random.randint(0, 1)
+                g6_tuple = (strongly_regular[i].encode(), strongly_regular[i + 1].encode())
+                g6_relabel = self.generate_relabel(g6_tuple[flag], num=self.num_relabel * 2)
+                g6_list.extend(g6_relabel)
+        # Extension graphs: 160 - 260
+        elif self.subset == 'extension':
+            extension = np.load(file_name_path)
+            for i in range(extension.size // 2):
+                g6_tuple = (extension[i][0].encode(), extension[i][1].encode())
+                g6_relabel_tuple = (self.generate_relabel(g6_tuple[0]), self.generate_relabel(g6_tuple[1]))
+                g6_list.extend(self.reindex_to_interlacing(g6_relabel_tuple))
+
+            for i in range(extension.size // 2):
+                flag = random.randint(0, 1)
+                g6_tuple = (extension[i][0].encode(), extension[i][1].encode())
+                g6_relabel = self.generate_relabel(g6_tuple[flag], num=self.num_relabel * 2)
+                g6_list.extend(g6_relabel)
+        # CFI graphs: 260 - 360
+        elif self.subset == 'cfi':
+            cfi = np.load(file_name_path)
+            for i in range(cfi.size // 2):
+                g6_tuple = cfi[i]
+                g6_relabel_tuple = (self.generate_relabel(g6_tuple[0]), self.generate_relabel(g6_tuple[1]))
+                g6_list.extend(self.reindex_to_interlacing(g6_relabel_tuple))
+
+            for i in range(cfi.size // 2):
+                flag = random.randint(0, 1)
+                g6_tuple = cfi[i]
+                g6_relabel = self.generate_relabel(g6_tuple[flag], num=self.num_relabel * 2)
+                g6_list.extend(g6_relabel)
+        # 4-vertex condition graphs: 360 - 380
+        elif self.subset == '4vtx':
+            vtx_4 = np.load(file_name_path)
+            for i in range(0, vtx_4.size, 2):
+                g6_tuple = (vtx_4[i].encode(), vtx_4[i + 1].encode())
+                g6_relabel_tuple = (self.generate_relabel(g6_tuple[0]), self.generate_relabel(g6_tuple[1]))
+                g6_list.extend(self.reindex_to_interlacing(g6_relabel_tuple))
+
+            for i in range(0, vtx_4.size, 2):
+                flag = random.randint(0, 1)
+                g6_tuple = (vtx_4[i].encode(), vtx_4[i + 1].encode())
+                g6_relabel = self.generate_relabel(g6_tuple[flag], num=self.num_relabel * 2)
+                g6_list.extend(g6_relabel)
+        # Distance regular graphs: 380 - 400
+        elif self.subset == 'dr':
+            distance_regular = np.load(file_name_path)
+            for i in range(0, distance_regular.size, 2):
+                g6_tuple = (distance_regular[i], distance_regular[i + 1])
+                g6_relabel_tuple = (self.generate_relabel(g6_tuple[0]), self.generate_relabel(g6_tuple[1]))
+                g6_list.extend(self.reindex_to_interlacing(g6_relabel_tuple))
+
+            for i in range(0, distance_regular.size, 2):
+                flag = random.randint(0, 1)
+                g6_tuple = (distance_regular[i], distance_regular[i + 1])
+                g6_relabel = self.generate_relabel(g6_tuple[flag], num=self.num_relabel * 2)
+                g6_list.extend(g6_relabel)
         else:
-            data_list = [graph6_to_pyg(data) for data in data_list]
+            raise ValueError(f"Unknown subset: {self.subset}")
+
+        # Convert to PyG format  
+        data_list = [graph6_to_pyg(data) for data in g6_list]
 
         for idx, data in enumerate(data_list):
             data["y"] = torch.tensor([idx], dtype=torch.long)
@@ -229,3 +302,43 @@ class BRECDataset(InMemoryDataset):
             (self._data.to_dict(), self.slices, {}, self._data.__class__),
             self.processed_paths[0],
         )
+
+    def relabel(self, g6):
+        pyg_graph = from_networkx(nx.from_graph6_bytes(g6))
+        n = pyg_graph.num_nodes
+        edge_index_relabel = pyg_graph.edge_index.clone().detach()
+        index_mapping = dict(zip(list(range(n)), np.random.permutation(n), strict=False))
+        for i in range(edge_index_relabel.shape[0]):
+            for j in range(edge_index_relabel.shape[1]):
+                edge_index_relabel[i, j] = index_mapping[edge_index_relabel[i, j].item()]
+        edge_index_relabel = edge_index_relabel[
+            :, torch.randperm(edge_index_relabel.shape[1])
+        ]
+        pyg_graph_relabel = torch_geometric.data.Data(
+            edge_index=edge_index_relabel, num_nodes=n
+        )
+        g6_relabel = nx.to_graph6_bytes(
+            to_networkx(pyg_graph_relabel, to_undirected=True), header=False
+        ).strip()
+        return g6_relabel
+
+
+    def generate_relabel(self, g6, num=0):
+        if num == 0:
+            num = self.num_relabel 
+        g6_list = [g6]
+        g6_set = set(g6_list)
+        for id in range(num - 1):
+            g6_relabel = self.relabel(g6)
+            g6_set.add(g6_relabel)
+            while len(g6_set) == len(g6_list):
+                g6_relabel = self.relabel(g6)
+                g6_set.add(g6_relabel)
+            g6_list.append(g6_relabel)
+        return g6_list
+
+    def reindex_to_interlacing(self, g6_relabel_tuple):
+        return_list = []
+        for (x, y) in zip(g6_relabel_tuple[0], g6_relabel_tuple[1], strict=False):
+            return_list.extend([x, y])
+        return return_list

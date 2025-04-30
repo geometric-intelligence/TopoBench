@@ -60,7 +60,7 @@ class ExpressivityDatasetLoader(AbstractLoader):
         ExpressivityDataset
             The initialized dataset instance.
         """
-        if self.parameters.data_name == "BREC":
+        if "BREC" in self.parameters.data_name:
             return BRECDataset(
                 root=str(self.root_data_dir),
                 name=self.parameters.data_name,
