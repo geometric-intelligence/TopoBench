@@ -2,7 +2,7 @@ defaults:
   - data_manipulations@redefine_simplicial_neighborhoods: redefine_simplicial_neighborhoods
   - data_manipulations@sann_encoding: hopse_ps_information
 
-redefine_simplicial_neighbourhoods:
+redefine_simplicial_neighborhoods:
   signed: True
 
 sann_encoding:
