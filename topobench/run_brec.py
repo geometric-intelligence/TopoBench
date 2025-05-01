@@ -32,6 +32,7 @@ from omegaconf import DictConfig, OmegaConf
 from torch.nn import CosineEmbeddingLoss
 from tqdm import tqdm
 from lightning.pytorch.loggers import Logger
+from lightning_utilities.core.rank_zero import rank_zero_only
 
 
 from topobench.data.preprocessor import PreProcessor
@@ -457,7 +458,34 @@ def main(cfg: DictConfig):
         name=DATASET_NAME, device=device, cfg=cfg, logger=logger
     )
     model = get_model(device, cfg, logger=logger)
+    object_dict = {
+        "cfg": cfg,
+        "model": model,
+        "dataset": dataset
+    }
+    log_hyperparams(object_dict, logger)
     evaluation(dataset, model, OUT_PATH, device, cfg, logger=logger)
+
+@rank_zero_only
+def log_hyperparams(object_dict, logger):
+    hparams = {}
+
+    cfg = OmegaConf.to_container(object_dict["cfg"], resolve=True)
+    model = object_dict["model"]
+
+    # save number of model parameters
+    hparams["model/params/total"] = sum(p.numel() for p in model.parameters())
+    hparams["model/params/trainable"] = sum(
+        p.numel() for p in model.parameters() if p.requires_grad
+    )
+    hparams["model/params/non_trainable"] = sum(
+        p.numel() for p in model.parameters() if not p.requires_grad
+    )
+
+    for key in cfg:
+        hparams[key] = cfg[key]
+    # send hparams to all loggers
+    logger.log_hyperparams(hparams)
 
 
 if __name__ == "__main__":
