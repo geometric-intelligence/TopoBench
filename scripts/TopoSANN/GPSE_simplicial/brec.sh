@@ -126,7 +126,7 @@ do
                 trainer.max_epochs=100\
                 logger.wandb.project=BREC\
                 model.readout.readout_name=SANNReadout\
-                --multirun
+                --multirun &
         done
     done
 
