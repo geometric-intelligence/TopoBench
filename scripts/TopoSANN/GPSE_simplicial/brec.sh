@@ -19,11 +19,11 @@ OUT_CHANNELS=(128 256)
 LEARNING_RATES=(0.0001 0.00001 0.001 0.01)
 PROJECTION_DROPOUTS=(0.25)
 WEIGHT_DECAYS=(0 0.0001 0.00001)
-BATCH_SIZES=(16 32 64 128)
+BATCH_SIZES=(16 32 64)
 # =====================
 # PRETRAINED MODELS
 # =====================
-PRETRAIN_MODELS=('ZINC') #  'GEOM' 'MOLPCBA' 'PCQM4MV2'
+PRETRAIN_MODELS=('ZINC' 'GEOM' 'MOLPCBA' 'PCQM4MV2')
 
 
 # =====================
@@ -84,21 +84,25 @@ do
                 transforms.sann_encoding.copy_initial=True \
                 transforms.sann_encoding.neighborhoods=$neighborhood\
                 transforms=GPSE_BREC\
+                trainer.devices=\[$CUDA\]\
                 transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
                 optimizer.parameters.lr=0.01\
                 optimizer.parameters.weight_decay=0\
-                trainer.devices=\[$CUDA\]\
                 dataset.dataloader_params.batch_size=128\
-                trainer.max_epochs=100\
+                trainer.max_epochs=5\
+                trainer.min_epochs=1\
                 logger.wandb.project=BREC_prerun\
                 model.readout.readout_name=SANNReadout\
-                --multirun
+                --multirun &
         done
+        wait
     done
+    wait
+done
+wait
 
-
-
-
+for dataset in ${datasets[*]}
+do
     gpus=(0 1 2 3 4 5 6 7)
     for i in {0..7}; do 
         CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
@@ -126,15 +130,8 @@ do
                 trainer.max_epochs=100\
                 logger.wandb.project=BREC\
                 model.readout.readout_name=SANNReadout\
-                --multirun
+                --multirun &
         done
     done
-
 done
-            #trainer.check_val_every_n_epoch=5\
-            #dataset.split_params.data_seed=$DATA_SEEDS_STR\
-            #dataset.dataloader_params.batch_size=$BATCH_SIZES_STR\
-            #trainer.max_epochs=500\
-            #trainer.min_epochs=50\
-            #logger.wandb.project=$project_name\
-            #callbacks.early_stopping.patience=10\
+wait
