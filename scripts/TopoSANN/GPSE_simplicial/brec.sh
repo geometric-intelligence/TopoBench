@@ -61,45 +61,45 @@ neighborhoods=(
     "['up_adjacency-0','up_adjacency-1','2-up_adjacency-0','down_adjacency-1','down_adjacency-2','2-down_adjacency-2']"
 )
 
-datasets=(BREC_str BREC_extension BREC_cfi BREC_4vtx BREC_dr) # BREC_basic BREC_regular q
+datasets=(BREC_basic BREC_regular BREC_extension BREC_cfi) #
 
-for dataset in ${datasets[*]}
-do
-    gpus=(0 1 2 3 4 5 6 7)
-    for i in {0..7}; do 
-        CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
-        neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
+# for dataset in ${datasets[*]}
+# do
+#     gpus=(0 1 2 3 4 5 6 7)
+#     for i in {0..7}; do 
+#         CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
+#         neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
 
-        for pretrain_model in ${PRETRAIN_MODELS[*]}
-        do
+#         for pretrain_model in ${PRETRAIN_MODELS[*]}
+#         do
             
-            python topobench/run_brec.py\
-                dataset=graph/$dataset\
-                model=simplicial/hopse_g\
-                model.backbone.n_layers=1\
-                model.feature_encoder.out_channels=64\
-                model.feature_encoder.proj_dropout=0\
-                transforms/data_manipulations@transforms.sann_encoding=add_gpse_information\
-                transforms.sann_encoding.pretrain_model=ZINC\
-                transforms.sann_encoding.copy_initial=True \
-                transforms.sann_encoding.neighborhoods=$neighborhood\
-                transforms=GPSE_BREC\
-                trainer.devices=\[$CUDA\]\
-                transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
-                optimizer.parameters.lr=0.01\
-                optimizer.parameters.weight_decay=0\
-                dataset.dataloader_params.batch_size=128\
-                trainer.max_epochs=5\
-                trainer.min_epochs=1\
-                logger.wandb.project=BREC_prerun\
-                model.readout.readout_name=SANNReadout\
-                --multirun &
-        done
-        wait
-    done
-    wait
-done
-wait
+#             python topobench/run_brec.py\
+#                 dataset=graph/$dataset\
+#                 model=simplicial/hopse_g\
+#                 model.backbone.n_layers=1\
+#                 model.feature_encoder.out_channels=64\
+#                 model.feature_encoder.proj_dropout=0\
+#                 transforms/data_manipulations@transforms.sann_encoding=add_gpse_information\
+#                 transforms.sann_encoding.pretrain_model=ZINC\
+#                 transforms.sann_encoding.copy_initial=True \
+#                 transforms.sann_encoding.neighborhoods=$neighborhood\
+#                 transforms=GPSE_BREC\
+#                 trainer.devices=\[$CUDA\]\
+#                 transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
+#                 optimizer.parameters.lr=0.01\
+#                 optimizer.parameters.weight_decay=0\
+#                 dataset.dataloader_params.batch_size=128\
+#                 trainer.max_epochs=5\
+#                 trainer.min_epochs=1\
+#                 logger.wandb.project=BREC_prerun\
+#                 model.readout.readout_name=SANNReadout\
+#                 --multirun &
+#         done
+#         wait
+#     done
+#     wait
+# done
+# wait
 
 for dataset in ${datasets[*]}
 do
