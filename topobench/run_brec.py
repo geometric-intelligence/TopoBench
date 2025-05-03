@@ -349,11 +349,11 @@ def evaluation(dataset, model, path, device, cfg, logger):
                 optimizer.step()
                 loss_all += len(pred) / 2 * loss.item()
             loss_all /= NUM_RELABEL
-            logger.log_metrics(
-                {
-                    f"loss_{id}": loss_all,
-                }
-            )
+            # logger.log_metrics(
+            #     {
+            #         f"loss_{id}": loss_all,
+            #     }
+            # )
             if loss_all < LOSS_THRESHOLD:
                 # logger.info("Early Stop Here")
                 break
@@ -386,9 +386,7 @@ def evaluation(dataset, model, path, device, cfg, logger):
         # )
         logger.log_metrics(
             {
-                f"correct_individual_{id}": int(isomorphic_flag),
-                f"fail_relability_individual_{id}": int(not reliability_flag),
-                f"corrent_cnt": cnt,
+                f"correct_cnt": cnt,
                 f"fail_relability_cnt": fail_in_reliability,
             }
         )
@@ -398,8 +396,6 @@ def evaluation(dataset, model, path, device, cfg, logger):
 
     logger.log_metrics(
         {
-            "correct_num": cnt,
-            "fail_in_reliability": fail_in_reliability,
             "total_num": SAMPLE_NUM,
             "accuracy": round(cnt / SAMPLE_NUM, 2),
         }
@@ -458,13 +454,10 @@ def main(cfg: DictConfig):
         name=DATASET_NAME, device=device, cfg=cfg, logger=logger
     )
     model = get_model(device, cfg, logger=logger)
-    object_dict = {
-        "cfg": cfg,
-        "model": model,
-        "dataset": dataset
-    }
+    object_dict = {"cfg": cfg, "model": model, "dataset": dataset}
     log_hyperparams(object_dict, logger)
     evaluation(dataset, model, OUT_PATH, device, cfg, logger=logger)
+
 
 @rank_zero_only
 def log_hyperparams(object_dict, logger):
