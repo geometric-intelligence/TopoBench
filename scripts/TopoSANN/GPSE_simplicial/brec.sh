@@ -61,7 +61,7 @@ neighborhoods=(
     "['up_adjacency-0','up_adjacency-1','2-up_adjacency-0','down_adjacency-1','down_adjacency-2','2-down_adjacency-2']"
 )
 
-datasets=(BREC_basic BREC_regular BREC_str BREC_extension BREC_cfi BREC_4vtx BREC_dr)
+datasets=(BREC_str BREC_extension BREC_cfi BREC_4vtx BREC_dr) # BREC_basic BREC_regular q
 
 for dataset in ${datasets[*]}
 do
