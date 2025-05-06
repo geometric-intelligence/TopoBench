@@ -3,6 +3,7 @@ MODEL_ORDER = {
     'simplicial': ['SCN', 'SCCNN', 'SaNN', 'GCCN', 'HOPSE-M', 'HOPSE-G'],
     'cell': ['CCCN', 'CWN', 'GCCN', 'HOPSE-M', 'HOPSE-G']
 }
+DATASET_ORDER = ["MUTAG", "PROTEINS", "NCI1", "NCI109", "ZINC", "MANTRA-N", "MANTRA-O", "MANTRA-BN", "MANTRA-BN-0", "MANTRA-BN-1", "MANTRA-BN-2"] 
 performance_classification = [
     "val/accuracy",
     "test/accuracy",

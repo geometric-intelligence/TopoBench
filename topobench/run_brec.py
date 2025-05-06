@@ -5,6 +5,20 @@
 #   3. model construction;
 #   4. evaluation
 
+# from typing import Any
+
+# from lightning.pytorch.loggers import Logger
+# from pytorch_lightning.loggers.wandb import WandbLogger
+
+# from topobench.utils import (
+#     RankedLogger,
+#     extras,
+#     get_metric_value,
+#     instantiate_callbacks,
+#     instantiate_loggers,
+#     log_hyperparameters,
+#     task_wrapper,
+# )
 
 import os
 import time
@@ -13,11 +27,13 @@ import hydra
 import torch
 import torch_geometric
 import torch_geometric.loader
-from loguru import logger
-from model import TBModelT
+from topobench.model import TBModelT
 from omegaconf import DictConfig, OmegaConf
 from torch.nn import CosineEmbeddingLoss
 from tqdm import tqdm
+from lightning.pytorch.loggers import Logger
+from lightning_utilities.core.rank_zero import rank_zero_only
+
 
 from topobench.data.preprocessor import PreProcessor
 from topobench.dataloader.utils import collate_fn
@@ -38,6 +54,7 @@ from topobench.utils.config_resolvers import (
     set_preserve_edge_attr,
 )
 from topobench.utils.utils import extras
+from topobench.utils.instantiators import instantiate_loggers
 
 OmegaConf.register_new_resolver(
     "get_default_metrics", get_default_metrics, replace=True
@@ -104,19 +121,13 @@ OmegaConf.register_new_resolver(
 )
 
 
-NUM_RELABEL = 32
 P_NORM = 2
 OUTPUT_DIM = 16
 EPSILON_MATRIX = 1e-7
 EPSILON_CMP = 1e-6
-SAMPLE_NUM = 400  # TODO Change
-EPOCH = 200
 MARGIN = 0.0
-LEARNING_RATE = 1e-4
 THRESHOLD = 72.34
-BATCH_SIZE = 32
-WEIGHT_DECAY = 1e-4
-LOSS_THRESHOLD = 0.001
+LOSS_THRESHOLD = 0.01
 SEED = 2023
 
 global_var = globals().copy()
@@ -125,15 +136,6 @@ for k, v in global_var.items():
     if isinstance(v, int) or isinstance(v, float):
         HYPERPARAM_DICT[k] = v
 
-# part_dict: {graph generation type, range}
-part_dict = {
-    # "Basic": (0, 60),
-    "Regular": (60, 160),
-    # "Extension": (160, 260),
-    # "CFI": (260, 360),
-    # "4-Vertex_Condition": (360, 380),
-    # "Distance_Regular": (380, 400),
-}
 # parser = argparse.ArgumentParser(description="BREC Test")
 
 # # Conditions for SANN model
@@ -166,6 +168,16 @@ torch_geometric.seed_everything(SEED)
 torch.backends.cudnn.deterministic = True
 # torch.use_deterministic_algorithms(True)
 
+part_dict = {
+    "basic": (0, 60),
+    "regular": (60, 110),
+    "str": (110, 160),
+    "extension": (160, 260),
+    "cfi": (260, 360),
+    "4vtx": (360, 380),
+    "dr": (380, 400),
+}
+
 
 # Stage 1: pre calculation
 # Here is for some calculation without data. e.g. generating all the k-substructures
@@ -176,12 +188,11 @@ def pre_calculation(*args, **kwargs):
 
     time_end = time.process_time()
     time_cost = round(time_end - time_start, 2)
-    logger.info(f"pre-calculation time cost: {time_cost}")
 
 
 # Stage 2: dataset construction
 # Here is for dataset construction, including data processing
-def get_dataset(name, device, cfg):
+def get_dataset(name, device, cfg, logger):
     time_start = time.process_time()
 
     dataset_loader = hydra.utils.instantiate(cfg.dataset.loader)
@@ -203,14 +214,14 @@ def get_dataset(name, device, cfg):
     # dataset = BRECDataset(name=name, pre_transform=)
     time_end = time.process_time()
     time_cost = round(time_end - time_start, 2)
-    logger.info(f"dataset construction time cost: {time_cost}")
+    # logger.info(f"dataset construction time cost: {time_cost}")
 
     return dataset_train
 
 
 # Stage 3: model construction
 # Here is for model construction.
-def get_model(device, cfg):
+def get_model(device, cfg, logger):
     time_start = time.process_time()
 
     backbone = hydra.utils.instantiate(cfg.model.backbone)
@@ -219,23 +230,32 @@ def get_model(device, cfg):
     feature_encoder = hydra.utils.instantiate(cfg.model.feature_encoder)
     actual_model = TBModelT(
         backbone, backbone_wrapper, readout, feature_encoder
-    )
+    ).to(device)
     time_end = time.process_time()
     time_cost = round(time_end - time_start, 2)
-    logger.info(f"model construction time cost: {time_cost}")
+    logger.log_metrics(
+        {
+            "preprocessor_time": time_cost,
+        }
+    )
 
     return actual_model
 
 
 # Stage 4: evaluation
 # Here is for evaluation.
-def evaluation(dataset, model, path, device, cfg):
+def evaluation(dataset, model, path, device, cfg, logger):
     """
     When testing on BREC, even on the same graph, the output embedding may be different,
     because numerical precision problem occur on large graphs, and even the same graph is permuted.
     However, if you want to test on some simple graphs without permutation outputting the exact same embedding,
     some modification is needed to avoid computing the inverse matrix of a zero matrix.
     """
+    LEARNING_RATE = cfg.optimizer.parameters.lr
+    WEIGHT_DECAY = cfg.optimizer.parameters.weight_decay
+    BATCH_SIZE = cfg.dataset.dataloader_params.batch_size
+    EPOCH = cfg.trainer.max_epochs
+    NUM_RELABEL = cfg.dataset.loader.parameters.num_relabel
 
     # If you want to test on some simple graphs without permutation outputting the exact same embedding, please use S_epsilon.
     # S_epsilon = torch.diag(
@@ -256,9 +276,9 @@ def evaluation(dataset, model, path, device, cfg):
             assert len(pred_0_list) > 0
             X = torch.cat([x.reshape(1, -1) for x in pred_0_list], dim=0).T
             Y = torch.cat([x.reshape(1, -1) for x in pred_1_list], dim=0).T
-            if log_flag:
-                logger.info(f"X_mean = {torch.mean(X, dim=1)}")
-                logger.info(f"Y_mean = {torch.mean(Y, dim=1)}")
+            # if log_flag:
+            #     logger.info(f"X_mean = {torch.mean(X, dim=1)}")
+            #     logger.info(f"Y_mean = {torch.mean(Y, dim=1)}")
             D = X - Y
             D_mean = torch.mean(D, dim=1).reshape(-1, 1)
             S = torch.cov(D)
@@ -274,116 +294,128 @@ def evaluation(dataset, model, path, device, cfg):
     correct_list = []
     fail_in_reliability = 0
     loss_func = CosineEmbeddingLoss(margin=MARGIN)
+    part_name = cfg.dataset.loader.parameters.subset
+    part_range = part_dict[part_name]
 
-    for part_name, part_range in part_dict.items():
-        logger.info(f"{part_name} part starting ---")
+    # Set sample_num
+    SAMPLE_NUM = part_range[1] - part_range[0]
+    # Substract the start index
+    part_range = (0, part_range[1] - part_range[0])
 
-        cnt_part = 0
-        fail_in_reliability_part = 0
-        start = time.process_time()
+    cnt_part = 0
+    fail_in_reliability_part = 0
+    start = time.process_time()
 
-        for id in tqdm(range(part_range[0], part_range[1])):
-            logger.info(f"ID: {id}")
-            model = get_model(device, cfg)
-            optimizer = torch.optim.Adam(
-                model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY
+    for id in tqdm(range(part_range[0], part_range[1])):
+        # logger.info(f"ID: {id}")
+        model = get_model(device, cfg, logger)
+        optimizer = torch.optim.Adam(
+            model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY
+        )
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer)
+        if part_range[0] > 0:  # TODO REMOVE
+            id -= part_range[0]
+        dataset_traintest = dataset[
+            id * NUM_RELABEL * 2 : (id + 1) * NUM_RELABEL * 2
+        ]
+        dataset_reliability = dataset[
+            (id + SAMPLE_NUM) * NUM_RELABEL * 2 : (id + SAMPLE_NUM + 1)
+            * NUM_RELABEL
+            * 2
+        ]
+        # dataset_reliability = dataset[
+        #     (id + (part_range[1] - part_range[0])) * NUM_RELABEL * 2 : (id + (part_range[1] - part_range[0]) + 1)
+        #     * NUM_RELABEL
+        #     * 2
+        # ]
+
+        model.train()
+        for _ in range(EPOCH):
+            traintest_loader = torch.utils.data.DataLoader(
+                dataset_traintest,
+                batch_size=BATCH_SIZE,
+                collate_fn=collate_fn,
             )
-            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer)
-            if part_range[0] > 0: # TODO REMOVE
-                id -= part_range[0]
-            dataset_traintest = dataset[
-                id * NUM_RELABEL * 2 : (id + 1) * NUM_RELABEL * 2
-            ]
-            # dataset_reliability = dataset[
-            #     (id + SAMPLE_NUM) * NUM_RELABEL * 2 : (id + SAMPLE_NUM + 1)
-            #     * NUM_RELABEL
-            #     * 2
-            # ]
-            dataset_reliability = dataset[
-                (id + (part_range[1] - part_range[0])) * NUM_RELABEL * 2 : (id + (part_range[1] - part_range[0]) + 1)
-                * NUM_RELABEL
-                * 2
-            ]
-
-            model.train()
-            for _ in range(EPOCH):
-                traintest_loader = torch.utils.data.DataLoader(
-                    dataset_traintest,
-                    batch_size=BATCH_SIZE,
-                    collate_fn=collate_fn,
+            loss_all = 0
+            for data in traintest_loader:
+                optimizer.zero_grad()
+                pred = model(data.to(device))
+                loss = loss_func(
+                    pred[0::2],
+                    pred[1::2],
+                    torch.tensor([-1] * (len(pred) // 2)).to(device),
                 )
-                loss_all = 0
-                for data in traintest_loader:
-                    optimizer.zero_grad()
-                    pred = model(data.to(device))
-                    loss = loss_func(
-                        pred[0::2],
-                        pred[1::2],
-                        torch.tensor([-1] * (len(pred) // 2)).to(device),
-                    )
-                    loss.backward()
-                    optimizer.step()
-                    loss_all += len(pred) / 2 * loss.item()
-                loss_all /= NUM_RELABEL
-                logger.info(f"Loss: {loss_all}")
-                if loss_all < LOSS_THRESHOLD:
-                    logger.info("Early Stop Here")
-                    break
-                scheduler.step(loss_all)
+                loss.backward()
+                optimizer.step()
+                loss_all += len(pred) / 2 * loss.item()
+            loss_all /= NUM_RELABEL
+            # logger.log_metrics(
+            #     {
+            #         f"loss_{id}": loss_all,
+            #     }
+            # )
+            if loss_all < LOSS_THRESHOLD:
+                # logger.info("Early Stop Here")
+                break
+            scheduler.step(loss_all)
 
-            model.eval()
-            T_square_traintest = T2_calculation(dataset_traintest, True)
-            T_square_reliability = T2_calculation(dataset_reliability, True)
+        model.eval()
+        T_square_traintest = T2_calculation(dataset_traintest, True)
+        T_square_reliability = T2_calculation(dataset_reliability, True)
 
-            isomorphic_flag = False
-            reliability_flag = False
-            if T_square_traintest > THRESHOLD and not torch.isclose(
-                T_square_traintest, T_square_reliability, atol=EPSILON_CMP
-            ):
-                isomorphic_flag = True
-            if T_square_reliability < THRESHOLD:
-                reliability_flag = True
+        isomorphic_flag = False
+        reliability_flag = False
+        if T_square_traintest > THRESHOLD and not torch.isclose(
+            T_square_traintest, T_square_reliability, atol=EPSILON_CMP
+        ):
+            isomorphic_flag = True
+        if T_square_reliability < THRESHOLD:
+            reliability_flag = True
 
-            if isomorphic_flag:
-                cnt += 1
-                cnt_part += 1
-                correct_list.append(id)
-                logger.info(f"Correct num in current part: {cnt_part}")
-            if not reliability_flag:
-                fail_in_reliability += 1
-                fail_in_reliability_part += 1
-            logger.info(f"isomorphic: {isomorphic_flag} {T_square_traintest}")
-            logger.info(
-                f"reliability: {reliability_flag} {T_square_reliability}"
-            )
-
-        end = time.process_time()
-        time_cost_part = round(end - start, 2)
-
-        logger.info(
-            f"{part_name} part costs time {time_cost_part}; Correct in {cnt_part} / {part_range[1] - part_range[0]}"
-        )
-        logger.info(
-            f"Fail in reliability: {fail_in_reliability_part} / {part_range[1] - part_range[0]}"
+        if isomorphic_flag:
+            cnt += 1
+            cnt_part += 1
+            correct_list.append(id)
+            # logger.info(f"Correct num in current part: {cnt_part}")
+        if not reliability_flag:
+            fail_in_reliability += 1
+            fail_in_reliability_part += 1
+        # logger.info(f"isomorphic: {isomorphic_flag} {T_square_traintest}")
+        # logger.info(
+        #     f"reliability: {reliability_flag} {T_square_reliability}"
+        # )
+        logger.log_metrics(
+            {
+                f"correct_cnt": cnt,
+                f"fail_relability_cnt": fail_in_reliability,
+            }
         )
 
+    end = time.process_time()
+    time_cost_part = round(end - start, 2)
+
+    logger.log_metrics(
+        {
+            "total_num": SAMPLE_NUM,
+            "accuracy": round(cnt / SAMPLE_NUM, 2),
+        }
+    )
     time_end = time.process_time()
     time_cost = round(time_end - time_start, 2)
-    logger.info(f"evaluation time cost: {time_cost}")
+    # logger.info(f"evaluation time cost: {time_cost}")
 
-    Acc = round(cnt / SAMPLE_NUM, 2)
-    logger.info(f"Correct in {cnt} / {SAMPLE_NUM}, Acc = {Acc}")
+    # logger.info(f"Correct in {cnt} / {SAMPLE_NUM}, Acc = {Acc}")
 
-    logger.info(f"Fail in reliability: {fail_in_reliability} / {SAMPLE_NUM}")
-    logger.info(correct_list)
+    # logger.info(f"Fail in reliability: {fail_in_reliability} / {SAMPLE_NUM}")
+    # logger.info(correct_list)
 
-    logger.add(f"{path}/result_show.txt", format="{message}", encoding="utf-8")
-    logger.info(
-        "Real_correct\tCorrect\tFail\tOUTPUT_DIM\tBATCH_SIZE\tLEARNING_RATE\tWEIGHT_DECAY\tSEED"
-    )
-    logger.info(
-        f"{cnt - fail_in_reliability}\t{cnt}\t{fail_in_reliability}\t{OUTPUT_DIM}\t{BATCH_SIZE}\t{LEARNING_RATE}\t{WEIGHT_DECAY}\t{SEED}"
-    )
+    # logger.add(f"{path}/result_show.txt", format="{message}", encoding="utf-8")
+    # logger.info(
+    #     "Real_correct\tCorrect\tFail\tOUTPUT_DIM\tBATCH_SIZE\tLEARNING_RATE\tWEIGHT_DECAY\tSEED"
+    # )
+    # logger.info(
+    #     f"{cnt - fail_in_reliability}\t{cnt}\t{fail_in_reliability}\t{OUTPUT_DIM}\t{BATCH_SIZE}\t{LEARNING_RATE}\t{WEIGHT_DECAY}\t{SEED}"
+    # )
 
 
 @hydra.main(
@@ -391,26 +423,62 @@ def evaluation(dataset, model, path, device, cfg):
 )
 def main(cfg: DictConfig):
     extras(cfg)
-    # device = torch.device(f"cuda:{args.device}" if torch.cuda.is_available() else "cpu")
-    device = torch.device("cpu")
+    device = torch.device(
+        f"cuda:{cfg.trainer.devices[0]}"
+        if cfg.trainer.accelerator != "cpu"
+        else "cpu"
+    )
+    # device = torch.device("cpu")
 
     OUT_PATH = "result_BREC"
-    NAME = "Model_Name"
-    DATASET_NAME = "BREC"
+    NAME = cfg.model.model_name
+    DATASET_NAME = (
+        cfg.dataset.loader.parameters.data_name
+        + "_"
+        + cfg.dataset.loader.parameters.subset
+    )
     path = os.path.join(OUT_PATH, NAME)
     os.makedirs(path, exist_ok=True)
 
-    logger.remove(handler_id=None)
-    LOG_NAME = os.path.join(path, "log.txt")
-    logger.add(LOG_NAME, rotation="5MB")
+    logger: list[Logger] = instantiate_loggers(cfg.get("logger"))[0]
+
+    # # TODO: Add wandb logger
+    # logger.remove(handler_id=None)
+    # LOG_NAME = os.path.join(path, "log.txt")
+    # logger.add(LOG_NAME, rotation="5MB")
 
     # logger.info(args)
 
     pre_calculation()
-    dataset = get_dataset(name=DATASET_NAME, device=device, cfg=cfg)
-    model = get_model(device, cfg)
-    print("DONE")
-    evaluation(dataset, model, OUT_PATH, device, cfg)
+    dataset = get_dataset(
+        name=DATASET_NAME, device=device, cfg=cfg, logger=logger
+    )
+    model = get_model(device, cfg, logger=logger)
+    object_dict = {"cfg": cfg, "model": model, "dataset": dataset}
+    log_hyperparams(object_dict, logger)
+    evaluation(dataset, model, OUT_PATH, device, cfg, logger=logger)
+
+
+@rank_zero_only
+def log_hyperparams(object_dict, logger):
+    hparams = {}
+
+    cfg = OmegaConf.to_container(object_dict["cfg"], resolve=True)
+    model = object_dict["model"]
+
+    # save number of model parameters
+    hparams["model/params/total"] = sum(p.numel() for p in model.parameters())
+    hparams["model/params/trainable"] = sum(
+        p.numel() for p in model.parameters() if p.requires_grad
+    )
+    hparams["model/params/non_trainable"] = sum(
+        p.numel() for p in model.parameters() if not p.requires_grad
+    )
+
+    for key in cfg:
+        hparams[key] = cfg[key]
+    # send hparams to all loggers
+    logger.log_hyperparams(hparams)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 import pandas as pd
-from constants import keep_columns, optimization_metrics
+from constants import keep_columns, optimization_metrics, DATASET_ORDER, MODEL_ORDER
 from fetch_and_parse import main
 from make_time_tables import fix_domain
 
@@ -833,7 +833,8 @@ def generate_table(df, optimization_metrics):
             )
 
         # Collect all datasets in this subset, sorted
-        all_datasets = sorted(subset_df["dataset"].unique())
+        unique_datasets = subset_df["dataset"].unique()
+        all_datasets = [d for d in DATASET_ORDER if d in unique_datasets] 
 
         # We'll group by domain to produce domain blocks
         domain_groups = {}
@@ -923,7 +924,6 @@ def generate_table(df, optimization_metrics):
         # For each domain, we do the "sandwiching" with midrules
         for dom in all_domains:
             dom_df = domain_groups[dom]
-            from constants import MODEL_ORDER
             dom_models = [m for m in MODEL_ORDER[dom] if m in dom_df["model"].unique()]
             # domain subtitle row
             latex_lines.append(r"\midrule")
@@ -957,14 +957,21 @@ def generate_table(df, optimization_metrics):
         return "\n".join(latex_lines)
 
     # Build the two separate tables
-    latex_mantra = build_table(
-        df_mantra,
-        "Topological datasets. Results are shown as mean and standard deviation. The best result is bold and shaded in grey, while those within one standard deviation are in blue-shaded boxes.",
-    )
-    latex_others = build_table(df_other, "Benchmarking datasets. Results are shown as mean and standard deviation. The best result is bold and shaded in grey, while those within one standard deviation are in blue-shaded boxes.")
+    # latex_mantra = build_table(
+    #     df_mantra,
+    #     "Topological datasets. Results are shown as mean and standard deviation. The best result is bold and shaded in grey, while those within one standard deviation are in blue-shaded boxes.",
+    # )
+    # latex_others = build_table(df_other, "Benchmarking datasets. Results are shown as mean and standard deviation. The best result is bold and shaded in grey, while those within one standard deviation are in blue-shaded boxes.")
+
+
 
     # Return them combined with some spacing
-    return latex_mantra + "\n\n" + latex_others
+    # return latex_mantra + "\n\n" + latex_others
+    latex_all = build_table(
+        df_best,
+        "Benchmarking datasets. Results are shown as mean and standard deviation. The best result is bold and shaded in grey, while those within one standard deviation are in blue-shaded boxes."
+    )
+    return latex_all
 
 
 if __name__ == "__main__":
@@ -977,7 +984,6 @@ if __name__ == "__main__":
         "ZINC",
         "MANTRA_orientation",
         "MANTRA_name",
-        "MANTRA_betti_numbers_0",
         "MANTRA_betti_numbers_1",
         "MANTRA_betti_numbers_2",
     ]
@@ -985,7 +991,7 @@ if __name__ == "__main__":
     # Parse the dataframes
     df = parse_all_dfs(selected_datasets)
     #df.drop(['variant'], inplace=True, axis=1) 
-    mask = (df['model'] == 'HOPSE-M') & (df['dataset'] == 'ZINC')
+    # mask = (df['model'] == 'HOPSE-M') & (df['dataset'] == 'ZINC')
 
     # Generate the LaTeX table
     latex_table = generate_table(df, optimization_metrics)

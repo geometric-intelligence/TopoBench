@@ -185,6 +185,7 @@ notebooks/tmp
 /tutorials/datasets/
 # wandb
 wandb/
+result_BREC/
 
 # ruff
 .ruff_cache/
