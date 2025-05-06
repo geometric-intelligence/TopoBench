@@ -339,7 +339,7 @@ def generate(
                     trainer_patience_str = (
                         "callbacks.early_stopping.patience=10"
                     )
-                    model_tag = f'logger.wandb.tags=["{model}","{domain}","{nbhd}]'
+                    model_tag = f'logger.wandb.tags=["{model}","{domain}"]'
                     wandb_str = (
                         "logger.wandb.project=HOPSE_reproducibility"
                         if not cpu
