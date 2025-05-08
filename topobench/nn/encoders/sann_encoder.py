@@ -4,6 +4,7 @@ import torch
 import torch_geometric
 
 from topobench.nn.encoders.base import AbstractFeatureEncoder
+from ogb.graphproppred.mol_encoder import AtomEncoder, BondEncoder
 
 
 class SANNFeatureEncoder(AbstractFeatureEncoder):
@@ -38,6 +39,8 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
         selected_dimensions=None,
         max_hop=3,
         batch_norm=False,
+        use_atom_encoder=False,
+        use_bond_encoder=False,
         **kwargs,
     ):
         super().__init__()
@@ -53,16 +56,30 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
         self.hops = max_hop
         for i in self.dimensions:
             for j in range(self.hops):
-                setattr(
-                    self,
-                    f"encoder_{i}_{j}",
-                    SimpleEncoder(
-                        self.in_channels[i][j],
-                        self.out_channels,
-                        dropout=proj_dropout,
-                        batch_norm=batch_norm,
-                    ),
-                )
+                if use_atom_encoder and i == 0 and j == 0:
+                    setattr(
+                        self,
+                        f"encoder_{i}_{j}",
+                        SimpleAtomEncoder(self.out_channels)
+
+                    )
+                elif use_bond_encoder and i == 1 and j == 0:
+                    setattr(
+                        self,
+                        f"encoder_{i}_{j}",
+                        SimpleBondEncoder(self.out_channels)
+                    )
+                else:
+                    setattr(
+                        self,
+                        f"encoder_{i}_{j}",
+                        SimpleEncoder(
+                            self.in_channels[i][j],
+                            self.out_channels,
+                            dropout=proj_dropout,
+                            batch_norm=batch_norm,
+                        ),
+                    )
 
     def __repr__(self):
         return f"{self.__class__.__name__}(in_channels={self.in_channels}, out_channels={self.out_channels}, dimensions={self.dimensions})"
@@ -92,7 +109,23 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
                 )
         return data
 
+class SimpleAtomEncoder(torch.nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.atom_encoder = AtomEncoder(in_channels)
 
+    def forward(self, x, batch):
+        x = self.atom_encoder(x.long())
+        return x
+
+class SimpleBondEncoder(torch.nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.bond_encoder = BondEncoder(in_channels)
+
+    def forward(self, x, batch):
+        x = self.bond_encoder(x.long())
+        return x
 class SimpleEncoder(torch.nn.Module):
     r"""SimpleEncoder used by SANN.
 

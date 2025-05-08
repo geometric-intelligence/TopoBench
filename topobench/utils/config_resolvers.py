@@ -563,12 +563,14 @@ def infer_in_hasse_graph_agg_dim(
 
         # If edge_attr is used, set those dimensions
         if use_edge_attr:
-            for i in range(1, len(dim_in)):
-                results[i][0] = dim_in[i]
+            for i in range(1, complex_dim+1):
+                results[i][0] = dim_in[1]
+        # TODO: If there are face attributes, another condition needs to be added
 
     else:
         results.fill(dim_hidden)
 
+    # For each complex
     for i in range(complex_dim + 1):
         results[i][hop_num - 1] = max(1, neighbor_targets[i]) * dim_hidden
 
