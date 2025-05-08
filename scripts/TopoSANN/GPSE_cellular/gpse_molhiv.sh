@@ -82,8 +82,7 @@ for i in {0..7}; do
             dataset.dataloader_params.batch_size=128\
             trainer.max_epochs=5\
             trainer.min_epochs=1\
-            trainer.devices=1\
-            trainer.accelerator=cpu\
+            trainer.devices=\[$CUDA\]\
             trainer.check_val_every_n_epoch=1\
             logger.wandb.project='prerun'\
             optimizer.parameters.lr=0.01\
