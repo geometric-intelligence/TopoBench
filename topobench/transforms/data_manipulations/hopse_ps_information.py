@@ -118,8 +118,20 @@ class HOPSE_PE_Information(torch_geometric.transforms.BaseTransform):
         feat_on_dst = torch.zeros_like(
             getattr(params, f"x_{dst_rank}"), device=self.device
         )
+        feat_on_src = getattr(params, f"x_{src_rank}").to(self.device)
+        # Features on the source rank are more than the destination rank
+        if feat_on_dst.shape[1] > src_batch.shape[1]:
+            pad = (0, feat_on_dst.shape[1] - src_batch.shape[1])
+            feat_on_src = torch.nn.functional.pad(feat_on_src, pad, "constant", 0)
+            src_batch = torch.nn.functional.pad(src_batch, pad, "constant", 0)
+        # Features on the source rank are more than the destination rank
+        elif feat_on_dst.shape[1] < src_batch.shape[1]:
+            pad = (0, feat_on_src.shape[1] - dst_batch.shape[1])
+            feat_on_dst = torch.nn.functional.pad(feat_on_dst, pad, "constant", 0)
+            dst_batch = torch.nn.functional.pad(dst_batch, pad, "constant", 0)
+
         x_in = torch.vstack(
-            [feat_on_dst, getattr(params, f"x_{src_rank}").to(self.device)]
+            [feat_on_dst, feat_on_src]
         )
         batch_expanded = torch.cat([dst_batch, src_batch], dim=0)
 
