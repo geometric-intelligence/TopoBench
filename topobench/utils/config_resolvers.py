@@ -636,7 +636,7 @@ def infer_in_hasse_graph_agg_dim_positional_encodings(
         # If edge_attr is used, set those dimensions
         if use_edge_attr:
             for i in range(1, len(dim_in)):
-                results[i][0] = dim_in[i]
+                results[i][0] = dim_in[1]
 
     else:
         results.fill(dim_hidden)
