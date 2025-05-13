@@ -81,7 +81,7 @@ do
             for batch_size in ${BATCH_SIZES[*]}
             do
                 python topobench/run.py\
-                    dataset=simplicial/$dataset\
+                    dataset=graph/$dataset\
                     model=simplicial/sann\
                     model.backbone.n_layers=$N_LAYERS_STR\
                     model.feature_encoder.out_channels=$OUT_CHANNELS_STR\
