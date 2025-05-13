@@ -2,7 +2,7 @@
 
 from omegaconf import DictConfig
 
-from topobench.data.datasets import BRECDataset
+from topobench.data.datasets import BRECDataset, CSLDataset
 from topobench.data.loaders.base import AbstractLoader
 
 
@@ -65,7 +65,13 @@ class ExpressivityDatasetLoader(AbstractLoader):
                 root=str(self.root_data_dir),
                 name=self.parameters.data_name,
                 parameters=self.parameters,
-                load_as_graph=True,
+                **kwargs,
+            )
+        elif "CSL" in self.parameters.data_name:
+            return CSLDataset(
+                root=str(self.root_data_dir),
+                name=self.parameters.data_name,
+                parameters=self.parameters,
                 **kwargs,
             )
         else:

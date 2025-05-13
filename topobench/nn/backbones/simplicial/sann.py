@@ -241,6 +241,10 @@ class SANNLayer(torch.nn.Module):
             return torch.nn.functional.relu(x)
         if self.update_func == "lrelu":
             return torch.nn.functional.leaky_relu(x)
+        if self.update_func == 'gelu':
+            return torch.nn.functional.gelu(x)
+        if self.update_func == 'silu':
+            return torch.nn.functional.silu(x)
         return None
 
     def forward(self, x_all: dict[int, torch.Tensor]):
