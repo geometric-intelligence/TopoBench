@@ -64,7 +64,6 @@ do
             callbacks.early_stopping.patience=1\
             transforms.sann_encoding.max_hop=$max_hop\
             transforms.sann_encoding.complex_dim=3\
-            transforms=MANTRA_SANN\
             --multirun &
             
     done
@@ -98,8 +97,6 @@ do
                     callbacks.early_stopping.patience=10\
                     transforms.sann_encoding.max_hop=$max_hop\
                     transforms.sann_encoding.complex_dim=3\
-                    transforms=MANTRA_SANN\
-                    evaluator=betti_numbers\
                     --multirun &
                 sleep 3
             done

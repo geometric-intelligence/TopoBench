@@ -109,7 +109,7 @@ do
             dataset.dataloader_params.batch_size=$BATCH_SIZES_STR\
             trainer.max_epochs=500\
             trainer.check_val_every_n_epoch=5\
-            trainer.min_epochs=50\
+            trainer.min_epochs=20\
             callbacks.early_stopping.patience=10\
             model.readout.readout_name=SANNReadout\
             trainer.devices=\[$CUDA\]\

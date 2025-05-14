@@ -15,7 +15,6 @@ feature_encoder:
     - 0
     - 1
     - 2
-  feature_lifting: Duplicate
   all_ones: true
   use_bond_encoder: False
   use_atom_encoder: False

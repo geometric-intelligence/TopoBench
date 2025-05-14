@@ -91,8 +91,6 @@ do
                     callbacks.early_stopping.patience=10\
                     optimizer.parameters.lr=$lr\
                     optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
-                    transforms=MANTRA_name_dataset_default\
-                    transforms.redefine_simplicial_neighbourhoods.signed=$INDICENCE_SIGNED_STR\
                     logger.wandb.project=$project_name\
                     --multirun &
                 sleep 10

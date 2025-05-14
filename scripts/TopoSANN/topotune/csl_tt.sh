@@ -82,8 +82,6 @@ gpus=(0 1 2 3 4 5 6 7)
             optimizer.parameters.lr=0.01\
             optimizer.parameters.weight_decay=0.25\
             callbacks.early_stopping.patience=10\
-            transforms=topotune_MANTRA\
-            transforms.redefine_simplicial_neighborhoods.neighborhoods=$neighborhood\
             model.backbone.neighborhoods=$neighborhood\
             evaluator=betti_numbers\
             --multirun &
@@ -118,8 +116,6 @@ gpus=(0 1 2 3 4 5 6 7)
                     optimizer.parameters.lr=$lr\
                     optimizer.parameters.weight_decay=$wd\
                     callbacks.early_stopping.patience=10\
-                    transforms=topotune_MANTRA\
-                    transforms.redefine_simplicial_neighborhoods.neighborhoods=$neighborhood\
                     model.backbone.neighborhoods=$neighborhood\
                     --multirun &
             done
