@@ -117,7 +117,7 @@ do
             callbacks.early_stopping.patience=10\
             model.readout.readout_name=SANNReadout\
             trainer.devices=\[$CUDA\]\
-            --multirun
+            --multirun &
     
     done
     wait

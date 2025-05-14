@@ -83,7 +83,6 @@ gpus=(0 1 2 3 4 5 6 7)
             optimizer.parameters.weight_decay=0.25\
             callbacks.early_stopping.patience=10\
             model.backbone.neighborhoods=$neighborhood\
-            evaluator=betti_numbers\
             --multirun &
         wait
     done
@@ -112,7 +111,7 @@ gpus=(0 1 2 3 4 5 6 7)
                     trainer.min_epochs=50\
                     trainer.devices=\[$CUDA\]\
                     trainer.check_val_every_n_epoch=5\
-                    logger.wandb.project=$project_name\
+                    logger.wandb.project='CSL'\
                     optimizer.parameters.lr=$lr\
                     optimizer.parameters.weight_decay=$wd\
                     callbacks.early_stopping.patience=10\

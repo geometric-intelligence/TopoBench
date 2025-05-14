@@ -91,7 +91,7 @@ do
                     callbacks.early_stopping.patience=10\
                     optimizer.parameters.lr=$lr\
                     optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
-                    logger.wandb.project=$project_name\
+                    logger.wandb.project='CSL'\
                     --multirun &
                 sleep 10
             done

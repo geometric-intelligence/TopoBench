@@ -91,7 +91,7 @@ do
                     trainer.min_epochs=50\
                     trainer.devices=\[$CUDA\]\
                     trainer.check_val_every_n_epoch=5\
-                    logger.wandb.project=$project_name\
+                    logger.wandb.project='CSL'\
                     optimizer.parameters.lr=$LEARNING_RATES_STR\
                     optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
                     callbacks.early_stopping.patience=10\
