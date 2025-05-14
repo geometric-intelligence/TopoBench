@@ -107,6 +107,7 @@ do
             optimizer.parameters.lr=$LEARNING_RATES_STR\
             optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
             dataset.dataloader_params.batch_size=$BATCH_SIZES_STR\
+            logger.wandb.project='CSL'\
             trainer.max_epochs=500\
             trainer.check_val_every_n_epoch=5\
             trainer.min_epochs=20\
