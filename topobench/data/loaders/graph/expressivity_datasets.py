@@ -1,8 +1,9 @@
 """Loaders for expressivity datasets."""
 
 from omegaconf import DictConfig
+import torch
 
-from topobench.data.datasets import BRECDataset, CSLDataset
+from topobench.data.datasets import BRECDataset, CSLDataset, GCBDataset
 from topobench.data.loaders.base import AbstractLoader
 
 
@@ -74,6 +75,27 @@ class ExpressivityDatasetLoader(AbstractLoader):
                 parameters=self.parameters,
                 **kwargs,
             )
+        elif "GCB" in self.parameters.data_name:
+            split_idx = {}
+
+            combined_dataset = None 
+            last_idx = 0
+            for split_type in ['train', 'valid', 'test']:
+                current_ds_split = GCBDataset(
+                    root=str(self.root_data_dir),
+                    name=self.parameters.data_name,
+                    parameters=self.parameters,
+                    split=split_type,
+                    **kwargs
+                )
+                split_idx[split_type] = torch.arange(last_idx, last_idx+len(current_ds_split))
+                last_idx = len(current_ds_split)
+                if combined_dataset is None:
+                    combined_dataset = current_ds_split
+                else:
+                    combined_dataset += current_ds_split
+            combined_dataset.split_idx = split_idx
+            return combined_dataset
         else:
             raise RuntimeError(
                 f"Dataset {self.parameters.data_name} not supported."
