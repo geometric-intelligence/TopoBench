@@ -35,12 +35,13 @@ datasets = (
 )
 batch_sizes = (1, 1, 1, 1, 1, 256, 256, 256)
 liftings = (
-    "liftings/graph2hypergraph/forman_ricci_curvature",
-    "liftings/graph2hypergraph/kernel",
-    "liftings/graph2hypergraph/khop",
-    "liftings/graph2hypergraph/knn",
-    "liftings/graph2hypergraph/mapper",
-    "liftings/graph2hypergraph/modularity_maximization",
+    # "liftings/graph2hypergraph/forman_ricci_curvature",
+    # "liftings/graph2hypergraph/kernel",
+    # "liftings/graph2hypergraph/khop",
+    # "liftings/graph2hypergraph/knn",
+    # "liftings/graph2hypergraph/mapper",
+    # "liftings/graph2hypergraph/modularity_maximization",
+    "liftings/graph2hypergraph/exclusive_hop_lifting",
 )
 lrs = (0.001, 0.01, 0.1)
 hidden_channels = (32, 64, 128)
