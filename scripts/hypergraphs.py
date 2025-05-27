@@ -24,11 +24,11 @@ models = (
     "hypergraph/unignn2",
 )
 datasets = (
-    "graph/cocitation_cora",
-    "graph/cocitation_citeseer",
-    # "graph/cocitation_pubmed",
-    # "graph/amazon_ratings",
-    # "graph/roman_empire",
+    # "graph/cocitation_cora",
+    # "graph/cocitation_citeseer",
+    # # "graph/cocitation_pubmed",
+    "graph/amazon_ratings",
+    "graph/roman_empire",
     "graph/MUTAG",
     "graph/PROTEINS",
     "graph/ZINC",
