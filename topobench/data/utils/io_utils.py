@@ -525,17 +525,17 @@ def load_hypergraph_content_dataset(data_dir, data_name):
         list(edge_index[1].numpy()),
     )
 
-    # check that every node is in some hyperedge
-    if len(np.unique(node_list)) != num_nodes:
-        # add self hyperedges to isolated nodes
-        isolated_nodes = np.setdiff1d(
-            np.arange(num_nodes), np.unique(node_list)
-        )
+    # # check that every node is in some hyperedge
+    # if len(np.unique(node_list)) != num_nodes:
+    #     # add self hyperedges to isolated nodes
+    #     isolated_nodes = np.setdiff1d(
+    #         np.arange(num_nodes), np.unique(node_list)
+    #     )
 
-        for node in isolated_nodes:
-            node_list += [node]
-            edge_list += [num_he]
-            num_he += 1
+    #     for node in isolated_nodes:
+    #         node_list += [node]
+    #         edge_list += [num_he]
+    #         num_he += 1
 
     assert num_he == max(edge_list) + 1, (
         "Num hyperedges do not coincide after adding isolated nodes"

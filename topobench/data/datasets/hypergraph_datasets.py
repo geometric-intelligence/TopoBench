@@ -69,16 +69,9 @@ class HypergraphDataset(InMemoryDataset):
         out = fs.torch_load(self.processed_paths[0])
         assert len(out) == 3 or len(out) == 4
 
-        if len(out) == 3:  # Backward compatibility.
-            data, self.slices, self.sizes = out
-            data_cls = Data
-        else:
-            data, self.slices, self.sizes, data_cls = out
+        data, self.slices, self.sizes, data_cls = out
 
-        if not isinstance(data, dict):  # Backward compatibility.
-            self.data = data
-        else:
-            self.data = data_cls.from_dict(data)
+        self.data = data_cls.from_dict(data)
 
         assert isinstance(self._data, Data)
 
@@ -181,31 +174,3 @@ class HypergraphDataset(InMemoryDataset):
             (self._data.to_dict(), self.slices, {}, self._data.__class__),
             self.processed_paths[0],
         )
-
-
-if __name__ == "__main__":
-    from omegaconf import OmegaConf
-
-    # Define config (you can adjust this as needed)
-    parameters = OmegaConf.create(
-        {
-            # add your specific config entries here if needed
-            # e.g., "year": 2024, "task_variable": "some_variable"
-        }
-    )
-
-    # Set the root directory where the dataset will be saved
-    root_dir = "/home/levtel/projects/TopoBenchmark/datasets/"
-    dataset_name = "ModelNet40"
-
-    # Create the dataset instance
-    dataset = HypergraphDataset(
-        root=root_dir, name=dataset_name, parameters=parameters
-    )
-
-    # Print out the dataset to confirm it's loaded
-    print(dataset)
-
-    # Example: access data[0]
-    data_item = dataset[0]
-    print(data_item)
