@@ -487,7 +487,7 @@ def load_hypergraph_content_dataset(data_dir, data_name):
 
     # features = np.array(idx_features_labels[:, 1:-1])
     features = torch.Tensor(idx_features_labels[:, 1:-1].astype(float)).float()
-    labels = torch.Tensor(idx_features_labels[:, -1].astype(int)).long()
+    labels = torch.Tensor(idx_features_labels[:, -1].astype(float)).long()
 
     # build graph
     idx = np.array(idx_features_labels[:, 0], dtype=np.int32)
