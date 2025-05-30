@@ -2,7 +2,7 @@ _target_: topobench.model.TBModel
 
 model_name: topotune
 model_domain: cell
-tune_gnn: IdentityGCN
+tune_gnn: GCN
 
 feature_encoder:
   _target_: topobench.nn.encoders.${model.feature_encoder.encoder_name}
