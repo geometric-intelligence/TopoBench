@@ -28,7 +28,7 @@ Assess how your model compares against state-of-the-art topological neural netwo
   <a href="#jigsaw-get-started">Get Started</a> •
   <a href="#anchor-tutorials">Tutorials</a> •
   <a href="#gear-neural-networks">Neural Networks</a> •
-  <a href="#rocket-liftings-transforms">Liftings & Transforms</a> •
+  <a href="#rocket-liftings-and-transforms">Liftings and Transforms</a> •
   <a href="#books-datasets">Datasets</a> •
   <a href="#mag-references">References</a> 
 </p>
@@ -43,7 +43,7 @@ Assess how your model compares against state-of-the-art topological neural netwo
   <img src="resources/workflow.jpg" width="700">
 </p>
 
-The main pipeline trains and evaluates a wide range of state-of-the-art TNNs and Graph Neural Networks (GNNs) (see <a href="#gear-neural-networks">:gear: Neural Networks</a>) on numerous and varied datasets and benchmark tasks (see <a href="#books-datasets">:books: Datasets</a> ). Additionally, the library offers the ability to transform, i.e. _lift_, each dataset from one topological domain to another (see <a href="#rocket-liftings">:rocket: Liftings</a>), enabling for the first time an exhaustive inter-domain comparison of TNNs.
+The main pipeline trains and evaluates a wide range of state-of-the-art TNNs and Graph Neural Networks (GNNs) (see <a href="#gear-neural-networks">:gear: Neural Networks</a>) on numerous and varied datasets and benchmark tasks (see <a href="#books-datasets">:books: Datasets</a> ). Additionally, the library offers the ability to transform, i.e. _lift_, each dataset from one topological domain to another (see <a href="#rocket-liftings-and-transforms">:rocket: Liftings and Transforms</a>), enabling for the first time an exhaustive inter-domain comparison of TNNs.
 
 ## :jigsaw: Get Started
 
@@ -230,7 +230,7 @@ We list the neural networks trained and evaluated by `TopoBench`, organized by t
 **Remark:** TopoBench includes [TopoTune](https://arxiv.org/pdf/2410.06530), a comprehensive framework for easily designing new, general TDL models on any domain using any (graph) neural network as a backbone. Please check out the extended [TopoTune wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/TopoTune) for further details on how to leverage this framework to define and train customized topological neural network architectures.
 
 
-## :rocket: Liftings & Transforms
+## :rocket: Liftings and Transforms
 
 We list the liftings used in `TopoBench` to transform datasets. Here, a _lifting_ refers to a function that transforms a dataset defined on a topological domain (_e.g._, on a graph) into the same dataset but supported on a different topological domain (_e.g._, on a simplicial complex). 
 
