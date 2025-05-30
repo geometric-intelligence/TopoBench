@@ -28,7 +28,7 @@ Assess how your model compares against state-of-the-art topological neural netwo
   <a href="#jigsaw-get-started">Get Started</a> •
   <a href="#anchor-tutorials">Tutorials</a> •
   <a href="#gear-neural-networks">Neural Networks</a> •
-  <a href="#rocket-liftings">Liftings</a> •
+  <a href="#rocket-liftings-transforms">Liftings & Transforms</a> •
   <a href="#books-datasets">Datasets</a> •
   <a href="#mag-references">References</a> 
 </p>
