@@ -17,7 +17,7 @@ backbone:
   dropout: 0.5
   activation: relu
   MLP_num_layers: 1
-  All_num_layers: 1
+  n_layers: 1
   edconv_type: EquivSet
   aggregate: 'add'
 

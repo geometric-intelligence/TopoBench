@@ -149,11 +149,16 @@ class HypergraphDataset(InMemoryDataset):
 
         # Move files from osp.join(folder, name_download) to folder
         for file in os.listdir(osp.join(folder, self.name)):
-            shutil.move(
-                osp.join(folder, self.name, file), osp.join(folder, file)
-            )
+            try:
+                shutil.move(
+                    osp.join(folder, self.name, file), osp.join(folder, file)
+                )
+            except shutil.Error:
+                # If the file already exists, skip it
+                continue
         # Delete osp.join(folder, self.name) dir
         shutil.rmtree(osp.join(folder, self.name))
+        
 
     def process(self) -> None:
         r"""Handle the data for the dataset.

@@ -27,7 +27,7 @@ class EDGNN(nn.Module):
         Number of layers in the second MLP. Defaults to -1.
     MLP3_num_layers : int, optional
         Number of layers in the third MLP. Defaults to -1.
-    All_num_layers : int, optional
+    n_layers : int, optional
         Number of layers in the EDConv. Defaults to 2.
     edconv_type : str, optional
         Type of EDConv. Defaults to 'EquivSet'.
@@ -50,7 +50,7 @@ class EDGNN(nn.Module):
         MLP_num_layers=2,
         MLP2_num_layers=-1,
         MLP3_num_layers=-1,
-        All_num_layers=2,
+        n_layers=2,
         edconv_type="EquivSet",
         restart_alpha=0.5,
         aggregate="add",
@@ -73,7 +73,7 @@ class EDGNN(nn.Module):
         self.mlp3_layers = (
             MLP_num_layers if MLP3_num_layers < 0 else MLP3_num_layers
         )
-        self.nlayer = All_num_layers
+        self.nlayer = n_layers
         self.edconv_type = edconv_type
 
         if edconv_type == "EquivSet":
