@@ -351,7 +351,7 @@ Specially useful in pre-processing steps, these are the general data manipulatio
 ### Simplicial
 | Dataset | Task | Description | Reference |
 | --- | --- | --- | --- |
-| Mantra |  Classification, Multi-label Classification  |  Predict topological attributes of manifold triangulations |  [Source](https://github.com/aidos-lab/MANTRA)  |
+| Mantra |  Classification, Multi-label Classification  |  Predict topological attributes of manifold triangulations |  [Source](https://github.com/aidos-lab/MANTRA) (This project includes third-party datasets. See third_party_licenses.txt for licensing information.) |
 
 ### Hypergraph
 | Dataset | Task | Description | Reference |
