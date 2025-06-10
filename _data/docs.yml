@@ -1,11 +1,14 @@
 - title: Getting Started
   docs:
-  - home
-  - themes
-  - customization
+  - getting-started
 
-- title: Examples
+- title: Core Topics
   docs:
-  - cheatsheet
-  - font-awesome
-  - bootstrap
+  - domains
+  - liftings
+  - datasets
+
+- title: Resources
+  docs:
+  - papers
+  - team

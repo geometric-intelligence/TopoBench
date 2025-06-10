@@ -1,3 +1,102 @@
+// Import our custom styles
+@import "custom";
+
+// Override Bootstrap variables
+$brand-primary: #3498db;
+$brand-warning: #f39c12;
+
+// Custom navbar styles
+.navbar-default {
+    background-color: #fff;
+    border-color: #e7e7e7;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    
+    .navbar-brand {
+        padding: 10px 15px;
+        
+        img {
+            height: 40px;
+            margin-right: 10px;
+        }
+    }
+
+    .navbar-nav {
+        float: none;
+        text-align: center;
+        margin: 0 auto;
+        display: inline-block;
+        
+        > li {
+            display: inline-block;
+            float: none;
+            margin: 0 15px;
+            
+            > a {
+                color: #333;
+                font-weight: 500;
+                font-size: 16px;
+                padding: 20px 0;
+                transition: color 0.3s ease;
+                
+                &:hover,
+                &:focus {
+                    color: $brand-primary;
+                }
+            }
+        }
+    }
+}
+
+#navbar {
+    text-align: center;
+}
+
+.navbar-container {
+    font-size: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.navbar-right {
+    margin-left: auto;
+}
+
+body {
+    padding-top: 70px;
+}
+
+.navbar-brand {
+    display: flex;
+    align-items: center;
+    
+    .brand-text {
+        font-size: 20px;
+        font-weight: 600;
+        margin-left: 10px;
+    }
+}
+
+// Custom button styles
+.btn {
+    border-radius: 4px;
+    font-weight: 500;
+    padding: 8px 16px;
+    
+    &.btn-lg {
+        padding: 12px 24px;
+    }
+}
+
+// Custom jumbotron styles
+.jumbotron {
+    background-color: #f8f9fa;
+    margin-bottom: 0;
+    
+    h1 {
+        color: #333;
+    }
+}
 
 html {
     position: relative;
@@ -11,23 +110,19 @@ html {
   .navbar-brand{
     img{
       margin: -$navbar-padding-vertical 0;
-      height: $navbar-height;
+      height: 80px !important;
       padding: 10px 0;
     }
   }
   
   
   .header-container {
-    background-color: black;
-    background: url('../img/bg.jpg') no-repeat 50% 0;
+    background: none;
     color: #fff;
-  
+
     h1 {
       color: #fff;
     }
-    // background-attachment: fixed;
-    background-size: cover;
-    background-position: center 36%;
     margin-top: -37px;
   }
   .navbar-container {

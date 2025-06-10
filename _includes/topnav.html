@@ -1,32 +1,74 @@
 <nav class="navbar navbar-default navbar-fixed-top">
-    <div class="container navbar-container">
+    <div class="container">
         <div class="navbar-header">
             <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar" aria-expanded="false" aria-controls="navbar">
-        <span class="sr-only">Toggle navigation</span>
-        <span class="icon-bar"></span>
-        <span class="icon-bar"></span>
-        <span class="icon-bar"></span>
-      </button>
+                <span class="sr-only">Toggle navigation</span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+                <span class="icon-bar"></span>
+            </button>
             <a class="navbar-brand" href="{{ site.baseurl }}/">
-                <span><img src="{{ "/assets/img/logonav.png" | relative_url }}" alt="Logo"></span> {{ site.title }}
+                <img src="{{ "/assets/img/logo_mouse.png" | relative_url }}" alt="TopoBench Logo">
+                <span class="brand-text">TopoBench</span>
             </a>
         </div>
         <div id="navbar" class="collapse navbar-collapse">
-            <ul class="nav navbar-nav">
-                <li {% if page.sectionid=='docs' %} class="active" {% endif %}><a href="{{ "/docs/home/" | relative_url }}">Docs</a></li>
-                <li {% if page.sectionid=='blog' %} class="active" {% endif %}><a href="{{ site.posts.first.url | relative_url }}">Blog</a></li>
-            </ul>
-            <div class="navbar-right">
-                <form class="navbar-form navbar-left">
-                    <div class="form-group has-feedback">
-                        <input id="search-box" type="search" class="form-control" placeholder="Search...">
-                        <i class="fa fa-search form-control-feedback"></i>
-                    </div>
-                </form>
+            <div class="container-fluid">
                 <ul class="nav navbar-nav">
-                    <li><a href="{{ site.git_address }}"><i class="fa fa-github" aria-hidden="true"></i></a></li>
+                    <li><a href="{{ site.baseurl }}/docs/getting-started">Get Started</a></li>
+                    <li><a href="{{ site.baseurl }}/docs/datasets">Datasets</a></li>
+                    <li><a href="{{ site.baseurl }}/docs/documentation">Documentation</a></li>
+                    <li><a href="{{ site.baseurl }}/docs/papers">Papers</a></li>
+                    <li><a href="{{ site.baseurl }}/docs/team">Team</a></li>
+                    <li><a href="https://github.com/geometric-intelligence/TopoBench"><i class="fa fa-github"></i></a></li>
                 </ul>
             </div>
         </div>
     </div>
 </nav>
+
+<style>
+.dropdown-menu {
+    background-color: #ffffff;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.dropdown-menu > li > a {
+    color: #333;
+    padding: 8px 20px;
+    transition: all 0.2s ease;
+}
+
+.dropdown-menu > li > a:hover {
+    background-color: #f8f9fa;
+    color: #007bff;
+}
+
+.dropdown:hover .dropdown-menu {
+    display: block;
+}
+
+@media (max-width: 767px) {
+    .dropdown-menu {
+        position: static;
+        float: none;
+        width: auto;
+        margin-top: 0;
+        background-color: transparent;
+        border: 0;
+        box-shadow: none;
+    }
+    
+    .dropdown-menu > li > a {
+        padding: 5px 15px;
+        color: #777;
+    }
+    
+    .dropdown-menu > li > a:hover {
+        background-color: transparent;
+        color: #333;
+    }
+}
+</style>

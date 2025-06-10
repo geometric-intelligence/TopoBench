@@ -1,0 +1,298 @@
+// Variables for TopoBench colors
+$tb-primary: #9C27B0;    // Purple from logo
+$tb-secondary: #E91E63;  // Pink from logo
+$tb-light: #F3E5F5;     // Light purple for backgrounds
+$tb-dark: #4A148C;      // Dark purple for hover states
+$tb-gray: #333333;      // Dark gray for text
+$tb-blue: #F0F8FF;      // Light blue for background (AliceBlue)
+
+// Custom styles for TopoBench website
+body {
+    background-color: $tb-blue;  // Changed from pink to light blue
+}
+
+// Header and Navigation
+.navbar-default {
+    background-color: #fff;
+    border: none;
+    padding: 0;  // Reduced padding to accommodate larger logo
+    
+    .navbar-nav {
+        margin-top: 5px;
+        
+        > li > a {
+            color: white;
+            font-weight: 500;
+            padding: 8px 16px;
+            border-radius: 20px;
+            margin: 0 5px;
+            transition: all 0.3s ease;
+            background-color: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            
+            &:hover {
+                background-color: rgba(255, 255, 255, 0.2);
+                color: white;
+            }
+        }
+    }
+
+    .navbar-brand {
+        padding: 5px 15px;
+        display: flex;
+        align-items: center;
+        
+        img {
+            display: block !important;
+            height: 80px !important;  // Changed from 400px to 150px
+            width: auto;
+            margin: 0;  // Reset margin
+        }
+        
+        .brand-text {
+            color: black;
+            font-size: 24px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+    }
+}
+
+// Hero section
+.header-container {
+    background-color: $tb-blue;  // Changed from pink to light blue
+    min-height: 60vh;  // Reduced from 100vh
+    padding: 0;
+    margin-top: -80px;
+    position: relative;
+    
+    .container {
+        position: relative;
+        z-index: 2;
+        padding-top: 80px;
+    }
+
+    .header-content {
+        padding: 60px 0;  // Reduced padding
+        max-width: 800px;
+        margin: 0 auto;
+        text-align: center;
+        
+        > p {
+            font-size: 24px;
+            color: $tb-primary;  // Changed to primary color
+            margin-bottom: 40px;
+            background-color: white;
+            border-radius: 20px;
+            padding: 15px 30px;
+            display: inline-block;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+        }
+    }
+}
+
+// Hide the logo in the navbar since we have it in the header
+.navbar-brand img {
+    display: none;
+}
+
+// Content boxes
+.description-box, .info-box {
+    background-color: rgba(255, 255, 255, 0.98);
+    border-radius: 20px;
+    padding: 40px;
+    margin: 20px 0;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    transition: all 0.3s ease;
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    
+    &:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+    }
+    
+    p {
+        margin: 0;
+        line-height: 1.8;
+        font-size: 18px;
+        color: $tb-gray;
+    }
+}
+
+.description-box {
+    max-width: 800px;
+    margin: 40px auto;
+    background-color: rgba(255, 255, 255, 0.98);
+    
+    .lead {
+        font-size: 22px;
+        font-weight: 300;
+        margin: 0;
+        color: $tb-gray;
+    }
+}
+
+// Main content section
+.main-content {
+    padding: 80px 0;
+    background-color: #FFF5FA;
+    position: relative;
+    
+    &::before {
+        content: '';
+        position: absolute;
+        top: -50px;
+        left: 0;
+        right: 0;
+        height: 50px;
+        background: linear-gradient(to bottom, transparent, #FFF5FA);
+    }
+    
+    .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 30px;
+        
+        .col-md-6 {
+            flex: 1;
+            min-width: 300px;
+            
+            .info-box {
+                height: 100%;
+                display: flex;
+                align-items: center;
+            }
+        }
+    }
+}
+
+// Container adjustments
+.container {
+    max-width: 1400px;
+    padding: 0 30px;
+    margin: 0 auto;
+}
+
+.btn-primary {
+    background-color: $tb-primary;
+    border-color: $tb-primary;
+    &:hover {
+        background-color: $tb-dark;
+        border-color: $tb-dark;
+    }
+}
+
+.btn-warning {
+    background-color: $tb-secondary;
+    border-color: $tb-secondary;
+    &:hover {
+        background-color: darken($tb-secondary, 10%);
+        border-color: darken($tb-secondary, 10%);
+    }
+}
+
+.lead {
+    font-size: 18px;
+    line-height: 1.6;
+    margin-bottom: 30px;
+    color: $tb-gray;
+}
+
+.feature-icon {
+    font-size: 48px;
+    color: #3498db;
+    margin-bottom: 20px;
+}
+
+.text-center {
+    i.fa {
+        color: $tb-primary;
+        transition: color 0.3s ease;
+        &:hover {
+            color: $tb-secondary;
+        }
+    }
+    
+    h3 {
+        margin: 20px 0;
+        font-weight: 600;
+        color: $tb-primary;
+    }
+}
+
+.img-responsive {
+    max-width: 300px;
+    margin: 0 auto;
+}
+
+// Links
+a {
+    color: $tb-primary;
+    &:hover,
+    &:focus {
+        color: $tb-secondary;
+        text-decoration: none;
+    }
+}
+
+// Horizontal rule
+hr {
+    border-top: 1px solid $tb-light;
+}
+
+// Update button styles to match new design
+.btn {
+    border-radius: 20px;
+    padding: 12px 30px;
+    font-size: 18px;
+    transition: all 0.3s ease;
+    background-color: rgba(255, 255, 255, 0.9);
+    border: none;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    
+    &:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+    }
+}
+
+.img-responsive.logo-main {
+    max-height: 200px;
+    width: auto;
+    margin: 0 auto;
+}
+
+// Responsive adjustments
+@media (max-width: 768px) {
+    .navbar-default {
+        .navbar-nav {
+            margin-top: 0;
+            background-color: rgba(0, 0, 0, 0.8);
+            border-radius: 10px;
+            padding: 10px;
+            
+            > li > a {
+                margin: 5px 0;
+                text-align: center;
+            }
+        }
+    }
+    
+    .header-container {
+        .header-content {
+            padding: 60px 20px;
+            
+            > p {
+                font-size: 18px;
+                padding: 10px 20px;
+            }
+        }
+    }
+    
+    .description-box {
+        padding: 20px;
+        margin: 20px 10px;
+    }
+} 
