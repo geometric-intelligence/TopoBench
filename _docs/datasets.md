@@ -111,9 +111,9 @@ layout: docs
                     </div>
 
                     <div class="dataset-card">
-                        <a href="{{ site.baseurl }}/docs/datasets/cocitation-citeseer" class="dataset-link">
+                        <a href="{{ site.baseurl }}/docs/datasets/citeseer" class="dataset-link">
                             <div class="dataset-header">
-                                <h3>Cocitation Citeseer</h3>
+                                <h3>Citeseer</h3>
                             </div>
                             <div class="dataset-tags">
                                 <span class="domain-tag">Graph</span>
@@ -123,9 +123,9 @@ layout: docs
                     </div>
 
                     <div class="dataset-card">
-                        <a href="{{ site.baseurl }}/docs/datasets/cocitation-cora" class="dataset-link">
+                        <a href="{{ site.baseurl }}/docs/datasets/cora" class="dataset-link">
                             <div class="dataset-header">
-                                <h3>Cocitation Cora</h3>
+                                <h3>Cora</h3>
                             </div>
                             <div class="dataset-tags">
                                 <span class="domain-tag">Graph</span>
@@ -137,7 +137,7 @@ layout: docs
                     <div class="dataset-card">
                         <a href="{{ site.baseurl }}/docs/datasets/pubmed" class="dataset-link">
                             <div class="dataset-header">
-                                <h3>Cocitation PubMed</h3>
+                                <h3>PubMed</h3>
                             </div>
                             <div class="dataset-tags">
                                 <span class="domain-tag">Graph</span>
@@ -171,23 +171,15 @@ layout: docs
                     </div>
 
                     <div class="dataset-card">
-                        <div class="dataset-header">
-                            <h3>Manual Dataset</h3>
-                        </div>
-                        <div class="dataset-tags">
-                            <span class="domain-tag">Graph</span>
-                            <span class="task-tag">Task Level: Graph</span>
-                        </div>
-                    </div>
-
-                    <div class="dataset-card">
-                        <div class="dataset-header">
-                            <h3>Minesweeper</h3>
-                        </div>
-                        <div class="dataset-tags">
-                            <span class="domain-tag">Graph</span>
-                            <span class="task-tag">Task Level: Node</span>
-                        </div>
+                        <a href="{{ site.baseurl }}/docs/datasets/minesweeper" class="dataset-link">
+                            <div class="dataset-header">
+                                <h3>Minesweeper</h3>
+                            </div>
+                            <div class="dataset-tags">
+                                <span class="domain-tag">Graph</span>
+                                <span class="task-tag">Task Level: Node</span>
+                            </div>
+                        </a>
                     </div>
 
                     <div class="dataset-card">
@@ -203,103 +195,99 @@ layout: docs
                     </div>
 
                     <div class="dataset-card">
-                        <div class="dataset-header">
-                            <h3>NCI109</h3>
-                        </div>
-                        <div class="dataset-tags">
-                            <span class="domain-tag">Graph</span>
-                            <span class="task-tag">Task Level: Graph</span>
-                        </div>
+                        <a href="{{ site.baseurl }}/docs/datasets/nci109" class="dataset-link">
+                            <div class="dataset-header">
+                                <h3>NCI109</h3>
+                            </div>
+                            <div class="dataset-tags">
+                                <span class="domain-tag">Graph</span>
+                                <span class="task-tag">Task Level: Graph</span>
+                            </div>
+                        </a>
                     </div>
 
                     <div class="dataset-card">
-                        <div class="dataset-header">
-                            <h3>OGBG-MolHIV</h3>
-                        </div>
-                        <div class="dataset-tags">
-                            <span class="domain-tag">Graph</span>
-                            <span class="task-tag">Task Level: Graph</span>
-                        </div>
+                        <a href="{{ site.baseurl }}/docs/datasets/proteins" class="dataset-link">
+                            <div class="dataset-header">
+                                <h3>PROTEINS</h3>
+                            </div>
+                            <div class="dataset-tags">
+                                <span class="domain-tag">Graph</span>
+                                <span class="task-tag">Task Level: Graph</span>
+                            </div>
+                        </a>
                     </div>
 
                     <div class="dataset-card">
-                        <div class="dataset-header">
-                            <h3>OGBG-MolPCBA</h3>
-                        </div>
-                        <div class="dataset-tags">
-                            <span class="domain-tag">Graph</span>
-                            <span class="task-tag">Task Level: Graph</span>
-                        </div>
+                        <a href="{{ site.baseurl }}/docs/datasets/questions" class="dataset-link">
+                            <div class="dataset-header">
+                                <h3>Questions</h3>
+                            </div>
+                            <div class="dataset-tags">
+                                <span class="domain-tag">Graph</span>
+                                <span class="task-tag">Task Level: Node</span>
+                            </div>
+                        </a>
                     </div>
 
                     <div class="dataset-card">
-                        <div class="dataset-header">
-                            <h3>PROTEINS</h3>
-                        </div>
-                        <div class="dataset-tags">
-                            <span class="domain-tag">Graph</span>
-                            <span class="task-tag">Task Level: Graph</span>
-                        </div>
+                        <a href="{{ site.baseurl }}/docs/datasets/reddit-binary" class="dataset-link">
+                            <div class="dataset-header">
+                                <h3>Reddit Binary</h3>
+                            </div>
+                            <div class="dataset-tags">
+                                <span class="domain-tag">Graph</span>
+                                <span class="task-tag">Task Level: Graph</span>
+                            </div>
+                        </a>
                     </div>
 
                     <div class="dataset-card">
-                        <div class="dataset-header">
-                            <h3>Questions</h3>
-                        </div>
-                        <div class="dataset-tags">
-                            <span class="domain-tag">Graph</span>
-                            <span class="task-tag">Task Level: Node</span>
-                        </div>
+                        <a href="{{ site.baseurl }}/docs/datasets/roman_empire" class="dataset-link">
+                            <div class="dataset-header">
+                                <h3>Roman Empire</h3>
+                            </div>
+                            <div class="dataset-tags">
+                                <span class="domain-tag">Graph</span>
+                                <span class="task-tag">Task Level: Node</span>
+                            </div>
+                        </a>
                     </div>
 
                     <div class="dataset-card">
-                        <div class="dataset-header">
-                            <h3>Reddit Binary</h3>
-                        </div>
-                        <div class="dataset-tags">
-                            <span class="domain-tag">Graph</span>
-                            <span class="task-tag">Task Level: Graph</span>
-                        </div>
+                        <a href="{{ site.baseurl }}/docs/datasets/tolokers" class="dataset-link">
+                            <div class="dataset-header">
+                                <h3>Tolokers</h3>
+                            </div>
+                            <div class="dataset-tags">
+                                <span class="domain-tag">Graph</span>
+                                <span class="task-tag">Task Level: Node</span>
+                            </div>
+                        </a>
                     </div>
 
                     <div class="dataset-card">
-                        <div class="dataset-header">
-                            <h3>Roman Empire</h3>
-                        </div>
-                        <div class="dataset-tags">
-                            <span class="domain-tag">Graph</span>
-                            <span class="task-tag">Task Level: Node</span>
-                        </div>
+                        <a href="{{ site.baseurl }}/docs/datasets/us-county-demos" class="dataset-link">
+                            <div class="dataset-header">
+                                <h3>US County Demos</h3>
+                            </div>
+                            <div class="dataset-tags">
+                                <span class="domain-tag">Graph</span>
+                                <span class="task-tag">Task Level: Node</span>
+                            </div>
+                        </a>
                     </div>
 
                     <div class="dataset-card">
-                        <div class="dataset-header">
-                            <h3>Tolokers</h3>
-                        </div>
-                        <div class="dataset-tags">
-                            <span class="domain-tag">Graph</span>
-                            <span class="task-tag">Task Level: Node</span>
-                        </div>
-                    </div>
-
-                    <div class="dataset-card">
-                        <div class="dataset-header">
-                            <h3>US County Demos</h3>
-                        </div>
-                        <div class="dataset-tags">
-                            <span class="domain-tag">Graph</span>
-                            <span class="task-tag">Task Level: Node</span>
-                        </div>
-                    </div>
-
-                    <div class="dataset-card">
-                        <div class="dataset-header">
-                            <h3>ZINC</h3>
-                        </div>
-                        <div class="dataset-tags">
-                            <span class="domain-tag">Graph</span>
-                            <span class="task-tag">Task Level: Graph</span>
-                        </div>
+                        <a href="{{ site.baseurl }}/docs/datasets/zinc" class="dataset-link">
+                            <div class="dataset-header">
+                                <h3>ZINC</h3>
+                            </div>
+                            <div class="dataset-tags">
+                                <span class="domain-tag">Graph</span>
+                                <span class="task-tag">Task Level: Graph</span>
+                            </div>
+                        </a>
                     </div>
                 </div>
             </div>

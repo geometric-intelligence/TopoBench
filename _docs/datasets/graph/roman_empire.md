@@ -1,13 +1,14 @@
 ---
-title: Mantra Name
-permalink: /docs/datasets/simplicial/mantra-name/
+title: Roman Empire
+permalink: /docs/datasets/roman_empire/
 layout: docs
 sectionid: docs
 ---
 
+
 <div class="dataset-page clean-modern v2">
     <div class="dataset-header clean-header v2-header">
-        <h1>Mantra Name</h1>
+        <h1>Roman Empire</h1>
         <div class="dataset-meta v2-meta">
             <span class="domain-tag">Graph</span>
             <span class="task-tag">Task Level: Graph</span>
@@ -17,7 +18,7 @@ sectionid: docs
     <div class="dataset-content clean-content v2-content">
         <section class="description-card v2-card">
             <h2>Description</h2>
-            <p>The Mantra Name dataset is a citation network dataset consisting of scientific publications from Mantra Name. Each node represents a scientific publication and edges represent citation relationships.</p>
+            <p>The Roman Empire dataset is a citation network dataset consisting of scientific publications from Roman Empire. Each node represents a scientific publication and edges represent citation relationships.</p>
         </section>
 
         <section class="overview-card v2-card">
@@ -114,7 +115,7 @@ sectionid: docs
                             <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="5" y="7" width="9" height="9" rx="2" stroke="#2563eb" stroke-width="1.5"/><rect x="7.5" y="4" width="9" height="9" rx="2" fill="#fff" stroke="#2563eb" stroke-width="1.5"/></svg>
                         </button>
                     </div>
-                    <pre class="repro-cli" id="repro-cli">python -m topobench model=graph/gin dataset=graph/cocitation_Mantra Name optimizer.parameters.lr=0.001 model.feature_encoder.out_channels=64 model.backbone.num_layers=2 model.feature_encoder.proj_dropout=0.5 dataset.dataloader_params.batch_size=1 dataset.split_params.data_seed=0,3,5,7,9 trainer.max_epochs=500 trainer.min_epochs=50 trainer.check_val_every_n_epoch=1 callbacks.early_stopping.patience=50</pre>
+                    <pre class="repro-cli" id="repro-cli">python -m topobench model=graph/gin dataset=graph/cocitation_Roman Empire optimizer.parameters.lr=0.001 model.feature_encoder.out_channels=64 model.backbone.num_layers=2 model.feature_encoder.proj_dropout=0.5 dataset.dataloader_params.batch_size=1 dataset.split_params.data_seed=0,3,5,7,9 trainer.max_epochs=500 trainer.min_epochs=50 trainer.check_val_every_n_epoch=1 callbacks.early_stopping.patience=50</pre>
                 </div>
             </div>
         </section>
