@@ -17,11 +17,11 @@ backbone:
   device: cuda:0
 
 backbone_wrapper:
-  _target_: topobench.nn.wrappers.TabPFNWrapper 
+  _target_: topobench.nn.wrappers.graph.tabpfn_wrapper.TabPFNWrapper 
   _partial_: true
   wrapper_name: TabPFNWrapper
   
-  
+
 
 readout:
   _target_: topobench.nn.readouts.${model.readout.readout_name}

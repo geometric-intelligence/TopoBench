@@ -1,22 +1,23 @@
 import torch
 
 
-from topobench.nn.wrappers.base import AbstractWrapper
+# from topobench.nn.wrappers.base import AbstractWrapper
 
 
-class TabPFNWrapper(AbstractWrapper):
+class TabPFNWrapper(torch.nn.Module):
     r"""Wrapper for the TimePFN model.
 
     This wrapper defines the forward pass of the TimePFN model.
     """
 
     def __init__(self, backbone, **kwargs):
+        super().__init__()
         self.backbone = backbone
         self.model_fit_flag = False
         self.lag = 0
 
-        self.train_dataloader = kwargs["train_dataloader"]
-        self.val_dataloader = kwargs["val_dataloader"]
+        # self.train_dataloader = kwargs["train_dataloader"]
+        # self.val_dataloader = kwargs["val_dataloader"]
 
     def __call__(self, batch):
         model_out = self.forward(batch)
@@ -42,7 +43,9 @@ class TabPFNWrapper(AbstractWrapper):
             Dictionary containing the updated model output.
         """
         # Option 2 (better one)
-        if self.model_fit_flag == False:
+        for idx in range(len(batch.test_mask)):
+            # Extract the context
+
             batch = next(iter(self.train_dataloader))
             self.fit(batch)
 
