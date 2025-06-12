@@ -5,13 +5,13 @@ max_rank: 2
 copy_initial: True
 neighborhoods:  
   - 'up_adjacency-0'
+  #- 'up_incidence-0'
   # - 'up_adjacency-1'
   # - 'down_adjacency-1'
   # - 'down_adjacency-2'
-  # - 'up_incidence-0'
   # - 'up_incidence-1'
-  - 'down_incidence-1'
-  - 'down_incidence-2'
+  # - 'down_incidence-1'
+  # - 'down_incidence-2'
 
 
 dim_target_node: ${.target_pe_dim} #51
