@@ -10,7 +10,16 @@ from topobench.nn.backbones.graph.gine_conv_layer import GINEConvESLapPE
 
 
 class GraphGPSBlock(nn.Module):
-    def __init__(self, hidden_channels, local_model, global_model, norm_type='batch', act='relu', dropout=0.0, attn_dropout=0.0):
+    def __init__(
+        self,
+        hidden_channels,
+        local_model,
+        global_model,
+        norm_type="batch",
+        act="relu",
+        dropout=0.0,
+        attn_dropout=0.0,
+    ):
         super().__init__()
         Norm = pygnn.norm.LayerNorm if norm_type == "layer" else nn.BatchNorm1d
         activation = nn.ReLU if act == "relu" else nn.SiLU
@@ -32,27 +41,41 @@ class GraphGPSBlock(nn.Module):
         self.ff_dropout2 = nn.Dropout(dropout)
 
     def forward(self, h, edge_index, edge_attr, batch_idx, pe=None):
-        if hasattr(self.local_model, 'equivstable_pe'):
+        if hasattr(self.local_model, "equivstable_pe"):
             local_out = self.local_model(h, edge_index, edge_attr, pe)
         else:
             local_out = self.local_model(h, edge_index, edge_attr)
 
         local = self.dropout_local(local_out)
         local = h + local
-        local = self.norm1_local(local, batch_idx) if hasattr(self.norm1_local, "normalized_shape") else self.norm1_local(local)
+        local = (
+            self.norm1_local(local, batch_idx)
+            if hasattr(self.norm1_local, "normalized_shape")
+            else self.norm1_local(local)
+        )
 
         h = local
         h_dense, mask = to_dense_batch(h, batch_idx)
-        attn_out = self.global_model(h_dense, h_dense, h_dense, key_padding_mask=~mask)[0]
+        attn_out = self.global_model(
+            h_dense, h_dense, h_dense, key_padding_mask=~mask
+        )[0]
         attn = attn_out[mask]
         attn = self.dropout_attn(attn)
         attn = h + attn
-        attn = self.norm1_attn(attn, batch_idx) if hasattr(self.norm1_attn, "normalized_shape") else self.norm1_attn(attn)
+        attn = (
+            self.norm1_attn(attn, batch_idx)
+            if hasattr(self.norm1_attn, "normalized_shape")
+            else self.norm1_attn(attn)
+        )
 
         ff = self.ff_dropout1(self.ff_activation(self.ff_linear1(attn)))
         ff = self.ff_dropout2(self.ff_linear2(ff))
         out = attn + ff
-        out = self.norm2(out, batch_idx) if hasattr(self.norm2, "normalized_shape") else self.norm2(out)
+        out = (
+            self.norm2(out, batch_idx)
+            if hasattr(self.norm2, "normalized_shape")
+            else self.norm2(out)
+        )
         return out
 
 
@@ -99,7 +122,9 @@ class GraphGPSNetwork(pl.LightningModule):
                     Linear_pyg(hidden_channels, hidden_channels),
                 )
                 if equivstable_pe:
-                    local_model = GINEConvESLapPE(gin_nn, edge_dim=self.edge_dim)
+                    local_model = GINEConvESLapPE(
+                        gin_nn, edge_dim=self.edge_dim
+                    )
                 else:
                     local_model = pygnn.GINEConv(gin_nn, edge_dim=64)
             elif local_gnn_type == "CustomGatedGCN":
@@ -117,10 +142,15 @@ class GraphGPSNetwork(pl.LightningModule):
             # Global model
             if global_model_type == "Transformer":
                 global_model = nn.MultiheadAttention(
-                    hidden_channels, num_heads, dropout=attn_dropout, batch_first=True
+                    hidden_channels,
+                    num_heads,
+                    dropout=attn_dropout,
+                    batch_first=True,
                 )
             else:
-                raise ValueError(f"Unsupported global model: {global_model_type}")
+                raise ValueError(
+                    f"Unsupported global model: {global_model_type}"
+                )
 
             block = GraphGPSBlock(
                 hidden_channels,
@@ -141,11 +171,17 @@ class GraphGPSNetwork(pl.LightningModule):
         if edge_attr is not None and edge_attr.dim() == 1:
             edge_attr = edge_attr.unsqueeze(-1)
         if edge_attr is None:
-            edge_attr = torch.zeros((edge_index.size(1), 1), device=h.device, dtype=h.dtype)
+            edge_attr = torch.zeros(
+                (edge_index.size(1), 1), device=h.device, dtype=h.dtype
+            )
         edge_attr = self.edge_encoder(edge_attr.to(dtype=h.dtype))
 
         batch_idx = batch.batch
-        pe = batch.pe_EquivStableLapPE if self.equivstable_pe and hasattr(batch, "pe_EquivStableLapPE") else None
+        pe = (
+            batch.pe_EquivStableLapPE
+            if self.equivstable_pe and hasattr(batch, "pe_EquivStableLapPE")
+            else None
+        )
 
         x_dis = h @ h.T if self.training else None
 
