@@ -23,11 +23,8 @@ class TabPFNWrapper(torch.nn.Module):
         model_out = self.forward(batch)
         return model_out
 
-    def fit(self, batch):
-        batch_x = batch.x_0
-        batch_y = batch.y
-
-        self.backbone.fit(batch_x.cpu(), batch_y.cpu())
+    def fit(self, x, y):
+        self.backbone.fit(x.cpu(), y.cpu())
 
     def forward(self, batch):
         r"""Forward pass for the Tune wrapper.
@@ -42,23 +39,16 @@ class TabPFNWrapper(torch.nn.Module):
         dict
             Dictionary containing the updated model output.
         """
-        # Option 2 (better one)
-        for idx in range(len(batch.test_mask)):
-            # Extract the context
 
-            batch = next(iter(self.train_dataloader))
-            self.fit(batch)
+        mask = batch["train_mask"]
+        x = batch.x_0[mask]
+        y = batch.y[mask]
+        self.fit(x, y)
 
-        batch_x = batch["batch_x"]
-        batch_y = batch["batch_y"]
-        batch_x_mark = batch["batch_x_mark"]
-        batch_y_mark = batch["batch_y_mark"]
-
-        outputs = self.backbone(batch_y, batch_x_mark)
-        outputs = outputs[:, -self.kwargs.pred_len :, :]
-        batch_y_subset = batch_y_subset[:, -self.kwargs.pred_len :, :]
+        proba = self.backbone.predict_proba(batch.x_0.cpu())
 
         # Update evaluator with current batch (replaces the accumulation logic)
-        model_out = {"predictions": outputs, "targets": batch_y_subset}
+        model_out = {"labels": batch.y, "batch_0": batch.batch_0}
+        model_out["x_0"] = torch.Tensor(proba).float().to(batch.y.device)
 
         return model_out

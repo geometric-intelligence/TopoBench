@@ -5,10 +5,10 @@
 defaults:
   - _self_
   - dataset: graph/cocitation_cora
-  - model: graph/tabpfn
+  - model: cell/tabpfn #tabpfn
   - transforms: ${get_default_transform:${dataset},${model}} #no_transform
   - optimizer: default
-  - loss: default
+  - loss: no_loss
   - evaluator: default
   - callbacks: default
   - logger: wandb # set logger here or use command line (e.g. `python train.py logger=tensorboard`)

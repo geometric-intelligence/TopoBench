@@ -283,7 +283,7 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
 
         # Remove saved model (useful with sweeps)
         # Check if the file exists and delete it
-        if os.path.exists(ckpt_path):
+        if (ckpt_path is not None) and (os.path.exists(ckpt_path)):
             os.remove(ckpt_path)
 
     test_metrics = trainer.callback_metrics
