@@ -3,6 +3,7 @@ import numpy as np
 from sklearn.neighbors import NearestNeighbors
 from copy import deepcopy
 
+
 class TabPFNWrapper(torch.nn.Module):
     r"""Wrapper for the TabPFN model that returns prediction probabilities as a tensor."""
 
@@ -55,12 +56,11 @@ class TabPFNWrapper(torch.nn.Module):
             (n_test, n_classes) containing predicted probabilities.
         """
         # Extract test samples
-        mask = batch["test_mask"]
-        X_test = batch.x_0[mask].cpu().numpy()
+        test_mask = batch["test_mask"]
 
         # Ensure model is fitted
-        #if self.X_train is None or self.y_train is None or self._nn is None:
-            #raise ValueError("Model has not been fitted. Call `fit` first.")
+        # if self.X_train is None or self.y_train is None or self._nn is None:
+        # raise ValueError("Model has not been fitted. Call `fit` first.")
 
         train_mask = batch["train_mask"]
         self.X_train = np.asarray(batch.x_0[train_mask].cpu().numpy())
@@ -71,17 +71,26 @@ class TabPFNWrapper(torch.nn.Module):
         self._nn.fit(self.X_train)
 
         n_classes = len(self.classes_)
-        probs = []
-        for idx, x_np in enumerate(batch.x_0[mask].cpu().numpy()):
+        probs = torch.zeros(batch.x_0.shape[0], torch.unique(batch.y).shape[0])
+
+        for idx in test_mask:
+            # Get the features of testing sample
+            x_0 = batch.x_0[idx].cpu().numpy()
+
+            # Some logic below: TODO
             if idx in train_mask:
                 # If the sample is in the training set, return one-hot encoded probabilities
                 one_hot = np.zeros(n_classes, dtype=float)
-                one_hot[np.where(self.classes_ == batch.y[mask][idx].item())[0][0]] = 1.0
+                one_hot[
+                    np.where(self.classes_ == batch.y[mask][idx].item())[0][0]
+                ] = 1.0
                 probs.append(torch.tensor(one_hot, dtype=torch.float32))
                 continue
 
             # Find k nearest neighbors
-            nbr_idx = self._nn.kneighbors(x_np.reshape(1, -1), return_distance=False)[0]
+            nbr_idx = self._nn.kneighbors(
+                x_np.reshape(1, -1), return_distance=False
+            )[0]
 
             # No neighbors -> uniform probability
             if nbr_idx.size == 0:
@@ -105,7 +114,9 @@ class TabPFNWrapper(torch.nn.Module):
             if X_nb.shape[1] == 0:
                 self.n_features_constant += 1
                 # count how many neighbors belong to each class
-                counts = np.array([np.sum(y_nb == c) for c in self.classes_], dtype=float)
+                counts = np.array(
+                    [np.sum(y_nb == c) for c in self.classes_], dtype=float
+                )
                 # normalize to get a probability distribution
                 dist = counts / counts.sum()
                 probs.append(torch.tensor(dist, dtype=torch.float32))
@@ -121,7 +132,10 @@ class TabPFNWrapper(torch.nn.Module):
             for idx_local, cls in enumerate(model.classes_):
                 global_idx = np.where(self.classes_ == cls)[0][0]
                 full_proba[global_idx] = raw_proba[idx_local]
-            probs.append(torch.tensor(full_proba, dtype=torch.float32))
+
+            # Right assigment of output
+            # Assign the probabilities to the output tensor at right position (idx)
+            probs[idx] = torch.tensor(full_proba, dtype=torch.float32)
 
         # Stack into (n_test, n_classes)
         prob_tensor = torch.stack(probs)
@@ -130,7 +144,9 @@ class TabPFNWrapper(torch.nn.Module):
         model_out = {
             "labels": batch.y,
             "batch_0": batch.batch_0,
-            "x_0": prob_tensor.to(batch.x_0.device),  # Ensure same device as input
+            "x_0": prob_tensor.to(
+                batch.x_0.device
+            ),  # Ensure same device as input
         }
         return model_out
 
