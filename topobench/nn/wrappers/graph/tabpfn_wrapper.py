@@ -56,7 +56,6 @@ class TabPFNWrapper(torch.nn.Module):
         """
         # Extract test samples
         mask = batch["test_mask"]
-        X_test = batch.x_0[mask].cpu().numpy()
 
         # Ensure model is fitted
         #if self.X_train is None or self.y_train is None or self._nn is None:
@@ -72,11 +71,11 @@ class TabPFNWrapper(torch.nn.Module):
 
         n_classes = len(self.classes_)
         probs = []
-        for idx, x_np in enumerate(batch.x_0[mask].cpu().numpy()):
+        for idx, x_np in enumerate(batch.x_0.cpu().numpy()):
             if idx in train_mask:
                 # If the sample is in the training set, return one-hot encoded probabilities
                 one_hot = np.zeros(n_classes, dtype=float)
-                one_hot[np.where(self.classes_ == batch.y[mask][idx].item())[0][0]] = 1.0
+                one_hot[np.where(self.classes_ == batch.y[idx].item())[0][0]] = 1.0
                 probs.append(torch.tensor(one_hot, dtype=torch.float32))
                 continue
 
