@@ -1,0 +1,33 @@
+# Dataset loader config
+loader:
+  _target_: topobench.data.loaders.ExpressivityDatasetLoader
+  parameters: 
+    data_domain: graph
+    data_type: expressivity
+    data_name: CSL
+    data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+
+# Dataset parameters
+parameters:
+  num_features: 10
+  num_classes: 10
+  max_node_degree: 35
+  task: classification 
+  loss_type: cross_entropy
+  monitor_metric: accuracy
+  task_level: graph
+
+#splits
+split_params:
+  learning_setting: inductive
+  data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}/
+  data_seed: 0
+  split_type: 'k-fold' #'k-fold' # either "k-fold" or "random" strategies
+  k: 5 # for "k-fold" Cross-Validation
+
+# Dataloader parameters
+dataloader_params:
+  batch_size: 10 
+  num_workers: 0
+  pin_memory: False
+

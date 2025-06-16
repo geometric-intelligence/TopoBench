@@ -1,6 +1,12 @@
 """Evaluators for model evaluation."""
 
-from torchmetrics.classification import AUROC, Accuracy, Precision, Recall
+from torchmetrics.classification import (
+    AUROC,
+    Accuracy,
+    F1Score,
+    Precision,
+    Recall,
+)
 from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError
 
 from .metrics import ExampleRegressionMetric
@@ -10,6 +16,7 @@ METRICS = {
     "accuracy": Accuracy,
     "precision": Precision,
     "recall": Recall,
+    "f1": F1Score,
     "auroc": AUROC,
     "mae": MeanAbsoluteError,
     "mse": MeanSquaredError,
@@ -18,9 +25,11 @@ METRICS = {
 
 from .base import AbstractEvaluator  # noqa: E402
 from .evaluator import TBEvaluator  # noqa: E402
+from .evaluator_betti import BettiEvaluator  # noqa: E402
 
 __all__ = [
     "METRICS",
     "AbstractEvaluator",
     "TBEvaluator",
+    "BettiEvaluator",
 ]

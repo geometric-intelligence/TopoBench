@@ -9,12 +9,15 @@ loader:
 
 # Dataset parameters
 parameters:
-  num_features: 9
+  num_features:
+  - 9 # Node features 
+  - 3 # Edge features
   num_classes: 2
   task: classification 
   loss_type: cross_entropy
-  monitor_metric: accuracy
+  monitor_metric: auroc 
   task_level: graph
+  preserve_edge_attr_if_lifted: True
 
 #splits
 split_params:

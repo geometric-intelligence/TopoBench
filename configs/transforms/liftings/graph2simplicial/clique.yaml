@@ -4,5 +4,5 @@ transform_name: "SimplicialCliqueLifting"
 complex_dim: ${oc.select:dataset.parameters.max_dim_if_lifted,3}
 preserve_edge_attr: ${oc.select:dataset.parameters.preserve_edge_attr_if_lifted,False}
 signed: False
-feature_lifting: ProjectionSum
+feature_lifting: ${oc.select:model.feature_encoder.feature_lifting,ProjectionSum}
 neighborhoods: ${oc.select:model.backbone.neighborhoods,null}

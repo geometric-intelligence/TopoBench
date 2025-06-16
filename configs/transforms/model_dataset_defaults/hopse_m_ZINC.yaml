@@ -1,0 +1,33 @@
+defaults:
+  - data_manipulations@one_hot_node_degree_features: one_hot_node_degree_features # Here we use the one_hot_node_degree_features to one-hot atoms types.
+  - liftings@_here_: ${get_required_lifting:graph,${model}}
+  - data_manipulations@sann_encoding: hopse_ps_information
+
+sann_encoding:
+  pe_types: 
+    - 'RWSE' 
+    - 'ElstaticPE'
+    - 'HKdiagSE'
+    - 'LapPE'
+   
+
+  # Different PS have different sizes, need to unify them. 
+  target_pe_dim: 20
+
+  # LapPE config
+  laplacian_norm_type: 'sym'
+  posenc_LapPE_eigen_max_freqs: 18
+  posenc_LapPE_eigen_eigvec_norm: 'L2'
+  posenc_LapPE_eigen_skip_zero_freq: True
+  posenc_LapPE_eigen_eigvec_abs: True
+
+  # RWSE config
+  kernel_param_RWSE: 
+    - 2
+    - 20
+
+  # HKdiagSE config
+  kernel_param_HKdiagSE: 
+    - 1
+    - 22
+

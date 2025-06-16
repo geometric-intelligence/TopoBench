@@ -6,12 +6,14 @@ import hydra
 from topobench.utils.config_resolvers import (
     infer_in_channels,
     infer_num_cell_dimensions,
+    infer_in_khop_feature_dim,
     get_default_metrics,
     get_default_trainer,
     get_default_transform,
     get_monitor_metric,
     get_monitor_mode,
     get_required_lifting,
+    set_preserve_edge_attr,
 )
 
 class TestConfigResolvers:
@@ -144,3 +146,20 @@ class TestConfigResolvers:
 
         with pytest.raises(ValueError, match="Invalid task") as e:
             get_default_metrics("some_task")
+            
+    def test_set_preserve_edge_attr(self):
+        """Test set_preserve_edge_attr."""
+        default = True
+        
+        out = set_preserve_edge_attr(model_name="sann", default=default)
+        assert out == False
+        
+        out = set_preserve_edge_attr(model_name="san", default=default)
+        assert out == True
+        
+    def test_infer_in_khop_feature_dim(self):
+        """Test infer_in_khop_feature_dim."""
+        dataset_in_channels = [7, 7, 7]
+        max_hop = 3
+        out = infer_in_khop_feature_dim(dataset_in_channels, max_hop)
+        assert out == [[7, 14, 42, 133], [7, 28, 91, 294], [7, 21, 70, 231]]

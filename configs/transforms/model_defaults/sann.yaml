@@ -1,0 +1,4 @@
+# USE python -m topobenchmarkx transforms.one_hot_node_degree_features.degrees_fields=x to run this config
+defaults:
+  - liftings@_here_: ${get_required_lifting:graph,${model}}
+  - data_manipulations@sann_encoding: precompute_khop_features

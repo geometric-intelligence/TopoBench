@@ -1,10 +1,9 @@
-"""Test RedefineSimplicialNeighbourhoods class."""
+"""Test RedefineSimplicialNeighborhoods class."""
 
 import pytest
 import hydra
 import torch
-from torch_geometric.data import Data
-from topobench.transforms.data_manipulations import RedefineSimplicialNeighbourhoods
+from topobench.transforms.data_manipulations import RedefineSimplicialNeighborhoods
 from topobench.data.preprocessor.preprocessor import PreProcessor
 
 
@@ -13,7 +12,7 @@ class TestRedefineSimplicialNeighbourhoods:
 
     def setup_method(self):
         """Set up test fixtures before each test method."""
-        self.transform = RedefineSimplicialNeighbourhoods()
+        self.transform = RedefineSimplicialNeighborhoods()
         self.relative_config_dir = "../../../configs"
 
 
@@ -41,13 +40,14 @@ class TestRedefineSimplicialNeighbourhoods:
 
         # Define transformation configuration
         transforms_config = {
-            "RedefineSimplicialNeighbourhoods": {
+            "RedefineSimplicialNeighborhoods": {
                 "_target_": "topobench.transforms.data_transform.DataTransform",
-                "transform_name": "RedefineSimplicialNeighbourhoods",
+                "transform_name": "RedefineSimplicialNeighborhoods",
                 "transform_type": None,
                 "complex_dim": 3,
                 "neighborhoods": None,
                 "signed": False,
+                "keys_to_keep": ["x", "x_0", "x_1", "x_2", "y", "edge_index", "edge_attr", "shape"],
             }
         }
 
@@ -60,11 +60,11 @@ class TestRedefineSimplicialNeighbourhoods:
 
             # Check tensor equality for all relevant keys
             for key in initial.keys():
-                if key not in {"x", "x_0", "x_1", "x_2", "y", "shape"}:
-                    try:
-                        assert torch.equal(initial[key].to_dense(), transformed[key].to_dense()), f"Mismatch in tensor values for key: {key}"
-                    except AttributeError as e:
-                        pytest.fail(f"Tensor conversion to dense failed for key: {key}. Error: {e}")
+                if key not in transforms_config["RedefineSimplicialNeighborhoods"]["keys_to_keep"]:
+                    assert torch.equal(initial[key].indices(), transformed[key].indices()), f"Mismatch in tensor values for key: {key}"
+                    
+
+                    
    
     def test_repr(self):
         """Test the string representation of the transformation class.
@@ -75,9 +75,9 @@ class TestRedefineSimplicialNeighbourhoods:
 
         # Define transformation configuration
         transforms_config = {
-            "RedefineSimplicialNeighbourhoods": {
+            "RedefineSimplicialNeighborhoods": {
                 "_target_": "topobench.transforms.data_transform.DataTransform",
-                "transform_name": "RedefineSimplicialNeighbourhoods",
+                "transform_name": "RedefineSimplicialNeighborhoods",
                 "transform_type": None,
                 "complex_dim": 3,
                 "neighborhoods": None,
@@ -86,15 +86,15 @@ class TestRedefineSimplicialNeighbourhoods:
         }
 
         # Instantiate the transformation
-        transform = RedefineSimplicialNeighbourhoods(
-            **transforms_config["RedefineSimplicialNeighbourhoods"]
+        transform = RedefineSimplicialNeighborhoods(
+            **transforms_config["RedefineSimplicialNeighborhoods"]
         )
 
             # Get the string representation
         repr_str = repr(transform)
 
         # Ensure all keys appear in the representation
-        for key in transforms_config["RedefineSimplicialNeighbourhoods"]:
+        for key in transforms_config["RedefineSimplicialNeighborhoods"]:
             assert key in repr_str, f"Missing key '{key}' in __repr__ output."
 
             

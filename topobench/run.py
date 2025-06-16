@@ -1,6 +1,9 @@
 """Main entry point for training and testing models."""
 
+import os
 import random
+
+# shutil
 from typing import Any
 
 import hydra
@@ -27,11 +30,17 @@ from topobench.utils.config_resolvers import (
     get_default_metrics,
     get_default_trainer,
     get_default_transform,
+    get_list_element,
     get_monitor_metric,
     get_monitor_mode,
     get_required_lifting,
     infer_in_channels,
+    infer_in_hasse_graph_agg_dim,
+    infer_in_hasse_graph_agg_dim_positional_encodings,
+    infer_in_khop_feature_dim,
+    infer_list_length,
     infer_num_cell_dimensions,
+    set_preserve_edge_attr,
 )
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
@@ -63,6 +72,9 @@ OmegaConf.register_new_resolver(
     "get_default_transform", get_default_transform, replace=True
 )
 OmegaConf.register_new_resolver(
+    "get_list_element", get_list_element, replace=True
+)
+OmegaConf.register_new_resolver(
     "get_required_lifting", get_required_lifting, replace=True
 )
 OmegaConf.register_new_resolver(
@@ -79,6 +91,39 @@ OmegaConf.register_new_resolver(
 )
 OmegaConf.register_new_resolver(
     "parameter_multiplication", lambda x, y: int(int(x) * int(y)), replace=True
+)
+OmegaConf.register_new_resolver(
+    "infer_in_khop_feature_dim",
+    infer_in_khop_feature_dim,
+    replace=True,
+)
+OmegaConf.register_new_resolver(
+    "infer_in_hasse_graph_agg_dim",
+    infer_in_hasse_graph_agg_dim,
+    replace=True,
+)
+
+OmegaConf.register_new_resolver(
+    "infer_in_hasse_graph_agg_dim_positional_encodings",
+    infer_in_hasse_graph_agg_dim_positional_encodings,
+    replace=True,
+)
+OmegaConf.register_new_resolver(
+    "get_hop_num_gpse",
+    lambda x: int(x)
+    + 1,  # 2-hop if copy_initial = True else 1-hop (only GPSE info)
+    replace=True,
+)
+
+OmegaConf.register_new_resolver(
+    "set_preserve_edge_attr",
+    set_preserve_edge_attr,
+    replace=True,
+)
+OmegaConf.register_new_resolver(
+    "infer_list_length",
+    infer_list_length,
+    replace=True,
 )
 
 
@@ -122,7 +167,6 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
         A tuple with metrics and dict with all instantiated objects.
     """
     # Set seed for random number generators in pytorch, numpy and python.random
-    # if cfg.get("seed"):
     L.seed_everything(cfg.seed, workers=True)
     # Seed for torch
     torch.manual_seed(cfg.seed)
@@ -169,12 +213,23 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
     log.info("Instantiating loggers...")
     logger: list[Logger] = instantiate_loggers(cfg.get("logger"))
 
+    # Log to wandb preprocessor time
+    if logger:
+        for log_temp in logger:
+            if isinstance(log_temp, L.pytorch.loggers.wandb.WandbLogger):
+                log_temp.log_metrics(
+                    {
+                        "preprocessor_time": preprocessor.preprocessing_time,
+                    }
+                )
+
     log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
     trainer: Trainer = hydra.utils.instantiate(
         cfg.trainer,
         callbacks=callbacks,
         logger=logger,
         num_sanity_val_steps=0,
+        log_every_n_steps=0,  # Avoid console logging
     )
 
     object_dict = {
@@ -197,7 +252,6 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
         )
 
     train_metrics = trainer.callback_metrics
-
     if cfg.get("test"):
         log.info("Starting testing!")
         test_best_model_path = True
@@ -226,6 +280,11 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
             trainer.test(
                 model=model, datamodule=datamodule, ckpt_path=ckpt_path
             )
+
+        # Remove saved model (useful with sweeps)
+        # Check if the file exists and delete it
+        if os.path.exists(ckpt_path):
+            os.remove(ckpt_path)
 
     test_metrics = trainer.callback_metrics
 

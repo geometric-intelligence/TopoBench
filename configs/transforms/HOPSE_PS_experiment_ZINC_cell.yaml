@@ -1,0 +1,38 @@
+defaults:
+  #- data_manipulations: node_degrees
+  - data_manipulations@one_hot_node_degree_features: one_hot_node_degree_features
+  - liftings@_here_: graph2cell_default
+  - data_manipulations@sann_encoding: hopse_ps_information
+
+one_hot_node_degree_features: 
+  degrees_field: x
+  features_field: x
+
+sann_encoding:
+  pe_types: 
+    - 'RWSE' 
+    - 'ElstaticPE'
+    - 'HKdiagSE'
+    - 'LapPE'
+   
+
+  # Different PS have different sizes, need to unify them. 
+  target_pe_dim: 20
+
+  # LapPE config
+  laplacian_norm_type: 'sym'
+  posenc_LapPE_eigen_max_freqs: 18
+  posenc_LapPE_eigen_eigvec_norm: 'L2'
+  posenc_LapPE_eigen_skip_zero_freq: True
+  posenc_LapPE_eigen_eigvec_abs: True
+
+  # RWSE config
+  kernel_param_RWSE: 
+    - 2
+    - 20
+
+
+  # HKdiagSE config
+  kernel_param_HKdiagSE: 
+    - 1
+    - 22

@@ -9,6 +9,9 @@ from topobench.transforms.liftings.graph2simplicial import (
 from topobench.transforms.liftings.graph2cell import (
     CellCycleLifting
 )
+from topobench.transforms.data_manipulations.precompute_khop_features import (
+    PrecomputeKHopFeatures
+)
 
 
 @pytest.fixture
@@ -153,6 +156,37 @@ def sg1_clique_lifted(simple_graph_1):
             )
     data = lifting_signed(simple_graph_1)
     data.batch_0 = "null"
+    return data
+
+@pytest.fixture
+def sg1_clique_lifted_precompute_k_hop(simple_graph_1):
+    """Return a simple graph with a clique lifting and a precomputed k-hop neighbourhood embedding.
+    
+    Parameters
+    ----------
+    simple_graph_1 : torch_geometric.data.Data
+        A simple graph data object.
+    
+    Returns
+    -------
+    torch_geometric.data.Data
+        A simple graph data object with a clique lifting and a K-neighbourhood embedding.
+    """
+    max_hop=2
+    complex_dim=3
+    lifting_signed = SimplicialCliqueLifting(
+                complex_dim=complex_dim, signed=True
+            )
+    data = lifting_signed(simple_graph_1)
+    precompute_k_hop = PrecomputeKHopFeatures(max_hop=max_hop, complex_dim=complex_dim)
+    data = precompute_k_hop(data)
+    # Set all k-hop dimensions to 1 to standardize testing
+    for i in range(max_hop+1):
+        for j in range(complex_dim):
+            data[f"x{j}_{i}"] = data[f"x{j}_{i}"][:, 0:1]
+    data.batch_0 = "null"
+    data.batch_1 = "null"
+    data.batch_2 = "null"
     return data
 
 @pytest.fixture
