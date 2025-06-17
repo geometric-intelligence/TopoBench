@@ -4,7 +4,7 @@ import numpy as np
 import networkx as nx
 from copy import deepcopy
 import torch
-
+from tqdm import tqdm
 
 class TabPFNWrapper(torch.nn.Module):
     """
@@ -39,13 +39,26 @@ class TabPFNWrapper(torch.nn.Module):
     ) -> Dict[str, torch.Tensor]:
         # if self.X_train is None or self.y_train is None:
         #    raise RuntimeError("Model has not been fitted. Call `fit` first.")
-        train_mask = batch.get("train_mask", None)
+        train_mask = batch.get("train_mask", None).cpu().numpy()
 
-        X_train = batch["x_0"][train_mask].cpu().numpy().copy()
-        y_train = batch["y"][train_mask].cpu().numpy().copy()
+        # encoded node features
+        rank0_features = []
+        all_keys = batch.keys() 
+        # adding all the rank0 features 
+        rank0_features.extend([s for s in all_keys if s.startswith('x0')])
 
-        node_features = batch["x_0"].cpu().numpy()
-        labels = batch["y"].cpu().numpy()
+        #deleting raw node features (we have alredy the encoded ones)
+        rank0_features.remove('x0_0')
+
+        # Concatenate tensors along the column dimension (dim=1)
+        tensors_to_concat = [batch[k] for k in rank0_features]
+        tensor_features = torch.cat(tensors_to_concat, dim=1)
+
+        node_features = tensor_features.cpu().numpy().copy()
+        labels = batch["y"].cpu().numpy().copy()
+
+        X_train = node_features[train_mask]
+        y_train = labels[train_mask]
 
         # Record unique class labels for probability vectors
         classes_ = np.unique(y_train)
@@ -74,11 +87,11 @@ class TabPFNWrapper(torch.nn.Module):
             X_train, 
             self.y_train, 
             edge_index=zip(tail, head),
-            train_mask=train_mask.cpu().numpy().tolist()
+            train_mask=train_mask.tolist()
         )
 
         probs = []
-        for idx, x_np in enumerate(node_features):
+        for idx, x_np in tqdm(enumerate(node_features), total=len(node_features), desc="Sampling and predicting"):
             if idx in train_mask:
                 # If the sample is in the training set, return one-hot encoded probabilities
                 one_hot = np.zeros(n_classes, dtype=float)
