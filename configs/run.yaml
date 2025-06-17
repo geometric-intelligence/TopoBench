@@ -5,8 +5,8 @@
 defaults:
   - _self_
   - dataset: graph/cocitation_citeseer
-  - model: graph/tabpfn #tabpfn
-  - transforms: ${get_default_transform:${dataset},${model}} #no_transform
+  - model: cell/tabpfn #tabpfn
+  - transforms: tabpfn #${get_default_transform:${dataset},${model}} #no_transform
   - optimizer: default
   - loss: no_loss
   - evaluator: default
