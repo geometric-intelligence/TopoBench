@@ -60,14 +60,13 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
                     setattr(
                         self,
                         f"encoder_{i}_{j}",
-                        SimpleAtomEncoder(self.out_channels)
-
+                        SimpleAtomEncoder(self.out_channels),
                     )
                 elif use_bond_encoder and i == 1 and j == 0:
                     setattr(
                         self,
                         f"encoder_{i}_{j}",
-                        SimpleBondEncoder(self.out_channels)
+                        SimpleBondEncoder(self.out_channels),
                     )
                 else:
                     setattr(
@@ -109,6 +108,7 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
                 )
         return data
 
+
 class SimpleAtomEncoder(torch.nn.Module):
     def __init__(self, in_channels):
         super().__init__()
@@ -118,6 +118,7 @@ class SimpleAtomEncoder(torch.nn.Module):
         x = self.atom_encoder(x.long())
         return x
 
+
 class SimpleBondEncoder(torch.nn.Module):
     def __init__(self, in_channels):
         super().__init__()
@@ -126,6 +127,8 @@ class SimpleBondEncoder(torch.nn.Module):
     def forward(self, x, batch):
         x = self.bond_encoder(x.long())
         return x
+
+
 class SimpleEncoder(torch.nn.Module):
     r"""SimpleEncoder used by SANN.
 
@@ -146,6 +149,7 @@ class SimpleEncoder(torch.nn.Module):
         self.batch_norm = batch_norm
         self.linear1 = torch.nn.Linear(in_channels, out_channels)
         # self.linear2 = torch.nn.Linear(out_channels, out_channels)
+        # self.relu = torch.nn.SiLU()
         self.relu = torch.nn.ReLU()
         self.BN = (
             torch.nn.BatchNorm1d(out_channels)

@@ -1,4 +1,4 @@
-_target_: topobenchmark.transforms.data_transform.DataTransform
+_target_: topobench.transforms.data_transform.DataTransform
 transform_name: "KeepSelectedTargetIndices"
 transform_type: "data manipulation"
 target_indices: [0]

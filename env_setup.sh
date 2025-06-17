@@ -9,6 +9,7 @@ CUDA="cpu"      # if available, select the CUDA version suitable for your system
                 # available options: cpu, cu102, cu113, cu116, cu117, cu118, cu121, ...
 pip install torch==${TORCH} --extra-index-url https://download.pytorch.org/whl/${CUDA}
 pip install torch-scatter torch-sparse torch-cluster -f https://data.pyg.org/whl/torch-${TORCH}+${CUDA}.html
+pip install dgl -f https://data.dgl.ai/wheels/torch-${TORCH}/${CUDA}/repo.html
 
 #pytest
 

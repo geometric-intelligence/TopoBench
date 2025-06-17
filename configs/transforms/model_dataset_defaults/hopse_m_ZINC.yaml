@@ -31,3 +31,6 @@ sann_encoding:
     - 1
     - 22
 
+one_hot_node_degree_features: 
+  degrees_field: x
+  features_field: x

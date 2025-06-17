@@ -66,7 +66,7 @@ gpus=(0 1 2 3 4 5 6 7)
 
         python topobench/run.py\
             dataset=graph/$dataset\
-            model=simplicial/topotune\
+            model=cell/topotune\
             model.backbone.GNN.num_layers=1\
             model.readout.readout_name=PropagateSignalDown\
             model.tune_gnn=GIN\
@@ -99,7 +99,7 @@ gpus=(0 1 2 3 4 5 6 7)
             do
                 python topobench/run.py\
                     dataset=graph/$dataset\
-                    model=simplicial/topotune\
+                    model=cell/topotune\
                     model.backbone.GNN.num_layers=$N_LAYERS_STR\
                     model.readout.readout_name=PropagateSignalDown\
                     model.tune_gnn=GIN\
@@ -111,7 +111,7 @@ gpus=(0 1 2 3 4 5 6 7)
                     trainer.min_epochs=50\
                     trainer.devices=\[$CUDA\]\
                     trainer.check_val_every_n_epoch=5\
-                    logger.wandb.project='CSL'\
+                    logger.wandb.project='GCB'\
                     optimizer.parameters.lr=$lr\
                     optimizer.parameters.weight_decay=$wd\
                     callbacks.early_stopping.patience=10\
