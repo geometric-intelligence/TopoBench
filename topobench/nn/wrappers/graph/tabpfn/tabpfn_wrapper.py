@@ -19,6 +19,7 @@ class TabPFNWrapper(torch.nn.Module):
         super().__init__()
         self.backbone = backbone
         self.sampler = kwargs.get("sampler", None)
+        self.use_embeddings = kwargs.get("use_embeddings", True)
         self.X_train: Optional[np.ndarray] = None
         self.y_train: Optional[np.ndarray] = None
         self.classes_: Optional[np.ndarray] = None
@@ -42,13 +43,15 @@ class TabPFNWrapper(torch.nn.Module):
         train_mask = batch.get("train_mask", None).cpu().numpy()
 
         # encoded node features
-        rank0_features = []
-        all_keys = batch.keys() 
-        # adding all the rank0 features 
-        rank0_features.extend([s for s in all_keys if s.startswith('x0')])
+        rank0_features = [ "x_0" ]
 
-        #deleting raw node features (we have alredy the encoded ones)
-        rank0_features.remove('x0_0')
+        if self.use_embeddings:
+            all_keys = batch.keys() 
+            # adding all the rank0 features 
+            rank0_features.extend([s for s in all_keys if s.startswith('x0')])
+
+            #deleting raw node features (we have alredy the encoded ones)
+            rank0_features.remove('x0_0')
 
         # Concatenate tensors along the column dimension (dim=1)
         tensors_to_concat = [batch[k] for k in rank0_features]

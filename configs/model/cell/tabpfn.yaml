@@ -19,11 +19,11 @@ backbone_wrapper:
   _target_: topobench.nn.wrappers.graph.tabpfn.TabPFNWrapper 
   _partial_: true
   wrapper_name: TabPFNWrapper
-  sampler:
-    _target_: topobench.nn.wrappers.graph.tabpfn.${model.backbone_wrapper.sampler.sampler_name}
-    sampler_name: CompositeSampler
-    k: 5 # Number of samples to use fr the TabPFN model
-    n_hops: 3
+  #sampler:
+  #  _target_: topobench.nn.wrappers.graph.tabpfn.${model.backbone_wrapper.sampler.sampler_name}
+  #  sampler_name: CompositeSampler
+  #  k: 5 # Number of samples to use fr the TabPFN model
+  #  n_hops: 3
   
 
 
