@@ -186,6 +186,8 @@ def reduce_neighborhoods(batch, node, rank=0, remove_self_loops=True):
     for i in range(max_rank + 1):
         if f"x_{i}" in batch.keys():  # noqa
             batch[f"x_{i}"] = batch[f"x_{i}"][cells_ids[i]]
+        elif "x_hyperedges" in batch.keys() and i == 1:  # noqa
+            batch["x_hyperedges"] = batch["x_hyperedges"][cells_ids[i]]
 
     # fix edge_index
     if not is_hypergraph:
@@ -200,11 +202,8 @@ def reduce_neighborhoods(batch, node, rank=0, remove_self_loops=True):
     if hasattr(batch, "num_nodes"):
         batch.num_nodes = batch.x.shape[0]
 
-    # # Reduce y, what if rank > 0?
-    # if hasattr(batch, "y") and rank == 0:
-    #     batch.y = batch.y[cells_ids[rank]]
-    # else:
-    #     raise ValueError("Tis case has not been worked out yet.")
+    if hasattr(batch, "y"):
+        batch.y = batch.y[cells_ids[rank]]
 
     batch.cells_ids = cells_ids
     return batch
