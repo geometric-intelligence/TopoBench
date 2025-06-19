@@ -5,10 +5,10 @@ import rootutils
 from hydra import compose
 import torch
 
-from topobenchmark.data.preprocessor import PreProcessor
-from topobenchmark.data.utils.utils import load_manual_graph
-from topobenchmark.data.batching import NeighborCellsLoader
-from topobenchmark.run import initialize_hydra
+from topobench.data.preprocessor import PreProcessor
+from topobench.data.utils.utils import load_manual_graph
+from topobench.data.batching import NeighborCellsLoader
+from topobench.run import initialize_hydra
 
 initialize_hydra()
 
