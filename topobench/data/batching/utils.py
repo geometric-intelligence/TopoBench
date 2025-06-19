@@ -178,6 +178,7 @@ def reduce_neighborhoods(batch, node, rank=0, remove_self_loops=True):
             "up_laplacian_",
             "hodge_laplacian_",
             "adjacency_",
+            "coadjacency_",
         ],
         max_rank=max_rank,
     )

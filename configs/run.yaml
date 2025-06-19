@@ -5,7 +5,7 @@
 defaults:
   - _self_
   - dataset: graph/cocitation_cora
-  - model: simplicial/scn
+  - model: cell/cwn
   - transforms: ${get_default_transform:${dataset},${model}} #no_transform
   - optimizer: default
   - loss: default
