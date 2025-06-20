@@ -605,8 +605,7 @@ class _LatentCliqueModel:
 
         if clique_i == clique_j:
             clique_size = self.Z[clique_i].sum()
-            if clique_size <= 2:
-                return
+            if clique_size <= 2: return # noqa
 
             Z_prop = self.Z.copy()
             Z_prop = np.delete(Z_prop, clique_i, 0)

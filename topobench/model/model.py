@@ -109,10 +109,10 @@ class TBModel(LightningModule):
         batch["model_state"] = self.state_str
 
         # Feature Encoder
-        model_out = self.feature_encoder(batch)
+        batch = self.feature_encoder(batch)
 
         # Domain model
-        model_out = self.forward(model_out)
+        model_out = self.forward(batch)
 
         # Readout
         if self.readout is not None:
@@ -230,10 +230,17 @@ class TBModel(LightningModule):
             raise ValueError("Invalid state_str")
 
         if self.task_level == "node":
-            # Keep only train data points
-            for key, val in model_out.items():
-                if key in ["logits", "labels"]:
-                    model_out[key] = val[mask]
+            if not batch.get("n_seed_cells", None):
+                # Keep only train data points
+                for key, val in model_out.items():
+                    if key in ["logits", "labels"]:
+                        model_out[key] = val[mask]
+            else:
+                # Consider the pivot cells. Check the logic
+                # Keep only train data points
+                for key, val in model_out.items():
+                    if key in ["logits", "labels"]:
+                        model_out[key] = val[: batch.n_seed_cells]
 
         return model_out
 

@@ -220,7 +220,7 @@ class TabPFNWrapper(torch.nn.Module):
 
         self.classes_ = np.unique(y_train)
         node_features = batch["x_0"].cpu().numpy()
-        node_pe = [batch[f"x0_i"].cpu().numpy() for i in range(1, 5)]
+        # node_pe = [batch[f"x0_i"].cpu().numpy() for i in range(1, 5)]
         labels = batch["y"].cpu().numpy()
 
         if self.sampler is None:

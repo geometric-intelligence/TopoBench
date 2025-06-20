@@ -126,7 +126,6 @@ class TBDataloader(LightningDataModule):
             input_nodes=mask,  # We have to specify split mask as we have to provide node indices to be sampled
             batch_size=self.batch_size,
             shuffle=shuffle,
-            split=split,  # We need split to get the correct batch index mtching
             **self.kwargs,
         )
 
