@@ -109,10 +109,10 @@ class TBModel(LightningModule):
         batch["model_state"] = self.state_str
 
         # Feature Encoder
-        model_out = self.feature_encoder(batch)
+        batch = self.feature_encoder(batch)
 
         # Domain model
-        model_out = self.forward(model_out)
+        model_out = self.forward(batch)
 
         # Readout
         if self.readout is not None:
