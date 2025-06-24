@@ -4,7 +4,6 @@ import torch_geometric.nn as pygnn
 from torch_geometric.nn import Linear as Linear_pyg
 from torch_geometric.utils import to_dense_batch
 import pytorch_lightning as pl
-
 from topobench.nn.backbones.graph.gatedgcn_layer import GatedGCNLayer
 from topobench.nn.backbones.graph.gine_conv_layer import GINEConvESLapPE
 

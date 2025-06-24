@@ -1,0 +1,2202 @@
+[33m254f5aab[m[33m ([m[1;36mHEAD -> [m[1;32mgraphgps[m[33m)[m Merge remote-tracking branch 'origin/topo_tt' into graphgps
+[33m17ee025e[m[33m ([m[1;31morigin/graphgps[m[33m)[m fixing docs
+[33m575d1bb1[m[33m ([m[1;31morigin/topo_tt[m[33m)[m first one
+[33m081e7336[m adding layers finazl GPS
+[33m1a6930d6[m First GraphGPS implementation
+[33mf9f79874[m rebuttal
+[33m228797e6[m asdsa
+[33m9fc71a1a[m errors in importing data
+[33m2b49e2cd[m Fixing GraphGPS Problems
+[33m3d7c69fd[m Fixing GraphGPS Problems
+[33ma406efc2[m[33m ([m[1;31morigin/gpse[m[33m)[m FIX: TT for GCB
+[33mf535975f[m ADD: GCB Dataset
+[33m42fd9bdf[m ADD: Fix scripts csl
+[33m109f588f[m ADD: Wandb project to CSL files
+[33m5aa55420[m ADD: CSL Dataset
+[33mf8ffad39[m FIX: Run scripts and configs for CSL
+[33mbed65923[m FIX: CSL naming
+[33me4ae2852[m ADD: CLS dataset
+[33m61ff582b[m FIX: molhiv scripts
+[33md72d2bf5[m fixed
+[33m96a388d2[m fixed
+[33mc80edbb3[m prints
+[33mb692ef64[m wip: first graphgps implementation
+[33m653fce46[m FIX: Scripts for MOLHIV
+[33m7aeb902b[m FIX: Config resolver for HOPSE-M
+[33md2d643d9[m Merge branch 'dataset_QM9' into gpse
+[33mb40ff2d2[m FIX: GPU
+[33me72c2f94[m ADD: ATOM encoder for SANN-based models (HOPSE aswell) and fix ogbg-molhiv config to fit this
+[33mabd56fb5[m Merge branch 'gpse' of https://github.com/pyt-team/TopoBenchmarkX into gpse
+[33m8d8f8cb7[m FIX: Scripts neighborhoods reproduction
+[33m4997d361[m updated scripts
+[33mc5d44faf[m Merge branch 'gpse' of https://github.com/pyt-team/TopoBenchmarkX into gpse
+[33m632a3b21[m FIX: Add hyperparamater logging
+[33m9a275e7d[m fixing scripts
+[33ma86f4d43[m more fixes
+[33ma0b4217c[m making parallel beh
+[33ma1651f1c[m FIX: Extra quote
+[33mc236ee86[m fixing scripts
+[33m02463f37[m fixing scripts
+[33m245b66e2[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBench into gpse
+[33m3e05084e[m some changes
+[33mea9ede2d[m Merge branch 'gpse' of https://github.com/pyt-team/TopoBenchmarkX into gpse
+[33m03130e40[m ADD: Reproduce scripts neighborhoods
+[33m4dc36fe8[m add fixes
+[33m691a33da[m add fixes
+[33mf131a86e[m add fixes
+[33m308a6542[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33m45cd6083[m some fix
+[33md3eaf134[m FIX: BREC scripts simplicial GPSE
+[33m5f6e368d[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33mf5619baa[m s
+[33m99efbd57[m FIX: Logging hyperparams BREC
+[33m122a0a43[m fixing errors of brec
+[33m9ddc93cf[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33m7f289325[m frank updates
+[33m5c95391d[m ADD: Reproduce tables
+[33m1ee80fcb[m Merge branch 'gpse' of https://github.com/pyt-team/TopoBenchmarkX into gpse
+[33m5f01843e[m FIX: BREC dataset and run script
+[33m429e7382[m merge
+[33madf6323c[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBench into gpse
+[33m15771b44[m runs reproduce
+[33m75961cfb[m runs reproduce
+[33mce2960b2[m baseline times scripts
+[33mc17205c6[m baseline times scripts
+[33m0d5ec3d0[m Merge branch 'gpse' of https://github.com/pyt-team/TopoBenchmarkX into gpse
+[33m00c74386[m Files for processing reproduction
+[33m2afbb7f1[m brec fix error
+[33me946734a[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33md623887a[m some other brec
+[33m9a4c1ce9[m FIX: BREC
+[33md929e484[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33m9d59afab[m brec
+[33m3de51b76[m ADD: BREC for Regular
+[33m61095e83[m resolve merge
+[33m6191f40a[m changes reproduce
+[33m69111477[m FIX: hopse_m zinc config
+[33m4e98fb29[m FIX: Add 250 epoch min for mantra
+[33m8aa29d20[m FIX: Add 250 epoch min for mantra
+[33m2e36601c[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBench into gpse
+[33m219565b3[m changes
+[33mb2b7a8b7[m FIX: Add 250 epoch min for mantra
+[33m4fbc937b[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBench into gpse
+[33mfdd13a85[m modified thing
+[33m924a9c23[m deleted old lines
+[33m677367a9[m merge
+[33m540b30bb[m changes
+[33mbd9f98cb[m FIX: RUff
+[33mf62502db[m ADD: BREC stuff
+[33m96822169[m FIX: Typo error
+[33mf7bce5ad[m ADD: Topotune working
+[33m9d327775[m Merge branch 'gpse' of https://github.com/pyt-team/TopoBenchmarkX into gpse
+[33m7702517c[m FIX: Added new runs
+[33mda7c97d0[m fixes defs
+[33m8a9cc151[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBench into gpse
+[33m515b95a0[m Merge branch 'dataset_BREC' into gpse
+[33m163a3967[m[33m ([m[1;31morigin/dataset_BREC[m[33m)[m ADD: Dataset BREC WIP
+[33mb51b5f31[m ADD: My results processing
+[33m4a63315c[m FIX: Config for HOPSE-M, HOPSE-G and reproducibility adjustment
+[33m0ca6d3ff[m fix scripts
+[33m0b254e38[m FIX: redefine and remove unwanted conifgs
+[33m60af2d8e[m fixed error in zinc yamls
+[33m891731b6[m Merge branch 'gpse' of https://github.com/pyt-team/TopoBenchmarkX into gpse
+[33mf1ea05ae[m FIX: Little fixes for reproduction scripts
+[33mae03e498[m record the preprocessing time
+[33md2bbad17[m hopse_m_simplicial scripts
+[33m02108bf8[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBench into gpse
+[33m47abb237[m simplicial sccnn betti numbers
+[33m2b03c6d8[m Fix runing scripts
+[33m5562d96b[m fixing scripts
+[33mdf16cc2f[m fixes
+[33m2389d142[m a
+[33ma8bc1393[m FIX: Scripts for processing results
+[33ma327abbb[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33mea6fefe3[m Merge branch 'gpse' of https://github.com/pyt-team/TopoBenchmarkX into gpse
+[33m8738a444[m FIX: best_runs
+[33m9f1bbf69[m FIX: best_runs
+[33m64488253[m FIX: Scripts and generation
+[33m95759d22[m fixing topotune
+[33me8d1c045[m some
+[33m3663c66e[m FIX: Lint
+[33mcf687eb5[m Merge branch 'gpse' of https://github.com/pyt-team/TopoBenchmarkX into gpse
+[33m3b921532[m FIX: Script for generating results and best runs file
+[33m9a6b3999[m added barycentric subdivision transform
+[33m163939d0[m gpse reddint
+[33m1cedc0b9[m reddit
+[33m53ece9df[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33mf0f36929[m reddit gpse
+[33mf04b2956[m FIX: Results generation scripts and add new datasets
+[33m4132d78d[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBench into gpse
+[33m686e245d[m mantra_scn scripts
+[33m124f54c2[m scn and sccnn scripts
+[33m47c82d30[m mantra betti number
+[33mcbd2f87b[m adding mantra 2 dim
+[33m6fd95bc1[m betti numbers
+[33m3ac40a51[m scipts
+[33m1c52e969[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33m8e42b308[m Merge branch 'gpse' of https://github.com/pyt-team/TopoBenchmarkX into gpse
+[33m17d53096[m ADD: Files for processing
+[33m3641c715[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33md8f84e1d[m hall scripts
+[33m82776c75[m smth called caseconflict
+[33m1e806ed9[m some mantra
+[33m167c8275[m time
+[33m99946efa[m graph mantra
+[33ma5444d98[m mantra script
+[33m81b45eb3[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33m72c03c1b[m scripts1
+[33m6312a3ae[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBench into gpse
+[33m8aeb70ca[m scripts
+[33m916ee40a[m scripts
+[33m08274146[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33mf52c44df[m some
+[33m1d6ae877[m node scripts
+[33m2ed7db46[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBench into gpse
+[33m9da458e2[m mantra
+[33m07bf73aa[m cora
+[33m66dd3c1d[m working node level
+[33m9a864bce[m merge with batching branch
+[33m6a9afc77[m[33m ([m[1;31morigin/batching[m[33m)[m running pipeline for rank=0
+[33ma7aebd35[m[33m ([m[1;32mmain[m[33m)[m Fix error in TopoTune config
+[33mdfb4ac54[m adding sann_online
+[33m6f430286[m fixing batching
+[33m5e2fd8ec[m fixing batching
+[33m406ee702[m fixing batching
+[33m3461a6d9[m merge with main
+[33m821b327a[m Merge pull request #158 from geometric-intelligence/docs2
+[33mb9dd7cfa[m[33m ([m[1;31morigin/docs2[m[33m)[m fix reproduce file
+[33mee019d6f[m finally fixed docs
+[33m4c20cba2[m docs
+[33mc6c14dfe[m fixing docs
+[33m9e5a07b5[m updating docs
+[33m2e6cf86c[m docs figure
+[33m5c2fa82b[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBench into gpse
+[33mb823aa4b[m mantra
+[33mb79caf1f[m updates
+[33me730b6cd[m Merge pull request #157 from geometric-intelligence/update_config
+[33mf68fe687[m[33m ([m[1;31morigin/update_config[m[33m)[m Restore tutorials
+[33me065ac1f[m Minor config modifications
+[33m342d414e[m Minor config modifications
+[33m0442a83f[m Add tensorboard library
+[33m69358b74[m Add get_default_trainer resolver
+[33m64c09ec1[m Update environment setup
+[33m3964c308[m Update README
+[33m514e3e90[m updates
+[33m4dd82043[m merge
+[33m9ea65bb4[m Update README
+[33m7c128ba9[m Merge pull request #156 from geometric-intelligence/docs
+[33m2d1bd28f[m back to index
+[33m7715dfdd[m Merge pull request #154 from geometric-intelligence/docs
+[33mcc5ae7af[m adding myst_parser to .toml
+[33mba45a2e8[m updated docs
+[33m5549fde4[m docs
+[33m0fa2c673[m some scripts
+[33m1b741a9c[m adding scripts
+[33mea65d772[m changing docs
+[33m01c9acb9[m Merge pull request #153 from geometric-intelligence/pre_submission
+[33m16772d96[m Update docs config
+[33mab14085e[m runtimes
+[33mc828f855[m created ipynb to extract time
+[33m98066124[m[33m ([m[1;31morigin/pre_submission[m[33m)[m get rid of p2cell as we dont have any
+[33mba7d3a68[m Merge branch 'gpse' of https://github.com/pyt-team/TopoBenchmarkX into gpse
+[33m719f60cc[m ADD:Figure
+[33m4badab1d[m updating slowly
+[33m24146ac7[m get rid of tb forlede
+[33m42058c5b[m fixed zinc
+[33mc93caafe[m updating markdown
+[33m4edc9cd3[m updating Mardown with contact information
+[33mbb121467[m fixing zinc
+[33mdd17beb0[m hopse zinc
+[33me7490b8c[m scripts
+[33m3800756f[m mantra
+[33m07245795[m splits
+[33m4ea85ac8[m identified error in MANTRA
+[33m6451f977[m mantra working with sccnn
+[33mbe6a9ac1[m adding new transform
+[33md52cd7a8[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33m3f824fd2[m scripts
+[33m2f33c932[m cycles per node
+[33mb00d915c[m hopse fix
+[33mf765bc78[m merge
+[33mefedb2ac[m Merge pull request #152 from geometric-intelligence/preprocessor
+[33m437a4870[m updated scripts
+[33mf93f0a53[m[33m ([m[1;31morigin/preprocessor[m[33m)[m updated markdown
+[33med2814da[m resolving the test in configs
+[33m7537863d[m resolving test issues
+[33m3db34da5[m updated markdown
+[33m0570a8f8[m updated markdown
+[33m2816c34d[m updating markdown
+[33ma80f2d41[m fix scripts
+[33m0436caaa[m fixing ruff
+[33mad25dc01[m data2simplex and neighbourhood adjustments
+[33m6e1ba808[m mantra neighbours
+[33m4bbe1cfa[m minor fixes
+[33m67c6548c[m got rid from the mantra as a graph
+[33m86329654[m added mantra as a graph but triangulation is not the same
+[33m14c4792e[m fixing mantra
+[33m0aa54b4a[m fix mantra
+[33m86b677df[m fixing imports
+[33ma0c8eff8[m updates of automated imports
+[33md3aceb3b[m fixing Back compatiility check in collate batch
+[33m6176778e[m fixing TopoBenchX
+[33m6c6db40d[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33mef421806[m issues running mantra with sann
+[33m428a168d[m updated scripts
+[33m2d77773c[m script updates
+[33m15043555[m working
+[33m7c9d15a6[m running merged
+[33mf2937d5b[m merging with latest main
+[33m8e0ce3cf[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33m04087b37[m different changes
+[33ma1522c27[m updates
+[33m44d680ef[m working zinc
+[33md18bbb9f[m Merge pull request #151 from geometric-intelligence/refine_liftings
+[33m6a44f9d3[m working?
+[33mf4d370e0[m running pe
+[33m5f3c7b38[m coverage
+[33m3807885f[m coverage
+[33m285a812b[m preprocessor accepts liftings config properly
+[33mad1ed2d2[m cleaning
+[33m01880649[m additional updates
+[33me0995796[m preparing the PS
+[33m2e52ba47[m added test
+[33m3e58ce1f[m enable topotune work with g2c
+[33md3123301[m docs
+[33m0c1545e2[m fixing minors
+[33m7e54f456[m Merge branch 'refine_liftings' of https://github.com/geometric-intelligence/TopoBench into refine_liftings
+[33mf6d19305[m fixing minors
+[33m1822d340[m added working combinatorial lifting
+[33m5fdb5887[m coverage
+[33m59baca5b[m Merge branch 'main' into refine_liftings
+[33m5f9b6d0f[m Merge pull request #146 from geometric-intelligence/dataset_ogbg
+[33m1127a22b[m pe and structural thing
+[33m2b16bee4[m[33m ([m[1;31morigin/dataset_ogbg[m[33m)[m increased coverage
+[33ma136a435[m fixing coverage
+[33mfd51f6eb[m updaed tutorial
+[33m4faf1b8c[m cleaning tutorial
+[33m7523900d[m cleaning imports of dataset tutorial
+[33m814c8bcb[m resolving test issues
+[33ma3edcb08[m working molhiv
+[33m0a32ea6d[m resolving merge
+[33m175b4c2e[m scripts running
+[33mb6d2df26[m compatible with updated lifting strategy
+[33m53952e2c[m added simplices for big neighborhoods
+[33m46ed7ef0[m added simplices rank>2
+[33m89cdc705[m limited number of simplices
+[33m1fc51ac6[m limited number of simplices
+[33m1f0bb383[m limited number of simplices
+[33m8b99e5e9[m added max rank simplices
+[33mdaf20ca2[m tested on cora
+[33m8740986d[m tested on cora
+[33m7e06572e[m tested on cora
+[33m7c8544f7[m tested on cora
+[33mc4f24682[m tested on cora
+[33mdd76ca02[m tested on cora
+[33m6d4c7355[m Merge pull request #150 from geometric-intelligence/challenge-icml-2024
+[33m004f7708[m[33m ([m[1;31morigin/challenge-icml-2024[m[33m)[m Coverage
+[33m649b8ea4[m Coverage
+[33m2d365fcd[m Coverage
+[33m26ca4661[m Coverage
+[33mcea2913e[m Remove repeated transforms
+[33m875a24d0[m Remove unused transform folders
+[33ma4f14462[m Coverage
+[33mbd9556d2[m Merge pull request #149 from geometric-intelligence/preprocessor
+[33m1b5c0ad4[m coverage
+[33m8d5c12f9[m sann zinc gpse
+[33m2f66257c[m merge
+[33m9b8d2005[m scripts
+[33m381a4785[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33m3938cd72[m run
+[33mc03b5405[m coverage
+[33m2eb640ad[m removed useless assert
+[33mee8e1609[m removed randomness from modularity_maximization test
+[33m0d27c302[m return all modules
+[33m20586732[m added ruff check to pre-commit
+[33md178db2e[m ruff format
+[33m9c9d59c6[m all tests passed
+[33mdb5ff986[m "fixed numypdoc-validation"
+[33ma170375a[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33mda32a0f7[m scripts
+[33m00a94852[m Fix ruff
+[33m4b994b9a[m Fix ruff
+[33m21e22eef[m Update pre-commit
+[33m510f856e[m Apply rename
+[33m6330f04a[m Merge branch 'main' of github.com:geometric-intelligence/TopoBench into challenge-icml-2024
+[33m5eb74fee[m Rename main folder
+[33m4d7e16b4[m Fix mogmst test
+[33m7b7b3f5b[m Fix universal strict lifting test
+[33m8df43917[m Fix neighborhood complex lifting test
+[33mae7a6b7c[m Fix modularity max. lifting test
+[33m556253e9[m Fix mapper lifting test
+[33m185c67da[m scripts
+[33ma5035e83[m coverage
+[33me6ead421[m Merge branch 'challenge-icml-2024' of https://github.com/geometric-intelligence/TopoBenchmark into challenge-icml-2024
+[33mc17d956e[m coverage
+[33mdb83ca09[m fixed test_datsaloader
+[33mdd0a8157[m old test passint
+[33mda7b3531[m Merge branch 'main' into preprocessor
+[33med373ad8[m 30test are failing
+[33m0cc88547[m test passed
+[33mdfeeb4b3[m docs
+[33mfe0e3c24[m faster split loading
+[33mef5b73c3[m docs
+[33md06cad09[m improved preprocessor speed
+[33m114f5e0b[m docs
+[33m45a62b45[m test liftings notebook
+[33mdcce70ff[m docs
+[33m92196144[m docs
+[33mb88fe401[m Merge branch 'challenge-icml-2024' of https://github.com/geometric-intelligence/TopoBenchmark into challenge-icml-2024
+[33m766843a7[m changes
+[33m54056cf5[m not working multilabel
+[33me47d2383[m Merge pull request #148 from geometric-intelligence/update-readme
+[33m9ab845c4[m Add data transforms
+[33m6b9cf5a0[m Add data manipulations
+[33m0e60d4b6[m Add mantra dataset
+[33m89c5076b[m Fix feature lifting error
+[33mae886826[m Add full list of liftings
+[33m41ff4a13[m Move TopoTune to wiki
+[33m5bbcc364[m Merge pull request #147 from geometric-intelligence/renaming
+[33m337c5282[m Add new logo
+[33ma03ac6b1[m Delete old logo
+[33mae6383f4[m Apply renaming
+[33mff5a41fb[m Update precommit
+[33m78148e83[m Apply renaming
+[33meb9d9631[m Rename root folder
+[33m925f9734[m Fix import bug
+[33me226f3ce[m working loss
+[33mb33baa00[m ADD: Loss averaging
+[33m8336ef72[m FIX: Naming issues and data conversions
+[33m15c784c8[m[33m ([m[1;31morigin/dataset_QM9[m[33m)[m FIX: QM9 yaml
+[33m1bb2488a[m FIX: Remove tutorial, list comprehension and reference correct dataset class
+[33m45671b10[m FIX: Remove PPA dataset (problems in the main download link)
+[33m33414241[m ADD: OGB library
+[33medd756fe[m Add combinatorial topotune config
+[33m3c07d1aa[m ADD: Dataset OGBG molecules
+[33m473050bc[m Merge branch 'gpse' of https://github.com/pyt-team/TopoBenchmarkX into gpse
+[33m39a5aad6[m ADD: Results
+[33m5669ec50[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33md6aae26d[m some
+[33m9369127a[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33mfe5486a8[m imdb
+[33m08bc4e05[m something
+[33ma24dff51[m ADD: QM9 dataset
+[33m9b6f7d00[m Merge branch 'gpse' of https://github.com/pyt-team/TopoBenchmarkX into gpse
+[33me443f50e[m FIX: REsults processing
+[33md86389d8[m additional search
+[33md7a684a4[m fix
+[33m19064356[m hypergraph2combinatorial works
+[33mcddf8299[m removed try statement
+[33m650af015[m Merge branch 'challenge-icml-2024' of https://github.com/geometric-intelligence/TopoBenchmark into challenge-icml-2024
+[33mbb14e53f[m h2c config
+[33m93bebfbf[m resolving deleted files
+[33m13db1c07[m fixed lifting tests
+[33m284fdce2[m pointcloud2simplicial liftings
+[33mf7025bb7[m pointcloud2simplicial liftings work
+[33mb22ca60e[m \Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33m0fe8c11f[m workedout ckpt
+[33mbb655841[m ADD: Results processing
+[33m45f43ac0[m added references to commits of deleted liftings
+[33m7d1e6fd1[m deleted liftings not working
+[33m85d628b3[m tested graph2combinatorial and hypergraph2simplicial, not working
+[33m73ad2abb[m pointcloud2hypergraph liftings checked
+[33m9e454340[m scripts
+[33m0e5cf095[m load_dataset returns dataset not data
+[33m8202874d[m g2combinatorial not working
+[33md58955ac[m hypergraph2simplicial not working
+[33mb1a14e4a[m all hypergraphs wirkking
+[33m046d5043[m hyergraph knn working base
+[33m9266c031[m working kernel
+[33md75282b6[m updated all hyeprgraph configs
+[33ma88dc00b[m expander_graph working
+[33m4dab1f45[m update configs to make them work
+[33m6c27ef0b[m hyeprgrpah ones
+[33mce7040a2[m epdated nci script
+[33mba5f876c[m solving docs
+[33m44a2226b[m working cubical-complex
+[33m00f748fb[m working cubical-complex
+[33m9401795d[m adding g2h_discrete_configuration_complex
+[33m01034b5f[m update cellular testing for cellular ccomplexes
+[33m282daede[m cleaning
+[33mc3a640f1[m tested all simplicial
+[33md3552bce[m dnd
+[33medc5f728[m dnd
+[33m9b5c3ed6[m neighborhood lifting fix one issue but encountered nw one
+[33m7f47ac75[m solving issue with edge_attributes for liftings that modify lifted edges
+[33m65573626[m latent clique config change
+[33m9cf7072d[m fixed line configs
+[33me0bd741f[m graph_induced_lifting
+[33m84a0148f[m g2s_vietoris_rips
+[33m0659776b[m working test scripts
+[33m6d9a1810[m first script
+[33m4ab1633e[m generated test_liftign.sh
+[33m50f805a0[m update
+[33mc75f1846[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33me732a3c1[m script change
+[33m0548edcb[m FIX: TBX change to TB
+[33m0a815473[m FIX: TBX nameing
+[33me20006a4[m Merge branch 'main' into gpse
+[33m998ebca9[m FIX: Set max rank in config
+[33m7b182032[m FIX: Remove comments
+[33m677862d8[m Fix tolerance in dnd_lifting
+[33mec149daf[m Remove previous structure
+[33m62d266fa[m Pre-commit
+[33mb065c254[m Fix imports
+[33me8e63fdb[m Relocate liftings
+[33mabe91cba[m Remove previous liftings
+[33m5ada8a42[m Update modules
+[33m208c8556[m Clean modules
+[33m02b929c6[m Merge branch 'branch-source-2' into challenge-icml-2024
+[33m3fd6f1e2[m Standardize test names
+[33mee41c956[m Rename liftings' configs
+[33m1aeac7ce[m Add _target_ to lifting configs
+[33m3bdc9a9e[m FIX: Add resolution for using edge_attributes
+[33m2c5d3500[m FIX:  Error in MUTAG, fix edge attribute setting
+[33m87c913fe[m FIX: Error on num_workers CUDA kernel re-initialization
+[33m0a38cbd3[m Merge branch 'gpse' of https://github.com/pyt-team/TopoBenchmarkX into gpse
+[33m73021b11[m[33m ([m[1;31morigin/gpse_test_new_arch[m[33m)[m FIX: Changes in checks
+[33m3b8f428c[m pre-commit
+[33mac918939[m Merge branch 'branch-source' into challenge-icml-2024
+[33md555eb07[m Renaming
+[33mf8daa390[m Hack neighborhood complex lifting
+[33mc31347e9[m Merge branch 'martin-carrasco-feat_nc_rg'
+[33m76b124ec[m Merge branch 'martin-carrasco-feat_nc_rg'
+[33mb9945e73[m Merge branch 'feat_nc_rg' of github.com:martin-carrasco/challenge-icml-2024 into martin-carrasco-feat_nc_rg
+[33mf904ae77[m Merge branch 'feat_nc_rg' of github.com:martin-carrasco/challenge-icml-2024 into martin-carrasco-feat_nc_rg
+[33mbd0fa57e[m Add eccentricity config
+[33m1c1c8030[m Merge branch 'Jonas-Verhellen-dnd-lifting'
+[33m1037fe97[m Merge branch 'Jonas-Verhellen-dnd-lifting'
+[33mfe141b8d[m Hack tests random flag + coface
+[33mc863c226[m Merge branch 'dnd-lifting' of github.com:Jonas-Verhellen/challenge-icml-2024 into Jonas-Verhellen-dnd-lifting
+[33m0a187d47[m Merge branch 'dnd-lifting' of github.com:Jonas-Verhellen/challenge-icml-2024 into Jonas-Verhellen-dnd-lifting
+[33m3953d544[m Merge branch 'coface_cc_lift' of github.com:martin-carrasco/challenge-icml-2024
+[33m99b51b6f[m Merge branch 'coface_cc_lift' of github.com:martin-carrasco/challenge-icml-2024
+[33m7ab55aca[m Merge branch 'martin-carrasco-feat_rsc'
+[33mb43480b8[m Merge branch 'martin-carrasco-feat_rsc'
+[33m386821b5[m Merge branch 'feat_rsc' of github.com:martin-carrasco/challenge-icml-2024 into martin-carrasco-feat_rsc
+[33m93f4f426[m Merge branch 'feat_rsc' of github.com:martin-carrasco/challenge-icml-2024 into martin-carrasco-feat_rsc
+[33m14684b19[m Add missing test + hack discrete configuration test
+[33m6f72dcda[m Merge branch 'theo-long-configuration-complex'
+[33m6cc30761[m Merge branch 'theo-long-configuration-complex'
+[33m0b5119e6[m Merge branch 'configuration-complex' of github.com:theo-long/challenge-icml-2024 into theo-long-configuration-complex
+[33m0d40d159[m Merge branch 'configuration-complex' of github.com:theo-long/challenge-icml-2024 into theo-long-configuration-complex
+[33mef039195[m Merge branch 'gdasoulas-lifting-integrate-upstream'
+[33m6966aa11[m Merge branch 'gdasoulas-lifting-integrate-upstream'
+[33m5dc68b66[m Merge branch 'lifting-integrate-upstream' of github.com:gdasoulas/challenge-icml-2024 into gdasoulas-lifting-integrate-upstream
+[33mff3aaffc[m Merge branch 'lifting-integrate-upstream' of github.com:gdasoulas/challenge-icml-2024 into gdasoulas-lifting-integrate-upstream
+[33m9a09cd11[m Merge branch 'peekxc-main'
+[33m8b078b75[m Merge branch 'peekxc-main'
+[33m0877cf3d[m Merge branch 'main' of github.com:peekxc/challenge-icml-2024 into peekxc-main
+[33m27e14db9[m Merge branch 'main' of github.com:peekxc/challenge-icml-2024 into peekxc-main
+[33m75f69c3e[m Merge branch 'main' of github.com:ManuelLecha/challenge-icml-2024 into ManuelLecha-main
+[33m68422ae7[m Merge branch 'main' of github.com:ManuelLecha/challenge-icml-2024 into ManuelLecha-main
+[33m6d4c7f6a[m Merge branch 'sukjulian-feature-lifting-pointnet'
+[33m1dda4f20[m Merge branch 'sukjulian-feature-lifting-pointnet'
+[33m1dda7190[m Hack test modularity max
+[33m14602737[m Merge branch 'feature-lifting-pointnet' of github.com:sukjulian/challenge-icml-2024 into sukjulian-feature-lifting-pointnet
+[33ma367018b[m Merge branch 'feature-lifting-pointnet' of github.com:sukjulian/challenge-icml-2024 into sukjulian-feature-lifting-pointnet
+[33me1eec6c6[m Merge branch 'ValentinaSanchezMelchor-main'
+[33mf035a06c[m Merge branch 'ValentinaSanchezMelchor-main'
+[33m1a234222[m Merge branch 'main' of github.com:ValentinaSanchezMelchor/challenge-icml-2024 into ValentinaSanchezMelchor-main
+[33maadf2fdc[m Merge branch 'main' of github.com:ValentinaSanchezMelchor/challenge-icml-2024 into ValentinaSanchezMelchor-main
+[33m48b795db[m Merge branch 'hfr1tz3-mapper_lift'
+[33me61dfa05[m Merge branch 'hfr1tz3-mapper_lift'
+[33m473b76ce[m Fix ruff
+[33m7bd98e83[m Merge branch 'mapper_lift' of github.com:hfr1tz3/challenge-icml-2024 into hfr1tz3-mapper_lift
+[33m82daee80[m Merge branch 'mapper_lift' of github.com:hfr1tz3/challenge-icml-2024 into hfr1tz3-mapper_lift
+[33mdc45d39c[m Merge branch 'alvarolmartinez-universalstrict'
+[33m1c6e78bb[m Merge branch 'alvarolmartinez-universalstrict'
+[33m81d65633[m Merge branch 'universalstrict' of github.com:alvarolmartinez/challenge-icml-2024 into alvarolmartinez-universalstrict
+[33mdd50c045[m Merge branch 'universalstrict' of github.com:alvarolmartinez/challenge-icml-2024 into alvarolmartinez-universalstrict
+[33m46669d9b[m Merge branch 'smeznar-mogmst'
+[33m5d060543[m Merge branch 'smeznar-mogmst'
+[33mdae0a1dd[m Merge branch 'mogmst' of github.com:smeznar/challenge-icml-2024 into smeznar-mogmst
+[33mdb7cf9bd[m Merge branch 'mogmst' of github.com:smeznar/challenge-icml-2024 into smeznar-mogmst
+[33mcca25623[m Merge branch 'PatRyg99-pr/voronoi-lifting'
+[33m44ae39ab[m Merge branch 'PatRyg99-pr/voronoi-lifting'
+[33m93b1801c[m Merge branch 'pr/voronoi-lifting' of github.com:PatRyg99/challenge-icml-2024 into PatRyg99-pr/voronoi-lifting
+[33m73a5385c[m Merge branch 'pr/voronoi-lifting' of github.com:PatRyg99/challenge-icml-2024 into PatRyg99-pr/voronoi-lifting
+[33m90581558[m Merge branch 'yShift-main'
+[33mf5843c97[m Merge branch 'yShift-main'
+[33mc2fde936[m Merge branch 'main' of github.com:yShift/challenge-icml-2024 into yShift-main
+[33mdbe4e8f4[m Merge branch 'main' of github.com:yShift/challenge-icml-2024 into yShift-main
+[33m6507223f[m Merge branch 'gescalona1-matroid_lifting'
+[33m03875b23[m Merge branch 'gescalona1-matroid_lifting'
+[33mcc86052e[m Merge branch 'main' into matroid_lifting
+[33mb2279e81[m Merge branch 'main' into matroid_lifting
+[33m3d7de067[m Fix ruff
+[33mf9f067a4[m Merge branch 'main' into main
+[33me3fa8373[m Merge branch 'main' into main
+[33mf95de9ff[m scripts
+[33ma5a4afc3[m scripts created
+[33mf0226f40[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33me76389a9[m added timer
+[33mf00292ca[m timer
+[33m121c8968[m Adding Graph Induced Lifting
+[33m03552095[m Adding Graph Induced Lifting
+[33md9804c39[m layer_norm
+[33m690e5a83[m Merge pull request #10 from Jonas-Verhellen/eccentricity-lifting
+[33mb5a9343b[m Merge pull request #10 from Jonas-Verhellen/eccentricity-lifting
+[33m57efa897[m fixing the issue with imports
+[33m39343fce[m fixing the issue with imports
+[33m298dfeeb[m some updates
+[33mddab0f64[m Merge branch 'gpse_test_new_arch' of https://github.com/geometric-intelligence/TopoBenchmark into gpse_test_new_arch
+[33md561b130[m adding one_hot
+[33m0b9a855d[m ADD: MLP for g_k
+[33mcdcb70ea[m sweep
+[33m14a7a8d0[m sweep
+[33m4998d49f[m minors
+[33mc35e18e4[m FIX: Hopefully no more errors on GPU
+[33m9fae78a8[m FIX: Set more to gpu
+[33mcdeebf2e[m FIX: Device of tensor
+[33mc9d7185c[m FIX: Device changes and yaml
+[33m0114f39e[m ADD: test_gpse
+[33m2f34b09d[m ADD: New GPSE-SANN combo
+[33m0b94b7d6[m FIX: Adjacency TopoTune
+[33mbe71ee50[m Fix bug in test Delaunay
+[33m244062b4[m Merge branch 'sukjulian-feature-lifting-expander't push origin main
+[33meb1dfa0c[m Merge branch 'sukjulian-feature-lifting-expander't push origin main
+[33mb0033bbc[m Fix ruff and notebook
+[33mb4e9b322[m Merge branch 'main' into feature-lifting-expander
+[33me4ce33a7[m Merge branch 'main' into feature-lifting-expander
+[33mef11c5c4[m Merge branch 'theo-long-alpha-complex't push origin main
+[33md0b1b253[m Merge branch 'theo-long-alpha-complex't push origin main
+[33m26393825[m Merge branch 'main' into alpha-complex
+[33m96d00e3f[m Merge branch 'main' into alpha-complex
+[33m5c629135[m Merge branch 'main' into delaunay
+[33m02799ee5[m Merge branch 'main' into delaunay
+[33m3eda27bf[m Merge branch 'bertranMiquel-rings_clt push origin mainose_atoms'
+[33m0983d49a[m Merge branch 'bertranMiquel-rings_clt push origin mainose_atoms'
+[33m1a456601[m Merge branch 'main' into rings_close_atoms
+[33m982cb879[m Merge branch 'main' into rings_close_atoms
+[33mc613c46c[m Merge branch 'Snopt push origin mainoff-line'
+[33m17233d3d[m Merge branch 'Snopt push origin mainoff-line'
+[33m00bdc59d[m Fix ruff
+[33mf2d13345[m Merge branch 'main' into line
+[33mbd7929fa[m Merge branch 'main' into line
+[33mb5dcbaab[m Add Vietoris Rips Lifting config
+[33m2db4eb4a[m Fix ruff
+[33m2af6a5ad[m t push origin mainMerge branch 'Jonas-Verhellen-graph-induced-lifting'
+[33m9899f4f9[m t push origin mainMerge branch 'Jonas-Verhellen-graph-induced-lifting'
+[33m326bb7d2[m Fixed numerical issues in tests and cleaned up notebooks
+[33m1dc5c753[m Fix ruff and env_setup typo
+[33m900e70ad[m Fixed numerical issues in tests and cleaned up notebooks
+[33mfe6b9e90[m Fix ruff and env_setup typo
+[33m452695c0[m Merge pull request #7 from Jonas-Verhellen/vietoris-rips_complex
+[33m48d8d5ab[m Merge pull request #7 from Jonas-Verhellen/vietoris-rips_complex
+[33mdff191d3[m adding experiment fixing ZINC
+[33mde680c0e[m script trial
+[33me2e8dbeb[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33m2830d3b4[m some levs changes
+[33m74230cdf[m Merge branch 'gpse' of https://github.com/pyt-team/TopoBenchmarkX into gpse
+[33m6afaa193[m FIX: GPSE neighborhoods, add edge case check
+[33mc9006e21[m fixing topotune
+[33m195f6a5f[m changes
+[33mcd723253[m updates
+[33m5bf2c4b9[m def run files changes
+[33m696531ff[m updates
+[33mec2d6b01[m FIX: Running scripts
+[33m41cffe24[m Merge branch 'gpse' of https://github.com/pyt-team/TopoBenchmarkX into gpse
+[33m1315387d[m updated error
+[33mfc5f8267[m FIX: Cellular scripts
+[33m0f127139[m Partial fix on error
+[33m634bf566[m FIX: Cast incidence to long
+[33m9131d581[m[33m ([m[1;31morigin/dev[m[33m)[m Merge branch 'main' of github.com:geometric-intelligence/TopoBenchmark into batching
+[33m99de7cb3[m Merge pull request #129 from geometric-intelligence/extra_tests
+[33m4fdc032e[m Merge pull request #131 from luisfpereira/testing-cache
+[33m58d07c68[m added cell_sann
+[33m0704259a[m Merge branch 'gpse' of https://github.com/pyt-team/TopoBenchmarkX into gpse
+[33m499421bc[m ADD: Cellular lifiting
+[33m3eb19dcf[m update scripts
+[33m2105ee27[m Merge pull request #133 from abertics/typo
+[33mc8543031[m Fix typo
+[33md19afd93[m Update testing workflow to use cache
+[33m2b567ad3[m[33m ([m[1;31morigin/extra_tests[m[33m)[m Merge branch 'main' into extra_tests
+[33mad86bca7[m merged with main
+[33md4fe19d1[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33maa9b58f8[m my changes
+[33m1a134e8a[m FIX: Change neighborhoods to include 0_adjacencies
+[33m46677bb1[m ADD: Results processing update
+[33mc44fa7c9[m ADD: Rework experiments scripts
+[33m897bfded[m ADD: SANN parameter for discarding original features and just using the topology
+[33md8aa9966[m ADD: Changes to GPSE transform to discard input features and only use neighbourhood information
+[33mae6ae063[m FIX: New heads for NCI/NCI109/ZINC random scripts
+[33m3dd914ec[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33mb87f5f21[m my updates
+[33m1392d47f[m ADD: Scripts for executing random baseline
+[33mf8dc5f13[m Merge branch 'gpse' of https://github.com/pyt-team/TopoBenchmarkX into gpse
+[33m80ca4329[m ADD: Results processing GPSE
+[33m7f4e5b18[m fix device in gpse
+[33m9a1f4f91[m updated scripts
+[33m2c259ab4[m Merge branch 'gpse' of https://github.com/geometric-intelligence/TopoBenchmark into gpse
+[33m5151fe04[m Merge pull request #130 from geometric-intelligence/logger
+[33m491af817[m[33m ([m[1;31morigin/logger[m[33m)[m hp updates
+[33m857a9df7[m logging transforms
+[33m4f70f013[m FIX: Ampersand missing
+[33m23f81eb4[m FIX: Mutag scripts
+[33m0da6c0a8[m FIX: GPSE mutag
+[33m5ba24b09[m FOX: Bad file
+[33m81a20940[m ADD: Fixes for MUTAG
+[33m2529e8c6[m FIX: Change dataset to NCI109
+[33m5407f8df[m ADD: SANN scripts
+[33mb6797278[m running scripts
+[33mb62614b0[m 3 datasets running
+[33m7763b068[m FIX: Correct directoy for files
+[33mf4ec3127[m FIX: Sweep and test scripts
+[33m9a855f10[m FIX: Move everything to GPU
+[33m58083bd6[m Merge pull request #110 from geometric-intelligence/feat-mantra
+[33m45a9bb37[m[33m ([m[1;31morigin/feat-mantra[m[33m)[m fix linting
+[33m21025327[m fixing long time action flow
+[33md461cbd8[m commented one of the matras
+[33m9de2f13a[m updates
+[33m8bde832f[m avoiding long tests
+[33me65cb7c8[m improving coverage
+[33mca788912[m trying to fix docs
+[33mc704b2aa[m delete random files
+[33mbc75bf0a[m fix orientation
+[33m0e961dd3[m fixed tesrt
+[33m104514e0[m fixing test files
+[33m4679bebf[m merging with main
+[33m17a7d1af[m get rid from old files
+[33m38d8bcd9[m back to working
+[33md11d627e[m fix file imports
+[33m14970c43[m fix configs
+[33m224c4fe7[m ADD: Configs for pretrained models and test files for sweep
+[33m48b8c1ca[m FIX: ADD GPSE information error
+[33m38fbf327[m Add gcnn tests
+[33me1e8c8c6[m Add readouts tests
+[33maba9d163[m Add sccnn tests
+[33m3f44880f[m fix temp folder
+[33m4a53d8fa[m ruff fixes
+[33mf92e3783[m changed batch size for new TBDataloader
+[33m503512f8[m formatting
+[33m4d802418[m test mse when batching
+[33m9758ff4f[m added batching in transductive setting
+[33m78f5ed29[m added test
+[33m6a0e4ec6[m hydra already initialized
+[33m04f9665c[m Update pyproject.toml
+[33m3c315741[m Merge pull request #126 from abertics/bugfix
+[33md97d7617[m Merge pull request #127 from geometric-intelligence/dev
+[33m58819d6b[m Remove karate_club config
+[33mecdd6583[m Merge branch 'main' of github.com:geometric-intelligence/TopoBenchmark into dev
+[33m30547f30[m Fix typo
+[33ma7662a96[m Remove karate_club reference (deprecated)
+[33m0a03b985[m Fix typo
+[33mb8c03bc2[m Merge branch 'main' into feat-mantra
+[33m2aa3de10[m Pre commit
+[33m03a69681[m Merge main
+[33m48f9fcf8[m Update README
+[33m54d428be[m Merge remote-tracking branch 'origin/main' into batching
+[33m47eefe18[m Make GNNWrapper forward call to backbone compatible with **kwargs
+[33m9271ec4c[m Add tests
+[33me34d5b16[m Merge branch 'main' of github.com:geometric-intelligence/TopoBenchmark
+[33m58b19ab5[m Add possibility of defining custom metrics for the evaluator
+[33mc303ec25[m Merge pull request #124 from geometric-intelligence/dev
+[33m37dad42f[m Add .gitattributes
+[33m1dc4c834[m Fix bug in select neighborhoods
+[33mc53a1f50[m None graph bug in gpse
+[33ma3c4f582[m cuda
+[33m499c01fb[m Merge branch 'main' of github.com:geometric-intelligence/TopoBenchmark into dev
+[33m951bb251[m Apply TopoTune refactorization to neighborhoods
+[33mdd77c83d[m general code updates + sweep NCI
+[33m1ea27f07[m Apply TopoTune refactorization to scripts
+[33m2eb3b6a6[m Merge pull request #122 from geometric-intelligence/dev
+[33mebb4cfea[m Revert bad commit
+[33m37f5a153[m Revert "Update Docs and Codecov"
+[33m088e1c86[m Fix bug
+[33md208ddb1[m Fix bug
+[33m03493c4f[m Check influence of .gitattributes
+[33mfaea8871[m Revert codecov.yaml
+[33mbbc8ac8a[m Update Docs and Codecov
+[33m1d9ec5a8[m Update workflow diagram
+[33m74ad08ea[m Update README
+[33m57b1415b[m Remove docker option --unused
+[33m8a1617b7[m Add .gitattributes
+[33m19de7f0d[m Rename TBX prefixes to TB
+[33maccb062f[m Original pre-commit
+[33m86fbe100[m Apply renaming of topobenchmark folder
+[33m539b8ca5[m Rename topobenchmark folder
+[33m79781dc4[m made sann work for node-level task through propagation of the signal down
+[33m946ed68b[m FIX: Config split for ZINC
+[33mb67d3b94[m ADD: FIX dataset config for ZINC and add ZINC experiment
+[33mec4f1b77[m ADD: Experiment for GPSE
+[33mcb63fda4[m IMPORTANT: Fix to evaluate lifted graphs that do not conform, don't add to main
+[33mbea50db0[m FIX: GPSE config and model
+[33m5cdcac82[m ADD: Correct position of GCN
+[33mde77e93e[m ADD: GPSE config and pretrained model config
+[33m8ad25e4f[m FIX: SANN dimensions and add layer/batch normalization
+[33m08a7ecbb[m FIX: Rename
+[33m665ff926[m ADD: experiments
+[33m7d4b4ca5[m FIX: GPSE config
+[33m7dca7216[m ADD: Gaussian features
+[33m9f526a29[m[33m ([m[1;31morigin/martin-sann[m[33m)[m FIX: San configurations
+[33m2872d0d3[m FIX: Sann config
+[33mc4d5195c[m Merge pull request #121 from abertics/main
+[33m80e91ad4[m Fix typo
+[33m69a0e949[m test batching with multiple hops
+[33m7bddf5dd[m changed DataloadDataset call
+[33me154231d[m support for multiple hops
+[33mf44781ef[m Merge pull request #120 from geometric-intelligence/ninamiolane-docs-cosmetics
+[33mcc3e9a13[m Remove x
+[33mdb6c9e91[m Link to tutorials
+[33m3b43a079[m Jpeg -> Jpg
+[33m8d1b0e4e[m Cleanup of readme + index of doc website
+[33mf88ba414[m Merge pull request #119 from geometric-intelligence/ninamiolane-confdocs
+[33mdbcaad99[m Update conf.py of documentation website
+[33mc63ef935[m Merge pull request #118 from geometric-intelligence/ninamiolane-docs-deploy
+[33mad21b5db[m Add deploy github action
+[33m64c2c9f7[m fixed __repr__ of readout
+[33m4c71c0fa[m Merge pull request #117 from geometric-intelligence/dataset_tutorial_new
+[33m83b2a192[m[33m ([m[1;31morigin/dataset_tutorial_new[m[33m)[m completed tutorial
+[33m7bded564[m Step 4 of tutoral
+[33m8220cb9a[m default transform section
+[33mb3c34767[m Merge pull request #115 from geometric-intelligence/topology_learning
+[33m786ab355[m updated tutorial
+[33m0f701650[m starting refactoruing the tutorial
+[33md3fe8be6[m[33m ([m[1;31morigin/topology_learning[m[33m)[m added test
+[33mfb4f4337[m Merge pull request #114 from geometric-intelligence/topology_learning
+[33mcf847281[m updated ruff
+[33m9b7d9312[m ruff
+[33m8601b719[m ruff
+[33m941a8aaf[m getting rid from tree
+[33mfad7b06d[m fixing minors
+[33m7a85f8f0[m refactoring losses
+[33m5fb63d4d[m refactor losses
+[33ma40004f7[m fixing loader automation
+[33m59df8e26[m fixing loader automation
+[33mf5860b8a[m small refactoring of hypegraph loader
+[33m9a30de2d[m refactoring
+[33me96957af[m running pipeline
+[33m1791ed1f[m additing dgm loss
+[33m8310c3c9[m merge_main
+[33m96e904ed[m trees
+[33md4497fe4[m Merge branch 'martin-sann' of https://github.com/pyt-team/TopoBenchmarkX into martin-sann
+[33m5af0de22[m FIX: automatic t-hop neighbourhood calculation based on config
+[33m21702140[m bug?
+[33m8b05b2dc[m some updates for the trees
+[33m3f2774c6[m Merge branch 'main' of github.com:geometric-intelligence/TopoBenchmark into martin-sann
+[33m01b4dac6[m Merge branch 'main' of github.com:geometric-intelligence/TopoBenchmark into feat-mantra
+[33m6b5c3494[m Merge pull request #112 from geometric-intelligence/loss
+[33m8492994f[m[33m ([m[1;31morigin/loss[m[33m)[m Improve test coverage
+[33m2dcc7e7a[m Merge branch 'feat-mantra' of github.com:geometric-intelligence/TopoBenchmark into feat-mantra
+[33m2c27813e[m Fix loss config in tutorials
+[33mb4dce826[m Add GraphMLP tests
+[33m564d5e25[m Optional residual connections in Wrappers
+[33m9f349373[m Add GraphML tests
+[33mee8c936d[m Enabling custom losses in all models' modules
+[33m62c7c8fa[m Fix ruff
+[33mb59c99f2[m Merge branch 'main' into martin-sann
+[33m0b4a0e64[m Minor
+[33m02bad97c[m Adding new config resolvers' tests
+[33mbd2188fa[m Fix bug with preserve_edge_attr
+[33m1ff67c2d[m issue with mutag dataset
+[33mcee8ee39[m working sann for some graph level datasets
+[33mffbc669a[m infer_in_khop_feature_dim working
+[33md3bbf4d3[m config_rrsolver
+[33m4d8d8a17[m updated tutorials
+[33ma9c69bff[m updated configs of orintable
+[33m7eec2075[m updated default configs
+[33mb177f337[m updated mantra
+[33m2af6601c[m merge
+[33m297ed6ac[m Merge branch 'martin-sann' of https://github.com/geometric-intelligence/TopoBenchmark into martin-sann
+[33m9e850e63[m exp with tree
+[33m5ec69b81[m Marco - fixed conflict
+[33m94882595[m merged changes
+[33m8519fef9[m Marco - defined NeighborCellsLoader
+[33mf623d24a[m added just sampling over the graph
+[33mfb392ce8[m get rid of random files
+[33m76e1d031[m added some comments
+[33m72f92ecf[m Marco - batching done
+[33m09bab78f[m added proper plot function
+[33m877fce10[m Marco - get_sampled_neighborhood reworked
+[33mc988b2d8[m Marco - added batching functions
+[33mb643e86f[m Enabling additional backbone losses (GraphMLP as an example)
+[33mb8fc8ac1[m Adding GraphMLP loss
+[33ma6689b61[m GraphMLP working without additional loss
+[33me437a38e[m added dgm
+[33ma21a1f79[m Merge pull request #109 from geometric-intelligence/automate_inits
+[33mc0dd63cc[m[33m ([m[1;31morigin/automate_inits[m[33m)[m Expand loader __init__
+[33m510b485a[m Minor coverage updates
+[33m6d06fedd[m updated test
+[33mbe520689[m increasing coverage
+[33m77caee0d[m updated tutorials
+[33mee220be1[m updated init of loaders
+[33m99d2a565[m test updates
+[33mddea84b5[m Merge branch 'automate_inits' of https://github.com/geometric-intelligence/TopoBenchmark into automate_inits
+[33m9fb18dd6[m small changes
+[33m496050eb[m Ruff & Init
+[33me9fa6262[m Init & ruff
+[33m181942b6[m Update dataset configs
+[33m7ca3ba36[m Refactor loaders
+[33m991285e7[m Config update
+[33mcc69930f[m improving coverage
+[33m5b4018de[m SaNN running on PROTEINS
+[33me7857750[m fighting with ruff in inits
+[33m1334afd0[m fixed random bugs
+[33m402699f4[m some weird bug with imports in tutorials
+[33mcef23679[m fixed tutorial configs
+[33m867c74b4[m fixed tutorial inputs
+[33mdd4151ed[m fixed typyng
+[33mfbde8b8b[m delete old tests
+[33m1280290c[m fix small issue with test
+[33m1e2ccf98[m ruff fixing
+[33ma0ac5514[m ADD: Two tests for SANN
+[33m6b60c286[m FIX: Configurations and removing useless eavluation stuff
+[33ma5b8d348[m ADD: Fix for SANN and related tests
+[33mbc1722b3[m Merge branch 'martin-sann' of https://github.com/pyt-team/TopoBenchmarkX into martin-sann
+[33mc9b65854[m Loading and transform working
+[33ma559490b[m Fix bug in precompute_khop_features
+[33m3c9df01f[m Start model adaptation
+[33m50bad08e[m Adding tutorial
+[33m718f84a9[m changes
+[33m8be86418[m Adapting config files
+[33mdd433e39[m Enabling model-based default transform
+[33m50371d15[m Merge branch 'main' of github.com:geometric-intelligence/TopoBenchmark into martin-sann
+[33macd4a02c[m Merge pull request #107 from geometric-intelligence/coverage
+[33md57792b9[m[33m ([m[1;31morigin/coverage[m[33m)[m Improve patch coverage
+[33m8af88460[m Merge branch 'main' of github.com:geometric-intelligence/TopoBenchmark into martin-sann
+[33m88bd363a[m Improve patch coverage
+[33m3556b39a[m Improve utils tests
+[33m5b4238ef[m Refactor config resolvers + tests
+[33m7552967d[m Merge branch 'main' of https://github.com/geometric-intelligence/TopoBenchmark into martin-sann
+[33me7e9ade5[m Update configs to definetransform type
+[33m44a0dcf9[m Solved bug in Concatenation feat. lifting
+[33me4473f97[m getting rid of cell loader
+[33m54030326[m getting rid of cell loader
+[33m9939f39f[m Docs deployment and tests
+[33ma079178a[m fix test
+[33m57ba158d[m tests added
+[33mcfb7595e[m fixing ruff
+[33m4fe424da[m fixing config_resolver
+[33m90a93960[m fixing config_resolver
+[33m95ec5c27[m fixing evaluator
+[33me00ef8cf[m fixing merge
+[33mcf30f46e[m fixing mantra dataset
+[33mbee30bd2[m FIX: Casting to float and unsqueezes
+[33md174edea[m FIX: Naming
+[33m07f5d996[m Merge branch 'main' of https://github.com/geometric-intelligence/TopoBenchmark into feat-mantra
+[33meec6b56e[m FIX: File delition and correct types
+[33m74b93e35[m Merge pull request #105 from geometric-intelligence/neighborhoods-of-interest
+[33meb3e4c91[m[33m ([m[1;31morigin/neighborhoods-of-interest[m[33m)[m Update run.yaml
+[33m622b7ff9[m Fix bug in homophily tutorial
+[33mf3babe08[m Fix bug in homophily tutorial
+[33m0a9e903f[m Fix bug in homophily tutorial when model is not in the hypergraph domain
+[33m0b3ba78f[m Fixed bug in Concatenation feature lifting
+[33m6974e350[m Merge branch 'main' of github.com:geometric-intelligence/TopoBenchmark into neighborhoods-of-interest
+[33m3d2daf6d[m Tests
+[33me1cd8f24[m Ruff
+[33m5cc98ae4[m Test data utils
+[33mda03fb6a[m Adapt tests
+[33m923b2e7c[m TopoTune OneHasse compatible with standardized neighborhoods
+[33m54f66674[m Simplicial TopoTune compatible with standardized neighborhoods
+[33m88d91244[m Adapt configs
+[33m0fe514fd[m Enabling non-consecutive rank neighborhoods in TopoTune
+[33me86afa65[m Add tests for new neighborhood format
+[33me8eb18e8[m New neighborhood format
+[33m89b4229c[m More efficient computation of r-hop neighborhood matrices
+[33m2fe754fa[m Merge pull request #104 from geometric-intelligence/homophily_measures
+[33me79ee884[m[33m ([m[1;31morigin/homophily_measures[m[33m)[m updated test
+[33m27a7c916[m added cell complex demosntration
+[33me8e0d97c[m fixing ruff
+[33mded5fe31[m add test for homophily
+[33meba633a9[m updated homophily
+[33m65d37c23[m homophily second
+[33mb83bb771[m added test
+[33m86e3419f[m added group homophily
+[33mc583efc9[m FIX: Should be elif
+[33m9d9a7546[m REMOVE: Testing file for SANN
+[33mae4cba42[m FIX: Custom dataloader removal
+[33mc6df63d3[m ADD: Mantra config
+[33m1c36e24a[m FIX: Changes to
+[33madf8109c[m ADD: Batching support and a not so nice fix
+[33m80c8b6da[m FIX: Add complex_dim config support and comment laplacian normalization due to division by 0
+[33m14e229ea[m FIX: Remove useless comments and fix indexing mixup
+[33m21a6cffd[m FIX: SAN cell embeddings to encoder
+[33m1154d45e[m ADD: Precompute embeddings for SANN
+[33m4cda3cc0[m ADD: Tutorial for SANN
+[33m268c3985[m ADD: Base setup for SANN
+[33m2057da75[m FIX:  Casting to boolean on y values and paths
+[33m8004f4dd[m ADD: Mantra dataset
+[33m48322300[m Enabling multi-rank neighborhood of interests - Init commit
+[33mc85517a5[m Merge pull request #101 from geometric-intelligence/dev
+[33m801d3231[m One last change
+[33m22ec57ec[m Fix bug in config resolver tests
+[33m0e8cf27b[m Add coadjacency to lifted topology
+[33m0420de44[m Fix minor bug in test
+[33m9b9de175[m Improve coverage of config resolvers
+[33meda63135[m Fixing bug
+[33m8f9601fe[m Add test for resolver infer_num_cell_dimensions
+[33m9cc72b55[m Update default transform resolver test
+[33m34cd2815[m Merge branch 'main' of github.com:geometric-intelligence/TopoBenchmark into dev
+[33m98287a06[m Fix default transform issues beyond graph-based data
+[33m67baaab8[m Merge pull request #100 from geometric-intelligence/improve_coverage
+[33m6b04c915[m Merge pull request #99 from geometric-intelligence/automate_inits
+[33m7227f16c[m Fix default transform beyond graph data domain
+[33m65f55d5f[m[33m ([m[1;31morigin/improve_coverage[m[33m)[m data manipulation tests
+[33mc0742cd9[m updated
+[33mf8f73e85[m data manipulation updated
+[33m1d59cfa6[m new tests
+[33m0a4b7114[m ruff
+[33mf2c19810[m ruff
+[33m3680822b[m ruff
+[33m0e0f3faa[m Merge branch 'main' of https://github.com/geometric-intelligence/TopoBenchmark into automate_inits
+[33mbef0392f[m Merge pull request #98 from geometric-intelligence/refactor_dataloading
+[33md46cdd7d[m automated transforms
+[33m1ba34e43[m ruff
+[33m0646359b[m test all loaders
+[33m82e1bae9[m test all loaders
+[33m444279fb[m test all loaders
+[33m9cb5defe[m start the developments of node level batching
+[33m8a3714b0[m Merge branch 'main' of https://github.com/geometric-intelligence/TopoBenchmark into batching
+[33m3265ef41[m Merge pull request #97 from geometric-intelligence/resolver_fix
+[33mea28c1c7[m allow use of resolver in ipynb
+[33mc225cc67[m resolver_error
+[33m82b3edeb[m run
+[33m16eb9768[m minor
+[33mfe2d5e71[m some random error
+[33m524cfbaa[m FIX:  Casting to boolean on y values and paths
+[33m1082a73e[m Testing CodeCov
+[33m5d6a8270[m Merge pull request #96 from geometric-intelligence/google_index
+[33m03d24a1a[m Add Google site verification meta tag
+[33m80fad19c[m Merge pull request #93 from geometric-intelligence/add_hypergraph_data
+[33ma8f2d990[m[33m ([m[1;31morigin/add_hypergraph_data[m[33m)[m ruff
+[33ma08a8a6f[m Merge branch 'add_hypergraph_data' of https://github.com/geometric-intelligence/TopoBenchmark into add_hypergraph_data
+[33m4c779e4f[m hypergrpah_datasets_and_fixed_test
+[33m948a2fca[m fix test
+[33mf7a54771[m Merge branch 'main' of https://github.com/geometric-intelligence/TopoBenchmark into add_hypergraph_data
+[33m639d1525[m errors  with pytest
+[33m38de6f84[m Merge branch 'main' of github.com:geometric-intelligence/TopoBenchmark into add_hypergraph_data
+[33m5dbdfdfe[m checking
+[33mdeb195a9[m some changes
+[33mcb3566ad[m citation/coauthorhypergraph datasets
+[33m6ba39f12[m updates
+[33m5512d511[m Merge pull request #92 from geometric-intelligence/dev
+[33m8a1eb735[m Update pyproject.toml
+[33mc0b147bf[m Update pyproject.toml
+[33ma26b7caf[m Update pyproject.toml
+[33m78608915[m Fix ZINC particularity with node degrees
+[33m41bb8385[m Importing all Graph models in __init__
+[33mb1a76cd8[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX into dev
+[33mb47bb5be[m ADD: Mantra dataset
+[33m062ed1b8[m Merge pull request #90 from geometric-intelligence/topotune
+[33m9098b32f[m Update README and fix logo
+[33mbb93d989[m Update README
+[33m986b8582[m Add files via upload
+[33m2eb9b287[m[33m ([m[1;31morigin/topotune[m[33m)[m fix extra space in scripts for hydra
+[33m07eb7a00[m Update LICENSE
+[33m7d00bc41[m Merge pull request #89 from pyt-team/topotune
+[33md5e2ea92[m add links to preprint
+[33m6c74f02c[m additional clarity introducing topotune, prop arxiv links
+[33m487edc3b[m standardizing neighborhood names across scripts and onehasse. additional instrucitons for running topotune in readme
+[33m0e5325a2[m Merge pull request #88 from pyt-team/topotune
+[33m49606070[m fix default run for unit tests
+[33mcc5bde28[m Merge pull request #85 from pyt-team/topotune
+[33md9f296d5[m clean up comments
+[33m912c674a[m rename topotune files, add tests for gccn and gccn_onehasse
+[33m2e0fcfa8[m clean ups cripts, add topotune description in readme
+[33m5bc2c3af[m reproduce CWN on one an dmany graphs, fix config GNN-> IdentityGNN in SCCN_Tune
+[33m7df473b2[m reproduce SCCN on many graphs
+[33md6639cb3[m fix bug in coincedence of onetune, make sccn config files
+[33m5cb8101f[m fix nbrhood names in onetune cweeps
+[33m882b3d1d[m make scripts and edit yaml to run sweeps on one graph, both cell and simplicial
+[33mf841e154[m fix hpsearch conflict
+[33m9279a73f[m add simplicial tune and onetune yamls, make oneg_gcxxn more flexible
+[33m954baac1[m Full simplicial and cell scripts
+[33mdaf554ed[m ZINC setup
+[33m1a55a6dc[m docstrings
+[33mc8b74647[m Refactoring backbone module to include TopoTune
+[33mec2c247e[m Fix bug (no intrarank MP when only 1 cell involved)
+[33mf9c3eb68[m Simplicial TopoTune
+[33m5051ef4f[m Fix env_setup.sh
+[33mdc0a81d9[m Update routes new format in tune.yaml
+[33md9c2b683[m Fix lightning version
+[33m567fb0b1[m Coboundary compatibility
+[33mcef60771[m Init hparams search
+[33m77e85430[m TopoTune implementation
+[33mb1334d25[m Documentation
+[33m9a71aacb[m start from half edges only
+[33m6d1e5a3c[m Remove unnecessary assignments
+[33macbe577f[m remove main from lift
+[33mc0571531[m fix notebook
+[33m08f7644b[m fix lifting
+[33mff4d2896[m fixed adj mat creation in class
+[33m325f61fc[m add testing
+[33m77c0728b[m rename
+[33mf0873784[m rename
+[33m80dfd58c[m add new dataset for tutorial
+[33m85b66681[m fix min variance to correct value
+[33m57624844[m Fix unused import
+[33m9f830eb9[m use seeded random generation from np.random.Generator
+[33mcd8af204[m use seeded random generation from np.random.Generator
+[33m42950bb3[m Fixed unnecessary assignments and main code in latentclique_lifting.py
+[33m41c84c58[m Remove unnecessary assignments and imports
+[33m091b977c[m Fixed unused variables from test
+[33m4406572a[m add configs
+[33m5f398baf[m Remove assignment to unused variable `num_cliques_input`
+[33m74011177[m small fixes
+[33m3be947c1[m Fixed test formatting, aboid extraneous parentheses
+[33mf492e3c1[m update test to comply with Black/PEP8
+[33m7c7de7b9[m Merge pull request #7 from gdasoulas/wrapup-first-submission
+[33m25646525[m Expanded test cases
+[33m2ffa0163[m Expanded test cases
+[33m1063b339[m add feature lifting and other improvements
+[33m524f5fe9[m Cleaned the warnings
+[33m0dcd554c[m clean up code
+[33m91187b17[m wip
+[33me5982bea[m added latent clique yaml
+[33m0351eaaa[m Merge pull request #6 from gdasoulas/add_test
+[33m9be0c052[m added testing file
+[33m28cb2e39[m Merge pull request #4 from gdasoulas/name-change
+[33m9391bfdb[m rename to latent clique lifting
+[33m869f8dd1[m Merge pull request #3 from gdasoulas/pie_params
+[33ma79ce290[m Fixed interpretation of the pie parameter and renamed it to edge_prob
+[33m59d38b52[m Merge pull request #2 from gdasoulas/rcc_fast
+[33m13583516[m Function with improved documentation
+[33m3bc45842[m fixed typos in test
+[33m0fd41b8a[m Small bug fix
+[33mfa9e4985[m More ruff linting fixes
+[33m2a643ae9[m More ruff linting fixes
+[33m778e35fb[m added tests and modified ipynb
+[33m7baa0cd5[m Ruff linting fixes
+[33m95c73dee[m linting
+[33ma794e4cd[m initial version passing tests
+[33mf9f03e26[m initial version passing tests
+[33m28f7ddf2[m solving ruff stuff
+[33m29ebbba7[m solving ruff stuff
+[33mc23bd3cf[m unused imports
+[33m0a7b17ee[m zip
+[33m51133672[m elif
+[33m9f32d94d[m Lift updates
+[33m94d8264b[m updates
+[33m5d3be4e8[m updates
+[33mf7fa9d01[m clean
+[33mde464cb1[m Merge pull request #1 from gdasoulas/create_lifting
+[33m8545e6ba[m Use simplicial lifting as base
+[33mc23e3bc2[m clean
+[33m01c547e0[m clean
+[33me4190437[m Linting
+[33m54ba1261[m Merge branch 'main' of github.com:yShift/challenge-icml-2024
+[33m521266bd[m clean
+[33m36b6d966[m clean
+[33md6197466[m Arterial wall shear stress simplicial complex dataset
+[33mbc63ed7a[m FIX: Key deleting
+[33m9268df29[m FIX: Lifiting procedure
+[33mb37e6a33[m FIX: Tests, ADD: implementatin for connectivity in combinatorial complex
+[33m226be2fc[m FIX: Tests, ADD: implementatin for connectivity in combinatorial complex
+[33mc5b02127[m first version, need to double check that cells are as expected and improe model speed
+[33mb9e7bf12[m FIX: ruff
+[33m0b606f9a[m FIX: Tests
+[33m7bf99727[m FIX: Tests
+[33m6ec088cd[m FIX: Tests, binomial and linting
+[33mfebc7b41[m FIX: Tests, binomial and linting
+[33md61c6270[m bug fix related to import statement
+[33mb6faf648[m FIX: Linting
+[33m1d0f6bc5[m ADD: Random flag complex
+[33m751a97d8[m ADD: Random flag complex
+[33me63825e5[m Update argument description
+[33mf61514ef[m various changes
+[33m49196df1[m various changes
+[33me9e0308d[m changing some stuff
+[33mf7b94a7e[m changing some stuff
+[33mc8abf863[m neural network fix
+[33m6642009e[m fix
+[33m06c1dd66[m fix
+[33mc42dd3f5[m unit test corrected.
+[33m1ff8201c[m .yaml + test file corrected.
+[33m306010a0[m added some extra comments to modularity_maximization_lifting.py + .ipynb.
+[33m2b970c70[m added comments to modularity_maximization_lifting.py.
+[33m47f8b9b4[m Adding test cases (not working yet)
+[33m4488e088[m tests PASSED, first linting issues have been resolved.
+[33m8398381e[m tests PASSED, first linting issues have been resolved.
+[33m2963033c[m Removed unintentially modified files
+[33mf2a5b4d6[m quick fixes
+[33m29adb109[m yaml config + basic tests
+[33m2cfbccc8[m de-linting
+[33m03d46428[m de-linting
+[33m9f05e320[m Cleanup
+[33m31f5225b[m Cleanup
+[33m60054b78[m added modularity_maximization_lifting method + .ipynb file for it.
+[33m16c7eead[m added modularity_maximization_lifting method + .ipynb file for it.
+[33m2b82b6e3[m fixed PreProcessor
+[33mfbc9b3bf[m Ruff linting fixes
+[33m393bead1[m Adding to data transform.py
+[33mca75beca[m Remove prints
+[33m8188f5bc[m Add tests
+[33m98ca0de4[m Add universal_strict_lifting config
+[33m46d81360[m Add universal_strict_lifting.py
+[33m70b7f770[m Add hypergraph lifting base.py
+[33mc77e1fe4[m Small fixes to the errors that occurred during the pull request
+[33m7b601287[m Small fixes to the errors that occurred during the pull request
+[33m9907c430[m Fixed a small problem
+[33m504c8ca3[m Updated tests
+[33m61ad5ca8[m test file complete. passes all test.
+[33mb6ed7821[m test file complete. passes all test.
+[33m1a1fdfa3[m Cleaned up modules
+[33m554fd059[m basic abstract class structure
+[33m296f0804[m Updated Tutorial
+[33m073cef6e[m ruff please
+[33m82b9db5e[m wrote tests and rewritten a little bit some core code
+[33m633d18be[m wrote tests and rewritten a little bit some core code
+[33mccecf949[m some mapper_lift changes
+[33m677c5c48[m some mapper_lift changes
+[33m7e10ea37[m fixing typos
+[33meb334a10[m fixing typos
+[33me0341e22[m Made some small changes
+[33m22887b55[m Made some small changes
+[33ma2356729[m bugfix
+[33mf3f05d3e[m Rewrite compare_to_threshold from lambda to inline def function
+[33mc6560fe8[m FIX: Correct dict comprehension
+[33m5a3d5d68[m FIX: Dict comprehension
+[33m702230a2[m bugfixing, adding possibility to define either quantile or absolute thresholds
+[33m985b6c4f[m bugfixing, adding possibility to define either quantile or absolute thresholds
+[33m199e5c82[m Update load manual mol name
+[33md68159bc[m FIX: Linting
+[33m592db073[m FIX: Linting
+[33m3220f121[m ADD: Nieghbourhood complex
+[33m342e2257[m ADD: Nieghbourhood complex
+[33m7d9de782[m Format
+[33m8d929fb2[m Format
+[33mf12ad701[m Adding DFC tests
+[33m8e3f3ace[m Adding DFC tests
+[33mfba09456[m Refine code
+[33mbb13a58a[m New test
+[33m6b079b11[m merged
+[33m45295727[m Update incidence hyperedge sorting
+[33mdc537f7e[m add path search
+[33m8e69b85f[m add path search
+[33m2192bb14[m Update incidence hyperedge in test
+[33mf23f4fc6[m Sort hyperedges
+[33m4da5b155[m Sort hyperedges
+[33m34e812bb[m Print incidence hyperedge
+[33ma9f66e54[m Print incidence hyperedge
+[33m794ada3a[m Update incidence hyperedges
+[33m2e1d575a[m Update incidence hyperedges
+[33mdf11bcfc[m Update incidence hyperedges
+[33mab77ba93[m Update incidence hyperedges
+[33m39af0e10[m Reformatted tests
+[33ma83ea0b4[m Added docstring
+[33m0e48bbb5[m Rewrote Matroid class
+[33mb8c48e59[m Rewrote Matroid class
+[33m727dd7e8[m Update hyperedges with non-repeated close atoms
+[33m1c6655d8[m Update hyperedges with non-repeated close atoms
+[33mfcadee4f[m ruff checks
+[33mce0a692b[m add logging
+[33mdfa0803b[m Change hyperedge definition
+[33me4f060cc[m Insert asserts
+[33me638abe2[m Solve test adding position to manual data
+[33m1fa7c1ee[m Solve test
+[33m9a7b00c5[m test + combinatorial nn
+[33m7c060df4[m multiple_contained_chunked modification
+[33m67ef24e0[m Changed graph to hypergraph
+[33me9a3294e[m Changed graph to hypergraph
+[33m5d9e88c9[m first commit - create class
+[33mf945c393[m PointNet++ lifting
+[33m0ec76209[m PointNet++ lifting
+[33mf1e6b710[m Add: test and tutorial
+[33m8740b0b5[m Add: test and tutorial
+[33mf86e8369[m Init
+[33md7cb9d14[m Init
+[33mb24faf40[m Added another test on truncated matroid
+[33m47a38a47[m Fixed notebook tutorial
+[33maeebd0ff[m Fixed tests
+[33m003cb8d5[m Fixed tests
+[33mca794917[m Added truncated / sub combinatorial ranking
+[33m02611142[m Added truncated / sub combinatorial ranking
+[33m79d9e51a[m fixing linting errors
+[33m918107d8[m graph2hypergraph lifting based on forman-ricci curvature to identify network backbone(s) as hyperedges
+[33m8e002164[m graph2hypergraph lifting based on forman-ricci curvature to identify network backbone(s) as hyperedges
+[33md8515c50[m Only qij-adjacencies
+[33m5d6236ce[m Added tests for the mogmst approach
+[33m355d235a[m Added tests for the mogmst approach
+[33m47180f79[m Fixed ruff complaints
+[33m509d8d26[m Graph curve lifting
+[33mcc672c90[m Graph curve lifting
+[33m97ac884a[m Finished lifting and added the tutorial file
+[33mb1f97a7c[m graph to matroid lifting
+[33m89bccdf9[m add ring sanity check
+[33mb8d4bbb9[m Framework setup
+[33me25be4b8[m Framework setup
+[33mc3f04a65[m ruff modifications
+[33mce8c5c3a[m Finish attributes
+[33mcdc75aa5[m update test
+[33m3e7f8d24[m fix linters
+[33mb2729c86[m Adding attributes
+[33m2390f864[m Adding attributes
+[33mdbe2ba74[m kernel lifting implementation
+[33mfb9f6d82[m kernel lifting implementation
+[33m90d467be[m Minor clarifications
+[33m812c6fb2[m FIX: Test
+[33m602a4959[m FIX: Linting
+[33m6c6755cc[m FIX: Linting
+[33m86f913ab[m Linting
+[33m4f8de53f[m Linting
+[33m5506ced7[m Expander hypergraph lifting
+[33mffacba31[m Expander hypergraph lifting
+[33m60b7ba51[m fix naming
+[33m566e0a17[m ruff fixes
+[33m6fb00bae[m add tests
+[33m825514ce[m add alpha complex
+[33m6a873a93[m add manual dataset and fix configs
+[33m20f10e42[m test file skeleton
+[33m33e606ca[m fixing yaml
+[33m3ac5abbd[m fixing yaml
+[33m2d941371[m resolved merge conflicts
+[33mc3123b91[m Creating tutorial
+[33m75241887[m filter changes
+[33m43572ae5[m filter changes
+[33mfc8ebc83[m Tweaked pyfile
+[33m74dd11b2[m Finished mapper lifting class foundations
+[33m7856af1b[m Update line_lifting.py
+[33m960d4d06[m Update delaunay_lifting.py
+[33md23760ae[m cluster function written
+[33mfa93c8de[m filter functiion
+[33m3c4d2c50[m Implemented Laplacian Eigenmap
+[33mb0a7c8db[m Created MapperCover
+[33ma937149d[m fixed small bugs, created testing ipynb
+[33mcd4fdc6d[m Skeleton Outline
+[33m7eadfde3[m fixed issues related to the fact that vertices in line complex are edges from initial graph
+[33mcb6647d7[m smol changes
+[33m307036e9[m hypergraph -> simplicial
+[33m8a49a352[m hypergraph -> simplicial
+[33mc7c41131[m small changes
+[33m6948fc02[m finished with .py file and .yaml; added .ipynb
+[33mea262171[m finished with .py file and .yaml; added .ipynb
+[33mf9b2b179[m graph -> simplicial change
+[33mbce662d1[m init commit
+[33m28c1967e[m Notes on Pipeline
+[33mdba4ed13[m Notes on Pipeline
+[33mbf6349b2[m Update incidence hyperedge matrix
+[33m88ee0668[m Applied --fix option
+[33m37c1d3c6[m errors solved
+[33m632ce3f2[m Fixing errors
+[33m34d8a3b9[m Solve errors
+[33m1f39b484[m Final combinatorial implementation.
+[33m93fd43a3[m Final combinatorial implementation.
+[33m6d4ca0c0[m Ending combinatorial implementation
+[33md17b8c28[m First try of combinatorial complexes.
+[33m0986d93f[m Update with tests
+[33m250633cc[m qij
+[33m7240cb36[m First try of rings + close_atoms. Difficulties on lifting the topology.
+[33m2b6053b4[m First try of rings + close_atoms. Difficulties on lifting the topology.
+[33mb89d3c18[m Adding required files
+[33m100f66b1[m Adding required files
+[33ma398fa9a[m Challenge Scaffolding
+[33md7f3d712[m Challenge Scaffolding
+[33mb3f288df[m Ring lifting modifications
+[33ma93c14ce[m Update ring_lifting.py
+[33m8bec6d46[m Deleting other test since they are using other test dataset
+[33md9d75f9b[m Hope it is the last one
+[33m5771cf58[m Fix lifting details
+[33m607fec76[m Correct more errors
+[33m88c74289[m mol ring lifting correctation
+[33m62e24600[m Readme update
+[33me77d294e[m Readme update
+[33m80209295[m First ring-based commit
+[33m267161b4[m First ring-based commit
+[33m04b085f7[m[33m ([m[1;31morigin/liftings[m[33m)[m Merge pull request #80 from pyt-team/dev
+[33mfd8f4f57[m updated readme
+[33mcf43f85c[m ADD: Coface lifitng test and tutorial notebook
+[33m16f1851f[m ADD: COnfigurations of combinatorial complex model and coface lifting
+[33mfa9dfea7[m ADD: Base of coface lifting
+[33m2c3e9e1b[m test utils
+[33m515369ad[m test instantiators of logger and callbacks
+[33m58a97d2b[m test instantiators of logger and callbacks
+[33m7ac3299c[m added feature liftings
+[33mcb57f187[m add testing projectionsum
+[33m0cfa5e89[m deleted old file
+[33m373cf33f[m added reproducibility into readme
+[33me2891b02[m ensured reproducibility
+[33m4bb85faa[m main_exp_script
+[33m6b9b7783[m Merge remote-tracking branch 'origin/dev' into reproducibility
+[33mb1830e1a[m pulled from main
+[33mb852ec49[m Fixed bug in Preprocessor when loading some processed data with no transform
+[33m3a886e70[m improved coverage
+[33mb322ba3d[m Merge pull request #79 from pyt-team/dev
+[33m577dbd0a[m Merge branch 'dev' of https://github.com/pyt-team/TopoBenchmarkX into dev
+[33m5764e68d[m coverage
+[33m29ccb1b1[m Adding test to new optimizer class
+[33m972f3da1[m Merge pull request #78 from pyt-team/dev
+[33m6a2162b8[m Adding test to the new get_default_metrics resolver
+[33m09b09c69[m Improving optimizer docstrings
+[33m2efadd57[m Adding new config resolver to get default metrics for the evaluator
+[33mfb706de3[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX into dev
+[33m15305c8b[m Update test_SCCNNWrapper.py
+[33m6d30c9ab[m Update test_GraphLoader.py
+[33mdfcc0144[m Update test_GraphLoader.py
+[33m92f86932[m Merge pull request #77 from pyt-team/dev
+[33mc8f5b99b[m Merge branch 'dev' of https://github.com/pyt-team/TopoBenchmarkX into dev
+[33m315f0b41[m Add tests for config_resolvers.py
+[33m3cddb296[m Update docs with optimizer module
+[33mf2cae6e3[m Update README mentioning hydra CLI
+[33m4d0e975a[m Minor README update adding lifting tutorial
+[33mc1e4e44c[m Add tests for simplicial model wrappers
+[33m602065d9[m Add tests for cell wrappers
+[33m5dafea6a[m Add wrapper tests
+[33m5c6622f0[m Separate tests for nn
+[33m140c2225[m Merge pull request #75 from pyt-team/dev
+[33m468cd95e[m Solved bug in tutorials
+[33m6769013d[m Format
+[33m05253af7[m New TBXOptimizer, compatible with all torch.optim optimizers and schedulers
+[33m70a883d2[m Update workflow image with new optimizer module
+[33m9bf0fbaa[m New optimizer module, managing both optimazir and scheduler
+[33m314cbaae[m Merge pull request #74 from pyt-team/dev
+[33ma091a448[m Formatters
+[33m6ecdc28f[m Apply renaming to tests
+[33mbf1d2c75[m Renaming data submodules: load -> loader, preprocess -> preprocessor
+[33m0e98ea91[m Applying refactorization to docs
+[33m0a1c4c96[m Refactorization - datasets within data module
+[33m05793518[m Merge pull request #73 from pyt-team/dev
+[33m368875c4[m Update logo
+[33m4ade3176[m Merge pull request #72 from pyt-team/ninamiolane-new-logo-on-docs
+[33md4c1d2a9[m style improvements
+[33m7ef8a2fd[m style improvements
+[33mec2b9d18[m style improvements
+[33ma63fb854[m markdowns edits
+[33m037d430f[m changed model to scn, faster
+[33mba68644d[m[33m ([m[1;31morigin/ninamiolane-new-logo-on-docs[m[33m)[m Update docs' landing page with new logo image
+[33mbdbe6470[m Merge pull request #71 from pyt-team/update_docs_api
+[33m6c3e23f8[m Update logo
+[33m65132c49[m[33m ([m[1;31morigin/update_docs_api[m[33m)[m fixing doc string of test_auto
+[33m6190360c[m updated backbones/init.py
+[33m1b8aacba[m updated docs api
+[33md2bb2122[m Logo update
+[33m9fddcc10[m deleting old files
+[33m31f10a00[m Merge pull request #70 from pyt-team/ninamiolane-apiiii
+[33me0efde49[m[33m ([m[1;31morigin/ninamiolane-apiiii[m[33m)[m Add missing ref in CWN for Bodnar et al + other fixes
+[33m5980f41b[m Fix API problems
+[33mc2237378[m Remove not needed register transform
+[33mb8d866fe[m Merge pull request #69 from pyt-team/ninamiolane-docs-badge
+[33mb5cfcff3[m Add docs badge in README.md
+[33m46daccd7[m Merge pull request #68 from pyt-team/ninamiolane-api-mysteries
+[33m82fe2fb5[m Add full installation of package to compile docs: otherwise, torch-sparse missing to render API docs
+[33mc501f9fb[m Merge pull request #67 from pyt-team/ninamiolane-fix-testyml
+[33m2d6e9cba[m Update test.yml with new test files and test_tutorials
+[33mb59ce654[m Merge pull request #66 from pyt-team/ninamiolane-issue-template
+[33ma93e4c68[m Add PR template
+[33m67d4d93c[m Add code of conduct
+[33me4828145[m Update issue templates
+[33m25f8bfec[m Merge pull request #62 from pyt-team/ninamiolane-test-tutorials3
+[33mfc4567c6[m Merge pull request #65 from pyt-team/ninamiolane-api-fixes
+[33m79688e49[m FIX Api: typo in dataload?
+[33mf8060670[m Merge pull request #64 from pyt-team/ninamiolane-fix-images-links
+[33m4be990f2[m QUICKFIX: Fix links to images on landing page
+[33mfa4fdcce[m Merge pull request #63 from pyt-team/ninamiolane-fix-gear
+[33mf654dbf1[m Update index.rst: FIX gear emoticon for Neural Networks section
+[33m76472377[m[33m ([m[1;31morigin/ninamiolane-test-tutorials3[m[33m)[m Rm unnecessary lines in .gitignore: ignores already there
+[33m5bc4a9fb[m Adding tests for tutorials
+[33m6753630a[m Merge pull request #60 from pyt-team/dev
+[33m4ccad96c[m Merge pull request #61 from pyt-team/ninamiolane-docs-images
+[33ma3a900b8[m Fix refs to sections on the landing page
+[33mc516b1ff[m Add images to landing page of docs website
+[33m6d912af8[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX into dev
+[33m9ff3130c[m Speeding up tutorials
+[33mf83f5043[m Merge pull request #59 from pyt-team/ninamiolane-docs-tutorials
+[33m2833d1fe[m Add thumbails for tutorials on docs website
+[33mb4ccb338[m Merge pull request #58 from pyt-team/ninamiolane-pi
+[33ma23e01a3[m Various fixes to API docs pages
+[33m172e3237[m Add fix in dataloader index.rst
+[33m21ec537b[m Merge pull request #56 from pyt-team/dev
+[33mb8fc4200[m Merge pull request #55 from pyt-team/ninamiolane-readme-tables
+[33m096cf393[m Cleaning Tutorials
+[33mc2edadf5[m Update index.rst
+[33m1bef3c8f[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX into dev
+[33m88555a2e[m README update
+[33m469b1a94[m Workflow figure update
+[33m264735d7[m Merge pull request #53 from pyt-team/ninamiolane-tables
+[33mfa708711[m Merge pull request #52 from pyt-team/ninamiolane-fix-nn
+[33m947bbc94[m Update index.rst
+[33mc7830f41[m Update index.rst
+[33ma5db72ba[m Update test.yml: fix absence of nn/ folder
+[33m94ae3a1b[m Merge pull request #51 from pyt-team/ninamiolane-cnt-docs
+[33m19185547[m Update index.rst
+[33m2c50ad62[m Clean landing page of doc website
+[33mffd8bafa[m Merge pull request #50 from pyt-team/ninamiolane-codecov-badge
+[33mebf1e615[m Continue on API
+[33m56dd196d[m Add codecov badge to readme: show coverage % + link to codecov report
+[33mdf4b8d6b[m Merge pull request #49 from pyt-team/ninamiolane-docs-deploy
+[33mf90222e4[m Merge pull request #48 from pyt-team/ninamiolane-fix-codecov
+[33m0af3949f[m Add transforms files
+[33me46eb397[m Continue API docs
+[33m30a51b5e[m Continue API for nn/
+[33m22e06d8b[m Add codecov config + remove outdated -n option
+[33m2a6991a1[m Add upload of yml report  to codecov + Add processing in parallel for unit-tests
+[33m9011b26e[m Merge pull request #46 from pyt-team/ninamiolane-docs-to-main
+[33m42018886[m Merge pull request #47 from pyt-team/ninamiolane-codecov
+[33m1bb223d6[m Add numpy_doc to docs dependencies
+[33m21bb2413[m Upload coverage with codecov
+[33m5b9b5a29[m Fix conf issue in thumbnails
+[33me920491b[m Fix conf issue
+[33m8b25a62d[m Cleaning
+[33md1db416b[m Add API's utils/index.rst
+[33me0d34afd[m Add API's model/index.rst
+[33m6cf0792a[m Add API's loss/index.rst
+[33m9ce88599[m Readme update
+[33mae4da2d5[m Add API's evaluator/index.rst
+[33m0b14668a[m Add API's datasets/index.rst
+[33m9cf7d5a5[m Add API's dataloader/index.rst
+[33mce45e91c[m Add API's data/index.rst
+[33m701715bc[m Add index.rst's files for API reference pages
+[33mcdb439af[m Readme update
+[33m93cc232f[m Update nn_module_auto_test.py
+[33m6bf43698[m First commit for docs: import structure and github actions
+[33m1d5dcf6a[m Minor update readme
+[33md366bcf3[m Merge branch 'dev' of https://github.com/pyt-team/TopoBenchmarkX into dev
+[33mb86354e4[m Add class for auto tests
+[33m30110422[m Readme update
+[33m64a8a605[m updated refs
+[33mfd177e38[m Update README.md refs
+[33m8853a57c[m Update README.md
+[33m5a04ad38[m Update README.md logo and workflow
+[33m5543ec8c[m Add files via upload
+[33m0d4bcb66[m Update README.md
+[33m796c1b72[m Update README.md
+[33m0895035e[m Add files via upload
+[33mc81ed078[m Merge pull request #45 from pyt-team/ninamiolane-quickfix-1
+[33mbca4c24a[m[33m ([m[1;31morigin/ninamiolane-quickfix-1[m[33m)[m FIX README.md: Fix failing Testing Badge + Fix typo in docker installation
+[33m31d147bf[m Merge pull request #44 from pyt-team/dev
+[33m3a569250[m Uncommenting dependencies on pyproject.toml
+[33me74ed3a2[m Format and lint
+[33mb87818b8[m pre-commit update
+[33me7de94bf[m Merge branch 'dev' of github.com:pyt-team/TopoBenchmarkX into dev
+[33me28cead7[m Fixed tests issues
+[33m228b7253[m docstring
+[33mf79a8fba[m docstring
+[33m0ede5909[m docstring
+[33m0462dd07[m docstring
+[33m1cefad6d[m docstring
+[33m81881cf5[m Merge branch 'dev' of https://github.com/pyt-team/TopoBenchmarkX into dev
+[33m03ad1625[m docstring
+[33mf79bda8e[m Merge branch 'dev' of github.com:pyt-team/TopoBenchmarkX into dev
+[33mb5560e9e[m Dataloader docstrings
+[33m042afb25[m docstring
+[33m5383538f[m docstring
+[33m1ef421d9[m docstring
+[33m6d2b2b51[m Merge branch 'dev' of https://github.com/pyt-team/TopoBenchmarkX into dev
+[33m226b3b8b[m docstring
+[33m53bcea56[m Update pyproject.toml
+[33m6fe2f230[m Merge branch 'dev' of https://github.com/pyt-team/TopoBenchmarkX into dev
+[33m6bf3804d[m Update test_preprocessor.py
+[33mf3e352fc[m Merge branch 'dev' of https://github.com/pyt-team/TopoBenchmarkX into dev
+[33mc3773efd[m docstring
+[33mc6c43bce[m Merge branch 'dev' of https://github.com/pyt-team/TopoBenchmarkX into dev
+[33mbb3b6e18[m Update test_preprocessor.py
+[33mf83c27e8[m docstring
+[33m213977db[m Data in numpydoc style
+[33m709f0c5a[m Data utils docstrings
+[33m68d64dcc[m Docstrings Preprocessor
+[33m1606ad9a[m Init change to numpydoc
+[33mfd0c20d9[m Reverting some doc modifications to follow the library standard
+[33m867c4705[m adding small fix
+[33mdbe54a9f[m fixing refs in the readme file
+[33mc274d6d1[m fixing documentation and make them follow numpy convention
+[33mbdf0b67c[m adding references
+[33me390681d[m Last try
+[33m0c685076[m Linting
+[33ma96586f2[m linting
+[33m8bce862c[m linting
+[33mde4cc9b1[m Formatting
+[33m6c1a0c13[m Formatting
+[33mdcd7f93e[m Cleaning
+[33m8d958a09[m Merge branch 'dev' of github.com:pyt-team/TopoBenchmarkX into dev
+[33mb3eafc2c[m Removing unnecessary logs
+[33mcaad4b33[m Merge branch 'dev' of https://github.com/pyt-team/TopoBenchmarkX into dev
+[33m67428c8c[m Change FlowMocker
+[33m8d9d0b55[m Merge branch 'dev' of https://github.com/pyt-team/TopoBenchmarkX into dev
+[33m790834d0[m initial commit
+[33m5f43c735[m Update README.md
+[33m318d0df8[m Black checkings
+[33m936edab1[m Docformatter checks
+[33m6892aa03[m Ruff errors fixed
+[33meb0c8db5[m Refactorization almost complete
+[33maa1334e2[m Refactorization
+[33mefbafd12[m added name of lifting for cell
+[33m454f7e99[m fixed graph2cell table
+[33mb5ad4fbb[m Merge branch 'dev' of https://github.com/pyt-team/TopoBenchmarkX into dev
+[33me446acbd[m added datasets
+[33m9801c07f[m cleaned up imports
+[33m34a366ab[m Merge branch 'dev' of https://github.com/pyt-team/TopoBenchmarkX into dev
+[33ma2b928cf[m Create test_io_utils.py
+[33me4ef99eb[m Merge branch 'dev' of github.com:pyt-team/TopoBenchmarkX into dev
+[33m43283147[m Fixed bug with preserving edge features
+[33m79f8590d[m Fix test_Dataloaders
+[33m530a6084[m Type checking in dataloader arguments
+[33ma994e112[m Update utils.py
+[33m3c45c199[m Merge branch 'dev' of https://github.com/pyt-team/TopoBenchmarkX into dev
+[33m76f7320c[m Change tests
+[33m6cd59614[m Small Name Fix
+[33m5a1dfe5f[m Implementation of the DnD lfiting (Graph to Complex)
+[33mffa021fd[m Implementation of the DnD lfiting (Graph to Complex)
+[33m59e5a084[m Merge pull request #42 from pyt-team/ninamiolane-quickfix
+[33me00b48b1[m run all
+[33ma8e1ef36[m initial commit
+[33ma23fbe51[m initial commit
+[33md5160c77[m bugfixes to use it on main_results
+[33md51e9021[m added None wrapper and readout
+[33md4cd7574[m Cleaning
+[33ma073e451[m Changed train.yaml -> run.yaml
+[33m3ae0a299[m Merge branch 'dev' of https://github.com/pyt-team/TopoBenchmarkX into dev
+[33mc290b34b[m Add test_GraphLoader.py
+[33mfd4dfdd1[m .gitignore
+[33md2c3b353[m Ruff correction
+[33maf78013b[m Refactorization (continued)
+[33mfd85154c[m Fix __init__.py
+[33m71dc637f[m Change test workflow config
+[33m577a5e7b[m Refactorization (continued)
+[33m28656e22[m Merge branch 'dev' of github.com:pyt-team/TopoBenchmarkX into dev
+[33m1b854cc1[m Refactorization + Renaming of some TBX main classes
+[33me39ec84a[m Merge branch 'dev' of https://github.com/pyt-team/TopoBenchmarkX into dev
+[33m02f24eff[m Add test_dataload_dataset
+[33mc79482eb[m Refactorization nn (continued)
+[33md7d30505[m Init Refactorization nn module
+[33m97a8fa70[m Enabling testing from a saved checkpoint + __main__ addition to run topobenchmarkx module
+[33mda4a9c65[m Refactorization losses
+[33m5ba3bbe7[m Refactorization of custom_models -> tbx.nn.backbones
+[33m3287958f[m Fixed bug in infering num_cell_dimensions in model configs
+[33m407bd080[m Init final refactorization
+[33m89e4e93b[m Init final refactorization
+[33m0c71afa6[m[33m ([m[1;31morigin/ninamiolane-quickfix[m[33m)[m Update README.md
+[33m3c4b9398[m Update README.md
+[33m008f96ba[m some changes
+[33mafda97c2[m Implementation of the eccentricity-based lifting of graphs to simplicial complexes
+[33m738820d4[m Implementation of the eccentricity-based lifting of graphs to simplicial complexes
+[33m1c48ba7b[m added ipynb and yaml
+[33maafd55c2[m added ipynb and yaml
+[33mb97ed6f7[m added skillings_mack test to handle nans
+[33mfd75be1e[m Fixed numerical issues in tests and cleaned up notebooks
+[33m1e29b614[m init commit
+[33m191aa039[m added the textual description of configuration hierarchy
+[33mb89e2418[m unified readout
+[33m303afa31[m Update README.md
+[33m663f0e97[m Update README.md
+[33me777f5b1[m Implementation of the graph induced lifting (graph to simplicial complex)
+[33m0d3c84d4[m Implementation of the graph induced lifting (graph to simplicial complex)
+[33mf116839a[m Update README.md: Fix topobenchmarkx -> TopoBenchmarkX + smaller logo
+[33m8e74d8fe[m Fixed bug in pyproject.toml
+[33m1844914f[m Adding docker files
+[33mfda822fb[m test.yaml minor update
+[33m707b55b9[m Merge pull request #41 from pyt-team/ninamiolane-readme
+[33m6a366796[m env setup update
+[33m41179e88[m Update and rename python-app.yml to test.yml
+[33m9315bf9a[m Update README.md
+[33m57ac4be9[m Update README.md
+[33mdb3821f9[m Update README.md
+[33m8421f1a1[m Update README.md
+[33ma469eb74[m Update README.md
+[33ma3de9183[m Update README.md
+[33m91566f36[m Update README.md
+[33m9797f76c[m Update README.md
+[33me8494a62[m Update README.md
+[33m86dbd061[m Update README.md
+[33m9fb00563[m Update README.md
+[33m0c6c2b42[m Update README.md
+[33m3c44e327[m Update README.md
+[33m6e41395d[m Update README.md
+[33m1024032e[m Delete resources/logo_black_purple.svg
+[33mf493db07[m Add files via upload
+[33ma229744c[m Add files via upload
+[33m56e73101[m Update README.md
+[33md941eeba[m Update README.md
+[33m1764eec5[m Update README.md
+[33m0687aa91[m Update README.md
+[33m3bdbe16e[m Update README.md
+[33md8de10fd[m Update README.md
+[33mdfaa44e3[m Update README.md
+[33mcb977234[m Update README.md
+[33m0130cd4d[m Update README.md
+[33m6df162c6[m Update README.md
+[33m847c0355[m Update README.md
+[33m85cba9bb[m Update README.md
+[33m78462cff[m load_splits method in PreProcessor
+[33mb870697b[m Readme minor update (adding conda option)
+[33mae75d210[m Initial implementation of the Vietoris-Rips lifting (graph to complex)
+[33m50182259[m Initial implementation of the Vietoris-Rips lifting (graph to complex)
+[33m7e471649[m update env.sh
+[33m66ad2119[m refactoring readout and added logo
+[33md66a66c3[m filled tables in readme
+[33m5041dedf[m Code cleaning
+[33m52a6d1ce[m Final config for ZINC dataset
+[33m40360c59[m ZINC working fine
+[33mf63bd2c2[m AQSOL running
+[33maf8aa509[m Adding persistent_workers option to dataloader
+[33mbb32f705[m Minor
+[33mb9c14f21[m initial work readme
+[33mc5e5772b[m Solved merging issues
+[33m9440f9e0[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX into dev
+[33mf64aff28[m Data refactorization complete
+[33mb2fcecc8[m dataset -> data module
+[33m112fb85e[m Cleaning and finishing refactorization
+[33md373c23d[m Applying refactorization in configs
+[33mafddc9f5[m Solved bug with default transforms
+[33mdbbdb440[m ZINC loading but failing to run
+[33m1a854136[m ZINC loading
+[33m6b5f408f[m Added io module
+[33m6944c5e0[m US running after further refactorization
+[33mb89e2471[m Minor ruff stuff
+[33mb5bb77a7[m Applying refactorization
+[33m6e1ab19f[m Merge branch 'dev' of github.com:pyt-team/TopoBenchmarkX into dev
+[33m60c850f7[m Adding option to standardize features (w.r.t. train data) in single-graph datasets
+[33m42a8f3e5[m Merge branch 'dev' of https://github.com/pyt-team/TopoBenchmarkX into dev
+[33mff139239[m Update data manipulation tests
+[33mb69bea49[m Merge branch 'dev' of github.com:pyt-team/TopoBenchmarkX into dev
+[33mb6e7f8e2[m US datasets running OK after refactorization
+[33m5178ee4f[m Update and add tests
+[33m9d55b793[m Minor
+[33m04dc8d18[m Refactorization complete for US-county-demos
+[33mc8f63737[m Add test_data_manipulations.py
+[33mfd3a559b[m Getting to transforms
+[33mf2efafab[m Solved paths minor inconsistency w.r.t. '/'
+[33mbe104ee5[m Still chaos, but closer
+[33m539a76a3[m Fix test_Dataloaders.py
+[33md5331500[m USCountyDemos refactored
+[33mcfe150a3[m Fix tests
+[33m0cbecd60[m Data refactorization in progress (II)
+[33m32f3bc0f[m Error in sccn.yaml
+[33mf18f49e0[m env.sh update
+[33m7ea386f0[m working out modularity
+[33md57daff3[m Attemp to parallelize in cpu
+[33m6324deff[m optimizer, loss, scheduler refactorization
+[33mf77ce2ff[m data refactorization in progress
+[33mf3a6e763[m Transforms refactorization complete
+[33mdee3da0b[m LIFTING_TRANSFORMS dict in __init__.py
+[33m05a03169[m Data Manipulations Checked
+[33mfcaf755d[m Refactorization of liftings
+[33mbfbaf699[m Start refactorization of data utils (uncompleted)
+[33m2af5f25d[m Renaming
+[33m6c2e955e[m Minor changes in configs
+[33m70735bdc[m Update env.sh
+[33m29678620[m Cleaning
+[33m1841eaf0[m Publish dev branch
+[33mf69f7a64[m Create python-app.yml
+[33mf29adb21[m Merge branch 'main' of https://github.com/pyt-team/TopoBenchmarkX
+[33me7e13bca[m removed test_ProjectionLifting.py
+[33m2351fb7b[m Preeliminar env setup
+[33mac85988f[m Solved problem with pyg loaders
+[33mfd0c488a[m New env.sh
+[33m30c12353[m[33m ([m[1;31morigin/cellular_exp[m[33m)[m cellular
+[33m637ba107[m docker update
+[33m7cce31ad[m fixed issue with env
+[33mf76ba4fd[m Merge branch 'main' of https://github.com/pyt-team/TopoBenchmarkX
+[33mc1bae72a[m fixing torch_geometeric
+[33m84d1322c[m fixed documentation
+[33m21fc5f86[m merging main brach with experiments
+[33m9f3700d2[m hypergraphs
+[33mbdd40568[m Merge branch 'main' of https://github.com/pyt-team/TopoBenchmarkX
+[33m5513c5e5[m check docstrings
+[33m0c991c7d[m deleted table
+[33me7150156[m statistics dataset script
+[33mbc604a96[m env setting
+[33mf782d150[m hypergraph initial sweep
+[33md1a0ffa0[m graph scripts
+[33mf715db19[m Merge branch 'main' of https://github.com/pyt-team/TopoBenchmarkX
+[33m8173c962[m refactor conf
+[33m202d33e9[m Remove unused Dockerfile and devcontainer configuration files
+[33mc5838de5[m Update env.bash
+[33m83bcd840[m Update env.bash
+[33m7afbdca3[m env setting
+[33m73ab47dc[m check values of incidences
+[33m3b87ee93[m cleaning
+[33mfb318bf2[m Merge branch 'main' of https://github.com/pyt-team/TopoBenchmarkX
+[33m84320f14[m cleaning
+[33m79cf1b65[m added test for collate_function
+[33m8d41451e[m to_data_list works
+[33m9fc0a7fd[m added pythonpath for pytest
+[33m34da4f8b[m small corrections
+[33m7721ac94[m fixing to_data_list
+[33mec42f1e0[m fixing to_data_list
+[33mdb353635[m updated collate
+[33mc69c1f38[m enhanced modularity
+[33m74fcc682[m updated wrapper modularity
+[33m8ed265de[m fixed sccn
+[33ma9cc2adc[m Ruff fixes
+[33m446e8110[m Ruff fixes
+[33med9d80e3[m Update pyproject.toml
+[33m18cca682[m Lintering
+[33mde384a25[m Update .pre-commit-config.yaml
+[33mfdec50c2[m Update .pre-commit-config.yaml
+[33m24b97ba5[m Update .pre-commit-config.yaml
+[33m9bc77f1e[m turned off linter for jupyter notebooks
+[33m06c8f188[m Update data.ipynb
+[33m7ebbd28d[m fixed notebooks
+[33mc88ba871[m uncommented lint.yaml
+[33mefcf759e[m uncommented ruff and numpydoc
+[33mcf337663[m general readout
+[33mcac20f4d[m general readout
+[33m332edefe[m updated metrics and new dataset
+[33mc1366538[m reproducibility update
+[33m236e8d5f[m reproducibility when full graph
+[33mcc354672[m reproducibility when full graph
+[33mf2b6a5c1[m substituted nan with means
+[33m81a098af[m added documentation
+[33mfe0e33fd[m seeds
+[33mf246f3da[m Merge branch 'main' of https://github.com/pyt-team/TopoBenchmarkX
+[33m8f732c80[m resolved issue with checpointing
+[33m2b69b202[m added documentation
+[33mf0f709f9[m Merge branch 'main' of https://github.com/pyt-team/TopoBenchmarkX
+[33ma930bafa[m added documentation
+[33me1fadcfc[m updated demos
+[33m1683cf29[m working cell models
+[33me0147f53[m Started CI
+[33m8621343f[m updated collare for hypergraphs
+[33mab7fd671[m Added cornel dataset and first tutorials
+[33m46f9061e[m Cornell datasets draft
+[33maa63837e[m Making interface to download datasets from any source
+[33m9b54e030[m updated tests
+[33med329c0f[m Selected liftings
+[33m020dde2d[m Selected liftings
+[33m2b024dc5[m ruff checks passed
+[33mec5e1d3b[m cleanup
+[33m4a864127[m added datasets
+[33m20bfd70f[m Refactoring + Improving Tutorials
+[33mcbd1c11e[m Refactoring + Improving Tutorials
+[33mb77a255e[m trying make ruff work
+[33mff61d3ec[m working tests
+[33m1cfd71b3[m ruff working
+[33m3e655f46[m ruff working
+[33m6757517b[m correct tests
+[33md434d3ef[m Tutorials compatible with new refactoring
+[33mb4a55ef1[m Simplifying configs
+[33md3bbfbf7[m Adding tutorial tests + Refactorization
+[33m50f8efb5[m Adding tutorial tests + Refactorization
+[33md1db4f92[m working tests and library installation
+[33mf4474340[m working tutorials
+[33me21a580a[m working tutorials
+[33me8fde4e2[m Adding tests
+[33m209dbb96[m Refactoring
+[33m29cf7b26[m Refactorization of io module
+[33me0527ab2[m Fix refactorization imports
+[33m1d13a636[m Refactoring completed
+[33mef6a82f6[m Init Refactorization of Transforms
+[33m67b00434[m Graph2Hypergraph Tutorial
+[33m8be072d2[m Graph2Cell Tutorial
+[33m08040aea[m code cleaning andupdate ttutorial
+[33m92ff6af2[m Init code
+[33m7892f74b[m updated normalization function for SCN
+[33m3ec70e4e[m Merge branch 'main' of https://github.com/pyt-team/TopoBenchmarkX
+[33m508a1604[m not necessary
+[33mb4791e40[m Merge branch 'main' of https://github.com/pyt-team/TopoBenchmarkX
+[33m601d53e7[m tests for feature liftings
+[33mebff83f3[m SimplicialClique Tutorial draft
+[33mc1a2b8f7[m merge
+[33m494b9431[m minor changes
+[33m9ec0195c[m cell lifting tests
+[33mac9c7ca0[m hypergraph lifting tests
+[33me77fecd5[m simplicial lifting tests
+[33m177eedf3[m dev notebook
+[33mda03b957[m test for simplicial
+[33m16f26e94[m infere connectivity
+[33mcb323580[m infere connectivity
+[33m17fda5c7[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX
+[33m7babaa3b[m Minor fix
+[33m914eecc3[m dataset splitting logic completed
+[33m265b5787[m Merge branch 'main' of https://github.com/pyt-team/TopoBenchmarkX
+[33m6cc18e8a[m split data base code
+[33m8163ec3d[m Documenting io module
+[33mac607b59[m Documenting liftings
+[33me4d80b86[m Documenting feature liftings
+[33mebae7c6c[m Documenting manipulations
+[33mf4197ef5[m Starting documentation & cleaning
+[33m7369de0d[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX
+[33m6cbb5bc7[m run sccnn_custom
+[33maa134785[m updated runs
+[33md8e00dba[m first attempt to fix sccnn
+[33mdc32e97a[m sccnn custom
+[33m381f7b7d[m merge
+[33m21be222a[m merge
+[33m9d6df86f[m merge
+[33m800cb22a[m small changes
+[33m1c5e4023[m small changes
+[33m51474577[m CWN_DCM working
+[33mc06b21eb[m CWN_DCM working
+[33mfbc24a52[m Code cleaning
+[33mb1ebb117[m Code cleaning
+[33m4741b493[m working set transformer
+[33mf5d0dae1[m working set transformer
+[33mca83c11e[m working concatenation feature lifting
+[33ma5f44038[m working concatenation feature lifting
+[33mba5222c3[m new feature transform
+[33m92c04540[m new feature transform
+[33m5a70506b[m working cwn
+[33m5d7d8956[m working cwn
+[33mb0b61f2c[m merge
+[33m3c0a4e60[m merge
+[33mcae15e62[m fixed scn normalization
+[33m21edbfc2[m fixed scn normalization
+[33mf4fdf698[m merge
+[33m0a03f181[m merge
+[33me3687c9e[m hypergraph runs plus stats
+[33mc26ea05b[m hypergraph runs plus stats
+[33mc5036924[m Merge branch 'main' of https://github.com/pyt-team/TopoBenchmarkX
+[33me3c4b184[m Merge branch 'main' of https://github.com/pyt-team/TopoBenchmarkX
+[33m7ffc7e8a[m added env with bash script
+[33m5720c847[m added env with bash script
+[33m19ddcb79[m New general encoder compatible with original edge features
+[33m15956c9a[m New general encoder compatible with original edge features
+[33m87a929dc[m Minor renaming
+[33m011d9ac5[m Minor renaming
+[33mebd15065[m Enabling the possibility of preserving edge features in graph liftings
+[33m6fee5b0f[m Enabling the possibility of preserving edge features in graph liftings
+[33m693b4429[m Refactorization of transforms (towards the use of existing edge features)
+[33m04d40dc7[m Refactorization of transforms (towards the use of existing edge features)
+[33m2c615ef6[m data_split_dir corrected
+[33m053e5cc1[m data_split_dir corrected
+[33m3ef69134[m Added SCCNN and SCN models
+[33mdd56ff1e[m Added SCCNN and SCN models
+[33mcff866d0[m Notation up/down laplacian changed to match TopoNetX
+[33m67707302[m Notation up/down laplacian changed to match TopoNetX
+[33ma4488055[m Standarize simplicial/cell liftings
+[33mb6ed6b15[m Standarize simplicial/cell liftings
+[33md6e232fc[m new graph batching
+[33mbaefcdd2[m new graph batching
+[33mbe41de0c[m merge
+[33ma5708b16[m merge
+[33m91c08ab4[m sanity_check
+[33mbc8a4c1b[m sanity_check
+[33mb60df7ff[m SCCN working (except ZINC) + robust connectivity computation in liftings
+[33m78ca2b97[m SCCN working (except ZINC) + robust connectivity computation in liftings
+[33m83716aeb[m SCCN close to working
+[33mced46b16[m SCCN close to working
+[33m706afbbe[m fixed zinc splits
+[33m37954f56[m fixed zinc splits
+[33m645f1658[m small randoms
+[33m61a54d79[m small randoms
+[33m5e26a45d[m Automatic setting for evaluator and callbacks
+[33m1c5d589c[m Automatic setting for evaluator and callbacks
+[33mb39160c5[m regression task
+[33mee265b79[m regression task
+[33m4091b60b[m regression task
+[33m96fe1990[m regression task
+[33m9047e9d5[m Removing torch_geometric_dataset
+[33mce1ac0a9[m Removing torch_geometric_dataset
+[33ma3ce0f35[m latest ones
+[33m703efdc6[m latest ones
+[33m7ae7c8d8[m one dataloader
+[33m45ad0f46[m one dataloader
+[33mbacbe802[m soling small issues with citeseer
+[33m5b6b6a71[m soling small issues with citeseer
+[33m9b69b819[m some tests
+[33m0e1a5fd7[m some tests
+[33m426d1aec[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX
+[33m0edd237e[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX
+[33mf4c90d89[m Default transforms working
+[33m70a62d89[m Default transforms working
+[33m63b329c4[m batching working
+[33m88dc5091[m batching working
+[33m1aade6af[m merge
+[33m5cdb80d3[m merge
+[33m75fbdaff[m Merge branch 'main' of https://github.com/pyt-team/TopoBenchmarkX
+[33m96f42cf0[m Merge branch 'main' of https://github.com/pyt-team/TopoBenchmarkX
+[33m4c4e8164[m introduced hypergraph batching
+[33m36a0c6f2[m introduced hypergraph batching
+[33m15386284[m nerge zinc
+[33mf36b556d[m nerge zinc
+[33m9667ed93[m graph batching and many other things
+[33mf7428b9d[m graph batching and many other things
+[33m98a1980f[m EDGNN working
+[33me31c80a6[m EDGNN working
+[33m3428d20c[m Custom models enabled (+EDGNN)
+[33m9f373165[m Custom models enabled (+EDGNN)
+[33mda5fc239[m added ZINC and AQSOL
+[33m60f39e25[m added ZINC and AQSOL
+[33mee53bd28[m minor changes
+[33m38fcd2e4[m minor changes
+[33mabd2cb4d[m Adding GNNs (GCN,GIN,GAT)
+[33mb0a156fa[m Adding GNNs (GCN,GIN,GAT)
+[33m27b35e15[m NCI datasets
+[33mc2a82d74[m NCI datasets
+[33m3110f9df[m new datasets
+[33md61a329d[m new datasets
+[33maeb63a9e[m new datasets
+[33md4372013[m new datasets
+[33m4ecf9020[m CCXN working (though bug detected in topomodelx)
+[33mc8b41eb1[m CCXN working (though bug detected in topomodelx)
+[33mbd034b64[m Renaming split loading for clarity
+[33m64050c9c[m Renaming split loading for clarity
+[33mf0bddf7b[m merge
+[33mf03e0f9c[m merge
+[33m6b0d30f1[m monday
+[33m2d086c16[m monday
+[33m94500c78[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX
+[33m3bf740de[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX
+[33m5df18ef7[m Data Loading refactorization + Preprocessor
+[33m35aac821[m Data Loading refactorization + Preprocessor
+[33m4c5050b0[m merge fix dream
+[33m5b0c1e14[m merge fix dream
+[33mb8835eef[m fir a dream
+[33m480816bf[m fir a dream
+[33m75b2242e[m Improving hyperedge data in higher-order datasets
+[33m8d665a4b[m Improving hyperedge data in higher-order datasets
+[33mdc26a576[m merge
+[33ma68c7e97[m merge
+[33m5e967b3e[m cwn network
+[33md96fe281[m cwn network
+[33m9811af0d[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX
+[33mc015bc05[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX
+[33m4da1298b[m Preprocessed dataset
+[33md7ed1873[m Preprocessed dataset
+[33m08421b0d[m merge
+[33m68c01c54[m merge
+[33ma08e95b3[m first sweeps
+[33m295c4a18[m first sweeps
+[33m0568697f[m New dataset configs
+[33m9c6e8e54[m New dataset configs
+[33me12a67f4[m Transform chain from dataset configs
+[33m03ac24f6[m Transform chain from dataset configs
+[33m7639ed9e[m Chaos with transforms
+[33m1fcd85b7[m Chaos with transforms
+[33m79bac2f6[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX
+[33m48944a72[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX
+[33m6efde22c[m Enabling single liftings
+[33m32f106e2[m Enabling single liftings
+[33m1ff63618[m compare models initial
+[33ma4cc3cb1[m compare models initial
+[33m91ab112c[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX
+[33m27282c6e[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX
+[33m871cefe7[m CAN pseudo-working (bug detected in topomodelx)
+[33m485fa9ba[m CAN pseudo-working (bug detected in topomodelx)
+[33m4d29cb23[m push for G
+[33mae7a8564[m push for G
+[33m3aa133de[m push for G
+[33m9ed180c3[m push for G
+[33m61f18de0[m CAN almost working
+[33m7fb82fe9[m CAN almost working
+[33m0de69334[m working pipeline
+[33m79f1ec1f[m working pipeline
+[33m4545b9b7[m added self edges
+[33m671331f6[m added self edges
+[33maaec2c0d[m updated frature trans
+[33ma2dba2b2[m updated frature trans
+[33m32bd7178[m evaluator not working
+[33mbdf58d48[m evaluator not working
+[33meca3789f[m topomodelx update
+[33m67df9583[m topomodelx update
+[33ma1afc3cd[m cofig updates
+[33m4bcdc5f0[m cofig updates
+[33m8ffd9e2f[m Fixed SAN bugs in TopoModelX
+[33mab585c2e[m Fixed SAN bugs in TopoModelX
+[33m87cb6286[m val and test acc do not coinside
+[33meebfb37c[m val and test acc do not coinside
+[33ma9d055fa[m working tree
+[33m9dc1a0d4[m working tree
+[33m1df636ab[m working pipeline with k-fold
+[33m3578241e[m working pipeline with k-fold
+[33m716462b1[m erroe in indices
+[33mb00c7d00[m erroe in indices
+[33m60052d9d[m second merge
+[33md8fb072b[m second merge
+[33m5a278ce0[m firsr merge
+[33mef112199[m firsr merge
+[33mc15922db[m k-fold validation returns test split
+[33m0ee7bc2e[m k-fold validation returns test split
+[33m5749a8e6[m proteins dataset
+[33m5d04e5fa[m proteins dataset
+[33mbfef7cb0[m added k-fold cross validation
+[33mc7b69357[m added k-fold cross validation
+[33m61d86e9d[m degrees working
+[33m9fc980aa[m degrees working
+[33m8d5a2a1d[m Merge branch 'main' of https://github.com/pyt-team/TopoBenchmarkX
+[33m626e3381[m Merge branch 'main' of https://github.com/pyt-team/TopoBenchmarkX
+[33m144a5225[m node/edge/cell degrees
+[33m9cbff973[m node/edge/cell degrees
+[33m61bedeb8[m Setting default device
+[33mdcf5a9e0[m Setting default device
+[33mc983d6df[m changing transforms
+[33m497a2494[m changing transforms
+[33mc5790b86[m cleaning
+[33ma218ec5e[m cleaning
+[33m10c19529[m changes logic of transforms
+[33m31724c44[m changes logic of transforms
+[33m6c1fdd78[m changes logic of transforms
+[33m32687f5a[m changes logic of transforms
+[33m80e93958[m Solved bug due to refactorization
+[33m821b5960[m Solved bug due to refactorization
+[33md760782b[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX
+[33m5c31e4de[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX
+[33mc4ec1502[m Step closer to CAN
+[33m2567fd2b[m Step closer to CAN
+[33m58be3940[m cleaned repos and working wandb logger
+[33m382cbec8[m cleaned repos and working wandb logger
+[33m0118d98d[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX
+[33m6c9cf4de[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX
+[33mfea2e7d2[m Solved inference mode bug
+[33m7fc7448b[m Solved inference mode bug
+[33m592f9b30[m working graph leveltask
+[33m97a4f5d3[m working graph leveltask
+[33mf56cb730[m added defult feature encoder and updated SAN loading with generating x_1
+[33m84bcf63c[m added defult feature encoder and updated SAN loading with generating x_1
+[33md107fd77[m san bad fix
+[33m9fcaaeb2[m san bad fix
+[33m93116a66[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX
+[33m845bb41a[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX
+[33mbc4bd040[m SAN working
+[33mc1ec5155[m SAN working
+[33m0b305157[m transformchain with possibility to use same files
+[33mf255fbae[m transformchain with possibility to use same files
+[33m3c6bcaa3[m transform chain 1st
+[33m9690556e[m transform chain 1st
+[33m278c87e6[m dir save
+[33md854b609[m dir save
+[33m427c4608[m working pipeline
+[33m6b2c93a7[m working pipeline
+[33mbc61a9ca[m working pipeline
+[33mc9658c03[m working pipeline
+[33m37c2fa47[m Importing transforms into dataset config
+[33m464aa652[m Importing transforms into dataset config
+[33m48346987[m Transforms loaded within the dataset loader
+[33m12b16693[m Transforms loaded within the dataset loader
+[33m9610a332[m working pipeline with no need to recompute same transforms
+[33meb02662a[m working pipeline with no need to recompute same transforms
+[33m85582568[m added hashing of transform parameters while dataset loading
+[33me4a0c636[m added hashing of transform parameters while dataset loading
+[33mf3ead097[m decoupled datasets and transform + identity transform
+[33m0dad1702[m decoupled datasets and transform + identity transform
+[33mafe06460[m first commit after xmas
+[33mf25fde34[m first commit after xmas
+[33ma5296abe[m working pipeline
+[33m0506ba5a[m working pipeline
+[33m80f0a927[m delta
+[33mf13c8926[m delta
+[33m7b5c112c[m Working
+[33m112e678a[m Working
+[33m3a722226[m not working pipeline
+[33mf6e6ddc8[m not working pipeline
+[33meeaedd23[m merge
+[33md4e71e5b[m merge
+[33mda132dbb[m some changes
+[33ma7017596[m some changes
+[33m2d500a26[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX
+[33md6dca99b[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX
+[33m2e2499b8[m Transforms into Data
+[33m6e2e957b[m Transforms into Data
+[33mc7455505[m running pipeline
+[33m7c09267c[m running pipeline
+[33m96d138ee[m merge transform
+[33me67ac84d[m merge transform
+[33mfbf3bc2c[m merge transform
+[33m4421bf53[m merge transform
+[33m881b4cff[m updated loading
+[33mbd1ca069[m updated loading
+[33m3aedc8fe[m Lifting refactoring completed
+[33m9969be14[m Lifting refactoring completed
+[33md554d0e6[m Lifting refactoring started (working but unfinished)
+[33m0eaad784[m Lifting refactoring started (working but unfinished)
+[33m88a90327[m General LiftingTransform instantiated by hydra
+[33m8eb0ad5b[m General LiftingTransform instantiated by hydra
+[33mc19cd307[m changes to loading
+[33m885b0dfb[m changes to loading
+[33m6bda4508[m added SimplicialCliqueLifting
+[33mbd738c5c[m added SimplicialCliqueLifting
+[33mca32cb03[m added cell lifting
+[33mcd3c409a[m added cell lifting
+[33mb2135828[m changed lifting logic to be nicer
+[33mb204f238[m changed lifting logic to be nicer
+[33mcb69ebc2[m merge
+[33mf3c9fd2a[m merge
+[33m85dc41ff[m delete prints
+[33m3153c116[m delete prints
+[33mddf279ef[m Merge branch 'main'
+[33me07263b9[m Merge branch 'main'
+[33md4033e61[m notebook with example liftings
+[33mba90dc1d[m notebook with example liftings
+[33mb2839c1d[m merge
+[33m1b4ddada[m merge
+[33me074f847[m merge
+[33m51936e2f[m merge
+[33mb3cacf90[m updated pipeline
+[33m9b80bd03[m updated pipeline
+[33mc531f2e8[m changed names of the liftings
+[33mba5a7518[m changed names of the liftings
+[33m773b6dbb[m added CliqueComplexLifting
+[33m7c7c393f[m added CliqueComplexLifting
+[33mc9ec894a[m notebook issue
+[33m7b0053c3[m notebook issue
+[33mcc702034[m isolated nodes issue
+[33m16e55f55[m isolated nodes issue
+[33m23f549da[m introduction of LiftedDataset
+[33m42276046[m introduction of LiftedDataset
+[33m0499761c[m consider undirected graphs
+[33mc7ded778[m consider undirected graphs
+[33m5fd485e8[m liftings are calculated once
+[33mb9df4e2a[m liftings are calculated once
+[33mc70f029d[m liftings work with batch now
+[33m8d86456c[m liftings work with batch now
+[33m993100bc[m working pipeline
+[33m5f073b4f[m working pipeline
+[33m3ddea16c[m working pipeline
+[33m37834bba[m working pipeline
+[33md1952125[m Evaluator
+[33m9443c134[m Evaluator
+[33mf9c2b4f5[m Evaluator outside model
+[33mfb36d8bf[m Evaluator outside model
+[33m271da6fa[m merge2
+[33m7f69a53d[m merge2
+[33md614d514[m merge
+[33m2088e429[m merge
+[33m5012aaab[m hypergraph datasets
+[33m4eda0f06[m hypergraph datasets
+[33mfec474b7[m fixed liftings
+[33m75c36aaf[m fixed liftings
+[33mc84c7050[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX
+[33m7fa06004[m Merge branch 'main' of github.com:pyt-team/TopoBenchmarkX
+[33m842a562f[m merge
+[33m18a4dcef[m merge
+[33m0efb60b9[m update configs
+[33mf0a0fe44[m update configs
+[33m28eb6178[m trying data stuff
+[33m268b16ce[m trying data stuff
+[33m8145bf5c[m Merge branch 'docker'
+[33medbb4714[m Merge branch 'docker'
+[33m9c527aaa[m cu115 version
+[33mc96a631b[m[33m ([m[1;31morigin/docker[m[33m)[m cu115 version
+[33m56847255[m Working
+[33m0c36c3ee[m Working
+[33mc08ca279[m starting liftings
+[33m292ad29a[m starting liftings
+[33m84c98bbc[m readout workaround
+[33m13455fb3[m readout workaround
+[33mfa4d0fa8[m init commit
+[33mf66df459[m init commit
+[33m7690db7c[m Relative paths
+[33m836f527b[m Relative paths
+[33ma64438cf[m Dev Container
+[33m7aa29134[m Dev Container
+[33m62d08efa[m Test docker
+[33m276ab41e[m Test docker
+[33m058c27b8[m Testing docker setting
+[33ma1cb9fe9[m Testing docker setting
+[33m953780dd[m spelling
+[33m70820e28[m spelling
+[33mc0f4bc76[m general readout
+[33mdaa00fd8[m general readout
+[33m29f8b557[m running
+[33mfb40c228[m running
+[33me002928a[m evaluator initial
+[33ma8a2df42[m evaluator initial
+[33mde56a8cb[m working allsettransformer configs
+[33m12482f65[m working allsettransformer configs
+[33macbc3c45[m readout
+[33m719d39ae[m readout
+[33m2920af5a[m network logic
+[33m2438970b[m network logic
+[33m12f27bf1[m "readout init"
+[33m1d606df8[m "readout init"
+[33m78bd8b2b[m loader
+[33m0f9c2a45[m loader
+[33ma138c02b[m hypergraph_dataset
+[33mdb88a637[m hypergraph_dataset
+[33mc2e13a8e[m Docker instructions
+[33md4fc2229[m Docker instructions
+[33ma4f8a7b4[m Docker instructions
+[33m8cb815d9[m Docker instructions
+[33m843729d5[m docker permission issue
+[33me92c930f[m docker permission issue
+[33mc309e40b[m teamplate copypast
+[33m5b3fec7c[m teamplate copypast
+[33m3a3e76b0[m config draft
+[33m0758eb40[m config draft
+[33m6676aae9[m docker
+[33m4ee4c6b2[m docker
+[33m64c4fc27[m play_notebook
+[33m2ba8ecdb[m play_notebook
+[33ma908298b[m docker
+[33me05d17d2[m docker
+[33m271e83c2[m Initial commit
+[33m12ac751c[m Initial commit
