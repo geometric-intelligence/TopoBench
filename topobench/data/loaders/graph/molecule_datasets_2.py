@@ -4,8 +4,8 @@ from omegaconf import DictConfig
 from torch_geometric.data import Dataset
 from torch_geometric.datasets import QM9
 
-from topobenchmark.data.datasets.qm9_custom_dataset import QM9Custom
-from topobenchmark.data.loaders.base import AbstractLoader
+from topobench.data.datasets.qm9_custom_dataset import QM9Custom
+from topobench.data.loaders.base import AbstractLoader
 
 
 class MoleculeDatasetLoader2(AbstractLoader):
