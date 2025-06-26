@@ -6,7 +6,7 @@ defaults:
   - _self_
   - dataset: graph/NCI1
   - model: cell/graphgps
-  - transforms: ${get_default_transform:${dataset},${model}} #no_transform
+  - transforms: graphgps #${get_default_transform:${dataset},${model}} #no_transform
   - optimizer: default
   - loss: default
   - evaluator: default

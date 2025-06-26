@@ -1,8 +1,8 @@
 defaults:
-  - liftings@_here_: ${get_required_lifting:graph,${model}}
-  - data_manipulations@sann_encoding: hopse_ps_information
+  - liftings@_here_: graph2cell_default
+  - data_manipulations@hopse_encoding: hopse_ps_information
 
-sann_encoding:
+hopse_encoding:
   neighborhoods:  
     - 'up_adjacency-0'
     #- 'up_incidence-0'
@@ -12,11 +12,10 @@ sann_encoding:
     # - 'up_incidence-1'
     # - 'down_incidence-1'
     # - 'down_incidence-2'
-    
   pe_types: 
-    # - 'RWSE' 
-    # - 'ElstaticPE'
-    # - 'HKdiagSE'
+    - 'RWSE' 
+    - 'ElstaticPE'
+    - 'HKdiagSE'
     - 'LapPE'
    
 
@@ -30,13 +29,17 @@ sann_encoding:
   posenc_LapPE_eigen_skip_zero_freq: True
   posenc_LapPE_eigen_eigvec_abs: True
 
-  # # RWSE config
-  # kernel_param_RWSE: 
-  #   - 2
-  #   - 20
+  # RWSE config
+  kernel_param_RWSE: 
+    - 2
+    - 20
+
+  # HKdiagSE config
+  kernel_param_HKdiagSE: 
+    - 1
+    - 22
 
 
-  # # HKdiagSE config
-  # kernel_param_HKdiagSE: 
-  #   - 1
-  #   - 22
+graph2cell_lifting: 
+  neighborhoods: ${transforms.hopse_encoding.neighborhoods}
+    

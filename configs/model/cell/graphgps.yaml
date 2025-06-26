@@ -2,7 +2,7 @@
 _target_: topobench.model.TBModel
 
 model_name: GraphGPS       
-model_domain: graph
+model_domain: cell
 
 feature_encoder:
   _target_: topobench.nn.encoders.${model.feature_encoder.encoder_name}
