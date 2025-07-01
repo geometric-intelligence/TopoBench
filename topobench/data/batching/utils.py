@@ -226,6 +226,13 @@ def reduce_neighborhoods(batch, node, rank=0, remove_self_loops=True):
     for i in range(max_rank + 1):
         if f"x_{i}" in batch.keys():  # noqa
             batch[f"x_{i}"] = batch[f"x_{i}"][cells_ids[i]]
+
+            # For the hopse encodings:
+            hopse_keys = [key for key in batch.keys() if f"x{i}_" in key]
+            if len(hopse_keys) > 0:
+                for hopse_key in hopse_keys:
+                    batch[hopse_key] = batch[hopse_key][cells_ids[i]]
+
         elif "x_hyperedges" in batch.keys() and i == 1:  # noqa
             batch["x_hyperedges"] = batch["x_hyperedges"][cells_ids[i]]
 
