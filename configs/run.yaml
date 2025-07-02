@@ -5,7 +5,7 @@
 defaults:
   - _self_
   - dataset: graph/cocitation_cora
-  - model: cell/tabpfn #tabpfn
+  - model: graph/tabpfn #tabpfn
   - transforms: tabpfn #${get_default_transform:${dataset},${model}} #no_transform
   - optimizer: default
   - loss: no_loss
