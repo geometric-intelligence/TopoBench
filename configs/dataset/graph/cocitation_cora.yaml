@@ -27,6 +27,8 @@ split_params:
 
 # Dataloader parameters
 dataloader_params:
-  batch_size: 64 # Fixed
+  batch_size: 128 # Fixed
   num_workers: 0
+  num_neighbors: [-1,-1] # all neighbours from the first neighbourhood in case wanna two neighbourhoods use [-1,-1]
+  rank: 0 # need to fix, works solely for rank 0
   pin_memory: False

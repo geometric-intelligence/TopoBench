@@ -262,6 +262,8 @@ def reduce_neighborhoods(batch, node, rank=0, remove_self_loops=True):
 
     if hasattr(batch, "y"):
         batch.y = batch.y[cells_ids[rank]]
+        # The task is defined for the nodes! hence always 0
+        # batch.y = batch.y[cells_ids[0]]
 
     batch.cells_ids = cells_ids
     return batch

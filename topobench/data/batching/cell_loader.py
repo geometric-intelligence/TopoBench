@@ -228,7 +228,8 @@ class CellLoader(
             if key == "x_0":
                 data["batch"] = data[f"batch_{cell_idx}"].clone()
 
-        data["n_seed_cells"] = out.num_sampled_nodes[0]
+        # data["n_seed_cells"] = out.num_sampled_nodes[0]
+        data["n_seed_cells"] = len(out.metadata[0])
 
         return data if self.transform is None else self.transform(data)
 
