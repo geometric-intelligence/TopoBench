@@ -14,19 +14,22 @@ class TabPFNWrapper(torch.nn.Module):
     def __init__(
         self,
         backbone: Any,
-        # sampler: Any,
         **kwargs,
     ) -> None:
         super().__init__()
         self.backbone = backbone
-        self.use_embeddings = kwargs.get("use_embeddings", True)
         self.sampler = kwargs.get("sampler", None)
+        self.use_embeddings = kwargs.get("use_embeddings", True)
+        self.X_train: Optional[np.ndarray] = None
+        self.y_train: Optional[np.ndarray] = None
+        self.classes_: Optional[np.ndarray] = None
 
         # Counters
         self.n_no_neighbors = 0
         self.n_features_constant = 0
         self.n_model_trained = 0
 
+    # Method NOT USED
     def fit(
         self, x: np.ndarray, y: np.ndarray, graph: Optional[nx.Graph] = None
     ) -> "TabPFNWrapper":
@@ -35,38 +38,37 @@ class TabPFNWrapper(torch.nn.Module):
     def forward(
         self, batch: Dict[str, torch.Tensor]
     ) -> Dict[str, torch.Tensor]:
-        train_mask = batch.get("train_mask", None)
+        # if self.X_train is None or self.y_train is None:
+        #    raise RuntimeError("Model has not been fitted. Call `fit` first.")
+        train_mask = batch.get("train_mask", None).cpu().numpy()
 
         # encoded node features
-        rank0_features = []
+        rank0_features = [ "x_0" ]
 
         if self.use_embeddings:
             all_keys = batch.keys() 
             # adding all the rank0 features 
             rank0_features.extend([s for s in all_keys if s.startswith('x0')])
-        else:
-            rank0_features = ["x0_0"]
+
+            #deleting raw node features (we have alredy the encoded ones)
+            rank0_features.remove('x0_0')
 
         # Concatenate tensors along the column dimension (dim=1)
         tensors_to_concat = [batch[k] for k in rank0_features]
         tensor_features = torch.cat(tensors_to_concat, dim=1)
 
         node_features = tensor_features.cpu().numpy().copy()
-        labels = batch["y"].cpu().numpy()
+        labels = batch["y"].cpu().numpy().copy()
 
-        X_train = node_features[train_mask].copy()
-        y_train = batch["y"][train_mask].cpu().numpy().copy()
+        X_train = node_features[train_mask]
+        y_train = labels[train_mask]
 
         # Record unique class labels for probability vectors
         classes_ = np.unique(y_train)
         n_classes = len(classes_)
 
-        edge_index = batch["edge_index"].cpu().numpy()
-        
-        self.classes_ = np.unique(y_train)
-
+        # If sample is None training the network on the whole dataset
         if self.sampler is None:
-            # If sample is None training the network on the whole dataset
             self.backbone.fit(X_train, y_train)
             # Predict probabilities for the ehole dataset (to allow compatibility with the rest of the code)
             prob = self.backbone.predict_proba(node_features)
@@ -79,14 +81,17 @@ class TabPFNWrapper(torch.nn.Module):
                 "batch_0": batch["batch_0"],
                 "x_0": prob_tensor,
             }
+        
+        # extracting the graph information
+        tail, head = batch["edge_index"].cpu().numpy()[0], batch["edge_index"].cpu().numpy()[1]
 
         # Fit sampler
         self.sampler.fit(
-            node_features, 
-            labels, 
-            edge_index=edge_index,
-            train_mask=train_mask
-            )
+            X_train, 
+            self.y_train, 
+            edge_index=zip(tail, head),
+            train_mask=train_mask.tolist()
+        )
 
         probs = []
         for idx, x_np in tqdm(enumerate(node_features), total=len(node_features), desc="Sampling and predicting"):
@@ -97,14 +102,13 @@ class TabPFNWrapper(torch.nn.Module):
                 probs.append(torch.tensor(one_hot, dtype=torch.float32))
                 continue
 
+
             # Sample neighbor indices
-            nbr_idx = self.sampler.sample(
-                x_np, idx
-            )
+            nbr_idx = self.sampler.sample(x_np, idx)
             if len(nbr_idx) == 0:
                 self.n_no_neighbors += 1
                 uniform = np.full(
-                    len(self.classes_), 1.0 / len(self.classes_), dtype=float
+                    n_classes, 1.0 / n_classes, dtype=float
                 )
                 probs.append(torch.from_numpy(uniform).float())
                 continue
@@ -112,19 +116,17 @@ class TabPFNWrapper(torch.nn.Module):
             X_nb = node_features[nbr_idx]
             y_nb = labels[nbr_idx]
 
-            # Select constant columns
+            # Remove constant features
             const_cols = np.ptp(X_nb, axis=0) == 0
             if np.all(const_cols):
-                # if all the columns are costant return a uniform prediction
                 self.n_features_constant += 1
                 counts = np.array(
-                    [np.sum(y_nb == c) for c in self.classes_], dtype=float
+                    [np.sum(y_nb == c) for c in classes_], dtype=float
                 )
                 dist = counts / counts.sum()
                 probs.append(torch.from_numpy(dist).float())
                 continue
 
-            # Remove constant features
             if np.any(const_cols):
                 X_nb = X_nb[:, ~const_cols]
                 x_filtered = x_np[~const_cols]
@@ -137,9 +139,9 @@ class TabPFNWrapper(torch.nn.Module):
             self.n_model_trained += 1
 
             raw_proba = model.predict_proba(x_filtered.reshape(1, -1))[0]
-            full_proba = np.zeros(len(self.classes_), dtype=float)
+            full_proba = np.zeros(n_classes, dtype=float)
             for i, cls in enumerate(model.classes_):
-                global_idx = np.where(self.classes_ == cls)[0][0]
+                global_idx = np.where(classes_ == cls)[0][0]
                 full_proba[global_idx] = raw_proba[i]
             probs.append(torch.from_numpy(full_proba).float())
 
