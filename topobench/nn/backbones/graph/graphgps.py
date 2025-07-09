@@ -162,8 +162,8 @@ class GraphGPSNetwork(pl.LightningModule):
             )
             self.blocks.append(block)
 
-    def forward(self, batch):
-        h = self.input_proj(batch.x)
+    def forward(self, batch): 
+        h = self.input_proj(batch.x_0)
         edge_index = batch.edge_index
         edge_attr = batch.edge_attr
 

@@ -16,5 +16,4 @@ class GraphGPSWrapper(AbstractWrapper):
             "x_0": x_0,
             "x_dis": x_dis,
         }
-
         return model_out

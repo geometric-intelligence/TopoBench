@@ -3,11 +3,11 @@ _target_: lightning.pytorch.trainer.Trainer
 default_root_dir: ${paths.output_dir}
 
 min_epochs: 1 # prevents early stopping
-max_epochs: 300
+max_epochs: 20
 #accumulate_grad_batches: 1 #${dataset.parameters.batch_size}
 
-accelerator: gpu
-devices: [0]
+accelerator: cpu
+devices: 1
 
 # mixed precision for extra speed-up
 # precision: 16

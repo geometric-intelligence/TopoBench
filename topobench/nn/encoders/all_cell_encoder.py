@@ -88,6 +88,7 @@ class AllCellFeatureEncoder(AbstractFeatureEncoder):
                 data[f"x_{i}"] = getattr(self, f"encoder_{i}")(
                     data[f"x_{i}"], batch
                 )
+                
         return data
 
 
