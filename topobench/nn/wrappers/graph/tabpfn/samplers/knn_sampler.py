@@ -1,7 +1,10 @@
 import numpy as np
 from typing import Sequence, Optional, Any
 from sklearn.neighbors import NearestNeighbors
-from topobench.nn.wrappers.graph.tabpfn.samplers.base_sampler import BaseSampler
+from topobench.nn.wrappers.graph.tabpfn.samplers.base_sampler import (
+    BaseSampler,
+)
+
 
 class KNNSampler(BaseSampler):
     """
@@ -12,14 +15,10 @@ class KNNSampler(BaseSampler):
         self.k = k
         self._nn: Optional[NearestNeighbors] = None
 
-    def fit(
-        self, 
-        X: np.ndarray, 
-        y: np.ndarray, 
-        **kwargs: Any
-    ) -> None:
+    def fit(self, X: np.ndarray, y: np.ndarray, **kwargs: Any) -> None:
+        train_mask = kwargs.pop("train_mask", None)
         self._nn = NearestNeighbors(n_neighbors=self.k)
-        self._nn.fit(X)
+        self._nn.fit(X[train_mask])
 
     def sample(self, x: np.ndarray, idx: int = -1) -> Sequence[int]:
         if self._nn is None:
