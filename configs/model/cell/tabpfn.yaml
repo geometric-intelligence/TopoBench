@@ -10,21 +10,21 @@ feature_encoder:
   out_channels: 256
 
 backbone:
-  _target_: tabpfn.TabPFNClassifier
+  _target_: tabpfn.TabPFNRegressor
   ignore_pretraining_limits: True
   random_state: 42
   device: cuda:0
 
 backbone_wrapper:
-  _target_: topobench.nn.wrappers.graph.tabpfn.TabPFNWrapper 
+  _target_: topobench.nn.wrappers.graph.tabpfn.TabPFNRegressorWrapper
   _partial_: true
-  wrapper_name: TabPFNWrapper
+  wrapper_name: TabPFNRegressorWrapper
   use_embeddings: True
   sampler:
     _target_: topobench.nn.wrappers.graph.tabpfn.${model.backbone_wrapper.sampler.sampler_name}
-    sampler_name: CompositeSampler
-    k: 5 # Number of samples to use fr the TabPFN model
-    n_hops: 3
+    sampler_name: KNNSampler
+    k: 10 # Number of samples to use fr the TabPFN model
+    #n_hops: 3
   
 
 
