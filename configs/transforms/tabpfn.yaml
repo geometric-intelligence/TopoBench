@@ -14,9 +14,9 @@ hopse_encoding:
     # - 'down_incidence-2'
   pe_types: 
     - 'RWSE' 
-    - 'ElstaticPE'
-    - 'HKdiagSE'
-    - 'LapPE'
+    #- 'ElstaticPE'
+    #- 'HKdiagSE'
+    #- 'LapPE'
    
 
   # Different PS have different sizes, need to unify them. 
