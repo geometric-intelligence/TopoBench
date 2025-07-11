@@ -15,25 +15,24 @@ class TabPFNRegressorWrapper(BaseWrapper):
     """
 
     def __init__(self, backbone: Any, sampler: Optional[Any] = None, **kwargs):
-        super().__init__(backbone, sampler, **kwargs)
+        super().__init__(backbone, sampler=sampler, **kwargs)
         self.global_mean_: float = 0.0
 
     def _init_targets(self, y_train: np.ndarray) -> None:
         self.global_mean_ = torch.tensor(float(np.mean(y_train)))
 
     def _handle_no_neighbors(self) -> torch.Tensor:
-        return self.global_mean_ , self.global_mean_ 
-    
+        return self.global_mean_, self.global_mean_
+
     def _get_prediction(self, model, X) -> torch.Tensor:
         pred = torch.tensor(model.predict(X))
         return pred, pred
-    
+
     def _get_train_prediction(self, y) -> torch.Tensor:
-        return y 
-    
+        return y
+
     def _calculate_metric_pbar(
         self, preds: list, trues: list
-    )-> tuple[str, float]:
+    ) -> tuple[str, float]:
         mse = mean_squared_error(trues, preds)
         return "MSE", mse
-
