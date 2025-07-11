@@ -21,7 +21,7 @@ class TabPFNRegressorWrapper(BaseWrapper):
     def _init_targets(self, y_train: np.ndarray) -> None:
         self.global_mean_ = torch.tensor(float(np.mean(y_train)))
 
-    def _handle_no_neighbors(self) -> torch.Tensor:
+    def _handle_no_neighbors(self):
         return self.global_mean_, self.global_mean_
 
     def _get_prediction(self, model, X) -> torch.Tensor:
