@@ -50,12 +50,12 @@ class TBModel(LightningModule):
             logger=False, ignore=["backbone", "readout", "feature_encoder"]
         )
 
-        self.feature_encoder = torch.compile(feature_encoder)
+        self.feature_encoder = feature_encoder
         if backbone_wrapper is None:
-            self.backbone = torch.compile(backbone)
+            self.backbone = backbone
         else:
             self.backbone = backbone_wrapper(backbone)
-        self.readout = torch.compile(readout)
+        self.readout = readout
 
         # Evaluator
         self.evaluator = evaluator
