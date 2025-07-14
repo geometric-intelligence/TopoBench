@@ -199,7 +199,7 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
         for logger_elem in logger:
             if isinstance(
                 logger_elem, L.pytorch.loggers.wandb.WandbLogger
-            ) and hasattr(logger, "experiment"):
+            ) and hasattr(logger_elem, "experiment"):
                 logger_elem.experiment.log(
                     {"checkpoint": trainer.checkpoint_callback.best_model_path}
                 )
