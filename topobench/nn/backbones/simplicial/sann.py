@@ -278,12 +278,14 @@ class SANNLayer(torch.nn.Module):
 
         # Maybe add skip-connections here: x = LN(x + x_0)
         # x_all
-        x_all = tuple([self.update(y_t) for y_t in y_k_t.values()])
+        # x_all = tuple([self.update(y_t) for y_t in y_k_t.values()])
 
         x_out = []
-        for i, xs in enumerate(zip(x_all_0, x_all, strict=False)):
+        for i, xs in enumerate(zip(x_all_0, y_k_t.values(), strict=False)):
             x_0, x = xs
-            x_out.append(self.LN[i](x + x_0))
+            y_t = self.LN[i](x + x_0)
+            y_t = self.update(y_t)
+            x_out.append(y_t)
             # x_out.append(x)
 
         return tuple(x_out)
