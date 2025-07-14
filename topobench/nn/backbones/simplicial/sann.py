@@ -35,7 +35,7 @@ class SANN(torch.nn.Module):
         complex_dim=3,
         max_hop=3,
         n_layers=2,
-        layer_norm=None,
+        layer_norm=True,
     ):
         super().__init__()
         self.complex_dim = complex_dim
@@ -43,9 +43,6 @@ class SANN(torch.nn.Module):
         self.layer_norm = layer_norm
 
         assert n_layers >= 1
-
-        if self.layer_norm:
-            self.layernorm = torch.nn.LayerNorm(hidden_channels, eps=1e-6)
 
         if isinstance(in_channels, int):  # If only one value is passed
             in_channels = [in_channels] * self.max_hop
@@ -108,11 +105,7 @@ class SANN(torch.nn.Module):
             # For each i-simplex (i=0,1,2) to all other k-simplices
             for i in range(self.complex_dim):
                 # Goes from i-simplex to all other simplices k<=i
-                x_i_to_t = (
-                    [self.layernorm(x_j) for x_j in x[i]]
-                    if self.layer_norm
-                    else x[i]
-                )
+                x_i_to_t = x[i]
                 x_i_to_t = layer[i](x_i_to_t)
                 # Update the i-th simplex to all other simplices embeddings
                 x_i.append(tuple(x_i_to_t))
@@ -152,6 +145,7 @@ class SANNLayer(torch.nn.Module):
         aggr_norm: bool = True,
         update_func=None,
         initialization: str = "xavier_normal",
+        layer_norm: bool = True,
     ) -> None:
         super().__init__()
 
@@ -169,6 +163,8 @@ class SANNLayer(torch.nn.Module):
         self.aggr_norm = aggr_norm
         self.update_func = update_func
         self.initialization = initialization
+
+        self.layer_norm = layer_norm
 
         assert initialization in ["xavier_uniform", "xavier_normal"]
 
@@ -194,9 +190,18 @@ class SANNLayer(torch.nn.Module):
             ]
         )
 
-        self.LN = torch.nn.ModuleList(
-            torch.nn.LayerNorm(self.out_channels[i]) for i in range(max_hop)
-        )
+        if self.layernorm:
+            self.LN = torch.nn.ModuleList(
+                torch.nn.BatchNorm1d(self.out_channels[i])
+                for i in range(max_hop)
+            )
+            # self.LN = torch.nn.ModuleList(
+            #     torch.nn.LayerNorm(self.out_channels[i]) for i in range(max_hop)
+            # )
+        else:
+            self.LN = torch.nn.ModuleList(
+                torch.nn.Identity() for i in range(max_hop)
+            )
 
         self.reset_parameters()
 
