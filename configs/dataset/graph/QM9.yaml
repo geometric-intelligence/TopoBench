@@ -1,6 +1,6 @@
 # Dataset loader config
 loader:
-  _target_: topobenchmark.data.loaders.MoleculeDatasetLoader2
+  _target_: topobenchmark.data.loaders.graph.MoleculeDatasetLoader2
   parameters: 
     data_domain: graph
     data_type: QM9
