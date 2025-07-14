@@ -123,33 +123,26 @@ class SANNReadout(AbstractZeroCellReadOut):
         """
 
         if self.task_level == "graph":
-            # This will contain x_k: [num_k_simplex, num_hops]
-            x_out = {
-                f"x_{i}": torch.cat(
+            x_out = []
+            for i in range(self.complex_dim + 1):
+                x_i = torch.cat(
                     [model_out[f"x{i}_{j}"] for j in range(self.max_hop)],
                     dim=1,
                 )
-                for i in range(self.complex_dim + 1)
-            }
 
-            for i in range(self.complex_dim + 1):
                 # MLP for aggregating  hops
-                x_out[f"x_{i}"] = getattr(self, f"linear_rank_{i}")(
-                    x_out[f"x_{i}"]
-                )
+                x_i = getattr(self, f"linear_rank_{i}")(x_i)
 
                 # This is pooling per r
-                x_out[f"x_{i}"] = scatter(
-                    x_out[f"x_{i}"],
+                x_i = scatter(
+                    x_i,
                     batch[f"batch_{i}"],
                     dim=0,
                     reduce=self.pooling_type,
                     dim_size=batch.batch_0.max() + 1,
                 )
-
-            x_all_cat = torch.cat(
-                [x_out[f"x_{i}"] for i in range(self.complex_dim + 1)], dim=1
-            )
+                x_out.append(x_i)
+            x_all_cat = torch.cat(x_out, dim=1)
 
         elif self.task_level == "node":
             for i in self.dimensions:

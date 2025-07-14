@@ -191,13 +191,14 @@ class SANNLayer(torch.nn.Module):
         )
 
         if self.layer_norm:
+            # self.LN = torch.nn.ModuleList(
+            #     torch.nn.BatchNorm1d(self.out_channels[i])
+            #     for i in range(max_hop)
+            # )
             self.LN = torch.nn.ModuleList(
-                torch.nn.BatchNorm1d(self.out_channels[i])
+                torch.nn.LayerNorm(self.out_channels[i])
                 for i in range(max_hop)
             )
-            # self.LN = torch.nn.ModuleList(
-            #     torch.nn.LayerNorm(self.out_channels[i]) for i in range(max_hop)
-            # )
         else:
             self.LN = torch.nn.ModuleList(
                 torch.nn.Identity() for i in range(max_hop)
