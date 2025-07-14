@@ -190,7 +190,7 @@ class SANNLayer(torch.nn.Module):
             ]
         )
 
-        if self.layernorm:
+        if self.layer_norm:
             self.LN = torch.nn.ModuleList(
                 torch.nn.BatchNorm1d(self.out_channels[i])
                 for i in range(max_hop)
