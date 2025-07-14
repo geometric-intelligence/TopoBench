@@ -239,11 +239,11 @@ class SANNLayer(torch.nn.Module):
             return torch.sigmoid(x)
         if self.update_func == "relu":
             return torch.nn.functional.relu(x)
-        if self.update_func == "lrelu":
+        if self.update_func == "leaky_relu":
             return torch.nn.functional.leaky_relu(x)
-        if self.update_func == 'gelu':
+        if self.update_func == "gelu":
             return torch.nn.functional.gelu(x)
-        if self.update_func == 'silu':
+        if self.update_func == "silu":
             return torch.nn.functional.silu(x)
         return None
 
