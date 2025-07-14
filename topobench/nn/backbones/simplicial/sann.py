@@ -99,17 +99,8 @@ class SANN(torch.nn.Module):
 
         # For each layer in the network
         for layer in self.layers:
-            # Temporary list
-            x_i = list()
-
-            # For each i-simplex (i=0,1,2) to all other k-simplices
-            for i in range(self.complex_dim):
-                # Goes from i-simplex to all other simplices k<=i
-                x_i_to_t = x[i]
-                x_i_to_t = layer[i](x_i_to_t)
-                # Update the i-th simplex to all other simplices embeddings
-                x_i.append(tuple(x_i_to_t))
-            x = tuple(x_i)
+            # For each simplex dimension (0, 1, 2)
+            x = tuple(layer[i](x[i]) for i in range(self.complex_dim))
         return x
 
 
@@ -171,7 +162,7 @@ class SANNLayer(torch.nn.Module):
         self.weights = ParameterList(
             [
                 Parameter(
-                    torch.Tensor(
+                    torch.empty(
                         self.in_channels[i],
                         self.out_channels[i],
                     )
@@ -182,7 +173,7 @@ class SANNLayer(torch.nn.Module):
         self.biases = ParameterList(
             [
                 Parameter(
-                    torch.Tensor(
+                    torch.empty(
                         self.out_channels[i],
                     )
                 )
@@ -270,14 +261,10 @@ class SANNLayer(torch.nn.Module):
         torch.Tensor
             Output tensors for each 2-cell.
         """
-        x_all_0 = [x.clone() for x in x_all]
-        # Extract all cells to all cells
-        x_k_t = {i: x_all[i] for i in range(self.max_hop)}
-
-        y_k_t = {
-            i: torch.mm(x_k_t[i], self.weights[i]) + self.biases[i]
-            for i in range(self.max_hop)
-        }
+        y_k_t = [
+            torch.addmm(bias, x, weight)
+            for x, weight, bias in zip(x_all, self.weights, self.biases)
+        ]
 
         if self.update_func is None:
             return tuple(y_k_t.values())
@@ -287,11 +274,8 @@ class SANNLayer(torch.nn.Module):
         # x_all = tuple([self.update(y_t) for y_t in y_k_t.values()])
 
         x_out = []
-        for i, xs in enumerate(zip(x_all_0, y_k_t.values(), strict=False)):
-            x_0, x = xs
-            y_t = self.LN[i](x + x_0)
-            y_t = self.update(y_t)
+        for ln, y, x in zip(self.LN, y_k_t, x_all):
+            y_t = self.update(ln(y + x))
             x_out.append(y_t)
-            # x_out.append(x)
 
         return tuple(x_out)

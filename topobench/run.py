@@ -232,7 +232,7 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
         logger=logger,
         num_sanity_val_steps=0,
         log_every_n_steps=0,  # Avoid console logging
-        precision="16",
+        precision="16-mixed",
     )
 
     object_dict = {
