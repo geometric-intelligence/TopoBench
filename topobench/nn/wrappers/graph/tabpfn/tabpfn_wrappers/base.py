@@ -93,3 +93,18 @@ class BaseWrapper(torch.nn.Module, ABC):
             prog_bar=True,
             on_step=False,
         )
+
+    def get_constant_columns(self, X: np.ndarray) -> np.ndarray:
+        """
+        Returns a boolean array indicating which columns are constant in X.
+        If X has only one row, all columns are considered constant.
+
+        Parameters:
+        - X (np.ndarray): 2D input array (n_samples, n_features)
+
+        Returns:
+        - np.ndarray: Boolean array of shape (n_features,), True for constant columns
+        """
+        if X.shape[0] == 1:
+            return np.ones(X.shape[1], dtype=bool) == 0  # Returns a list of False
+        return np.ptp(X, axis=0) == 0  # range == 0 ⇒ constant
