@@ -54,7 +54,7 @@ class TBModel(LightningModule):
         if backbone_wrapper is None:
             self.backbone = backbone
         else:
-            self.backbone = backbone_wrapper(backbone)
+            self.backbone = backbone_wrapper(backbone, logger=self.log)
         self.readout = readout
 
         # Evaluator

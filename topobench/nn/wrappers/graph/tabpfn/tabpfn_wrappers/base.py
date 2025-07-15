@@ -2,9 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Union
 import torch
 import numpy as np
-from tqdm import tqdm
-from copy import deepcopy
-from sklearn.base import is_classifier, is_regressor
+import math
 
 
 class BaseWrapper(torch.nn.Module, ABC):
@@ -18,10 +16,12 @@ class BaseWrapper(torch.nn.Module, ABC):
         assert self.use_embeddings or self.use_node_features, (
             "Either use_embeddings or use_node_features could be False, not both."
         )
-
-        self.n_no_neighbors = 0
-        self.n_model_trained = 0
-        self.n_features_constant = 0
+        self.logger = kwargs.get("logger", None)
+        # Initialize the counters
+        self.num_no_neighbors = 0
+        self.num_one_neighbor = 0
+        self.num_all_feat_constant = 0
+        self.num_model_trained = 0
 
     @abstractmethod
     def _init_targets(self, y_train: np.ndarray):
@@ -57,3 +57,39 @@ class BaseWrapper(torch.nn.Module, ABC):
         self, batch: Dict[str, torch.Tensor]
     ) -> Dict[str, torch.Tensor]:
         """Implement forward pass"""
+
+    def log_model_stat(self, num_test_points):
+        total_ratio = (
+            self.num_no_neighbors / num_test_points
+            + self.num_one_neighbor / num_test_points
+            + self.num_all_feat_constant / num_test_points
+            + self.num_model_trained / num_test_points
+        )
+
+        assert math.isclose(total_ratio, 1.0, rel_tol=1e-9, abs_tol=1e-6), (
+            f"The sum of the ratios should be 1 (within tolerance), but got {total_ratio:.10f}"
+        )
+        self.logger(
+            "test/no_neighbors",
+            np.round((100 * self.num_no_neighbors / num_test_points), 2),
+            prog_bar=True,
+            on_step=False,
+        )
+        self.logger(
+            "test/one_neighbor",
+            np.round((100 * self.num_one_neighbor / num_test_points), 2),
+            prog_bar=True,
+            on_step=False,
+        )
+        self.logger(
+            "test/all_features_constant",
+            np.round((100 * self.num_all_feat_constant / num_test_points), 2),
+            prog_bar=True,
+            on_step=False,
+        )
+        self.logger(
+            "test/model_trained",
+            np.round((100 * self.num_model_trained / num_test_points), 2),
+            prog_bar=True,
+            on_step=False,
+        )

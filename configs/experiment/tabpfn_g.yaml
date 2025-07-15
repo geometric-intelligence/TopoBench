@@ -1,0 +1,9 @@
+# @package _global_
+defaults:
+- override /transforms: tabpfn_g
+
+transforms:
+  hopse_encoding: 
+    neighborhoods:  
+      - 'up_adjacency-0'
+      #- 'down_incidence-1'

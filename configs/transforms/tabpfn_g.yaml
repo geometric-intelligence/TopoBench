@@ -1,0 +1,18 @@
+defaults:
+  - liftings@_here_: graph2cell_default
+  - data_manipulations@hopse_encoding: add_gpse_information
+
+hopse_encoding:
+  neighborhoods:  
+    - 'up_adjacency-0'
+    #- 'up_incidence-0'
+    # - 'up_adjacency-1'
+    # - 'down_adjacency-1'
+    # - 'down_adjacency-2'
+    # - 'up_incidence-1'
+    # - 'down_incidence-1'
+    # - 'down_incidence-2'
+
+graph2cell_lifting: 
+  neighborhoods: ${transforms.hopse_encoding.neighborhoods}
+    

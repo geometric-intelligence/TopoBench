@@ -6,7 +6,7 @@ defaults:
   - _self_
   - dataset: graph/cocitation_cora
   - model: cell/tabpfn_classifier #tabpfn
-  - transforms: tabpfn #${get_default_transform:${dataset},${model}} #no_transform
+  - transforms: null #${get_default_transform:${dataset},${model}} #no_transform
   - optimizer: default
   - loss: no_loss
   - evaluator: default

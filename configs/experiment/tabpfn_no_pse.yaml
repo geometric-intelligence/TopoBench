@@ -1,0 +1,8 @@
+# @package _global_
+defaults:
+- override /transforms: tabpfn_no_pse
+
+model:
+  backbone_wrapper:
+      use_embeddings: False
+
