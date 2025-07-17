@@ -34,7 +34,7 @@ class TBModel(LightningModule):
     def __init__(
         self,
         backbone: torch.nn.Module,
-        backbone_wrapper: torch.nn.Module,
+        backbone_wrapper: torch.nn.Module | None,
         readout: torch.nn.Module,
         loss: torch.nn.Module,
         feature_encoder: torch.nn.Module | None = None,
@@ -78,7 +78,7 @@ class TBModel(LightningModule):
         return f"{self.__class__.__name__}(backbone={self.backbone}, readout={self.readout}, loss={self.loss}, feature_encoder={self.feature_encoder})"
 
     def forward(self, batch: Data) -> dict:
-        r"""Perform a forward pass through the model `self.backbone`.
+        r"""Perform a forward pass through the model.
 
         Parameters
         ----------
@@ -88,9 +88,19 @@ class TBModel(LightningModule):
         Returns
         -------
         dict
-            Dictionary containing the model output.
+            Dictionary containing the model output, which includes the logits and other relevant information.
         """
-        return self.backbone(batch)
+        # Feature Encoder
+        if self.feature_encoder is not None:
+            model_out = self.feature_encoder(batch)
+
+        # Domain model
+        model_out = self.backbone(model_out)
+
+        # Readout
+        model_out = self.readout(model_out=model_out, batch=batch)
+        
+        return model_out
 
     def model_step(self, batch: Data) -> dict:
         r"""Perform a single model step on a batch of data.
@@ -107,16 +117,9 @@ class TBModel(LightningModule):
         """
         # Allow batch object to know the phase of the training
         batch["model_state"] = self.state_str
-
-        # Feature Encoder
-        batch = self.feature_encoder(batch)
-
-        # Domain model
+        
+        # Forward pass
         model_out = self.forward(batch)
-
-        # Readout
-        if self.readout is not None:
-            model_out = self.readout(model_out=model_out, batch=batch)
 
         # Loss
         model_out = self.process_outputs(model_out=model_out, batch=batch)
