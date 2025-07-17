@@ -133,6 +133,12 @@ class BasePCA(torch.nn.Module):
         """
         device = x.device
 
+        if self.pca.n_components >= x.shape[1]:
+            print(
+                f"n_components ({self.pca.n_components}) must be less than the number of features ({x.shape[1]}). Ignoring PCA"
+            )
+            return x
+
         x = (
             torch.Tensor(self.pca.fit_transform(x.cpu().numpy()))
             .to(device)

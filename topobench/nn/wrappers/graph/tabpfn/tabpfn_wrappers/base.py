@@ -20,6 +20,7 @@ class BaseWrapper(torch.nn.Module, ABC):
         # Initialize the counters
         self.num_no_neighbors = 0
         self.num_one_neighbor = 0
+        self.num_all_same_label = 0
         self.num_all_feat_constant = 0
         self.num_model_trained = 0
 
@@ -64,6 +65,7 @@ class BaseWrapper(torch.nn.Module, ABC):
             + self.num_one_neighbor / num_test_points
             + self.num_all_feat_constant / num_test_points
             + self.num_model_trained / num_test_points
+            + self.num_all_same_label / num_test_points
         )
 
         assert math.isclose(total_ratio, 1.0, rel_tol=1e-9, abs_tol=1e-6), (
@@ -84,6 +86,12 @@ class BaseWrapper(torch.nn.Module, ABC):
         self.logger(
             "test/all_features_constant",
             np.round((100 * self.num_all_feat_constant / num_test_points), 2),
+            prog_bar=True,
+            on_step=False,
+        )
+        self.logger(
+            "test/num_all_same_label",
+            np.round((100 * self.num_all_same_label / num_test_points), 2),
             prog_bar=True,
             on_step=False,
         )

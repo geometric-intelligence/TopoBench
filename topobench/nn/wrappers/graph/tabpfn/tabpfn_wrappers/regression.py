@@ -31,7 +31,7 @@ class TabPFNRegressorWrapper(BaseWrapper):
         return y_mean, y_mean
 
     def _get_prediction(self, model, X) -> torch.Tensor:
-        pred = torch.tensor(model.predict(X))
+        pred = torch.tensor(model.predict(X))[0]
         return pred, pred
 
     def _get_train_prediction(self, y) -> torch.Tensor:
@@ -53,8 +53,8 @@ class TabPFNRegressorWrapper(BaseWrapper):
         )
 
         pbar.update(1)
-        metric_name, metric = self._calculate_metric_pbar(preds, trues)
-        pbar.set_postfix({metric_name: f"{metric:.2%}"})
+        metric_name, metric = self._calculate_metric_pbar(outputs, trues)
+        pbar.set_postfix({metric_name: f"{metric:.2f}"})
 
     def _process_single_test_node(
         self, idx, node_features, labels, batch, val_mask, test_mask
@@ -79,7 +79,7 @@ class TabPFNRegressorWrapper(BaseWrapper):
 
             # Update the counter and return
             self.num_no_neighbors += 1
-            return _, pred
+            return _, torch.tensor(pred)
 
         X_nb = node_features[nbr_idx]
         y_nb = labels[nbr_idx]
@@ -91,7 +91,7 @@ class TabPFNRegressorWrapper(BaseWrapper):
 
             # Update the counter and return
             self.num_all_feat_constant += 1
-            return _, pred
+            return None, torch.tensor(pred)
 
         # Case 3: Only one neighbor
         if X_nb.shape[0] == 1:
@@ -99,9 +99,17 @@ class TabPFNRegressorWrapper(BaseWrapper):
 
             # Update the counter and return
             self.num_one_neighbor += 1
-            return _, pred
+            return None, torch.tensor(pred)
+        
+        # Case 4: All the node have the same label - return the label, to avoid TabPFN error
+        if np.unique(y_nb).shape[0] == 1:
+            pred = y_nb[0].item()
 
-        # Case 4: Normal case - fit backbone on neighbors
+            # Update the counter and return
+            self.num_all_same_label += 1
+            return None, torch.tensor(pred)
+
+        # Case 5: Normal case - fit backbone on neighbors
         if np.any(const_cols):
             # Remove constant columns for train and test
             X_nb = X_nb[:, ~const_cols]
@@ -157,10 +165,13 @@ class TabPFNRegressorWrapper(BaseWrapper):
             self.backbone.fit(X_train, y_train)
 
             # Predict probabilities for the whole dataset (to allow compatibility with the rest of the code)
-            output = self.backbone.predict(node_features)
+            output = self.backbone.predict(node_features[test_mask])
+
+            #To ensure compatibility with the rest of the code
+            self.num_model_trained += len(test_mask)
 
             prob_tensor = (
-                torch.from_numpy(output).float().to(batch["x_0"].device)
+                torch.from_numpy(output).float().to(batch["x_0"].device).view(-1, 1)
             )
 
         else:
@@ -200,10 +211,10 @@ class TabPFNRegressorWrapper(BaseWrapper):
             pbar.close()
 
             # stack & return exactly like before
-            prob_tensor = torch.stack(outputs).to(batch["x_0"].device)
+            prob_tensor = torch.stack(outputs).to(batch["x_0"].device).view(-1, 1)
 
         # Prepare the output
-        prob_logits = torch.zeros(batch["y"].shape[0], device=batch["x_0"].device)
+        prob_logits = torch.zeros(batch["y"].shape[0], 1, device=batch["x_0"].device)
         prob_logits[test_mask] = prob_tensor
 
         num_test_points = test_mask.shape[0]
