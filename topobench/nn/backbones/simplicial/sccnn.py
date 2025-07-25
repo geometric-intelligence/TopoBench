@@ -249,7 +249,7 @@ class SCCNNLayer(torch.nn.Module):
             return torch.sigmoid(x)
         if self.update_func == "relu":
             return torch.nn.functional.relu(x)
-        if self.update_func == "lrelu":
+        if self.update_func == "leaky_relu":
             return torch.nn.functional.leaky_relu(x)
         return None
 

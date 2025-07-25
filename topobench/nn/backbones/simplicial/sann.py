@@ -35,7 +35,7 @@ class SANN(torch.nn.Module):
         complex_dim=3,
         max_hop=3,
         n_layers=2,
-        layer_norm=None,
+        layer_norm=True,
     ):
         super().__init__()
         self.complex_dim = complex_dim
@@ -43,9 +43,6 @@ class SANN(torch.nn.Module):
         self.layer_norm = layer_norm
 
         assert n_layers >= 1
-
-        if self.layer_norm:
-            self.layernorm = torch.nn.LayerNorm(hidden_channels, eps=1e-6)
 
         if isinstance(in_channels, int):  # If only one value is passed
             in_channels = [in_channels] * self.max_hop
@@ -102,21 +99,8 @@ class SANN(torch.nn.Module):
 
         # For each layer in the network
         for layer in self.layers:
-            # Temporary list
-            x_i = list()
-
-            # For each i-simplex (i=0,1,2) to all other k-simplices
-            for i in range(self.complex_dim):
-                # Goes from i-simplex to all other simplices k<=i
-                x_i_to_t = (
-                    [self.layernorm(x_j) for x_j in x[i]]
-                    if self.layer_norm
-                    else x[i]
-                )
-                x_i_to_t = layer[i](x_i_to_t)
-                # Update the i-th simplex to all other simplices embeddings
-                x_i.append(tuple(x_i_to_t))
-            x = tuple(x_i)
+            # For each simplex dimension (0, 1, 2)
+            x = tuple(layer[i](x[i]) for i in range(self.complex_dim))
         return x
 
 
@@ -152,6 +136,7 @@ class SANNLayer(torch.nn.Module):
         aggr_norm: bool = True,
         update_func=None,
         initialization: str = "xavier_normal",
+        layer_norm: bool = True,
     ) -> None:
         super().__init__()
 
@@ -170,12 +155,14 @@ class SANNLayer(torch.nn.Module):
         self.update_func = update_func
         self.initialization = initialization
 
+        self.layer_norm = layer_norm
+
         assert initialization in ["xavier_uniform", "xavier_normal"]
 
         self.weights = ParameterList(
             [
                 Parameter(
-                    torch.Tensor(
+                    torch.empty(
                         self.in_channels[i],
                         self.out_channels[i],
                     )
@@ -186,7 +173,7 @@ class SANNLayer(torch.nn.Module):
         self.biases = ParameterList(
             [
                 Parameter(
-                    torch.Tensor(
+                    torch.empty(
                         self.out_channels[i],
                     )
                 )
@@ -194,9 +181,19 @@ class SANNLayer(torch.nn.Module):
             ]
         )
 
-        self.LN = torch.nn.ModuleList(
-            torch.nn.LayerNorm(self.out_channels[i]) for i in range(max_hop)
-        )
+        if self.layer_norm:
+            # self.LN = torch.nn.ModuleList(
+            #     torch.nn.BatchNorm1d(self.out_channels[i])
+            #     for i in range(max_hop)
+            # )
+            self.LN = torch.nn.ModuleList(
+                torch.nn.LayerNorm(self.out_channels[i])
+                for i in range(max_hop)
+            )
+        else:
+            self.LN = torch.nn.ModuleList(
+                torch.nn.Identity() for i in range(max_hop)
+            )
 
         self.reset_parameters()
 
@@ -239,11 +236,11 @@ class SANNLayer(torch.nn.Module):
             return torch.sigmoid(x)
         if self.update_func == "relu":
             return torch.nn.functional.relu(x)
-        if self.update_func == "lrelu":
+        if self.update_func == "leaky_relu":
             return torch.nn.functional.leaky_relu(x)
-        if self.update_func == 'gelu':
+        if self.update_func == "gelu":
             return torch.nn.functional.gelu(x)
-        if self.update_func == 'silu':
+        if self.update_func == "silu":
             return torch.nn.functional.silu(x)
         return None
 
@@ -264,26 +261,21 @@ class SANNLayer(torch.nn.Module):
         torch.Tensor
             Output tensors for each 2-cell.
         """
-        x_all_0 = [x.clone() for x in x_all]
-        # Extract all cells to all cells
-        x_k_t = {i: x_all[i] for i in range(self.max_hop)}
-
-        y_k_t = {
-            i: torch.mm(x_k_t[i], self.weights[i]) + self.biases[i]
-            for i in range(self.max_hop)
-        }
+        y_k_t = [
+            torch.addmm(bias, x, weight)
+            for x, weight, bias in zip(x_all, self.weights, self.biases)
+        ]
 
         if self.update_func is None:
             return tuple(y_k_t.values())
 
         # Maybe add skip-connections here: x = LN(x + x_0)
         # x_all
-        x_all = tuple([self.update(y_t) for y_t in y_k_t.values()])
+        # x_all = tuple([self.update(y_t) for y_t in y_k_t.values()])
 
         x_out = []
-        for i, xs in enumerate(zip(x_all_0, x_all, strict=False)):
-            x_0, x = xs
-            x_out.append(self.LN[i](x + x_0))
-            # x_out.append(x)
+        for ln, y, x in zip(self.LN, y_k_t, x_all):
+            y_t = self.update(ln(y + x))
+            x_out.append(y_t)
 
         return tuple(x_out)

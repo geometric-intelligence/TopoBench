@@ -2,9 +2,9 @@
 
 import torch
 import torch_geometric
+from ogb.graphproppred.mol_encoder import AtomEncoder, BondEncoder
 
 from topobench.nn.encoders.base import AbstractFeatureEncoder
-from ogb.graphproppred.mol_encoder import AtomEncoder, BondEncoder
 
 
 class SANNFeatureEncoder(AbstractFeatureEncoder):
