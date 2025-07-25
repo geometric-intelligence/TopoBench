@@ -41,6 +41,7 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
         batch_norm=False,
         use_atom_encoder=False,
         use_bond_encoder=False,
+        fuse_pse2cell=False,
         **kwargs,
     ):
         super().__init__()
@@ -80,6 +81,18 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
                         ),
                     )
 
+        # Rebuttal update
+        self.fuse_pse2cell = fuse_pse2cell
+        if self.fuse_pse2cell == True:
+            # Instantiate self.hops layer normalization
+            self.LN_pse2cell = torch.nn.ModuleList(
+                torch.nn.LayerNorm(self.out_channels) for _ in range(self.hops)
+            )
+
+            self.ln_pse2cell = torch.nn.Linear(
+                self.hops * out_channels, out_channels
+            )
+
     def __repr__(self):
         return f"{self.__class__.__name__}(in_channels={self.in_channels}, out_channels={self.out_channels}, dimensions={self.dimensions})"
 
@@ -106,6 +119,19 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
                 data[f"x{i}_{j}"] = getattr(self, f"encoder_{i}_{j}")(
                     data[f"x{i}_{j}"], batch
                 )
+
+        if self.fuse_pse2cell == True:
+            for i in self.dimensions:
+                node_and_pse_encodings = [
+                    self.LN_pse2cell[j](data[f"x{i}_{j}"])
+                    for j in range(self.hops)
+                ]
+                # Concatenate the encodings along the last dimension
+                concatenated = torch.cat(node_and_pse_encodings, dim=-1)
+                data[f"x_{i}"] = self.ln_pse2cell(concatenated)
+
+                # data[f"x_{i}"] = sum(node_and_pse_encodings)
+
         return data
 
 

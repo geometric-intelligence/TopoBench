@@ -1,0 +1,5 @@
+_target_: topobench.transforms.data_transform.DataTransform
+transform_name: "HOPSE2CellFeatures"
+transform_type: "data manipulation"
+
+
