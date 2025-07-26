@@ -174,10 +174,10 @@ class SimpleEncoder(torch.nn.Module):
         super().__init__()
         self.batch_norm = batch_norm
         self.linear1 = torch.nn.Linear(in_channels, out_channels)
-        self.linear2 = torch.nn.Linear(out_channels, out_channels)
+        #self.linear2 = torch.nn.Linear(out_channels, out_channels)
 
         torch.nn.init.xavier_uniform_(self.linear1.weight)
-        torch.nn.init.xavier_uniform_(self.linear2.weight)
+        #torch.nn.init.xavier_uniform_(self.linear2.weight)
 
         self.relu = torch.nn.ReLU()
         self.BN = (
@@ -213,6 +213,7 @@ class SimpleEncoder(torch.nn.Module):
         x = self.linear1(x)
         if self.batch_norm:
             x = self.BN(x, batch=batch) if batch.shape[0] > 0 else self.BN(x)
-        x = self.dropout(self.relu(x))
-        x = self.linear2(x)
+        x = self.dropout(x)
+        #x = self.dropout(self.relu(x))
+        #x = self.linear2(x)
         return x
