@@ -161,10 +161,12 @@ class SANNLayer(torch.nn.Module):
 
         self.list_linear = torch.nn.ModuleList(
             [
-                torch.nn.Linear(in_features=self.in_channels[i], out_features=self.out_channels[i])
+                torch.nn.Linear(
+                    in_features=self.in_channels[i],
+                    out_features=self.out_channels[i],
+                )
                 for i in range(max_hop)
             ]
-            
         )
 
         if self.layer_norm:
@@ -180,7 +182,6 @@ class SANNLayer(torch.nn.Module):
             self.LN = torch.nn.ModuleList(
                 torch.nn.Identity() for i in range(max_hop)
             )
-
 
     def update(self, x: torch.Tensor):
         """Update embeddings on each cell (step 4).
@@ -225,8 +226,7 @@ class SANNLayer(torch.nn.Module):
             Output tensors for each 2-cell.
         """
         y_k_t = [
-            linear_layer(x) 
-            for x, linear_layer in zip(x_all, self.list_linear)
+            linear_layer(x) for x, linear_layer in zip(x_all, self.list_linear)
         ]
 
         if self.update_func is None:

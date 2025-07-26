@@ -81,8 +81,8 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
                             dropout=proj_dropout,
                             batch_norm=batch_norm,
                             num_layers=1,
-                            act= 'relu'
-                        )
+                            act="relu",
+                        ),
                     )
 
         # Rebuttal update
