@@ -1,4 +1,4 @@
-dataset='mantra_orientation'
+dataset='mantra_name'
 project_name="rebuttal_cell_$dataset"
 
 # =====================

@@ -1,4 +1,4 @@
-dataset='mantra_orientation'
+dataset='mantra_betti_numbers'
 project_name="rebuttal_cell_$dataset"
 
 # =====================
@@ -73,6 +73,7 @@ for i in {0..1}; do
         callbacks.early_stopping.patience=10\
         transforms.sann_encoding.neighborhoods=$neighborhood\
         transforms.redefine_simplicial_neighbourhoods.neighborhoods=$neighborhood\
+        evaluator=betti_numbers\
         --multirun &
         sleep 300
 done
@@ -106,6 +107,7 @@ for i in {0..1}; do
                 callbacks.early_stopping.patience=10\
                 transforms.sann_encoding.neighborhoods=$neighborhood\
                 transforms.redefine_simplicial_neighbourhoods.neighborhoods=$neighborhood\
+                evaluator=betti_numbers\
                 --multirun &
         done
     done
