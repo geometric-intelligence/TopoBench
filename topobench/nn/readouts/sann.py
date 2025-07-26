@@ -47,7 +47,7 @@ class SANNReadout(AbstractZeroCellReadOut):
 
         elif self.task_level == "graph":
             self._graph_level_task_inits(hidden_dim)
-            self.linear = torch.nn.Sequential(
+            self.proj = torch.nn.Sequential(
                 # We add a +1 to complex dim because the complex dimension is 0-indexed
                 torch.nn.Linear(
                     (self.complex_dim + 1) * hidden_dim, hidden_dim

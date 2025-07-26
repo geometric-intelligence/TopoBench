@@ -238,7 +238,8 @@ class SANNLayer(torch.nn.Module):
 
         x_out = []
         for ln, y, x in zip(self.LN, y_k_t, x_all):
-            y_t = self.update(ln(y + x))
+            y_t = self.update(y + x)
+            y_t = ln(y_t)
             x_out.append(y_t)
 
         return tuple(x_out)

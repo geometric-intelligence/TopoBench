@@ -80,7 +80,8 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
                             out_channels=self.out_channels,
                             dropout=proj_dropout,
                             batch_norm=batch_norm,
-                            num_layers=2
+                            num_layers=1,
+                            act= 'relu'
                         )
                     )
 
