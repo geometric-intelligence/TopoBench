@@ -2,6 +2,7 @@
 
 import torch
 import torch_geometric
+from torch_geometric.nn.models import MLP
 from ogb.graphproppred.mol_encoder import AtomEncoder, BondEncoder
 
 from topobench.nn.encoders.base import AbstractFeatureEncoder
@@ -73,12 +74,14 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
                     setattr(
                         self,
                         f"encoder_{i}_{j}",
-                        SimpleEncoder(
-                            self.in_channels[i][j],
-                            self.out_channels,
+                        MLP(
+                            in_channels=self.in_channels[i][j],
+                            hidden_channels=self.in_channels[i][j],
+                            out_channels=self.out_channels,
                             dropout=proj_dropout,
                             batch_norm=batch_norm,
-                        ),
+                            num_layers=2
+                        )
                     )
 
         # Rebuttal update
@@ -152,68 +155,4 @@ class SimpleBondEncoder(torch.nn.Module):
 
     def forward(self, x, batch):
         x = self.bond_encoder(x.long())
-        return x
-
-
-class SimpleEncoder(torch.nn.Module):
-    r"""SimpleEncoder used by SANN.
-
-    Parameters
-    ----------
-    in_channels : int
-        Dimension of input features.
-    out_channels : int
-        Dimensions of output features.
-    dropout : float, optional
-        Percentage of channels to discard between the two linear layers (default: 0).
-    batch_norm : bool, optional
-        Wether to perform batch normalization (default: False).
-    """
-
-    def __init__(self, in_channels, out_channels, dropout=0, batch_norm=False):
-        super().__init__()
-        self.batch_norm = batch_norm
-        self.linear1 = torch.nn.Linear(in_channels, out_channels)
-        #self.linear2 = torch.nn.Linear(out_channels, out_channels)
-
-        torch.nn.init.xavier_uniform_(self.linear1.weight)
-        #torch.nn.init.xavier_uniform_(self.linear2.weight)
-
-        self.relu = torch.nn.ReLU()
-        self.BN = (
-            torch.nn.BatchNorm1d(out_channels)
-            if batch_norm
-            else torch.nn.Identity()
-        )
-        self.dropout = (
-            torch.nn.Dropout(dropout) if dropout > 0 else torch.nn.Identity()
-        )
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}(in_channels={self.linear1.in_features}, out_channels={self.linear1.out_features})"
-
-    def forward(self, x: torch.Tensor, batch: torch.Tensor) -> torch.Tensor:
-        r"""Forward pass of the encoder.
-
-        Applies a linear layer and a ReLu activation.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            Input tensor of dimensions [N, in_channels].
-        batch : torch.Tensor
-            The batch vector which assigns each element to a specific example.
-
-        Returns
-        -------
-        torch.Tensor
-            Output tensor of shape [N, out_channels].
-        """
-
-        x = self.linear1(x)
-        if self.batch_norm:
-            x = self.BN(x, batch=batch) if batch.shape[0] > 0 else self.BN(x)
-        x = self.dropout(x)
-        #x = self.dropout(self.relu(x))
-        #x = self.linear2(x)
         return x

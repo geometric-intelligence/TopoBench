@@ -135,7 +135,7 @@ class SANNLayer(torch.nn.Module):
         max_hop,
         aggr_norm: bool = True,
         update_func=None,
-        initialization: str = "xavier_normal",
+        initialization: str = "xavier_uniform",
         layer_norm: bool = True,
     ) -> None:
         super().__init__()
@@ -159,26 +159,12 @@ class SANNLayer(torch.nn.Module):
 
         assert initialization in ["xavier_uniform", "xavier_normal"]
 
-        self.weights = ParameterList(
+        self.list_linear = torch.nn.ModuleList(
             [
-                Parameter(
-                    torch.empty(
-                        self.in_channels[i],
-                        self.out_channels[i],
-                    )
-                )
+                torch.nn.Linear(in_features=self.in_channels[i], out_features=self.out_channels[i])
                 for i in range(max_hop)
             ]
-        )
-        self.biases = ParameterList(
-            [
-                Parameter(
-                    torch.empty(
-                        self.out_channels[i],
-                    )
-                )
-                for i in range(max_hop)
-            ]
+            
         )
 
         if self.layer_norm:
@@ -195,29 +181,6 @@ class SANNLayer(torch.nn.Module):
                 torch.nn.Identity() for i in range(max_hop)
             )
 
-        self.reset_parameters()
-
-    def reset_parameters(self, gain: float = 1.414):
-        r"""Reset learnable parameters.
-
-        Parameters
-        ----------
-        gain : float
-            Gain for the weight initialization.
-        """
-        if self.initialization == "xavier_uniform":
-            for i in range(len(self.weights)):
-                torch.nn.init.xavier_uniform_(self.weights[i], gain=gain)
-                torch.nn.init.zeros_(self.biases[i])
-        elif self.initialization == "xavier_normal":
-            for i in range(len(self.weights)):
-                torch.nn.init.xavier_normal_(self.weights[i], gain=gain)
-                torch.nn.init.zeros_(self.biases[i])
-        else:
-            raise RuntimeError(
-                "Initialization method not recognized. "
-                "Should be either xavier_uniform or xavier_normal."
-            )
 
     def update(self, x: torch.Tensor):
         """Update embeddings on each cell (step 4).
@@ -262,8 +225,8 @@ class SANNLayer(torch.nn.Module):
             Output tensors for each 2-cell.
         """
         y_k_t = [
-            torch.addmm(bias, x, weight)
-            for x, weight, bias in zip(x_all, self.weights, self.biases)
+            linear_layer(x) 
+            for x, linear_layer in zip(x_all, self.list_linear)
         ]
 
         if self.update_func is None:
