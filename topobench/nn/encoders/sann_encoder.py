@@ -153,7 +153,6 @@ class SimpleEncoder(torch.nn.Module):
         torch.nn.init.xavier_uniform_(self.linear1.weight)
         torch.nn.init.xavier_uniform_(self.linear2.weight)
 
-
         self.relu = torch.nn.ReLU()
         self.BN = (
             torch.nn.BatchNorm1d(out_channels)
