@@ -18,6 +18,8 @@ feature_encoder:
   all_ones: true
   use_bond_encoder: False
   use_atom_encoder: False
+  use_embedding: False
+  embedding_dim: ${dataset.parameters.embedding_dim}
 
 backbone:
   _target_: topobench.nn.backbones.simplicial.sann.SANN

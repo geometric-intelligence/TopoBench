@@ -42,6 +42,7 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
         batch_norm=False,
         use_atom_encoder=False,
         use_bond_encoder=False,
+        use_embedding=False,
         fuse_pse2cell=False,
         **kwargs,
     ):
@@ -49,22 +50,47 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
 
         self.in_channels = in_channels
         self.out_channels = out_channels
+        self.use_embedding = use_embedding
 
         self.dimensions = (
             selected_dimensions
             if (selected_dimensions is not None)
             else range(len(self.in_channels))
         )
+        if self.use_embedding:
+            for i in self.dimensions:
+                if i == 0:
+                    setattr(
+                        self,
+                        f"embedder_{i}",
+                        torch.nn.Embedding(
+                            num_embeddings=kwargs["embedding_dim"],
+                            embedding_dim=self.out_channels
+                        ),
+                    )
+                elif i == 1:
+                    setattr(
+                        self,
+                        f"embedder_{i}",
+                        torch.nn.Embedding(
+                            num_embeddings=kwargs["embedding_dim"],
+                            embedding_dim=self.out_channels
+                        ),
+                    )
+                elif i == 2:
+                    setattr(
+                        self,
+                        f"embedder_{i}",
+                        torch.nn.Embedding(
+                            num_embeddings=kwargs["embedding_dim"]*3,
+                            embedding_dim=self.out_channels
+                        ),
+                    )
+                self.in_channels[i][0] = self.out_channels
         self.hops = max_hop
         for i in self.dimensions:
             for j in range(self.hops):
-                if use_atom_encoder and i == 0 and j == 0:
-                    setattr(
-                        self,
-                        f"encoder_{i}_{j}",
-                        SimpleAtomEncoder(self.out_channels),
-                    )
-                elif use_bond_encoder and i == 1 and j == 0:
+                if use_bond_encoder and i == 1 and j == 0:
                     setattr(
                         self,
                         f"encoder_{i}_{j}",
@@ -80,7 +106,7 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
                             out_channels=self.out_channels,
                             dropout=proj_dropout,
                             batch_norm=batch_norm,
-                            num_layers=1,
+                            num_layers=2,
                             act="relu",
                         ),
                     )
@@ -120,6 +146,11 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
         for i in self.dimensions:
             batch = getattr(data, f"batch_{i}")
             for j in range(self.hops):
+                # Use the learned embedding
+                if self.use_embedding and j == 0:
+                    data[f"x{i}_{j}"] = getattr(self, f"embedder_{i}")(
+                        data[f"x{i}_{j}"].long()
+                    ).squeeze()
                 data[f"x{i}_{j}"] = getattr(self, f"encoder_{i}_{j}")(
                     data[f"x{i}_{j}"], batch
                 )

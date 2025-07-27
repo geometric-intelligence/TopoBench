@@ -4,6 +4,7 @@ import topomodelx
 import torch
 import torch_geometric
 from torch_scatter import scatter
+from torch_geometric.nn.models import MLP
 
 from topobench.nn.readouts.base import AbstractZeroCellReadOut
 
@@ -125,6 +126,7 @@ class SANNReadout(AbstractZeroCellReadOut):
         if self.task_level == "graph":
             x_out = []
             for i in range(self.complex_dim + 1):
+
                 x_i = torch.cat(
                     [model_out[f"x{i}_{j}"] for j in range(self.max_hop)],
                     dim=1,

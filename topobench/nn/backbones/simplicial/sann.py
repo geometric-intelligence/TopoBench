@@ -2,8 +2,6 @@
 
 import torch
 import torch.nn.functional
-from torch.nn import ParameterList
-from torch.nn.parameter import Parameter
 
 
 class SANN(torch.nn.Module):
