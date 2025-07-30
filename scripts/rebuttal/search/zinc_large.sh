@@ -9,8 +9,8 @@ DATA_SEEDS=(42 3 5 23 150)
 # =====================
 # MODEL PARAMETERS
 # =====================
-N_LAYERS=(14 16 18)
-OUT_CHANNELS=(64 128)
+N_LAYERS=(16 18)
+OUT_CHANNELS=(128)
 
 # =====================
 # OPTIMIZATION PARAMETERS
@@ -39,7 +39,7 @@ PRETRAIN_MODELS_STR=$(IFS=,; echo "${PRETRAIN_MODELS[*]}")  # Convert to comma-s
 # =====================
 # PARAMETERS OVER WHICH WE PERFORM PARALLEL RUNS
 # =====================
-batch_sizes=(128 256 512)
+batch_sizes=(128 256)
 learning_rates=(0.001)
 neighborhoods=(
     # adjacency 
@@ -49,36 +49,36 @@ neighborhoods=(
 )
 
 # TODO: fix bug with transforms.one_hot_node_degree_features.degrees_fields=x\
-gpus=(5 6 7)
-for i in {0..1}; do 
-    CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
-    neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
+# gpus=(5 6 7)
+# for i in {0..1}; do 
+#     CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
+#     neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
 
     
-    python topobench/run.py\
-        dataset=graph/$dataset\
-        model=graph/hopse_gin\
-        experiment=hopse_m_gnn_cell_zinc\
-        model.backbone.num_layers=1\
-        model.feature_encoder.out_channels=128\
-        model.feature_encoder.proj_dropout=0.25\
-        dataset.split_params.data_seed=0\
-        dataset.dataloader_params.batch_size=128\
-        trainer.max_epochs=5\
-        trainer.min_epochs=1\
-        trainer.devices=\[$CUDA\]\
-        trainer.check_val_every_n_epoch=1\
-        logger.wandb.project='prerun'\
-        optimizer.parameters.lr=0.01\
-        optimizer.parameters.weight_decay=0.25\
-        callbacks.early_stopping.patience=10\
-        transforms.graph2cell_lifting.max_cell_length=10\
-        transforms.sann_encoding.neighborhoods=$neighborhood\
-        transforms.graph2cell_lifting.neighborhoods=$neighborhood\
-        --multirun &
-        sleep 5
-done
-wait
+#     python topobench/run.py\
+#         dataset=graph/$dataset\
+#         model=graph/hopse_gin\
+#         experiment=hopse_m_gnn_cell_zinc\
+#         model.backbone.num_layers=1\
+#         model.feature_encoder.out_channels=128\
+#         model.feature_encoder.proj_dropout=0.25\
+#         dataset.split_params.data_seed=0\
+#         dataset.dataloader_params.batch_size=128\
+#         trainer.max_epochs=5\
+#         trainer.min_epochs=1\
+#         trainer.devices=\[$CUDA\]\
+#         trainer.check_val_every_n_epoch=1\
+#         logger.wandb.project='prerun'\
+#         optimizer.parameters.lr=0.01\
+#         optimizer.parameters.weight_decay=0.25\
+#         callbacks.early_stopping.patience=10\
+#         transforms.graph2cell_lifting.max_cell_length=10\
+#         transforms.sann_encoding.neighborhoods=$neighborhood\
+#         transforms.graph2cell_lifting.neighborhoods=$neighborhood\
+#         --multirun &
+#         sleep 5
+# done
+# wait
 
 gpus=(5 6 7)
 for i in {0..1}; do 
@@ -96,6 +96,8 @@ for i in {0..1}; do
                 model.backbone.num_layers=$N_LAYERS_STR\
                 model.feature_encoder.out_channels=$OUT_CHANNELS_STR\
                 model.feature_encoder.proj_dropout=$pd\
+                model.feature_encoder.use_bond_encoder=True\
+                model.feature_encoder.use_atom_encoder=True\
                 seed=$DATA_SEEDS_STR\
                 dataset.dataloader_params.batch_size=$batch_size\
                 trainer.max_epochs=1000\
@@ -109,6 +111,7 @@ for i in {0..1}; do
                 transforms.graph2cell_lifting.max_cell_length=10\
                 transforms.sann_encoding.neighborhoods=$neighborhood\
                 transforms.graph2cell_lifting.neighborhoods=$neighborhood\
+                
                 --multirun &
         done
     done
