@@ -1,9 +1,21 @@
 MODEL_ORDER = {
-    'graph':['GCN','GAT','GIN'],
-    'simplicial': ['SCN', 'SCCNN', 'SaNN', 'GCCN', 'HOPSE-M', 'HOPSE-G'],
-    'cell': ['CCCN', 'CWN', 'GCCN', 'HOPSE-M', 'HOPSE-G']
+    "graph": ["GCN", "GAT", "GIN"],
+    "simplicial": ["SCN", "SCCNN", "SaNN", "GCCN", "HOPSE-M", "HOPSE-G"],
+    "cell": ["CCCN", "CWN", "GCCN", "HOPSE-M", "HOPSE-G"],
 }
-DATASET_ORDER = ["MUTAG", "PROTEINS", "NCI1", "NCI109", "ZINC", "MANTRA-N", "MANTRA-O", "MANTRA-BN", "MANTRA-BN-0", "MANTRA-BN-1", "MANTRA-BN-2"] 
+DATASET_ORDER = [
+    "MUTAG",
+    "PROTEINS",
+    "NCI1",
+    "NCI109",
+    "ZINC",
+    "MANTRA-N",
+    "MANTRA-O",
+    "MANTRA-BN",
+    "MANTRA-BN-0",
+    "MANTRA-BN-1",
+    "MANTRA-BN-2",
+]
 performance_classification = [
     "val/accuracy",
     "test/accuracy",
@@ -162,8 +174,8 @@ sweeped_columns = [
     "transforms.graph2cell_lifting.max_cell_length",
     "transforms.sann_encoding.use_initial_features",
     "transforms.sann_encoding.is_undirected",
-    "transforms.redefine_simplicial_neighbourhoods.signed",
-    "transforms.redefine_simplicial_neighbourhoods.complex_dim",
+    "transforms.redefine_simplicial_neighborhoods.signed",
+    "transforms.redefine_simplicial_neighborhoods.complex_dim",
 ]
 run_columns = [
     "dataset.split_params.data_seed",
@@ -208,4 +220,3 @@ keep_columns = (
     + run_columns
     + time_columns
 )
-

@@ -25,6 +25,7 @@ parameters:
   monitor_metric: loss # TODO: adapt pipeline to support multilabel classification
   task_level: graph 
   data_seed: 0
+  preserve_edge_attr_if_lifted: False
 
 #splits
 split_params:

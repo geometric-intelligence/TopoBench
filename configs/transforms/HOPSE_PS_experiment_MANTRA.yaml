@@ -1,10 +1,10 @@
 defaults:
   # - data_manipulations: node_degrees
   # - data_manipulations@one_hot_node_degree_features: one_hot_node_degree_features
-  - data_manipulations@redefine_simplicial_neighbourhoods: redefine_simplicial_neighbourhoods
+  - data_manipulations@redefine_simplicial_neighborhoods: redefine_simplicial_neighborhoods
   - data_manipulations@sann_encoding: hopse_ps_information
 
-redefine_simplicial_neighbourhoods:
+redefine_simplicial_neighborhoods:
   signed: True
 
 sann_encoding:

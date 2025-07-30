@@ -86,7 +86,7 @@ gpus=(0 1 2 3 4 5 6 7)
             transforms.sann_encoding.pretrain_model=$PRETRAIN_MODELS_STR\
             transforms.sann_encoding.copy_initial=True\
             transforms.sann_encoding.neighborhoods=$neighborhood\
-            transforms.redefine_simplicial_neighbourhoods.neighborhoods=$neighborhood\
+            transforms.redefine_simplicial_neighborhoods.neighborhoods=$neighborhood\
             --multirun &
     done
     wait
@@ -120,7 +120,7 @@ gpus=(0 1 2 3 4 5 6 7)
                     transforms.sann_encoding.pretrain_model=$PRETRAIN_MODELS_STR\
                     transforms.sann_encoding.copy_initial=True\
                     transforms.sann_encoding.neighborhoods=$neighborhood\
-                    transforms.redefine_simplicial_neighbourhoods.neighborhoods=$neighborhood\
+                    transforms.redefine_simplicial_neighborhoods.neighborhoods=$neighborhood\
                     --multirun &
             done
         done

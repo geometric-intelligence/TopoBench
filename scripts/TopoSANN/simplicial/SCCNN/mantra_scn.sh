@@ -55,7 +55,7 @@ do
         trainer.check_val_every_n_epoch=1\
         logger.wandb.project=prerun\
         transforms=MANTRA_name_dataset_default\
-        transforms.redefine_simplicial_neighbourhoods.signed=True\
+        transforms.redefine_simplicial_neighborhoods.signed=True\
         optimizer.parameters.lr=0.001\
         optimizer.parameters.weight_decay=0.01\
         callbacks.early_stopping.patience=1\
@@ -89,7 +89,7 @@ do
                     optimizer.parameters.lr=$lr\
                     optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
                     transforms=MANTRA_name_dataset_default\
-                    transforms.redefine_simplicial_neighbourhoods.signed=$INDICENCE_SIGNED_STR\
+                    transforms.redefine_simplicial_neighborhoods.signed=$INDICENCE_SIGNED_STR\
                     logger.wandb.project=$project_name\
                     --multirun &
                 sleep 10

@@ -84,7 +84,7 @@ gpus=(0 1 2 3 4 5 6 7)
 #         callbacks.early_stopping.patience=10\
 #         transforms=HOPSE_PS_experiment_MANTRA\
 #         transforms.sann_encoding.neighborhoods=$neighborhood\
-#         transforms.redefine_simplicial_neighbourhoods.neighborhoods=$neighborhood\
+#         transforms.redefine_simplicial_neighborhoods.neighborhoods=$neighborhood\
 #         evaluator=betti_numbers\
 #         --multirun &
 #         sleep 5
@@ -118,7 +118,7 @@ for i in {0..7}; do
                 callbacks.early_stopping.patience=10\
                 transforms=HOPSE_PS_experiment_MANTRA\
                 transforms.sann_encoding.neighborhoods=$neighborhood\
-                transforms.redefine_simplicial_neighbourhoods.neighborhoods=$neighborhood\
+                transforms.redefine_simplicial_neighborhoods.neighborhoods=$neighborhood\
                 evaluator=betti_numbers\
                 --multirun &
         done

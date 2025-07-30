@@ -84,7 +84,7 @@ neighborhoods=(
 #         callbacks.early_stopping.patience=10\
 #         transforms=HOPSE_PS_experiment_MANTRA\
 #         transforms.sann_encoding.neighborhoods=$neighborhood\
-#         transforms.redefine_simplicial_neighbourhoods.neighborhoods=$neighborhood\
+#         transforms.redefine_simplicial_neighborhoods.neighborhoods=$neighborhood\
 #         --multirun &
 #         sleep 5
 # done
@@ -117,7 +117,7 @@ for i in {0..7}; do
                 callbacks.early_stopping.patience=10\
                 transforms=HOPSE_PS_experiment_MANTRA\
                 transforms.sann_encoding.neighborhoods=$neighborhood\
-                transforms.redefine_simplicial_neighbourhoods.neighborhoods=$neighborhood\
+                transforms.redefine_simplicial_neighborhoods.neighborhoods=$neighborhood\
                 --multirun &
         done
     done

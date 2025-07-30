@@ -1,7 +1,7 @@
 _target_: topobench.model.TBModel
 
 model_name: hopse_m
-model_domain: cell
+model_domain: graph
 
 feature_encoder:
   _target_: topobench.nn.encoders.${model.feature_encoder.encoder_name}

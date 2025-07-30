@@ -156,8 +156,8 @@ sweeped_columns = [
     "transforms.graph2cell_lifting.max_cell_length",
     "transforms.sann_encoding.use_initial_features",
     "transforms.sann_encoding.is_undirected",
-    "transforms.redefine_simplicial_neighbourhoods.signed",
-    "transforms.redefine_simplicial_neighbourhoods.complex_dim",
+    "transforms.redefine_simplicial_neighborhoods.signed",
+    "transforms.redefine_simplicial_neighborhoods.complex_dim",
 ]
 run_columns = [
     "dataset.split_params.data_seed",
