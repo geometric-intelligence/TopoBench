@@ -15,7 +15,7 @@ parameters:
   max_node_degree: 20 # Use it to one_hot encode node degrees. Additional parameter to run dataset.transforms.one_hot_node_degree_features.degrees_fields=x
   num_classes: 1
   task: regression
-  loss_type: mse
+  loss_type: mae
   monitor_metric: mae
   task_level: graph
   degrees_fields: "x" # Additional parameter to run dataset.transforms.one_hot_node_degree_features.degrees_fields=x

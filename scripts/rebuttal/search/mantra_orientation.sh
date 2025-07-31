@@ -48,7 +48,7 @@ neighborhoods=(
 )
 
 # TODO: fix bug with transforms.one_hot_node_degree_features.degrees_fields=x\
-gpus=(1 2 3 4 5 6 7)
+gpus=(0 1 2 3 4 5 6 7)
 for i in {0..1}; do 
     CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
     neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
@@ -72,13 +72,13 @@ for i in {0..1}; do
         optimizer.parameters.weight_decay=0.25\
         callbacks.early_stopping.patience=10\
         transforms.sann_encoding.neighborhoods=$neighborhood\
-        transforms.redefine_simplicial_neighbourhoods.neighborhoods=$neighborhood\
+        transforms.redefine_simplicial_neighborhoods.neighborhoods=$neighborhood\
         --multirun &
-        sleep 120
+        sleep 300
 done
 wait
 
-gpus=(3 4 5 6 7)
+gpus=(2 3 4 5 6 7)
 for i in {0..1}; do 
     CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
     neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
@@ -105,7 +105,7 @@ for i in {0..1}; do
                 optimizer.parameters.weight_decay=$wd\
                 callbacks.early_stopping.patience=10\
                 transforms.sann_encoding.neighborhoods=$neighborhood\
-                transforms.redefine_simplicial_neighbourhoods.neighborhoods=$neighborhood\
+                transforms.redefine_simplicial_neighborhoods.neighborhoods=$neighborhood\
                 --multirun &
         done
     done

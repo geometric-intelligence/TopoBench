@@ -1,5 +1,5 @@
 dataset='mantra_betti_numbers'
-project_name="HOPSE_simplicial_$dataset"
+project_name="rebuttal_cell_$dataset"
 
 # =====================
 # DATA
@@ -43,56 +43,44 @@ BATCH_SIZES_STR=$(IFS=,; echo "${BATCH_SIZES[*]}")
 neighborhoods=(
     # adjacency 
     "['up_adjacency-0']"
-    "['up_adjacency-0','up_adjacency-1']"
-    "['up_adjacency-0','up_adjacency-1','down_adjacency-2']"
-
     # incidence
-    "['up_adjacency-0','up_incidence-0','up_incidence-1']"
-    "['up_adjacency-0','down_incidence-1','down_incidence-2']"
-    "['up_adjacency-0','up_incidence-0','up_incidence-1','down_incidence-1','down_incidence-2']"
-    
-    # all together
-    "['up_adjacency-0','up_adjacency-1','down_adjacency-1','down_adjacency-2','up_incidence-0','up_incidence-1','down_incidence-1','down_incidence-2']"
-    
-    # We have 8th gpu hence we can add one more neighbourhood
-    "['up_adjacency-0','up_adjacency-1','2-up_adjacency-0','down_adjacency-1','down_adjacency-2','2-down_adjacency-2']"
-
+    "['up_adjacency-0','down_incidence-1']"
 )
 
 # TODO: fix bug with transforms.one_hot_node_degree_features.degrees_fields=x\
-gpus=(0 1 2 3 4 5 6 7)
-# for i in {0..7}; do 
-#     CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
-#     neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
+gpus=(0 1 2 3)
+for i in {0..1}; do 
+    CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
+    neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
 
     
-#     python topobench/run.py\
-#         dataset=simplicial/$dataset\
-#         model=simplicial/sann\
-#         model.backbone.n_layers=1\
-#         model.feature_encoder.out_channels=128\
-#         model.feature_encoder.proj_dropout=0.25\
-#         dataset.split_params.data_seed=0\
-#         dataset.dataloader_params.batch_size=128\
-#         trainer.max_epochs=5\
-#         trainer.min_epochs=1\
-#         trainer.devices=\[$CUDA\]\
-#         trainer.check_val_every_n_epoch=1\
-#         logger.wandb.project='prerun'\
-#         optimizer.parameters.lr=0.01\
-#         optimizer.parameters.weight_decay=0.25\
-#         callbacks.early_stopping.patience=10\
-#         transforms=HOPSE_PS_experiment_MANTRA\
-#         transforms.sann_encoding.neighborhoods=$neighborhood\
-#         transforms.redefine_simplicial_neighborhoods.neighborhoods=$neighborhood\
-#         evaluator=betti_numbers\
-#         --multirun &
-#         sleep 5
-# done
-# wait
+    python topobench/run.py\
+        dataset=simplicial/$dataset\
+        model=graph/hopse_gin\
+        experiment=hopse_m_gnn_mantra\
+        model.backbone.num_layers=1\
+        model.feature_encoder.out_channels=128\
+        model.feature_encoder.proj_dropout=0.25\
+        dataset.split_params.data_seed=0\
+        dataset.dataloader_params.batch_size=128\
+        trainer.max_epochs=5\
+        trainer.min_epochs=1\
+        trainer.devices=\[$CUDA\]\
+        trainer.check_val_every_n_epoch=1\
+        logger.wandb.project='prerun'\
+        optimizer.parameters.lr=0.01\
+        optimizer.parameters.weight_decay=0.25\
+        callbacks.early_stopping.patience=10\
+        transforms.sann_encoding.neighborhoods=$neighborhood\
+        transforms.redefine_simplicial_neighborhoods.neighborhoods=$neighborhood\
+        evaluator=betti_numbers\
+        --multirun &
+        sleep 300
+done
+wait
 
-gpus=(0 1 2 3 4 5 6 7)
-for i in {0..7}; do 
+gpus=(2 3)
+for i in {0..1}; do 
     CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
     neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
 
@@ -102,8 +90,9 @@ for i in {0..7}; do
         do
             python topobench/run.py\
                 dataset=simplicial/$dataset\
-                model=simplicial/sann\
-                model.backbone.n_layers=$N_LAYERS_STR\
+                model=graph/hopse_gin\
+                experiment=hopse_m_gnn_mantra\
+                model.backbone.num_layers=$N_LAYERS_STR\
                 model.feature_encoder.out_channels=$OUT_CHANNELS_STR\
                 model.feature_encoder.proj_dropout=$PROJECTION_DROPOUTS_STR\
                 dataset.split_params.data_seed=$DATA_SEEDS_STR\
@@ -116,7 +105,6 @@ for i in {0..7}; do
                 optimizer.parameters.lr=$lr\
                 optimizer.parameters.weight_decay=$wd\
                 callbacks.early_stopping.patience=10\
-                transforms=HOPSE_PS_experiment_MANTRA\
                 transforms.sann_encoding.neighborhoods=$neighborhood\
                 transforms.redefine_simplicial_neighborhoods.neighborhoods=$neighborhood\
                 evaluator=betti_numbers\

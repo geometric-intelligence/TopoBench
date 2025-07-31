@@ -8,6 +8,6 @@ transforms:
       - 'up_adjacency-0'
       # - 'down_incidence-1'
 
-  graph2simplicial_lifting: 
-    neighborhoods: ${transforms.sann_encoding.neighborhoods}
+  # graph2simplicial_lifting: 
+  #   neighborhoods: ${transforms.sann_encoding.neighborhoods}
 

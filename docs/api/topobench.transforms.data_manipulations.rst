@@ -103,7 +103,7 @@ topobench.transforms.data\_manipulations.one\_hot\_degree\_features module
 topobench.transforms.data\_manipulations.redefine\_simplicial\_neighbourhoods module
 ------------------------------------------------------------------------------------
 
-.. automodule:: topobench.transforms.data_manipulations.redefine_simplicial_neighbourhoods
+.. automodule:: topobench.transforms.data_manipulations.redefine_simplicial_neighborhoods
    :members:
    :undoc-members:
    :show-inheritance:
