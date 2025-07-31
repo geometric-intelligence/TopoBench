@@ -1,7 +1,12 @@
 import pandas as pd
-from constants import keep_columns, optimization_metrics, DATASET_ORDER, MODEL_ORDER
+from constants import (
+    DATASET_ORDER,
+    MODEL_ORDER,
+    optimization_metrics,
+)
 from fetch_and_parse import main
 from make_time_tables import fix_domain
+
 
 def split_evaluation_metrics(df):
     scores_df_list = []
@@ -36,7 +41,7 @@ def parse_hopse_results(df, selected_datasets):
     }
 
     df = split_evaluation_metrics(df)
-    df['model.model_domain'] = df.apply(fix_domain, axis=1)
+    df["model.model_domain"] = df.apply(fix_domain, axis=1)
 
     models = df["model.model_name"].unique()
     datasets = df["dataset.loader.parameters.data_name"].unique()
@@ -47,7 +52,7 @@ def parse_hopse_results(df, selected_datasets):
         for model in models:
             for domain in domains:
                 subset = df[
-                    (df["dataset.loader.parameters.data_name"] == dataset) 
+                    (df["dataset.loader.parameters.data_name"] == dataset)
                     & (df["model.model_name"] == model)
                     & (df["model.model_domain"] == domain)
                 ]
@@ -56,11 +61,11 @@ def parse_hopse_results(df, selected_datasets):
                     continue
                 eval_metric = optimization_metrics[dataset]["eval_metric"]
 
-                if eval_metric in ["test/accuracy", "test/f1"]: 
+                if eval_metric in ["test/accuracy", "test/f1"]:
                     subset[eval_metric] *= 100
 
                 subset[eval_metric] = subset[
-                    eval_metric 
+                    eval_metric
                 ].round(4)
 
 
@@ -707,7 +712,7 @@ def parse_tb_results():
 def parse_all_dfs(selected_datasets=[]):
     df = main()
     df_hopse = parse_hopse_results(df, selected_datasets)
-    mask = (df_hopse['model'] == 'sann') & (df_hopse['dataset'] == 'ZINC')
+    mask = (df_hopse["model"] == "sann") & (df_hopse["dataset"] == "ZINC")
 
     df_hopse = df_hopse[~df_hopse.isna()]
     df_topotune = parse_topotune_results()
@@ -786,7 +791,7 @@ def generate_table(df, optimization_metrics):
         direction = optimization_metrics.get(dataset, {}).get(
             "direction", "max"
         )
-        if len(group['mean']) == 1:
+        if len(group["mean"]) == 1:
             return group.iloc[0]
         if "BN" in dataset:
             direction = "max"
@@ -834,7 +839,7 @@ def generate_table(df, optimization_metrics):
 
         # Collect all datasets in this subset, sorted
         unique_datasets = subset_df["dataset"].unique()
-        all_datasets = [d for d in DATASET_ORDER if d in unique_datasets] 
+        all_datasets = [d for d in DATASET_ORDER if d in unique_datasets]
 
         # We'll group by domain to produce domain blocks
         domain_groups = {}
@@ -990,7 +995,7 @@ if __name__ == "__main__":
 
     # Parse the dataframes
     df = parse_all_dfs(selected_datasets)
-    #df.drop(['variant'], inplace=True, axis=1) 
+    #df.drop(['variant'], inplace=True, axis=1)
     # mask = (df['model'] == 'HOPSE-M') & (df['dataset'] == 'ZINC')
 
     # Generate the LaTeX table

@@ -3,6 +3,7 @@ from constants import optimization_metrics, sweeped_columns
 from generate_scores import gen_scores
 from preprocess import preprocess_df
 
+
 def write_to_file(f):
     f.write("#!/usr/bin/env bash\n\n")
     f.write("# Define log files\n")
@@ -68,10 +69,10 @@ def generate(
             if "HOPSE" not in model:
                 continue
             for domain in domains:
-                if domain == 'graph':
+                if domain == "graph":
                     continue
                 for nbhd in neighborhoods:
-                    if nbhd == 'nan':
+                    if nbhd == "nan":
                         continue
                     # Filter to rows for this model
                     model_agg = aggregated[
@@ -334,7 +335,7 @@ def generate(
                         if not cpu
                         else "trainer.accelerator=cpu trainer.devices=1"
                     )
-                    min_epoch_str = "trainer.min_epochs=250" if  'MANTRA' in dataset else "trainer.min_epochs=50"
+                    min_epoch_str = "trainer.min_epochs=250" if  "MANTRA" in dataset else "trainer.min_epochs=50"
                     trainer_epochs_str = f"trainer.max_epochs=500 {min_epoch_str} trainer.check_val_every_n_epoch=5"
                     trainer_patience_str = (
                         "callbacks.early_stopping.patience=10"

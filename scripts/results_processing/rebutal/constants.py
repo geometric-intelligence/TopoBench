@@ -14,8 +14,6 @@ performance_classification = [
     "val/precision",
     "test/precision",
     "val/loss",
-    "val/f1",
-    "test/f1",
 ]
 performance_classification_additional = [
     "val/accuracy",
@@ -26,8 +24,6 @@ performance_classification_additional = [
     "test/recall",
     "val/precision",
     "test/precision",
-    "val/f1",
-    "test/f1",
 ]
 performance_regression = [
     "val/mae",
@@ -138,32 +134,20 @@ sweeped_columns = [
     "transforms.sann_encoding.max_hop",
     "transforms.sann_encoding.max_rank",
     "transforms.sann_encoding.neighborhoods",
-    "transforms.sann_encoding.pretrain_model",
-    "transforms.sann_encoding.complex_dim",
     "model.feature_encoder.proj_dropout",
-    "model.backbone.n_layers",
+    "model.backbone.num_layers",
     "model.backbone.hidden_channels",
     "model.readout.hidden_dim",
     "model.feature_encoder.out_channels",
-    # SCCNN
-    "model.backbone.sc_order",
-    "model.backbone.conv_order",
-    "model.readout.readout_name",
-    # Topotune
-    "model.backbone.GNN.num_layers",
-    "model.backbone.neighborhoods",
     # Others
     "optimizer.parameters.weight_decay",
     "optimizer.parameters.lr",
     "dataset.dataloader_params.batch_size",
-    "dataset.loader.parameters.manifold_dim",
     # Additional
     "transforms.sann_encoding.copy_initial",
+    "transforms.sann_encoding.pe_types",
     "transforms.graph2cell_lifting.max_cell_length",
-    "transforms.sann_encoding.use_initial_features",
     "transforms.sann_encoding.is_undirected",
-    "transforms.redefine_simplicial_neighbourhoods.signed",
-    "transforms.redefine_simplicial_neighbourhoods.complex_dim",
 ]
 run_columns = [
     "dataset.split_params.data_seed",
@@ -193,8 +177,6 @@ performance_columns = [
     "test/recall",
     "val/precision",
     "test/precision",
-    "val/f1",
-    "test/f1",
 ]
 time_columns = [
     "AvgTime/train_epoch_mean",
