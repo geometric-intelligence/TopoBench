@@ -15,7 +15,7 @@ feature_encoder:
     - 0
     - 1
     - 2
-  all_ones: true
+  all_ones: True
   use_bond_encoder: False
   use_atom_encoder: False
   use_embedding: False
@@ -28,6 +28,7 @@ backbone:
   max_hop: ${transforms.sann_encoding.max_hop} 
   hidden_channels: ${model.feature_encoder.out_channels}
   update_func: "leaky_relu"
+  complex_dim: ${transforms.sann_encoding.max_rank}
 
 backbone_wrapper:
   _target_: topobench.nn.wrappers.SANNWrapper
