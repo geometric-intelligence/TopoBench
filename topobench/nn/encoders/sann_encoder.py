@@ -73,7 +73,7 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
                         self,
                         f"embedder_{i}",
                         torch.nn.Embedding(
-                            num_embeddings=kwargs["embedding_dim"],
+                            num_embeddings=4,
                             embedding_dim=self.out_channels
                         ),
                     )
@@ -105,9 +105,9 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
                             hidden_channels=self.in_channels[i][j],
                             out_channels=self.out_channels,
                             dropout=proj_dropout,
-                            batch_norm=batch_norm,
+                            norm='batch_norm',
                             num_layers=2,
-                            act="relu",
+                            act='leaky_relu',
                         ),
                     )
 

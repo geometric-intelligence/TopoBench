@@ -30,7 +30,7 @@ class SANN(torch.nn.Module):
         in_channels,
         hidden_channels,
         update_func=None,
-        complex_dim=3,
+        complex_dim=2,
         max_hop=3,
         n_layers=2,
         layer_norm=True,
@@ -45,35 +45,18 @@ class SANN(torch.nn.Module):
         if isinstance(in_channels, int):  # If only one value is passed
             in_channels = [in_channels] * self.max_hop
 
-        self.layers = torch.nn.ModuleList()
 
-        # Set of simplices layers
-        self.layers_0 = torch.nn.ModuleList(
-            SANNLayer(
-                [in_channels[i] for i in range(max_hop)],
-                [hidden_channels] * max_hop,
-                update_func=update_func,
-                max_hop=max_hop,
-            )
-            for i in range(complex_dim)
-        )
-        self.layers.append(self.layers_0)
-
-        # From layer 1 to n_layers
-        for i in range(1, n_layers):
-            self.layers.append(
-                torch.nn.ModuleList(
-                    SANNLayer(
-                        [hidden_channels] * max_hop,
-                        [hidden_channels] * max_hop,
-                        update_func=update_func,
-                        max_hop=max_hop,
-                    )
-                    for i in range(complex_dim)
+        self.f_x_MLPS = torch.nn.ModuleList(
+                SANNLayer(
+                    [hidden_channels] * max_hop,
+                    [hidden_channels] * max_hop,
+                    update_func=update_func,
+                    max_hop=max_hop,
                 )
-            )
+                for i in range(complex_dim+1)
+                )
 
-    def forward(self, x):
+    def forward(self, x, batch):
         r"""Forward pass of the model.
 
         Parameters
@@ -96,9 +79,8 @@ class SANN(torch.nn.Module):
         # x_2_tup = tuple(self.in_linear_2[i](x[2][i]) for i in range(3))
 
         # For each layer in the network
-        for layer in self.layers:
-            # For each simplex dimension (0, 1, 2)
-            x = tuple(layer[i](x[i]) for i in range(self.complex_dim))
+        # For each simplex dimension (0, 1, 2)
+        x = tuple(self.f_x_MLPS[i](x[i], batch[i]) for i in range(self.complex_dim+1))
         return x
 
 
@@ -135,6 +117,7 @@ class SANNLayer(torch.nn.Module):
         update_func=None,
         initialization: str = "xavier_uniform",
         layer_norm: bool = True,
+        block_depth = 4
     ) -> None:
         super().__init__()
 
@@ -156,30 +139,47 @@ class SANNLayer(torch.nn.Module):
         self.layer_norm = layer_norm
 
         assert initialization in ["xavier_uniform", "xavier_normal"]
+        assert self.in_channels[0] == self.out_channels[0]
 
-        self.list_linear = torch.nn.ModuleList(
-            [
+        # One element for each hop (1, 2, 3, ... , k)
+        self.list_hops = torch.nn.ModuleList()
+        self.list_ln_hops = torch.nn.ModuleList()
+
+        # Iterate over each of the hops 
+        for i in range(max_hop):
+            # Create a list of linear layers for each hop
+            list_block = torch.nn.ModuleList(
                 torch.nn.Linear(
                     in_features=self.in_channels[i],
                     out_features=self.out_channels[i],
                 )
-                for i in range(max_hop)
-            ]
-        )
+                for _ in range(block_depth)
+            )
+            self.list_hops.append(list_block)
 
-        if self.layer_norm:
-            # self.LN = torch.nn.ModuleList(
-            #     torch.nn.BatchNorm1d(self.out_channels[i])
-            #     for i in range(max_hop)
-            # )
-            self.LN = torch.nn.ModuleList(
-                torch.nn.LayerNorm(self.out_channels[i])
-                for i in range(max_hop)
+            list_ln = torch.nn.ModuleList(
+                torch.nn.BatchNorm1d(
+                    num_features=self.out_channels[i],
+                )
+                for _ in range(block_depth-1)
             )
-        else:
-            self.LN = torch.nn.ModuleList(
-                torch.nn.Identity() for i in range(max_hop)
-            )
+            self.list_ln_hops.append(list_ln)
+
+
+
+        # if self.layer_norm:
+        #     self.LN = torch.nn.ModuleList(
+        #         torch.nn.BatchNorm1d(self.out_channels[i])
+        #         for i in range(max_hop)
+        #     )
+        #     # self.LN = torch.nn.ModuleList(
+        #     #     torch.nn.LayerNorm(self.out_channels[i])
+        #     #     for i in range(max_hop)
+        #     # )
+        # else:
+        #     self.LN = torch.nn.ModuleList(
+        #         torch.nn.Identity() for i in range(max_hop)
+        #     )
 
     def update(self, x: torch.Tensor):
         """Update embeddings on each cell (step 4).
@@ -206,7 +206,7 @@ class SANNLayer(torch.nn.Module):
             return torch.nn.functional.silu(x)
         return None
 
-    def forward(self, x_all: dict[int, torch.Tensor]):
+    def forward(self, x_all: dict[int, torch.Tensor], batch):
         r"""Forward computation.
 
         Parameters
@@ -223,21 +223,21 @@ class SANNLayer(torch.nn.Module):
         torch.Tensor
             Output tensors for each 2-cell.
         """
-        y_k_t = [
-            linear_layer(x) for x, linear_layer in zip(x_all, self.list_linear)
-        ]
 
-        if self.update_func is None:
-            return tuple(y_k_t.values())
+        x_out = []
+        for x, linear_layer, ln in zip(x_all, self.list_hops, self.list_ln_hops):
+            prev_x = x
+            for i, layer in enumerate(linear_layer):
+                x = layer(x)
+                if i < len(linear_layer) - 1:
+                    x = ln[i](x)
+                x = self.update(x)
+            x = self.update(x + prev_x)
+            x_out.append(x)
+
 
         # Maybe add skip-connections here: x = LN(x + x_0)
         # x_all
         # x_all = tuple([self.update(y_t) for y_t in y_k_t.values()])
-
-        x_out = []
-        for ln, y, x in zip(self.LN, y_k_t, x_all):
-            y_t = self.update(y + x)
-            y_t = ln(y_t)
-            x_out.append(y_t)
 
         return tuple(x_out)

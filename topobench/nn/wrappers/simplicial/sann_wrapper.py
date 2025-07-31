@@ -60,7 +60,7 @@ class SANNWrapper(AbstractWrapper):
             for i in range(self.complex_dim + 1)
         )
 
-        x_out = self.backbone(x_all)
+        x_out = self.backbone(x_all, [batch[f'batch_{i}'] for i in range(self.complex_dim + 1)])
 
         # Get all the batch tensors according to the max_simplex_dim
         model_out = {
