@@ -79,7 +79,7 @@ do
             trainer.min_epochs=1\
             trainer.devices=\[$CUDA\]\
             trainer.check_val_every_n_epoch=1\
-            logger.wandb.project='perun'\
+            logger.wandb.project='prerun'\
             optimizer.parameters.lr=0.01\
             optimizer.parameters.weight_decay=0.25\
             callbacks.early_stopping.patience=10\
@@ -98,7 +98,7 @@ do
         CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
         neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
 
-        for batch_size in ${batch_sizes[*]}
+        for batch_size in ${BATCH_SIZES[*]}
         do
             for pd in ${PROJECTION_DROPOUTS[*]}
             do
