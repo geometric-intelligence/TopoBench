@@ -11,22 +11,22 @@ ENABLE_RETRY=true
 RETRY_DELAY_SECONDS=10 # Delay before retry
 
 # Datasets, experiments, seeds
-datasets=("graph/cocitation_citeseer" "graph/cocitation_cora")
+datasets_classification=("graph/cocitation_citeseer" "graph/cocitation_cora")
+datasets_regression=("graph/US-county-demos")
 experiments=("tabpfn_m" "tabpfn_g")
 #seeds=(0 3 5 7 9)
 
 # ======================
 # ARGUMENT PARSING
 # ======================
-for arg in "$@"; do
-    case $arg in
+while [[ $# -gt 0 ]]; do
+    case "$1" in
         --no-retry)
             ENABLE_RETRY=false
-            shift # Remove --no-retry from processing
+            shift
             ;;
         *)
-            # Unknown option, potentially other arguments for a future extension
-            # For now, just shift it.
+            # preserve or collect unknowns if needed
             shift
             ;;
     esac
@@ -94,7 +94,65 @@ run_logged_command() {
 # ======================
 # MAIN EXECUTION LOOP
 # ======================
-for dataset in "${datasets[@]}"; do
+for dataset in "${datasets_regression[@]}"; do
+    dataset_slug=$(basename "$dataset")  # e.g., Election
+
+    for experiment in "${experiments[@]}"; do
+        # Increment run_counter for each parallel job (dataset x experiment)
+        run_id_for_parallel_job=$(printf "%04d" $run_counter)
+        ((run_counter++))
+
+        cmd_graph="python -m topobench \
+            model=cell/tabpfn_regressor \
+            dataset=$dataset \
+            model.backbone_wrapper.use_embeddings=True \
+            experiment=$experiment \
+            model.backbone_wrapper.sampler.sampler_name=GraphHopSampler \
+            model.backbone_wrapper.sampler.n_hops=1,2,3 \
+            dataset.split_params.data_seed=0,3,5,7,9 \
+            logger.wandb.project=tabpfn \
+            --multirun"
+
+        # The run_id here now represents the specific parallel job (dataset + experiment)
+        # We run this in the background
+        # Using graph sampler
+        run_logged_command "$cmd_graph" "$dataset_slug" "${run_id_for_parallel_job}_${experiment}_graph" &
+
+        cmd_knn="python -m topobench \
+            model=cell/tabpfn_regressor \
+            dataset=$dataset \
+            model.backbone_wrapper.use_embeddings=True \
+            experiment=$experiment \
+            model.backbone_wrapper.sampler.sampler_name=KNNSampler \
+            model.backbone_wrapper.sampler.k=10,50,100,200,500,1000 \
+            dataset.split_params.data_seed=0,3,5,7,9 \
+            logger.wandb.project=tabpfn \
+            --multirun"
+
+        # Using K-nn sampler
+        run_logged_command "$cmd_knn" "$dataset_slug" "${run_id_for_parallel_job}_${experiment}_knn" &
+
+        cmd_all_nodes="python -m topobench \
+            model=cell/tabpfn_regressor \
+            dataset=$dataset \
+            model.backbone_wrapper.use_embeddings=True \
+            experiment=$experiment \
+            dataset.split_params.data_seed=0,3,5,7,9 \
+            logger.wandb.project=tabpfn \
+            --multirun"
+
+        # All the node features  embedding are in the context
+        run_logged_command "$cmd_all_nodes" "$dataset_slug" "${run_id_for_parallel_job}_${experiment}_all_nodes" &
+
+        ((JOBS++))
+        if [ "$JOBS" -ge "$MAX_PARALLEL" ]; then
+            wait
+            JOBS=0
+        fi
+    done
+done
+
+for dataset in "${datasets_classification[@]}"; do
     dataset_slug=$(basename "$dataset")  # e.g., cocitation_citeseer
 
     for experiment in "${experiments[@]}"; do
@@ -102,10 +160,7 @@ for dataset in "${datasets[@]}"; do
         run_id_for_parallel_job=$(printf "%04d" $run_counter)
         ((run_counter++))
 
-        
-        
-
-        cmd="python -m topobench \
+        cmd_graph="python -m topobench \
             model=cell/tabpfn_classifier \
             dataset=$dataset \
             model.backbone_wrapper.use_embeddings=True \
@@ -118,7 +173,34 @@ for dataset in "${datasets[@]}"; do
 
         # The run_id here now represents the specific parallel job (dataset + experiment)
         # We run this in the background
-        run_logged_command "$cmd" "$dataset_slug" "${run_id_for_parallel_job}_${experiment}" &
+        # Using graph sampler
+        run_logged_command "$cmd_graph" "$dataset_slug" "${run_id_for_parallel_job}_${experiment}_graph" &
+
+        cmd_knn="python -m topobench \
+            model=cell/tabpfn_classifier \
+            dataset=$dataset \
+            model.backbone_wrapper.use_embeddings=True \
+            experiment=$experiment \
+            model.backbone_wrapper.sampler.sampler_name=KNNSampler \
+            model.backbone_wrapper.sampler.k=10,50,100,200,500, 1000 \
+            dataset.split_params.data_seed=0,3,5,7,9 \
+            logger.wandb.project=tabpfn \
+            --multirun"
+
+        # Using K-nn sampler
+        run_logged_command "$cmd_knn" "$dataset_slug" "${run_id_for_parallel_job}_${experiment}_knn" &
+
+        cmd_all_nodes="python -m topobench \
+            model=cell/tabpfn_classifier \
+            dataset=$dataset \
+            model.backbone_wrapper.use_embeddings=True,False \
+            experiment=$experiment \
+            dataset.split_params.data_seed=0,3,5,7,9 \
+            logger.wandb.project=tabpfn \
+            --multirun"
+
+        # All the node features  embedding are in the context
+        run_logged_command "$cmd_all_nodes" "$dataset_slug" "${run_id_for_parallel_job}_${experiment}_all_nodes" &
 
         ((JOBS++))
         if [ "$JOBS" -ge "$MAX_PARALLEL" ]; then

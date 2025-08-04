@@ -166,7 +166,7 @@ class TabPFNClassifierWrapper(BaseWrapper):
             # Predict probabilities for the whole dataset (to allow compatibility with the rest of the code)
             output = self.backbone.predict_proba(node_features[test_mask])
 
-            #To ensure compatibility with the rest of the code
+            # To ensure compatibility with the rest of the code
             self.num_model_trained += len(test_mask)
 
             prob_tensor = (
@@ -214,10 +214,15 @@ class TabPFNClassifierWrapper(BaseWrapper):
             prob_tensor = torch.stack(outputs).to(batch["x_0"].device)
 
         # Prepare the output
-        prob_logits = torch.zeros(batch["y"].shape[0], self.num_classes_)
-        prob_logits[test_mask] = prob_tensor
-
+        prob_logits = torch.zeros(batch["y"].shape[0], self.num_classes_).to(
+            prob_tensor.device
+        )
         num_test_points = test_mask.shape[0]
+
+        # Making sure that test mask is on the same device
+        test_mask = torch.from_numpy(test_mask).to(prob_tensor.device)
+
+        prob_logits[test_mask] = prob_tensor
 
         # Log the metrics calculated within wrapper
         self.log_model_stat(num_test_points)

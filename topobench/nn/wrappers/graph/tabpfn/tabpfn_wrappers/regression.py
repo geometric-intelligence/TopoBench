@@ -25,8 +25,10 @@ class TabPFNRegressorWrapper(BaseWrapper):
 
     def _handle_no_neighbors(self):
         return self.global_mean_, self.global_mean_
-    
-    def _handle_constant_features(self, y) -> tuple[torch.Tensor, torch.Tensor]:
+
+    def _handle_constant_features(
+        self, y
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         y_mean = y.mean()
         return y_mean, y_mean
 
@@ -42,7 +44,7 @@ class TabPFNRegressorWrapper(BaseWrapper):
     ) -> tuple[str, float]:
         mse = mean_squared_error(trues, preds)
         return "MSE", mse
-    
+
     def _update_progress_and_results(
         self, prob, prediction, true_label, outputs, preds, trues, pbar
     ):
@@ -100,7 +102,7 @@ class TabPFNRegressorWrapper(BaseWrapper):
             # Update the counter and return
             self.num_one_neighbor += 1
             return None, torch.tensor(pred)
-        
+
         # Case 4: All the node have the same label - return the label, to avoid TabPFN error
         if np.unique(y_nb).shape[0] == 1:
             pred = y_nb[0].item()
@@ -167,11 +169,14 @@ class TabPFNRegressorWrapper(BaseWrapper):
             # Predict probabilities for the whole dataset (to allow compatibility with the rest of the code)
             output = self.backbone.predict(node_features[test_mask])
 
-            #To ensure compatibility with the rest of the code
+            # To ensure compatibility with the rest of the code
             self.num_model_trained += len(test_mask)
 
             prob_tensor = (
-                torch.from_numpy(output).float().to(batch["x_0"].device).view(-1, 1)
+                torch.from_numpy(output)
+                .float()
+                .to(batch["x_0"].device)
+                .view(-1, 1)
             )
 
         else:
@@ -211,13 +216,20 @@ class TabPFNRegressorWrapper(BaseWrapper):
             pbar.close()
 
             # stack & return exactly like before
-            prob_tensor = torch.stack(outputs).to(batch["x_0"].device).view(-1, 1)
+            prob_tensor = (
+                torch.stack(outputs).to(batch["x_0"].device).view(-1, 1)
+            )
 
         # Prepare the output
-        prob_logits = torch.zeros(batch["y"].shape[0], 1, device=batch["x_0"].device)
-        prob_logits[test_mask] = prob_tensor
-
+        prob_logits = torch.zeros(
+            batch["y"].shape[0], 1, device=batch["x_0"].device
+        ).to(prob_tensor.device)
         num_test_points = test_mask.shape[0]
+
+        # Making sure that test mask is on the same device
+        test_mask = torch.from_numpy(test_mask).to(prob_tensor.device)
+
+        prob_logits[test_mask] = prob_tensor
 
         # Log the metrics calculated within wrapper
         self.log_model_stat(num_test_points)
