@@ -54,21 +54,22 @@ def parse_pse_results(datasets, collect_subsets):
 
 
 def parse_all_dfs(selected_datasets=[]):
-    df = pd.read_csv("merged_rebutals/merged_total.csv")
-    df = preprocess_df(df)
+    df = pd.read_csv("merged_csl/merged_normalized.csv")
+    df = preprocess_df(df, gnn=True, split_mantra=False)
     # Keep only relevant columns
     df = df[keep_columns]
     # Generate best scores per hyperparameter sweep
     scores = gen_scores(df)
 
     df_pse = parse_pse_results(selected_datasets, scores)
+    print(df_pse)
 
     # FIX MAntra naming
-    df_pse.loc[df_pse.dataset == "MANTRA_betti_numbers_0", "dataset"] = "MANTRA-BN-0"
-    df_pse.loc[df_pse.dataset == "MANTRA_betti_numbers_1", "dataset"] = "MANTRA-BN-1"
-    df_pse.loc[df_pse.dataset == "MANTRA_betti_numbers_2", "dataset"] = "MANTRA-BN-2"
-    df_pse.loc[df_pse.dataset == "MANTRA_name", "dataset"] = "MANTRA-N"
-    df_pse.loc[df_pse.dataset == "MANTRA_orientation", "dataset"] = "MANTRA-O"
+    # df_pse.loc[df_pse.dataset == "MANTRA_betti_numbers_0", "dataset"] = "MANTRA-BN-0"
+    # df_pse.loc[df_pse.dataset == "MANTRA_betti_numbers_1", "dataset"] = "MANTRA-BN-1"
+    # df_pse.loc[df_pse.dataset == "MANTRA_betti_numbers_2", "dataset"] = "MANTRA-BN-2"
+    # df_pse.loc[df_pse.dataset == "MANTRA_name", "dataset"] = "MANTRA-N"
+    # df_pse.loc[df_pse.dataset == "MANTRA_orientation", "dataset"] = "MANTRA-O"
 
     # Only grab the datasets we are interested in
 
@@ -299,18 +300,18 @@ def generate_table(df, optimization_metrics):
 if __name__ == "__main__":
     # Define the datasets to include in the table
     selected_datasets = [
-        "MUTAG",
-        "PROTEINS",
-        "NCI1",
-        "NCI109",
+        # "MUTAG",
+        # "PROTEINS",
+        # "NCI1",
+        # "NCI109",
         # "IMDB-BINARY",
         # "IMDB-MULTI",
-        "ZINC",
-        "MANTRA_betti_numbers_0",
-        "MANTRA_betti_numbers_1",
-        "MANTRA_betti_numbers_2",
-        "MANTRA_name",
-        "MANTRA_orientation",
+        "CSL",
+        # "MANTRA_betti_numbers_0",
+        # "MANTRA_betti_numbers_1",
+        # "MANTRA_betti_numbers_2",
+        # "MANTRA_name",
+        # "MANTRA_orientation",
     ]
 
     # Parse the dataframes

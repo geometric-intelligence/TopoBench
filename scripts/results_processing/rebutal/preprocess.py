@@ -41,15 +41,15 @@ def split_evaluation_metrics(df):
     return pd.concat([df, scores_df])
 
 
-def preprocess_df(df, split_mantra=False):
+def preprocess_df(df, split_mantra=True, gnn=True):
     columns_to_eval = ["transforms.sann_encoding.pe_types"]
     for col in columns_to_eval:
         df[col] = df[col].apply(lambda x: str(x).replace("nan", "None"))
         df[col] = df[col].apply(literal_eval)
     df = df[~(df["dataset.split_params.data_seed"].isna())]
-    df = df[~(df["model.backbone._target_"].isna())]
-    print(df['model.backbone._target_'].unique())
-    df["model.model_name"] = df['model.backbone._target_'].str.split('.').str[-1]
+    if gnn:
+        df = df[~(df["model.backbone._target_"].isna())]
+        df["model.model_name"] = df['model.backbone._target_'].str.split('.').str[-1]
     df["transforms.sann_encoding.pe_types"] = df["transforms.sann_encoding.pe_types"].str.join(',').astype(str)
     df["transforms.sann_encoding.neighborhoods"] = df[
         "transforms.sann_encoding.neighborhoods"
