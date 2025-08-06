@@ -60,6 +60,8 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         # We need to store this information to be able to reproduce the splits afterwards
         if hasattr(dataset, "split_idx"):
             self.split_idx = dataset.split_idx
+        if hasattr(dataset, "split_idx_list"):
+            self.split_idx_list = dataset.split_idx_list
 
     @property
     def processed_dir(self) -> str:
