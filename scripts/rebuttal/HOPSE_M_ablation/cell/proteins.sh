@@ -1,5 +1,5 @@
 dataset='PROTEINS'
-project_name="HOPSE_M_cell_ablation_rebutal_$dataset"
+project_name="fix_HOPSE_M_cell_ablation_rebutal_$dataset"
 
 # =====================
 # DATA

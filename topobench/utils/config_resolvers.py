@@ -400,6 +400,22 @@ def infer_list_length(list):
     return len(list)
 
 
+def infer_list_length_plus_one(list):
+    r"""Infer the length of a list plus one.
+
+    Parameters
+    ----------
+    list : list
+        List.
+
+    Returns
+    -------
+    int
+        Length of the input list plus one.
+    """
+    return len(list) + 1
+
+
 def get_default_metrics(task, metrics=None):
     r"""Get default metrics for a given task.
 
@@ -563,7 +579,7 @@ def infer_in_hasse_graph_agg_dim(
 
         # If edge_attr is used, set those dimensions
         if use_edge_attr:
-            for i in range(1, complex_dim+1):
+            for i in range(1, complex_dim + 1):
                 results[i][0] = dim_in[1]
         # TODO: If there are face attributes, another condition needs to be added
 
@@ -635,7 +651,7 @@ def infer_in_hasse_graph_agg_dim_positional_encodings(
 
         # If edge_attr is used, set those dimensions
         if use_edge_attr:
-            for i in range(1, complex_dim+1):
+            for i in range(1, complex_dim + 1):
                 results[i][0] = dim_in[1]
 
     else:

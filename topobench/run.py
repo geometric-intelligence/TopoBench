@@ -39,6 +39,7 @@ from topobench.utils.config_resolvers import (
     infer_in_hasse_graph_agg_dim_positional_encodings,
     infer_in_khop_feature_dim,
     infer_list_length,
+    infer_list_length_plus_one,
     infer_num_cell_dimensions,
     set_preserve_edge_attr,
 )
@@ -125,7 +126,11 @@ OmegaConf.register_new_resolver(
     infer_list_length,
     replace=True,
 )
-
+OmegaConf.register_new_resolver(
+    "infer_list_length_plus_one",
+    infer_list_length_plus_one,
+    replace=True,
+)
 
 
 def initialize_hydra() -> DictConfig:
