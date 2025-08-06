@@ -54,8 +54,8 @@ def parse_pse_results(datasets, collect_subsets):
 
 
 def parse_all_dfs(selected_datasets=[]):
-    df = pd.read_csv("merged_rebutals/merged_total.csv")
-    df = preprocess_df(df)
+    df = pd.read_csv("hopse_m_merged_rebutals/merged_normalized.csv")
+    df = preprocess_df(df, gnn=False, split_mantra=False)
     # Keep only relevant columns
     df = df[keep_columns]
     # Generate best scores per hyperparameter sweep
@@ -306,11 +306,11 @@ if __name__ == "__main__":
         # "IMDB-BINARY",
         # "IMDB-MULTI",
         "ZINC",
-        "MANTRA_betti_numbers_0",
-        "MANTRA_betti_numbers_1",
-        "MANTRA_betti_numbers_2",
-        "MANTRA_name",
-        "MANTRA_orientation",
+        # "MANTRA_betti_numbers_0",
+        # "MANTRA_betti_numbers_1",
+        # "MANTRA_betti_numbers_2",
+        # "MANTRA_name",
+        # "MANTRA_orientation",
     ]
 
     # Parse the dataframes

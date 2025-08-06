@@ -8,6 +8,82 @@ from sklearn.model_selection import StratifiedKFold, train_test_split
 
 from topobench.dataloader import DataloadDataset
 
+def k_fold_split_fixed(labels, parameters, split_idx_list):
+    """Return train and valid indices as in K-Fold Cross-Validation.
+
+    If the split already exists it loads it automatically, otherwise it creates the
+    split file for the subsequent runs.
+
+    Parameters
+    ----------
+    labels : torch.Tensor
+        Label tensor.
+    parameters : DictConfig
+        Configuration parameters.
+
+    Returns
+    -------
+    dict
+        Dictionary containing the train, validation and test indices, with keys "train", "valid", and "test".
+    """
+
+    data_dir = parameters.data_split_dir
+    k = parameters.k
+    fold = parameters.data_seed
+    assert fold < k, "data_seed needs to be less than k"
+
+    torch.manual_seed(0)
+    np.random.seed(0)
+
+    split_dir = os.path.join(data_dir, f"{k}-fold")
+
+    if not os.path.isdir(split_dir):
+        os.makedirs(split_dir)
+
+    split_path = os.path.join(split_dir, f"{fold}.npz")
+    if not os.path.isfile(split_path):
+        n = labels.shape[0]
+        x_idx = np.arange(n)
+        x_idx = np.random.permutation(x_idx)
+        labels = labels[x_idx]
+
+        for fold_n in range(len(split_idx_list['train'])):
+            split_idx = {
+                "train": split_idx_list['train'][fold_n],
+                "valid": split_idx_list['valid'][fold_n],
+                "test": split_idx_list['test'][fold_n],
+            }
+
+            # Check that all nodes/graph have been assigned to some split
+            # assert np.all(
+            #     np.sort(
+            #         np.array(
+            #             split_idx["train"]
+            #             + split_idx["valid"]
+            #         )
+            #     )
+            #     == np.sort(np.arange(len(labels)))
+            # ), "Not every sample has been loaded."
+            split_path = os.path.join(split_dir, f"{fold_n}.npz")
+
+            np.savez(split_path, **split_idx)
+
+    split_path = os.path.join(split_dir, f"{fold}.npz")
+    split_idx = np.load(split_path)
+
+    # Check that all nodes/graph have been assigned to some split
+    # assert (
+    #     np.unique(
+    #         np.array(
+    #             split_idx["train"].tolist()
+    #             + split_idx["valid"].tolist()
+    #             + split_idx["test"].tolist()
+    #         )
+    #     ).shape[0]
+    #     == labels.shape[0]
+    # ), "Not all nodes within splits"
+
+    return split_idx
 
 # Generate splits in different fasions
 def k_fold_split(labels, parameters):
@@ -408,6 +484,9 @@ def load_inductive_splits(dataset, parameters):
 
     elif parameters.split_type == "fixed" and hasattr(dataset, "split_idx"):
         split_idx = dataset.split_idx
+
+    elif parameters.split_type == "k-fold-fixed":
+        split_idx = k_fold_split_fixed(labels, parameters, dataset.split_idx_list)
 
     else:
         raise NotImplementedError(

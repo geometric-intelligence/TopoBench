@@ -14,6 +14,8 @@ performance_classification = [
     "val/precision",
     "test/precision",
     "val/loss",
+    # "val/f1",
+    # "test/f1"
 ]
 performance_classification_additional = [
     "val/accuracy",
@@ -24,12 +26,14 @@ performance_classification_additional = [
     "test/recall",
     "val/precision",
     "test/precision",
+    # "val/f1",
+    # "test/f1"
 ]
 performance_regression = [
-    "val/mae",
-    "test/mae",
-    "val/mse",
-    "test/mse",
+    # "val/mae",
+    # "test/mae",
+    # "val/mse",
+    # "test/mse",
 ]
 
 optimization_metrics = {
@@ -129,6 +133,12 @@ optimization_metrics = {
         "direction": "min",
         "performance_columns": performance_classification,
     },
+    "CSL": {
+        "optim_metric": "val/accuracy",
+        "eval_metric": "test/accuracy",
+        "direction": "max",
+        "performance_columns": performance_classification,
+    }
 }
 sweeped_columns = [
     "transforms.sann_encoding.max_hop",
@@ -136,6 +146,7 @@ sweeped_columns = [
     "transforms.sann_encoding.neighborhoods",
     "model.feature_encoder.proj_dropout",
     "model.backbone.num_layers",
+    # "model.backbone.n_layers",
     "model.backbone.hidden_channels",
     "model.readout.hidden_dim",
     "model.feature_encoder.out_channels",
@@ -165,10 +176,10 @@ dataset_model_columns = [
 performance_columns = [
     "val/loss",
     "test/loss",
-    "val/mae",
-    "test/mae",
-    "val/mse",
-    "test/mse",
+    # "val/mae",
+    # "test/mae",
+    # "val/mse",
+    # "test/mse",
     "val/accuracy",
     "test/accuracy",
     "val/auroc",
@@ -177,6 +188,8 @@ performance_columns = [
     "test/recall",
     "val/precision",
     "test/precision",
+    # "val/f1",
+    # "test/f1"
 ]
 time_columns = [
     "AvgTime/train_epoch_mean",
