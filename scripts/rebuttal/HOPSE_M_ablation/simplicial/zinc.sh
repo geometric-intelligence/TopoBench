@@ -1,5 +1,5 @@
 dataset='ZINC'
-project_name="HOPSE_M_simplicial_ablation_rebutal_$dataset"
+project_name="fix_HOPSE_M_simplicial_ablation_rebutal_$dataset"
 
 # =====================
 # DATA
