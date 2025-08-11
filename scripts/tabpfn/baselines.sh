@@ -11,7 +11,7 @@ ENABLE_RETRY=true
 RETRY_DELAY_SECONDS=10 # Delay before retry
 
 # Datasets, experiments, seeds
-datasets_classification=("graph/cocitation_citeseer" "graph/cocitation_cora")
+datasets_classification=("graph/cocitation_citeseer" "graph/cocitation_cora" "graph/minesweeper" "graph/roman_empire" "graph/cocitation_pubmed")
 datasets_regression=("graph/US-county-demos")
 experiments=("tabpfn_m" "tabpfn_g")
 #seeds=(0 3 5 7 9)
@@ -105,7 +105,7 @@ for dataset in "${datasets_regression[@]}"; do
         cmd_graph="python -m topobench \
             model=cell/tabpfn_regressor \
             dataset=$dataset \
-            model.backbone_wrapper.use_embeddings=True \
+            model.backbone_wrapper.use_embeddings=True,False \
             experiment=$experiment \
             model.backbone_wrapper.sampler.sampler_name=GraphHopSampler \
             model.backbone_wrapper.sampler.n_hops=1,2,3 \
@@ -121,10 +121,10 @@ for dataset in "${datasets_regression[@]}"; do
         cmd_knn="python -m topobench \
             model=cell/tabpfn_regressor \
             dataset=$dataset \
-            model.backbone_wrapper.use_embeddings=True \
+            model.backbone_wrapper.use_embeddings=True,False \
             experiment=$experiment \
             model.backbone_wrapper.sampler.sampler_name=KNNSampler \
-            model.backbone_wrapper.sampler.k=10,50,100,200,500,1000 \
+            model.backbone_wrapper.sampler.k=2,3,4,5,10,20,50,100,200 \
             dataset.split_params.data_seed=0,3,5,7,9 \
             logger.wandb.project=tabpfn \
             --multirun"
@@ -135,7 +135,7 @@ for dataset in "${datasets_regression[@]}"; do
         cmd_all_nodes="python -m topobench \
             model=cell/tabpfn_regressor \
             dataset=$dataset \
-            model.backbone_wrapper.use_embeddings=True \
+            model.backbone_wrapper.use_embeddings=True,False \
             experiment=$experiment \
             dataset.split_params.data_seed=0,3,5,7,9 \
             logger.wandb.project=tabpfn \
@@ -163,7 +163,7 @@ for dataset in "${datasets_classification[@]}"; do
         cmd_graph="python -m topobench \
             model=cell/tabpfn_classifier \
             dataset=$dataset \
-            model.backbone_wrapper.use_embeddings=True \
+            model.backbone_wrapper.use_embeddings=True,False \
             experiment=$experiment \
             model.backbone_wrapper.sampler.sampler_name=GraphHopSampler \
             model.backbone_wrapper.sampler.n_hops=1,2,3 \
@@ -179,10 +179,10 @@ for dataset in "${datasets_classification[@]}"; do
         cmd_knn="python -m topobench \
             model=cell/tabpfn_classifier \
             dataset=$dataset \
-            model.backbone_wrapper.use_embeddings=True \
+            model.backbone_wrapper.use_embeddings=True,False \
             experiment=$experiment \
             model.backbone_wrapper.sampler.sampler_name=KNNSampler \
-            model.backbone_wrapper.sampler.k=10,50,100,200,500, 1000 \
+            model.backbone_wrapper.sampler.k=2,3,4,5,10,20,50,100,200 \
             dataset.split_params.data_seed=0,3,5,7,9 \
             logger.wandb.project=tabpfn \
             --multirun"
