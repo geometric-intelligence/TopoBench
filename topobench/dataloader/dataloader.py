@@ -5,6 +5,7 @@ from typing import Any
 from lightning import LightningDataModule
 from torch.utils.data import DataLoader
 
+from topobench.data.batching import NeighborCellsLoader
 from topobench.dataloader.dataload_dataset import DataloadDataset
 from topobench.dataloader.utils import collate_fn
 
@@ -24,6 +25,10 @@ class TBDataloader(LightningDataModule):
         The test dataset (default: None).
     batch_size : int, optional
         The batch size for the dataloader (default: 1).
+    rank : int, optional
+        The rank of the cells to consider when batching in the transductive setting (default: 0).
+    num_neighbors : list[int], optional
+        The number of neighbors to sample in the transductive setting. To consider n-hop neighborhoods this list should contain n elements. Care should be taken to check that the number of hops is appropriate for your model. With topological models the number of layers might not be enough to determine how far information is propagated.  (default: [-1]).
     num_workers : int, optional
         The number of worker processes to use for data loading (default: 0).
     pin_memory : bool, optional
@@ -43,6 +48,8 @@ class TBDataloader(LightningDataModule):
         dataset_val: DataloadDataset = None,
         dataset_test: DataloadDataset = None,
         batch_size: int = 1,
+        rank: int = 0,
+        num_neighbors: list[int] | None = None,
         num_workers: int = 0,
         pin_memory: bool = False,
         **kwargs: Any,
@@ -57,23 +64,68 @@ class TBDataloader(LightningDataModule):
         )
         self.dataset_train = dataset_train
         self.batch_size = batch_size
-
+        self.transductive = False
+        self.rank = rank
+        self.num_neighbors = (
+            num_neighbors if num_neighbors is not None else [-1]
+        )
         if dataset_val is None and dataset_test is None:
             # Transductive setting
             self.dataset_val = dataset_train
             self.dataset_test = dataset_train
-            assert self.batch_size == 1, (
-                "Batch size must be 1 for transductive setting."
-            )
+            self.transductive = True
         else:
             self.dataset_val = dataset_val
             self.dataset_test = dataset_test
         self.num_workers = num_workers
         self.pin_memory = pin_memory
         self.persistent_workers = kwargs.get("persistent_workers", False)
+        self.kwargs = kwargs
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(dataset_train={self.dataset_train}, dataset_val={self.dataset_val}, dataset_test={self.dataset_test}, batch_size={self.batch_size})"
+
+    def _get_dataloader(self, split: str) -> DataLoader | NeighborCellsLoader:
+        r"""Create and return the dataloader for the specified split.
+
+        Parameters
+        ----------
+        split : str
+            The split to create the dataloader for.
+
+        Returns
+        -------
+        torch.utils.data.DataLoader | NeighborCellsLoader
+            The dataloader for the specified split.
+        """
+        shuffle = split == "train"
+
+        if not self.transductive or self.batch_size == -1:
+            batch_size = self.batch_size if self.batch_size != -1 else 1
+
+            return DataLoader(
+                dataset=getattr(self, f"dataset_{split}"),
+                batch_size=batch_size,
+                num_workers=self.num_workers,
+                pin_memory=self.pin_memory,
+                shuffle=shuffle,
+                collate_fn=collate_fn,
+                persistent_workers=self.persistent_workers,
+                **self.kwargs,
+            )
+
+        mask_idx = self.dataset_train[0][1].index(f"{split}_mask")
+        mask = self.dataset_train[0][0][mask_idx]
+
+        return NeighborCellsLoader(
+            data=getattr(self, f"dataset_{split}"),
+            rank=self.rank,
+            num_neighbors=self.num_neighbors,
+            input_nodes=mask,  # We have to specify split mask as we have to provide node indices to be sampled
+            batch_size=self.batch_size,
+            shuffle=shuffle,
+            **self.kwargs,
+        )
 
     def train_dataloader(self) -> DataLoader:
         r"""Create and return the train dataloader.
@@ -83,15 +135,7 @@ class TBDataloader(LightningDataModule):
         torch.utils.data.DataLoader
             The train dataloader.
         """
-        return DataLoader(
-            dataset=self.dataset_train,
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            pin_memory=self.pin_memory,
-            shuffle=True,
-            collate_fn=collate_fn,
-            persistent_workers=self.persistent_workers,
-        )
+        return self._get_dataloader("train")
 
     def val_dataloader(self) -> DataLoader:
         r"""Create and return the validation dataloader.
@@ -101,15 +145,7 @@ class TBDataloader(LightningDataModule):
         torch.utils.data.DataLoader
             The validation dataloader.
         """
-        return DataLoader(
-            dataset=self.dataset_val,
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            pin_memory=self.pin_memory,
-            shuffle=False,
-            collate_fn=collate_fn,
-            persistent_workers=self.persistent_workers,
-        )
+        return self._get_dataloader("val")
 
     def test_dataloader(self) -> DataLoader:
         r"""Create and return the test dataloader.
@@ -121,15 +157,7 @@ class TBDataloader(LightningDataModule):
         """
         if self.dataset_test is None:
             raise ValueError("There is no test dataloader.")
-        return DataLoader(
-            dataset=self.dataset_test,
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            pin_memory=self.pin_memory,
-            shuffle=False,
-            collate_fn=collate_fn,
-            persistent_workers=self.persistent_workers,
-        )
+        return self._get_dataloader("test")
 
     def teardown(self, stage: str | None = None) -> None:
         r"""Lightning hook for cleaning up after `trainer.fit()`, `trainer.validate()`, `trainer.test()`, and `trainer.predict()`.
