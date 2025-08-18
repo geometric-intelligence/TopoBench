@@ -1,6 +1,6 @@
 ---
-title: Coauthor Citeseer
-permalink: /docs/datasets/coauthor-citeseer/
+title: Cocitation Citeseer
+permalink: /docs/datasets/cocitation-citeseer/
 layout: docs
 sectionid: docs
 ---

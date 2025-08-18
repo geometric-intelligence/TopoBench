@@ -1,6 +1,6 @@
 ---
-title: US County Demos
-permalink: /docs/datasets/us-county-demos/
+title: Cocitation Cora
+permalink: /docs/datasets/cocitation-cora/
 layout: docs
 sectionid: docs
 ---
@@ -8,7 +8,7 @@ sectionid: docs
 
 <div class="dataset-page clean-modern v2">
     <div class="dataset-header clean-header v2-header">
-        <h1>US County Demos</h1>
+        <h1>Cocitation Cora</h1>
         <div class="dataset-meta v2-meta">
             <span class="domain-tag">Graph</span>
             <span class="task-tag">Task Level: Graph</span>

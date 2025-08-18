@@ -19,22 +19,22 @@ sectionid: docs
     <div class="dataset-content clean-content v2-content">
         <section class="description-card v2-card">
             <h2>Description</h2>
-            <p>The Cora dataset is a citation network dataset consisting of scientific publications from Cora. Each node represents a scientific publication and edges represent citation relationships.</p>
+            <p>Cora</p>
         </section>
 
         <section class="overview-card v2-card">
             <h2>Dataset Overview</h2>
             <div class="overview-grid v2-grid">
-                <div class="overview-block key-numbers v2-block">
+                <!--<div class="overview-block key-numbers v2-block">
                     <h3>Key Numbers</h3>
                     <div class="key-stats v2-key-stats" style="gap:0.7rem;">
                         <div class="stat-item"><span class="stat-value blue v2-big">2,708</span><span class="stat-label">Nodes</span></div>
                         <div class="stat-item"><span class="stat-value blue v2-big">9,856</span><span class="stat-label">Total Cells</span></div>
                         <div class="stat-item"><span class="stat-value blue v2-big">3</span><span class="stat-label">Max Cell Dimension</span></div>
                     </div>
-                </div>
+                </div>-->
 
-                <div class="overview-block domain-stats v2-block">
+                <!--<div class="overview-block domain-stats v2-block">
                     <h3>Domain Statistics</h3>
                     <div class="statistics-table v2-table large-table">
                         <table>
@@ -48,7 +48,7 @@ sectionid: docs
                             </tbody>
                         </table>
                     </div>
-                </div>
+                </div>-->
 
                 <div class="overview-block lifting-methods v2-block">
                     <h3>Lifting Methods</h3>

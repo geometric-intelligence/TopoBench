@@ -1,6 +1,8 @@
 ---
-title: US County Demos
-permalink: /docs/datasets/us-county-demos/
+title: ModelNet40
+type: HyperGraph
+task_level: Node
+permalink: /docs/datasets/modelnet40/
 layout: docs
 sectionid: docs
 ---
@@ -8,10 +10,10 @@ sectionid: docs
 
 <div class="dataset-page clean-modern v2">
     <div class="dataset-header clean-header v2-header">
-        <h1>US County Demos</h1>
+        <h1>ModelNet40</h1>
         <div class="dataset-meta v2-meta">
-            <span class="domain-tag">Graph</span>
-            <span class="task-tag">Task Level: Graph</span>
+            <span class="domain-tag">HyperGraph</span>
+            <span class="task-tag">Task Level: Node</span>
         </div>
     </div>
 

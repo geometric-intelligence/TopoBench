@@ -17,22 +17,22 @@ sectionid: docs
     <div class="dataset-content clean-content v2-content">
         <section class="description-card v2-card">
             <h2>Description</h2>
-            <p>The Mantra Betti Numbers dataset is a citation network dataset consisting of scientific publications from Mantra Betti Numbers. Each node represents a scientific publication and edges represent citation relationships.</p>
+            <p>Mantra Betti Numbers</p>
         </section>
 
         <section class="overview-card v2-card">
             <h2>Dataset Overview</h2>
             <div class="overview-grid v2-grid">
-                <div class="overview-block key-numbers v2-block">
+                <!--<div class="overview-block key-numbers v2-block">
                     <h3>Key Numbers</h3>
                     <div class="key-stats v2-key-stats" style="gap:0.7rem;">
                         <div class="stat-item"><span class="stat-value blue v2-big">2,708</span><span class="stat-label">Nodes</span></div>
                         <div class="stat-item"><span class="stat-value blue v2-big">9,856</span><span class="stat-label">Total Cells</span></div>
                         <div class="stat-item"><span class="stat-value blue v2-big">3</span><span class="stat-label">Max Cell Dimension</span></div>
                     </div>
-                </div>
+                </div>-->
 
-                <div class="overview-block domain-stats v2-block">
+                <!--<div class="overview-block domain-stats v2-block">
                     <h3>Domain Statistics</h3>
                     <div class="statistics-table v2-table large-table">
                         <table>
@@ -46,7 +46,7 @@ sectionid: docs
                             </tbody>
                         </table>
                     </div>
-                </div>
+                </div>-->
 
                 <div class="overview-block lifting-methods v2-block">
                     <h3>Lifting Methods</h3>
@@ -73,38 +73,63 @@ sectionid: docs
 
         <section class="performance-card v2-card">
             <h2>Model Performance</h2>
-            
             <div class="performance-grid v2-perf-grid">
                 <div class="performance-chart v2-perf-chart">
-                    <canvas id="benchmarkChart" height="120"></canvas>
+                    <canvas id="benchmarkChart" height="180"></canvas>
                 </div>
-                
                 <div class="performance-table-wrapper v2-table-wrapper">
                     <table class="performance-table v2-perf-table">
                         <thead>
-                            <tr><th>Model</th><th>Accuracy (%)</th><th>Std Dev (±)</th></tr>
+                            <tr>
+                                <th>Model</th>
+                                <th>GCN</th>
+                                <th>GAT</th>
+                                <th>GIN</th>
+                                <th>SCN</th>
+                                <th>SCCNN</th>
+                                <th>SaNN</th>
+                                <th>GCCN</th>
+                                <th>HOPSE-M</th>
+                                <th>HOPSE-G</th>
+                            </tr>
                         </thead>
                         <tbody>
-                            <tr class="highlight"><td>GIN</td><td>87.21</td><td>1.89</td></tr>
-                            <tr><td>GCN</td><td>87.09</td><td>0.20</td></tr>
-                            <tr><td>GAT</td><td>86.71</td><td>0.95</td></tr>
-                            <tr><td>UniGNN2</td><td>86.97</td><td>0.88</td></tr>
-                            <tr><td>EDGNN</td><td>87.06</td><td>1.09</td></tr>
-                            <tr><td>AST</td><td>88.92</td><td>0.44</td></tr>
-                            <tr><td>CWN</td><td>86.32</td><td>1.38</td></tr>
-                            <tr><td>CCCN</td><td>87.44</td><td>1.28</td></tr>
+                            <tr class="highlight">
+                                <td>Betti 1 (Accuracy ± Std)</td>
+                                <td>46.86 ± 4.50</td>
+                                <td>7.45 ± 0.05</td>
+                                <td>88.13 ± 0.00</td>
+                                <td>76.45 ± 3.06</td>
+                                <td>90.20 ± 0.20</td>
+                                <td>88.46 ± 0.09</td>
+                                <td>84.20 ± 4.80</td>
+                                <td><b>90.26 ± 0.55</b></td>
+                                <td>88.28 ± 0.08</td>
+                            </tr>
+                            <tr class="highlight">
+                                <td>Betti 2 (Accuracy ± Std)</td>
+                                <td>0.00 ± 0.00</td>
+                                <td>0.00 ± 0.00</td>
+                                <td>0.93 ± 1.21</td>
+                                <td>5.45 ± 2.31</td>
+                                <td>65.82 ± 2.70</td>
+                                <td>39.22 ± 2.80</td>
+                                <td>41.82 ± 20.19</td>
+                                <td><b>71.69 ± 1.50</b></td>
+                                <td>35.37 ± 2.25</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
             </div>
-
             <div class="insights-card v2-insights">
                 <h3>Key Insights</h3>
                 <ul>
-                    <li>AST achieves the best performance with 88.92% accuracy</li>
-                    <li>Most models perform consistently well, with accuracies above 86%</li>
-                    <li>GIN shows relatively high variability (±1.89)</li>
-                    <li>GCN shows the most stable results with lowest std dev (±0.20)</li>
+                    <li>HOPSE-M achieves the best performance for both Betti numbers: 90.26% (±0.55) for Betti 1 and 71.69% (±1.50) for Betti 2.</li>
+                    <li>SCCNN is the second-best for both Betti numbers, with 90.20% (±0.20) for Betti 1 and 65.82% (±2.70) for Betti 2.</li>
+                    <li>GIN, SaNN, and HOPSE-G also perform strongly on Betti 1, but most models struggle on Betti 2.</li>
+                    <li>GAT and GCN perform poorly on Betti 2, with near-zero accuracy.</li>
+                    <li>GCCN shows high variability on Betti 2 (±20.19).</li>
                 </ul>
                 <div class="insight-divider"></div>
                 <div class="repro-block">
@@ -114,7 +139,7 @@ sectionid: docs
                             <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="5" y="7" width="9" height="9" rx="2" stroke="#2563eb" stroke-width="1.5"/><rect x="7.5" y="4" width="9" height="9" rx="2" fill="#fff" stroke="#2563eb" stroke-width="1.5"/></svg>
                         </button>
                     </div>
-                    <pre class="repro-cli" id="repro-cli">python -m topobench model=graph/gin dataset=graph/cocitation_Mantra Betti Numbers optimizer.parameters.lr=0.001 model.feature_encoder.out_channels=64 model.backbone.num_layers=2 model.feature_encoder.proj_dropout=0.5 dataset.dataloader_params.batch_size=1 dataset.split_params.data_seed=0,3,5,7,9 trainer.max_epochs=500 trainer.min_epochs=50 trainer.check_val_every_n_epoch=1 callbacks.early_stopping.patience=50</pre>
+                    <pre class="repro-cli" id="repro-cli">to be released</pre>
                 </div>
             </div>
         </section>
@@ -438,21 +463,43 @@ body {
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const ctx = document.getElementById('benchmarkChart').getContext('2d');
-    
     const data = {
-        labels: ['AST', 'GIN', 'GCN', 'CCCN', 'EDGNN', 'UniGNN2', 'GAT', 'CWN'],
-        datasets: [{
-            label: 'Accuracy (%)',
-            data: [88.92, 87.21, 87.09, 87.44, 87.06, 86.97, 86.71, 86.32],
-            backgroundColor: 'rgba(37, 99, 235, 0.12)',
-            borderColor: 'rgb(37, 99, 235)',
-            borderWidth: 2,
-            borderRadius: 10,
-            barPercentage: 0.7,
-            categoryPercentage: 0.7
-        }]
+        labels: ['GCN', 'GAT', 'GIN', 'SCN', 'SCCNN', 'SaNN', 'GCCN', 'HOPSE-M', 'HOPSE-G'],
+        datasets: [
+            {
+                label: 'Betti 1',
+                data: [46.86, 7.45, 88.13, 76.45, 90.20, 88.46, 84.20, 90.26, 88.28],
+                backgroundColor: [
+                    'rgba(37,99,235,0.12)', 'rgba(37,99,235,0.12)', 'rgba(37,99,235,0.12)', 'rgba(37,99,235,0.12)',
+                    'rgba(37,99,235,0.12)', 'rgba(37,99,235,0.12)', 'rgba(37,99,235,0.12)', 'rgba(16,185,129,0.35)', 'rgba(37,99,235,0.12)'
+                ],
+                borderColor: [
+                    'rgb(37,99,235)', 'rgb(37,99,235)', 'rgb(37,99,235)', 'rgb(37,99,235)',
+                    'rgb(37,99,235)', 'rgb(37,99,235)', 'rgb(37,99,235)', 'rgb(16,185,129)', 'rgb(37,99,235)'
+                ],
+                borderWidth: 2,
+                borderRadius: 10,
+                barPercentage: 0.7,
+                categoryPercentage: 0.7
+            },
+            {
+                label: 'Betti 2',
+                data: [0.00, 0.00, 0.93, 5.45, 65.82, 39.22, 41.82, 71.69, 35.37],
+                backgroundColor: [
+                    'rgba(37,99,235,0.12)', 'rgba(37,99,235,0.12)', 'rgba(37,99,235,0.12)', 'rgba(37,99,235,0.12)',
+                    'rgba(37,99,235,0.12)', 'rgba(37,99,235,0.12)', 'rgba(37,99,235,0.12)', 'rgba(16,185,129,0.35)', 'rgba(37,99,235,0.12)'
+                ],
+                borderColor: [
+                    'rgb(37,99,235)', 'rgb(37,99,235)', 'rgb(37,99,235)', 'rgb(37,99,235)',
+                    'rgb(37,99,235)', 'rgb(37,99,235)', 'rgb(37,99,235)', 'rgb(16,185,129)', 'rgb(37,99,235)'
+                ],
+                borderWidth: 2,
+                borderRadius: 10,
+                barPercentage: 0.7,
+                categoryPercentage: 0.7
+            }
+        ]
     };
-
     const config = {
         type: 'bar',
         data: data,
@@ -460,11 +507,11 @@ document.addEventListener('DOMContentLoaded', function() {
             responsive: true,
             plugins: {
                 legend: {
-                    display: false
+                    display: true
                 },
                 title: {
                     display: true,
-                    text: 'Model Performance Comparison',
+                    text: 'Model Performance Comparison (Betti 1 and Betti 2)',
                     font: { size: 18, weight: '700', family: "'Inter', sans-serif" },
                     color: '#22223b',
                     padding: 18
@@ -479,9 +526,9 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             scales: {
                 y: {
-                    beginAtZero: false,
-                    min: 85,
-                    max: 90,
+                    beginAtZero: true,
+                    min: 0,
+                    max: 100,
                     title: {
                         display: true,
                         text: 'Accuracy (%)',
@@ -490,7 +537,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     ticks: {
                         font: { size: 15, family: "'Inter', sans-serif" },
                         color: '#64748b',
-                        stepSize: 1
+                        stepSize: 10
                     },
                     grid: {
                         color: '#e3edff',
@@ -509,7 +556,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
     };
-
     new Chart(ctx, config);
 });
 

@@ -21,13 +21,13 @@ layout: docs
                     <input type="checkbox" value="graph">
                     <span class="checkbox-custom"></span>
                     <span class="filter-label">Graph</span>
-                    <span class="count">21</span>
+                    <span class="count">17</span>
                 </label>
                 <label class="filter-option">
                     <input type="checkbox" value="hypergraph">
                     <span class="checkbox-custom"></span>
                     <span class="filter-label">HyperGraph</span>
-                    <span class="count">5</span>
+                    <span class="count">10</span>
                 </label>
                 <label class="filter-option">
                     <input type="checkbox" value="pointcloud">
@@ -51,13 +51,13 @@ layout: docs
                     <input type="checkbox" value="graph">
                     <span class="checkbox-custom"></span>
                     <span class="filter-label">Graph</span>
-                    <span class="count">16</span>
+                    <span class="count">11</span>
                 </label>
                 <label class="filter-option">
                     <input type="checkbox" value="node">
                     <span class="checkbox-custom"></span>
                     <span class="filter-label">Node</span>
-                    <span class="count">14</span>
+                    <span class="count">20</span>
                 </label>
                 <label class="filter-option">
                     <input type="checkbox" value="point-cloud">
@@ -93,7 +93,7 @@ layout: docs
                             </div>
                             <div class="dataset-tags">
                                 <span class="domain-tag">Graph</span>
-                                <span class="task-tag">Task Level: Graph</span>
+                                <span class="task-tag">Task Level: Node</span>
                             </div>
                         </a>
                     </div>
@@ -296,9 +296,9 @@ layout: docs
                 <h2>HyperGraph Datasets</h2>
                 <div class="datasets-list">
                     <div class="dataset-card">
-                        <a href="{{ site.baseurl }}/docs/datasets/coauthor-citeseer" class="dataset-link">
+                        <a href="{{ site.baseurl }}/docs/datasets/cocitation-citeseer" class="dataset-link">
                             <div class="dataset-header">
-                                <h3>Coauthor Citeseer</h3>
+                                <h3>Cocitation Citeseer</h3>
                             </div>
                             <div class="dataset-tags">
                                 <span class="domain-tag">HyperGraph</span>
@@ -320,9 +320,93 @@ layout: docs
                     </div>
 
                     <div class="dataset-card">
-                        <a href="{{ site.baseurl }}/docs/datasets/coauthor-pubmed" class="dataset-link">
+                        <a href="{{ site.baseurl }}/docs/datasets/cocitation-cora" class="dataset-link">
                             <div class="dataset-header">
-                                <h3>Coauthor PubMed</h3>
+                                <h3>Cocitation Cora</h3>
+                            </div>
+                            <div class="dataset-tags">
+                                <span class="domain-tag">HyperGraph</span>
+                                <span class="task-tag">Task Level: Node</span>
+                            </div>
+                        </a>
+                    </div>
+
+                    <div class="dataset-card">
+                        <a href="{{ site.baseurl }}/docs/datasets/cocitation-pubmed" class="dataset-link">
+                            <div class="dataset-header">
+                                <h3>Cocitation PubMed</h3>
+                            </div>
+                            <div class="dataset-tags">
+                                <span class="domain-tag">HyperGraph</span>
+                                <span class="task-tag">Task Level: Node</span>
+                            </div>
+                        </a>
+                    </div>
+
+                    <div class="dataset-card">
+                        <a href="{{ site.baseurl }}/docs/datasets/zoo" class="dataset-link">
+                            <div class="dataset-header">
+                                <h3>ZOO</h3>
+                            </div>
+                            <div class="dataset-tags">
+                                <span class="domain-tag">HyperGraph</span>
+                                <span class="task-tag">Task Level: Node</span>
+                            </div>
+                        </a>
+                    </div>
+
+                    <div class="dataset-card">
+                        <a href="{{ site.baseurl }}/docs/datasets/ntu2012" class="dataset-link">
+                            <div class="dataset-header">
+                                <h3>NTU2012</h3>
+                            </div>
+                            <div class="dataset-tags">
+                                <span class="domain-tag">HyperGraph</span>
+                                <span class="task-tag">Task Level: Node</span>
+                            </div>
+                        </a>
+                    </div>
+
+                    <div class="dataset-card">
+                        <a href="{{ site.baseurl }}/docs/datasets/dblp-ca" class="dataset-link">
+                            <div class="dataset-header">
+                                <h3>DBLP-CA</h3>
+                            </div>
+                            <div class="dataset-tags">
+                                <span class="domain-tag">HyperGraph</span>
+                                <span class="task-tag">Task Level: Node</span>
+                            </div>
+                        </a>
+                    </div>
+
+                    <div class="dataset-card">
+                        <a href="{{ site.baseurl }}/docs/datasets/modelnet40" class="dataset-link">
+                            <div class="dataset-header">
+                                <h3>ModelNet40</h3>
+                            </div>
+                            <div class="dataset-tags">
+                                <span class="domain-tag">HyperGraph</span>
+                                <span class="task-tag">Task Level: Node</span>
+                            </div>
+                        </a>
+                    </div>
+
+                    <div class="dataset-card">
+                        <a href="{{ site.baseurl }}/docs/datasets/mushroom" class="dataset-link">
+                            <div class="dataset-header">
+                                <h3>Mushroom</h3>
+                            </div>
+                            <div class="dataset-tags">
+                                <span class="domain-tag">HyperGraph</span>
+                                <span class="task-tag">Task Level: Node</span>
+                            </div>
+                        </a>
+                    </div>
+
+                    <div class="dataset-card">
+                        <a href="{{ site.baseurl }}/docs/datasets/20newsw100" class="dataset-link">
+                            <div class="dataset-header">
+                                <h3>20newsW100</h3>
                             </div>
                             <div class="dataset-tags">
                                 <span class="domain-tag">HyperGraph</span>
@@ -337,13 +421,15 @@ layout: docs
                 <h2>PointCloud Datasets</h2>
                 <div class="datasets-list">
                     <div class="dataset-card">
-                        <div class="dataset-header">
-                            <h3>Geometric Shapes</h3>
-                        </div>
-                        <div class="dataset-tags">
-                            <span class="domain-tag">PointCloud</span>
-                            <span class="task-tag">Task Level: Point Cloud</span>
-                        </div>
+                        <a href="{{ site.baseurl }}/docs/datasets/geometric-shapes" class="dataset-link">
+                            <div class="dataset-header">
+                                <h3>Geometric Shapes</h3>
+                            </div>
+                            <div class="dataset-tags">
+                                <span class="domain-tag">PointCloud</span>
+                                <span class="task-tag">Task Level: Point Cloud</span>
+                            </div>
+                        </a>
                     </div>
                 </div>
             </div>

@@ -17,22 +17,22 @@ sectionid: docs
     <div class="dataset-content clean-content v2-content">
         <section class="description-card v2-card">
             <h2>Description</h2>
-            <p>The MUTAG dataset is a citation network dataset consisting of scientific publications from MUTAG. Each node represents a scientific publication and edges represent citation relationships.</p>
+            <p>MUTAG</p>
         </section>
 
         <section class="overview-card v2-card">
             <h2>Dataset Overview</h2>
             <div class="overview-grid v2-grid">
-                <div class="overview-block key-numbers v2-block">
+                <!--<div class="overview-block key-numbers v2-block">
                     <h3>Key Numbers</h3>
                     <div class="key-stats v2-key-stats" style="gap:0.7rem;">
                         <div class="stat-item"><span class="stat-value blue v2-big">2,708</span><span class="stat-label">Nodes</span></div>
                         <div class="stat-item"><span class="stat-value blue v2-big">9,856</span><span class="stat-label">Total Cells</span></div>
                         <div class="stat-item"><span class="stat-value blue v2-big">3</span><span class="stat-label">Max Cell Dimension</span></div>
                     </div>
-                </div>
+                </div>-->
 
-                <div class="overview-block domain-stats v2-block">
+                <!--<div class="overview-block domain-stats v2-block">
                     <h3>Domain Statistics</h3>
                     <div class="statistics-table v2-table large-table">
                         <table>
@@ -46,7 +46,7 @@ sectionid: docs
                             </tbody>
                         </table>
                     </div>
-                </div>
+                </div>-->
 
                 <div class="overview-block lifting-methods v2-block">
                     <h3>Lifting Methods</h3>
@@ -85,14 +85,16 @@ sectionid: docs
                             <tr><th>Model</th><th>Accuracy (%)</th><th>Std Dev (±)</th></tr>
                         </thead>
                         <tbody>
-                            <tr class="highlight"><td>GIN</td><td>87.21</td><td>1.89</td></tr>
-                            <tr><td>GCN</td><td>87.09</td><td>0.20</td></tr>
-                            <tr><td>GAT</td><td>86.71</td><td>0.95</td></tr>
-                            <tr><td>UniGNN2</td><td>86.97</td><td>0.88</td></tr>
-                            <tr><td>EDGNN</td><td>87.06</td><td>1.09</td></tr>
-                            <tr><td>AST</td><td>88.92</td><td>0.44</td></tr>
-                            <tr><td>CWN</td><td>86.32</td><td>1.38</td></tr>
-                            <tr><td>CCCN</td><td>87.44</td><td>1.28</td></tr>
+                            <tr><td>GCN</td><td>69.79</td><td>6.80</td></tr>
+                            <tr><td>GIN</td><td>79.57</td><td>6.13</td></tr>
+                            <tr><td>GAT</td><td>72.77</td><td>2.77</td></tr>
+                            <tr><td>AST</td><td>71.06</td><td>6.49</td></tr>
+                            <tr><td>EDGNN</td><td>80.00</td><td>4.90</td></tr>
+                            <tr class="highlight"><td>UniGNN2</td><td>80.43</td><td>4.09</td></tr>
+                            <tr class="highlight"><td>CWN</td><td>80.43</td><td>1.78</td></tr>
+                            <tr><td>CCCN</td><td>77.02</td><td>9.32</td></tr>
+                            <tr><td>SCCNN</td><td>76.17</td><td>6.63</td></tr>
+                            <tr><td>SCN</td><td>73.62</td><td>6.13</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -101,10 +103,10 @@ sectionid: docs
             <div class="insights-card v2-insights">
                 <h3>Key Insights</h3>
                 <ul>
-                    <li>AST achieves the best performance with 88.92% accuracy</li>
-                    <li>Most models perform consistently well, with accuracies above 86%</li>
-                    <li>GIN shows relatively high variability (±1.89)</li>
-                    <li>GCN shows the most stable results with lowest std dev (±0.20)</li>
+                    <li>UniGNN2 and CWN achieve the best performance with 80.43% accuracy</li>
+                    <li>EDGNN is also highly competitive with 80.00% accuracy</li>
+                    <li>CCCN shows the highest variability (±9.32)</li>
+                    <li>GAT is the most stable with the lowest std dev (±2.77)</li>
                 </ul>
                 <div class="insight-divider"></div>
                 <div class="repro-block">
@@ -114,7 +116,7 @@ sectionid: docs
                             <svg width="18" height="18" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="5" y="7" width="9" height="9" rx="2" stroke="#2563eb" stroke-width="1.5"/><rect x="7.5" y="4" width="9" height="9" rx="2" fill="#fff" stroke="#2563eb" stroke-width="1.5"/></svg>
                         </button>
                     </div>
-                    <pre class="repro-cli" id="repro-cli">python -m topobench model=graph/gin dataset=graph/cocitation_MUTAG optimizer.parameters.lr=0.001 model.feature_encoder.out_channels=64 model.backbone.num_layers=2 model.feature_encoder.proj_dropout=0.5 dataset.dataloader_params.batch_size=1 dataset.split_params.data_seed=0,3,5,7,9 trainer.max_epochs=500 trainer.min_epochs=50 trainer.check_val_every_n_epoch=1 callbacks.early_stopping.patience=50</pre>
+                    <pre class="repro-cli" id="repro-cli">python -m topobench model=cell/cwn dataset=graph/MUTAG optimizer.parameters.lr=0.001 model.feature_encoder.out_channels=128 model.backbone.n_layers=2 model.readout.readout_name=PropagateSignalDown model.feature_encoder.proj_dropout=0.25 dataset.dataloader_params.batch_size=32 transforms.graph2cell_lifting.max_cell_length=10 dataset.split_params.data_seed=0,3,5,7,9 trainer.max_epochs=500 trainer.min_epochs=50 trainer.check_val_every_n_epoch=5 callbacks.early_stopping.patience=10 logger.wandb.project=TopoBench --multirun</pre>
                 </div>
             </div>
         </section>
@@ -440,12 +442,34 @@ document.addEventListener('DOMContentLoaded', function() {
     const ctx = document.getElementById('benchmarkChart').getContext('2d');
     
     const data = {
-        labels: ['AST', 'GIN', 'GCN', 'CCCN', 'EDGNN', 'UniGNN2', 'GAT', 'CWN'],
+        labels: ['GCN', 'GIN', 'GAT', 'AST', 'EDGNN', 'UniGNN2', 'CWN', 'CCCN', 'SCCNN', 'SCN'],
         datasets: [{
             label: 'Accuracy (%)',
-            data: [88.92, 87.21, 87.09, 87.44, 87.06, 86.97, 86.71, 86.32],
-            backgroundColor: 'rgba(37, 99, 235, 0.12)',
-            borderColor: 'rgb(37, 99, 235)',
+            data: [69.79, 79.57, 72.77, 71.06, 80.00, 80.43, 80.43, 77.02, 76.17, 73.62],
+            backgroundColor: [
+                'rgba(37, 99, 235, 0.12)', // GCN
+                'rgba(37, 99, 235, 0.12)', // GIN
+                'rgba(37, 99, 235, 0.12)', // GAT
+                'rgba(37, 99, 235, 0.12)', // AST
+                'rgba(37, 99, 235, 0.12)', // EDGNN
+                'rgba(22, 163, 74, 0.25)', // UniGNN2 (highlight)
+                'rgba(22, 163, 74, 0.25)', // CWN (highlight)
+                'rgba(37, 99, 235, 0.12)', // CCCN
+                'rgba(37, 99, 235, 0.12)', // SCCNN
+                'rgba(37, 99, 235, 0.12)'  // SCN
+            ],
+            borderColor: [
+                'rgb(37, 99, 235)', // GCN
+                'rgb(37, 99, 235)', // GIN
+                'rgb(37, 99, 235)', // GAT
+                'rgb(37, 99, 235)', // AST
+                'rgb(37, 99, 235)', // EDGNN
+                'rgb(22, 163, 74)', // UniGNN2 (highlight)
+                'rgb(22, 163, 74)', // CWN (highlight)
+                'rgb(37, 99, 235)', // CCCN
+                'rgb(37, 99, 235)', // SCCNN
+                'rgb(37, 99, 235)'  // SCN
+            ],
             borderWidth: 2,
             borderRadius: 10,
             barPercentage: 0.7,
@@ -480,8 +504,8 @@ document.addEventListener('DOMContentLoaded', function() {
             scales: {
                 y: {
                     beginAtZero: false,
-                    min: 85,
-                    max: 90,
+                    min: 65,
+                    max: 85,
                     title: {
                         display: true,
                         text: 'Accuracy (%)',
@@ -490,7 +514,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     ticks: {
                         font: { size: 15, family: "'Inter', sans-serif" },
                         color: '#64748b',
-                        stepSize: 1
+                        stepSize: 2
                     },
                     grid: {
                         color: '#e3edff',
