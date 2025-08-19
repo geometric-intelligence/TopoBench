@@ -23,8 +23,8 @@ backbone_wrapper:
   sampler:
     _target_: topobench.nn.wrappers.graph.tabpfn.${model.backbone_wrapper.sampler.sampler_name}
     sampler_name: GraphHopSampler
-    #k: 10 # Number of samples to use fr the TabPFN model
-    n_hops: 3
+    k: null # Number of samples to use fr the TabPFN model, define during the run
+    n_hops: null # Number of hops to sample from the graph, define during the run
   
 
 

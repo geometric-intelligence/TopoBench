@@ -20,11 +20,11 @@ backbone_wrapper:
   _partial_: true
   wrapper_name: TabPFNRegressorWrapper
   use_embeddings: True
-  #sampler:
-  #  _target_: topobench.nn.wrappers.graph.tabpfn.${model.backbone_wrapper.sampler.sampler_name}
-  #  sampler_name: KNNSampler
-  #  k: 10 # Number of samples to use fr the TabPFN model
-    #n_hops: 3
+  sampler:
+    _target_: topobench.nn.wrappers.graph.tabpfn.${model.backbone_wrapper.sampler.sampler_name}
+    sampler_name: GraphHopSampler
+    k: null # Number of samples to use fr the TabPFN model, define during the run
+    n_hops: null # Number of hops to sample from the graph, define during the run
   
 
 
