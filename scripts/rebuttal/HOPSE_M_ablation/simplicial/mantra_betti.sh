@@ -59,7 +59,7 @@ neighborhoods=(
 )
 
 
-gpus=(0 1 2 3 4 5 6 7)
+gpus=(0 1 2 3 0 1 2 3)
 PE_TYPES=('RWSE' 'ElstaticPE' 'HKdiagSE' 'LapPE')
 for pe_type in ${PE_TYPES[*]}
 do
@@ -94,7 +94,7 @@ do
     done
     wait 
 
-    gpus=(0 1 2 3 4 5 6 7)
+    gpus=(0 1 2 3 0 1 2 3)
     for i in {0..7}; do 
         CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
         neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array

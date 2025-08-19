@@ -1,5 +1,5 @@
 dataset='mantra_orientation'
-project_name="rebuttal_cell_$dataset"
+project_name=".rebuttal_cell_$dataset"
 
 # =====================
 # DATA
@@ -78,7 +78,7 @@ for i in {0..1}; do
 done
 wait
 
-gpus=(2 3 4 5 6 7)
+gpus=(3 0)
 for i in {0..1}; do 
     CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
     neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
