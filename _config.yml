@@ -1,9 +1,8 @@
 # Site settings
-title: Jekyll Doc Theme
-email: your-email@domain.com
+title: TopoBench
+email: topological.intelligence@gmail.com
 description: >
-  Jekyll Template for Project Websites
-  providing documentation and blog post pages.
+  A framework for Topological Deep Learning.
 lang: en-US
 
 baseurl: "/TopoBench" # the subpath of your site, e.g. /TopoBench/
