@@ -20,6 +20,8 @@ class AbstractZeroCellReadOut(torch.nn.Module):
         Task level for readout layer. Either "graph" or "node".
     pooling_type : str
         Pooling type for readout layer. Either "max", "sum" or "mean".
+    logits_linear_layer : bool
+        Whether to use a linear layer for getting the final logits.
     **kwargs : dict
         Additional arguments.
     """
@@ -30,13 +32,19 @@ class AbstractZeroCellReadOut(torch.nn.Module):
         out_channels: int,
         task_level: str,
         pooling_type: str = "sum",
+        logits_linear_layer: bool = True,
         **kwargs,
     ):
         super().__init__()
 
-        self.linear = torch.nn.Linear(hidden_dim, out_channels)
+        self.linear = (
+            torch.nn.Linear(hidden_dim, out_channels)
+            if hidden_dim != out_channels or logits_linear_layer
+            else torch.nn.Identity()
+        )
         assert task_level in ["graph", "node"], "Invalid task_level"
         self.task_level = task_level
+        self.logits_linear_layer = logits_linear_layer
 
         assert pooling_type in ["max", "sum", "mean"], "Invalid pooling_type"
         self.pooling_type = pooling_type
