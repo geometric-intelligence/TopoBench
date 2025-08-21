@@ -197,7 +197,7 @@ We list the neural networks trained and evaluated by `TopoBench`, organized by t
 | GCN | [Semi-Supervised Classification with Graph Convolutional Networks](https://arxiv.org/pdf/1609.02907v4) |
 | GraphMLP | [Graph-MLP: Node Classification without Message Passing in Graph](https://arxiv.org/pdf/2106.04051) |
 
-### Simplicial complexes
+### Simplicial Complexes
 | Model | Reference |
 | --- | --- |
 | SAN | [Simplicial Attention Neural Networks](https://arxiv.org/pdf/2203.07485) |
@@ -205,7 +205,7 @@ We list the neural networks trained and evaluated by `TopoBench`, organized by t
 | SCCNN | [Convolutional Learning on Simplicial Complexes](https://arxiv.org/pdf/2301.11163) |
 | SCN | [Simplicial Complex Neural Networks](https://ieeexplore.ieee.org/document/10285604) |
 
-### Cellular complexes
+### Cellular Complexes
 | Model | Reference |
 | --- | --- |
 | CAN | [Cell Attention Network](https://arxiv.org/pdf/2209.08179) |
@@ -222,12 +222,20 @@ We list the neural networks trained and evaluated by `TopoBench`, organized by t
 | UniGNN | [UniGNN: a Unified Framework for Graph and Hypergraph Neural Networks](https://arxiv.org/pdf/2105.00956) |
 | UniGNN2 | [UniGNN: a Unified Framework for Graph and Hypergraph Neural Networks](https://arxiv.org/pdf/2105.00956) |
 
-### Combinatorial complexes
+### Combinatorial Complexes
 | Model | Reference |
 | --- | --- |
 | GCCN | [TopoTune: A Framework for Generalized Combinatorial Complex Neural Networks](https://arxiv.org/pdf/2410.06530) |
 
 **Remark:** TopoBench includes [TopoTune](https://arxiv.org/pdf/2410.06530), a comprehensive framework for easily designing new, general TDL models on any domain using any (graph) neural network as a backbone. Please check out the extended [TopoTune wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/TopoTune) for further details on how to leverage this framework to define and train customized topological neural network architectures.
+
+### Non-relational Models
+
+| Model | Reference |
+| --- | --- |
+| MLP | Standard implementation of a Multi-Layer Perceptron. |
+
+**Remark:** Note that MLP only works in single-graph transductive settings or with datasets where all graphs have the same number of nodes.
 
 
 ## :rocket: Liftings and Transforms
