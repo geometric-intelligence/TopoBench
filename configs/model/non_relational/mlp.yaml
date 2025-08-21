@@ -7,13 +7,13 @@ feature_encoder:
   _target_: topobench.nn.encoders.${model.feature_encoder.encoder_name}
   encoder_name: FlatEncoder
   in_channels: ${dataset.parameters.num_features}
-  out_channels: ${get_flattened_feature_matrix_dim:${dataset.parameters.num_nodes},${dataset.parameters.num_features}}
+  out_channels: ${get_flattened_channels:${dataset.parameters.num_nodes},${dataset.parameters.num_features}}
 
 backbone:
   _target_: topobench.nn.backbones.MLP
   in_channels: ${model.feature_encoder.out_channels}
   hidden_channels: [128, 64, 32]
-  out_channels: ${get_flattened_out_channels:${dataset.parameters.num_nodes},${dataset.parameters.num_classes}}
+  out_channels: ${get_flattened_channels:${dataset.parameters.num_nodes},${dataset.parameters.num_classes}}
   dropout: 0.25
   norm: null
   norm_kwargs: null

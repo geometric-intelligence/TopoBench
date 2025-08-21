@@ -6,40 +6,22 @@ import omegaconf
 import torch
 
 
-def get_flattened_feature_matrix_dim(num_nodes, feature_dim):
+def get_flattened_channels(num_nodes, channels):
     r"""Get the output dimension of flattening a feature matrix.
 
     Parameters
     ----------
     num_nodes : int
         Hidden dimension for the first layer.
-    feature_dim : int
-        Hidden dimension.
+    channels : int
+        Channel dimension.
 
     Returns
     -------
-    list
-        List of hidden dimensions for each layer.
+    int
+        Flatenned cchannels dimension.
     """
-    return num_nodes * feature_dim
-
-
-def get_flattened_out_channels(num_nodes, out_channels):
-    r"""Get the output dimension of flattening the output channels.
-
-    Parameters
-    ----------
-    num_nodes : int
-        Number of nodes in the graph.
-    out_channels : int
-        Number of output channels.
-
-    Returns
-    -------
-    list
-        List of output dimensions for each layer.
-    """
-    return num_nodes * out_channels
+    return num_nodes * channels
 
 
 def get_default_trainer():

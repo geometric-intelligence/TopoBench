@@ -9,6 +9,7 @@ from topobench.utils.config_resolvers import (
     get_default_metrics,
     get_default_trainer,
     get_default_transform,
+    get_flattened_channels,
     get_monitor_metric,
     get_monitor_mode,
     get_required_lifting,
@@ -52,8 +53,12 @@ class TestConfigResolvers:
 
         out = get_default_transform("graph/ZINC", "cell/can")
         assert out == "dataset_defaults/ZINC"
-        
-        
+
+    def test_get_flattened_channels(self):
+        """Test get_flattened_channels."""
+        out = get_flattened_channels(10, 5)
+        assert out == 50
+
     def test_get_required_lifting(self):
         """Test get_required_lifting."""
         out = get_required_lifting("graph", "graph/gat")
