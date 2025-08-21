@@ -4,10 +4,10 @@
 root_dir: ${oc.env:PROJECT_ROOT}
 
 # path to data directory
-data_dir: ${paths.root_dir}/datasets
+data_dir: /data/gbg141/TB/datasets
 
 # path to logging directory
-log_dir: ${paths.root_dir}/logs
+log_dir: /data/gbg141/TB/logs
 
 # path to output directory, created dynamically by hydra
 # path generation pattern is specified in `configs/hydra/default.yaml`
