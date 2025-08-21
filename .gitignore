@@ -182,6 +182,7 @@ notebooks/tmp
 /tutorials/datasets/
 /tutorials/lightning_logs/
 /tutorials/datasets/
+/tutorials/GraphUniverse/
 # wandb
 wandb/
 
