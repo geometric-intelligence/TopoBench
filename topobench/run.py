@@ -27,6 +27,8 @@ from topobench.utils.config_resolvers import (
     get_default_metrics,
     get_default_trainer,
     get_default_transform,
+    get_flattened_feature_matrix_dim,
+    get_flattened_out_channels,
     get_monitor_metric,
     get_monitor_mode,
     get_required_lifting,
@@ -61,6 +63,14 @@ OmegaConf.register_new_resolver(
 )
 OmegaConf.register_new_resolver(
     "get_default_transform", get_default_transform, replace=True
+)
+OmegaConf.register_new_resolver(
+    "get_flattened_feature_matrix_dim",
+    get_flattened_feature_matrix_dim,
+    replace=True,
+)
+OmegaConf.register_new_resolver(
+    "get_flattened_out_channels", get_flattened_out_channels, replace=True
 )
 OmegaConf.register_new_resolver(
     "get_required_lifting", get_required_lifting, replace=True

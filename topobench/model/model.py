@@ -15,12 +15,12 @@ class TBModel(LightningModule):
     ----------
     backbone : torch.nn.Module
         The backbone model to train.
-    backbone_wrapper : torch.nn.Module
-        The backbone wrapper class.
     readout : torch.nn.Module
         The readout class.
     loss : torch.nn.Module
         The loss class.
+    backbone_wrapper : torch.nn.Module, optional
+        The backbone wrapper class (default: None).
     feature_encoder : torch.nn.Module, optional
         The feature encoder (default: None).
     evaluator : Any, optional
@@ -34,9 +34,9 @@ class TBModel(LightningModule):
     def __init__(
         self,
         backbone: torch.nn.Module,
-        backbone_wrapper: torch.nn.Module | None,
         readout: torch.nn.Module,
         loss: torch.nn.Module,
+        backbone_wrapper: torch.nn.Module | None = None,
         feature_encoder: torch.nn.Module | None = None,
         evaluator: Any = None,
         optimizer: Any = None,
@@ -50,7 +50,11 @@ class TBModel(LightningModule):
             logger=False, ignore=["backbone", "readout", "feature_encoder"]
         )
 
-        self.feature_encoder = feature_encoder
+        self.feature_encoder = (
+            feature_encoder
+            if feature_encoder is not None
+            else torch.nn.Identity()
+        )
         if backbone_wrapper is None:
             self.backbone = backbone
         else:
@@ -91,15 +95,14 @@ class TBModel(LightningModule):
             Dictionary containing the model output, which includes the logits and other relevant information.
         """
         # Feature Encoder
-        if self.feature_encoder is not None:
-            model_out = self.feature_encoder(batch)
+        model_out = self.feature_encoder(batch)
 
         # Domain model
         model_out = self.backbone(model_out)
 
         # Readout
         model_out = self.readout(model_out=model_out, batch=batch)
-        
+
         return model_out
 
     def model_step(self, batch: Data) -> dict:
@@ -117,7 +120,7 @@ class TBModel(LightningModule):
         """
         # Allow batch object to know the phase of the training
         batch["model_state"] = self.state_str
-        
+
         # Forward pass
         model_out = self.forward(batch)
 
