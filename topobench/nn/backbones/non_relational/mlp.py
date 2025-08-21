@@ -148,11 +148,14 @@ class MLP(nn.Module):
         """
         flattened_x = x.view(batch_size, -1)
         x = self.mlp_layers(flattened_x)
-        return (
-            x.view(batch_size, self.num_nodes, -1)
-            if batch_size > 1
-            else x.view(self.num_nodes, -1)
-        )
+        if self.num_nodes is not None:
+            return (
+                x.view(batch_size, self.num_nodes, -1)
+                if batch_size > 1
+                else x.view(self.num_nodes, -1)
+            )
+        else:
+            return x.view(batch_size, -1) if batch_size > 1 else x.view(-1)
 
     def __call__(self, model_out) -> dict:
         """Backbone logic based on model_output.
@@ -167,7 +170,9 @@ class MLP(nn.Module):
         dict
             Dictionary containing the updated model output.
         """
-        model_out["x_0"] = self.forward(model_out["x_0"], model_out.batch_size)
+        model_out["x_0"] = self.forward(
+            model_out["x_0"], model_out["batch_size"]
+        )
         model_out["logits"] = model_out["x_0"]
 
         return model_out
