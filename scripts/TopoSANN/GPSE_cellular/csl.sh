@@ -4,12 +4,12 @@
 # =====================
 # DATA
 # =====================
-DATA_SEEDS=(0 3 5 7 9) 
+DATA_SEEDS=(0 1 2 3 4) 
 
 # =====================
 # MODEL PARAMETERS
 # =====================
-N_LAYERS=(5)
+N_LAYERS=(2)
 OUT_CHANNELS=(128)
 
 # =====================
@@ -43,7 +43,19 @@ BATCH_SIZES_STR=$(IFS=,; echo "${BATCH_SIZES[*]}")
 # batch_sizes=(128 256)
 # learning_rates=(0.01 0.001)
 neighborhoods=(
-    # adjacency 
+     # adjacency 
+    "['up_adjacency-0']"
+    "['up_adjacency-0','up_adjacency-1']"
+    "['up_adjacency-0','up_adjacency-1','down_adjacency-2']"
+
+    # incidence
+    "['up_adjacency-0','up_incidence-0','up_incidence-1']"
+    "['up_adjacency-0','down_incidence-1','down_incidence-2']"
+    "['up_adjacency-0','up_incidence-0','up_incidence-1','down_incidence-1','down_incidence-2']"
+    
+    # all together
+    "['up_adjacency-0','up_adjacency-1','down_adjacency-1','down_adjacency-2','up_incidence-0','up_incidence-1','down_incidence-1','down_incidence-2']"
+    
     # We have 8th gpu hence we can add one more neighbourhood
     "['up_adjacency-0','up_adjacency-1','2-up_adjacency-0','down_adjacency-1','down_adjacency-2','2-down_adjacency-2']"
 )
@@ -101,6 +113,7 @@ do
             model=cell/hopse_g\
             model.backbone.n_layers=$N_LAYERS_STR\
             model.feature_encoder.out_channels=$OUT_CHANNELS\
+            dataset.split_params.data_seed=$DATA_SEEDS_STR\
             model.feature_encoder.proj_dropout=$PROJECTION_DROPOUTS_STR\
             transforms/data_manipulations@transforms.sann_encoding=add_gpse_information\
             transforms.sann_encoding.pretrain_model=$PRETRAIN_MODELS_STR\
@@ -113,7 +126,7 @@ do
             trainer.max_epochs=500\
             trainer.check_val_every_n_epoch=5\
             trainer.min_epochs=20\
-            logger.wandb.project='CSL'\
+            logger.wandb.project='CSL_cell_hopse_g'\
             transforms.graph2cell_lifting.max_cell_length=10\
             callbacks.early_stopping.patience=10\
             model.readout.readout_name=SANNReadout\

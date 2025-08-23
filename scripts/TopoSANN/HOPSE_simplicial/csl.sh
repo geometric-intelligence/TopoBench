@@ -4,19 +4,19 @@
 # =====================
 # DATA
 # =====================
-DATA_SEEDS=(0 3 5 7 9) 
+DATA_SEEDS=(0 1 2 3 4) 
 
 # =====================
 # MODEL PARAMETERS
 # =====================
-N_LAYERS=(5)
+N_LAYERS=(2)
 OUT_CHANNELS=(128)
 
 # =====================
 # OPTIMIZATION PARAMETERS
 # =====================
-LEARNING_RATES=(0.001)
-PROJECTION_DROPOUTS=(0.25)
+LEARNING_RATES=(0.001 0.0005)
+PROJECTION_DROPOUTS=(0.0)
 WEIGHT_DECAYS=(0.0001)
 BATCH_SIZES=(256)
 # =====================
@@ -44,49 +44,61 @@ BATCH_SIZES_STR=$(IFS=,; echo "${BATCH_SIZES[*]}")
 # learning_rates=(0.01 0.001)
 neighborhoods=(
     # adjacency 
+    "['up_adjacency-0']"
+    "['up_adjacency-0','up_adjacency-1']"
+    "['up_adjacency-0','up_adjacency-1','down_adjacency-2']"
+
+    # incidence
+    "['up_adjacency-0','up_incidence-0','up_incidence-1']"
+    "['up_adjacency-0','down_incidence-1','down_incidence-2']"
+    "['up_adjacency-0','up_incidence-0','up_incidence-1','down_incidence-1','down_incidence-2']"
+    
+    # all together
+    "['up_adjacency-0','up_adjacency-1','down_adjacency-1','down_adjacency-2','up_incidence-0','up_incidence-1','down_incidence-1','down_incidence-2']"
+    
     # We have 8th gpu hence we can add one more neighbourhood
     "['up_adjacency-0','up_adjacency-1','2-up_adjacency-0','down_adjacency-1','down_adjacency-2','2-down_adjacency-2']"
 )
 
 datasets=(CSL) #
 
-# for dataset in ${datasets[*]}
-# do
-#     gpus=(0 1 2 3 4 5 6 7)
-#     for i in {0..7}; do 
-#         CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
-#         neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
+for dataset in ${datasets[*]}
+do
+    gpus=(0 1 2 3 4 5 6 7)
+    for i in {0..7}; do 
+        CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
+        neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
 
-#         for pretrain_model in ${PRETRAIN_MODELS[*]}
-#         do
+        for pretrain_model in ${PRETRAIN_MODELS[*]}
+        do
             
-#             python topobench/run_brec.py\
-#                 dataset=graph/$dataset\
-#                 model=simplicial/hopse_g\
-#                 model.backbone.n_layers=1\
-#                 model.feature_encoder.out_channels=64\
-#                 model.feature_encoder.proj_dropout=0\
-#                 transforms/data_manipulations@transforms.sann_encoding=add_gpse_information\
-#                 transforms.sann_encoding.pretrain_model=ZINC\
-#                 transforms.sann_encoding.copy_initial=True \
-#                 transforms.sann_encoding.neighborhoods=$neighborhood\
-#                 transforms=GPSE_BREC\
-#                 trainer.devices=\[$CUDA\]\
-#                 transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
-#                 optimizer.parameters.lr=0.01\
-#                 optimizer.parameters.weight_decay=0\
-#                 dataset.dataloader_params.batch_size=128\
-#                 trainer.max_epochs=5\
-#                 trainer.min_epochs=1\
-#                 logger.wandb.project=BREC_prerun\
-#                 model.readout.readout_name=SANNReadout\
-#                 --multirun &
-#         done
-#         wait
-#     done
-#     wait
-# done
-# wait
+            python topobench/run.py\
+                dataset=graph/$dataset\
+                model=simplicial/hopse_g\
+                model.backbone.n_layers=1\
+                model.feature_encoder.out_channels=64\
+                model.feature_encoder.proj_dropout=0\
+                transforms/data_manipulations@transforms.sann_encoding=add_gpse_information\
+                transforms.sann_encoding.pretrain_model=ZINC\
+                transforms.sann_encoding.copy_initial=True \
+                transforms.sann_encoding.neighborhoods=$neighborhood\
+                transforms=GPSE_BREC\
+                trainer.devices=\[$CUDA\]\
+                transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
+                optimizer.parameters.lr=0.01\
+                optimizer.parameters.weight_decay=0\
+                dataset.dataloader_params.batch_size=128\
+                trainer.max_epochs=5\
+                trainer.min_epochs=1\
+                logger.wandb.project=BREC_prerun\
+                model.readout.readout_name=SANNReadout\
+                --multirun &
+        done
+        wait
+    done
+    wait
+done
+wait
 
 gpus=(0 1 2 3 4 5 6 7)
 for dataset in ${datasets[*]}
@@ -107,7 +119,7 @@ do
             optimizer.parameters.lr=$LEARNING_RATES_STR\
             optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
             dataset.dataloader_params.batch_size=$BATCH_SIZES_STR\
-            logger.wandb.project='CSL'\
+            logger.wandb.project='CSL_fix'\
             trainer.max_epochs=500\
             trainer.check_val_every_n_epoch=5\
             trainer.min_epochs=20\

@@ -1,5 +1,5 @@
 dataset='ZINC'
-project_name="rebuttal_cell_$dataset"
+project_name="fix_gnn_rebuttal_cell_$dataset"
 
 # =====================
 # DATA
