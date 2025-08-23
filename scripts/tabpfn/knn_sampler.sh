@@ -3,9 +3,9 @@
 # ======================
 # USER CONFIGURATION
 # ======================
-project_name='tabpfn_full_graph'
+project_name='tabpfn_knn'
 exp_name="tabpfn"   # Set your experiment name here
-MAX_PARALLEL=8        # Max parallel jobs
+MAX_PARALLEL=7        # Max parallel jobs
 
 # Default to enabling retry
 ENABLE_RETRY=true
@@ -16,6 +16,7 @@ datasets_classification=("graph/cocitation_citeseer" "graph/cocitation_cora" "gr
 datasets_regression=("graph/US-county-demos")
 experiments=("tabpfn_m" "tabpfn_g")
 USE_EMBEDDINGS=(True False)
+Ks=(2 3 4 5 10 20 50 100)
 #seeds=(0 3 5 7 9)
 
 # ======================
@@ -101,31 +102,33 @@ for dataset in "${datasets_regression[@]}"; do
 
     for experiment in "${experiments[@]}"; do
         for use_embeddings in "${USE_EMBEDDINGS[@]}"; do
-        
+            for k in "${Ks[@]}"; do
             # Increment run_counter for each parallel job (dataset x experiment)
             run_id_for_parallel_job=$(printf "%04d" $run_counter)
             ((run_counter++))
             
+            ((JOBS++))
+            if [ "$JOBS" -ge "$MAX_PARALLEL" ]; then
+                wait
+                JOBS=0
+            fi
+
+            cmd_knn="python -m topobench \
+            model=cell/tabpfn_regressor \
+            dataset=$dataset \
+            model.backbone_wrapper.use_embeddings=$use_embeddings \
+            experiment=$experiment \
+            model.backbone_wrapper.sampler.sampler_name=KNNSampler \
+            model.backbone_wrapper.sampler.k=$k \
+            dataset.split_params.data_seed=0,3,5,7,9 \
+            logger.wandb.project=$project_name \
+            model.backbone.device=cuda:$JOBS \
+            --multirun"
+
+            # Using K-nn sampler
+            run_logged_command "$cmd_knn" "$dataset_slug" "${run_id_for_parallel_job}_${experiment}_knn" &
+
             
-            cmd_all_nodes="python -m topobench \
-                    model=cell/tabpfn_regressor \
-                    dataset=$dataset \
-                    model.backbone_wrapper.use_embeddings=$use_embeddings \
-                    experiment=$experiment \
-                    dataset.split_params.data_seed=0,3,5,7,9 \
-                    logger.wandb.project=$project_name \
-                    model.backbone.device=cuda:$JOBS \
-                    model.backbone_wrapper.sampler=null \
-                    --multirun"
-
-                # All the node features  embedding are in the context
-                run_logged_command "$cmd_all_nodes" "$dataset_slug" "${run_id_for_parallel_job}_${experiment}_all_nodes" &
-
-                ((JOBS++))
-                if [ "$JOBS" -ge "$MAX_PARALLEL" ]; then
-                    wait
-                    JOBS=0
-                fi
         
                                                 # cmd_graph="python -m topobench \
                                                 #     model=cell/tabpfn_regressor \
@@ -158,6 +161,7 @@ for dataset in "${datasets_regression[@]}"; do
 
                                                 # # Using K-nn sampler
                                                 # run_logged_command "$cmd_knn" "$dataset_slug" "${run_id_for_parallel_job}_${experiment}_knn" &            
+            done        
         done
     done
 done
@@ -168,30 +172,34 @@ for dataset in "${datasets_classification[@]}"; do
 
     for experiment in "${experiments[@]}"; do
         for use_embeddings in "${USE_EMBEDDINGS[@]}"; do
+            for k in "${Ks[@]}"; do
             # Increment run_counter for each parallel job (dataset x experiment)
             run_id_for_parallel_job=$(printf "%04d" $run_counter)
             ((run_counter++))
             
-            
-            cmd_all_nodes="python -m topobench \
-            model=cell/tabpfn_classifier \
-            dataset=$dataset \
-            model.backbone_wrapper.use_embeddings=$use_embeddings \
-            experiment=$experiment \
-            dataset.split_params.data_seed=0,3,5,7,9 \
-            logger.wandb.project=$project_name \
-            model.backbone.device=cuda:$JOBS \
-            model.backbone_wrapper.sampler=null \
-            --multirun"
-
-            # All the node features  embedding are in the context
-            run_logged_command "$cmd_all_nodes" "$dataset_slug" "${run_id_for_parallel_job}_${experiment}_all_nodes" &
-
             ((JOBS++))
             if [ "$JOBS" -ge "$MAX_PARALLEL" ]; then
                 wait
                 JOBS=0
             fi
+            
+            cmd_knn="python -m topobench \
+            model=cell/tabpfn_classifier \
+            dataset=$dataset \
+            model.backbone_wrapper.use_embeddings=$use_embeddings \
+            experiment=$experiment \
+            model.backbone_wrapper.sampler.sampler_name=KNNSampler \
+            model.backbone_wrapper.sampler.k=$k \
+            dataset.split_params.data_seed=0,3,5,7,9 \
+            logger.wandb.project=$project_name \
+            model.backbone.device=cuda:$JOBS \
+            --multirun"
+
+            # Using K-nn sampler
+            run_logged_command "$cmd_knn" "$dataset_slug" "${run_id_for_parallel_job}_${experiment}_knn" &
+
+
+            
 
         # cmd_graph="python -m topobench \
         #     model=cell/tabpfn_classifier \
@@ -210,22 +218,9 @@ for dataset in "${datasets_classification[@]}"; do
         # # Using graph sampler
         # run_logged_command "$cmd_graph" "$dataset_slug" "${run_id_for_parallel_job}_${experiment}_graph" &
 
-        # cmd_knn="python -m topobench \
-        #     model=cell/tabpfn_classifier \
-        #     dataset=$dataset \
-        #     model.backbone_wrapper.use_embeddings=True,False \
-        #     experiment=$experiment \
-        #     model.backbone_wrapper.sampler.sampler_name=KNNSampler \
-        #     model.backbone_wrapper.sampler.k=2,3,4,5,10,20,50,100 \
-        #     dataset.split_params.data_seed=0,3,5,7,9 \
-        #     logger.wandb.project=tabpfn \
-        #     model.backbone.device=cuda:$cuda \
-        #     --multirun"
-
-        # # Using K-nn sampler
-        # run_logged_command "$cmd_knn" "$dataset_slug" "${run_id_for_parallel_job}_${experiment}_knn" &
-
         
+
+            done
         done
     done
 done
