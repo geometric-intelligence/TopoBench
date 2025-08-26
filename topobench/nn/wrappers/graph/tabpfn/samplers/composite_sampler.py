@@ -1,8 +1,13 @@
 import numpy as np
 from typing import Sequence, Any
-from topobench.nn.wrappers.graph.tabpfn.samplers.base_sampler import BaseSampler
+from topobench.nn.wrappers.graph.tabpfn.samplers.base_sampler import (
+    BaseSampler,
+)
 from topobench.nn.wrappers.graph.tabpfn.samplers.knn_sampler import KNNSampler
-from topobench.nn.wrappers.graph.tabpfn.samplers.graph_sampler import GraphHopSampler
+from topobench.nn.wrappers.graph.tabpfn.samplers.graph_sampler import (
+    GraphHopSampler,
+)
+
 
 class CompositeSampler(BaseSampler):
     def __init__(self, **kwargs) -> None:
@@ -11,9 +16,7 @@ class CompositeSampler(BaseSampler):
         self.n_hops = kwargs.pop("n_hops", 2)
         self.graph_hop_sampler = GraphHopSampler(n_hops=self.n_hops)
 
-    def fit(
-        self, X: np.ndarray, y: np.ndarray, **kwargs
-    ) -> None:
+    def fit(self, X: np.ndarray, y: np.ndarray, **kwargs) -> None:
         self.knn_sampler.fit(X, y, **kwargs)
         self.graph_hop_sampler.fit(X, y, **kwargs)
 
@@ -26,15 +29,13 @@ class CompositeSampler(BaseSampler):
         for knn_neighbor in knn_neighbors:
             # Finding neighbors using the graph hop sampler sampling from the knn neighbors
             graph_neighbors = self.graph_hop_sampler.sample(
-                x, knn_neighbor, **kwargs
+                knn_neighbor, **kwargs
             )
             neighbors.extend(graph_neighbors)
 
         # Adding the direct neighbors of the test node
         # Finding neighbors using the graph hop sampler sampling from the knn neighbors
-        direct_graph_neighbors = self.graph_hop_sampler.sample(
-            x, idx, **kwargs
-        )
+        direct_graph_neighbors = self.graph_hop_sampler.sample(idx, **kwargs)
         neighbors.extend(direct_graph_neighbors)
         seen = set()
         unique_neighbors = [
