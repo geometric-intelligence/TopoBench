@@ -30,6 +30,7 @@ from topobench.utils.config_resolvers import (
     get_flattened_channels,
     get_monitor_metric,
     get_monitor_mode,
+    get_non_relational_out_channels,
     get_required_lifting,
     infer_in_channels,
     infer_num_cell_dimensions,
@@ -76,6 +77,11 @@ OmegaConf.register_new_resolver(
 )
 OmegaConf.register_new_resolver(
     "get_monitor_mode", get_monitor_mode, replace=True
+)
+OmegaConf.register_new_resolver(
+    "get_non_relational_out_channels",
+    get_non_relational_out_channels,
+    replace=True,
 )
 OmegaConf.register_new_resolver(
     "infer_in_channels", infer_in_channels, replace=True
