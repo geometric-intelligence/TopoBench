@@ -15,8 +15,9 @@ neighborhoods:
 
 
 dim_target_node: ${.target_pe_dim} #51
-max_hop: ${infer_list_length_plus_one:${.pe_types}} # num_ps 
-in_channels: ${infer_in_hasse_graph_agg_dim_positional_encodings:${.neighborhoods}, ${.max_rank}, ${.max_hop}, ${oc.select:dataset.parameters.num_features}, ${.dim_target_node}, ${.copy_initial}, ${oc.select:dataset.parameters.preserve_edge_attr_if_lifted}}
+dim_target_graph: 0
+max_hop: ${get_hop_num_pses:${.pe_types}, ${.copy_initial}}
+in_channels: ${infer_in_hasse_graph_agg_dim:${.neighborhoods}, ${.max_rank}, ${.max_hop}, ${oc.select:dataset.parameters.num_features}, ${.dim_target_graph}, ${.dim_target_node}, ${.copy_initial}, ${oc.select:dataset.parameters.preserve_edge_attr_if_lifted}}
 device: ${trainer.accelerator}
 cuda: ${trainer.devices}
 

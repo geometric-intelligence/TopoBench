@@ -26,7 +26,6 @@ split_params:
   data_seed: 0
   split_type: "fixed" #'k-fold' # either "k-fold" or "random" strategies
   k: 10 # for "k-fold" Cross-Validation
-  train_prop: 0.5 # for "random" strategy splitting
 
 # Dataloader parameters
 dataloader_params:

@@ -36,7 +36,6 @@ from topobench.utils.config_resolvers import (
     get_required_lifting,
     infer_in_channels,
     infer_in_hasse_graph_agg_dim,
-    infer_in_hasse_graph_agg_dim_positional_encodings,
     infer_in_khop_feature_dim,
     infer_list_length,
     infer_list_length_plus_one,
@@ -105,15 +104,15 @@ OmegaConf.register_new_resolver(
 )
 
 OmegaConf.register_new_resolver(
-    "infer_in_hasse_graph_agg_dim_positional_encodings",
-    infer_in_hasse_graph_agg_dim_positional_encodings,
-    replace=True,
-)
-OmegaConf.register_new_resolver(
     "get_hop_num_gpse",
     lambda x: int(x)
     + 1,  # 2-hop if copy_initial = True else 1-hop (only GPSE info)
     replace=True,
+)
+OmegaConf.register_new_resolver(
+    "get_hop_num_pses",
+    lambda x, y: len(x) + int(y),
+    replace=True
 )
 
 OmegaConf.register_new_resolver(

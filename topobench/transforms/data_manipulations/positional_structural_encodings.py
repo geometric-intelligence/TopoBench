@@ -382,9 +382,7 @@ def get_lap_decomp_stats(
     evects = torch.from_numpy(evects).float()
     evects = eigvec_normalizer(evects, evals, normalization=eigvec_norm)
     if max_freqs + offset > N:
-        EigVecs = F.pad(
-            evects, (0, max_freqs + offset - N), value=float(0)
-        )
+        EigVecs = F.pad(evects, (0, max_freqs + offset - N), value=float(0))
         assert np.isnan(evects).sum() == 0
     else:
         EigVecs = evects

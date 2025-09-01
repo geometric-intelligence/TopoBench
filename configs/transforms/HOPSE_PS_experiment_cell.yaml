@@ -3,13 +3,6 @@ defaults:
   - data_manipulations@sann_encoding: hopse_ps_information
 #liftings@_here_: ${get_required_lifting:graph,${model}}
 sann_encoding:
-  pe_types: 
-    - 'RWSE' 
-    - 'ElstaticPE'
-    - 'HKdiagSE'
-    - 'LapPE'
-   
-
   # Different PS have different sizes, need to unify them. 
   target_pe_dim: 20
 
