@@ -199,6 +199,7 @@ def compute_posenc_stats(data, pe_types, **kwargs):
             ),
             eigvec_abs=kwargs.get("posenc_LapPE_eigen_eigvec_abs", True),
         )
+
         # hstack
         output_pe["LapPE"] = torch.hstack((EigVals.squeeze(-1), EigVecs))
 
@@ -382,16 +383,18 @@ def get_lap_decomp_stats(
     evects = eigvec_normalizer(evects, evals, normalization=eigvec_norm)
     if max_freqs + offset > N:
         EigVecs = F.pad(
-            evects, (0, max_freqs + offset - N), value=float("nan")
+            evects, (0, max_freqs + offset - N), value=float(0)
         )
+        assert np.isnan(evects).sum() == 0
     else:
         EigVecs = evects
 
     # Pad and save eigenvalues.
     if max_freqs + offset > N:
         EigVals = F.pad(
-            evals, (0, max_freqs + offset - N), value=float("nan")
+            evals, (0, max_freqs + offset - N), value=float(0)
         ).unsqueeze(0)
+        assert np.isnan(evals).sum() == 0
     else:
         EigVals = evals.unsqueeze(0)
     EigVals = EigVals.repeat(N, 1).unsqueeze(2)
