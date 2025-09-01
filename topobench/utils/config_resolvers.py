@@ -6,6 +6,24 @@ import omegaconf
 import torch
 
 
+def get_flattened_channels(num_nodes, channels):
+    r"""Get the output dimension of flattening a feature matrix.
+
+    Parameters
+    ----------
+    num_nodes : int
+        Hidden dimension for the first layer.
+    channels : int
+        Channel dimension.
+
+    Returns
+    -------
+    int
+        Flatenned cchannels dimension.
+    """
+    return num_nodes * channels
+
+
 def get_default_trainer():
     r"""Get default trainer configuration.
 
@@ -34,6 +52,8 @@ def get_default_transform(dataset, model):
     """
     data_domain, dataset = dataset.split("/")
     model_domain = model.split("/")[0]
+    if model_domain == "non_relational":
+        model_domain = "graph"
     # Check if there is a default transform for the dataset at ./configs/transforms/dataset_defaults/
     # If not, use the default lifting transform for the dataset to be compatible with the model
     base_dir = os.path.dirname(
