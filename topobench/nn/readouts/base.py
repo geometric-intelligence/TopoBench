@@ -71,9 +71,10 @@ class AbstractZeroCellReadOut(torch.nn.Module):
         """
         model_out = self.forward(model_out, batch)
 
-        model_out["logits"] = self.compute_logits(
-            model_out["x_0"], batch["batch_0"]
-        )
+        if model_out.get("logits", None) is None:
+            model_out["logits"] = self.compute_logits(
+                model_out["x_0"], batch["batch_0"]
+            )
 
         return model_out
 

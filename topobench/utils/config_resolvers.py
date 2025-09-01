@@ -24,6 +24,31 @@ def get_flattened_channels(num_nodes, channels):
     return num_nodes * channels
 
 
+def get_non_relational_out_channels(num_nodes, channels, task_level):
+    r"""Get the output dimension for a non-relational model.
+
+    Parameters
+    ----------
+    num_nodes : int
+        Number of nodes in the input graph.
+    channels : int
+        Channel dimension.
+    task_level : int
+        Task level for the model.
+
+    Returns
+    -------
+    int
+        Output dimension.
+    """
+    if task_level == "node":  # node-level task
+        return num_nodes * channels
+    elif task_level == "graph":  # graph-level task
+        return channels
+    else:
+        raise ValueError(f"Invalid task level {task_level}")
+
+
 def get_default_trainer():
     r"""Get default trainer configuration.
 
