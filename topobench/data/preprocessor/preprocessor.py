@@ -45,12 +45,14 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             )
             self.save_transform_parameters()
             self.load(self.processed_paths[0])
+            self.data_list = [self.get(idx) for idx in range(len(self))]
         else:
             self.transforms_applied = False
-            super().__init__(data_dir, None, None, **kwargs)
-            self.load(data_dir + "/processed/data.pt")
+            super().__init__(dataset.root, None, None, **kwargs)
+            self.transform = dataset.transform
+            self.data, self.slices = dataset._data, dataset.slices
+            self.data_list = [data for data in dataset]
 
-        self.data_list = [self.get(idx) for idx in range(len(self))]
         # Some datasets have fixed splits, and those are stored as split_idx during loading
         # We need to store this information to be able to reproduce the splits afterwards
         if hasattr(dataset, "split_idx"):

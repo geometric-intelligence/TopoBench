@@ -92,7 +92,7 @@ def k_fold_split(labels, parameters):
     return split_idx
 
 
-def random_splitting(labels, parameters, global_data_seed=42):
+def random_splitting(labels, parameters, root=None, global_data_seed=42):
     r"""Randomly splits label into train/valid/test splits.
 
     Adapted from https://github.com/CUAI/Non-Homophily-Benchmarks.
@@ -103,6 +103,8 @@ def random_splitting(labels, parameters, global_data_seed=42):
         Label tensor.
     parameters : DictConfig
         Configuration parameter.
+    root : str, optional
+        Root directory for data splits. Overwrite the default directory.
     global_data_seed : int
         Seed for the random number generator.
 
@@ -112,7 +114,11 @@ def random_splitting(labels, parameters, global_data_seed=42):
         Dictionary containing the train, validation and test indices with keys "train", "valid", and "test".
     """
     fold = parameters["data_seed"]
-    data_dir = parameters["data_split_dir"]
+    data_dir = (
+        parameters["data_split_dir"]
+        if root is None
+        else os.path.join(root, "data_splits")
+    )
     train_prop = parameters["train_prop"]
     valid_prop = (1 - train_prop) / 2
 
@@ -131,7 +137,7 @@ def random_splitting(labels, parameters, global_data_seed=42):
         torch.manual_seed(global_data_seed)
         np.random.seed(global_data_seed)
         # Generate a split
-        n = labels.shape[0]
+        n = len(labels)
         train_num = int(n * train_prop)
         valid_num = int(n * valid_prop)
 
@@ -158,16 +164,13 @@ def random_splitting(labels, parameters, global_data_seed=42):
     split_idx = np.load(split_path)
 
     # Check that all nodes/graph have been assigned to some split
-    assert (
-        np.unique(
-            np.array(
-                split_idx["train"].tolist()
-                + split_idx["valid"].tolist()
-                + split_idx["test"].tolist()
-            )
-        ).shape[0]
-        == labels.shape[0]
-    ), "Not all nodes within splits"
+    assert np.unique(
+        np.array(
+            split_idx["train"].tolist()
+            + split_idx["valid"].tolist()
+            + split_idx["test"].tolist()
+        )
+    ).shape[0] == len(labels), "Not all nodes within splits"
 
     return split_idx
 
@@ -292,12 +295,15 @@ def load_inductive_splits(dataset, parameters):
     assert len(dataset) > 1, (
         "Datasets should have more than one graph in an inductive setting."
     )
-    labels = np.array(
-        [data.y.squeeze(0).numpy() for data in dataset.data_list]
-    )
+    labels = [data.y.squeeze(0).numpy() for data in dataset]
 
     if parameters.split_type == "random":
-        split_idx = random_splitting(labels, parameters)
+        root = (
+            dataset.dataset.get_data_dir()
+            if hasattr(dataset.dataset, "get_data_dir")
+            else None
+        )
+        split_idx = random_splitting(labels, parameters, root)
 
     elif parameters.split_type == "k-fold":
         split_idx = k_fold_split(labels, parameters)

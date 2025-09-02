@@ -1,5 +1,6 @@
 """Loaders for TU datasets."""
 
+import torch_geometric.transforms as T
 from graph_universe import GraphUniverseDataset
 from omegaconf import DictConfig
 from torch_geometric.data import Data, Dataset
@@ -43,10 +44,13 @@ class GraphUniverseDatasetLoader(AbstractLoader):
             root=str(self.root_data_dir),
             parameters=self.parameters["generation_parameters"],
         )
-        dataset.y = getattr(dataset, self.task)
-        for idx in range(len(dataset)):
-            y = getattr(dataset[idx], self.task)
-            dataset[idx].y = y
+        dataset.transform = DefineLabels(self.task)
+        # dataset.y = getattr(dataset, self.task)
+        # dataset.slices["y"] = dataset.slices[self.task]
+        # for idx in range(len(dataset)):
+        #     y = getattr(dataset[idx], self.task)
+        #     setattr(dataset[idx], "y", y)
+        #     #dataset[idx].y = y
 
         return dataset
 
@@ -67,3 +71,33 @@ class GraphUniverseDatasetLoader(AbstractLoader):
         data_dir = dataset.raw_dir
 
         return dataset, data_dir
+
+
+class DefineLabels(T.BaseTransform):
+    """Define labels for the dataset.
+
+    Parameters
+    ----------
+    task : str
+        The task to be performed (e.g., "community_detection").
+    """
+
+    def __init__(self, task):
+        self.task = task
+
+    def forward(self, data: Data) -> Data:
+        """Forward pass to define labels.
+
+        Parameters
+        ----------
+        data : Data
+            The input data.
+
+        Returns
+        -------
+        Data
+            The transformed data with defined labels.
+        """
+        label = getattr(data, self.task)
+        data.y = label
+        return data
