@@ -52,6 +52,7 @@ dependencies=[
     "rootutils",
     "topomodelx @ git+https://github.com/pyt-team/TopoModelX.git",
     "toponetx @ git+https://github.com/pyt-team/TopoNetX.git",
+    "graphuniverse @ https://github.com/LouisVanLangendonck/GraphUniverse.git",
     "lightning==2.4.0",
 ]
 
