@@ -20,11 +20,12 @@ backbone_wrapper:
   _partial_: true
   wrapper_name: TabPFNClassifierWrapper
   use_embeddings: True
+  num_test_nodes: 5
   sampler:
     _target_: topobench.nn.wrappers.graph.tabpfn.${model.backbone_wrapper.sampler.sampler_name}
-    sampler_name: CompositeSampler
+    sampler_name: KNNSampler
     k: 5 # Number of samples to use fr the TabPFN model, define during the run
-    n_hops: 3 # Number of hops to sample from the graph, define during the run
+    #n_hops: 3 # Number of hops to sample from the graph, define during the run
   
 
 

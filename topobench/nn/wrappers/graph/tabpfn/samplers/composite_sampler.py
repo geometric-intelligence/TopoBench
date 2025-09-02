@@ -20,25 +20,25 @@ class CompositeSampler(BaseSampler):
         self.knn_sampler.fit(X, y, **kwargs)
         self.graph_hop_sampler.fit(X, y, **kwargs)
 
-    def sample(self, x: np.ndarray, idx: int, **kwargs: Any) -> Sequence[int]:
+    def _sample(
+        self, x: np.ndarray, ids: list, **kwargs: Any
+    ) -> Sequence[int]:
         neighbors = []
         # Finding neighbors using the comparing the node features with the knn sampler
-        knn_neighbors = self.knn_sampler.sample(x, idx)
+        knn_neighbors = self.knn_sampler.sample(x, ids)
         # Adding them to the neighbors list
         neighbors.extend(knn_neighbors)
-        for knn_neighbor in knn_neighbors:
-            # Finding neighbors using the graph hop sampler sampling from the knn neighbors
-            graph_neighbors = self.graph_hop_sampler.sample(
-                knn_neighbor, **kwargs
-            )
-            neighbors.extend(graph_neighbors)
+
+        # Finding neighbors using the graph hop sampler sampling from the knn neighbors
+        graph_neighbors = self.graph_hop_sampler.sample(
+            None, knn_neighbors, **kwargs
+        )
+        neighbors.extend(graph_neighbors)
 
         # Adding the direct neighbors of the test node
         # Finding neighbors using the graph hop sampler sampling from the knn neighbors
-        direct_graph_neighbors = self.graph_hop_sampler.sample(idx, **kwargs)
+        direct_graph_neighbors = self.graph_hop_sampler.sample(
+            None, ids, **kwargs
+        )
         neighbors.extend(direct_graph_neighbors)
-        seen = set()
-        unique_neighbors = [
-            n for n in neighbors if n not in seen and not seen.add(n)
-        ]
-        return unique_neighbors
+        return neighbors

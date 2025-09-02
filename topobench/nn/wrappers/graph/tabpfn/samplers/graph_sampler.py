@@ -30,20 +30,23 @@ class GraphHopSampler(BaseSampler):
             # Train_mask must be provided
             raise RuntimeError("Train_mask must be provided.")
 
-    def sample(self, idx: int, **kwargs: Any) -> Sequence[int]:
+    def _sample(
+        self, x: np.ndarray, ids: list, **kwargs: Any
+    ) -> Sequence[int]:
         if self.graph is None:
             raise RuntimeError(
                 "GraphHopSampler must be fitted with edge_index before sampling."
             )
-        if self.graph.has_node(idx) is False:
-            # Node index idx does not exist in the graph (has no neighbors in the training graph)
-            return []
-        close_nodes = nx.single_source_shortest_path_length(
-            self.graph, idx, cutoff=self.n_hops
-        )
-        # Deleting the node itself from the close nodes
-        close_nodes.pop(idx, None)
-        close_nodes = list(close_nodes.keys())
+        close_nodes = []
+        for idx in ids:
+            if self.graph.has_node(idx) is False:
+                # Node index idx does not exist in the graph (has no neighbors in the training graph)
+                continue
+            close_nodes = close_nodes + list(
+                nx.single_source_shortest_path_length(
+                    self.graph, idx, cutoff=self.n_hops
+                ).keys()
+            )
 
         # Taking only the nodes that are in the training set (we cannot use others label)
         close_nodes = set(close_nodes).intersection(list(self.train_mask))

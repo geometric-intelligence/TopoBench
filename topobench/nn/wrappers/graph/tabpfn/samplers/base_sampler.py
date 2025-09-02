@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 import numpy as np
-from typing import Sequence, Optional
+from typing import Sequence, Optional, Any
 import networkx as nx
+
 
 class BaseSampler(ABC):
     """
@@ -26,8 +27,19 @@ class BaseSampler(ABC):
         """
         pass
 
+    def sample(self, x: np.ndarray, ids: list, **kwargs: Any) -> Sequence[int]:
+        sampled_nodes = self._sample(x, ids, **kwargs)
+        if type(sampled_nodes) != list:
+            sampled_nodes = list(
+                sampled_nodes.reshape(-1)
+            )  # create a 1-D list of indexes, if it isn't a list
+        seen = set()
+        return [n for n in sampled_nodes if n not in seen and not seen.add(n)]
+
     @abstractmethod
-    def sample(self, x: np.ndarray, idx: int) -> Sequence[int]:
+    def _sample(
+        self, x: np.ndarray, ids: list, **kwargs: Any
+    ) -> Sequence[int]:
         """
         Return indices of neighbors for the sample at index `idx` or features `x`.
 

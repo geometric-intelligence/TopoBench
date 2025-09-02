@@ -18,21 +18,38 @@ class TabPFNClassifierWrapper(BaseWrapper):
             self.num_classes_
         )
 
-    def _get_prediction(self, model, X) -> torch.Tensor:
-        # Reshaping to fit the model's expected input shape
-        X_reshaped = X.reshape(1, -1)
-        raw_proba = model.predict_proba(X_reshaped)
-        # Reshaping raw_proba to 1D
-        raw_proba = raw_proba[0]
+    def _get_predictions(self, model, X) -> torch.Tensor:
+        """
+        Map model's local class ordering to the wrapper's global class order (self.classes_)
+        and support batch inputs X with shape (n_samples, n_features).
 
-        # Map local class order → global class order
-        full_proba = np.zeros(self.num_classes_, dtype=float)
-        for i, cls in enumerate(model.classes_):
-            full_proba[cls] = raw_proba[i]
+        Returns
+        -------
+        probs : torch.FloatTensor, shape (n_samples, num_classes)
+            Class probabilities in global class order.
+        preds : torch.Tensor, shape (n_samples,)
+            Predicted class labels (assumes numeric labels).
+        """
+        # raw_proba: (n_samples, n_local_classes)
+        raw_proba = model.predict_proba(X)
 
-        prob = torch.from_numpy(full_proba).float()
-        pred = torch.tensor(self.classes_[full_proba.argmax()])
-        return prob, pred
+        n_samples = raw_proba.shape[0]
+        num_classes = self.num_classes_
+
+        # Build global index: label -> position in self.classes_
+        # This avoids assuming labels are 0..K-1 or contiguous
+        global_pos = {label: i for i, label in enumerate(self.classes_)}
+
+        # Allocate and fill probs in global order
+        full_proba = np.zeros((n_samples, num_classes), dtype=float)
+        for j, local_label in enumerate(model.classes_):
+            gj = global_pos[local_label]
+            full_proba[:, gj] = raw_proba[:, j]
+
+        # indices of the max in each inner list
+        preds = [np.argmax(test_point) for test_point in full_proba]
+
+        return list(full_proba), preds
 
     def _calculate_metric_pbar(
         self, preds: list, trues: list
@@ -58,14 +75,14 @@ class TabPFNClassifierWrapper(BaseWrapper):
         metric_name, metric = self._calculate_metric_pbar(preds, trues)
         pbar.set_postfix({metric_name: f"{metric:.2%}"})
 
-    def _process_single_test_node(
-        self, idx, node_features, labels, batch, val_mask, test_mask
+    def _process_test_nodes(
+        self, ids_test, node_features, labels, batch, val_mask, test_mask
     ):
-        """Process a single test node and return probability and prediction"""
-        x_np = node_features[idx]
+        """Process test nodes and return probabilities and predictions"""
+        x_np = node_features[ids_test]
 
         # Sample neighbours
-        nbr_idx = self.sampler.sample(x=x_np, idx=idx[0])
+        nbr_idx = self.sampler.sample(x=x_np, ids=ids_test)
 
         # Check if there's any overlap
         assert set(nbr_idx).isdisjoint(set(val_mask)), (
@@ -118,11 +135,11 @@ class TabPFNClassifierWrapper(BaseWrapper):
 
         self.backbone.fit(X_nb, y_nb)
 
-        prob, prediction = self._get_prediction(self.backbone, x_filtered)
+        probs, predictions = self._get_predictions(self.backbone, x_filtered)
 
         # Update the counter and return
-        self.num_model_trained += 1
-        return prob, prediction
+        self.num_model_trained += len(ids_test)
+        return probs, predictions
 
     def forward(
         self, batch: Dict[str, torch.Tensor]
@@ -185,6 +202,7 @@ class TabPFNClassifierWrapper(BaseWrapper):
             outputs = []
             trues = []
             preds = []
+            out_indices = []
 
             # create the progress bar once
             pbar = tqdm(
@@ -193,37 +211,47 @@ class TabPFNClassifierWrapper(BaseWrapper):
                 dynamic_ncols=True,
             )
 
-            n_test_nodes_per_sample = 1
-            for i in range(0, len(test_mask), n_test_nodes_per_sample):
-                idx = test_mask[i : i + n_test_nodes_per_sample]
+            batch_size = max(1, self.num_test_nodes)
 
-                # Process the test node
-                prob, prediction = self._process_single_test_node(
-                    idx, node_features, labels, batch, val_mask, test_mask
+            for start in range(0, len(test_mask), batch_size):
+                idx_batch = test_mask[start : start + batch_size]
+
+                # keep one-model-per-test-node logic; iterate within the batch
+                probs, predictions = self._process_test_nodes(
+                    idx_batch,
+                    node_features,
+                    labels,
+                    batch,
+                    val_mask,
+                    test_mask,
                 )
 
-                # Update results and progress bar
-                self._update_progress_and_results(
-                    prob, prediction, batch.y[idx], outputs, preds, trues, pbar
-                )
+                outputs.extend(probs)
+
+                # progress/metric
+                y_true = list(labels[idx_batch])
+                preds.extend(predictions)
+                trues.extend(y_true)
+                metric_name, metric = self._calculate_metric_pbar(preds, trues)
+                pbar.update(len(idx_batch))
+                pbar.set_postfix({metric_name: f"{metric:.2%}"})
 
             # close bar (optional when loop ends)
             pbar.close()
 
-            # stack & return exactly like before
-            prob_tensor = torch.stack(outputs).to(batch["x_0"].device)
+        # stack & return exactly like before
+        prob_tensor = torch.FloatTensor(outputs).to(batch["x_0"].device)
 
         # Prepare the output
         prob_logits = torch.zeros(batch["y"].shape[0], self.num_classes_).to(
             prob_tensor.device
         )
-        num_test_points = test_mask.shape[0]
 
         # Making sure that test mask is on the same device
         test_mask = torch.from_numpy(test_mask).to(prob_tensor.device)
-
         prob_logits[test_mask] = prob_tensor
 
+        num_test_points = test_mask.shape[0]
         # Log the metrics calculated within wrapper
         self.log_model_stat(num_test_points)
 

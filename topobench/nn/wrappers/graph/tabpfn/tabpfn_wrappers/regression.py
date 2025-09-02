@@ -27,14 +27,24 @@ class TabPFNRegressorWrapper(BaseWrapper):
         return self.global_mean_, self.global_mean_
 
     def _handle_constant_features(
-        self, y
+        self, y: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        y_mean = y.mean()
-        return y_mean, y_mean
+        """
+        Replace constant features with arrays filled with the mean of y.
 
-    def _get_prediction(self, model, X) -> torch.Tensor:
-        pred = torch.tensor(model.predict(X))[0]
-        return pred, pred
+        Args:
+            y (torch.Tensor): Input tensor.
+
+        Returns:
+            tuple[torch.Tensor, torch.Tensor]: Two tensors with the same shape as y,
+                                            filled with y.mean().
+        """
+        y_mean = y.mean()
+        return torch.full_like(y, y_mean), torch.full_like(y, y_mean)
+
+    def _get_predictions(self, model, X) -> torch.Tensor:
+        preds = model.predict(X)
+        return list(preds), list(preds)
 
     def _get_train_prediction(self, y) -> torch.Tensor:
         return y
@@ -49,23 +59,24 @@ class TabPFNRegressorWrapper(BaseWrapper):
         self, prob, prediction, true_label, outputs, preds, trues, pbar
     ):
         """Helper method to update results and progress bar"""
-        outputs.append(prediction.float())
-        trues.append(
-            true_label.item() if hasattr(true_label, "item") else true_label
-        )
+        outputs.extend(prediction)
+        true_label = list(
+            true_label.numpy()
+        )  # converting true label as a list
+        trues.extend(true_label)
 
-        pbar.update(1)
+        pbar.update(len(prediction))
         metric_name, metric = self._calculate_metric_pbar(outputs, trues)
         pbar.set_postfix({metric_name: f"{metric:.2f}"})
 
-    def _process_single_test_node(
-        self, idx, node_features, labels, batch, val_mask, test_mask
+    def _process_test_nodes(
+        self, ids_test, node_features, labels, batch, val_mask, test_mask
     ):
         """Process a single test node and return probability and prediction"""
-        x_np = node_features[idx]
+        x_np = node_features[ids_test]
 
         # Sample neighbours
-        nbr_idx = self.sampler.sample(x=x_np, idx=idx[0])
+        nbr_idx = self.sampler.sample(x=x_np, ids=ids_test)
 
         # Check if there's any overlap
         assert set(nbr_idx).isdisjoint(set(val_mask)), (
@@ -77,11 +88,11 @@ class TabPFNRegressorWrapper(BaseWrapper):
 
         # Case 1: No neighbors
         if len(nbr_idx) == 0:
-            _, pred = self._handle_no_neighbors()
+            _, preds = self._handle_no_neighbors()
 
             # Update the counter and return
             self.num_no_neighbors += 1
-            return _, torch.tensor(pred)
+            return _, preds
 
         X_nb = node_features[nbr_idx]
         y_nb = labels[nbr_idx]
@@ -97,19 +108,19 @@ class TabPFNRegressorWrapper(BaseWrapper):
 
         # Case 3: Only one neighbor
         if X_nb.shape[0] == 1:
-            pred = y_nb.item()
+            preds = y_nb.item()
 
             # Update the counter and return
             self.num_one_neighbor += 1
-            return None, torch.tensor(pred)
+            return None, preds
 
         # Case 4: All the node have the same label - return the label, to avoid TabPFN error
         if np.unique(y_nb).shape[0] == 1:
-            pred = y_nb[0].item()
+            preds = y_nb[0].item()
 
             # Update the counter and return
             self.num_all_same_label += 1
-            return None, torch.tensor(pred)
+            return None, torch.tensor(preds)
 
         # Case 5: Normal case - fit backbone on neighbors
         if np.any(const_cols):
@@ -121,11 +132,11 @@ class TabPFNRegressorWrapper(BaseWrapper):
 
         self.backbone.fit(X_nb, y_nb)
 
-        _, pred = self._get_prediction(self.backbone, x_filtered)
+        _, preds = self._get_predictions(self.backbone, x_filtered)
 
         # Update the counter and return
-        self.num_model_trained += 1
-        return _, pred
+        self.num_model_trained += len(ids_test)
+        return _, preds
 
     def forward(
         self, batch: Dict[str, torch.Tensor]
@@ -198,18 +209,30 @@ class TabPFNRegressorWrapper(BaseWrapper):
                 dynamic_ncols=True,
             )
 
-            n_test_nodes_per_sample = 1
-            for i in range(0, len(test_mask), n_test_nodes_per_sample):
-                idx = test_mask[i : i + n_test_nodes_per_sample]
+            batch_size = max(1, self.num_test_nodes)
+
+            for start in range(0, len(test_mask), batch_size):
+                idx_batch = test_mask[start : start + batch_size]
 
                 # Process the test node
-                _, prediction = self._process_single_test_node(
-                    idx, node_features, labels, batch, val_mask, test_mask
+                _, predictions = self._process_test_nodes(
+                    idx_batch,
+                    node_features,
+                    labels,
+                    batch,
+                    val_mask,
+                    test_mask,
                 )
 
                 # Update results and progress bar
                 self._update_progress_and_results(
-                    None, prediction, batch.y[idx], outputs, None, trues, pbar
+                    None,
+                    predictions,
+                    batch.y[idx_batch],
+                    outputs,
+                    None,
+                    trues,
+                    pbar,
                 )
 
             # close bar (optional when loop ends)
@@ -217,7 +240,7 @@ class TabPFNRegressorWrapper(BaseWrapper):
 
             # stack & return exactly like before
             prob_tensor = (
-                torch.stack(outputs).to(batch["x_0"].device).view(-1, 1)
+                torch.FloatTensor(outputs).to(batch["x_0"].device).view(-1, 1)
             )
 
         # Prepare the output

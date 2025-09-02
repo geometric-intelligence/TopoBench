@@ -12,6 +12,7 @@ class BaseWrapper(torch.nn.Module, ABC):
         self.use_embeddings = kwargs.get("use_embeddings", True)
         self.use_node_features = kwargs.get("use_node_features", True)
         self.sampler = kwargs.get("sampler", None)
+        self.num_test_nodes = kwargs.get("num_test_nodes", 1)
 
         assert self.use_embeddings or self.use_node_features, (
             "Either use_embeddings or use_node_features could be False, not both."
@@ -35,7 +36,7 @@ class BaseWrapper(torch.nn.Module, ABC):
         ...
 
     @abstractmethod
-    def _get_prediction(self, model, X) -> tuple[torch.Tensor, torch.Tensor]:
+    def _get_predictions(self, model, X) -> tuple[torch.Tensor, torch.Tensor]:
         """Return a the prediction of the model."""
         ...
 
@@ -114,5 +115,7 @@ class BaseWrapper(torch.nn.Module, ABC):
         - np.ndarray: Boolean array of shape (n_features,), True for constant columns
         """
         if X.shape[0] == 1:
-            return np.ones(X.shape[1], dtype=bool) == 0  # Returns a list of False
+            return (
+                np.ones(X.shape[1], dtype=bool) == 0
+            )  # Returns a list of False
         return np.ptp(X, axis=0) == 0  # range == 0 ⇒ constant

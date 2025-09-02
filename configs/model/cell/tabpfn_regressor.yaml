@@ -20,6 +20,7 @@ backbone_wrapper:
   _partial_: true
   wrapper_name: TabPFNRegressorWrapper
   use_embeddings: True
+  num_test_nodes: 5
   sampler:
     _target_: topobench.nn.wrappers.graph.tabpfn.${model.backbone_wrapper.sampler.sampler_name}
     sampler_name: CompositeSampler
