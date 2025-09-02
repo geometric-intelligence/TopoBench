@@ -61,7 +61,7 @@ class TabPFNRegressorWrapper(BaseWrapper):
         """Helper method to update results and progress bar"""
         outputs.extend(prediction)
         true_label = list(
-            true_label.numpy()
+            true_label.cpu().numpy()
         )  # converting true label as a list
         trues.extend(true_label)
 
