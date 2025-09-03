@@ -55,7 +55,7 @@ neighborhoods=(
 
 # TODO: fix bug with transforms.one_hot_node_degree_features.degrees_fields=x\
 gpus=(0 1 2 3 4 5 6 7)
-PE_TYPES=('RWSE' 'ElstaticPE' 'HKdiagSE' 'LapPE')
+PE_TYPES=('LapPE') #'RWSE' 'ElstaticPE' 'HKdiagSE' 
 for pe_type in ${PE_TYPES[*]}
 do
     for i in {0..7}

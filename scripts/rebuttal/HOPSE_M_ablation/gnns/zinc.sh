@@ -49,7 +49,7 @@ neighborhoods=(
 )
 
 
-PE_TYPES=('RWSE' 'ElstaticPE' 'HKdiagSE' 'LapPE')
+PE_TYPES=('LapPE') # 'RWSE' 'ElstaticPE' 'HKdiagSE' 
 model_types=('hopse_gin' 'hopse_gcn' 'hopse_gat')
 for model_type in ${model_types[*]}
 do
