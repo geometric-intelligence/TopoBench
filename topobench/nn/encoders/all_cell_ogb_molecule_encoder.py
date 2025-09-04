@@ -67,7 +67,7 @@ class AllCellMoleculeFeatureEncoder(AbstractFeatureEncoder):
                     self,
                     f"encoder_{i}",
                     BaseEncoder(
-                        1,
+                        self.in_channels[i],
                         self.out_channels,
                         dropout=proj_dropout,
                     ),
