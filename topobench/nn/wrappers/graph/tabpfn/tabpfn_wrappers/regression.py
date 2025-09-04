@@ -22,21 +22,31 @@ class TabPFNRegressorWrapper(BaseWrapper):
         self.global_mean_ = float(np.mean(y_train))
 
     def _no_neighborns(self) -> tuple[np.ndarray, np.ndarray]:
-        return np.full_like(y, self.global_mean_), np.full_like(
-            y, self.global_mean_
+        # Fill with global mean for all test nodes
+        return (
+            np.full((self.num_test_nodes,), self.global_mean_),
+            np.full((self.num_test_nodes,), self.global_mean_),
         )
 
     def _one_neighborn(
         self, labels: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray]:
+        # Repeat the neighbor label for all test nodes
         label = labels[0]
-        return np.full_like(y, label), np.full_like(y, label)
+        return (
+            np.full((self.num_test_nodes,), label),
+            np.full((self.num_test_nodes,), label),
+        )
 
     def _all_features_constant(
         self, labels: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray]:
-        labels_mean = labels.mean()
-        return np.full_like(y, labels_mean), np.full_like(y, labels_mean)
+        # Use the average of labels as constant prediction
+        labels_mean = np.mean(labels)
+        return (
+            np.full((self.num_test_nodes,), labels_mean),
+            np.full((self.num_test_nodes,), labels_mean),
+        )
 
     def _get_predictions(self, model, X) -> tuple[np.ndarray, np.ndarray]:
         preds = model.predict(X)
