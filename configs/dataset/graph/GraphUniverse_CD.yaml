@@ -7,7 +7,6 @@ loader:
     data_type: GraphUniverse
     data_name: GraphUniverse
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
-    dataset_task: community_detection
     generation_parameters:
       universe_parameters:
         K: 10
@@ -17,24 +16,25 @@ loader:
         edge_propensity_variance: 0.5
         seed: 42
       family_parameters:
-        n_graphs: 10
-        min_n_nodes: 100
-        max_n_nodes: 300
+        n_graphs: 100
+        min_n_nodes: 50
+        max_n_nodes: 200
         min_communities: 3
-        max_communities: 8
-        homophily_range: [0.1, 0.4]
+        max_communities: 6
+        homophily_range: [0.0, 0.1]
         avg_degree_range: [1.0, 5.0]
         degree_heterogeneity: 0.5
         use_dccc_sbm: true
-        degree_separation_range: [0.7, 1.0]
+        degree_separation_range: [0.5, 0.8]
         degree_distribution: power_law
+        power_law_exponent_range: [2.0, 2.5]
         seed: 42
     
 
 # Dataset parameters
 parameters:
   num_features: ${dataset.loader.parameters.generation_parameters.universe_parameters.feature_dim}
-  num_classes: ${dataset.loader.parameters.generation_parameters.family_parameters.max_communities}
+  num_classes: ${dataset.loader.parameters.generation_parameters.universe_parameters.K}
   task: classification
   loss_type: cross_entropy
   monitor_metric: accuracy
