@@ -65,6 +65,7 @@ for i in {0..5}; do
         model.backbone.GNN.num_layers=1\
         model.readout.readout_name=PropagateSignalDown\
         model.tune_gnn=GIN\
+        model.feature_encoder.encoder_name=AllCellMoleculeFeatureEncoder\
         model.feature_encoder.out_channels=128\
         model.feature_encoder.proj_dropout=0.25\
         dataset.split_params.data_seed=0\
