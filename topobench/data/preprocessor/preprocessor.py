@@ -48,7 +48,12 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             self.data_list = [self.get(idx) for idx in range(len(self))]
         else:
             self.transforms_applied = False
-            super().__init__(dataset.root, None, None, **kwargs)
+            data_dir = (
+                dataset.get_data_dir()
+                if hasattr(dataset, "get_data_dir")
+                else dataset.root()
+            )
+            super().__init__(data_dir, None, None, **kwargs)
             self.transform = dataset.transform
             self.data, self.slices = dataset._data, dataset.slices
             self.data_list = [data for data in dataset]
@@ -67,7 +72,7 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         str
             Path to the processed directory.
         """
-        if self.transforms_applied:
+        if not self.transforms_applied:
             return self.root
         else:
             return self.root + "/processed"
