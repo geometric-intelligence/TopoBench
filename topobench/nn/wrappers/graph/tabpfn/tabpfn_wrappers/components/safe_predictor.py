@@ -93,7 +93,7 @@ class SafePredictor:
                 else np.empty((0,), dtype=labels.dtype)
             )
             probs, preds = self.f_one(y_nb)
-            return probs, preds, Case.FAIL_SAME_Y
+            return probs, preds, Case.ONE_NEIGHBOR
 
         except AllNeighborSameY:
             y_nb = labels[neighbors_id]
