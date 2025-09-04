@@ -17,7 +17,7 @@ OUT_CHANNELS=(128 256)
 # OPTIMIZATION PARAMETERS
 # =====================
 LEARNING_RATES=(0.0001)
-PROJECTION_DROPOUTS=(0 0.1 0.25)
+PROJECTION_DROPOUTS=(0 0.1)
 WEIGHT_DECAYS=(0 0.000001)
 BATCH_SIZES=(32 64)
 
@@ -36,7 +36,7 @@ BATCH_SIZES_STR=$(IFS=,; echo "${BATCH_SIZES[*]}")
 # =====================
 # PARAMETERS OVER WHICH WE PERFORM PARALLEL RUNS
 # =====================
-PE_TYPES=('RWSE' 'ElstaticPE' 'HKdiagSE' 'LapPE')
+PE_TYPES=('RWSE' 'ElstaticPE' 'HKdiagSE' 'LapPE' 'RWSE,ElstaticPE,HKdiagSE,LapPE')
 neighborhoods=(
     # adjacency 
     "['up_adjacency-0']"
