@@ -152,9 +152,9 @@ class BaseMoleculeEncoder(torch.nn.Module):
         torch.Tensor
             Output tensor of shape [N, out_channels].
         """
-        x = self.encoder(x.reshape(-1, 1))
-        x = self.BN(x, batch=batch) if batch.shape[0] > 0 else self.BN(x)
-        x = self.dropout(x)
+        x = self.encoder(x.long())
+        # x = self.BN(x, batch=batch) if batch.shape[0] > 0 else self.BN(x)
+        # x = self.dropout(x)
         return x
 
 
