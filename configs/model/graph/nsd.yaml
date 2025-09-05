@@ -7,7 +7,7 @@ feature_encoder:
   _target_: topobench.nn.encoders.${model.feature_encoder.encoder_name}
   encoder_name: AllCellFeatureEncoder
   in_channels: ${infer_in_channels:${dataset},${oc.select:transforms,null}} 
-  out_channels: 64
+  out_channels: 32
   proj_dropout: 0.0
 
 backbone:
@@ -16,16 +16,19 @@ backbone:
   hidden_dim: ${model.feature_encoder.out_channels}
   output_dim: ${model.feature_encoder.out_channels}
   num_layers: 2
-  pe_dim: 0
-  dropout: 0.0
-  sheaf_type: diag
-  d: 3
+  pe_dim: 10 # Keep at 10! Bit of a clumsy solution for now.
+  pe_norm: false
+  pe_type: None # laplacian, degree, rwse or None
+  dropout: 0.2
+  sheaf_type: diag # diag or bundle
+  d: 3 # 2 or 3
   input_dropout: 0.0
 
 backbone_wrapper:
-  _target_: topobench.nn.wrappers.GNNWrapper 
+  _target_: topobench.nn.wrappers.GNNWrapperWithPE 
   _partial_: true
-  wrapper_name: GNNWrapper
+  wrapper_name: GNNWrapperWithPE
+  pe_type: ${model.backbone.pe_type}
   out_channels: ${model.feature_encoder.out_channels}
   num_cell_dimensions: ${infer_num_cell_dimensions:${oc.select:model.feature_encoder.selected_dimensions,null},${model.feature_encoder.in_channels}}
 

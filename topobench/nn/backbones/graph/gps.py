@@ -57,7 +57,9 @@ class GPSEncoder(torch.nn.Module):
         input_dim: int,
         hidden_dim: int,
         num_layers: int = 4,
-        pe_dim: int = 20,
+        pe_dim: int = 10,
+        pe_type: str = 'laplacian',
+        pe_norm: bool = False,
         heads: int = 4,
         dropout: float = 0.1,
         attn_type: str = 'multihead',
@@ -71,23 +73,30 @@ class GPSEncoder(torch.nn.Module):
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
+        self.pe_type = pe_type
+        self.heads = heads 
         self.pe_dim = pe_dim
-        self.heads = heads
+        self.pe_norm = pe_norm
         self.dropout = dropout
         self.attn_type = attn_type
         self.use_edge_attr = use_edge_attr
         
         # Input projection
-        if pe_dim > 0:
+        if pe_type in ['laplacian', 'degree', 'rwse']:
             # If using PE, split channels between node features and PE
             self.node_proj = nn.Linear(input_dim, hidden_dim - pe_dim)
             self.pe_proj = nn.Linear(pe_dim, pe_dim)
-            self.pe_norm = nn.BatchNorm1d(pe_dim)
-        else:
+            if self.pe_norm:
+                self.pe_norm = nn.BatchNorm1d(pe_dim)
+            else:
+                self.pe_norm = None
+        elif pe_type is None or pe_type == "None":
             # No PE, use full hidden_dim for node features
             self.node_proj = nn.Linear(input_dim, hidden_dim)
             self.pe_proj = None
             self.pe_norm = None
+        else:
+            raise ValueError(f"Invalid PE type: {pe_type}. Supported: 'laplacian', 'degree', 'rwse', None")
         
         # GPS layers using official PyG GPSConv
         self.convs = nn.ModuleList()
@@ -172,18 +181,22 @@ class GPSEncoder(torch.nn.Module):
         h = self.node_proj(x)
         
         # Add positional encoding if available
-        if self.pe_proj is not None and pe is not None:
-            # Normalize PE
-            if self.pe_norm is not None and pe.size(0) > 1:
-                pe_normalized = self.pe_norm(pe)
+        if self.pe_proj is not None:
+            if pe is not None:
+                # Normalize PE
+                if self.pe_norm is not None and pe.size(0) > 1:
+                    pe_normalized = self.pe_norm(pe)
+                else:
+                    pe_normalized = pe
+                
+                # Project PE
+                pe_proj = self.pe_proj(pe_normalized)
+                
+                # Concatenate node features with PE
+                h = torch.cat([h, pe_proj], dim=-1)
             else:
-                pe_normalized = pe
-            
-            # Project PE
-            pe_proj = self.pe_proj(pe_normalized)
-            
-            # Concatenate node features with PE
-            h = torch.cat([h, pe_proj], dim=-1)
+                raise ValueError(f"If PE type is not None, PE must be provided in forward pass")
+        
         
         # Apply GPS layers (no edge attributes)
         for conv in self.convs:
