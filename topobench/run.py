@@ -156,7 +156,7 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
     )
     # Prepare datamodule
     log.info("Instantiating datamodule...")
-    if cfg.dataset.parameters.task_level in ["node", "graph"]:
+    if cfg.dataset.parameters.task_level in ["node", "graph", "inductive_node"]:
         datamodule = TBDataloader(
             dataset_train=dataset_train,
             dataset_val=dataset_val,
