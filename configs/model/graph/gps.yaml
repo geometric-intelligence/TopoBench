@@ -21,7 +21,7 @@ backbone:
   heads: 4 # SWEEP: [4,8]
   attn_type: multihead # SWEEP: [multihead, performer]
 
-  pe_dim: 10 pe_dim: 10 # no sweep. Keep at 10! Bit of a clumsy solution for now. dont sweep
+  pe_dim: 10 # no sweep. Keep at 10! Bit of a clumsy solution for now. dont sweep
   local_conv_type: gin # no sweep. 
 
 backbone_wrapper:
