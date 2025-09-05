@@ -13,7 +13,7 @@ from topobench.nn.backbones.graph.sheaf_model_utils.inductive_discrete_models im
 class NSD(Module):
     def __init__(
         self,
-        input_dim, hidden_dim, output_dim,
+        input_dim, hidden_dim,
         sheaf_type="diag", d=2, num_layers=2,
         dropout=0.1, input_dropout=0.1,
         device="cpu", normalised=False, deg_normalised=False,
@@ -28,7 +28,6 @@ class NSD(Module):
 
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
-        self.output_dim = output_dim
         self.sheaf_type = sheaf_type
         self.d = d
         self.num_layers = num_layers
