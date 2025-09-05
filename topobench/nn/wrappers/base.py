@@ -25,6 +25,7 @@ class AbstractWrapper(ABC, torch.nn.Module):
         out_channels = kwargs["out_channels"]
         self.dimensions = range(kwargs["num_cell_dimensions"])
         self.residual_connections = kwargs.get("residual_connections", True)
+        self.pe_type = kwargs.get("pe_type", None)
 
         for i in self.dimensions:
             setattr(

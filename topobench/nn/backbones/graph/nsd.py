@@ -1,5 +1,7 @@
 import torch
 from torch.nn import Module
+import torch.nn as nn
+from typing import Optional
 
 from topobench.nn.backbones.graph.sheaf_model_utils.inductive_discrete_models import (
     InductiveDiscreteDiagSheafDiffusion,
@@ -14,14 +16,13 @@ class NSD(Module):
         input_dim, hidden_dim, output_dim,
         sheaf_type="diag", d=2, num_layers=2,
         dropout=0.1, input_dropout=0.1,
-        is_regression=False, is_graph_level_task=False,
         device="cpu", normalised=False, deg_normalised=False,
         linear=False, left_weights=True, right_weights=True,
         sparse_learner=False, use_act=True, sheaf_act="tanh",
-        second_linear=False, orth="cayley",
+        second_linear=False, orth="euler",
         edge_weights=False, max_t=1.0,
         add_lp=False, add_hp=False, 
-        pe_type=None, pe_dim=16, **kwargs
+        pe_type=None, pe_dim=16, pe_norm=False, **kwargs
     ):
         super().__init__()
 
@@ -31,18 +32,31 @@ class NSD(Module):
         self.sheaf_type = sheaf_type
         self.d = d
         self.num_layers = num_layers
-        self.is_regression = is_regression
-        self.is_graph_level_task = is_graph_level_task
         self.device = device
         
         # PE configuration
         self.pe_type = pe_type
         self.pe_dim = pe_dim
+        self.pe_norm = pe_norm
         
-        # Adjust input dimension if PE is used
-        self.actual_input_dim = input_dim
-        if pe_type is not None:
-            self.actual_input_dim = input_dim + pe_dim
+        # Input projection setup similar to GPS
+        if pe_type in ['laplacian', 'degree', 'rwse']:
+            # If using PE, split channels between node features and PE
+            self.node_proj = nn.Linear(input_dim, hidden_dim - pe_dim)
+            self.pe_proj = nn.Linear(pe_dim, pe_dim)
+            if self.pe_norm:
+                self.pe_norm_layer = nn.BatchNorm1d(pe_dim)
+            else:
+                self.pe_norm_layer = None
+            self.actual_input_dim = hidden_dim  # Full hidden_dim after concatenation
+        elif pe_type is None or pe_type == "None":
+            # No PE, use full hidden_dim for node features
+            self.node_proj = nn.Linear(input_dim, hidden_dim)
+            self.pe_proj = None
+            self.pe_norm_layer = None
+            self.actual_input_dim = hidden_dim
+        else:
+            raise ValueError(f"Invalid PE type: {pe_type}. Supported: 'laplacian', 'degree', 'rwse', 'None")
 
         if sheaf_type == "diag":
             assert d >= 1
@@ -84,27 +98,45 @@ class NSD(Module):
 
         # Create the sheaf model immediately (no lazy initialization)
         self.sheaf_model = self.sheaf_class(self.sheaf_config)
+   
 
-        # Create prediction head
-        self.is_graph_level_task = is_graph_level_task
-        self.is_regression = is_regression
-
-        if is_graph_level_task:
-            # Graph-level prediction head
-            self.readout = torch.nn.Sequential(
-                torch.nn.Linear(hidden_dim, hidden_dim),
-                torch.nn.ReLU(),
-                torch.nn.Dropout(dropout),
-                torch.nn.Linear(hidden_dim, output_dim)
-            )
-        else:
-            # Node-level prediction head
-            self.readout = torch.nn.Sequential(
-                torch.nn.Linear(hidden_dim, output_dim),
-            )     
-
-    def forward(self, x, edge_index, edge_attr = None, edge_weight = None):
-        return self.sheaf_model(x, edge_index)
+    def forward(self, x, edge_index, edge_attr=None, edge_weight=None, 
+                pe: Optional[torch.Tensor] = None, **kwargs):
+        """
+        Forward pass with PE handling
+        
+        Args:
+            x: Node features [num_nodes, input_dim]
+            edge_index: Edge indices [2, num_edges]
+            edge_attr: Edge attributes (optional)
+            edge_weight: Edge weights (optional)
+            pe: Positional encodings [num_nodes, pe_dim] (optional)
+            
+        Returns:
+            Node embeddings [num_nodes, hidden_dim]
+        """
+        # Process node features similar to GPS
+        h = self.node_proj(x)
+        
+        # Add positional encoding if available
+        if self.pe_proj is not None:
+            if pe is not None:
+                # Normalize PE
+                if self.pe_norm_layer is not None and pe.size(0) > 1:
+                    pe_normalized = self.pe_norm_layer(pe)
+                else:
+                    pe_normalized = pe
+                
+                # Project PE
+                pe_proj = self.pe_proj(pe_normalized)
+                
+                # Concatenate node features with PE
+                h = torch.cat([h, pe_proj], dim=-1)
+            else:
+                raise ValueError(f"If PE type is not None, PE must be provided in forward pass")
+        
+        # Pass processed features to sheaf model
+        return self.sheaf_model(h, edge_index)
 
     def get_sheaf_model(self):
         return self.sheaf_model
