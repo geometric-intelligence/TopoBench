@@ -19,7 +19,6 @@ backbone:
   pe_norm: false # SWEEP: [true,false]
   dropout: 0.5 # SWEEP: [0.0, 0.25, 0.5]
   sheaf_type: diag # SWEEP: [diag, bundle]
-
   d: 3 # no sweep.
   input_dropout: 0.0 # no sweep.
 
