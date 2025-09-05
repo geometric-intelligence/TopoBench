@@ -16,7 +16,7 @@ loader:
         edge_propensity_variance: 0.5
         seed: 42
       family_parameters:
-        n_graphs: 100
+        n_graphs: 500
         min_n_nodes: 50
         max_n_nodes: 200
         min_communities: 3
@@ -38,7 +38,7 @@ parameters:
   task: classification
   loss_type: cross_entropy
   monitor_metric: accuracy
-  task_level: node
+  task_level: inductive_node
 
 #splits
 split_params:

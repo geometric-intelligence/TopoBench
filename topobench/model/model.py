@@ -152,13 +152,14 @@ class TBModel(LightningModule):
         model_out = self.model_step(batch)
 
         # Update and log metrics
+        actual_batch_size = batch.num_graphs if hasattr(batch, 'num_graphs') else 1
         self.log(
             "train/loss",
             model_out["loss"],
             on_step=False,
             on_epoch=True,
             prog_bar=True,
-            batch_size=1,
+            batch_size=actual_batch_size,
         )
 
         # Return loss for backpropagation step
@@ -178,13 +179,14 @@ class TBModel(LightningModule):
         model_out = self.model_step(batch)
 
         # Log Loss
+        actual_batch_size = batch.num_graphs if hasattr(batch, 'num_graphs') else 1
         self.log(
             "val/loss",
             model_out["loss"],
             on_step=False,
             on_epoch=True,
             prog_bar=True,
-            batch_size=1,
+            batch_size=actual_batch_size,
         )
 
     def test_step(self, batch: Data, batch_idx: int) -> None:
@@ -201,13 +203,14 @@ class TBModel(LightningModule):
         model_out = self.model_step(batch)
 
         # Log loss
+        actual_batch_size = batch.num_graphs if hasattr(batch, 'num_graphs') else 1
         self.log(
             "test/loss",
             model_out["loss"],
             on_step=False,
             on_epoch=True,
             prog_bar=True,
-            batch_size=1,
+            batch_size=actual_batch_size,
         )
 
     def process_outputs(self, model_out: dict, batch: Data) -> dict:
@@ -225,21 +228,22 @@ class TBModel(LightningModule):
         dict
             Dictionary containing the updated model output.
         """
-        # Get the correct mask
-        if self.state_str == "Training":
-            mask = batch.train_mask
-        elif self.state_str == "Validation":
-            mask = batch.val_mask
-        elif self.state_str == "Test":
-            mask = batch.test_mask
-        else:
-            raise ValueError("Invalid state_str")
+        if not self.task_level == "inductive_node":
+            # Get the correct mask
+            if self.state_str == "Training":
+                mask = batch.train_mask
+            elif self.state_str == "Validation":
+                mask = batch.val_mask
+            elif self.state_str == "Test":
+                mask = batch.test_mask
+            else:
+                raise ValueError("Invalid state_str")
 
-        if self.task_level == "node":
-            # Keep only train data points
-            for key, val in model_out.items():
-                if key in ["logits", "labels"]:
-                    model_out[key] = val[mask]
+            if self.task_level == "node":
+                # Keep only train data points
+                for key, val in model_out.items():
+                    if key in ["logits", "labels"]:
+                        model_out[key] = val[mask]
 
         return model_out
 
