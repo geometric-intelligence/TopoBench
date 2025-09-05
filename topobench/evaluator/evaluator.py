@@ -82,7 +82,12 @@ class TBEvaluator(AbstractEvaluator):
         target = model_out["labels"].cpu()
 
         if self.task == "regression":
-            self.metrics.update(preds, target.unsqueeze(1))
+            # Only unsqueeze if we have single output (1D regression)
+            if preds.shape[-1] == 1:
+                self.metrics.update(preds, target.unsqueeze(1))
+            else:
+                # Multi-output regression - target already has correct shape from loss function
+                self.metrics.update(preds, target)
 
         elif self.task == "classification":
             self.metrics.update(preds, target)
