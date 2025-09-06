@@ -76,7 +76,7 @@ def get_default_transform(dataset, model):
         Default transform.
     """
     data_domain, dataset = dataset.split("/")
-    model_domain = model.split("/")[0]
+    model_domain, model = model.split("/")
     if model_domain == "non_relational":
         model_domain = "graph"
     # Check if there is a default transform for the dataset at ./configs/transforms/dataset_defaults/
@@ -84,12 +84,18 @@ def get_default_transform(dataset, model):
     base_dir = os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     )
-    configs_dir = os.path.join(
+    model_configs_dir = os.path.join(
+        base_dir, "configs", "transforms", "model_defaults"
+    )
+    dataset_configs_dir = os.path.join(
         base_dir, "configs", "transforms", "dataset_defaults"
     )
-    datasets_with_defaults = [f.split(".")[0] for f in os.listdir(configs_dir)]
+    datasets_with_defaults = [f.split(".")[0] for f in os.listdir(dataset_configs_dir)]
+    model_with_defaults = [f.split(".")[0] for f in os.listdir(model_configs_dir)]
     if dataset in datasets_with_defaults:
         return f"dataset_defaults/{dataset}"
+    elif model in model_with_defaults:
+        return f"model_defaults/{model}"
     else:
         if data_domain == model_domain:
             return "no_transform"
@@ -192,6 +198,7 @@ def check_pses_in_transforms(transforms):
     """
     added_features = 0
     for key in transforms.keys():
+        # Single transform
         if "encodings" in key:
             for enc in transforms.get("encodings", []):
                 if enc  == "LapPE":
@@ -201,6 +208,7 @@ def check_pses_in_transforms(transforms):
                         added_features += transforms.get("parameters").get(enc).get("max_pe_dim")
                 elif enc == "RWSE":
                     added_features += transforms.get("parameters").get(enc).get("max_pe_dim")
+        # Potentially multiple transforms
         elif "LapPE" in key:
             if transforms[key].get("include_eigenvalues"):
                 added_features += transforms[key].get("max_pe_dim")*2
@@ -208,6 +216,15 @@ def check_pses_in_transforms(transforms):
                 added_features += transforms[key].get("max_pe_dim")
         elif "RWSE" in key:
             added_features += transforms[key].get("max_pe_dim")
+        elif "CombinedPSEs" in key:
+            for pse in transforms[key].get("encodings", []):
+                if pse  == "LapPE":
+                    if transforms.get("parameters").get(pse).get("include_eigenvalues"):
+                        added_features += transforms.get("parameters").get(pse).get("max_pe_dim")*2
+                    else:
+                        added_features += transforms.get("parameters").get(pse).get("max_pe_dim")
+                elif pse == "RWSE":
+                    added_features += transforms.get("parameters").get(pse).get("max_pe_dim")
     return added_features
 
 
