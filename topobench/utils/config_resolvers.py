@@ -176,6 +176,39 @@ def get_monitor_mode(task):
 
     else:
         raise ValueError(f"Invalid task {task}")
+    
+def check_pses_in_transforms(transforms):
+    r"""Check if there are positional or structural encodings in the transforms.
+
+    Parameters
+    ----------
+    transforms : DictConfig
+        Configuration parameters for the transforms.
+
+    Returns
+    -------
+    bool
+        True if there are positional or structural encodings, False otherwise.
+    """
+    added_features = 0
+    for key in transforms.keys():
+        if "encodings" in key:
+            for enc in transforms.get("encodings", []):
+                if enc  == "LapPE":
+                    if transforms.get("parameters").get(enc).get("include_eigenvalues"):
+                        added_features += transforms.get("parameters").get(enc).get("max_pe_dim")*2
+                    else:
+                        added_features += transforms.get("parameters").get(enc).get("max_pe_dim")
+                elif enc == "RWSE":
+                    added_features += transforms.get("parameters").get(enc).get("max_pe_dim")
+        elif "LapPE" in key:
+            if transforms[key].get("include_eigenvalues"):
+                added_features += transforms[key].get("max_pe_dim")*2
+            else:
+                added_features += transforms[key].get("max_pe_dim")
+        elif "RWSE" in key:
+            added_features += transforms[key].get("max_pe_dim")
+    return added_features
 
 
 def infer_in_channels(dataset, transforms):
@@ -193,6 +226,9 @@ def infer_in_channels(dataset, transforms):
     list
         List with dimensions of the input channels.
     """
+    num_features = dataset.parameters.num_features
+    if isinstance(num_features, int):
+        num_features = num_features + check_pses_in_transforms(transforms)
 
     # Make it possible to pass lifting configuration as file path
     if transforms is not None and transforms.keys() == {"liftings"}:
@@ -273,11 +309,11 @@ def infer_in_channels(dataset, transforms):
         # Get type of feature lifting
         feature_lifting = check_for_type_feature_lifting(transforms, lifting)
 
-        # Check if the dataset.parameters.num_features defines a single value or a list
-        if isinstance(dataset.parameters.num_features, int):
+        # Check if the num_features defines a single value or a list
+        if isinstance(num_features, int):
             # Case when the dataset has no edge attributes
             if feature_lifting == "Concatenation":
-                return_value = [dataset.parameters.num_features]
+                return_value = [num_features]
                 for i in range(2, transforms[lifting].complex_dim + 1):
                     return_value += [int(return_value[-1]) * i]
 
@@ -285,21 +321,21 @@ def infer_in_channels(dataset, transforms):
 
             else:
                 # ProjectionSum feature lifting by default
-                return [dataset.parameters.num_features] * transforms[
+                return [num_features] * transforms[
                     lifting
                 ].complex_dim
         # Case when the dataset has edge attributes (cells attributes)
         else:
             assert (
-                type(dataset.parameters.num_features)
+                type(num_features)
                 is omegaconf.listconfig.ListConfig
             ), (
-                f"num_features should be a list of integers, not {type(dataset.parameters.num_features)}"
+                f"num_features should be a list of integers, not {type(num_features)}"
             )
             # If preserve_edge_attr == False
             if not transforms[lifting].preserve_edge_attr:
                 if feature_lifting == "Concatenation":
-                    return_value = [dataset.parameters.num_features[0]]
+                    return_value = [num_features[0]]
                     for i in range(2, transforms[lifting].complex_dim + 1):
                         return_value += [int(return_value[-1]) * i]
 
@@ -307,16 +343,16 @@ def infer_in_channels(dataset, transforms):
 
                 else:
                     # ProjectionSum feature lifting by default
-                    return [dataset.parameters.num_features[0]] * transforms[
+                    return [num_features[0]] * transforms[
                         lifting
                     ].complex_dim
             # If preserve_edge_attr == True
             else:
-                return list(dataset.parameters.num_features) + [
-                    dataset.parameters.num_features[1]
+                return list(num_features) + [
+                    num_features[1]
                 ] * (
                     transforms[lifting].complex_dim
-                    - len(dataset.parameters.num_features)
+                    - len(num_features)
                 )
 
     # Case when there is no lifting
@@ -332,20 +368,20 @@ def infer_in_channels(dataset, transforms):
             in ["simplicial", "cell", "combinatorial", "hypergraph"]
         ):
             if isinstance(
-                dataset.parameters.num_features,
+                num_features,
                 omegaconf.listconfig.ListConfig,
             ):
-                return list(dataset.parameters.num_features)
+                return list(num_features)
             else:
                 raise ValueError(
                     "The dataset and model are from the same domain but the data_domain is not higher-order."
                 )
 
-        elif isinstance(dataset.parameters.num_features, int):
-            return [dataset.parameters.num_features]
+        elif isinstance(num_features, int):
+            return [num_features]
 
         else:
-            return [dataset.parameters.num_features[0]]
+            return [num_features[0]]
 
     # This else is never executed
     else:
