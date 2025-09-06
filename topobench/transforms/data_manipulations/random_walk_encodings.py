@@ -1,4 +1,5 @@
 """Random Walk Structural Encodings (RWSE) Transform."""
+
 import torch
 from torch_geometric.data import Data
 from torch_geometric.transforms import BaseTransform
@@ -38,11 +39,13 @@ class RWSE(BaseTransform):
             else:
                 data.x = torch.cat([data.x, pe], dim=-1)
         else:
-            setattr(data, "RWSE", pe)
+            data.RWSE = pe
 
         return data
 
-    def _compute_rwse(self, edge_index: torch.Tensor, num_nodes: int) -> torch.Tensor:
+    def _compute_rwse(
+        self, edge_index: torch.Tensor, num_nodes: int
+    ) -> torch.Tensor:
         """Internal method to compute RWSE return probabilities."""
         device = edge_index.device
 
