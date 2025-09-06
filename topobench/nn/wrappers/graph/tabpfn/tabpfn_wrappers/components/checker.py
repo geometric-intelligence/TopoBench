@@ -87,6 +87,20 @@ class Checker:
         # Build neighbor feature matrix
         X_nb = node_features[neighbors_id]  # shape: (k, d)
         x_np = node_features[test_ids]  # shape: (num_test_points, d)
+        X = node_features[list(neighbors_id) + list(test_ids)]
+
+        # Create mask of "valid" columns
+        mask = np.all(np.isfinite(X), axis=0)
+
+        # Keep only valid columns
+        X_nb = X_nb[:, mask]
+        x_np = x_np[:, mask]
+
+        nan_columns = np.invert(mask)
+        if nan_columns.any():
+            print(
+                f"WARNING: {nan_columns.sum()} COLUMNS CONTAINED NaNs VALUES."
+            )
 
         # One neighbor
         if X_nb.shape[0] == 1:

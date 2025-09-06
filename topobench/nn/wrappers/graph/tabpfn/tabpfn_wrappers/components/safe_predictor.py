@@ -65,7 +65,6 @@ class SafePredictor:
               things, adapt the two lines marked with 'ADAPT'.
         """
         try:
-            # ADAPT: if your Checker returns something else, adjust here.
             X_nb, X_test = self.checker(
                 test_ids=test_ids,
                 neighbors_id=neighbors_id,
@@ -83,7 +82,7 @@ class SafePredictor:
             return probs, preds, Case.TRAINED
 
         except NoNeighborsError:
-            probs, preds = self.f_no()
+            probs, preds = self.f_no(batch_size=len(test_ids))
             return probs, preds, Case.NO_NEIGHBORS
 
         except OneNeighborError:
@@ -92,12 +91,14 @@ class SafePredictor:
                 if len(neighbors_id)
                 else np.empty((0,), dtype=labels.dtype)
             )
-            probs, preds = self.f_one(y_nb)
+            probs, preds = self.f_one(y_nb, batch_size=len(test_ids))
             return probs, preds, Case.ONE_NEIGHBOR
 
         except AllNeighborSameY:
             y_nb = labels[neighbors_id]
-            probs, preds = self.f_one(y_nb)  #  handle it as one neighborn
+            probs, preds = self.f_one(
+                y_nb, batch_size=len(test_ids)
+            )  #  handle it as one neighbor
             return probs, preds, Case.SAME_Y
 
         except AllFeaturesConstantError:
@@ -106,7 +107,7 @@ class SafePredictor:
                 if len(neighbors_id)
                 else np.empty((0,), dtype=labels.dtype)
             )
-            probs, preds = self.f_const(y_nb)
+            probs, preds = self.f_const(y_nb, batch_size=len(test_ids))
             return probs, preds, Case.ALL_CONST
 
         except CheckerError as e:

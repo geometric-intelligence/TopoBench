@@ -15,31 +15,31 @@ class TabPFNClassifierWrapper(BaseWrapper):
         self.uniform_ = np.ones(self.num_classes_) / self.num_classes_
 
         # Class distribution (normalized counts)
-        self.self = counts / counts.sum()
+        self.class_distribution_ = counts / counts.sum()
 
         # Most common class (mode)
         most_common_idx = np.argmax(counts)
         self.most_common_class_ = self.classes_[most_common_idx]
 
-    def _no_neighborns(self) -> Tuple[np.ndarray, np.ndarray]:
+    def _no_neighborns(self, batch_size: int) -> Tuple[np.ndarray, np.ndarray]:
         """
         Handle case with no neighbors by repeating the class distribution and most common class.
 
         Returns
         -------
         probs : np.ndarray
-            Shape (self.num_test_nodes, self.num_classes_),
+            Shape (batch_size, self.num_classes_),
             each row is self.class_distribution_.
         preds : np.ndarray
-            Shape (self.num_test_nodes,),
+            Shape (batch_size,),
             each element is self.most_common_class_.
         """
-        probs = np.tile(self.class_distribution_, (self.num_test_nodes, 1))
-        preds = np.full(self.num_test_nodes, self.most_common_class_)
+        probs = np.tile(self.class_distribution_, (batch_size, 1))
+        preds = np.full(batch_size, self.most_common_class_)
         return probs, list(preds)
 
     def _one_neighborn(
-        self, labels: np.ndarray
+        self, labels: np.ndarray, batch_size: int
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Handle case with exactly one neighbor.
@@ -52,10 +52,10 @@ class TabPFNClassifierWrapper(BaseWrapper):
         Returns
         -------
         probs : np.ndarray
-            Shape (self.num_test_nodes, self.num_classes_),
+            Shape (batch_size, self.num_classes_),
             each row is a one-hot vector for the neighbor's label.
         preds : np.ndarray
-            Shape (self.num_test_nodes,),
+            Shape (batch_size,),
             each element is the neighbor's label.
         """
         # taking the label of the node
@@ -66,12 +66,14 @@ class TabPFNClassifierWrapper(BaseWrapper):
         one_hot[label] = 1.0
 
         # Repeat for all test nodes
-        probs = np.tile(one_hot, (self.num_test_nodes, 1))
-        preds = np.full(self.num_test_nodes, label)
+        probs = np.tile(one_hot, (batch_size, 1))
+        preds = np.full(batch_size, label)
 
         return probs, list(preds)
 
-    def _all_features_constant(self, labels) -> tuple[np.ndarray, np.ndarray]:
+    def _all_features_constant(
+        self, labels: np.ndarray, batch_size: int
+    ) -> tuple[np.ndarray, np.ndarray]:
         counts = np.bincount(labels, minlength=self.num_classes_).astype(
             np.float64
         )
@@ -88,8 +90,8 @@ class TabPFNClassifierWrapper(BaseWrapper):
         pred_idx = int(np.argmax(counts))
 
         # Repeat for all test nodes
-        probs = np.tile(probs, (self.num_test_nodes, 1))
-        preds = np.full(self.num_test_nodes, pred_idx)
+        probs = np.tile(probs, (batch_size, 1))
+        preds = np.full(batch_size, pred_idx)
 
         return probs, list(pred)
 
