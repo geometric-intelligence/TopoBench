@@ -90,8 +90,12 @@ def get_default_transform(dataset, model):
     dataset_configs_dir = os.path.join(
         base_dir, "configs", "transforms", "dataset_defaults"
     )
-    datasets_with_defaults = [f.split(".")[0] for f in os.listdir(dataset_configs_dir)]
-    model_with_defaults = [f.split(".")[0] for f in os.listdir(model_configs_dir)]
+    datasets_with_defaults = [
+        f.split(".")[0] for f in os.listdir(dataset_configs_dir)
+    ]
+    model_with_defaults = [
+        f.split(".")[0] for f in os.listdir(model_configs_dir)
+    ]
     if dataset in datasets_with_defaults:
         return f"dataset_defaults/{dataset}"
     elif model in model_with_defaults:
@@ -182,7 +186,8 @@ def get_monitor_mode(task):
 
     else:
         raise ValueError(f"Invalid task {task}")
-    
+
+
 def check_pses_in_transforms(transforms):
     r"""Check if there are positional or structural encodings in the transforms.
 
@@ -197,34 +202,70 @@ def check_pses_in_transforms(transforms):
         True if there are positional or structural encodings, False otherwise.
     """
     added_features = 0
-    for key in transforms.keys():
+    for key in transforms:
         # Single transform
         if "encodings" in key:
             for enc in transforms.get("encodings", []):
-                if enc  == "LapPE":
-                    if transforms.get("parameters").get(enc).get("include_eigenvalues"):
-                        added_features += transforms.get("parameters").get(enc).get("max_pe_dim")*2
+                if enc == "LapPE":
+                    if (
+                        transforms.get("parameters")
+                        .get(enc)
+                        .get("include_eigenvalues")
+                    ):
+                        added_features += (
+                            transforms.get("parameters")
+                            .get(enc)
+                            .get("max_pe_dim")
+                            * 2
+                        )
                     else:
-                        added_features += transforms.get("parameters").get(enc).get("max_pe_dim")
+                        added_features += (
+                            transforms.get("parameters")
+                            .get(enc)
+                            .get("max_pe_dim")
+                        )
                 elif enc == "RWSE":
-                    added_features += transforms.get("parameters").get(enc).get("max_pe_dim")
+                    added_features += (
+                        transforms.get("parameters").get(enc).get("max_pe_dim")
+                    )
         # Potentially multiple transforms
         elif "LapPE" in key:
             if transforms[key].get("include_eigenvalues"):
-                added_features += transforms[key].get("max_pe_dim")*2
+                added_features += transforms[key].get("max_pe_dim") * 2
             else:
                 added_features += transforms[key].get("max_pe_dim")
         elif "RWSE" in key:
             added_features += transforms[key].get("max_pe_dim")
         elif "CombinedPSEs" in key:
             for pse in transforms[key].get("encodings", []):
-                if pse  == "LapPE":
-                    if transforms.get("parameters").get(pse).get("include_eigenvalues"):
-                        added_features += transforms.get("parameters").get(pse).get("max_pe_dim")*2
+                if pse == "LapPE":
+                    if (
+                        transforms[key]
+                        .get("parameters")
+                        .get(pse)
+                        .get("include_eigenvalues")
+                    ):
+                        added_features += (
+                            transforms[key]
+                            .get("parameters")
+                            .get(pse)
+                            .get("max_pe_dim")
+                            * 2
+                        )
                     else:
-                        added_features += transforms.get("parameters").get(pse).get("max_pe_dim")
+                        added_features += (
+                            transforms[key]
+                            .get("parameters")
+                            .get(pse)
+                            .get("max_pe_dim")
+                        )
                 elif pse == "RWSE":
-                    added_features += transforms.get("parameters").get(pse).get("max_pe_dim")
+                    added_features += (
+                        transforms[key]
+                        .get("parameters")
+                        .get(pse)
+                        .get("max_pe_dim")
+                    )
     return added_features
 
 
@@ -244,7 +285,7 @@ def infer_in_channels(dataset, transforms):
         List with dimensions of the input channels.
     """
     num_features = dataset.parameters.num_features
-    if isinstance(num_features, int):
+    if isinstance(num_features, int) and transforms is not None:
         num_features = num_features + check_pses_in_transforms(transforms)
 
     # Make it possible to pass lifting configuration as file path
@@ -338,15 +379,10 @@ def infer_in_channels(dataset, transforms):
 
             else:
                 # ProjectionSum feature lifting by default
-                return [num_features] * transforms[
-                    lifting
-                ].complex_dim
+                return [num_features] * transforms[lifting].complex_dim
         # Case when the dataset has edge attributes (cells attributes)
         else:
-            assert (
-                type(num_features)
-                is omegaconf.listconfig.ListConfig
-            ), (
+            assert type(num_features) is omegaconf.listconfig.ListConfig, (
                 f"num_features should be a list of integers, not {type(num_features)}"
             )
             # If preserve_edge_attr == False
@@ -360,16 +396,11 @@ def infer_in_channels(dataset, transforms):
 
                 else:
                     # ProjectionSum feature lifting by default
-                    return [num_features[0]] * transforms[
-                        lifting
-                    ].complex_dim
+                    return [num_features[0]] * transforms[lifting].complex_dim
             # If preserve_edge_attr == True
             else:
-                return list(num_features) + [
-                    num_features[1]
-                ] * (
-                    transforms[lifting].complex_dim
-                    - len(num_features)
+                return list(num_features) + [num_features[1]] * (
+                    transforms[lifting].complex_dim - len(num_features)
                 )
 
     # Case when there is no lifting
