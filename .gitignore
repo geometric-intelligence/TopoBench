@@ -16,7 +16,6 @@ downloads/
 eggs/
 .eggs/
 .vscode/
-lib/
 logs/
 lib64/
 parts/
