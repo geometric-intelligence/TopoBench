@@ -1,12 +1,11 @@
 """Laplacian Positional Encoding (LapPE) Transform."""
+
 import numpy as np
 import torch
+from scipy.sparse.linalg import eigsh
 from torch_geometric.data import Data
 from torch_geometric.transforms import BaseTransform
 from torch_geometric.utils import get_laplacian, to_scipy_sparse_matrix
-
-from typing import Optional
-from scipy.sparse.linalg import eigsh
 
 
 class LapPE(BaseTransform):
@@ -57,11 +56,13 @@ class LapPE(BaseTransform):
             else:
                 data.x = torch.cat([data.x, pe], dim=-1)
         else:
-            setattr(data, "LapPE", pe)
+            data.LapPE = pe
 
         return data
 
-    def _compute_lap_pe(self, edge_index: torch.Tensor, num_nodes: int) -> torch.Tensor:
+    def _compute_lap_pe(
+        self, edge_index: torch.Tensor, num_nodes: int
+    ) -> torch.Tensor:
         """Internal method to compute Laplacian eigenvector encodings."""
         device = edge_index.device
 
@@ -72,9 +73,9 @@ class LapPE(BaseTransform):
         edge_index_lap, edge_weight = get_laplacian(
             edge_index, normalization="sym", num_nodes=num_nodes
         )
-        L = to_scipy_sparse_matrix(edge_index_lap, edge_weight, num_nodes).astype(
-            np.float64
-        )
+        L = to_scipy_sparse_matrix(
+            edge_index_lap, edge_weight, num_nodes
+        ).astype(np.float64)
 
         k = min(self.max_pe_dim, max(1, num_nodes - 1))
 
@@ -111,10 +112,12 @@ class LapPE(BaseTransform):
         pe = torch.from_numpy(evecs).to(dtype=torch.float32, device=device)
 
         if self.include_eigenvalues:
-            eigvals_broadcast = (
-                torch.from_numpy(evals).to(dtype=torch.float32, device=device)
+            eigvals_broadcast = torch.from_numpy(evals).to(
+                dtype=torch.float32, device=device
             )
-            eigvals_broadcast = eigvals_broadcast.unsqueeze(0).repeat(num_nodes, 1)
+            eigvals_broadcast = eigvals_broadcast.unsqueeze(0).repeat(
+                num_nodes, 1
+            )
             pe = torch.cat([pe, eigvals_broadcast], dim=-1)
 
         return pe

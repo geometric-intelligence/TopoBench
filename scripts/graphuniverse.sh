@@ -1,0 +1,245 @@
+python -m topobench \
+    dataset=graph/GraphUniverse_CD \
+    dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.0,0.1\],\[0.4,0.6\],\[0.9,1.0\] \
+    dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=100,1000,10000 \
+    model=graph/gps \
+    model.feature_encoder.out_channels=32,64 \
+    model.backbone.num_layers=2,4 \
+    model.backbone.heads=4,8 \
+    model.backbone.dropout=0.0,0.25,0.5 \
+    model.backbone.attn_type=multihead,performer \
+    dataset.split_params.data_seed=1 \
+    dataset.dataloader_params.batch_size=16,32 \
+    transforms.CombinedPSEs.encodings=\[\],\[LapPE\],\[RWSE\] \
+    logger.wandb.project=first_experiments \
+    trainer.max_epochs=1000 \
+    trainer.min_epochs=50 \
+    trainer.devices=\[1\] \
+    trainer.check_val_every_n_epoch=1 \
+    callbacks.early_stopping.patience=50 \
+    tags="[FirstExperiments]" \
+    --multirun &
+
+python -m topobench \
+    dataset=graph/GraphUniverse_CD \
+    dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.0,0.1\],\[0.4,0.6\],\[0.9,1.0\] \
+    dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=100,1000,10000 \
+    model=graph/nsd \
+    model.feature_encoder.out_channels=32,64 \
+    model.backbone.num_layers=2,4 \
+    model.backbone.dropout=0.0,0.25,0.5 \
+    model.backbone.sheaf_type=diag,bundle \
+    dataset.split_params.data_seed=1 \
+    dataset.dataloader_params.batch_size=16,32 \
+    transforms.CombinedPSEs.encodings=\[\],\[LapPE\],\[RWSE\] \
+    logger.wandb.project=first_experiments \
+    trainer.max_epochs=1000 \
+    trainer.min_epochs=50 \
+    trainer.devices=\[2\] \
+    trainer.check_val_every_n_epoch=1 \
+    callbacks.early_stopping.patience=50 \
+    tags="[FirstExperiments]" \
+    --multirun &
+
+python -m topobench \
+    dataset=graph/GraphUniverse_CD \
+    dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.0,0.1\],\[0.4,0.6\],\[0.9,1.0\] \
+    dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=100,1000,10000 \
+    model=graph/gcn \
+    model.feature_encoder.out_channels=32,64,128 \
+    model.backbone.num_layers=2,4 \
+    model.backbone.dropout=0.0,0.25,0.5 \
+    dataset.split_params.data_seed=1 \
+    dataset.dataloader_params.batch_size=16,32 \
+    logger.wandb.project=first_experiments \
+    trainer.max_epochs=1000 \
+    trainer.min_epochs=50 \
+    trainer.devices=\[3\] \
+    trainer.check_val_every_n_epoch=1 \
+    callbacks.early_stopping.patience=50 \
+    tags="[FirstExperiments]" \
+    --multirun &
+
+python -m topobench \
+    dataset=graph/GraphUniverse_CD \
+    dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.0,0.1\],\[0.4,0.6\],\[0.9,1.0\] \
+    dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=100,1000,10000 \
+    model=graph/gat \
+    model.feature_encoder.out_channels=32,64,128 \
+    model.backbone.heads=1,4,8 \
+    model.backbone.num_layers=2,4 \
+    model.backbone.dropout=0.0,0.25,0.5 \
+    dataset.split_params.data_seed=1 \
+    dataset.dataloader_params.batch_size=16,32 \
+    logger.wandb.project=first_experiments \
+    trainer.max_epochs=1000 \
+    trainer.min_epochs=50 \
+    trainer.devices=\[0\] \
+    trainer.check_val_every_n_epoch=1 \
+    callbacks.early_stopping.patience=50 \
+    tags="[FirstExperiments]" \
+    --multirun &
+
+python -m topobench \
+    dataset=graph/GraphUniverse_CD \
+    dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.0,0.1\],\[0.4,0.6\],\[0.9,1.0\] \
+    dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=100,1000,10000 \
+    model=graph/gps \
+    model.feature_encoder.out_channels=32,64 \
+    model.backbone.num_layers=2,4 \
+    model.backbone.heads=4,8 \
+    model.backbone.dropout=0.0,0.25,0.5 \
+    model.backbone.attn_type=multihead,performer \
+    dataset.split_params.data_seed=3 \
+    dataset.dataloader_params.batch_size=16,32 \
+    transforms.CombinedPSEs.encodings=\[\],\[LapPE\],\[RWSE\] \
+    logger.wandb.project=first_experiments \
+    trainer.max_epochs=1000 \
+    trainer.min_epochs=50 \
+    trainer.devices=\[1\] \
+    trainer.check_val_every_n_epoch=1 \
+    callbacks.early_stopping.patience=50 \
+    tags="[FirstExperiments]" \
+    --multirun &
+
+python -m topobench \
+    dataset=graph/GraphUniverse_CD \
+    dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.0,0.1\],\[0.4,0.6\],\[0.9,1.0\] \
+    dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=100,1000,10000 \
+    model=graph/nsd \
+    model.feature_encoder.out_channels=32,64 \
+    model.backbone.num_layers=2,4 \
+    model.backbone.dropout=0.0,0.25,0.5 \
+    model.backbone.sheaf_type=diag,bundle \
+    dataset.split_params.data_seed=3 \
+    dataset.dataloader_params.batch_size=16,32 \
+    transforms.CombinedPSEs.encodings=\[\],\[LapPE\],\[RWSE\] \
+    logger.wandb.project=first_experiments \
+    trainer.max_epochs=1000 \
+    trainer.min_epochs=50 \
+    trainer.devices=\[2\] \
+    trainer.check_val_every_n_epoch=1 \
+    callbacks.early_stopping.patience=50 \
+    tags="[FirstExperiments]" \
+    --multirun &
+
+python -m topobench \
+    dataset=graph/GraphUniverse_CD \
+    dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.0,0.1\],\[0.4,0.6\],\[0.9,1.0\] \
+    dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=100,1000,10000 \
+    model=graph/gcn \
+    model.feature_encoder.out_channels=32,64,128 \
+    model.backbone.num_layers=2,4 \
+    model.backbone.dropout=0.0,0.25,0.5 \
+    dataset.split_params.data_seed=3 \
+    dataset.dataloader_params.batch_size=16,32 \
+    logger.wandb.project=first_experiments \
+    trainer.max_epochs=1000 \
+    trainer.min_epochs=50 \
+    trainer.devices=\[3\] \
+    trainer.check_val_every_n_epoch=1 \
+    callbacks.early_stopping.patience=50 \
+    tags="[FirstExperiments]" \
+    --multirun &
+
+python -m topobench \
+    dataset=graph/GraphUniverse_CD \
+    dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.0,0.1\],\[0.4,0.6\],\[0.9,1.0\] \
+    dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=100,1000,10000 \
+    model=graph/gat \
+    model.feature_encoder.out_channels=32,64,128 \
+    model.backbone.heads=1,4,8 \
+    model.backbone.num_layers=2,4 \
+    model.backbone.dropout=0.0,0.25,0.5 \
+    dataset.split_params.data_seed=3 \
+    dataset.dataloader_params.batch_size=16,32 \
+    logger.wandb.project=first_experiments \
+    trainer.max_epochs=1000 \
+    trainer.min_epochs=50 \
+    trainer.devices=\[0\] \
+    trainer.check_val_every_n_epoch=1 \
+    callbacks.early_stopping.patience=50 \
+    tags="[FirstExperiments]" \
+    --multirun &
+
+python -m topobench \
+    dataset=graph/GraphUniverse_CD \
+    dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.0,0.1\],\[0.4,0.6\],\[0.9,1.0\] \
+    dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=100,1000,10000 \
+    model=graph/gps \
+    model.feature_encoder.out_channels=32,64 \
+    model.backbone.num_layers=2,4 \
+    model.backbone.heads=4,8 \
+    model.backbone.dropout=0.0,0.25,0.5 \
+    model.backbone.attn_type=multihead,performer \
+    dataset.split_params.data_seed=5 \
+    dataset.dataloader_params.batch_size=16,32 \
+    transforms.CombinedPSEs.encodings=\[\],\[LapPE\],\[RWSE\] \
+    logger.wandb.project=first_experiments \
+    trainer.max_epochs=1000 \
+    trainer.min_epochs=50 \
+    trainer.devices=\[1\] \
+    trainer.check_val_every_n_epoch=1 \
+    callbacks.early_stopping.patience=50 \
+    tags="[FirstExperiments]" \
+    --multirun &
+
+python -m topobench \
+    dataset=graph/GraphUniverse_CD \
+    dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.0,0.1\],\[0.4,0.6\],\[0.9,1.0\] \
+    dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=100,1000,10000 \
+    model=graph/nsd \
+    model.feature_encoder.out_channels=32,64 \
+    model.backbone.num_layers=2,4 \
+    model.backbone.dropout=0.0,0.25,0.5 \
+    model.backbone.sheaf_type=diag,bundle \
+    dataset.split_params.data_seed=5 \
+    dataset.dataloader_params.batch_size=16,32 \
+    transforms.CombinedPSEs.encodings=\[\],\[LapPE\],\[RWSE\] \
+    logger.wandb.project=first_experiments \
+    trainer.max_epochs=1000 \
+    trainer.min_epochs=50 \
+    trainer.devices=\[2\] \
+    trainer.check_val_every_n_epoch=1 \
+    callbacks.early_stopping.patience=50 \
+    tags="[FirstExperiments]" \
+    --multirun &
+
+python -m topobench \
+    dataset=graph/GraphUniverse_CD \
+    dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.0,0.1\],\[0.4,0.6\],\[0.9,1.0\] \
+    dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=100,1000,10000 \
+    model=graph/gcn \
+    model.feature_encoder.out_channels=32,64,128 \
+    model.backbone.num_layers=2,4 \
+    model.backbone.dropout=0.0,0.25,0.5 \
+    dataset.split_params.data_seed=5 \
+    dataset.dataloader_params.batch_size=16,32 \
+    logger.wandb.project=first_experiments \
+    trainer.max_epochs=1000 \
+    trainer.min_epochs=50 \
+    trainer.devices=\[3\] \
+    trainer.check_val_every_n_epoch=1 \
+    callbacks.early_stopping.patience=50 \
+    tags="[FirstExperiments]" \
+    --multirun &
+
+python -m topobench \
+    dataset=graph/GraphUniverse_CD \
+    dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.0,0.1\],\[0.4,0.6\],\[0.9,1.0\] \
+    dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=100,1000,10000 \
+    model=graph/gat \
+    model.feature_encoder.out_channels=32,64,128 \
+    model.backbone.heads=1,4,8 \
+    model.backbone.num_layers=2,4 \
+    model.backbone.dropout=0.0,0.25,0.5 \
+    dataset.split_params.data_seed=5 \
+    dataset.dataloader_params.batch_size=16,32 \
+    logger.wandb.project=first_experiments \
+    trainer.max_epochs=1000 \
+    trainer.min_epochs=50 \
+    trainer.devices=\[0\] \
+    trainer.check_val_every_n_epoch=1 \
+    callbacks.early_stopping.patience=50 \
+    tags="[FirstExperiments]" \
+    --multirun &

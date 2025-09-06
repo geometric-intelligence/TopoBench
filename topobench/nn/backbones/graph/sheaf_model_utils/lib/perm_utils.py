@@ -1,9 +1,8 @@
 # Copyright 2022 Twitter, Inc.
 # SPDX-License-Identifier: Apache-2.0
 
-import torch
 import numpy as np
-
+import torch
 from scipy import sparse as sp
 from torch_geometric.data import Data
 
@@ -31,7 +30,10 @@ def permute_graph(graph: Data, P: np.ndarray) -> Data:
 
     # Apply permutation to adjacencies, if any
     if graph.edge_index.size(1) > 0:
-        inps = (np.ones(graph.edge_index.size(1)), (graph.edge_index[0].numpy(), graph.edge_index[1].numpy()))
+        inps = (
+            np.ones(graph.edge_index.size(1)),
+            (graph.edge_index[0].numpy(), graph.edge_index[1].numpy()),
+        )
         A = sp.csr_matrix(inps, shape=(n, n))
         P = sp.csr_matrix(P)
         A_perm = P.dot(A).dot(P.transpose()).tocoo()

@@ -1,7 +1,7 @@
 """Combined Positional and Structural Encodings Transform."""
+
 from torch_geometric.data import Data
 from torch_geometric.transforms import BaseTransform
-from typing import Optional
 
 
 class CombinedPSEs(BaseTransform):
@@ -30,7 +30,7 @@ class CombinedPSEs(BaseTransform):
     def __init__(
         self,
         encodings: list[str],
-        parameters: Optional[dict] = None,
+        parameters: dict | None = None,
         **kwargs,
     ):
         self.encodings = encodings
@@ -48,7 +48,8 @@ class CombinedPSEs(BaseTransform):
         torch_geometric.data.Data
             The transformed data with added structural encodings.
         """
-        from topobench.transforms.data_manipulations import LapPE, RWSE
+        from topobench.transforms.data_manipulations import RWSE, LapPE
+
         for enc in self.encodings:
             if enc == "LapPE":
                 lappe = LapPE(**self.parameters.get("LapPE", {}))
