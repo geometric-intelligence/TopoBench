@@ -1,3 +1,4 @@
+"""Random Walk Structural Encodings (RWSE) Transform."""
 import torch
 from torch_geometric.data import Data
 from torch_geometric.transforms import BaseTransform
