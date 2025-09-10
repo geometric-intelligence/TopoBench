@@ -18,7 +18,7 @@ class MLP(nn.Module):
     ----------
     in_channels : int
         The dimensionality of the input features.
-    hidden_channels : int
+    hidden_layers : int
         The dimensionality of the hidden features.
     out_channels : int
         The dimensionality of the output features.
@@ -47,7 +47,7 @@ class MLP(nn.Module):
     def __init__(
         self,
         in_channels,
-        hidden_channels,
+        hidden_layers,
         out_channels,
         dropout=0.25,
         norm=None,
@@ -62,7 +62,7 @@ class MLP(nn.Module):
     ):
         super().__init__()
         self.in_channels = in_channels
-        self.hidden_channels = hidden_channels
+        self.hidden_layers = [hidden_layers] if isinstance(hidden_layers, int) else list(hidden_layers)
         self.dropout = dropout
         self.norm_layers = self.build_norm_layers(norm, norm_kwargs)
         self.act = (
@@ -96,7 +96,7 @@ class MLP(nn.Module):
             A list of normalization layers.
         """
         layers = []
-        for hidden_dim in self.hidden_channels:
+        for hidden_dim in self.hidden_layers:
             if norm is not None:
                 layers.append(
                     normalization_resolver(
@@ -119,8 +119,9 @@ class MLP(nn.Module):
         """
         layers = []
         fc_layer_input_dim = self.in_channels
+        fc_dim = self.in_channels
         for fc_dim, norm_layer in zip(
-            self.hidden_channels, self.norm_layers, strict=False
+            self.hidden_layers, self.norm_layers, strict=False
         ):
             layers.append(
                 nn.Sequential(
@@ -150,8 +151,7 @@ class MLP(nn.Module):
         torch.Tensor
             Output tensor.
         """
-        flattened_x = x.view(batch_size, -1)
-        x = self.mlp_layers(flattened_x)
+        x = self.mlp_layers(x)
         if self.num_nodes is not None and self.task_level == "node":
             return (
                 x.view(batch_size, self.num_nodes, -1)
