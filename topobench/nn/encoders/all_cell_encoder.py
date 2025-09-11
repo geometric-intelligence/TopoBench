@@ -108,14 +108,13 @@ class BaseEncoder(torch.nn.Module):
 
     def __init__(self, in_channels, out_channels, dropout=0):
         super().__init__()
-        self.linear1 = torch.nn.Linear(in_channels, out_channels)
-        self.linear2 = torch.nn.Linear(out_channels, out_channels)
+        self.BN = GraphNorm(in_channels)
+        self.linear = torch.nn.Linear(in_channels, out_channels)
         self.relu = torch.nn.ReLU()
-        self.BN = GraphNorm(out_channels)
         self.dropout = torch.nn.Dropout(dropout)
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(in_channels={self.linear1.in_features}, out_channels={self.linear1.out_features})"
+        return f"{self.__class__.__name__}(in_channels={self.linear.in_features}, out_channels={self.linear.out_features})"
 
     def forward(self, x: torch.Tensor, batch: torch.Tensor) -> torch.Tensor:
         r"""Forward pass of the encoder.
@@ -134,8 +133,7 @@ class BaseEncoder(torch.nn.Module):
         torch.Tensor
             Output tensor of shape [N, out_channels].
         """
-        x = self.linear1(x)
         x = self.BN(x, batch=batch) if batch.shape[0] > 0 else self.BN(x)
+        x = self.linear(x)
         x = self.dropout(self.relu(x))
-        x = self.linear2(x)
         return x
