@@ -21,6 +21,7 @@ class GNNWrapperWithPE(AbstractWrapper):
         x_0 = self.backbone(
             batch.x_0,
             batch.edge_index,
+            batch=batch.batch_0,
             edge_weight=batch.get("edge_weight", None),
             pe=batch.get(f"{self.pe_type}_pe", None),
         )
@@ -55,6 +56,7 @@ class GNNWrapper(AbstractWrapper):
         x_0 = self.backbone(
             batch.x_0,
             batch.edge_index,
+            batch=batch.batch_0,
             edge_weight=batch.get("edge_weight", None),
         )
 
