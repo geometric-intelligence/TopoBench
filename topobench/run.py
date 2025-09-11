@@ -34,6 +34,7 @@ from topobench.utils.config_resolvers import (
     get_required_lifting,
     infer_in_channels,
     infer_num_cell_dimensions,
+    infer_topotune_num_cell_dimensions,
 )
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
@@ -88,6 +89,11 @@ OmegaConf.register_new_resolver(
 )
 OmegaConf.register_new_resolver(
     "infer_num_cell_dimensions", infer_num_cell_dimensions, replace=True
+)
+OmegaConf.register_new_resolver(
+    "infer_topotune_num_cell_dimensions",
+    infer_topotune_num_cell_dimensions,
+    replace=True,
 )
 OmegaConf.register_new_resolver(
     "parameter_multiplication", lambda x, y: int(int(x) * int(y)), replace=True
