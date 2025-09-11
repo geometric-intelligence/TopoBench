@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.nn import Module
+from torch_geometric.nn import GraphNorm
 
 from topobench.nn.backbones.graph.sheaf_model_utils.inductive_discrete_models import (
     InductiveDiscreteBundleSheafDiffusion,
@@ -29,7 +30,7 @@ class NSD(Module):
         use_act=True,
         sheaf_act="tanh",
         second_linear=False,
-        orth="euler",
+        orth="cayley", # SWEEP: [euler, cayley, householder, matrix_exp]
         edge_weights=False,
         max_t=1.0,
         add_lp=False,
@@ -59,7 +60,8 @@ class NSD(Module):
             self.node_proj = nn.Linear(input_dim, hidden_dim - pe_dim)
             self.pe_proj = nn.Linear(pe_dim, pe_dim)
             if self.pe_norm:
-                self.pe_norm_layer = nn.BatchNorm1d(pe_dim)
+                print("Using GraphNorm for PE normalization")
+                self.pe_norm_layer = GraphNorm(pe_dim)
             else:
                 self.pe_norm_layer = None
             self.actual_input_dim = (
@@ -123,6 +125,7 @@ class NSD(Module):
         edge_index,
         edge_attr=None,
         edge_weight=None,
+        batch=None,
         pe: torch.Tensor | None = None,
         **kwargs,
     ):
@@ -134,6 +137,7 @@ class NSD(Module):
             edge_index: Edge indices [2, num_edges]
             edge_attr: Edge attributes (optional)
             edge_weight: Edge weights (optional)
+            batch: Batch indices [num_nodes] (optional)
             pe: Positional encodings [num_nodes, pe_dim] (optional)
 
         Returns:
@@ -147,7 +151,7 @@ class NSD(Module):
             if pe is not None:
                 # Normalize PE
                 if self.pe_norm_layer is not None and pe.size(0) > 1:
-                    pe_normalized = self.pe_norm_layer(pe)
+                    pe_normalized = self.pe_norm_layer(pe, batch=batch)
                 else:
                     pe_normalized = pe
 

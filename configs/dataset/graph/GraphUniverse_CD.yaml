@@ -11,12 +11,12 @@ loader:
       universe_parameters:
         K: 10
         feature_dim: 15
-        center_variance: 0.1
+        center_variance: 0.2
         cluster_variance: 0.5
         edge_propensity_variance: 0.5
         seed: 42
       family_parameters:
-        n_graphs: 500
+        n_graphs: 100
         min_n_nodes: 50
         max_n_nodes: 200
         min_communities: 4

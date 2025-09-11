@@ -15,6 +15,7 @@ from torch_geometric.nn import (
     PNAConv,
 )
 from torch_geometric.nn.attention import PerformerAttention
+from torch_geometric.nn import GraphNorm
 
 
 class RedrawProjection:
@@ -98,7 +99,7 @@ class GPSEncoder(torch.nn.Module):
             self.node_proj = nn.Linear(input_dim, hidden_dim - pe_dim)
             self.pe_proj = nn.Linear(pe_dim, pe_dim)
             if self.pe_norm:
-                self.pe_norm = nn.BatchNorm1d(pe_dim)
+                self.pe_norm = GraphNorm(pe_dim)
             else:
                 self.pe_norm = None
         elif pe_type is None or pe_type == "None":
@@ -203,7 +204,7 @@ class GPSEncoder(torch.nn.Module):
             if pe is not None:
                 # Normalize PE
                 if self.pe_norm is not None and pe.size(0) > 1:
-                    pe_normalized = self.pe_norm(pe)
+                    pe_normalized = self.pe_norm(pe, batch=batch)
                 else:
                     pe_normalized = pe
 
