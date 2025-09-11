@@ -234,7 +234,7 @@ class TBModel(LightningModule):
         dict
             Dictionary containing the updated model output.
         """
-        if not self.task_level == "inductive_node":
+        if self.task_level == "node":
             # Get the correct mask
             if self.state_str == "Training":
                 mask = batch.train_mask
