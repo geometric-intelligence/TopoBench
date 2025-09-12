@@ -1,0 +1,88 @@
+#!/bin/bash
+
+data_seeds=(1 3 5)
+for i in ${data_seeds[@]}; do
+    python -m topobench \
+        dataset=graph/GraphUniverse_CD \
+        dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.0,0.1\],\[0.4,0.6\],\[0.9,1.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1000 \
+        model=cell/topotune \
+        model.feature_encoder.out_channels=32 \
+        model.tune_gnn=GCN,GIN,GAT,GraphSAGE \
+        model.backbone.GNN.num_layers=1 \
+        model.backbone.neighborhoods=\[1-up_laplacian-0,1-down_laplacian-1,1-up_laplacian-1,1-down_laplacian-2\],\[1-up_laplacian-0,1-up_incidence-0,1-down_incidence-1,1-down_laplacian-1,1-up_laplacian-1,1-up_incidence-1,1-down_incidence-2,1-down_laplacian-2\],\[1-up_laplacian-0,1-down_incidence-1,1-up_laplacian-1,1-down_incidence-2\],\[1-up_laplacian-0,1-up_incidence-0,1-up_laplacian-1,1-up_incidence-1\],\[1-up_laplacian-0,1-down_incidence-1,1-down_laplacian-1,1-up_laplacian-1,1-down_incidence-2,1-down_laplacian-2\] \
+        model.backbone.layers=2 \
+        dataset.split_params.data_seed=$i \
+        dataset.dataloader_params.batch_size=32 \
+        logger.wandb.project=homophily_experiments \
+        trainer.max_epochs=1000 \
+        trainer.min_epochs=50 \
+        trainer.devices=\[0\] \
+        trainer.check_val_every_n_epoch=1 \
+        callbacks.early_stopping.patience=50 \
+        tags="[homophily]" \
+        --multirun &
+    
+    python -m topobench \
+        dataset=graph/GraphUniverse_CD \
+        dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.0,0.1\],\[0.4,0.6\],\[0.9,1.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1000 \
+        model=cell/topotune \
+        model.feature_encoder.out_channels=32 \
+        model.tune_gnn=GCN,GIN,GAT,GraphSAGE \
+        model.backbone.GNN.num_layers=1 \
+        model.backbone.neighborhoods=\[1-up_laplacian-0,1-up_incidence-0,1-down_laplacian-1,1-up_laplacian-1,1-up_incidence-1,1-down_laplacian-2\],\[1-up_laplacian-0,1-down_laplacian-1\],\[1-up_laplacian-0,1-up_laplacian-1\],\[1-up_laplacian-0,1-down_laplacian-2\],\[1-up_laplacian-0,1-down_incidence-2\] \
+        model.backbone.layers=2 \
+        dataset.split_params.data_seed=$i \
+        dataset.dataloader_params.batch_size=32 \
+        logger.wandb.project=homophily_experiments \
+        trainer.max_epochs=1000 \
+        trainer.min_epochs=50 \
+        trainer.devices=\[1\] \
+        trainer.check_val_every_n_epoch=1 \
+        callbacks.early_stopping.patience=50 \
+        tags="[homophily]" \
+        --multirun &
+
+    python -m topobench \
+        dataset=graph/GraphUniverse_CD \
+        dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.0,0.1\],\[0.4,0.6\],\[0.9,1.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1000 \
+        model=simplicial/topotune \
+        model.feature_encoder.out_channels=32 \
+        model.tune_gnn=GCN,GIN,GAT,GraphSAGE \
+        model.backbone.GNN.num_layers=1 \
+        model.backbone.neighborhoods=\[1-up_laplacian-0,1-down_laplacian-1,1-up_laplacian-1,1-down_laplacian-2\],\[1-up_laplacian-0,1-up_incidence-0,1-down_incidence-1,1-down_laplacian-1,1-up_laplacian-1,1-up_incidence-1,1-down_incidence-2,1-down_laplacian-2\],\[1-up_laplacian-0,1-down_incidence-1,1-up_laplacian-1,1-down_incidence-2\],\[1-up_laplacian-0,1-up_incidence-0,1-up_laplacian-1,1-up_incidence-1\],\[1-up_laplacian-0,1-down_incidence-1,1-down_laplacian-1,1-up_laplacian-1,1-down_incidence-2,1-down_laplacian-2\] \
+        model.backbone.layers=2 \
+        dataset.split_params.data_seed=$i \
+        dataset.dataloader_params.batch_size=32 \
+        logger.wandb.project=homophily_experiments \
+        trainer.max_epochs=1000 \
+        trainer.min_epochs=50 \
+        trainer.devices=\[2\] \
+        trainer.check_val_every_n_epoch=1 \
+        callbacks.early_stopping.patience=50 \
+        tags="[homophily]" \
+        --multirun &
+    
+    python -m topobench \
+        dataset=graph/GraphUniverse_CD \
+        dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.0,0.1\],\[0.4,0.6\],\[0.9,1.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1000 \
+        model=simplicial/topotune \
+        model.feature_encoder.out_channels=32 \
+        model.tune_gnn=GCN,GIN,GAT,GraphSAGE \
+        model.backbone.GNN.num_layers=1 \
+        model.backbone.neighborhoods=\[1-up_laplacian-0,1-up_incidence-0,1-down_laplacian-1,1-up_laplacian-1,1-up_incidence-1,1-down_laplacian-2\],\[1-up_laplacian-0,1-down_laplacian-1\],\[1-up_laplacian-0,1-up_laplacian-1\],\[1-up_laplacian-0,1-down_laplacian-2\],\[1-up_laplacian-0,1-down_incidence-2\] \
+        model.backbone.layers=2 \
+        dataset.split_params.data_seed=$i \
+        dataset.dataloader_params.batch_size=32 \
+        logger.wandb.project=homophily_experiments \
+        trainer.max_epochs=1000 \
+        trainer.min_epochs=50 \
+        trainer.devices=\[3\] \
+        trainer.check_val_every_n_epoch=1 \
+        callbacks.early_stopping.patience=50 \
+        tags="[homophily]" \
+        --multirun &
+done
