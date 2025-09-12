@@ -17,9 +17,9 @@ OUT_CHANNELS=(128 256)
 # OPTIMIZATION PARAMETERS
 # =====================
 LEARNING_RATES=(0.0001)
-PROJECTION_DROPOUTS=(0 0.1 0.25)
+PROJECTION_DROPOUTS=(0 0.1)
 WEIGHT_DECAYS=(0 0.000001)
-BATCH_SIZES=(32 64)
+BATCH_SIZES=(128 256)
 
 # =====================
 # CONVERT TO STRINGS
@@ -65,6 +65,7 @@ for i in {0..5}; do
         model.backbone.GNN.num_layers=1\
         model.readout.readout_name=PropagateSignalDown\
         model.tune_gnn=GIN\
+        model.feature_encoder.encoder_name=AllCellMoleculeFeatureEncoder\
         model.feature_encoder.out_channels=128\
         model.feature_encoder.proj_dropout=0.25\
         dataset.split_params.data_seed=0\
