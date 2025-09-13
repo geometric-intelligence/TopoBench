@@ -102,27 +102,30 @@ do
         do
             for pd in ${PROJECTION_DROPOUTS[*]}
             do
-                python topobench/run.py\
-                    dataset=simplicial/$dataset\
-                    model=simplicial/sann\
-                    model.backbone.n_layers=$N_LAYERS_STR\
-                    model.feature_encoder.out_channels=$OUT_CHANNELS_STR\
-                    model.feature_encoder.proj_dropout=$PROJECTION_DROPOUTS_STR\
-                    dataset.split_params.data_seed=$DATA_SEEDS_STR\
-                    dataset.dataloader_params.batch_size=$batch_size\
-                    trainer.max_epochs=500\
-                    trainer.min_epochs=50\
-                    trainer.devices=\[$CUDA\]\
-                    trainer.check_val_every_n_epoch=5\
-                    logger.wandb.project=$project_name\
-                    optimizer.parameters.lr=$LEARNING_RATES_STR\
-                    transforms.sann_encoding.pe_types=[$pe_type]\
-                    optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
-                    callbacks.early_stopping.patience=10\
-                    transforms=HOPSE_PS_experiment_MANTRA\
-                    transforms.sann_encoding.neighborhoods=$neighborhood\
-                    transforms.redefine_simplicial_neighborhoods.neighborhoods=$neighborhood\
-                    --multirun &
+                for lr in ${LEARNING_RATES[*]}
+                do
+                    python topobench/run.py\
+                        dataset=simplicial/$dataset\
+                        model=simplicial/sann\
+                        model.backbone.n_layers=$N_LAYERS_STR\
+                        model.feature_encoder.out_channels=$OUT_CHANNELS_STR\
+                        model.feature_encoder.proj_dropout=$pd\
+                        dataset.split_params.data_seed=$DATA_SEEDS_STR\
+                        dataset.dataloader_params.batch_size=$batch_size\
+                        trainer.max_epochs=500\
+                        trainer.min_epochs=50\
+                        trainer.devices=\[$CUDA\]\
+                        trainer.check_val_every_n_epoch=5\
+                        logger.wandb.project=$project_name\
+                        optimizer.parameters.lr=$lr\
+                        transforms.sann_encoding.pe_types=[$pe_type]\
+                        optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
+                        callbacks.early_stopping.patience=10\
+                        transforms=HOPSE_PS_experiment_MANTRA\
+                        transforms.sann_encoding.neighborhoods=$neighborhood\
+                        transforms.redefine_simplicial_neighborhoods.neighborhoods=$neighborhood\
+                        --multirun &
+                done
             done
         done
     done
