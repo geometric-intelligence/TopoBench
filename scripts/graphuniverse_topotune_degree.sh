@@ -4,6 +4,7 @@ data_seeds=(1 3 5)
 for i in ${data_seeds[@]}; do
     python -m topobench \
         dataset=graph/GraphUniverse_CD \
+        dataset.loader.parameters.generation_parameters.universe_parameters.seed=0 \
         dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.4,0.6\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1000 \
         dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[1.0,5.0\],\[5.0,10.0\],\[10.0,20.0\] \
@@ -15,7 +16,7 @@ for i in ${data_seeds[@]}; do
         model.backbone.layers=2 \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=32 \
-        logger.wandb.project=degree_experiments \
+        logger.wandb.project=degree_experiments_2 \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[0\] \
@@ -24,8 +25,11 @@ for i in ${data_seeds[@]}; do
         tags="[degree]" \
         --multirun &
     
+    sleep 200
+    
     python -m topobench \
         dataset=graph/GraphUniverse_CD \
+        dataset.loader.parameters.generation_parameters.universe_parameters.seed=0 \
         dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.4,0.6\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1000 \
         dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[1.0,5.0\],\[5.0,10.0\],\[10.0,20.0\] \
@@ -37,7 +41,7 @@ for i in ${data_seeds[@]}; do
         model.backbone.layers=2 \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=32 \
-        logger.wandb.project=degree_experiments \
+        logger.wandb.project=degree_experiments_2 \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[1\] \
@@ -48,6 +52,7 @@ for i in ${data_seeds[@]}; do
 
     python -m topobench \
         dataset=graph/GraphUniverse_CD \
+        dataset.loader.parameters.generation_parameters.universe_parameters.seed=0 \
         dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.4,0.6\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1000 \
         dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[1.0,5.0\],\[5.0,10.0\],\[10.0,20.0\] \
@@ -59,7 +64,7 @@ for i in ${data_seeds[@]}; do
         model.backbone.layers=2 \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=32 \
-        logger.wandb.project=degree_experiments \
+        logger.wandb.project=degree_experiments_2 \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[2\] \
@@ -68,8 +73,11 @@ for i in ${data_seeds[@]}; do
         tags="[degree]" \
         --multirun &
     
+    sleep 200
+    
     python -m topobench \
         dataset=graph/GraphUniverse_CD \
+        dataset.loader.parameters.generation_parameters.universe_parameters.seed=0 \
         dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.4,0.6\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1000 \
         dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[1.0,5.0\],\[5.0,10.0\],\[10.0,20.0\] \
@@ -81,7 +89,7 @@ for i in ${data_seeds[@]}; do
         model.backbone.layers=2 \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=32 \
-        logger.wandb.project=degree_experiments \
+        logger.wandb.project=degree_experiments_2 \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[3\] \
