@@ -93,7 +93,7 @@ class TabPFNClassifierWrapper(BaseWrapper):
         probs = np.tile(probs, (batch_size, 1))
         preds = np.full(batch_size, pred_idx)
 
-        return probs, list(pred)
+        return probs, list(preds)
 
     def _get_predictions(self, model, X_test) -> torch.Tensor:
         """
