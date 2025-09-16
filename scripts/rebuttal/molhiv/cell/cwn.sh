@@ -10,16 +10,16 @@ DATA_SEEDS=(0 3 5 7 9)
 # =====================
 # MODEL PARAMETERS
 # =====================
-N_LAYERS=(2 4)
-OUT_CHANNELS=(128 256)
+N_LAYERS=(1 2 3 4)
+OUT_CHANNELS=(64 128 256)
 
 # =====================
 # OPTIMIZATION PARAMETERS
 # =====================
-LEARNING_RATES=(0.0001)
-PROJECTION_DROPOUTS=(0 0.1 0.25)
-WEIGHT_DECAYS=(0 0.000001)
-BATCH_SIZES=(32 64)
+LEARNING_RATES=(0.01 0.001)
+PROJECTION_DROPOUTS=(0.25 0.5)
+WEIGHT_DECAYS=(0 0.0001)
+BATCH_SIZES=(128 256)
 READOUT_NAMES=("NoReadOut" "PropagateSignalDown")
 
 # =====================

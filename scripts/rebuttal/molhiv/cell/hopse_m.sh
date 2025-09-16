@@ -10,8 +10,8 @@ DATA_SEEDS=(0 3 5 7 9)
 # =====================
 # MODEL PARAMETERS
 # =====================
-N_LAYERS=(2 4)
-OUT_CHANNELS=(128 256)
+N_LAYERS=(1 2 3 4)
+OUT_CHANNELS=(64 128 256)
 
 # =====================
 # OPTIMIZATION PARAMETERS

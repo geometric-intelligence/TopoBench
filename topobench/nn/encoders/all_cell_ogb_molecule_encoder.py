@@ -67,7 +67,7 @@ class AllCellMoleculeFeatureEncoder(AbstractFeatureEncoder):
                     self,
                     f"encoder_{i}",
                     BaseEncoder(
-                        1,
+                        self.in_channels[i],
                         self.out_channels,
                         dropout=proj_dropout,
                     ),
@@ -152,9 +152,9 @@ class BaseMoleculeEncoder(torch.nn.Module):
         torch.Tensor
             Output tensor of shape [N, out_channels].
         """
-        x = self.encoder(x.reshape(-1, 1))
-        x = self.BN(x, batch=batch) if batch.shape[0] > 0 else self.BN(x)
-        x = self.dropout(x)
+        x = self.encoder(x.long())
+        # x = self.BN(x, batch=batch) if batch.shape[0] > 0 else self.BN(x)
+        # x = self.dropout(x)
         return x
 
 
@@ -201,7 +201,7 @@ class BaseEncoder(torch.nn.Module):
         torch.Tensor
             Output tensor of shape [N, out_channels].
         """
-        x = self.linear1(x.reshape(-1, 1))
+        x = self.linear1(x)
         x = self.BN(x, batch=batch) if batch.shape[0] > 0 else self.BN(x)
         x = self.dropout(self.relu(x))
         x = self.linear2(x)

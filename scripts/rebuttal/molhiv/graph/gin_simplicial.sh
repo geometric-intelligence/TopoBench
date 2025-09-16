@@ -36,7 +36,7 @@ BATCH_SIZES_STR=$(IFS=,; echo "${BATCH_SIZES[*]}")
 # =====================
 # PARAMETERS OVER WHICH WE PERFORM PARALLEL RUNS
 # =====================
-PE_TYPES=('RWSE' 'ElstaticPE' 'HKdiagSE' 'LapPE')
+PE_TYPES=('RWSE' 'ElstaticPE' 'HKdiagSE' 'LapPE' 'RWSE,ElstaticPE,HKdiagSE,LapPE')
 neighborhoods=(
     # adjacency 
     "['up_adjacency-0']"
