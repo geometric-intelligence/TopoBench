@@ -60,7 +60,7 @@ wait
 sleep 5
 
 # =====================
-for i in {0..4}; do 
+for i in {2..7}; do 
     CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
     data_seed=${DATA_SEEDS[$i]} # Use the neighbourhood from our neighbourhoods array
     

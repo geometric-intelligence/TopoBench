@@ -17,7 +17,7 @@ OUT_CHANNELS=(128 256)
 # OPTIMIZATION PARAMETERS
 # =====================
 LEARNING_RATES=(0.0001)
-PROJECTION_DROPOUTS=(0 0.1 0.25)
+PROJECTION_DROPOUTS=(0.0 0.1 0.25)
 WEIGHT_DECAYS=(0 0.000001)
 BATCH_SIZES=(32 64)
 
@@ -80,7 +80,7 @@ for i in {0..7}; do
         optimizer.parameters.weight_decay=0.25\
         transforms.sann_encoding.neighborhoods=$neighborhood\
         transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
-        --multirun &
+        --multirun
         sleep 5
 done
 wait
@@ -116,7 +116,7 @@ for i in {0..7}; do
                 optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
                 transforms.sann_encoding.neighborhoods=$neighborhood\
                 transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
-                --multirun &
+                --multirun
         done
     done
 done
