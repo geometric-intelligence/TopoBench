@@ -18,7 +18,7 @@ OUT_CHANNELS=(64 128 256)
 # =====================
 LEARNING_RATES=(0.01 0.001)
 PROJECTION_DROPOUTS=(0.25 0.5)
-WEIGHT_DECAYS=(0 0.0001)
+WEIGHT_DECAYS=(0.0 0.0001)
 BATCH_SIZES=(128 256)
 
 # =====================
@@ -36,7 +36,7 @@ BATCH_SIZES_STR=$(IFS=,; echo "${BATCH_SIZES[*]}")
 # =====================
 # PARAMETERS OVER WHICH WE PERFORM PARALLEL RUNS
 # =====================
-PE_TYPES=('RWSE' 'ElstaticPE' 'HKdiagSE' 'LapPE' 'RWSE,ElstaticPE,HKdiagSE,LapPE')
+PE_TYPES=('RWSE' 'ElstaticPE' 'HKdiagSE' 'LapPE' 'RWSE,ElstaticPE,HKdiagSE,LapPE' 'RWSE,ElstaticPE,HKdiagSE')
 neighborhoods=(
     # adjacency 
     "['up_adjacency-0']"
