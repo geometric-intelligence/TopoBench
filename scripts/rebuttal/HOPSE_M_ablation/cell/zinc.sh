@@ -54,9 +54,10 @@ neighborhoods=(
 
 # TODO: fix bug with transforms.one_hot_node_degree_features.degrees_fields=x\
 gpus=(0 1 2 3 4 5 6 7)
-PE_TYPES=('RWSE' 'ElstaticPE' 'HKdiagSE' 'LapPE')
-for pe_type in ${PE_TYPES[*]}
+PE_TYPES=("['RWSE','ElstaticPE','HKdiagSE','LapPE']") # 'RWSE' 'ElstaticPE' 'HKdiagSE' 
+for j in {0..0};  #for pe_type in ${PE_TYPES[*]}
 do
+    pe_type=${PE_TYPES[j]}
     for i in {0..7}; do 
         CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
         neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
@@ -78,7 +79,7 @@ do
             optimizer.parameters.lr=0.01\
             optimizer.parameters.weight_decay=0.25\
             callbacks.early_stopping.patience=10\
-            transforms.sann_encoding.pe_types=[$pe_type]\
+            transforms.sann_encoding.pe_types=$pe_type\
             transforms.graph2cell_lifting.max_cell_length=10\
             transforms.sann_encoding.neighborhoods=$neighborhood\
             transforms.graph2cell_lifting.neighborhoods=$neighborhood\
@@ -111,7 +112,7 @@ do
                     trainer.check_val_every_n_epoch=5\
                     logger.wandb.project=$project_name\
                     optimizer.parameters.lr=$LEARNING_RATES_STR\
-                    transforms.sann_encoding.pe_types=[$pe_type]\
+                    transforms.sann_encoding.pe_types=$pe_type\
                     optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
                     callbacks.early_stopping.patience=10\
                     transforms=HOPSE_PS_experiment_cell\

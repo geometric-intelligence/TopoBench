@@ -60,7 +60,7 @@ neighborhoods=(
 
 
 gpus=(0 1 2 3 0 1 2 3)
-PE_TYPES=('RWSE' 'ElstaticPE' 'HKdiagSE' 'LapPE')
+PE_TYPES=('LapPE') # 'RWSE' 'ElstaticPE' 'HKdiagSE' 
 for pe_type in ${PE_TYPES[*]}
 do
     for i in {0..7}; do 

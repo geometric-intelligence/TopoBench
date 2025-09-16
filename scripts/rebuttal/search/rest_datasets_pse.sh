@@ -54,7 +54,7 @@ do
     do
         for pe_type in ${PE_TYPES[*]}
         do
-        project_name="rebuttal_cell_${dataset}"
+        project_name="fix_gnn_rebuttal_cell_${dataset}"
             # =====================
             gpus=(5 6 7)
             for i in {0..1}; do 

@@ -1,11 +1,11 @@
-dataset='PROTEINS'
-project_name="fix_HOPSE_M_simplicial_ablation_rebutal_$dataset"
+dataset='ZINC'
+project_name="fix_gnn_rebuttal_cell_$dataset"
 
 # =====================
 # DATA
 # =====================
-DATA_SEEDS=(0 3 5 7 9) 
-
+DATA_SEEDS=(42 3 5 23 150) 
+# 42,3,5,23,150
 # =====================
 # MODEL PARAMETERS
 # =====================
@@ -15,7 +15,7 @@ OUT_CHANNELS=(128 256)
 # =====================
 # OPTIMIZATION PARAMETERS
 # =====================
-LEARNING_RATES=(0.01 0.001)
+LEARNING_RATES=(0.001)
 PROJECTION_DROPOUTS=(0.25 0.5)
 WEIGHT_DECAYS=(0 0.0001)
 
@@ -34,44 +34,38 @@ OUT_CHANNELS_STR=$(IFS=,; echo "${OUT_CHANNELS[*]}")  # Convert to comma-separat
 LEARNING_RATES_STR=$(IFS=,; echo "${LEARNING_RATES[*]}")  # Convert to comma-separated string
 PROJECTION_DROPOUTS_STR=$(IFS=,; echo "${PROJECTION_DROPOUTS[*]}")  # Convert to comma-separated string
 WEIGHT_DECAYS_STR=$(IFS=,; echo "${WEIGHT_DECAYS[*]}")  # Convert to comma-separated string
+PRETRAIN_MODELS_STR=$(IFS=,; echo "${PRETRAIN_MODELS[*]}")  # Convert to comma-separated string
 
 # =====================
 # PARAMETERS OVER WHICH WE PERFORM PARALLEL RUNS
 # =====================
 batch_sizes=(128 256)
+learning_rates=(0.001)
 neighborhoods=(
     # adjacency 
     "['up_adjacency-0']"
-    "['up_adjacency-0','up_adjacency-1']"
-    "['up_adjacency-0','up_adjacency-1','down_adjacency-2']"
-
     # incidence
-    "['up_adjacency-0','up_incidence-0','up_incidence-1']"
-    "['up_adjacency-0','down_incidence-1','down_incidence-2']"
-    "['up_adjacency-0','up_incidence-0','up_incidence-1','down_incidence-1','down_incidence-2']"
-    
-    # all together
-    "['up_adjacency-0','up_adjacency-1','down_adjacency-1','down_adjacency-2','up_incidence-0','up_incidence-1','down_incidence-1','down_incidence-2']"
-    
-    # We have 8th gpu hence we can add one more neighbourhood
-    "['up_adjacency-0','up_adjacency-1','2-up_adjacency-0','down_adjacency-1','down_adjacency-2','2-down_adjacency-2']"
-
+    "['up_adjacency-0','down_incidence-1']"
 )
 
-# TODO: fix bug with transforms.one_hot_node_degree_features.degrees_fields=x\
-gpus=(0 1 2 3 4 5 6 7)
-PE_TYPES=('LapPE') # 'RWSE' 'ElstaticPE' 'HKdiagSE' 
-for pe_type in ${PE_TYPES[*]}
+
+
+model_types=('hopse_gin' 'hopse_gcn' 'hopse_gat')
+for model_type in ${model_types[*]}
 do
-    for i in {0..7}; do 
+    
+    # TODO: fix bug with transforms.one_hot_node_degree_features.degrees_fields=x\
+    gpus=(3 4)
+    for i in {0..1}; do 
         CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
         neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
 
         
         python topobench/run.py\
             dataset=graph/$dataset\
-            model=simplicial/hopse_m\
-            model.backbone.n_layers=1\
+            model=graph/$model_type\
+            experiment=hopse_m_gnn_cell_zinc\
+            model.backbone.num_layers=1\
             model.feature_encoder.out_channels=128\
             model.feature_encoder.proj_dropout=0.25\
             dataset.split_params.data_seed=0\
@@ -84,17 +78,17 @@ do
             optimizer.parameters.lr=0.01\
             optimizer.parameters.weight_decay=0.25\
             callbacks.early_stopping.patience=10\
-            transforms.sann_encoding.pe_types=[$pe_type]\
-            transforms=HOPSE_M_simplicial\
+            transforms.graph2cell_lifting.max_cell_length=10\
+            transforms.sann_encoding.pe_types=['RWSE','ElstaticPE','HKdiagSE','LapPE']\
             transforms.sann_encoding.neighborhoods=$neighborhood\
-            transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
+            transforms.graph2cell_lifting.neighborhoods=$neighborhood\
             --multirun &
-            sleep 10
+            sleep 5
     done
     wait
 
-    gpus=(0 1 2 3 4 5 6 7)
-    for i in {0..7}; do 
+    gpus=(3 4)
+    for i in {0..1}; do 
         CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
         neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
 
@@ -104,11 +98,12 @@ do
             do
                 python topobench/run.py\
                     dataset=graph/$dataset\
-                    model=simplicial/hopse_m\
-                    model.backbone.n_layers=$N_LAYERS_STR\
+                    model=graph/$model_type\
+                    experiment=hopse_m_gnn_cell_zinc\
+                    model.backbone.num_layers=$N_LAYERS_STR\
                     model.feature_encoder.out_channels=$OUT_CHANNELS_STR\
                     model.feature_encoder.proj_dropout=$pd\
-                    dataset.split_params.data_seed=$DATA_SEEDS_STR\
+                    seed=$DATA_SEEDS_STR\
                     dataset.dataloader_params.batch_size=$batch_size\
                     trainer.max_epochs=500\
                     trainer.min_epochs=50\
@@ -116,15 +111,15 @@ do
                     trainer.check_val_every_n_epoch=5\
                     logger.wandb.project=$project_name\
                     optimizer.parameters.lr=$LEARNING_RATES_STR\
-                    transforms.sann_encoding.pe_types=[$pe_type]\
                     optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
                     callbacks.early_stopping.patience=10\
-                    transforms=HOPSE_M_simplicial\
+                    transforms.graph2cell_lifting.max_cell_length=10\
+                    transforms.sann_encoding.pe_types=['RWSE','ElstaticPE','HKdiagSE','LapPE']\
                     transforms.sann_encoding.neighborhoods=$neighborhood\
-                    transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
+                    transforms.graph2cell_lifting.neighborhoods=$neighborhood\
                     --multirun &
             done
         done
     done
+    wait 
 done
-wait
