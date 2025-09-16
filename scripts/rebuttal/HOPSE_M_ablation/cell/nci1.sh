@@ -70,7 +70,7 @@ do
         
         python topobench/run.py\
             dataset=graph/$dataset\
-            model=cell/sann\
+            model=cell/hopse_m\
             model.backbone.n_layers=1\
             model.feature_encoder.out_channels=128\
             model.feature_encoder.proj_dropout=0.25\
@@ -105,7 +105,7 @@ do
             do
                 python topobench/run.py\
                     dataset=graph/$dataset\
-                    model=cell/sann\
+                    model=cell/hopse_m\
                     model.backbone.n_layers=$N_LAYERS_STR\
                     model.feature_encoder.out_channels=$OUT_CHANNELS_STR\
                     model.feature_encoder.proj_dropout=$pd\
