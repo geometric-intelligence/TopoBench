@@ -1,5 +1,5 @@
 dataset='ogbg-molhiv'
-project_name="GRAPH_$dataset"
+project_name="rebutal_GRAPH_$dataset"
 
 
 # =====================
@@ -46,7 +46,7 @@ do
             model.backbone.num_layers=$N_LAYERS_STR\
             model.feature_encoder.out_channels=$OUT_CHANNELS_STR\
             model.feature_encoder.proj_dropout=$PROJECTION_DROPOUTS_STR\
-            dataset.split_params.data_seed=$data_seed\
+            dataset.split_params.data_seed=$DATA_SEEDS_STR\
             dataset.dataloader_params.batch_size=$batch_size\
             trainer.devices=\[0\]\
             trainer.max_epochs=100\
@@ -61,6 +61,7 @@ do
         sleep 10
     done
 done
+wait
 
 
 
