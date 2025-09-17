@@ -175,6 +175,7 @@ cython_debug/
 # Data
 /datasets/
 /data/
+/outputs/
 /notebooks/*.csv
 notebooks/tmp
 *.pickle
@@ -182,7 +183,7 @@ notebooks/tmp
 /tutorials/datasets/
 /tutorials/lightning_logs/
 /tutorials/datasets/
-/tutorials/GraphUniverse/
+
 # wandb
 wandb/
 
