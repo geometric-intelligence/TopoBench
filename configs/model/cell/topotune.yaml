@@ -49,6 +49,10 @@ readout:
   out_channels: ${dataset.parameters.num_classes}
   task_level: ${dataset.parameters.task_level}
   pooling_type: sum
+  # MLPReadOut params
+  in_channels: ${model.backbone_wrapper.out_channels}
+  dropout: 0.0
+  hidden_layers: []
 
 # compile model for faster training with pytorch 2.0
 compile: false
