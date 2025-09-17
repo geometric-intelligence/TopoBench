@@ -127,7 +127,8 @@ ignore = [
     "NPY002",   # Replace legacy `np.random.seed` call with `np.random.Generator`
     "UP038",    # Use `X | Y` in `isinstance` call instead of `(X, Y)` -- not compatible with python 3.9 (even with __future__ import)
     "W293",     # Does not allow to have empty lines in multiline comments
-    "PERF203",  # [TODO: fix all such issues] `try`-`except` within a loop incurs performance overhead
+    "PERF203",  # [TODO: fix all such issues] `try`-`except` within a loop incurs performance overhead    
+    "RUF059",   # Unpacked variable is never used
 ]
 
 [tool.ruff.lint.pydocstyle]
