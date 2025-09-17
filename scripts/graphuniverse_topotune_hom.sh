@@ -1,6 +1,8 @@
 #!/bin/bash
 
+
 data_seeds=(1 3 5)
+
 for i in ${data_seeds[@]}; do
     python -m topobench \
         dataset=graph/GraphUniverse_CD \
@@ -74,7 +76,7 @@ for i in ${data_seeds[@]}; do
         logger.wandb.project=final_homophily_experiments \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
-        trainer.devices=\[0\] \
+        trainer.devices=\[2\] \
         trainer.check_val_every_n_epoch=1 \
         callbacks.early_stopping.patience=50 \
         tags="[homophily]" \
@@ -102,7 +104,7 @@ for i in ${data_seeds[@]}; do
         logger.wandb.project=final_homophily_experiments \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
-        trainer.devices=\[1\] \
+        trainer.devices=\[3\] \
         trainer.check_val_every_n_epoch=1 \
         callbacks.early_stopping.patience=50 \
         tags="[homophily]" \
