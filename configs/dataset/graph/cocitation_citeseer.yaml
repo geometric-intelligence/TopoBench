@@ -12,6 +12,7 @@ parameters:
   # Dataset parameters
   num_features: 3703
   num_classes: 6
+  num_nodes: 3327
   task: classification
   loss_type: cross_entropy
   monitor_metric: accuracy

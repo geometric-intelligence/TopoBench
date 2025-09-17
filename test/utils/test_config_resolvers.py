@@ -9,6 +9,8 @@ from topobench.utils.config_resolvers import (
     get_default_metrics,
     get_default_trainer,
     get_default_transform,
+    get_flattened_channels,
+    get_non_relational_out_channels,
     get_monitor_metric,
     get_monitor_mode,
     get_required_lifting,
@@ -52,8 +54,23 @@ class TestConfigResolvers:
 
         out = get_default_transform("graph/ZINC", "cell/can")
         assert out == "dataset_defaults/ZINC"
-        
-        
+
+    def test_get_flattened_channels(self):
+        """Test get_flattened_channels."""
+        out = get_flattened_channels(10, 5)
+        assert out == 50
+
+    def test_non_relational_out_channels(self):
+        """Test get_non_relational_out_channels."""
+        out = get_non_relational_out_channels(10, 5, "node")
+        assert out == 50
+
+        out = get_non_relational_out_channels(10, 5, "graph")
+        assert out == 5
+
+        with pytest.raises(ValueError, match="Invalid task level") as e:
+            get_non_relational_out_channels(10, 5, "some_task")
+
     def test_get_required_lifting(self):
         """Test get_required_lifting."""
         out = get_required_lifting("graph", "graph/gat")
