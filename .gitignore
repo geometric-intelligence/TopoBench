@@ -174,6 +174,7 @@ cython_debug/
 # Data
 /datasets/
 /data/
+/outputs/
 /notebooks/*.csv
 notebooks/tmp
 *.pickle
@@ -184,6 +185,8 @@ notebooks/tmp
 /tutorials/GraphUniverse/
 /tutorials/*.json
 /tutorials/*.csv
+/tutorials/*.zip
+/tutorials/selected_checkpoints/
 
 # wandb
 wandb/
