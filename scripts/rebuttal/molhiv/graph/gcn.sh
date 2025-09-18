@@ -38,7 +38,6 @@ BATCH_SIZES_STR=$(IFS=,; echo "${BATCH_SIZES[*]}")
 # =====================
 PE_TYPES=('RWSE' 'ElstaticPE' 'HKdiagSE' 'LapPE' 'RWSE,ElstaticPE,HKdiagSE,LapPE' 'RWSE,ElstaticPE,HKdiagSE')
 neighborhoods=(
-    # adjacency 
     "['up_adjacency-0']"
 )
 
@@ -73,7 +72,7 @@ wait
 
 for pe_type in ${PE_TYPES[*]}
 do
-    for batch_size in ${batch_sizes}
+    for batch_size in ${BATCH_SIZES[*]}
     do
     
         python topobench/run.py\
