@@ -181,7 +181,7 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         """Method that processes the data."""
         if isinstance(self.dataset, torch_geometric.data.Dataset):
             data_list = [
-                self.dataset.get(idx) for idx in range(len(self.dataset))
+                data for data in self.dataset
             ]
         elif isinstance(self.dataset, torch.utils.data.Dataset):
             data_list = [self.dataset[idx] for idx in range(len(self.dataset))]
