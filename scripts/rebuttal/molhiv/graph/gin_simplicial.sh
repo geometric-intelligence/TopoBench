@@ -38,7 +38,6 @@ BATCH_SIZES_STR=$(IFS=,; echo "${BATCH_SIZES[*]}")
 # =====================
 PE_TYPES=('RWSE' 'ElstaticPE' 'HKdiagSE' 'LapPE' 'RWSE,ElstaticPE,HKdiagSE,LapPE' 'RWSE,ElstaticPE,HKdiagSE')
 neighborhoods=(
-    # adjacency 
     "['up_adjacency-0']"
 )
 

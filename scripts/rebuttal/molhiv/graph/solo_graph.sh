@@ -1,5 +1,5 @@
 dataset='ogbg-molhiv'
-project_name="GRAPH_$dataset"
+project_name="rebutal_GRAPH_$dataset"
 
 
 # =====================
