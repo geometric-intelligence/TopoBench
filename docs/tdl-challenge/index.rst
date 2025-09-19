@@ -8,23 +8,77 @@ Welcome to the **Topological Deep Learning Challenge 2025: Expanding the Data La
 .. seealso::
    Challenge hub (TopoBench repository): `<https://github.com/geometric-intelligence/TopoBench>`__.
 
+.. rst-class:: text-center
+
+|logo_tagds| |logo_arlq| |logo_gil| |logo_imos|
+
+.. |logo_tagds| image:: ../_static/logos/TAG-DS_logo.png
+   :height: 56px
+   :alt: TAG-DS Conference
+   :target: https://www.tagds.com/events/tag-ds-2025
+
+.. |logo_arlq| image:: ../_static/logos/arlequin.png
+   :height: 56px
+   :alt: Arlequin AI
+   :target: https://www.arlq.ai/
+
+.. |logo_gil| image:: ../_static/logos/gil_ucsb.png
+   :height: 56px
+   :alt: Geometric Intelligence Lab, UC Santa Barbara
+   :target: https://gi.ece.ucsb.edu/
+
+.. |logo_imos| image:: ../_static/logos/logo_EPFL_IMOS.png
+   :height: 56px
+   :alt: IMOS Lab, EPFL
+   :target: https://www.epfl.ch/labs/imos/
+
 Motivation
 ----------
 
-Topological Deep Learning (TDL) is emerging as a powerful paradigm for analyzing data with topological neural networks, a class of models that extends Graph Neural Networks (GNNs) to capture interactions beyond simple pairs of nodes. While GNNs model pairwise links—like friendships in a social network—many systems involve higher-order relationships, such as 6 atoms forming a ring in a molecule or multiple researchers co-authoring a paper in a co-authorship network. TDL provides a principled framework to represent and learn from these richer, multi-way relationships, making it especially suited for complex data in science and engineering.
+Motivation
+----------
 
-**TopoBench** is the premier open-source platform for developing and benchmarking TDL models. It provides a unified interface for datasets, loaders, and tasks across topological domains. TopoBench enables reproducible comparisons, accelerates model development, and serves as the central hub for TDL experimentation.
+Topological Deep Learning (TDL) is emerging as a powerful paradigm for
+analyzing data with **topological neural networks**, a class of models that
+extends Graph Neural Networks (GNNs) to capture interactions beyond simple
+pairs of nodes. While GNNs model pairwise links—like friendships in a social
+network—many systems involve **higher-order relationships**, such as six atoms
+forming a ring in a molecule or multiple researchers co-authoring a paper in a
+co-authorship network. TDL provides a principled framework to represent and
+learn from these richer, multi-way relationships, making it especially suited
+for complex data in science and engineering.
 
-For TDL to realize its full potential, the data landscape must evolve (Papamarkou et al. (2024)). The field’s current reliance on a handful of well-worn benchmarks creates a bottleneck for innovation and rigorous evaluation. To truly propel the field forward, we propose accelerating the field on three fronts.
-- **Broadening**: the foundational benchmarks of TDL by adapting diverse datasets from the GNN community and beyond.
-- **Deepening**: TDL capabilities by building infrastructure for large-scale datasets and novel benchmark tasks.
+**TopoBench** is the premier open-source platform for developing and
+benchmarking TDL models. It provides a unified interface for datasets,
+loaders, and tasks across topological domains. TopoBench enables reproducible
+comparisons, accelerates model development, and serves as the central hub for
+TDL experimentation.
+
+For TDL to realize its full potential, the **data landscape must evolve**
+(Papamarkou et al., 2024). The field’s current reliance on a handful of
+well-worn benchmarks creates a bottleneck for innovation and rigorous
+evaluation. To propel the field forward, we focus on the following fronts:
+
+- **Broadening:** the foundational benchmarks of TDL by adapting diverse
+  datasets from the GNN community and beyond.
+- **Deepening:** TDL capabilities by building infrastructure for large-scale
+  datasets and novel benchmark tasks.
+
 
 Description of the Challenge
 ----------------------------
 
-The 2025 Topological Deep Learning Challenge is organized into two primary **missions** designed to systematically expand the TDL ecosystem: expanding the data landscape and advancing the core data infrastructure. Participants are invited to contribute one dataset (or dataset class, such as TUDataset) per submission, where each submission belongs to one category. For examples of datasets to contribute, please refer to the Reference Datasets Table below.. We also welcome other datasets, either existing or novel (as long as they are hosted on an open-source platform).
+The 2025 Topological Deep Learning Challenge is organized into two primary
+**missions** designed to systematically expand the TDL ecosystem: expanding the
+data landscape and advancing the core data infrastructure. Participants are
+invited to contribute one dataset (or dataset class, such as TUDataset) per
+submission, where each submission belongs to one category. For examples of datasets
+to contribute, please refer to the Reference Datasets Table below.. We also welcome
+other datasets, either existing or novel (as long as they are hosted on an open-source
+platform).
 
-We invite participants to review this webpage regularly, as more details might be added to answer relevant questions.
+We invite participants to review this webpage regularly, as more details might be added to
+answer relevant questions.
 
 Mission A — Expanding the Data Landscape 📊
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -109,8 +163,8 @@ submissions will be offered co-authorship. [1]_
 🏆 **Cash prizes**: Four winning teams (one per category) will be announced at
 TAG-DS 2025 during the Awards Ceremony.
 
-- 💰 **Mission A** winners: **$200 USD** each (sponsored by `Arlequin AI <https://www.arlq.ai/>`__).
-- 💰 **Mission B** winners: **$800 USD** each (sponsored by `Arlequin AI <https://www.arlq.ai/>`__).
+- 💰 **Mission A** winners: $200 USD each (sponsored by `Arlequin AI <https://www.arlq.ai/>`__).
+- 💰 **Mission B** winners: $800 USD each (sponsored by `Arlequin AI <https://www.arlq.ai/>`__).
 
 🌴 **Visit opportunity — Geometric Intelligence Lab, UCSB (USA):**
 A team, pending evaluation results and interest, will be invited for a visit
@@ -447,19 +501,19 @@ Graphs
    * - TwiBot-20
      - Large (220k)
      - *A Comprehensive Twitter Bot Detection Benchmark (Large).* 
-     - `code <PASTE_SOURCE_URL>`__
+     - 
    * - TwiBot-22
      - Large (1M)
      - *Towards Graph-Based Twitter Bot Detection (Large).* 
-     - `code <PASTE_SOURCE_URL>`__
+     - 
    * - MGTAB
      - Small (10k)
      - *A Multi-Relational Graph-Based Twitter Account Detection Benchmark.* 
-     - `code <PASTE_SOURCE_URL>`__
+     - 
    * - GraphLand (14 datasets)
      - Small/Medium/Large
      - *GraphLand: Evaluating Graph Machine Learning Models on Diverse Industrial Data.* 
-     - `code <PASTE_SOURCE_URL>`__
+     - 
    * - Karate Club (7 datasets)
      - Small/Medium/Large
      - *Karate Club: An API Oriented Open-Source Python Framework for Unsupervised…* 
@@ -467,23 +521,23 @@ Graphs
    * - Coauth-DBLP
      - Medium (108k)
      - *Classification of Edge-dependent Labels of Nodes in Hypergraphs.* 
-     - `code <PASTE_SOURCE_URL>`__
+     - 
    * - Coauth-AMiner
      - Large (1.7M)
      - *Classification of Edge-dependent Labels of Nodes in Hypergraphs.* 
-     - `code <PASTE_SOURCE_URL>`__
+     - 
    * - Email-Enron
      - Small (986)
      - *Classification of Edge-dependent Labels of Nodes in Hypergraphs.* 
-     - `code <PASTE_SOURCE_URL>`__
+     - 
    * - Email-Eu
      - Small (15k)
      - *Classification of Edge-dependent Labels of Nodes in Hypergraphs.* 
-     - `code <PASTE_SOURCE_URL>`__
+     - 
    * - Stack-Physics
      - Medium (80k)
      - *Classification of Edge-dependent Labels of Nodes in Hypergraphs.* 
-     - `code <PASTE_SOURCE_URL>`__
+     - 
    * - Wiki-CS
      - Small (11k)
      - *Wiki-CS: A Wikipedia-Based Benchmark for Graph Neural Networks.* 
@@ -491,35 +545,35 @@ Graphs
    * - FacebookPagePage
      - Small (22k)
      - *Multi-Scale Attributed Node Embedding (MUSAE).* 
-     - `PyG <PASTE_PYG_URL>`__
+     -
    * - GitHub (MUSAE)
      - Small (37k)
      - *Multi-Scale Attributed Node Embedding (MUSAE).* 
-     - `PyG <PASTE_PYG_URL>`__
+     -
    * - LastFMAsia
      - Small (7k)
      - *Multi-Scale Attributed Node Embedding (MUSAE).* 
-     - `PyG <PASTE_PYG_URL>`__
+     -
    * - Deezer Europe
      - Small (28k)
      - *Multi-Scale Attributed Node Embedding (MUSAE).* 
-     - `PyG <PASTE_PYG_URL>`__
+     -
    * - Twitch
      - Six small datasets
      - *Multi-Scale Attributed Node Embedding (MUSAE).* 
-     - `PyG <PASTE_PYG_URL>`__
+     -
    * - GemsecDeezer
      - Two small, one medium
      - *GEMSEC: Graph Embedding with Self Clustering.* 
-     - `PyG <PASTE_PYG_URL>`__
+     -
    * - Torus dataset
      - Small
      - *Topological Blindspots: Understanding and Extending Topological Deep Learning through the Lens of Expressivity.* 
-     - `code <PASTE_SOURCE_URL>`__
+     - 
    * - QM9
      - Medium
      - *MoleculeNet: A Benchmark for Molecular Machine Learning.* 
-     - `PyG <PASTE_PYG_URL>`__
+     -
 
 
 Hypergraphs
@@ -536,10 +590,10 @@ Hypergraphs
    * - CornellTemporalHyperGraphDataset
      - Hypergraphs (15 datasets)
      - *Simplicial Closure and Higher-Order Link Prediction.* 
-     - `PyG <PASTE_PYG_URL>`__
+     -
    * - CornellLabelledNodes
      - Hypergraphs (11 datasets)
-     - *Various references.* `collection <PASTE_COLLECTION_URL>`__
+     - *Various references.*
      - `Cornell <https://www.cs.cornell.edu/~arb/data/>`__
    * - RHG-3
      - HGraph classification
