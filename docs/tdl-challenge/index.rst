@@ -545,27 +545,27 @@ Organizers and Sponsors
 
 .. rst-class:: text-center
 
-|logo_tagds| 
-|logo_arlq| 
-|logo_gil| 
+|logo_tagds|
+|logo_arlq|
+|logo_gil|
 |logo_imos|
 
-.. |logo_tagds| image:: ../_static/logos/TAG-DS_logo.png
-   :height: 100px
+.. |logo_tagds| image:: ../_static/logos/TAG_DS_2025_white_teal.png
+   :height: 120px
    :alt: TAG-DS Conference
    :target: https://www.tagds.com/events/tag-ds-2025
 
 .. |logo_arlq| image:: ../_static/logos/arlequin.png
-   :height: 100px
+   :height: 120px
    :alt: Arlequin AI
    :target: https://www.arlq.ai/
 
 .. |logo_gil| image:: ../_static/logos/gil_ucsb.png
-   :height: 100px
+   :height: 120px
    :alt: Geometric Intelligence Lab, UC Santa Barbara
    :target: https://gi.ece.ucsb.edu/
 
 .. |logo_imos| image:: ../_static/logos/logo_EPFL_IMOS.png
-   :height: 100px
+   :height: 120px
    :alt: IMOS Lab, EPFL
    :target: https://www.epfl.ch/labs/imos/
