@@ -12,7 +12,7 @@ Welcome to the **Topological Deep Learning Challenge 2025: Expanding the Data La
 Motivation
 ----------
 
-.. figure:: ../_static/challenge_image.png
+.. figure:: ../_static/logos/challenge_image.png
    :name: fig:challenge_image
 
 Topological Deep Learning (TDL) is emerging as a powerful paradigm for
