@@ -42,7 +42,7 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
         batch_norm=False,
         use_atom_encoder=False,
         use_bond_encoder=False,
-        fuse_pse2cell=False,
+        fuse_pse2cell=True,
         **kwargs,
     ):
         super().__init__()
@@ -56,6 +56,7 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
             else range(len(self.in_channels))
         )
         self.hops = max_hop
+        self.fuse_pse2cell = fuse_pse2cell
         for i in self.dimensions:
             for j in range(self.hops):
                 if use_atom_encoder and i == 0 and j == 0:
@@ -71,12 +72,17 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
                         SimpleBondEncoder(self.out_channels),
                     )
                 else:
+                    true_in_channels = self.in_channels[i][j]
+
+                    if self.fuse_pse2cell and j == 0:
+                        true_in_channels = self.out_channels
+
                     setattr(
                         self,
                         f"encoder_{i}_{j}",
                         MLP(
-                            in_channels=self.in_channels[i][j],
-                            hidden_channels=self.in_channels[i][j],
+                            in_channels=true_in_channels,
+                            hidden_channels=true_in_channels,
                             out_channels=self.out_channels,
                             dropout=proj_dropout,
                             batch_norm=batch_norm,
@@ -86,16 +92,29 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
                     )
 
         # Rebuttal update
-        self.fuse_pse2cell = fuse_pse2cell
-        if self.fuse_pse2cell == True:
+        if self.fuse_pse2cell:
+            for i in self.dimensions:
+                in_channel_total = 0
+                for j in range(self.hops):
+                    in_channel_total += self.in_channels[i][j]
+                setattr(
+                    self,
+                    f"feature_mixing_{i}",
+                    MLP(
+                        in_channels=in_channel_total,
+                        hidden_channels=in_channel_total,
+                        out_channels=self.out_channels,
+                        dropout=proj_dropout,
+                        batch_norm=None,
+                        num_layers=1,
+                        act=None
+                    )
+                )
             # Instantiate self.hops layer normalization
-            self.LN_pse2cell = torch.nn.ModuleList(
-                torch.nn.LayerNorm(self.out_channels) for _ in range(self.hops)
-            )
+            # self.LN_pse2cell = torch.nn.ModuleList(
+            #     torch.nn.LayerNorm(self.out_channels) for _ in range(self.hops)
+            # )
 
-            self.ln_pse2cell = torch.nn.Linear(
-                self.hops * out_channels, out_channels
-            )
 
     def __repr__(self):
         return f"{self.__class__.__name__}(in_channels={self.in_channels}, out_channels={self.out_channels}, dimensions={self.dimensions})"
@@ -117,24 +136,24 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
         torch_geometric.data.Data
             Output data object with updated x_{i} features.
         """
+        if self.fuse_pse2cell:
+            for i in self.dimensions:
+                # node_and_pse_encodings = [
+                #     self.LN_pse2cell[j](data[f"x{i}_{j}"])
+                #     for j in range(self.hops)
+                # ]
+                # Concatenate the encodings along the last dimension
+                concatenated = torch.cat([data[f"x{i}_{j}"] for j in range(self.hops)], dim=-1)
+                data[f"x{i}_0"] = getattr(self, f"feature_mixing_{i}")(concatenated)
+
+                # data[f"x_{i}"] = sum(node_and_pse_encodings)
+
         for i in self.dimensions:
             batch = getattr(data, f"batch_{i}")
             for j in range(self.hops):
                 data[f"x{i}_{j}"] = getattr(self, f"encoder_{i}_{j}")(
                     data[f"x{i}_{j}"], batch
                 )
-
-        if self.fuse_pse2cell == True:
-            for i in self.dimensions:
-                node_and_pse_encodings = [
-                    self.LN_pse2cell[j](data[f"x{i}_{j}"])
-                    for j in range(self.hops)
-                ]
-                # Concatenate the encodings along the last dimension
-                concatenated = torch.cat(node_and_pse_encodings, dim=-1)
-                data[f"x_{i}"] = self.ln_pse2cell(concatenated)
-
-                # data[f"x_{i}"] = sum(node_and_pse_encodings)
 
         return data
 
