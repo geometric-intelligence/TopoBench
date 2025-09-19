@@ -12,6 +12,9 @@ Welcome to the **Topological Deep Learning Challenge 2025: Expanding the Data La
 Motivation
 ----------
 
+.. figure:: ../_static/challenge_image.png
+   :name: fig:challenge_image
+
 Topological Deep Learning (TDL) is emerging as a powerful paradigm for
 analyzing data with **topological neural networks**, a class of models that
 extends Graph Neural Networks (GNNs) to capture interactions beyond simple
@@ -57,15 +60,15 @@ platform).
 We invite participants to review this webpage regularly, as more details might be added to
 answer relevant questions.
 
-Mission A — Expanding the Data Landscape 📊
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Mission A — Expanding the Data Landscape
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 This mission focuses on enriching the TDL ecosystem with a diverse and meaningful collection of datasets.
 
 Category A.1: Broadening Benchmarks with Graphs & Point Clouds
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-*(Difficulty: Medium)*
+*(Difficulty: Easy/Medium)*
 
 Implement a well-established graph or point cloud dataset. Expand TDL’s applicability to
 new fields. Alternatively, help bridge the gap between TDL and mainstream GNN research by
@@ -82,8 +85,8 @@ Integrate datasets where higher-order structures (e.g., simplicial complexes, hy
 a native feature of the data, rather than being algorithmically inferred by transforms in TopoBench.
 These datasets are critical for testing the unique expressive power of topological models.
 
-Mission B — Advancing the Data Infrastructure 💻
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Mission B — Advancing the Data Infrastructure
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Category B.1: Developing Large-Scale Inductive Data Infrastructure
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -143,7 +146,7 @@ TAG-DS 2025 during the Awards Ceremony.
 - 💰 **Mission A** winners: $200 USD each (sponsored by `Arlequin AI <https://www.arlq.ai/>`__).
 - 💰 **Mission B** winners: $800 USD each (sponsored by `Arlequin AI <https://www.arlq.ai/>`__).
 
-🌴 **Visit opportunity — Geometric Intelligence Lab, UCSB (USA):**
+🌴 **Research internship — Geometric Intelligence Lab, UCSB (USA):**
 A team, pending evaluation results and interest, will be invited for a visit
 of up to **two months** at the Geometric Intelligence Lab, University of
 California, Santa Barbara. During the visit, winners will work on cutting-edge
@@ -459,6 +462,12 @@ topological liftings or may help in defining novel ones.
 Reference Datasets Table
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
+The following tables list potential datasets that can be implemented for the challenge.
+However, **participants are not limited to these datasets** and are welcome to propose
+others, either existing or novel (as long as they are hosted on an open-source
+platform). We also encourage participants to explore pointcloud datasets representing
+3D objects, which can be lifted to higher-order domains using TopoBench transforms.
+
 .. important::
    By default, if the selected dataset is available in **PyTorch Geometric (PyG)**,
    the submission should use the **PyG adaptation**. In practice, your dataloader
@@ -551,12 +560,12 @@ Organizers and Sponsors
 |logo_imos|
 
 .. |logo_tagds| image:: ../_static/logos/TAG_DS_2025_white_teal.png
-   :height: 200px
+   :height: 220px
    :alt: TAG-DS Conference
    :target: https://www.tagds.com/events/tag-ds-2025
 
 .. |logo_arlq| image:: ../_static/logos/arlequin.png
-   :height: 200px
+   :height: 220px
    :alt: Arlequin AI
    :target: https://www.arlq.ai/
 
@@ -566,6 +575,6 @@ Organizers and Sponsors
    :target: https://gi.ece.ucsb.edu/
 
 .. |logo_imos| image:: ../_static/logos/logo_EPFL_IMOS.png
-   :height: 100px
+   :height: 90px
    :alt: IMOS Lab, EPFL
    :target: https://www.epfl.ch/labs/imos/
