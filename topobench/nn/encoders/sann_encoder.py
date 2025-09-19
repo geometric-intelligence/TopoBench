@@ -79,8 +79,8 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
                         out_channels=self.out_channels,
                         dropout=proj_dropout,
                         batch_norm=batch_norm,
-                        num_layers=1,
-                        act="relu",
+                        num_layers=2,
+                        act="leaky_relu",
                     ),
                 )
 
@@ -115,10 +115,9 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
                         in_channels=in_channel_total,
                         hidden_channels=in_channel_total,
                         out_channels=self.out_channels,
-                        dropout=proj_dropout,
-                        batch_norm=None,
-                        num_layers=1,
-                        act=None,
+                        #batch_norm=None,
+                        num_layers=2,
+                        #act=None,
                     ),
                 )
             # Instantiate self.hops layer normalization
@@ -159,11 +158,12 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
                 #     for j in range(self.hops)
                 # ]
                 # Concatenate the encodings along the last dimension
+                batch = getattr(data, f"batch_{i}")
                 concatenated = torch.cat(
                     [data[f"x{i}_{j}"] for j in range(self.hops)], dim=-1
                 )
-                data[f"x{i}_0"] =getattr(self, f"feature_mixing_{i}")(
-                    concatenated
+                data[f"x{i}_0"] = getattr(self, f"feature_mixing_{i}")(
+                    concatenated, batch
                 )
 
                 # data[f"x_{i}"] = sum(node_and_pse_encodings)
@@ -171,6 +171,8 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
         for i in self.dimensions:
             batch = getattr(data, f"batch_{i}")
             for j in range(self.hops):
+                if self.fuse_pse2cell and j == 0:
+                    continue
                 data[f"x{i}_{j}"] = getattr(self, f"encoder_{i}_{j}")(
                     data[f"x{i}_{j}"], batch
                 )
