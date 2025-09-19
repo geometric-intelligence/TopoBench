@@ -1,39 +1,13 @@
-TAG-DS Challenge 2025
----------------------
+TAG-DS Topological Deep Learning Challenge 2025: Expanding the Data Landscape
+-----------------------------------------------------------------------------
 
 Welcome to the **Topological Deep Learning Challenge 2025: Expanding the Data Landscape**, sponsored by `Arlequin AI <https://www.arlq.ai/>`__ and hosted at the first `Topology, Algebra, and Geometry in Data Science (TAG-DS) Conference <https://www.tagds.com/events/tag-ds-2025>`__.
 
 *Organizers:* Guillermo Bernardez, Lev Telyatnikov, Mathilde Papillon, Marco Montagna, Miquel Ferriol, Raffael Theiler, Olga Fink, Nina Miolane
 
 .. seealso::
-   Challenge hub (TopoBench repository): `<https://github.com/geometric-intelligence/TopoBench>`__.
+   Link to the challenge repository: `<https://github.com/geometric-intelligence/TopoBench>`__.
 
-.. rst-class:: text-center
-
-|logo_tagds| |logo_arlq| |logo_gil| |logo_imos|
-
-.. |logo_tagds| image:: ../_static/logos/TAG-DS_logo.png
-   :height: 56px
-   :alt: TAG-DS Conference
-   :target: https://www.tagds.com/events/tag-ds-2025
-
-.. |logo_arlq| image:: ../_static/logos/arlequin.png
-   :height: 56px
-   :alt: Arlequin AI
-   :target: https://www.arlq.ai/
-
-.. |logo_gil| image:: ../_static/logos/gil_ucsb.png
-   :height: 56px
-   :alt: Geometric Intelligence Lab, UC Santa Barbara
-   :target: https://gi.ece.ucsb.edu/
-
-.. |logo_imos| image:: ../_static/logos/logo_EPFL_IMOS.png
-   :height: 56px
-   :alt: IMOS Lab, EPFL
-   :target: https://www.epfl.ch/labs/imos/
-
-Motivation
-----------
 
 Motivation
 ----------
@@ -63,6 +37,9 @@ evaluation. To propel the field forward, we focus on the following fronts:
   datasets from the GNN community and beyond.
 - **Deepening:** TDL capabilities by building infrastructure for large-scale
   datasets and novel benchmark tasks.
+
+We are calling on the community to build a richer, more robust, and scalable data ecosystem for TDL. 
+By participating, you will be paving the way for the next generation of topological models.
 
 
 Description of the Challenge
@@ -492,88 +469,48 @@ Graphs
 
 .. list-table::
    :header-rows: 1
-   :widths: 26 14 40 20
+   :widths: 36 70
 
    * - Dataset
-     - Category
      - Reference
-     - Source
    * - TwiBot-20
-     - Large (220k)
      - *A Comprehensive Twitter Bot Detection Benchmark (Large).* 
-     - 
    * - TwiBot-22
-     - Large (1M)
      - *Towards Graph-Based Twitter Bot Detection (Large).* 
-     - 
    * - MGTAB
-     - Small (10k)
      - *A Multi-Relational Graph-Based Twitter Account Detection Benchmark.* 
-     - 
    * - GraphLand (14 datasets)
-     - Small/Medium/Large
      - *GraphLand: Evaluating Graph Machine Learning Models on Diverse Industrial Data.* 
-     - 
    * - Karate Club (7 datasets)
-     - Small/Medium/Large
      - *Karate Club: An API Oriented Open-Source Python Framework for Unsupervised…* 
-     - `GitHub <https://github.com/benedekrozemberczki/karateclub>`__
    * - Coauth-DBLP
-     - Medium (108k)
      - *Classification of Edge-dependent Labels of Nodes in Hypergraphs.* 
-     - 
    * - Coauth-AMiner
-     - Large (1.7M)
      - *Classification of Edge-dependent Labels of Nodes in Hypergraphs.* 
-     - 
    * - Email-Enron
-     - Small (986)
      - *Classification of Edge-dependent Labels of Nodes in Hypergraphs.* 
-     - 
    * - Email-Eu
-     - Small (15k)
      - *Classification of Edge-dependent Labels of Nodes in Hypergraphs.* 
-     - 
    * - Stack-Physics
-     - Medium (80k)
      - *Classification of Edge-dependent Labels of Nodes in Hypergraphs.* 
-     - 
    * - Wiki-CS
-     - Small (11k)
      - *Wiki-CS: A Wikipedia-Based Benchmark for Graph Neural Networks.* 
-     - `PyG <https://pytorch-geometric.readthedocs.io/en/2.6.0/generated/torch_geometric.datasets.WikiCS.html#torch_geometric.datasets.WikiCS>`__
    * - FacebookPagePage
-     - Small (22k)
      - *Multi-Scale Attributed Node Embedding (MUSAE).* 
-     -
    * - GitHub (MUSAE)
-     - Small (37k)
      - *Multi-Scale Attributed Node Embedding (MUSAE).* 
-     -
    * - LastFMAsia
-     - Small (7k)
      - *Multi-Scale Attributed Node Embedding (MUSAE).* 
-     -
    * - Deezer Europe
-     - Small (28k)
      - *Multi-Scale Attributed Node Embedding (MUSAE).* 
-     -
    * - Twitch
-     - Six small datasets
      - *Multi-Scale Attributed Node Embedding (MUSAE).* 
-     -
    * - GemsecDeezer
-     - Two small, one medium
      - *GEMSEC: Graph Embedding with Self Clustering.* 
-     -
    * - Torus dataset
-     - Small
      - *Topological Blindspots: Understanding and Extending Topological Deep Learning through the Lens of Expressivity.* 
-     - 
    * - QM9
-     - Medium
      - *MoleculeNet: A Benchmark for Molecular Machine Learning.* 
-     -
 
 
 Hypergraphs
@@ -581,41 +518,54 @@ Hypergraphs
 
 .. list-table::
    :header-rows: 1
-   :widths: 26 20 38 16
+   :widths: 36 70
 
    * - Dataset
-     - Category
      - Reference
-     - Source
    * - CornellTemporalHyperGraphDataset
-     - Hypergraphs (15 datasets)
      - *Simplicial Closure and Higher-Order Link Prediction.* 
-     -
    * - CornellLabelledNodes
-     - Hypergraphs (11 datasets)
      - *Various references.*
-     - `Cornell <https://www.cs.cornell.edu/~arb/data/>`__
    * - RHG-3
-     - HGraph classification
      - *Hypergraph Isomorphism Computation.* 
-     - `DHG <https://deephypergraph.readthedocs.io/en/latest/>`__
    * - RHG-10
-     - HGraph classification
      - *Hypergraph Isomorphism Computation.* 
-     - `DHG <https://deephypergraph.readthedocs.io/en/latest/>`__
    * - IMDB-Dir-Form
-     - HGraph classification
      - *Hypergraph Isomorphism Computation.* 
-     - `DHG <https://deephypergraph.readthedocs.io/en/latest/>`__
    * - IMDB-Dir-Genre
-     - HGraph classification
      - *Hypergraph Isomorphism Computation.* 
-     - `DHG <https://deephypergraph.readthedocs.io/en/latest/>`__
    * - Steam-Player
-     - HGraph classification
      - *Hypergraph Isomorphism Computation.* 
-     - `DHG <https://deephypergraph.readthedocs.io/en/latest/>`__
    * - Twitter-Friend
-     - HGraph classification
      - *Hypergraph Isomorphism Computation.* 
-     - `DHG <https://deephypergraph.readthedocs.io/en/latest/>`__
+
+
+Organizers and Sponsors
+-----------------------
+
+.. rst-class:: text-center
+
+|logo_tagds| 
+|logo_arlq| 
+|logo_gil| 
+|logo_imos|
+
+.. |logo_tagds| image:: ../_static/logos/TAG-DS_logo.png
+   :height: 100px
+   :alt: TAG-DS Conference
+   :target: https://www.tagds.com/events/tag-ds-2025
+
+.. |logo_arlq| image:: ../_static/logos/arlequin.png
+   :height: 100px
+   :alt: Arlequin AI
+   :target: https://www.arlq.ai/
+
+.. |logo_gil| image:: ../_static/logos/gil_ucsb.png
+   :height: 100px
+   :alt: Geometric Intelligence Lab, UC Santa Barbara
+   :target: https://gi.ece.ucsb.edu/
+
+.. |logo_imos| image:: ../_static/logos/logo_EPFL_IMOS.png
+   :height: 100px
+   :alt: IMOS Lab, EPFL
+   :target: https://www.epfl.ch/labs/imos/
