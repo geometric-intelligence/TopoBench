@@ -551,12 +551,12 @@ Organizers and Sponsors
 |logo_imos|
 
 .. |logo_tagds| image:: ../_static/logos/TAG_DS_2025_white_teal.png
-   :height: 120px
+   :height: 200px
    :alt: TAG-DS Conference
    :target: https://www.tagds.com/events/tag-ds-2025
 
 .. |logo_arlq| image:: ../_static/logos/arlequin.png
-   :height: 120px
+   :height: 200px
    :alt: Arlequin AI
    :target: https://www.arlq.ai/
 
@@ -566,6 +566,6 @@ Organizers and Sponsors
    :target: https://gi.ece.ucsb.edu/
 
 .. |logo_imos| image:: ../_static/logos/logo_EPFL_IMOS.png
-   :height: 120px
+   :height: 100px
    :alt: IMOS Lab, EPFL
    :target: https://www.epfl.ch/labs/imos/
