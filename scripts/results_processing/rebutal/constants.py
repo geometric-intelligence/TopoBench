@@ -1,9 +1,21 @@
 MODEL_ORDER = {
-    "graph":["GCN","GAT","GIN"],
+    "graph": ["GCN", "GAT", "GIN"],
     "simplicial": ["SCN", "SCCNN", "SaNN", "GCCN", "HOPSE-M", "HOPSE-G"],
-    "cell": ["CCCN", "CWN", "GCCN", "HOPSE-M", "HOPSE-G"]
+    "cell": ["CCCN", "CWN", "GCCN", "HOPSE-M", "HOPSE-G"],
 }
-DATASET_ORDER = ["MUTAG", "PROTEINS", "NCI1", "NCI109", "ZINC", "MANTRA-N", "MANTRA-O", "MANTRA-BN", "MANTRA-BN-0", "MANTRA-BN-1", "MANTRA-BN-2"]
+DATASET_ORDER = [
+    "MUTAG",
+    "PROTEINS",
+    "NCI1",
+    "NCI109",
+    "ZINC",
+    "MANTRA-N",
+    "MANTRA-O",
+    "MANTRA-BN",
+    "MANTRA-BN-0",
+    "MANTRA-BN-1",
+    "MANTRA-BN-2",
+]
 performance_classification = [
     "val/accuracy",
     "test/accuracy",
@@ -30,10 +42,10 @@ performance_classification_additional = [
     # "test/f1"
 ]
 performance_regression = [
-    # "val/mae",
-    # "test/mae",
-    # "val/mse",
-    # "test/mse",
+    "val/mae",
+    "test/mae",
+    "val/mse",
+    "test/mse",
 ]
 
 optimization_metrics = {
@@ -138,48 +150,78 @@ optimization_metrics = {
         "eval_metric": "test/accuracy",
         "direction": "max",
         "performance_columns": performance_classification,
-    }
+    },
 }
-sweeped_columns = [
-    "transforms.sann_encoding.max_hop",
-    "transforms.sann_encoding.max_rank",
-    "transforms.sann_encoding.neighborhoods",
-    "model.feature_encoder.proj_dropout",
-    "model.backbone.num_layers",
-    # "model.backbone.n_layers",
-    "model.backbone.hidden_channels",
-    "model.readout.hidden_dim",
-    "model.feature_encoder.out_channels",
-    # Others
-    "optimizer.parameters.weight_decay",
-    "optimizer.parameters.lr",
-    "dataset.dataloader_params.batch_size",
-    # Additional
-    "transforms.sann_encoding.copy_initial",
-    "transforms.sann_encoding.pe_types",
-    "transforms.graph2cell_lifting.max_cell_length",
-    "transforms.sann_encoding.is_undirected",
-]
+sweeped_columns = {
+    "hopse": [
+        "transforms.sann_encoding.max_hop",
+        "transforms.sann_encoding.max_rank",
+        "transforms.sann_encoding.neighborhoods",
+        "model.feature_encoder.proj_dropout",
+        # "model.backbone.num_layers",
+        "model.backbone.n_layers",
+        "model.backbone.hidden_channels",
+        "model.readout.hidden_dim",
+        "model.feature_encoder.out_channels",
+        # Others
+        "optimizer.parameters.weight_decay",
+        "optimizer.parameters.lr",
+        "dataset.dataloader_params.batch_size",
+        # Additional
+        # "transforms.sann_encoding.copy_initial",
+        "transforms.sann_encoding.pe_types",
+        "transforms.graph2cell_lifting.max_cell_length",
+        "transforms.sann_encoding.is_undirected",
+    ],
+    "gnn": [
+        "transforms.sann_encoding.max_hop",
+        "transforms.sann_encoding.max_rank",
+        "transforms.sann_encoding.neighborhoods",
+        "model.feature_encoder.proj_dropout",
+        "model.backbone.num_layers",
+        # "model.backbone.n_layers",
+        "model.backbone.hidden_channels",
+        "model.readout.hidden_dim",
+        "model.feature_encoder.out_channels",
+        # Others
+        "optimizer.parameters.weight_decay",
+        "optimizer.parameters.lr",
+        "dataset.dataloader_params.batch_size",
+        # Additional
+        # "transforms.sann_encoding.copy_initial",
+        "transforms.sann_encoding.pe_types",
+        "transforms.graph2cell_lifting.max_cell_length",
+        "transforms.sann_encoding.is_undirected",
+    ],
+}
+
 run_columns = [
     "dataset.split_params.data_seed",
     "seed",
 ]
 
 # Dataset and model columns
-dataset_model_columns = [
-    "model.model_name",
-    "model.model_domain",
-    "dataset.loader.parameters.data_name",
-]
+dataset_model_columns = {
+    "hopse": [
+        "model.model_name",
+        "model.model_domain",
+        "dataset.loader.parameters.data_name",
+    ],
+    "gnn": [
+        "model.model_name",
+        "model.model_domain",
+        "dataset.loader.parameters.data_name",
+    ],
+}
 
 # Performance columns
 performance_columns = [
     "val/loss",
     "test/loss",
-    # "val/mae",
-    # "test/mae",
-    # "val/mse",
-    # "test/mse",
+    "val/mae",
+    "test/mae",
+    "val/mse",
+    "test/mse",
     "val/accuracy",
     "test/accuracy",
     "val/auroc",
@@ -196,11 +238,19 @@ time_columns = [
     "AvgTime/train_epoch_std",
 ]
 
-keep_columns = (
-    dataset_model_columns
-    + sweeped_columns
-    + performance_columns
-    + run_columns
-    + time_columns
-)
-
+keep_columns = {
+    "hopse": (
+        dataset_model_columns["hopse"]
+        + sweeped_columns["hopse"]
+        + performance_columns
+        + run_columns
+        + time_columns
+    ),
+    "gnn": (
+        dataset_model_columns["gnn"]
+        + sweeped_columns["gnn"]
+        + performance_columns
+        + run_columns
+        + time_columns
+    ),
+}

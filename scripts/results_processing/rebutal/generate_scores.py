@@ -8,9 +8,10 @@ from constants import (
 )
 
 
-def gen_scores(df):
+def gen_scores(df, gnn=False):
     # Get unique datasets
     datasets = list(df["dataset.loader.parameters.data_name"].unique())
+    type_str = "gnn" if gnn else "hopse"
     # Get unique models
     models = list(df["model.model_name"].unique())
 
@@ -32,13 +33,14 @@ def gen_scores(df):
                 "performance_columns"
             ]
             subset = subset[
-                dataset_model_columns
-                + sweeped_columns
+                dataset_model_columns[type_str]
+                + sweeped_columns[type_str]
                 + performance_columns
                 + run_columns
             ]
             aggregated = subset.groupby(
-                sweeped_columns + ["model.model_name", "model.model_domain"],
+                sweeped_columns[type_str]
+                + ["model.model_name", "model.model_domain"],
                 dropna=False,
             ).agg(
                 {col: ["mean", "std", "count"] for col in performance_columns},
@@ -57,7 +59,9 @@ def gen_scores(df):
                 / len(aggregated)
                 * 100
             )
-            aggregated = aggregated[aggregated[(eval_metric, "count")] >= n_count]
+            aggregated = aggregated[
+                aggregated[(eval_metric, "count")] >= n_count
+            ]
             # print(len(aggregated[aggregated['seed'] > 4]))
             # aggregated = aggregated.sort_values(
             #     by=(optim_metric, "mean"), ascending=(direction == "min")

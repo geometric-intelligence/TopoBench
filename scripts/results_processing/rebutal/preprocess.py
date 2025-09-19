@@ -49,9 +49,13 @@ def preprocess_df(df, split_mantra=True, gnn=True):
     df = df[~(df["dataset.split_params.data_seed"].isna())]
     if gnn:
         df = df[~(df["model.backbone._target_"].isna())]
-        df["model.model_name"] = df['model.backbone._target_'].str.split('.').str[-1]
-    df["transforms.sann_encoding.pe_types"] = df["transforms.sann_encoding.pe_types"].str.join(',').astype(str)
-    df["transforms.sann_encoding.neighborhoods"] = df[
+        df["model.model_name"] = (
+            df["model.backbone._target_"].str.split(".").str[-1]
+        )
+    df.loc[:, "transforms.sann_encoding.pe_types"] = (
+        df["transforms.sann_encoding.pe_types"].str.join(",").astype(str)
+    )
+    df.loc[:, "transforms.sann_encoding.neighborhoods"] = df[
         "transforms.sann_encoding.neighborhoods"
     ].astype(str)
     if split_mantra:
