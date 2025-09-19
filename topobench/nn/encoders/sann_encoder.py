@@ -58,7 +58,7 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
         self.hops = max_hop
         self.fuse_pse2cell = fuse_pse2cell
         self.use_atom_encoder = use_atom_encoder
-        self.use_bond_encoder = use_bond_encoder 
+        self.use_bond_encoder = use_bond_encoder
         for i in self.dimensions:
             for j in range(self.hops):
                 true_in_channels = self.in_channels[i][j]
@@ -115,9 +115,9 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
                         in_channels=in_channel_total,
                         hidden_channels=in_channel_total,
                         out_channels=self.out_channels,
-                        #batch_norm=None,
+                        # batch_norm=None,
                         num_layers=2,
-                        #act=None,
+                        # act=None,
                     ),
                 )
             # Instantiate self.hops layer normalization
