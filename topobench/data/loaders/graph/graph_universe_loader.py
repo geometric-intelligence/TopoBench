@@ -25,6 +25,9 @@ class GraphUniverseDatasetLoader(AbstractLoader):
     def __init__(self, task: str, parameters: DictConfig) -> None:
         self.task = task
         super().__init__(parameters)
+        if self.parameters.get("num_nodes_range") is not None:
+            self.parameters["generation_parameters"]["family_parameters"]["min_n_nodes"] = self.parameters.get("num_nodes_range")[0]
+            self.parameters["generation_parameters"]["family_parameters"]["max_n_nodes"] = self.parameters.get("num_nodes_range")[1]
 
     def load_dataset(self) -> Dataset:
         """Load Graph Universe dataset.
