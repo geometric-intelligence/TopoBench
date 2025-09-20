@@ -6,7 +6,8 @@ for i in ${data_seeds[@]}; do
     python -m topobench \
         dataset=graph/GraphUniverse_CD_transductive \
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
-        dataset.loader.parameters.generation_parameters.family_parameters.degree_range=\[2.5,2.5\],\[7.5,7.5\],\[15.0,15.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.5,0.5\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[2.5,2.5\],\[7.5,7.5\],\[15.0,15.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1 \
         model=graph/gcn \
         model.feature_encoder.out_channels=32,64,128 \
@@ -24,11 +25,14 @@ for i in ${data_seeds[@]}; do
         callbacks.early_stopping.patience=50 \
         tags="[degree_transductive]" \
         --multirun &
+
+    sleep 60
     
     python -m topobench \
         dataset=graph/GraphUniverse_CD_transductive \
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
-        dataset.loader.parameters.generation_parameters.family_parameters.degree_range=\[2.5,2.5\],\[7.5,7.5\],\[15.0,15.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.5,0.5\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[2.5,2.5\],\[7.5,7.5\],\[15.0,15.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1 \
         model=graph/gps \
         model.feature_encoder.out_channels=32,64,128 \
@@ -36,12 +40,12 @@ for i in ${data_seeds[@]}; do
         model.backbone.num_layers=2,4 \
         model.backbone.heads=4 \
         model.backbone.dropout=0.2,0.4 \
-        model.backbone.attn_type=multihead \
+        model.backbone.attn_type=multihead,performer \
         model.readout.hidden_layers=\[16\],\[\] \
         model.readout.dropout=0.3 \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=1 \
-        transforms.CombinedPSEs.encodings=\[RWSE\],\[\] \
+        transforms.CombinedPSEs.encodings=\[RWSE\],\[LapPE\] \
         logger.wandb.project=final_degree_experiments_transductive \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
@@ -54,19 +58,20 @@ for i in ${data_seeds[@]}; do
     python -m topobench \
         dataset=graph/GraphUniverse_CD_transductive \
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
-        dataset.loader.parameters.generation_parameters.family_parameters.degree_range=\[2.5,2.5\],\[7.5,7.5\],\[15.0,15.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.5,0.5\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[2.5,2.5\],\[7.5,7.5\],\[15.0,15.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1 \
         model=graph/nsd \
         model.feature_encoder.out_channels=32,64,128 \
         model.feature_encoder.proj_dropout=0.3 \
         model.backbone.num_layers=4,6 \
-        model.backbone.dropout=0.0,0.2 \
-        model.backbone.sheaf_type=bundle \
+        model.backbone.dropout=0.2,0.4 \
+        model.backbone.sheaf_type=bundle,diag \
         model.readout.hidden_layers=\[16\],\[\] \
         model.readout.dropout=0.3 \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=1 \
-        transforms.CombinedPSEs.encodings=\[RWSE\],\[\] \
+        transforms.CombinedPSEs.encodings=\[RWSE\],\[LapPE\] \
         logger.wandb.project=final_degree_experiments_transductive \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
@@ -79,7 +84,8 @@ for i in ${data_seeds[@]}; do
     python -m topobench \
         dataset=graph/GraphUniverse_CD_transductive \
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
-        dataset.loader.parameters.generation_parameters.family_parameters.degree_range=\[2.5,2.5\],\[7.5,7.5\],\[15.0,15.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.5,0.5\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[2.5,2.5\],\[7.5,7.5\],\[15.0,15.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1 \
         model=graph/gat \
         model.feature_encoder.out_channels=32,64,128 \
@@ -103,7 +109,8 @@ for i in ${data_seeds[@]}; do
     python -m topobench \
         dataset=graph/GraphUniverse_CD_transductive \
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
-        dataset.loader.parameters.generation_parameters.family_parameters.degree_range=\[2.5,2.5\],\[7.5,7.5\],\[15.0,15.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.5,0.5\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[2.5,2.5\],\[7.5,7.5\],\[15.0,15.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1 \
         model=graph/sage \
         model.feature_encoder.out_channels=32,64,128 \
@@ -126,7 +133,8 @@ for i in ${data_seeds[@]}; do
     python -m topobench \
         dataset=graph/GraphUniverse_CD_transductive \
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
-        dataset.loader.parameters.generation_parameters.family_parameters.degree_range=\[2.5,2.5\],\[7.5,7.5\],\[15.0,15.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.5,0.5\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[2.5,2.5\],\[7.5,7.5\],\[15.0,15.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1 \
         model=graph/gin \
         model.feature_encoder.out_channels=32,64,128 \
@@ -149,7 +157,8 @@ for i in ${data_seeds[@]}; do
     python -m topobench \
         dataset=graph/GraphUniverse_CD_transductive \
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
-        dataset.loader.parameters.generation_parameters.family_parameters.degree_range=\[2.5,2.5\],\[7.5,7.5\],\[15.0,15.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.5,0.5\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[2.5,2.5\],\[7.5,7.5\],\[15.0,15.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1 \
         model=pointcloud/deepset \
         model.feature_encoder.out_channels=32,64,128 \
@@ -171,7 +180,8 @@ for i in ${data_seeds[@]}; do
     python -m topobench \
         dataset=graph/GraphUniverse_CD_transductive \
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
-        dataset.loader.parameters.generation_parameters.family_parameters.degree_range=\[2.5,2.5\],\[7.5,7.5\],\[15.0,15.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.5,0.5\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[2.5,2.5\],\[7.5,7.5\],\[15.0,15.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1 \
         model=graph/graph_mlp \
         model.feature_encoder.out_channels=32,64,128 \

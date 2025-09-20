@@ -17,8 +17,8 @@ loader:
         seed: 42
       family_parameters:
         n_graphs: 1
-        min_n_nodes: 200
-        max_n_nodes: 200
+        min_n_nodes: 1000
+        max_n_nodes: 1000
         min_communities: 10
         max_communities: 10
         homophily_range: [0.5, 0.5]
