@@ -186,7 +186,7 @@ notebooks/tmp
 /tutorials/*.json
 /tutorials/*.csv
 /tutorials/*.zip
-/tutorials/selected_checkpoints/
+/tutorials/*checkpoints/
 
 # wandb
 wandb/
