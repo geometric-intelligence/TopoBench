@@ -6,7 +6,7 @@ for i in ${data_seeds[@]}; do
     python -m topobench \
         dataset=graph/GraphUniverse_TC \
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
-        dataset.loader.parameters.generation_parameters.family_parameters.degree_separation_range=\[0.0,1.0\],\[9.0,10.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.degree_separation_range=\[0.0,0.1\],\[0.9,1.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1000 \
         model=graph/gcn \
         model.feature_encoder.out_channels=64 \
@@ -17,7 +17,7 @@ for i in ${data_seeds[@]}; do
         model.readout.dropout=0.3 \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=32 \
-        logger.wandb.project=triangle_experiments \
+        logger.wandb.project=final_triangle_experiments \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[0\] \
@@ -25,11 +25,13 @@ for i in ${data_seeds[@]}; do
         callbacks.early_stopping.patience=50 \
         tags="[triangle]" \
         --multirun &
+
+    sleep 200
     
     python -m topobench \
         dataset=graph/GraphUniverse_TC \
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
-        dataset.loader.parameters.generation_parameters.family_parameters.degree_separation_range=\[0.0,1.0\],\[9.0,10.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.degree_separation_range=\[0.0,0.1\],\[0.9,1.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1000 \
         model=graph/gps \
         model.feature_encoder.out_channels=64 \
@@ -43,7 +45,7 @@ for i in ${data_seeds[@]}; do
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=32 \
         transforms.CombinedPSEs.encodings=\[RWSE\],\[LapPE\] \
-        logger.wandb.project=triangle_experiments \
+        logger.wandb.project=final_triangle_experiments \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[1\] \
@@ -55,7 +57,7 @@ for i in ${data_seeds[@]}; do
     python -m topobench \
         dataset=graph/GraphUniverse_TC \
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
-        dataset.loader.parameters.generation_parameters.family_parameters.degree_separation_range=\[0.0,1.0\],\[9.0,10.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.degree_separation_range=\[0.0,0.1\],\[0.9,1.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1000 \
         model=graph/nsd \
         model.feature_encoder.out_channels=64 \
@@ -68,7 +70,7 @@ for i in ${data_seeds[@]}; do
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=32 \
         transforms.CombinedPSEs.encodings=\[RWSE\],\[LapPE\] \
-        logger.wandb.project=triangle_experiments \
+        logger.wandb.project=final_triangle_experiments \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[2\] \
@@ -80,7 +82,7 @@ for i in ${data_seeds[@]}; do
     python -m topobench \
         dataset=graph/GraphUniverse_TC \
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
-        dataset.loader.parameters.generation_parameters.family_parameters.degree_separation_range=\[0.0,1.0\],\[9.0,10.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.degree_separation_range=\[0.0,0.1\],\[0.9,1.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1000 \
         model=graph/gat \
         model.feature_encoder.out_channels=64 \
@@ -92,7 +94,7 @@ for i in ${data_seeds[@]}; do
         model.readout.hidden_layers=\[16\],\[\] \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=32 \
-        logger.wandb.project=triangle_experiments \
+        logger.wandb.project=final_triangle_experiments \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[3\] \
@@ -104,7 +106,7 @@ for i in ${data_seeds[@]}; do
     python -m topobench \
         dataset=graph/GraphUniverse_TC \
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
-        dataset.loader.parameters.generation_parameters.family_parameters.degree_separation_range=\[0.0,1.0\],\[9.0,10.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.degree_separation_range=\[0.0,0.1\],\[0.9,1.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1000 \
         model=graph/sage \
         model.feature_encoder.out_channels=64 \
@@ -115,7 +117,7 @@ for i in ${data_seeds[@]}; do
         model.readout.hidden_layers=\[16\],\[\] \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=32 \
-        logger.wandb.project=triangle_experiments \
+        logger.wandb.project=final_triangle_experiments \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[0\] \
@@ -127,7 +129,7 @@ for i in ${data_seeds[@]}; do
     python -m topobench \
         dataset=graph/GraphUniverse_TC \
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
-        dataset.loader.parameters.generation_parameters.family_parameters.degree_separation_range=\[0.0,1.0\],\[9.0,10.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.degree_separation_range=\[0.0,0.1\],\[0.9,1.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1000 \
         model=graph/gin \
         model.feature_encoder.out_channels=64 \
@@ -138,7 +140,7 @@ for i in ${data_seeds[@]}; do
         model.readout.hidden_layers=\[16\],\[\] \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=32 \
-        logger.wandb.project=triangle_experiments \
+        logger.wandb.project=final_triangle_experiments \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[1\] \
@@ -150,7 +152,7 @@ for i in ${data_seeds[@]}; do
     python -m topobench \
         dataset=graph/GraphUniverse_TC \
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
-        dataset.loader.parameters.generation_parameters.family_parameters.degree_separation_range=\[0.0,1.0\],\[9.0,10.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.degree_separation_range=\[0.0,0.1\],\[0.9,1.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1000 \
         model=pointcloud/deepset \
         model.feature_encoder.out_channels=64 \
@@ -160,7 +162,7 @@ for i in ${data_seeds[@]}; do
         model.readout.dropout=0.3 \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=32 \
-        logger.wandb.project=triangle_experiments \
+        logger.wandb.project=final_triangle_experiments \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[2\] \
@@ -172,7 +174,7 @@ for i in ${data_seeds[@]}; do
     python -m topobench \
         dataset=graph/GraphUniverse_TC \
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
-        dataset.loader.parameters.generation_parameters.family_parameters.degree_separation_range=\[0.0,1.0\],\[9.0,10.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.degree_separation_range=\[0.0,0.1\],\[0.9,1.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1000 \
         model=graph/graph_mlp \
         model.feature_encoder.out_channels=64 \
@@ -183,7 +185,7 @@ for i in ${data_seeds[@]}; do
         model.readout.hidden_layers=\[16\],\[\] \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=32 \
-        logger.wandb.project=triangle_experiments \
+        logger.wandb.project=final_triangle_experiments \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[3\] \

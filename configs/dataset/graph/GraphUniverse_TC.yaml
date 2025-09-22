@@ -34,10 +34,10 @@ loader:
 # Dataset parameters
 parameters:
   num_features: ${dataset.loader.parameters.generation_parameters.universe_parameters.feature_dim}
-  num_classes: ${dataset.loader.parameters.generation_parameters.universe_parameters.K}
+  num_classes: 1
   task: regression
-  loss_type: mse
-  monitor_metric: mse
+  loss_type: mae
+  monitor_metric: mae
   task_level: graph
 
 #splits
