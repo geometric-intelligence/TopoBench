@@ -476,7 +476,7 @@ if __name__ == "__main__":
         # "MANTRA_betti_numbers_2",
         # "MANTRA_name",
         # "MANTRA_orientation",
-        "ogbg-molhiv"
+        "ogbg-molhiv",
     ]
 
     # Parse the dataframes
