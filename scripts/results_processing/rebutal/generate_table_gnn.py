@@ -6,6 +6,7 @@ from preprocess import preprocess_df
 
 NAME_DICT_PE = {
     "rwse,elstaticpe,hkdiagse,lappe": "All",
+    "rwse,elstaticpe,hkdiagse": "All w/o LapPE",
     "rwse": "RWSE",
     "hkdiagse": "HKDiag",
     "lappe": "LapPE",
