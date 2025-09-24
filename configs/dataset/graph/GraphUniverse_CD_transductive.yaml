@@ -45,7 +45,7 @@ split_params:
   learning_setting: transductive
   data_split_dir: ${dataset.loader.parameters.data_dir}/data_splits
   data_seed: 0
-  split_type: k-fold #'k-fold' # either "k-fold" or "random" strategies
+  split_type: random #'k-fold' # either "k-fold" or "random" strategies
   k: 10 # for "k-fold" Cross-Validation
   train_prop: 0.7 # for "random" strategy splitting
 
