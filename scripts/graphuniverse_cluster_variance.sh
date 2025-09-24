@@ -33,7 +33,7 @@ for i in ${data_seeds[@]}; do
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
         dataset.loader.parameters.generation_parameters.universe_parameters.cluster_variance=0.2,0.8 \
         dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.4,0.6\] \
-        dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[5.0,10.0\],\[10.0,20.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[1.0,5.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1000 \
         model=graph/gps \
         model.feature_encoder.out_channels=64 \
@@ -61,7 +61,7 @@ for i in ${data_seeds[@]}; do
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
         dataset.loader.parameters.generation_parameters.universe_parameters.cluster_variance=0.2,0.8 \
         dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.4,0.6\] \
-        dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[5.0,10.0\],\[10.0,20.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[1.0,5.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1000 \
         model=graph/nsd \
         model.feature_encoder.out_channels=64 \
@@ -88,7 +88,7 @@ for i in ${data_seeds[@]}; do
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
         dataset.loader.parameters.generation_parameters.universe_parameters.cluster_variance=0.2,0.8 \
         dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.4,0.6\] \
-        dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[5.0,10.0\],\[10.0,20.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[1.0,5.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1000 \
         model=graph/gat \
         model.feature_encoder.out_channels=64 \
@@ -114,7 +114,7 @@ for i in ${data_seeds[@]}; do
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
         dataset.loader.parameters.generation_parameters.universe_parameters.cluster_variance=0.2,0.8 \
         dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.4,0.6\] \
-        dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[5.0,10.0\],\[10.0,20.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[1.0,5.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1000 \
         model=graph/sage \
         model.feature_encoder.out_channels=64 \
@@ -139,7 +139,7 @@ for i in ${data_seeds[@]}; do
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
         dataset.loader.parameters.generation_parameters.universe_parameters.cluster_variance=0.2,0.8 \
         dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.4,0.6\] \
-        dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[5.0,10.0\],\[10.0,20.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[1.0,5.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1000 \
         model=graph/gin \
         model.feature_encoder.out_channels=64 \
@@ -164,7 +164,7 @@ for i in ${data_seeds[@]}; do
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
         dataset.loader.parameters.generation_parameters.universe_parameters.cluster_variance=0.2,0.8 \
         dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.4,0.6\] \
-        dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[5.0,10.0\],\[10.0,20.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[1.0,5.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1000 \
         model=pointcloud/deepset \
         model.feature_encoder.out_channels=64 \
@@ -188,7 +188,7 @@ for i in ${data_seeds[@]}; do
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
         dataset.loader.parameters.generation_parameters.universe_parameters.cluster_variance=0.2,0.8 \
         dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.4,0.6\] \
-        dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[5.0,10.0\],\[10.0,20.0\] \
+        dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[1.0,5.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1000 \
         model=graph/graph_mlp \
         model.feature_encoder.out_channels=64 \
