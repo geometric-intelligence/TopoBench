@@ -10,7 +10,7 @@ from topobench.dataloader import DataloadDataset
 
 
 # Generate splits in different fasions
-def k_fold_split(labels, parameters):
+def k_fold_split(labels, parameters, root=None):
     """Return train and valid indices as in K-Fold Cross-Validation.
 
     If the split already exists it loads it automatically, otherwise it creates the
@@ -22,6 +22,8 @@ def k_fold_split(labels, parameters):
         Label tensor.
     parameters : DictConfig
         Configuration parameters.
+    root : str, optional
+        Root directory for data splits. Overwrite the default directory.
 
     Returns
     -------
@@ -29,7 +31,11 @@ def k_fold_split(labels, parameters):
         Dictionary containing the train, validation and test indices, with keys "train", "valid", and "test".
     """
 
-    data_dir = parameters.data_split_dir
+    data_dir = (
+        parameters["data_split_dir"]
+        if root is None
+        else os.path.join(root, "data_splits")
+    )
     k = parameters.k
     fold = parameters.data_seed
     assert fold < k, "data_seed needs to be less than k"
@@ -244,15 +250,20 @@ def load_transductive_splits(dataset, parameters):
 
     data = dataset.data_list[0]
     labels = data.y.numpy()
-
     # Ensure labels are one dimensional array
     assert len(labels.shape) == 1, "Labels should be one dimensional array"
 
+    root = (
+        dataset.dataset.get_data_dir()
+        if hasattr(dataset.dataset, "get_data_dir")
+        else None
+    )
+
     if parameters.split_type == "random":
-        splits = random_splitting(labels, parameters)
+        splits = random_splitting(labels, parameters, root)
 
     elif parameters.split_type == "k-fold":
-        splits = k_fold_split(labels, parameters)
+        splits = k_fold_split(labels, parameters, root)
 
     else:
         raise NotImplementedError(
@@ -297,16 +308,17 @@ def load_inductive_splits(dataset, parameters):
     )
     labels = [data.y.squeeze(0).numpy() for data in dataset]
 
+    root = (
+        dataset.dataset.get_data_dir()
+        if hasattr(dataset.dataset, "get_data_dir")
+        else None
+    )
+
     if parameters.split_type == "random":
-        root = (
-            dataset.dataset.get_data_dir()
-            if hasattr(dataset.dataset, "get_data_dir")
-            else None
-        )
         split_idx = random_splitting(labels, parameters, root)
 
     elif parameters.split_type == "k-fold":
-        split_idx = k_fold_split(labels, parameters)
+        split_idx = k_fold_split(labels, parameters, root)
 
     elif parameters.split_type == "fixed" and hasattr(dataset, "split_idx"):
         split_idx = dataset.split_idx
