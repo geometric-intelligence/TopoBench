@@ -10,14 +10,14 @@ for i in ${data_seeds[@]}; do
         dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[2.5,2.5\],\[7.5,7.5\],\[15.0,15.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1 \
         model=graph/gcn \
-        model.feature_encoder.out_channels=32,64,128 \
+        model.feature_encoder.out_channels=32,64 \
         model.feature_encoder.proj_dropout=0.3 \
         model.backbone.num_layers=2,4 \
         model.backbone.dropout=0.2,0.4 \
         model.readout.hidden_layers=\[16\],\[\] \
         model.readout.dropout=0.3 \
         dataset.split_params.data_seed=$i \
-        logger.wandb.project=final_degree_experiments_transductive \
+        logger.wandb.project=really_final_degree_experiments_transductive \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[0\] \
@@ -35,7 +35,7 @@ for i in ${data_seeds[@]}; do
         dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[2.5,2.5\],\[7.5,7.5\],\[15.0,15.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1 \
         model=graph/gps \
-        model.feature_encoder.out_channels=32,64,128 \
+        model.feature_encoder.out_channels=32,64 \
         model.feature_encoder.proj_dropout=0.3 \
         model.backbone.num_layers=2,4 \
         model.backbone.heads=4 \
@@ -46,7 +46,7 @@ for i in ${data_seeds[@]}; do
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=1 \
         transforms.CombinedPSEs.encodings=\[RWSE\],\[LapPE\] \
-        logger.wandb.project=final_degree_experiments_transductive \
+        logger.wandb.project=really_final_degree_experiments_transductive \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[1\] \
@@ -62,7 +62,7 @@ for i in ${data_seeds[@]}; do
         dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[2.5,2.5\],\[7.5,7.5\],\[15.0,15.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1 \
         model=graph/nsd \
-        model.feature_encoder.out_channels=32,64,128 \
+        model.feature_encoder.out_channels=32,64 \
         model.feature_encoder.proj_dropout=0.3 \
         model.backbone.num_layers=4,6 \
         model.backbone.dropout=0.2,0.4 \
@@ -72,7 +72,7 @@ for i in ${data_seeds[@]}; do
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=1 \
         transforms.CombinedPSEs.encodings=\[RWSE\],\[LapPE\] \
-        logger.wandb.project=final_degree_experiments_transductive \
+        logger.wandb.project=really_final_degree_experiments_transductive \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[2\] \
@@ -88,7 +88,7 @@ for i in ${data_seeds[@]}; do
         dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[2.5,2.5\],\[7.5,7.5\],\[15.0,15.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1 \
         model=graph/gat \
-        model.feature_encoder.out_channels=32,64,128 \
+        model.feature_encoder.out_channels=32,64 \
         model.feature_encoder.proj_dropout=0.3 \
         model.backbone.heads=2,4,8 \
         model.backbone.num_layers=2,4 \
@@ -97,7 +97,7 @@ for i in ${data_seeds[@]}; do
         model.readout.hidden_layers=\[16\],\[\] \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=1 \
-        logger.wandb.project=final_degree_experiments_transductive \
+        logger.wandb.project=really_final_degree_experiments_transductive \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[3\] \
@@ -113,7 +113,7 @@ for i in ${data_seeds[@]}; do
         dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[2.5,2.5\],\[7.5,7.5\],\[15.0,15.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1 \
         model=graph/sage \
-        model.feature_encoder.out_channels=32,64,128 \
+        model.feature_encoder.out_channels=32,64 \
         model.feature_encoder.proj_dropout=0.3 \
         model.backbone.num_layers=2,4 \
         model.backbone.dropout=0.2,0.4 \
@@ -121,7 +121,7 @@ for i in ${data_seeds[@]}; do
         model.readout.hidden_layers=\[16\],\[\] \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=1 \
-        logger.wandb.project=final_degree_experiments_transductive \
+        logger.wandb.project=really_final_degree_experiments_transductive \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[0\] \
@@ -137,7 +137,7 @@ for i in ${data_seeds[@]}; do
         dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[2.5,2.5\],\[7.5,7.5\],\[15.0,15.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1 \
         model=graph/gin \
-        model.feature_encoder.out_channels=32,64,128 \
+        model.feature_encoder.out_channels=32,64 \
         model.feature_encoder.proj_dropout=0.3 \
         model.backbone.num_layers=2,4 \
         model.backbone.dropout=0.2,0.4 \
@@ -145,7 +145,7 @@ for i in ${data_seeds[@]}; do
         model.readout.hidden_layers=\[16\],\[\] \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=1 \
-        logger.wandb.project=final_degree_experiments_transductive \
+        logger.wandb.project=really_final_degree_experiments_transductive \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[1\] \
@@ -161,14 +161,14 @@ for i in ${data_seeds[@]}; do
         dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[2.5,2.5\],\[7.5,7.5\],\[15.0,15.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1 \
         model=pointcloud/deepset \
-        model.feature_encoder.out_channels=32,64,128 \
+        model.feature_encoder.out_channels=32,64 \
         model.feature_encoder.proj_dropout=0.3 \
         model.readout.hidden_layers=\[64,32\],\[32,16\],\[16\] \
         model.readout.dropout=0.2,0.4 \
         model.readout.dropout=0.3 \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=1 \
-        logger.wandb.project=final_degree_experiments_transductive \
+        logger.wandb.project=really_final_degree_experiments_transductive \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[2\] \
@@ -184,7 +184,7 @@ for i in ${data_seeds[@]}; do
         dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[2.5,2.5\],\[7.5,7.5\],\[15.0,15.0\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1 \
         model=graph/graph_mlp \
-        model.feature_encoder.out_channels=32,64,128 \
+        model.feature_encoder.out_channels=32,64 \
         model.feature_encoder.proj_dropout=0.3 \
         model.backbone.order=2,4 \
         model.backbone.dropout=0.2,0.4 \
@@ -192,7 +192,7 @@ for i in ${data_seeds[@]}; do
         model.readout.hidden_layers=\[16\],\[\] \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=1 \
-        logger.wandb.project=final_degree_experiments_transductive \
+        logger.wandb.project=really_final_degree_experiments_transductive \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[3\] \

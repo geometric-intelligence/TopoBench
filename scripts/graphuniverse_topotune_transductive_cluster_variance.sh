@@ -7,7 +7,7 @@ for i in ${data_seeds[@]}; do
     python -m topobench \
         dataset=graph/GraphUniverse_CD_transductive \
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
-        dataset.loader.parameters.generation_parameters.universe_parameters.cluster_variance=0.2,0.8 \
+        dataset.loader.parameters.generation_parameters.universe_parameters.cluster_variance=0.2,0.5,0.8 \
         dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.5,0.5\] \
         dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[2.5,2.5\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1 \
@@ -22,10 +22,10 @@ for i in ${data_seeds[@]}; do
         model.readout.pooling_type=mean,sum \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=1 \
-        logger.wandb.project=final_cluster_variance_experiments_transductive \
+        logger.wandb.project=really_final_cluster_variance_experiments_transductive \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
-        trainer.devices=\[0\] \
+        trainer.devices=\[2\] \
         trainer.check_val_every_n_epoch=1 \
         callbacks.early_stopping.patience=50 \
         tags="[cluster]" \
@@ -34,7 +34,7 @@ for i in ${data_seeds[@]}; do
     python -m topobench \
         dataset=graph/GraphUniverse_CD_transductive \
         dataset.loader.parameters.generation_parameters.universe_parameters.seed=$i \
-        dataset.loader.parameters.generation_parameters.universe_parameters.cluster_variance=0.2,0.8 \
+        dataset.loader.parameters.generation_parameters.universe_parameters.cluster_variance=0.2,0.5,0.8 \
         dataset.loader.parameters.generation_parameters.family_parameters.homophily_range=\[0.5,0.5\] \
         dataset.loader.parameters.generation_parameters.family_parameters.avg_degree_range=\[2.5,2.5\] \
         dataset.loader.parameters.generation_parameters.family_parameters.n_graphs=1 \
@@ -49,10 +49,10 @@ for i in ${data_seeds[@]}; do
         model.readout.pooling_type=sum,mean \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=1 \
-        logger.wandb.project=final_cluster_variance_experiments_transductive \
+        logger.wandb.project=really_final_cluster_variance_experiments_transductive \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
-        trainer.devices=\[1\] \
+        trainer.devices=\[3\] \
         trainer.check_val_every_n_epoch=1 \
         callbacks.early_stopping.patience=50 \
         tags="[cluster]" \
