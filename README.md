@@ -354,6 +354,7 @@ Specially useful in pre-processing steps, these are the general data manipulatio
 | Tolokers | Classification | Heterophilic dataset. | [Source](https://arxiv.org/pdf/2302.11640) |
 | US-county-demos | Regression | In turn each node attribute is used as the target label. | [Source](https://arxiv.org/pdf/2002.08274) |
 | ZINC | Regression | Graph-level regression. | [Source](https://pubs.acs.org/doi/10.1021/ci3001277) |
+| HypBench | Classification | Synthetic complex networks | [Source](https://arxiv.org/abs/2406.02772)
 
 
 ### Simplicial
