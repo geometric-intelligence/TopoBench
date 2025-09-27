@@ -39,15 +39,12 @@ PRETRAIN_MODELS_STR=$(IFS=,; echo "${PRETRAIN_MODELS[*]}")  # Convert to comma-s
 batch_sizes=(128 256)
 learning_rates=(0.001)
 neighborhoods=(
-    # adjacency 
     "['up_adjacency-0']"
-    # incidence
-    "['up_adjacency-0','down_incidence-1']"
 )
 
 datasets=('NCI1' 'NCI109' 'MUTAG' 'PROTEINS')
-PE_TYPES=('LapPE') # 'RWSE' 'ElstaticPE' 'HKdiagSE' 
-model_types=('hopse_gin' 'hopse_gcn' 'hopse_gat')
+PE_TYPES=('RWSE,ElstaticPE,HKdiagSE')
+model_types=('hopse_gcn' 'hopse_gat')
 for model_type in ${model_types[*]}
 do
     for dataset in ${datasets[*]}
@@ -56,9 +53,7 @@ do
         do
         project_name="fix_gnn_rebuttal_cell_${dataset}"
             # =====================
-            gpus=(1 2 3 4 5 6 7)
             for i in {0..1}; do 
-                CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
                 neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
 
                 python topobench/run.py\
@@ -72,7 +67,7 @@ do
                     dataset.dataloader_params.batch_size=128\
                     trainer.max_epochs=5\
                     trainer.min_epochs=1\
-                    trainer.devices=\[$CUDA\]\
+                    trainer.devices=\[0\]\
                     trainer.check_val_every_n_epoch=1\
                     logger.wandb.project='prerun'\
                     optimizer.parameters.lr=0.01\
