@@ -82,9 +82,7 @@ do
             done
             wait
 
-            gpus=(1 2 3 4 5 6 7)
             for i in {0..1}; do 
-                CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
                 neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
 
                 for batch_size in ${batch_sizes[*]}
@@ -102,7 +100,7 @@ do
                             dataset.dataloader_params.batch_size=$batch_size\
                             trainer.max_epochs=500\
                             trainer.min_epochs=50\
-                            trainer.devices=\[$CUDA\]\
+                            trainer.devices=\[0\]\
                             trainer.check_val_every_n_epoch=5\
                             logger.wandb.project=$project_name\
                             optimizer.parameters.lr=$LEARNING_RATES_STR\
