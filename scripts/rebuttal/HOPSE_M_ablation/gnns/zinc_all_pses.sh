@@ -4,7 +4,7 @@ project_name="fix_gnn_rebuttal_cell_$dataset"
 # =====================
 # DATA
 # =====================
-DATA_SEEDS=(42 3 5 23 150) 
+DATA_SEEDS=(0 3 5 7 9) 
 # 42,3,5,23,150
 # =====================
 # MODEL PARAMETERS
@@ -42,10 +42,7 @@ PRETRAIN_MODELS_STR=$(IFS=,; echo "${PRETRAIN_MODELS[*]}")  # Convert to comma-s
 batch_sizes=(128 256)
 learning_rates=(0.001)
 neighborhoods=(
-    # adjacency 
     "['up_adjacency-0']"
-    # incidence
-    "['up_adjacency-0','down_incidence-1']"
 )
 
 
@@ -53,11 +50,7 @@ neighborhoods=(
 model_types=('hopse_gin' 'hopse_gcn' 'hopse_gat')
 for model_type in ${model_types[*]}
 do
-    
-    # TODO: fix bug with transforms.one_hot_node_degree_features.degrees_fields=x\
-    gpus=(3 4)
     for i in {0..1}; do 
-        CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
         neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
 
         
@@ -72,7 +65,7 @@ do
             dataset.dataloader_params.batch_size=128\
             trainer.max_epochs=5\
             trainer.min_epochs=1\
-            trainer.devices=\[$CUDA\]\
+            trainer.devices=\[0\]\
             trainer.check_val_every_n_epoch=1\
             logger.wandb.project='prerun'\
             optimizer.parameters.lr=0.01\
@@ -87,9 +80,7 @@ do
     done
     wait
 
-    gpus=(3 4)
     for i in {0..1}; do 
-        CUDA=${gpus[$i]}  # Use the GPU number from our gpus array
         neighborhood=${neighborhoods[$i]} # Use the neighbourhood from our neighbourhoods array
 
         for batch_size in ${batch_sizes[*]}
@@ -107,14 +98,14 @@ do
                     dataset.dataloader_params.batch_size=$batch_size\
                     trainer.max_epochs=500\
                     trainer.min_epochs=50\
-                    trainer.devices=\[$CUDA\]\
+                    trainer.devices=\[0\]\
                     trainer.check_val_every_n_epoch=5\
                     logger.wandb.project=$project_name\
                     optimizer.parameters.lr=$LEARNING_RATES_STR\
                     optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
                     callbacks.early_stopping.patience=10\
                     transforms.graph2cell_lifting.max_cell_length=10\
-                    transforms.sann_encoding.pe_types=['RWSE','ElstaticPE','HKdiagSE','LapPE']\
+                    transforms.sann_encoding.pe_types=['RWSE','ElstaticPE','HKdiagSE']\
                     transforms.sann_encoding.neighborhoods=$neighborhood\
                     transforms.graph2cell_lifting.neighborhoods=$neighborhood\
                     --multirun &
