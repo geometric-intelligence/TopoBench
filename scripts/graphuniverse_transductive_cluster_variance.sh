@@ -1,6 +1,6 @@
 #!/bin/bash
 
-data_seeds=(1 3 5)
+data_seeds=(1 3 5 7 9)
 for i in ${data_seeds[@]}; do
 
     python -m topobench \

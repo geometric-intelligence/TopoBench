@@ -1,6 +1,6 @@
 #!/bin/bash
 
-data_seeds=(7 9)
+data_seeds=(1 3 5 7 9)
 for i in ${data_seeds[@]}; do
 
     python -m topobench \
@@ -192,5 +192,5 @@ for i in ${data_seeds[@]}; do
         trainer.check_val_every_n_epoch=1 \
         callbacks.early_stopping.patience=50 \
         tags="[homophily_transductive]" \
-        --multirun
+        --multirun &
 done
