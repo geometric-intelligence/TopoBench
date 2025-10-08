@@ -25,7 +25,7 @@ sorts of Topological Neural Networks (TNNs) across the different
 topological domains, where by *topological domain* we refer to a graph,
 a simplicial complex, a cellular complex, or a hypergraph. For detailed
 information, please refer to the
-```TopoBench: A Framework for Benchmarking Topological Deep Learning`` <https://arxiv.org/pdf/2406.06642>`__
+`TopoBench: A Framework for Benchmarking Topological Deep Learning <https://arxiv.org/pdf/2406.06642>`__
 paper.
 
 .. raw:: html
@@ -44,8 +44,8 @@ i.e. *lift*, each dataset from one topological domain to another (see
 :rocket: Liftings), enabling for the first time an exhaustive
 inter-domain comparison of TNNs.
 
-:jigsaw: Get Started
---------------------
+🧩 Get Started
+--------------
 
 Create Environment
 ~~~~~~~~~~~~~~~~~~
@@ -230,7 +230,8 @@ We list the neural networks trained and evaluated by ``TopoBench``,
 organized by the topological domain over which they operate: graph,
 simplicial complex, cellular complex or hypergraph. Many of these neural
 networks were originally implemented in
-```TopoModelX`` <https://github.com/pyt-team/TopoModelX>`__.
+`TopoModelX <https://github.com/pyt-team/TopoModelX>`__.
+
 
 Graphs
 ------
@@ -984,3 +985,10 @@ domains <https://arxiv.org/pdf/2402.02441>`__
    :target: https://github.com/geometric-intelligence/TopoBench/blob/main/LICENSE
 .. |slack| image:: https://img.shields.io/badge/chat-on%20slack-purple?logo=slack
    :target: https://join.slack.com/t/geometric-intelligenceworkspace/shared_invite/zt-2k63sv99s-jbFMLtwzUCc8nt3sIRWjEw
+
+.. toctree::
+   :hidden:
+   :maxdepth: 2
+
+   tdl-challenge/index
+

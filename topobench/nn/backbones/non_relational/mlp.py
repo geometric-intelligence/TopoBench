@@ -18,7 +18,11 @@ class MLP(nn.Module):
     ----------
     in_channels : int
         The dimensionality of the input features.
+<<<<<<< HEAD
     hidden_layers : int
+=======
+    hidden_channels : int
+>>>>>>> 76592a072dbfa220ce0ec4d8cb28dbc95d716fe4
         The dimensionality of the hidden features.
     out_channels : int
         The dimensionality of the output features.
@@ -174,7 +178,9 @@ class MLP(nn.Module):
         dict
             Dictionary containing the updated model output.
         """
-        model_out["x_0"] = self.forward(model_out["x_0"], model_out.batch_size)
+        model_out["x_0"] = self.forward(
+            model_out["x_0"], model_out["batch_size"]
+        )
         model_out["logits"] = model_out["x_0"]
 
         return model_out
