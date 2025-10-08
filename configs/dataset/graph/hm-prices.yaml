@@ -1,19 +1,19 @@
 # Dataset loader config
 loader:
-  _target_: topobench.data.loaders.WikiCS
+  _target_: topobench.data.loaders.GraphlandDatasetLoader
   parameters: 
     data_domain: graph
-    data_type: wiki
-    data_name: wiki_cs
+    data_type: graphland
+    data_name: hm-prices
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
 
 # Dataset parameters
 parameters:
-  num_features: 300
-  num_classes: 10
-  task: classification
-  loss_type: cross_entropy
-  monitor_metric: accuracy
+  num_features: 41
+  num_classes: 1
+  task: regression
+  loss_type: mae
+  monitor_metric: mse
   task_level: node
 
 #splits
