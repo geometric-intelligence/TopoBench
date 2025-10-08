@@ -6,7 +6,7 @@ from topobench.data.loaders.base import AbstractLoader
 
 
 class WikiCSDatasetLoader(AbstractLoader):
-    """Load PLANETOID datasets.
+    """Load WikiCS datasets.
 
     Parameters
     ----------
@@ -21,12 +21,12 @@ class WikiCSDatasetLoader(AbstractLoader):
         super().__init__(parameters)
 
     def load_dataset(self) -> Dataset:
-        """Load Planetoid dataset.
+        """Load WikiCS dataset.
 
         Returns
         -------
         Dataset
-            The loaded Planetoid dataset.
+            The loaded WikiCS dataset.
 
         Raises
         ------
