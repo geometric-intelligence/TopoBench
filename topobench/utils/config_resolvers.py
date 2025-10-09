@@ -375,6 +375,25 @@ def infer_num_cell_dimensions(selected_dimensions, in_channels):
         return len(in_channels)
 
 
+def infer_topotune_num_cell_dimensions(neighborhoods):
+    r"""Infer the length of a list.
+
+    Parameters
+    ----------
+    neighborhoods : list
+        List of neighborhoods.
+
+    Returns
+    -------
+    int
+        Length of the input list.
+    """
+    from topobench.data.utils import get_routes_from_neighborhoods
+
+    routes = get_routes_from_neighborhoods(neighborhoods)
+    return max([max(route) for route in routes]) + 1
+
+
 def get_default_metrics(task, metrics=None):
     r"""Get default metrics for a given task.
 
