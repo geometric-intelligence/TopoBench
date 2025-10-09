@@ -6,6 +6,7 @@ import hydra
 from topobench.utils.config_resolvers import (
     infer_in_channels,
     infer_num_cell_dimensions,
+    infer_topotune_num_cell_dimensions,
     get_default_metrics,
     get_default_trainer,
     get_default_transform,
@@ -138,14 +139,26 @@ class TestConfigResolvers:
         in_channels = infer_in_channels(cfg.dataset, cfg.transforms)
         assert in_channels == [1433,1433,1433]
 
-
-        
     def test_infer_num_cell_dimensions(self):
         """Test infer_num_cell_dimensions."""
         out = infer_num_cell_dimensions(None, [7, 7, 7])
         assert out == 3
 
         out = infer_num_cell_dimensions([1, 2, 3], [7, 7])
+        assert out == 3
+
+    def test_infer_topotune_num_cell_dimensions(self):
+        """Test infer_topotune_num_cell_dimensions."""
+        neighborhoods = ["up_adjacency-1"]
+        out = infer_topotune_num_cell_dimensions(neighborhoods)
+        assert out == 3
+
+        neighborhoods = ["up_incidence-0"]
+        out = infer_topotune_num_cell_dimensions(neighborhoods)
+        assert out == 2
+
+        neighborhoods = ["down_incidence-2"]
+        out = infer_topotune_num_cell_dimensions(neighborhoods)
         assert out == 3
         
     def test_get_default_metrics(self):
