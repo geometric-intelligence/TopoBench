@@ -102,7 +102,7 @@ for model in "${models[@]}"; do
                         "model.feature_encoder.proj_dropout=0.5"
                         "dataset.dataloader_params.batch_size=${batch_size}"
                         "transforms=[${lifting}]"
-                        "transforms.0.k_value=${k}" 
+                        "transforms.liftings.graph2hypergraph.k_value=${k}" 
                         "dataset.split_params.data_seed=0,3,5,7,9"
                         "trainer.max_epochs=500"
                         "trainer.min_epochs=50"
