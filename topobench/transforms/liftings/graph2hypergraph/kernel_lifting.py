@@ -110,8 +110,11 @@ def get_feat_kernel(
 
     kernel : str or callable, optional
         Specifies the type of kernel to apply or a custom kernel function.
-        - If a string, it specifies a predefined kernel type. Currently, only "identity" is supported.
-        The "identity" kernel returns an identity matrix of size `(N, N)`, where `N` is the number of features.
+        - If a string, it specifies a predefined kernel type. Currently supported types are:
+          - "identity": Returns an identity matrix of size `(N, N)`, where `N` is the number of features.
+          - "mse": Computes the Mean Squared Error (MSE) distance matrix between feature vectors.
+          - "cosine": Computes the Cosine similarity matrix between feature vectors.
+          - "euclidean": Computes the Euclidean distance matrix between feature vectors.        
         - If a callable, it should be a function that takes `features` and additional keyword arguments (`**kwargs`)
         as input and returns a kernel matrix.
         Default is "identity".
@@ -152,6 +155,25 @@ def get_feat_kernel(
         return kernel(features)
     if kernel == "identity":
         return torch.ones((features.shape[0], features.shape[0]))
+    if kernel == "mse":
+        N, d = features.shape
+        squared_norms = torch.sum(features**2, dim=1, keepdim=True)
+        B = torch.matmul(features, features.T)
+        D_SED = squared_norms - 2 * B + squared_norms.T
+        D_SED = torch.clamp(D_SED, min=0.0) 
+        D_MSE = D_SED / d
+        return D_MSE
+    if kernel == "cosine":
+        normalized_features = features / features.norm(dim=1, keepdim=True)
+        return torch.matmul(normalized_features, normalized_features.T)
+    if kernel == "euclidean":
+        N, d = features.shape
+        squared_norms = torch.sum(features**2, dim=1, keepdim=True)
+        B = torch.matmul(features, features.T)
+        D_SED = squared_norms - 2 * B + squared_norms.T
+        D_SED = torch.clamp(D_SED, min=0.0) 
+        D_ED = torch.sqrt(D_SED + 1e-8) 
+        return D_ED
     raise ValueError(f"Unknown feature kernel type: {kernel}")
 
 
