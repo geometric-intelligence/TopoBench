@@ -4,15 +4,15 @@
 # order of defaults determines the order in which configs override each other
 defaults:
   - _self_
-  - dataset: graph/MUTAG
-  - model: simplicial/sccn
+  - dataset: graph/cocitation_cora
+  - model: simplicial/topotune
   - transforms: ${get_default_transform:${dataset},${model}} #no_transform
   - optimizer: default
   - loss: default
   - evaluator: default
   - callbacks: default
   - logger: wandb # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
-  - trainer: default
+  - trainer: ${get_default_trainer:} #default
   - paths: default
   - extras: default
   - hydra: default
@@ -54,3 +54,6 @@ ckpt_path: null
 
 # seed for random number generators in pytorch, numpy and python.random
 seed: 42
+
+# make cudnn backend fully reproducible
+deterministic: True

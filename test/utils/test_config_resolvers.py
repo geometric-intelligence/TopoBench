@@ -6,8 +6,12 @@ import hydra
 from topobench.utils.config_resolvers import (
     infer_in_channels,
     infer_num_cell_dimensions,
+    infer_topotune_num_cell_dimensions,
     get_default_metrics,
+    get_default_trainer,
     get_default_transform,
+    get_flattened_channels,
+    get_non_relational_out_channels,
     get_monitor_metric,
     get_monitor_mode,
     get_required_lifting,
@@ -24,6 +28,11 @@ class TestConfigResolvers:
         self.cliq_lift_transform = OmegaConf.load("configs/transforms/liftings/graph2simplicial/clique.yaml")
         self.feature_lift_transform = OmegaConf.load("configs/transforms/feature_liftings/concatenate.yaml")
         hydra.initialize(version_base="1.3", config_path="../../configs", job_name="job")
+        
+    def test_get_default_trainer(self):
+        """Test get_default_trainer."""
+        out = get_default_trainer()
+        assert isinstance(out, str)
         
     def test_get_default_metrics(self):
         """Test get_default_metrics."""
@@ -46,8 +55,23 @@ class TestConfigResolvers:
 
         out = get_default_transform("graph/ZINC", "cell/can")
         assert out == "dataset_defaults/ZINC"
-        
-        
+
+    def test_get_flattened_channels(self):
+        """Test get_flattened_channels."""
+        out = get_flattened_channels(10, 5)
+        assert out == 50
+
+    def test_non_relational_out_channels(self):
+        """Test get_non_relational_out_channels."""
+        out = get_non_relational_out_channels(10, 5, "node")
+        assert out == 50
+
+        out = get_non_relational_out_channels(10, 5, "graph")
+        assert out == 5
+
+        with pytest.raises(ValueError, match="Invalid task level") as e:
+            get_non_relational_out_channels(10, 5, "some_task")
+
     def test_get_required_lifting(self):
         """Test get_required_lifting."""
         out = get_required_lifting("graph", "graph/gat")
@@ -115,14 +139,26 @@ class TestConfigResolvers:
         in_channels = infer_in_channels(cfg.dataset, cfg.transforms)
         assert in_channels == [1433,1433,1433]
 
-
-        
     def test_infer_num_cell_dimensions(self):
         """Test infer_num_cell_dimensions."""
         out = infer_num_cell_dimensions(None, [7, 7, 7])
         assert out == 3
 
         out = infer_num_cell_dimensions([1, 2, 3], [7, 7])
+        assert out == 3
+
+    def test_infer_topotune_num_cell_dimensions(self):
+        """Test infer_topotune_num_cell_dimensions."""
+        neighborhoods = ["up_adjacency-1"]
+        out = infer_topotune_num_cell_dimensions(neighborhoods)
+        assert out == 3
+
+        neighborhoods = ["up_incidence-0"]
+        out = infer_topotune_num_cell_dimensions(neighborhoods)
+        assert out == 2
+
+        neighborhoods = ["down_incidence-2"]
+        out = infer_topotune_num_cell_dimensions(neighborhoods)
         assert out == 3
         
     def test_get_default_metrics(self):

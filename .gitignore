@@ -86,6 +86,8 @@ tutorials/data/
 tutorials/data/*
 tutorials/lightning_logs/
 tutorials/lightning_logs/*
+tutorials/checkpoints
+tutorials/checkpoints/*
 
 # IPython
 profile_default/
@@ -175,6 +177,7 @@ cython_debug/
 # Data
 /datasets/
 /data/
+/outputs/
 /notebooks/*.csv
 notebooks/tmp
 *.pickle
@@ -182,6 +185,7 @@ notebooks/tmp
 /tutorials/datasets/
 /tutorials/lightning_logs/
 /tutorials/datasets/
+
 # wandb
 wandb/
 
