@@ -77,7 +77,8 @@ def get_default_transform(dataset, model):
     """
     data_domain, dataset = dataset.split("/")
     model_domain = model.split("/")[0]
-    if model_domain == "non_relational":
+    # TODO: improve logic for pointcloud models
+    if model_domain == "non_relational" or model_domain == "pointcloud":
         model_domain = "graph"
     # Check if there is a default transform for the dataset at ./configs/transforms/dataset_defaults/
     # If not, use the default lifting transform for the dataset to be compatible with the model
