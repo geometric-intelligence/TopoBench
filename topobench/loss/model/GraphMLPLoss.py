@@ -88,7 +88,7 @@ class GraphMLPLoss(AbstractLoss):
         """
         x_dis = model_out["x_dis"]
         if x_dis is None:  # Validation and test
-            return torch.tensor(0.0)
+            return torch.tensor(0.0).to(batch.x.device)
         adj_label = self.get_power_adj(batch.edge_index)
         graph_mlp_loss = self.loss_weight * self.graph_mlp_contrast_loss(
             x_dis, adj_label
