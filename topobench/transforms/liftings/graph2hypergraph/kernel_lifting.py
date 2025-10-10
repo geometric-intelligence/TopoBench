@@ -297,7 +297,48 @@ class HypergraphKernelLifting(Graph2HypergraphLifting):
         """
         transposed_tensor = incidence.T
         return torch.unique(transposed_tensor, dim=0).T
+    
+    def _fix_incidence(self, incidence_1):
+        """Ensures every node is contained within at least one hyperedge.
 
+        This function modifies the incidence matrix by introducing new, single-node 
+        hyperedges (columns) for any node that currently does not belong to any 
+        existing hyperedge (i.e., rows that sum to zero). This is crucial for 
+        maintaining graph connectivity and structural integrity in hypergraph models.
+
+        Parameters
+        ----------
+        incidence_1 : torch.Tensor
+            The incidence matrix of shape [N, M], where N is the number of nodes 
+            (vertices) and M is the number of hyperedges (columns).
+
+        Returns
+        -------
+        torch.Tensor
+            The modified incidence matrix of shape [N, M + K], where K is the 
+            number of newly added hyperedges (one for each originally isolated node). 
+            Returns the original matrix if no isolated nodes are found.
+        """
+        row_sums = incidence_1.sum(dim=1)
+        zero_rows = (row_sums == 0).nonzero(as_tuple=False).squeeze()
+
+        if zero_rows.numel() == 0:
+            return incidence_1  # No modification needed
+
+        if zero_rows.ndim == 0:
+            zero_rows = zero_rows.unsqueeze(0)
+
+        n, m = incidence_1.shape
+        k = zero_rows.numel()
+
+        # Create new columns: shape [n, k]
+        new_cols = torch.zeros((n, k), dtype=incidence_1.dtype, device=incidence_1.device)
+        new_cols[zero_rows, torch.arange(k)] = 1
+
+        # Concatenate the new columns to the original matrix
+        fixed_incidence = torch.cat([incidence_1, new_cols], dim=1)
+        return fixed_incidence
+    
     def lift_topology(
         self, data: torch_geometric.data.Data
     ) -> dict[str, torch.Tensor]:
@@ -365,6 +406,7 @@ class HypergraphKernelLifting(Graph2HypergraphLifting):
         incidence_1[data_lifted.edge_index[1], data_lifted.edge_index[0]] = 1
         incidence_1 = self._remove_empty_edges(incidence_1)
         incidence_1 = self._deduplicate_hyperedges(incidence_1)
+        incidence_1 = self._fix_incidence(incidence_1)
         incidence_1 = torch.Tensor(incidence_1).to_sparse_coo()
         return {
             "incidence_hyperedges": incidence_1,
