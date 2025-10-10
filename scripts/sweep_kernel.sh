@@ -101,7 +101,6 @@ for model in "${models[@]}"; do
                             "dataset=${dataset}"
                             "optimizer.parameters.lr=${lr}"
                             "model.feature_encoder.out_channels=${h}"
-                            "model.backbone.n_layers=2"
                             "model.readout.readout_name=PropagateSignalDown"
                             "model.feature_encoder.proj_dropout=0.5"
                             "dataset.dataloader_params.batch_size=${batch_size}"
@@ -116,7 +115,11 @@ for model in "${models[@]}"; do
                             "logger.wandb.project=hypergraph_liftings"
                             "--multirun"
                         )
-                        
+                        # 2. Check if the model is NOT the edgnn model.
+                        if [[ "$model_name" != "edgnn" ]]; then
+                            # If it is NOT edgnn, append the layer setting to the command array.
+                            cmd+=("model.backbone.n_layers=2")
+                        fi
                         run_and_log "${cmd[*]}" "$run_name" &
 
                         # --- 6. Increment counters and manage parallel jobs ---
