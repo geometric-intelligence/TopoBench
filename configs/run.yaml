@@ -56,4 +56,4 @@ ckpt_path: null
 seed: 42
 
 # make cudnn backend fully reproducible
-deterministic: True
+deterministic: False
