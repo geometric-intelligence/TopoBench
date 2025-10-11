@@ -1,2 +1,0 @@
-defaults:
-  - /transforms/liftings/graph2hypergraph@graph2hypergraph_lifting: forman_ricci_curvature
