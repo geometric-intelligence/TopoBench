@@ -43,14 +43,17 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             super().__init__(
                 self.processed_data_dir, None, pre_transform, **kwargs
             )
+            self.transform = dataset.transform
             self.save_transform_parameters()
             self.load(self.processed_paths[0])
+            self.data_list = [data for data in self]
         else:
             self.transforms_applied = False
             super().__init__(data_dir, None, None, **kwargs)
-            self.load(data_dir + "/processed/data.pt")
+            self.transform = dataset.transform
+            self.data, self.slices = dataset._data, dataset.slices
+            self.data_list = [data for data in dataset]
 
-        self.data_list = [self.get(idx) for idx in range(len(self))]
         # Some datasets have fixed splits, and those are stored as split_idx during loading
         # We need to store this information to be able to reproduce the splits afterwards
         if hasattr(dataset, "split_idx"):
@@ -65,7 +68,7 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         str
             Path to the processed directory.
         """
-        if self.transforms_applied:
+        if not self.transforms_applied:
             return self.root
         else:
             return self.root + "/processed"
@@ -164,12 +167,11 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
 
     def process(self) -> None:
         """Method that processes the data."""
-        if isinstance(self.dataset, torch_geometric.data.Dataset):
-            data_list = [
-                self.dataset.get(idx) for idx in range(len(self.dataset))
-            ]
-        elif isinstance(self.dataset, torch.utils.data.Dataset):
-            data_list = [self.dataset[idx] for idx in range(len(self.dataset))]
+        if isinstance(
+            self.dataset,
+            (torch_geometric.data.Dataset, torch.utils.data.Dataset),
+        ):
+            data_list = [data for data in self.dataset]
         elif isinstance(self.dataset, torch_geometric.data.Data):
             data_list = [self.dataset]
 
