@@ -13,7 +13,7 @@ from topobench.dataloader import DataloadDataset
 def k_fold_split(labels, parameters, root=None):
     """Return train and valid indices as in K-Fold Cross-Validation.
 
-    If the split already exists it loads it automatically, otherwise it creates the        Label tensor.
+    If the split already exists it loads it automatically, otherwise it creates the
     split file for the subsequent runs.
 
     Parameters
@@ -304,7 +304,7 @@ def load_inductive_splits(dataset, parameters):
     assert len(dataset) > 1, (
         "Datasets should have more than one graph in an inductive setting."
     )
-    labels = [data.y.squeeze(0).numpy() for data in dataset]
+    labels = np.array([data.y.squeeze(0).numpy() for data in dataset])
 
     root = (
         dataset.dataset.get_data_dir()
