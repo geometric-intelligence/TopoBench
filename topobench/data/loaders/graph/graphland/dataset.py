@@ -67,8 +67,6 @@ class GraphlandDataset(InMemoryDataset):
             with open(complete_file_path, "wb") as f:   # use wb since values are binary
                 f.write(binary_content)
 
-        
-
     # ---------- Building the graph(s) ----------
 
     def process(self) -> None:
@@ -79,7 +77,7 @@ class GraphlandDataset(InMemoryDataset):
         edges_df = pd.read_csv(os.path.join(self.raw_dir, "edgelist.csv"))
         feats_df = pd.read_csv(os.path.join(self.raw_dir, "features.csv"), index_col="node_id")
         targs_df = pd.read_csv(os.path.join(self.raw_dir, "targets.csv"))
-    
+
         # Imputing missing values in X
         if self.impute_missing_x is not None:
             x_numpy = self.impute_missing_x.fit_transform(feats_df)
@@ -95,7 +93,9 @@ class GraphlandDataset(InMemoryDataset):
         targ_values = targs_df.squeeze()
 
         # inferring data type (NaN cannot be integer)
-        if is_integer_dtype(targ_values.fillna(0)) or targ_values.fillna(0).apply(float.is_integer).all():
+        if is_integer_dtype(targ_values.fillna(0)) \
+            or \
+                targ_values.fillna(0).apply(float.is_integer).all():
             y = torch.tensor(targs_df.values, dtype=torch.long).squeeze() # classification
         else:
             y = torch.tensor(targs_df.values, dtype=torch.double).squeeze() # regression
@@ -104,8 +104,7 @@ class GraphlandDataset(InMemoryDataset):
             mask = ~torch.tensor(targ_values.isna().values)
             x = x[mask]
             y = y[mask]
-            feats_df = feats_df[mask.numpy()]
-            
+            feats_df = feats_df[mask.numpy()]           
             # filter edges to keep only nodes still present
             old_to_new = {old: new for new, old in enumerate(mask.numpy().nonzero()[0])}
 
@@ -121,7 +120,7 @@ class GraphlandDataset(InMemoryDataset):
         # creating the edge indexes
         src = edges_df["source"].to_numpy()
         dst = edges_df["target"].to_numpy()
-        edge_index = torch.tensor(np.array([src, dst]), dtype=torch.long)   
+        edge_index = torch.tensor(np.array([src, dst]), dtype=torch.long)
 
         data = Data(x=x, edge_index=edge_index, y=y)
 
@@ -139,7 +138,10 @@ class GraphlandDataset(InMemoryDataset):
         os.makedirs(self.processed_paths[0], exist_ok=True)
 
         #saving
-        torch.save((data_big, slices),  os.path.join(self.processed_paths[0], self.processed_file_names))
+        torch.save(
+            (data_big, slices),
+            os.path.join(self.processed_paths[0], self.processed_file_names)
+            )
 
 
     # ---------- Required properties ----------
@@ -151,13 +153,13 @@ class GraphlandDataset(InMemoryDataset):
         If you don't know them upfront (e.g., a ZIP with many files), use a
         sentinel. We'll create 'READY' after extracting to signal completeness.
         """
-        return ["edgelist.csv", "features.csv", "targets.csv"]  # sentinel; created by download() or by you manually
+        return ["edgelist.csv", "features.csv", "targets.csv"]
 
     @property
     def processed_paths(self):
         """The processed path to avoid processing."""
         return [ os.path.join(self.root, "processed" ) ]
-    
+
     @property
     def processed_file_names(self):
         """The processed file produced by `process()`."""
