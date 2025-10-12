@@ -121,7 +121,7 @@ class GraphlandDataset(InMemoryDataset):
         # creating the edge indexes
         src = edges_df["source"].to_numpy()
         dst = edges_df["target"].to_numpy()
-        edge_index = torch.tensor(np.array([src, dst]), dtype=torch.long)     
+        edge_index = torch.tensor(np.array([src, dst]), dtype=torch.long)   
 
         data = Data(x=x, edge_index=edge_index, y=y)
 
