@@ -6,11 +6,17 @@ loader:
     data_type: graphland
     data_name: pokec-regions
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+    drop_missing_y: True
+    impute_missing_x: 
+      _target_: sklearn.impute.SimpleImputer
+      strategy: most_frequent
+      copy: true # if false, the input X is modified directly
+      add_indicator: false # if true, adds a boolean indicator for missing values
 
 # Dataset parameters
 parameters:
   num_features: 56
-  num_classes: 184
+  num_classes: 183
   task: classification
   loss_type: cross_entropy
   monitor_metric: accuracy

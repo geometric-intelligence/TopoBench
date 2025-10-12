@@ -35,6 +35,8 @@ class GraphlandDatasetLoader(AbstractLoader):
 
         dataset = GraphlandDataset(
             root = str(self.root_data_dir),
-            name = self.parameters.data_name
+            name = self.parameters.data_name,
+            drop_missing_y = self.parameters.get("drop_missing_y", True),
+            impute_missing_x = self.parameters.get("impute_missing_x", None),
         )
         return dataset

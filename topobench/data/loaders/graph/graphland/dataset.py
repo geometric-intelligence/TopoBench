@@ -3,6 +3,7 @@ from pandas.api.types import is_integer_dtype
 import os
 
 import torch
+import numpy as np
 from torch import Tensor
 from torch_geometric.data import InMemoryDataset, Data
 
@@ -36,12 +37,16 @@ class GraphlandDataset(InMemoryDataset):
         self,
         root: str | os.PathLike,
         name: str,
+        drop_missing_y = True,
+        impute_missing_x = None,
         transform=None,
         pre_transform=None,
         pre_filter=None,
     ):
         self.zip_url = f"{ZENODO_BASE}{name}.zip?"
         self.name = name
+        self.drop_missing_y = drop_missing_y
+        self.impute_missing_x = impute_missing_x
         super().__init__(os.path.join(root, name), transform, pre_transform, pre_filter)
 
         # After super().__init__, processed file must exist. Load it:
@@ -78,28 +83,49 @@ class GraphlandDataset(InMemoryDataset):
         edges_df = pd.read_csv(os.path.join(self.raw_dir, 'edgelist.csv'))
         feats_df = pd.read_csv(os.path.join(self.raw_dir, 'features.csv'), index_col='node_id')
         targs_df = pd.read_csv(os.path.join(self.raw_dir, 'targets.csv'))
+    
+        # Imputing missing values in X
+        if self.impute_missing_x is not None:
+            x_numpy = self.impute_missing_x.fit_transform(feats_df)
+        else:
+            x_numpy = feats_df.values
+
+        # creating X tensor 
+        x = torch.tensor(x_numpy, dtype=torch.float)
+
+        # create y tensor (assuming node_id is the dataframe))
+        targs_df = targs_df.set_index('node_id')
+        # transforming to series
+        targ_values = targs_df.squeeze()
+
+        # inferring data type (NaN cannot be integer)
+        if is_integer_dtype(targ_values.fillna(0)) or targ_values.fillna(0).apply(float.is_integer).all():
+            y = torch.tensor(targs_df.values, dtype=torch.long).squeeze() # classification
+        else: 
+            y = torch.tensor(targs_df.values, dtype=torch.double).squeeze() # regression
+
+        if self.drop_missing_y:
+            mask = ~torch.tensor(targ_values.isna().values)
+            x = x[mask]
+            y = y[mask]
+            feats_df = feats_df[mask.numpy()]
+            
+            # filter edges to keep only nodes still present
+            old_to_new = {old: new for new, old in enumerate(mask.numpy().nonzero()[0])}
+
+            edges_df = edges_df[
+                edges_df['source'].isin(old_to_new.keys()) &
+                edges_df['target'].isin(old_to_new.keys())
+            ].copy()
+
+            # remap old indices to new consecutive indices
+            edges_df['source'] = edges_df['source'].map(old_to_new)
+            edges_df['target'] = edges_df['target'].map(old_to_new)
 
         # creating the edge indexes
         src = edges_df['source'].to_numpy()
         dst = edges_df['target'].to_numpy()
-        edge_index = torch.tensor([src, dst], dtype=torch.long)
-
-        # creating X tensor 
-        x = torch.tensor(feats_df.values, dtype=torch.float)
-
-        # y: node-level o graph-level
-        if 'node_id' in targs_df.columns:
-            # node-level
-            targs_df = targs_df.set_index('node_id')
-            targ_values = targs_df.squeeze().fillna(0)
-            # inferring data type (NaN cannot be integer)
-            if is_integer_dtype(targ_values) or targ_values.apply(float.is_integer).all():
-                y = torch.tensor(targs_df.values, dtype=torch.long).squeeze() # classification
-            else: 
-                y = torch.tensor(targs_df.values, dtype=torch.double).squeeze() # regression
-        else:
-            # graph-level 
-            ValueError("Not implemented for graph level task")
+        edge_index = torch.tensor(np.array([src, dst]), dtype=torch.long)     
 
         data = Data(x=x, edge_index=edge_index, y=y)
 
