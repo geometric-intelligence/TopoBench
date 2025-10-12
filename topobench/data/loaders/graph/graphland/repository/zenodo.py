@@ -1,8 +1,8 @@
+import zipfile
+
 from io import BytesIO
 from urllib.request import urlopen, Request
 from fnmatch import fnmatch
-import zipfile
-
 
 class ZenodoZip:
     """Tiny helper to download a ZIP to memory and return {name: bytes}.

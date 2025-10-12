@@ -4,13 +4,10 @@ import os
 
 import torch
 import numpy as np
-from torch import Tensor
 from torch_geometric.data import InMemoryDataset, Data
+import pandas as pd
 
 from .repository.zenodo import ZenodoZip
-
-# Optional: if you want to parse CSVs
-import pandas as pd
 
 ZENODO_RECORD_ID = "16895532"
 ZENODO_BASE = f"https://zenodo.org/records/{ZENODO_RECORD_ID}/files/"
@@ -55,7 +52,7 @@ class GraphlandDataset(InMemoryDataset):
 
     def download(self) -> None:
         """
-        If `raw_file_names` are missing, PyG calls this. 
+        If `raw_file_names` are missing, PyG calls this.
         """
         downloader = ZenodoZip(
             url = self.zip_url
@@ -66,7 +63,7 @@ class GraphlandDataset(InMemoryDataset):
 
         for file_path, binary_content in data.items():
             # taking only the filename
-            filename = file_path.split('/')[-1]
+            filename = file_path.split("/")[-1]
             complete_file_path = os.path.join(self.raw_dir, filename)
             with open(complete_file_path, "wb") as f:   # use wb since values are binary
                 f.write(binary_content)
@@ -80,9 +77,9 @@ class GraphlandDataset(InMemoryDataset):
         Create and save processed tensors. For InMemoryDataset
         """
         # Reading 'csv's
-        edges_df = pd.read_csv(os.path.join(self.raw_dir, 'edgelist.csv'))
-        feats_df = pd.read_csv(os.path.join(self.raw_dir, 'features.csv'), index_col='node_id')
-        targs_df = pd.read_csv(os.path.join(self.raw_dir, 'targets.csv'))
+        edges_df = pd.read_csv(os.path.join(self.raw_dir, "edgelist.csv"))
+        feats_df = pd.read_csv(os.path.join(self.raw_dir, "features.csv"), index_col="node_id")
+        targs_df = pd.read_csv(os.path.join(self.raw_dir, "targets.csv"))
     
         # Imputing missing values in X
         if self.impute_missing_x is not None:
@@ -90,18 +87,18 @@ class GraphlandDataset(InMemoryDataset):
         else:
             x_numpy = feats_df.values
 
-        # creating X tensor 
+        # creating X tensor
         x = torch.tensor(x_numpy, dtype=torch.float)
 
-        # create y tensor (assuming node_id is the dataframe))
-        targs_df = targs_df.set_index('node_id')
+        # create y tensor (assuming node_id is the dataframe)
+        targs_df = targs_df.set_index("node_id")
         # transforming to series
         targ_values = targs_df.squeeze()
 
         # inferring data type (NaN cannot be integer)
         if is_integer_dtype(targ_values.fillna(0)) or targ_values.fillna(0).apply(float.is_integer).all():
             y = torch.tensor(targs_df.values, dtype=torch.long).squeeze() # classification
-        else: 
+        else:
             y = torch.tensor(targs_df.values, dtype=torch.double).squeeze() # regression
 
         if self.drop_missing_y:
@@ -114,17 +111,17 @@ class GraphlandDataset(InMemoryDataset):
             old_to_new = {old: new for new, old in enumerate(mask.numpy().nonzero()[0])}
 
             edges_df = edges_df[
-                edges_df['source'].isin(old_to_new.keys()) &
-                edges_df['target'].isin(old_to_new.keys())
+                edges_df["source"].isin(old_to_new.keys()) &
+                edges_df["target"].isin(old_to_new.keys())
             ].copy()
 
             # remap old indices to new consecutive indices
-            edges_df['source'] = edges_df['source'].map(old_to_new)
-            edges_df['target'] = edges_df['target'].map(old_to_new)
+            edges_df["source"] = edges_df["source"].map(old_to_new)
+            edges_df["target"] = edges_df["target"].map(old_to_new)
 
         # creating the edge indexes
-        src = edges_df['source'].to_numpy()
-        dst = edges_df['target'].to_numpy()
+        src = edges_df["source"].to_numpy()
+        dst = edges_df["target"].to_numpy()
         edge_index = torch.tensor(np.array([src, dst]), dtype=torch.long)     
 
         data = Data(x=x, edge_index=edge_index, y=y)
