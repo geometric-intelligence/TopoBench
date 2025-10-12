@@ -4,6 +4,7 @@ from torch_geometric.data import Dataset
 from topobench.data.loaders.base import AbstractLoader
 from topobench.data.loaders.graph.graphland.dataset import GraphlandDataset
 
+
 class GraphlandDatasetLoader(AbstractLoader):
     """Load a Graphland dataset.
 

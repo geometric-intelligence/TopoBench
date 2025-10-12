@@ -1,11 +1,10 @@
-from pandas.api.types import is_integer_dtype
-
 import os
 
-import torch
 import numpy as np
-from torch_geometric.data import InMemoryDataset, Data
 import pandas as pd
+import torch
+from pandas.api.types import is_integer_dtype
+from torch_geometric.data import Data, InMemoryDataset
 
 from .repository.zenodo import ZenodoZip
 
