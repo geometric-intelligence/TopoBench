@@ -104,7 +104,7 @@ class GraphlandDataset(InMemoryDataset):
             mask = ~torch.tensor(targ_values.isna().values)
             x = x[mask]
             y = y[mask]
-            feats_df = feats_df[mask.numpy()]           
+            feats_df = feats_df[mask.numpy()]
             # filter edges to keep only nodes still present
             old_to_new = {old: new for new, old in enumerate(mask.numpy().nonzero()[0])}
 
