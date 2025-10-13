@@ -1,0 +1,2 @@
+_target_: sklearn.neural_network.MLPClassifier
+random_state: ${seed}

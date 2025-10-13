@@ -1,0 +1,2 @@
+_target_: lightgbm.LGBMRegressor
+random_state: ${seed}

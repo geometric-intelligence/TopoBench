@@ -1,0 +1,2 @@
+_target_: sklearn.ensemble.HistGradientBoostingRegressor
+random_state: ${seed}

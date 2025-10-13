@@ -1,6 +1,10 @@
+defaults:
+  - _self_
+  - non_relational/sklearn@backbone: linear_regression
+
 _target_: topobench.model.TBModel
 
-model_name: logistic_regression
+model_name: sklearn_regressor
 model_domain: graph
 
 feature_encoder:
@@ -8,9 +12,6 @@ feature_encoder:
   encoder_name: AllPCAFeatureEncoder
   in_channels: ${infer_in_channels:${dataset},${oc.select:transforms,null}}
   out_channels: 256
-
-backbone:
-  _target_: sklearn.linear_model.LinearRegression
 
 backbone_wrapper:
   _target_: topobench.nn.wrappers.graph.sklearn.RegressorWrapper

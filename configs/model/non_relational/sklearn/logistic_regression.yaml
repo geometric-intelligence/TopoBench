@@ -1,0 +1,2 @@
+_target_: sklearn.linear_model.LogisticRegression
+random_state: ${seed}
