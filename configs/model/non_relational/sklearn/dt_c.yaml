@@ -1,2 +1,2 @@
-_target_: sklearn.tree.MLPRegressor
+_target_: sklearn.tree.DecisionTreeClassifier
 random_state: ${seed}
