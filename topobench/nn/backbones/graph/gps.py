@@ -1,7 +1,10 @@
-"""This module implements a GPS encoder that can be used with the training framework.
+"""This module implements a GPS-based model[1] that can be used with the training framework.
 
 GPS combines local message passing with global attention mechanisms.
 Uses the official PyTorch Geometric GPSConv implementation.
+
+[1] Rampášek, Ladislav, et al. "Recipe for a general, powerful, scalable graph transformer."
+Advances in Neural Information Processing Systems 35 (2022): 14501-14515.
 """
 
 from typing import Any
