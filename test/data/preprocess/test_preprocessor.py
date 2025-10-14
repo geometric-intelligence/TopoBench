@@ -473,15 +473,162 @@ class TestPreProcessorTransforms:
                 
                 # Mock DataTransform to avoid needing real transforms
                 with patch("topobench.data.preprocessor.preprocessor.DataTransform") as mock_dt:
-                    with patch("topobench.data.preprocessor.preprocessor.hydra.utils.instantiate"):
-                        mock_dt.return_value = MagicMock()
-                        
-                        pre_transform = preprocessor.instantiate_pre_transform(
-                            tmpdir, transforms_config
-                        )
-                        
-                        # Check that a Compose object was created
-                        assert hasattr(pre_transform, '__call__')
+                    mock_dt.return_value = MagicMock()
+                    preprocessor.set_processed_data_dir = MagicMock()
+                    
+                    pre_transform = preprocessor.instantiate_pre_transform(
+                        tmpdir, transforms_config
+                    )
+                    
+                    # Check that a Compose object was created
+                    assert hasattr(pre_transform, '__call__')
+
+    def test_instantiate_pre_transform_multiple_transforms(self):
+        """Test instantiate_pre_transform with multiple transforms (else branch)."""
+        transforms_config = DictConfig({
+            "transform1": {"transform_name": "Transform1", "param1": "value1"},
+            "transform2": {"transform_name": "Transform2", "param2": "value2"}
+        })
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
+                preprocessor = PreProcessor(None, tmpdir, None)
+                
+                # Mock DataTransform
+                with patch("topobench.data.preprocessor.preprocessor.DataTransform") as mock_dt:
+                    mock_dt.return_value = MagicMock()
+                    
+                    # Mock set_processed_data_dir
+                    preprocessor.set_processed_data_dir = MagicMock()
+                    
+                    pre_transform = preprocessor.instantiate_pre_transform(
+                        tmpdir, transforms_config
+                    )
+                    
+                    # DataTransform should be called for each transform
+                    assert mock_dt.call_count == 2
+                    assert hasattr(pre_transform, '__call__')
+
+    def test_instantiate_pre_transform_single_transform(self):
+        """Test instantiate_pre_transform with single transform (if branch)."""
+        transforms_config = DictConfig({
+            "transform_name": "SingleTransform",
+            "param1": "value1",
+            "param2": 42
+        })
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
+                preprocessor = PreProcessor(None, tmpdir, None)
+                
+                # Mock DataTransform
+                with patch("topobench.data.preprocessor.preprocessor.DataTransform") as mock_dt:
+                    # Mock DataTransform to return a mock object
+                    mock_transform = MagicMock()
+                    mock_dt.return_value = mock_transform
+                    
+                    # Mock set_processed_data_dir
+                    preprocessor.set_processed_data_dir = MagicMock()
+                    
+                    pre_transform = preprocessor.instantiate_pre_transform(
+                        tmpdir, transforms_config
+                    )
+                    
+                    # DataTransform should be called once with the entire config
+                    assert mock_dt.call_count == 1
+                    # Should be called with all the config parameters
+                    mock_dt.assert_called_once_with(**transforms_config)
+                    
+                    # Verify the pre_transform is a Compose object
+                    assert isinstance(
+                        pre_transform, 
+                        torch_geometric.transforms.Compose
+                    )
+
+    def test_instantiate_pre_transform_calls_set_processed_data_dir(self):
+        """Test that instantiate_pre_transform calls set_processed_data_dir."""
+        transforms_config = DictConfig({
+            "transform1": {"transform_name": "Transform1", "param1": "value1"}
+        })
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
+                preprocessor = PreProcessor(None, tmpdir, None)
+                
+                with patch("topobench.data.preprocessor.preprocessor.DataTransform") as mock_dt:
+                    mock_dt.return_value = MagicMock()
+                    # Mock set_processed_data_dir
+                    preprocessor.set_processed_data_dir = MagicMock()
+                    
+                    pre_transform = preprocessor.instantiate_pre_transform(
+                        tmpdir, transforms_config
+                    )
+                    
+                    # Verify set_processed_data_dir was called
+                    preprocessor.set_processed_data_dir.assert_called_once()
+                    call_args = preprocessor.set_processed_data_dir.call_args
+                    assert call_args[0][1] == tmpdir
+                    assert call_args[0][2] == transforms_config
+
+    def test_instantiate_pre_transform_returns_compose(self):
+        """Test that instantiate_pre_transform returns a Compose object."""
+        transforms_config = DictConfig({
+            "transform1": {"transform_name": "Transform1", "param1": "value1"}
+        })
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
+                preprocessor = PreProcessor(None, tmpdir, None)
+                
+                with patch("topobench.data.preprocessor.preprocessor.DataTransform") as mock_dt:
+                    mock_dt.return_value = MagicMock()
+                    preprocessor.set_processed_data_dir = MagicMock()
+                    
+                    pre_transform = preprocessor.instantiate_pre_transform(
+                        tmpdir, transforms_config
+                    )
+                    
+                    # Check it's a Compose instance
+                    assert isinstance(
+                        pre_transform, 
+                        torch_geometric.transforms.Compose
+                    )
+
+    def test_instantiate_pre_transform_single_vs_multiple(self):
+        """Test that the method correctly distinguishes between single and multiple transforms."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
+                preprocessor = PreProcessor(None, tmpdir, None)
+                preprocessor.set_processed_data_dir = MagicMock()
+                
+                with patch("topobench.data.preprocessor.preprocessor.DataTransform") as mock_dt:
+                    mock_dt.return_value = MagicMock()
+                    
+                    # Test single transform (has transform_name key)
+                    single_config = DictConfig({
+                        "transform_name": "SingleTransform",
+                        "param1": "value1"
+                    })
+                    
+                    preprocessor.instantiate_pre_transform(tmpdir, single_config)
+                    
+                    # Should be called once with all parameters
+                    assert mock_dt.call_count == 1
+                    mock_dt.assert_called_with(**single_config)
+                    
+                    # Reset mock
+                    mock_dt.reset_mock()
+                    
+                    # Test multiple transforms (no transform_name key at top level)
+                    multiple_config = DictConfig({
+                        "transform1": {"transform_name": "Transform1", "param1": "value1"},
+                        "transform2": {"transform_name": "Transform2", "param2": "value2"}
+                    })
+                    
+                    preprocessor.instantiate_pre_transform(tmpdir, multiple_config)
+                    
+                    # Should be called twice, once for each transform
+                    assert mock_dt.call_count == 2
 
 
 class TestPreProcessorEdgeCases:
