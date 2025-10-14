@@ -473,15 +473,15 @@ class TestPreProcessorTransforms:
                 
                 # Mock DataTransform to avoid needing real transforms
                 with patch("topobench.data.preprocessor.preprocessor.DataTransform") as mock_dt:
-                    with patch("topobench.data.preprocessor.preprocessor.hydra.utils.instantiate"):
-                        mock_dt.return_value = MagicMock()
-                        
-                        pre_transform = preprocessor.instantiate_pre_transform(
-                            tmpdir, transforms_config
-                        )
-                        
-                        # Check that a Compose object was created
-                        assert hasattr(pre_transform, '__call__')
+                    mock_dt.return_value = MagicMock()
+                    preprocessor.set_processed_data_dir = MagicMock()
+                    
+                    pre_transform = preprocessor.instantiate_pre_transform(
+                        tmpdir, transforms_config
+                    )
+                    
+                    # Check that a Compose object was created
+                    assert hasattr(pre_transform, '__call__')
 
     def test_instantiate_pre_transform_multiple_transforms(self):
         """Test instantiate_pre_transform with multiple transforms (else branch)."""
@@ -555,20 +555,20 @@ class TestPreProcessorTransforms:
             with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
                 preprocessor = PreProcessor(None, tmpdir, None)
                 
-                with patch("topobench.data.preprocessor.preprocessor.DataTransform"):
-                    with patch("topobench.data.preprocessor.preprocessor.hydra.utils.instantiate"):
-                        # Mock set_processed_data_dir
-                        preprocessor.set_processed_data_dir = MagicMock()
-                        
-                        pre_transform = preprocessor.instantiate_pre_transform(
-                            tmpdir, transforms_config
-                        )
-                        
-                        # Verify set_processed_data_dir was called
-                        preprocessor.set_processed_data_dir.assert_called_once()
-                        call_args = preprocessor.set_processed_data_dir.call_args
-                        assert call_args[0][1] == tmpdir
-                        assert call_args[0][2] == transforms_config
+                with patch("topobench.data.preprocessor.preprocessor.DataTransform") as mock_dt:
+                    mock_dt.return_value = MagicMock()
+                    # Mock set_processed_data_dir
+                    preprocessor.set_processed_data_dir = MagicMock()
+                    
+                    pre_transform = preprocessor.instantiate_pre_transform(
+                        tmpdir, transforms_config
+                    )
+                    
+                    # Verify set_processed_data_dir was called
+                    preprocessor.set_processed_data_dir.assert_called_once()
+                    call_args = preprocessor.set_processed_data_dir.call_args
+                    assert call_args[0][1] == tmpdir
+                    assert call_args[0][2] == transforms_config
 
     def test_instantiate_pre_transform_returns_compose(self):
         """Test that instantiate_pre_transform returns a Compose object."""
