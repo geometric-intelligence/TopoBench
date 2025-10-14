@@ -1,4 +1,3 @@
-_target_: topobench.transforms.data_transform.DataTransform
 transform_name: "CombinedPSEs"
 transform_type: "data manipulation"
 encodings: ["LapPE", "RWSE"]
