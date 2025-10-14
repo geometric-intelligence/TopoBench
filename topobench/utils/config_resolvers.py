@@ -206,41 +206,19 @@ def check_pses_in_transforms(transforms):
         True if there are positional or structural encodings, False otherwise.
     """
     added_features = 0
-    for key in transforms:
-        # Single transform
-        if "encodings" in key:
-            for enc in transforms.get("encodings", []):
-                if enc == "LapPE":
-                    if (
-                        transforms.get("parameters")
-                        .get(enc)
-                        .get("include_eigenvalues")
-                    ):
-                        added_features += (
-                            transforms.get("parameters")
-                            .get(enc)
-                            .get("max_pe_dim")
-                            * 2
-                        )
-                    else:
-                        added_features += (
-                            transforms.get("parameters")
-                            .get(enc)
-                            .get("max_pe_dim")
-                        )
-                elif enc == "RWSE":
-                    added_features += (
-                        transforms.get("parameters").get(enc).get("max_pe_dim")
-                    )
-        # Potentially multiple transforms
-        elif "LapPE" in key:
-            if transforms[key].get("include_eigenvalues"):
-                added_features += transforms[key].get("max_pe_dim") * 2
+    # Single transform
+    transform = transforms.get("transform_name", None)
+    if transform is not None:
+        if transform == "LapPE":
+            if transforms.get("include_eigenvalues"):
+                added_features += transforms.get("max_pe_dim") * 2
             else:
-                added_features += transforms[key].get("max_pe_dim")
-        elif "RWSE" in key:
-            added_features += transforms[key].get("max_pe_dim")
-        elif "CombinedPSEs" in key:
+                added_features += transforms.get("max_pe_dim")
+        elif transform == "RWSE":
+            added_features += transforms.get("max_pe_dim")
+    # Potentially multiple transforms
+    for key in transforms:
+        if "CombinedPSEs" in key or "encodings" in key:
             for pse in transforms[key].get("encodings", []):
                 if pse == "LapPE":
                     if (
@@ -270,6 +248,14 @@ def check_pses_in_transforms(transforms):
                         .get(pse)
                         .get("max_pe_dim")
                     )
+        elif "LapPE" in key:
+            if transforms[key].get("include_eigenvalues"):
+                added_features += transforms[key].get("max_pe_dim") * 2
+            else:
+                added_features += transforms[key].get("max_pe_dim")
+        elif "RWSE" in key:
+            added_features += transforms[key].get("max_pe_dim")
+
     return added_features
 
 
