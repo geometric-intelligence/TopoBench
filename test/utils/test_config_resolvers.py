@@ -50,6 +50,9 @@ class TestConfigResolvers:
         """Test get_default_transform."""
         out = get_default_transform("graph/MUTAG", "graph/gat")
         assert out == "no_transform"
+        
+        out = get_default_transform("graph/MUTAG", "non_relational/mlp")
+        assert out == "no_transform"
 
         out = get_default_transform("graph/MUTAG", "cell/can")
         assert out == "liftings/graph2cell_default"
@@ -188,6 +191,35 @@ class TestConfigResolvers:
         transforms = OmegaConf.create({})
         result = check_pses_in_transforms(transforms)
         assert result == 0
+        
+    def test_single_transform_lappe_with_eigenvalues(self):
+        """Test single transform with LapPE including eigenvalues."""
+        transforms = OmegaConf.create({
+            "transform_name": "LapPE",
+            "include_eigenvalues": True,
+            "max_pe_dim": 8
+        })
+        result = check_pses_in_transforms(transforms)
+        assert result == 16  # 8 * 2
+
+    def test_single_transform_lappe_without_eigenvalues(self):
+        """Test single transform with LapPE without eigenvalues."""
+        transforms = OmegaConf.create({
+            "transform_name": "LapPE",
+            "include_eigenvalues": False,
+            "max_pe_dim": 8
+        })
+        result = check_pses_in_transforms(transforms)
+        assert result == 8
+
+    def test_single_transform_rwse(self):
+        """Test single transform with RWSE."""
+        transforms = OmegaConf.create({
+            "transform_name": "RWSE",
+            "max_pe_dim": 16
+        })
+        result = check_pses_in_transforms(transforms)
+        assert result == 16
 
     def test_check_pses_in_transforms_lappe_only(self):
         """Test check_pses_in_transforms with only LapPE encoding."""
