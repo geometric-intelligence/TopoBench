@@ -1,6 +1,6 @@
 # Dataset loader config
 loader:
-  _target_: topobench.data.loaders.WikiCS
+  _target_: topobench.data.loaders.WikiCSDatasetLoader
   parameters: 
     data_domain: graph
     data_type: wiki
