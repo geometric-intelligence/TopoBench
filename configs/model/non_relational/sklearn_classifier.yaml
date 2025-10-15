@@ -1,6 +1,7 @@
 defaults:
   - _self_
   - non_relational/sklearn@backbone: logistic_regression
+  - non_relational/sklearn/samplers@backbone_wrapper.sampler: graph_hop
 
 _target_: topobench.model.TBModel
 
@@ -19,7 +20,6 @@ backbone_wrapper:
   _partial_: true
   wrapper_name: ClassifierWrapper
   use_embeddings: True
-
 
 readout:
   _target_: topobench.nn.readouts.${model.readout.readout_name}

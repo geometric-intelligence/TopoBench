@@ -1,0 +1,4 @@
+_target_: topobench.nn.wrappers.graph.sklearn.sklearn_wrappers.samplers.${model.backbone_wrapper.sampler.sampler_name}
+sampler_name: CompositeSampler
+k: 5 # Number of samples to use fr the sklearn model, define during the run
+n_hops: 3 # Number of hops to sample from the graph, define during the run

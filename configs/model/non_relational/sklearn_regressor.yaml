@@ -1,6 +1,7 @@
 defaults:
   - _self_
   - non_relational/sklearn@backbone: linear_regression
+  - non_relational/sklearn/samplers@backbone_wrapper.sampler: graph_hop
 
 _target_: topobench.model.TBModel
 
