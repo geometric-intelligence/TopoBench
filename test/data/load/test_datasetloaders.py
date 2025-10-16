@@ -40,7 +40,7 @@ class TestLoaders:
         exclude_datasets = {"karate_club.yaml",
                             # Below the datasets that have some default transforms with we manually overriten with no_transform,
                             # due to lack of default transform for domain2domain
-                            "REDDIT-BINARY.yaml", "IMDB-MULTI.yaml", "IMDB-BINARY.yaml", #"ZINC.yaml"
+                            "REDDIT-BINARY.yaml", "IMDB-MULTI.yaml", "IMDB-BINARY.yaml", "ZINC.yaml",
                             "ogbg-molpcba.yaml", "manual_dataset.yaml", # "ogbg-molhiv.yaml"
                             "artnet-exp.yaml", "avazu-ctr.yaml", "city-reviews.yaml", "city-roads-L.yaml",
                             "city-roads-M.yaml", "hm-prices.yaml", "pokec-regions.yaml", "tolokers-2.yaml",
