@@ -93,7 +93,7 @@ class NeighborFeatureAggregation(BaseTransform):
             # Nothing to do
             return data
 
-        # Combine strategy
+        # Combine strategy ( model only check "x" in the data object)
         combine = self.parameters["combine"]
         if combine == "store":
             out_field = self.parameters["out_field"] or f"{x_field}_neighbor_{self.parameters['agg']}"
