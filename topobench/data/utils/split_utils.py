@@ -1,11 +1,9 @@
 """Split utilities."""
 
 import os
-
 import numpy as np
 import torch
-from sklearn.model_selection import StratifiedKFold
-
+from sklearn.model_selection import StratifiedKFold, train_test_split
 from topobench.dataloader import DataloadDataset
 
 
@@ -91,6 +89,95 @@ def k_fold_split(labels, parameters):
 
     return split_idx
 
+def stratified_splitting(labels, parameters, global_data_seed=42):
+    r"""Randomly splits nodes into train/valid/test splits in a stratified fashion.
+    Making sure that each split has the same proportion of classes.
+
+    Parameters
+    ----------
+    labels : torch.Tensor
+        Label tensor.
+    parameters : DictConfig
+        Configuration parameter.
+    global_data_seed : int
+        Seed for the random number generator.
+
+    Returns
+    -------
+    dict:
+        Dictionary containing the train, validation and test indices with keys "train", "valid", and "test".
+    """
+    fold = parameters["data_seed"]
+    data_dir = parameters["data_split_dir"]
+    train_prop = parameters["train_prop"]
+    val_prop = parameters.get("val_prop", (1 - train_prop) / 2)
+
+    # Create split directory if it does not exist
+    split_dir = os.path.join(
+        data_dir, f"train_prop={train_prop}_val_prop={val_prop}_global_seed={global_data_seed}"
+    )
+    generate_splits = False
+    if not os.path.isdir(split_dir):
+        os.makedirs(split_dir)
+        generate_splits = True
+        
+
+    # Generate splits if they do not exist
+    if generate_splits:
+        # Generate a split
+        n = labels.shape[0]
+        indices = np.arange(n)
+
+        # Generate 10 splits
+        for fold_n in range(10):
+            # Train vs Temp (Valid+Test)
+            train_idx, val_test_idx, y_train, y_val_test = train_test_split(
+                indices,
+                labels,
+                test_size=(1.0 - train_prop),
+                stratify=labels,
+                random_state=global_data_seed,
+                shuffle=True,
+            )
+
+            # 2) Split Temp into Valid vs Test
+            val_idx, test_idx, _, _ = train_test_split(
+                val_test_idx,
+                y_val_test,
+                test_size=(1.0 - val_prop - train_prop),
+                stratify=y_val_test,
+                random_state=global_data_seed,
+                shuffle=True,
+            )
+
+            split_idx = {
+                "train": train_idx.astype(np.int64),
+                "valid": val_idx.astype(np.int64),
+                "test":  test_idx.astype(np.int64),
+            }
+
+            # Save generated split
+            split_path = os.path.join(split_dir, f"{fold_n}.npz")
+            np.savez(split_path, **split_idx)
+
+    # Load the split
+    split_path = os.path.join(split_dir, f"{fold}.npz")
+    split_idx = np.load(split_path)
+
+    # Check that all nodes/graph have been assigned to some split
+    assert (
+        np.unique(
+            np.array(
+                split_idx["train"].tolist()
+                + split_idx["valid"].tolist()
+                + split_idx["test"].tolist()
+            )
+        ).shape[0]
+        == labels.shape[0]
+    ), "Not all nodes within splits"
+
+    return split_idx
+
 
 def random_splitting(labels, parameters, global_data_seed=42):
     r"""Randomly splits label into train/valid/test splits.
@@ -114,11 +201,11 @@ def random_splitting(labels, parameters, global_data_seed=42):
     fold = parameters["data_seed"]
     data_dir = parameters["data_split_dir"]
     train_prop = parameters["train_prop"]
-    valid_prop = (1 - train_prop) / 2
+    val_prop = parameters.get("val_prop", (1 - train_prop) / 2)
 
     # Create split directory if it does not exist
     split_dir = os.path.join(
-        data_dir, f"train_prop={train_prop}_global_seed={global_data_seed}"
+        data_dir, f"train_prop={train_prop}_val_prop={val_prop}_global_seed={global_data_seed}"
     )
     generate_splits = False
     if not os.path.isdir(split_dir):
@@ -133,7 +220,7 @@ def random_splitting(labels, parameters, global_data_seed=42):
         # Generate a split
         n = labels.shape[0]
         train_num = int(n * train_prop)
-        valid_num = int(n * valid_prop)
+        valid_num = int(n * val_prop)
 
         # Generate 10 splits
         for fold_n in range(10):
@@ -251,6 +338,9 @@ def load_transductive_splits(dataset, parameters):
     elif parameters.split_type == "k-fold":
         splits = k_fold_split(labels, parameters)
 
+    elif parameters.split_type == "stratified":
+        splits = stratified_splitting(labels, parameters)
+
     else:
         raise NotImplementedError(
             f"split_type {parameters.split_type} not valid. Choose either 'random' or 'k-fold'"
@@ -301,6 +391,9 @@ def load_inductive_splits(dataset, parameters):
 
     elif parameters.split_type == "k-fold":
         split_idx = k_fold_split(labels, parameters)
+
+    elif parameters.split_type == "stratified":
+        split_idx = stratified_splitting(labels, parameters)
 
     elif parameters.split_type == "fixed" and hasattr(dataset, "split_idx"):
         split_idx = dataset.split_idx
