@@ -118,7 +118,6 @@ select = [
     "SIM", # code simplifications
     "NPY", # numpy rules
     "PERF", # performance rules
-    "RUF", # miscellaneous rules
 ]
 fixable = ["ALL"]
 ignore = [

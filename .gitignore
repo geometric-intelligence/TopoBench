@@ -85,6 +85,8 @@ tutorials/data/
 tutorials/data/*
 tutorials/lightning_logs/
 tutorials/lightning_logs/*
+tutorials/checkpoints
+tutorials/checkpoints/*
 
 # IPython
 profile_default/

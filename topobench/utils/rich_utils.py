@@ -22,6 +22,7 @@ def print_config_tree(
     print_order: Sequence[str] = (
         "dataset",
         "model",
+        "transforms",
         "callbacks",
         "logger",
         "trainer",

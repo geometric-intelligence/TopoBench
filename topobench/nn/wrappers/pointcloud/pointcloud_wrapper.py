@@ -1,10 +1,10 @@
-"""Wrapper for the GNN models."""
+"""Wrapper for pointcloud models."""
 
 from topobench.nn.wrappers.base import AbstractWrapper
 
 
 class PointcloudWrapper(AbstractWrapper):
-    r"""Wrapper for the Pointcloud models.
+    r"""Wrapper for Pointcloud models.
 
     This wrapper defines the forward pass of the model. The Pointcloud models return
     the embeddings of the cells of rank 0.

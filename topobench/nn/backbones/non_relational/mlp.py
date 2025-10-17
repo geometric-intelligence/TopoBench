@@ -62,7 +62,11 @@ class MLP(nn.Module):
     ):
         super().__init__()
         self.in_channels = in_channels
-        self.hidden_layers = [hidden_layers] if isinstance(hidden_layers, int) else list(hidden_layers)
+        self.hidden_layers = (
+            [hidden_layers]
+            if isinstance(hidden_layers, int)
+            else list(hidden_layers)
+        )
         self.dropout = dropout
         self.norm_layers = self.build_norm_layers(norm, norm_kwargs)
         self.act = (
@@ -132,7 +136,7 @@ class MLP(nn.Module):
                 )
             )
             fc_layer_input_dim = fc_dim
-        layers.append(nn.Linear(fc_dim, self.out_channels))
+        layers.append(nn.Linear(fc_layer_input_dim, self.out_channels))
         layers.append(self.final_act)
         return nn.Sequential(*layers)
 

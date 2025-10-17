@@ -1,0 +1,14 @@
+defaults:
+  - early_stopping
+  - model_summary
+  - model_timer
+  - _self_
+
+
+early_stopping:
+  monitor: ${get_monitor_metric:${dataset.parameters.task},${dataset.parameters.monitor_metric}} #${callbacks.model_checkpoint.monitor}
+  patience: 25
+  mode: "${get_monitor_mode:${dataset.parameters.task}}" #${callbacks.model_checkpoint.mode}
+
+model_summary:
+  max_depth: -1

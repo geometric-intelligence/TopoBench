@@ -1,7 +1,6 @@
 """Sphinx configuration file."""
 
 import os
-import shutil
 import sys
 
 sys.path.insert(0, os.path.abspath("../topobench"))
@@ -22,7 +21,6 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx.ext.mathjax",
     "sphinx.ext.napoleon",
-    "sphinx.ext.viewcode",
     "sphinx_gallery.load_style",
     "sphinx.ext.autosummary",
     "myst_parser",
@@ -44,7 +42,14 @@ nbsphinx_allow_errors = True
 
 templates_path = ["_templates"]
 
-source_suffix = [".rst"]
+source_suffix = [".rst", ".md"]
+
+autodoc_mock_imports = [
+    "torch", "torchvision", "torchaudio",
+    "torch_geometric", "pyg_lib",
+    "torch_sparse", "torch_scatter", "torch_cluster", "torch_spline_conv"
+]
+
 
 master_doc = "index"
 
@@ -63,9 +68,20 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "**.ipynb_checkpoints"]
 pygments_style = None
 
 html_theme = "pydata_sphinx_theme"
+html_static_path = ['_static']
 html_baseurl = "https://geometric-intelligence.github.io/topobench"
 htmlhelp_basename = "topobenchdoc"
 html_last_updated_fmt = "%c"
+
+html_sidebars = {
+    "**": []
+}
+
+html_show_sourcelink = False
+
+html_theme_options = {
+    "secondary_sidebar_items": ["page-toc"],
+}
 
 latex_elements = {}
 
@@ -96,32 +112,32 @@ texinfo_documents = [
 epub_title = project
 epub_exclude_files = ["search.html"]
 
+from pathlib import Path
+import shutil
 
-def copy_thumbnails():
-    """Copy the thumbnail files.
-
-    This function copies the thumbnail png files in the _build
-    directory to enable thumbnails in the gallery.
+def _copy_thumbnails(app):
     """
-    src_directory = "./_thumbnails"
-    des_directory = "./_build/_thumbnails"
+    Copy thumbnail png files from <confdir>/_thumbnails to <outdir>/_thumbnails
+    once per build (on 'builder-inited').
+    """
+    src = Path(app.confdir) / "_thumbnails"
+    if not src.exists():
+        return  # nothing to do
 
-    des_directory_walked = os.walk(src_directory)
-    all_thumbnails = []
+    des = Path(app.outdir) / "_thumbnails"  # app.outdir == docs/_build (html builder)
+    # make destination (and parents) if needed
+    des.mkdir(parents=True, exist_ok=True)
 
-    for root, _, pngs in des_directory_walked:
-        for png in pngs:
-            full_filename = root + "/" + png
-            all_thumbnails.append(full_filename)
-
-    os.makedirs("./_build", exist_ok=True)  # os.mkdir("./_build")
-    os.mkdir(des_directory)
-
-    for thumbnail in all_thumbnails:
-        shutil.copyfile(thumbnail, "./_build/" + thumbnail[2:])
+    # copy all files (keep subfolders)
+    for p in src.rglob("*"):
+        if p.is_file():
+            target = des / p.relative_to(src)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(p, target)
 
 
-copy_thumbnails()
+def setup(app):
+    app.connect("builder-inited", _copy_thumbnails)
 
 nbsphinx_thumbnails = {
     "notebooks/tutorial_dataset": "_thumbnails/tutorial_dataset.png",

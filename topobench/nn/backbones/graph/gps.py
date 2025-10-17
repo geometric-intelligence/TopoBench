@@ -1,8 +1,10 @@
-"""
-This module implements a GPS encoder that can be used with the training framework.
-GPS combines local message passing with global attention mechanisms.
+"""This module implements a GPS-based model[1] that can be used with the training framework.
 
+GPS combines local message passing with global attention mechanisms.
 Uses the official PyTorch Geometric GPSConv implementation.
+
+[1] Rampášek, Ladislav, et al. "Recipe for a general, powerful, scalable graph transformer."
+Advances in Neural Information Processing Systems 35 (2022): 14501-14515.
 """
 
 from typing import Any
@@ -15,13 +17,20 @@ from torch_geometric.nn import (
     PNAConv,
 )
 from torch_geometric.nn.attention import PerformerAttention
-from torch_geometric.nn import GraphNorm
 
 
 class RedrawProjection:
     """
     Helper class to handle redrawing of random projections in Performer attention.
+
     This is crucial for maintaining the quality of the random feature approximation.
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+        The model containing PerformerAttention modules.
+    redraw_interval : int or None, optional
+        Interval for redrawing random projections. If None, projections are not redrawn. Default is None.
     """
 
     def __init__(
@@ -32,7 +41,13 @@ class RedrawProjection:
         self.num_last_redraw = 0
 
     def redraw_projections(self):
-        """Redraw random projections in PerformerAttention modules if needed."""
+        """Redraw random projections in PerformerAttention modules if needed.
+
+        Returns
+        -------
+        None
+            None.
+        """
         if not self.model.training or self.redraw_interval is None:
             return
 
@@ -62,6 +77,32 @@ class GPSEncoder(torch.nn.Module):
     Uses the official PyTorch Geometric GPSConv implementation.
     This encoder combines local message passing with global attention mechanisms
     for powerful graph representation learning.
+
+    Parameters
+    ----------
+    input_dim : int
+        Dimension of input node features.
+    hidden_dim : int
+        Dimension of hidden layers.
+    num_layers : int, optional
+        Number of GPS layers. Default is 4.
+    heads : int, optional
+        Number of attention heads in GPSConv layers. Default is 4.
+    dropout : float, optional
+        Dropout rate for GPSConv layers. Default is 0.1.
+    attn_type : str, optional
+        Type of attention mechanism to use. Options are 'multihead', 'performer', etc.
+        Default is 'multihead'.
+    local_conv_type : str, optional
+        Type of local message passing layer. Options are 'gin', 'pna', etc.
+        Default is 'gin'.
+    use_edge_attr : bool, optional
+        Whether to use edge attributes in GPSConv layers. Default is False.
+    redraw_interval : int or None, optional
+        Interval for redrawing random projections in Performer attention.
+        If None, projections are not redrawn. Default is None.
+    attn_kwargs : dict, optional
+        Additional keyword arguments for the attention mechanism.
     """
 
     def __init__(
@@ -69,9 +110,6 @@ class GPSEncoder(torch.nn.Module):
         input_dim: int,
         hidden_dim: int,
         num_layers: int = 4,
-        pe_dim: int = 10,
-        pe_type: str = "laplacian",
-        pe_norm: bool = False,
         heads: int = 4,
         dropout: float = 0.1,
         attn_type: str = "multihead",
@@ -85,32 +123,10 @@ class GPSEncoder(torch.nn.Module):
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
-        self.pe_type = pe_type
         self.heads = heads
-        self.pe_dim = pe_dim
-        self.pe_norm = pe_norm
         self.dropout = dropout
         self.attn_type = attn_type
         self.use_edge_attr = use_edge_attr
-
-        # Input projection
-        if pe_type in ["laplacian", "degree", "rwse"]:
-            # If using PE, split channels between node features and PE
-            self.node_proj = nn.Linear(input_dim, hidden_dim - pe_dim)
-            self.pe_proj = nn.Linear(pe_dim, pe_dim)
-            if self.pe_norm:
-                self.pe_norm = GraphNorm(pe_dim)
-            else:
-                self.pe_norm = None
-        elif pe_type is None or pe_type == "None":
-            # No PE, use full hidden_dim for node features
-            self.node_proj = nn.Identity()  # nn.Linear(input_dim, hidden_dim)
-            self.pe_proj = None
-            self.pe_norm = None
-        else:
-            raise ValueError(
-                f"Invalid PE type: {pe_type}. Supported: 'laplacian', 'degree', 'rwse', None"
-            )
 
         # GPS layers using official PyG GPSConv
         self.convs = nn.ModuleList()
@@ -176,50 +192,35 @@ class GPSEncoder(torch.nn.Module):
         edge_index: torch.Tensor,
         batch: torch.Tensor | None = None,
         edge_attr: torch.Tensor | None = None,
-        pe: torch.Tensor | None = None,
         **kwargs,
     ) -> torch.Tensor:
         """
         Forward pass of GPS encoder.
 
-        Args:
-            x: Node features [num_nodes, input_dim]
-            edge_index: Edge indices [2, num_edges]
-            batch: Batch indices [num_nodes] (optional)
-            edge_attr: Edge attributes [num_edges, edge_attr_dim] (optional)
-            pe: Positional encodings [num_nodes, pe_dim] (optional)
+        Parameters
+        ----------
+        x : torch.Tensor
+            Node feature matrix of shape [num_nodes, input_dim].
+        edge_index : torch.Tensor
+            Edge indices of shape [2, num_edges].
+        batch : torch.Tensor, optional
+            Batch vector assigning each node to a specific graph. Shape [num_nodes]. Default is None.
+        edge_attr : torch.Tensor, optional
+            Edge feature matrix of shape [num_edges, edge_dim]. Default is None.
+        **kwargs : dict
+            Additional arguments (not used).
 
-        Returns:
-            Node embeddings [num_nodes, hidden_dim]
+        Returns
+        -------
+        torch.Tensor
+            Output node feature matrix of shape [num_nodes, hidden_dim].
         """
         # Redraw projections if using Performer attention
         if self.training:
             self.redraw_projection.redraw_projections()
 
-        # Node feature projection
-        h = self.node_proj(x)
-
-        # Add positional encoding if available
-        if self.pe_proj is not None:
-            if pe is not None:
-                # Normalize PE
-                if self.pe_norm is not None and pe.size(0) > 1:
-                    pe_normalized = self.pe_norm(pe, batch=batch)
-                else:
-                    pe_normalized = pe
-
-                # Project PE
-                pe_proj = self.pe_proj(pe_normalized)
-
-                # Concatenate node features with PE
-                h = torch.cat([h, pe_proj], dim=-1)
-            else:
-                raise ValueError(
-                    "If PE type is not None, PE must be provided in forward pass"
-                )
-
         # Apply GPS layers (no edge attributes)
         for conv in self.convs:
-            h = conv(h, edge_index, batch=batch)
+            x = conv(x, edge_index, batch=batch)
 
-        return h
+        return x

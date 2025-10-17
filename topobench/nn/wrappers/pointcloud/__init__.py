@@ -1,4 +1,4 @@
-"""Wrappers for graph neural networks with automated exports."""
+"""Wrappers for pointcloud neural networks with automated exports."""
 
 import inspect
 from importlib import util

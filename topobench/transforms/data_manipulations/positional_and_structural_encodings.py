@@ -18,13 +18,10 @@ class CombinedPSEs(BaseTransform):
         List of structural encodings to apply. Supported values are
         "LapPE" for Laplacian Positional Encoding and "RWSE" for
         Random Walk Structural Encoding.
-    max_pe_dim : int, optional
-        Maximum dimension for positional encodings (default: 10).
-    encoding_parameters : dict, optional
+    parameters : dict, optional
         Additional parameters for the encoding transforms.
-    concat_to_x : bool, optional
-        If True, concatenates the computed encodings to `data.x`.
-        Default is True.
+    **kwargs : dict, optional
+        Additional keyword arguments.
     """
 
     def __init__(

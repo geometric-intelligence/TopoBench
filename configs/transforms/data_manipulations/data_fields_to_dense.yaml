@@ -1,3 +1,2 @@
-_target_: topobench.transforms.data_transform.DataTransform
 transform_name: "DataFieldsToDense"
 transform_type: "data manipulation"

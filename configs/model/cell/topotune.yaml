@@ -39,7 +39,7 @@ backbone_wrapper:
   _partial_: true
   wrapper_name: TuneWrapper
   out_channels: ${model.feature_encoder.out_channels}
-  num_cell_dimensions: ${infer_num_cell_dimensions:${oc.select:model.feature_encoder.selected_dimensions,null},${model.feature_encoder.in_channels}}
+  num_cell_dimensions: ${infer_topotune_num_cell_dimensions:${oc.select:model.backbone.neighborhoods}}
 
 readout:
   _target_: topobench.nn.readouts.${model.readout.readout_name}

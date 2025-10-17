@@ -50,7 +50,7 @@ def k_fold_split(labels, parameters, root=None):
 
     split_path = os.path.join(split_dir, f"{fold}.npz")
     if not os.path.isfile(split_path):
-        n = labels.shape[0]
+        n = len(labels)
         x_idx = np.arange(n)
         x_idx = np.random.permutation(x_idx)
         labels = labels[x_idx]
@@ -84,16 +84,13 @@ def k_fold_split(labels, parameters, root=None):
     split_idx = np.load(split_path)
 
     # Check that all nodes/graph have been assigned to some split
-    assert (
-        np.unique(
-            np.array(
-                split_idx["train"].tolist()
-                + split_idx["valid"].tolist()
-                + split_idx["test"].tolist()
-            )
-        ).shape[0]
-        == labels.shape[0]
-    ), "Not all nodes within splits"
+    assert np.unique(
+        np.array(
+            split_idx["train"].tolist()
+            + split_idx["valid"].tolist()
+            + split_idx["test"].tolist()
+        )
+    ).shape[0] == len(labels), "Not all nodes within splits"
 
     return split_idx
 
@@ -260,10 +257,10 @@ def load_transductive_splits(dataset, parameters):
     )
 
     if parameters.split_type == "random":
-        splits = random_splitting(labels, parameters, root)
+        splits = random_splitting(labels, parameters, root=root)
 
     elif parameters.split_type == "k-fold":
-        splits = k_fold_split(labels, parameters, root)
+        splits = k_fold_split(labels, parameters, root=root)
 
     else:
         raise NotImplementedError(
@@ -306,7 +303,7 @@ def load_inductive_splits(dataset, parameters):
     assert len(dataset) > 1, (
         "Datasets should have more than one graph in an inductive setting."
     )
-    labels = [data.y.squeeze(0).numpy() for data in dataset]
+    labels = np.array([data.y.squeeze(0).numpy() for data in dataset])
 
     root = (
         dataset.dataset.get_data_dir()
@@ -315,10 +312,10 @@ def load_inductive_splits(dataset, parameters):
     )
 
     if parameters.split_type == "random":
-        split_idx = random_splitting(labels, parameters, root)
+        split_idx = random_splitting(labels, parameters, root=root)
 
     elif parameters.split_type == "k-fold":
-        split_idx = k_fold_split(labels, parameters, root)
+        split_idx = k_fold_split(labels, parameters, root=root)
 
     elif parameters.split_type == "fixed" and hasattr(dataset, "split_idx"):
         split_idx = dataset.split_idx

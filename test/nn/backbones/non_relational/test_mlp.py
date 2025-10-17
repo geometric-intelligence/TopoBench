@@ -1,15 +1,16 @@
 """Test MLP."""
 import torch
 import torch.nn as nn
+import torch_geometric
 import pytest
 from topobench.nn.backbones.non_relational.mlp import MLP
 from omegaconf import DictConfig
 
-@pytest.mark.parametrize("batch_size,num_nodes,in_channels,hidden_channels,out_channels,final_act", [
+@pytest.mark.parametrize("batch_size,num_nodes,in_channels,hidden_layers,out_channels,final_act", [
     (1, 4, 10, [16, 8], 8, "sigmoid"),
     (2, None, 4, [8], 1, None),
 ])
-def test_mlp_forward(batch_size, num_nodes, in_channels, hidden_channels, out_channels, final_act):
+def test_mlp_forward(batch_size, num_nodes, in_channels, hidden_layers, out_channels, final_act):
     """Test MLP.
 
     Parameters
@@ -20,7 +21,7 @@ def test_mlp_forward(batch_size, num_nodes, in_channels, hidden_channels, out_ch
         The number of nodes.
     in_channels : int
         The number of input channels.
-    hidden_channels : list
+    hidden_layers : list
         The list of hidden channel sizes.
     out_channels : int
         The number of output channels.
@@ -30,7 +31,7 @@ def test_mlp_forward(batch_size, num_nodes, in_channels, hidden_channels, out_ch
     x = torch.randn(batch_size, in_channels)
     model = MLP(
         in_channels=in_channels,
-        hidden_channels=hidden_channels,
+        hidden_layers=hidden_layers,
         out_channels=out_channels,
         final_act=final_act,
         num_nodes=num_nodes,
@@ -41,7 +42,7 @@ def test_mlp_forward(batch_size, num_nodes, in_channels, hidden_channels, out_ch
     else:
         assert output.shape == (batch_size, out_channels) if batch_size > 1 else (out_channels)
     # Test __call__ method
-    model_out = {"x_0": x, "batch_size": batch_size}
+    model_out = torch_geometric.data.Data(x_0=x, batch_size=batch_size)
     result = model.__call__(model_out)
     assert "x_0" in result and "logits" in result
     assert torch.allclose(result["x_0"], result["logits"])

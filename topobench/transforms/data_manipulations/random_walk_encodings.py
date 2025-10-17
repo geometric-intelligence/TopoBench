@@ -7,8 +7,7 @@ from torch_geometric.utils import degree
 
 
 class RWSE(BaseTransform):
-    r"""
-    Random Walk Structural Encoding (RWSE) transform.
+    r"""Random Walk Structural Encoding (RWSE) transform.
 
     Computes return probabilities of random walks of length 1..K
     for each node in the graph, and appends them as structural
@@ -31,6 +30,18 @@ class RWSE(BaseTransform):
         self.concat_to_x = concat_to_x
 
     def forward(self, data: Data) -> Data:
+        """Compute the RWSE for the input graph.
+
+        Parameters
+        ----------
+        data : Data
+            Input graph data object.
+
+        Returns
+        -------
+        Data
+            Graph data object with RWSE added.
+        """
         pe = self._compute_rwse(data.edge_index, data.num_nodes)
 
         if self.concat_to_x:
@@ -46,7 +57,20 @@ class RWSE(BaseTransform):
     def _compute_rwse(
         self, edge_index: torch.Tensor, num_nodes: int
     ) -> torch.Tensor:
-        """Internal method to compute RWSE return probabilities."""
+        """Internal method to compute RWSE return probabilities.
+
+        Parameters
+        ----------
+        edge_index : torch.Tensor
+            Edge indices of the graph.
+        num_nodes : int
+            Number of nodes in the graph.
+
+        Returns
+        -------
+        torch.Tensor
+            RWSE return probabilities.
+        """
         device = edge_index.device
 
         if edge_index.numel() == 0 or num_nodes <= 1:

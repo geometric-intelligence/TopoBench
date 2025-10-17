@@ -77,6 +77,7 @@ def get_default_transform(dataset, model):
     """
     data_domain, dataset = dataset.split("/")
     model_domain, model = model.split("/")
+    # TODO: improve logic for pointcloud models
     if model_domain == "non_relational" or model_domain == "pointcloud":
         model_domain = "graph"
     # Check if there is a default transform for the dataset at ./configs/transforms/dataset_defaults/
@@ -84,11 +85,11 @@ def get_default_transform(dataset, model):
     base_dir = os.path.dirname(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     )
-    model_configs_dir = os.path.join(
-        base_dir, "configs", "transforms", "model_defaults"
-    )
     dataset_configs_dir = os.path.join(
         base_dir, "configs", "transforms", "dataset_defaults"
+    )
+    model_configs_dir = os.path.join(
+        base_dir, "configs", "transforms", "model_defaults"
     )
     datasets_with_defaults = [
         f.split(".")[0] for f in os.listdir(dataset_configs_dir)
@@ -96,7 +97,10 @@ def get_default_transform(dataset, model):
     model_with_defaults = [
         f.split(".")[0] for f in os.listdir(model_configs_dir)
     ]
-    if dataset in datasets_with_defaults:
+    if dataset in datasets_with_defaults and model in model_with_defaults:
+        # TODO: Work in progress, check logic here
+        return f"dataset_model_defaults/{dataset}_{model}"
+    elif dataset in datasets_with_defaults:
         return f"dataset_defaults/{dataset}"
     elif model in model_with_defaults:
         return f"model_defaults/{model}"
@@ -202,41 +206,19 @@ def check_pses_in_transforms(transforms):
         True if there are positional or structural encodings, False otherwise.
     """
     added_features = 0
-    for key in transforms:
-        # Single transform
-        if "encodings" in key:
-            for enc in transforms.get("encodings", []):
-                if enc == "LapPE":
-                    if (
-                        transforms.get("parameters")
-                        .get(enc)
-                        .get("include_eigenvalues")
-                    ):
-                        added_features += (
-                            transforms.get("parameters")
-                            .get(enc)
-                            .get("max_pe_dim")
-                            * 2
-                        )
-                    else:
-                        added_features += (
-                            transforms.get("parameters")
-                            .get(enc)
-                            .get("max_pe_dim")
-                        )
-                elif enc == "RWSE":
-                    added_features += (
-                        transforms.get("parameters").get(enc).get("max_pe_dim")
-                    )
-        # Potentially multiple transforms
-        elif "LapPE" in key:
-            if transforms[key].get("include_eigenvalues"):
-                added_features += transforms[key].get("max_pe_dim") * 2
+    # Single transform
+    transform = transforms.get("transform_name", None)
+    if transform is not None:
+        if transform == "LapPE":
+            if transforms.get("include_eigenvalues"):
+                added_features += transforms.get("max_pe_dim") * 2
             else:
-                added_features += transforms[key].get("max_pe_dim")
-        elif "RWSE" in key:
-            added_features += transforms[key].get("max_pe_dim")
-        elif "CombinedPSEs" in key:
+                added_features += transforms.get("max_pe_dim")
+        elif transform == "RWSE":
+            added_features += transforms.get("max_pe_dim")
+    # Potentially multiple transforms
+    for key in transforms:
+        if "CombinedPSEs" in key or "encodings" in key:
             for pse in transforms[key].get("encodings", []):
                 if pse == "LapPE":
                     if (
@@ -266,6 +248,14 @@ def check_pses_in_transforms(transforms):
                         .get(pse)
                         .get("max_pe_dim")
                     )
+        elif "LapPE" in key:
+            if transforms[key].get("include_eigenvalues"):
+                added_features += transforms[key].get("max_pe_dim") * 2
+            else:
+                added_features += transforms[key].get("max_pe_dim")
+        elif "RWSE" in key:
+            added_features += transforms[key].get("max_pe_dim")
+
     return added_features
 
 
@@ -474,6 +464,25 @@ def infer_topotune_num_cell_dimensions(neighborhoods):
     from topobench.data.utils import get_routes_from_neighborhoods
     routes = get_routes_from_neighborhoods(neighborhoods)
     return max([max(route) for route in routes])+1
+
+
+def infer_topotune_num_cell_dimensions(neighborhoods):
+    r"""Infer the length of a list.
+
+    Parameters
+    ----------
+    neighborhoods : list
+        List of neighborhoods.
+
+    Returns
+    -------
+    int
+        Length of the input list.
+    """
+    from topobench.data.utils import get_routes_from_neighborhoods
+
+    routes = get_routes_from_neighborhoods(neighborhoods)
+    return max([max(route) for route in routes]) + 1
 
 
 def get_default_metrics(task, metrics=None):
