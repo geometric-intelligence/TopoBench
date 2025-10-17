@@ -33,7 +33,27 @@ Assess how your model compares against state-of-the-art topological neural netwo
   <a href="#mag-references">References</a> 
 </p>
 
+## 🏆 Announcing the Topological Deep Learning Challenge 2025!
 
+We are excited to announce that `TopoBench` is hosting the **Topological Deep Learning Challenge 2025**, as part of the Topology, Algebra, and Geometry in Data Science (TAG-DS) 2025 conference.
+
+This year's theme is **"Expanding the Data Landscape"**. 
+Participants are invited to implement a new or existing dataset within TopoBench.
+<p align="center">
+  <img src="resources/2025_challenge_flyer.png" alt="TDL Challenge 2025 Flyer" width="800">
+</p>
+
+#### Why Participate?
+* 🌟 Co-author a white paper for the Proceedings of Machine Learning Research (PMLR).
+* 🌟 Win cash prizes up to $800 USD.
+* 🌟 Secure internship opportunities at UC Santa Barbara and EPFL.
+
+**Sponsored by:** Arlequin AI 
+**Deadline for submission:** November 25th, 2025 (AoE) 
+
+For more details, rules, and to get started, please visit the [`link to the challenge website`](https://geometric-intelligence.github.io/topobench/tdl-challenge/index.html).
+
+---
 
 ## :pushpin: Overview
 
