@@ -4,4 +4,4 @@ task_level: ${dataset.parameters.task_level}
 num_classes: ${dataset.parameters.num_classes}
 
 # Metrics
-metrics: [mae, mse] #Available options: mae, mse, r2
+metrics:  [accuracy, precision, recall, auroc, "f1_score", "average_precision", "cohen_kappa", "mcc", "jaccard"] # Available options: accuracy, auroc, precision, recall
