@@ -79,8 +79,11 @@ class LoadManager:
                     )
                 }
                 losses.update(new_losses)
-            except ImportError as e:
-                print(f"Could not import module {module_name}: {e}")
+            except:  # noqa: E722
+                pass
+                # TODO: here repetative printing at every epoch
+                # except: ImportError as e
+                # print(f"Could not import module {module_name}: {e}")
 
         return losses
 
