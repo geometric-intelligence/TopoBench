@@ -44,7 +44,8 @@ class TestLoaders:
                             "ogbg-molpcba.yaml", "manual_dataset.yaml", "ogbg-molhiv.yaml"
                             "artnet-exp.yaml", "avazu-ctr.yaml", "city-reviews.yaml", "city-roads-L.yaml",
                             "artnet-views.yaml", "hm-prices.yaml", "pokec-regions.yaml", "tolokers-2.yaml",
-                            "twitch-views.yaml", "web-fraud.yaml", "web-traffic.yaml", "web-topic.yaml"
+                            "twitch-views.yaml", "web-fraud.yaml", "web-traffic.yaml", "web-topic.yaml",
+                            "geometric_shapes.yaml"
                             }
         
         # Below the datasets that takes quite some time to load and process                            
