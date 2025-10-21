@@ -304,7 +304,9 @@ def load_inductive_splits(dataset, parameters):
     assert len(dataset) > 1, (
         "Datasets should have more than one graph in an inductive setting."
     )
-    labels = np.array([data.y.squeeze(0).numpy() for data in dataset])
+    labels = np.array(
+        [data.y.squeeze(0).numpy() for data in dataset], dtype=object
+    )
 
     root = (
         dataset.dataset.get_data_dir()
