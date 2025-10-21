@@ -14,8 +14,8 @@ parameters:
   num_classes: 10
   num_nodes: 11701
   task: classification
-  loss_type: mse
-  monitor_metric: mae
+  loss_type: cross_entropy
+  monitor_metric: accuracy
   task_level: node
 
 #splits
@@ -26,7 +26,6 @@ split_params:
   split_type: random #'k-fold' # either "k-fold" or "random" strategies
   k: 10 # for "k-fold" Cross-Validation
   train_prop: 0.5 # for "random" strategy splitting
-  standardize: True
 
 # Dataloader parameters
 dataloader_params:
