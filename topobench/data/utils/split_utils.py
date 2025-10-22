@@ -304,8 +304,14 @@ def load_inductive_splits(dataset, parameters):
     assert len(dataset) > 1, (
         "Datasets should have more than one graph in an inductive setting."
     )
-    labels = np.array(
-        [data.y.squeeze(0).numpy() for data in dataset], dtype=object
+    # Check if labels are ragged (different sizes across graphs)
+    label_list = [data.y.squeeze(0).numpy() for data in dataset]
+    label_shapes = [label.shape for label in label_list]
+    # Use dtype=object only if labels have different shapes (ragged)
+    labels = (
+        np.array(label_list, dtype=object)
+        if len(set(label_shapes)) > 1
+        else np.array(label_list)
     )
 
     root = (
@@ -318,6 +324,9 @@ def load_inductive_splits(dataset, parameters):
         split_idx = random_splitting(labels, parameters, root=root)
 
     elif parameters.split_type == "k-fold":
+        assert type(labels) is not object, (
+            "K-Fold splitting not supported for ragged labels."
+        )
         split_idx = k_fold_split(labels, parameters, root=root)
 
     elif parameters.split_type == "fixed" and hasattr(dataset, "split_idx"):
