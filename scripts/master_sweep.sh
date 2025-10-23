@@ -5,13 +5,13 @@
 # List of individual sweep scripts to run.
 # Ensure these scripts are executable (chmod +x)
 SWEEP_SCRIPTS=(
-    "./sweep_knn.sh"
-    "./sweep_khop.sh"
-    "./sweep_ekhop.sh"
-    "./sweep_fr.sh"
-    # "./sweep_kernel.sh"  --- DISABLED FOR NOW ---
-    "./sweep_mapper.sh"
-    "./sweep_modularity.sh"
+    "scripts/sweep_knn.sh"
+    "scripts/sweep_khop.sh"
+    "scripts/sweep_ekhop.sh"
+    "scripts/sweep_fr.sh"
+    # "scripts/sweep_kernel.sh"  --- DISABLED FOR NOW ---
+    "scripts/sweep_mapper.sh"
+    "scripts/sweep_modularity.sh"
 )
 
 # Loop through the list of scripts and execute each one sequentially

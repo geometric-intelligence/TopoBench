@@ -46,7 +46,7 @@ datasets=(
     "graph/roman_empire"
     "graph/MUTAG"
     "graph/PROTEINS"
-    "graph/ZINC"
+    # "graph/ZINC"
 )
 
 # NOTE: The batch_sizes array must match the length and order of datasets
@@ -107,19 +107,17 @@ for model in "${models[@]}"; do
                             "transforms=[${lifting}]"
                             "transforms.liftings.graph2hypergraph.t=${t}" 
                             "transforms.liftings.graph2hypergraph.kernel_feat=${k}"
-                            "dataset.split_params.data_seed=0,3,5,7,9"
+                            "dataset.split_params.data_seed=0"
                             "trainer.max_epochs=500"
                             "trainer.min_epochs=50"
                             "trainer.check_val_every_n_epoch=5"
                             "callbacks.early_stopping.patience=10"
                             "logger.wandb.project=hypergraph_liftings"
-                            "--multirun"
                         )
-                        # 2. Check if the model is NOT the edgnn model.
-                        if [[ "$model_name" != "edgnn" ]]; then
-                            # If it is NOT edgnn, append the layer setting to the command array.
+                        if [[ "${model##*/}" != "edgnn" ]]; then
                             cmd+=("model.backbone.n_layers=2")
                         fi
+                        cmd+=("--multirun")
                         run_and_log "${cmd[*]}" "$run_name" &
 
                         # --- 6. Increment counters and manage parallel jobs ---

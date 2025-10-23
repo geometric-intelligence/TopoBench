@@ -9,9 +9,7 @@ loader:
 
 # Dataset parameters
 parameters:
-  num_features:
-    - 7 # initial node features
-    - 4 # initial edge features
+  num_features: 7
   num_classes: 2
   task: classification
   loss_type: cross_entropy
