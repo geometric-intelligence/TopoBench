@@ -188,6 +188,10 @@ Explore our [tutorials](https://github.com/geometric-intelligence/TopoBench/tree
 
 We list the neural networks trained and evaluated by `TopoBench`, organized by the topological domain over which they operate: graph, simplicial complex, cellular complex or hypergraph. Many of these neural networks were originally implemented in [`TopoModelX`](https://github.com/pyt-team/TopoModelX).
 
+### Pointclouds
+| Model | Reference |
+| --- | --- |
+| DeepSets | [Deep Sets](https://arxiv.org/pdf/1703.06114) |
 
 ### Graphs
 | Model | Reference |
@@ -196,6 +200,7 @@ We list the neural networks trained and evaluated by `TopoBench`, organized by t
 | GIN | [How Powerful are Graph Neural Networks?](https://openreview.net/pdf?id=ryGs6iA5Km) |
 | GCN | [Semi-Supervised Classification with Graph Convolutional Networks](https://arxiv.org/pdf/1609.02907v4) |
 | GraphMLP | [Graph-MLP: Node Classification without Message Passing in Graph](https://arxiv.org/pdf/2106.04051) |
+| GPS | [Recipe for a General, Powerful, Scalable Graph Transformer](https://arxiv.org/pdf/2205.12454) |
 
 ### Simplicial Complexes
 | Model | Reference |
@@ -321,15 +326,18 @@ Specially useful in pre-processing steps, these are the general data manipulatio
 | Transform | Description | 
 | --- | --- |
 | OneHotDegreeFeatures | Adds the node degree as one hot encodings to the node features. |
-|NodeFeaturesToFloat |Converts the node features of the input graph to float. |
+| NodeFeaturesToFloat |Converts the node features of the input graph to float. |
 | NodeDegrees | Calculates the node degrees of the input graph.|
-| NodeDegrees | Keeps only the selected fields of the input data. |
+| KeepSelectedDataFields | Keeps only the selected fields of the input data. |
 | KeepOnlyConnectedComponent | Keep only the largest connected components of the input graph. |
 | InfereRadiusConnectivity | Generates the radius connectivity of the input point cloud. |
 | InfereKNNConnectivity | Generates the k-nearest neighbor connectivity of the input point cloud. |
 | IdentityTransform | An identity transform that does nothing to the input data. |
 |  EqualGausFeatures | Generates equal Gaussian features for all nodes. |
 |  CalculateSimplicialCurvature |  Calculates the simplicial curvature of the input graph.  |
+|  LapPE |  Computes Laplacian eigenvectors positional encodings.  |
+|  RWSE |  Computes Random Walk structural encodings.  |
+| CombinedPSEs | Computes one or several positional and/or structural encodings.  |
 
 </details>
 
