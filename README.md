@@ -28,12 +28,29 @@ Assess how your model compares against state-of-the-art topological neural netwo
   <a href="#jigsaw-get-started">Get Started</a> •
   <a href="#anchor-tutorials">Tutorials</a> •
   <a href="#gear-neural-networks">Neural Networks</a> •
-  <a href="#rocket-liftings">Liftings</a> •
+  <a href="#rocket-liftings-and-transforms">Liftings and Transforms</a> •
   <a href="#books-datasets">Datasets</a> •
   <a href="#mag-references">References</a> 
 </p>
 
+## 🏆 Announcing the Topological Deep Learning Challenge 2025!
 
+We are excited to announce that `TopoBench` is hosting the **Topological Deep Learning Challenge 2025**, as part of the Topology, Algebra, and Geometry in Data Science (TAG-DS) 2025 conference. This year's theme is **"Expanding the Data Landscape"**: 
+participants are invited to implement a new or existing dataset within TopoBench.
+<p align="center">
+  <img src="resources/2025_challenge_flyer.png" alt="TDL Challenge 2025 Flyer" width="800">
+</p>
+
+#### Why Participate?
+* 🌟 Co-author a white paper for the Proceedings of Machine Learning Research (PMLR).
+* 🌟 Win cash prizes up to $800 USD, sponsored by [Arlequin AI](https://www.arlq.ai/).
+* 🌟 Secure internship opportunities at UC Santa Barbara and EPFL.
+
+**Deadline for submission:** November 25th, 2025 (AoE) 
+
+For more details, rules, and to get started, please visit the [`link to the challenge website`](https://geometric-intelligence.github.io/topobench/tdl-challenge/index.html).
+
+---
 
 ## :pushpin: Overview
 
@@ -43,7 +60,7 @@ Assess how your model compares against state-of-the-art topological neural netwo
   <img src="resources/workflow.jpg" width="700">
 </p>
 
-The main pipeline trains and evaluates a wide range of state-of-the-art TNNs and Graph Neural Networks (GNNs) (see <a href="#gear-neural-networks">:gear: Neural Networks</a>) on numerous and varied datasets and benchmark tasks (see <a href="#books-datasets">:books: Datasets</a> ). Additionally, the library offers the ability to transform, i.e. _lift_, each dataset from one topological domain to another (see <a href="#rocket-liftings">:rocket: Liftings</a>), enabling for the first time an exhaustive inter-domain comparison of TNNs.
+The main pipeline trains and evaluates a wide range of state-of-the-art TNNs and Graph Neural Networks (GNNs) (see <a href="#gear-neural-networks">:gear: Neural Networks</a>) on numerous and varied datasets and benchmark tasks (see <a href="#books-datasets">:books: Datasets</a> ). Additionally, the library offers the ability to transform, i.e. _lift_, each dataset from one topological domain to another (see <a href="#rocket-liftings-and-transforms">:rocket: Liftings and Transforms</a>), enabling for the first time an exhaustive inter-domain comparison of TNNs.
 
 ## :jigsaw: Get Started
 
@@ -188,6 +205,10 @@ Explore our [tutorials](https://github.com/geometric-intelligence/TopoBench/tree
 
 We list the neural networks trained and evaluated by `TopoBench`, organized by the topological domain over which they operate: graph, simplicial complex, cellular complex or hypergraph. Many of these neural networks were originally implemented in [`TopoModelX`](https://github.com/pyt-team/TopoModelX).
 
+### Pointclouds
+| Model | Reference |
+| --- | --- |
+| DeepSets | [Deep Sets](https://arxiv.org/pdf/1703.06114) |
 
 ### Graphs
 | Model | Reference |
@@ -196,8 +217,9 @@ We list the neural networks trained and evaluated by `TopoBench`, organized by t
 | GIN | [How Powerful are Graph Neural Networks?](https://openreview.net/pdf?id=ryGs6iA5Km) |
 | GCN | [Semi-Supervised Classification with Graph Convolutional Networks](https://arxiv.org/pdf/1609.02907v4) |
 | GraphMLP | [Graph-MLP: Node Classification without Message Passing in Graph](https://arxiv.org/pdf/2106.04051) |
+| GPS | [Recipe for a General, Powerful, Scalable Graph Transformer](https://arxiv.org/pdf/2205.12454) |
 
-### Simplicial complexes
+### Simplicial Complexes
 | Model | Reference |
 | --- | --- |
 | SAN | [Simplicial Attention Neural Networks](https://arxiv.org/pdf/2203.07485) |
@@ -205,7 +227,7 @@ We list the neural networks trained and evaluated by `TopoBench`, organized by t
 | SCCNN | [Convolutional Learning on Simplicial Complexes](https://arxiv.org/pdf/2301.11163) |
 | SCN | [Simplicial Complex Neural Networks](https://ieeexplore.ieee.org/document/10285604) |
 
-### Cellular complexes
+### Cellular Complexes
 | Model | Reference |
 | --- | --- |
 | CAN | [Cell Attention Network](https://arxiv.org/pdf/2209.08179) |
@@ -222,15 +244,23 @@ We list the neural networks trained and evaluated by `TopoBench`, organized by t
 | UniGNN | [UniGNN: a Unified Framework for Graph and Hypergraph Neural Networks](https://arxiv.org/pdf/2105.00956) |
 | UniGNN2 | [UniGNN: a Unified Framework for Graph and Hypergraph Neural Networks](https://arxiv.org/pdf/2105.00956) |
 
-### Combinatorial complexes
+### Combinatorial Complexes
 | Model | Reference |
 | --- | --- |
 | GCCN | [TopoTune: A Framework for Generalized Combinatorial Complex Neural Networks](https://arxiv.org/pdf/2410.06530) |
 
 **Remark:** TopoBench includes [TopoTune](https://arxiv.org/pdf/2410.06530), a comprehensive framework for easily designing new, general TDL models on any domain using any (graph) neural network as a backbone. Please check out the extended [TopoTune wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/TopoTune) for further details on how to leverage this framework to define and train customized topological neural network architectures.
 
+### Non-relational Models
 
-## :rocket: Liftings & Transforms
+| Model | Reference |
+| --- | --- |
+| MLP | Standard implementation of a Multi-Layer Perceptron. |
+
+**Remark:** Note that MLP only works in single-graph transductive settings or with datasets where all graphs have the same number of nodes.
+
+
+## :rocket: Liftings and Transforms
 
 We list the liftings used in `TopoBench` to transform datasets. Here, a _lifting_ refers to a function that transforms a dataset defined on a topological domain (_e.g._, on a graph) into the same dataset but supported on a different topological domain (_e.g._, on a simplicial complex). 
 
@@ -313,15 +343,18 @@ Specially useful in pre-processing steps, these are the general data manipulatio
 | Transform | Description | 
 | --- | --- |
 | OneHotDegreeFeatures | Adds the node degree as one hot encodings to the node features. |
-|NodeFeaturesToFloat |Converts the node features of the input graph to float. |
+| NodeFeaturesToFloat |Converts the node features of the input graph to float. |
 | NodeDegrees | Calculates the node degrees of the input graph.|
-| NodeDegrees | Keeps only the selected fields of the input data. |
+| KeepSelectedDataFields | Keeps only the selected fields of the input data. |
 | KeepOnlyConnectedComponent | Keep only the largest connected components of the input graph. |
 | InfereRadiusConnectivity | Generates the radius connectivity of the input point cloud. |
 | InfereKNNConnectivity | Generates the k-nearest neighbor connectivity of the input point cloud. |
 | IdentityTransform | An identity transform that does nothing to the input data. |
 |  EqualGausFeatures | Generates equal Gaussian features for all nodes. |
 |  CalculateSimplicialCurvature |  Calculates the simplicial curvature of the input graph.  |
+|  LapPE |  Computes Laplacian eigenvectors positional encodings.  |
+|  RWSE |  Computes Random Walk structural encodings.  |
+| CombinedPSEs | Computes one or several positional and/or structural encodings.  |
 
 </details>
 
@@ -351,7 +384,7 @@ Specially useful in pre-processing steps, these are the general data manipulatio
 ### Simplicial
 | Dataset | Task | Description | Reference |
 | --- | --- | --- | --- |
-| Mantra |  Classification, Multi-label Classification  |  Predict topological attributes of manifold triangulations |  [Source](https://github.com/aidos-lab/MANTRA)  |
+| Mantra |  Classification, Multi-label Classification  |  Predict topological attributes of manifold triangulations |  [Source](https://github.com/aidos-lab/MANTRA) (This project includes third-party datasets. See third_party_licenses.txt for licensing information.) |
 
 ### Hypergraph
 | Dataset | Task | Description | Reference |

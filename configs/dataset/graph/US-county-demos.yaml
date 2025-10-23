@@ -13,6 +13,7 @@ loader:
 parameters:
   num_features: 6
   num_classes: 1
+  num_nodes: 3224
   task: regression
   loss_type: mse
   monitor_metric: mae

@@ -465,3 +465,122 @@ def load_hypergraph_pickle_dataset(data_dir, data_name):
     print("Final num_class", data.num_class)
 
     return data, data_dir
+
+
+def load_hypergraph_content_dataset(data_dir, data_name):
+    """Load hypergraph datasets from pickle files.
+
+    Parameters
+    ----------
+    data_dir : str
+        Path to data.
+    data_name : str
+        Name of the dataset.
+
+    Returns
+    -------
+    torch_geometric.data.Data
+        Hypergraph dataset.
+    """
+    # data_dir = osp.join(data_dir, data_name)
+
+    p2idx_features_labels = osp.join(data_dir, f"{data_name}.content")
+    idx_features_labels = np.genfromtxt(
+        p2idx_features_labels, dtype=np.dtype(str)
+    )
+
+    # features = np.array(idx_features_labels[:, 1:-1])
+    features = torch.Tensor(idx_features_labels[:, 1:-1].astype(float)).float()
+    labels = torch.Tensor(idx_features_labels[:, -1].astype(float)).long()
+
+    # build graph
+    idx = np.array(idx_features_labels[:, 0], dtype=np.int32)
+    idx_map = {j: i for i, j in enumerate(idx)}
+
+    p2edges_unordered = p2idx_features_labels = osp.join(
+        data_dir, f"{data_name}.edges"
+    )
+    edges_unordered = np.genfromtxt(p2edges_unordered, dtype=np.int32)
+    edges = np.array(
+        list(map(idx_map.get, edges_unordered.flatten())), dtype=np.int32
+    ).reshape(edges_unordered.shape)
+
+    # From adjacency matrix to edge_list
+    edge_index = edges.T
+    assert edge_index[0].max() == edge_index[1].min() - 1
+
+    # check if values in edge_index is consecutive. i.e. no missing value for node_id/he_id.
+    assert len(np.unique(edge_index)) == edge_index.max() + 1
+
+    num_nodes = edge_index[0].max() + 1
+    num_he = edge_index[1].max() - num_nodes + 1
+
+    features = features[:num_nodes]
+    labels = labels[:num_nodes]
+
+    # In case labels start from 1, we shift it to start from 0
+    labels = labels - labels.min()
+
+    edge_index = torch.tensor(edge_index, dtype=torch.long)
+    edge_index[1] = edge_index[1] - edge_index[1].min()
+
+    node_list, edge_list = (
+        list(edge_index[0].numpy()),
+        list(edge_index[1].numpy()),
+    )
+
+    # # check that every node is in some hyperedge
+    # if len(np.unique(node_list)) != num_nodes:
+    #     # add self hyperedges to isolated nodes
+    #     isolated_nodes = np.setdiff1d(
+    #         np.arange(num_nodes), np.unique(node_list)
+    #     )
+
+    #     for node in isolated_nodes:
+    #         node_list += [node]
+    #         edge_list += [num_he]
+    #         num_he += 1
+
+    assert num_he == max(edge_list) + 1, (
+        "Num hyperedges do not coincide after adding isolated nodes"
+    )
+
+    edge_index = np.array([node_list, edge_list], dtype=int)
+    edge_index = torch.LongTensor(edge_index)
+
+    data = Data(
+        x=features,
+        x_0=features,
+        edge_index=edge_index,
+        incidence_hyperedges=edge_index,
+        y=labels,
+    )
+
+    # There might be errors if edge_index.max() != num_nodes.
+    # used user function to override the default function.
+    # the following will also sort the edge_index and remove duplicates.
+    total_num_node_id_he_id = edge_index.max() + 1
+    data.edge_index, data.edge_attr = coalesce(
+        data.edge_index, None, total_num_node_id_he_id, total_num_node_id_he_id
+    )
+
+    n_x = num_nodes
+    num_class = len(np.unique(labels))
+
+    # Add parameters to attribute
+    data.n_x = n_x
+    data.num_hyperedges = num_he
+    data.num_class = num_class
+
+    data.incidence_hyperedges = torch.sparse_coo_tensor(
+        data.edge_index,
+        values=torch.ones(data.edge_index.shape[1]),
+        size=(data.num_nodes, data.num_hyperedges),
+    )
+
+    # Print some info
+    print("Final num_hyperedges", data.num_hyperedges)
+    print("Final num_nodes", data.num_nodes)
+    print("Final num_class", data.num_class)
+
+    return data, data_dir

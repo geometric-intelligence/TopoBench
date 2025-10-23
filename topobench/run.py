@@ -31,8 +31,10 @@ from topobench.utils.config_resolvers import (
     get_default_trainer,
     get_default_transform,
     get_list_element,
+    get_flattened_channels,
     get_monitor_metric,
     get_monitor_mode,
+    get_non_relational_out_channels,
     get_required_lifting,
     infer_in_channels,
     infer_in_hasse_graph_agg_dim,
@@ -41,6 +43,7 @@ from topobench.utils.config_resolvers import (
     infer_list_length_plus_one,
     infer_num_cell_dimensions,
     set_preserve_edge_attr,
+    infer_topotune_num_cell_dimensions,
 )
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
@@ -75,6 +78,11 @@ OmegaConf.register_new_resolver(
     "get_list_element", get_list_element, replace=True
 )
 OmegaConf.register_new_resolver(
+    "get_flattened_channels",
+    get_flattened_channels,
+    replace=True,
+)
+OmegaConf.register_new_resolver(
     "get_required_lifting", get_required_lifting, replace=True
 )
 OmegaConf.register_new_resolver(
@@ -84,10 +92,20 @@ OmegaConf.register_new_resolver(
     "get_monitor_mode", get_monitor_mode, replace=True
 )
 OmegaConf.register_new_resolver(
+    "get_non_relational_out_channels",
+    get_non_relational_out_channels,
+    replace=True,
+)
+OmegaConf.register_new_resolver(
     "infer_in_channels", infer_in_channels, replace=True
 )
 OmegaConf.register_new_resolver(
     "infer_num_cell_dimensions", infer_num_cell_dimensions, replace=True
+)
+OmegaConf.register_new_resolver(
+    "infer_topotune_num_cell_dimensions",
+    infer_topotune_num_cell_dimensions,
+    replace=True,
 )
 OmegaConf.register_new_resolver(
     "parameter_multiplication", lambda x, y: int(int(x) * int(y)), replace=True
@@ -110,9 +128,7 @@ OmegaConf.register_new_resolver(
     replace=True,
 )
 OmegaConf.register_new_resolver(
-    "get_hop_num_pses",
-    lambda x, y: len(x) + int(y),
-    replace=True
+    "get_hop_num_pses", lambda x, y: len(x) + int(y), replace=True
 )
 
 OmegaConf.register_new_resolver(
@@ -179,6 +195,15 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
     np.random.seed(cfg.seed)
     # Seed for python random
     random.seed(cfg.seed)
+
+    if cfg.get("deterministic", False):
+        # Enable cudnn deterministic algorithms for reproducibility
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        torch.use_deterministic_algorithms(True, warn_only=True)
+        log.info(
+            "Enabled cudnn.deterministic and torch.use_deterministic_algorithms"
+        )
 
     # Instantiate and load dataset
     log.info(f"Instantiating loader <{cfg.dataset.loader._target_}>")
@@ -255,6 +280,19 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
         trainer.fit(
             model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path")
         )
+        # Log the best model checkpoint path into wandb
+        for logger_elem in logger:
+            if isinstance(
+                logger_elem, L.pytorch.loggers.wandb.WandbLogger
+            ) and hasattr(logger_elem, "experiment"):
+                logger_elem.experiment.log(
+                    {"checkpoint": trainer.checkpoint_callback.best_model_path}
+                )
+                logger_elem.experiment.log(
+                    {
+                        "best_monitored_score": trainer.checkpoint_callback.best_model_score
+                    }
+                )
 
     train_metrics = trainer.callback_metrics
     if cfg.get("test"):

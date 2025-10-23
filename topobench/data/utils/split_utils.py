@@ -8,6 +8,7 @@ from sklearn.model_selection import StratifiedKFold, train_test_split
 
 from topobench.dataloader import DataloadDataset
 
+
 def k_fold_split_fixed(labels, parameters, split_idx_list):
     """Return train and valid indices as in K-Fold Cross-Validation.
 
@@ -47,11 +48,11 @@ def k_fold_split_fixed(labels, parameters, split_idx_list):
         x_idx = np.random.permutation(x_idx)
         labels = labels[x_idx]
 
-        for fold_n in range(len(split_idx_list['train'])):
+        for fold_n in range(len(split_idx_list["train"])):
             split_idx = {
-                "train": split_idx_list['train'][fold_n],
-                "valid": split_idx_list['valid'][fold_n],
-                "test": split_idx_list['test'][fold_n],
+                "train": split_idx_list["train"][fold_n],
+                "valid": split_idx_list["valid"][fold_n],
+                "test": split_idx_list["test"][fold_n],
             }
 
             # Check that all nodes/graph have been assigned to some split
@@ -85,8 +86,9 @@ def k_fold_split_fixed(labels, parameters, split_idx_list):
 
     return split_idx
 
+
 # Generate splits in different fasions
-def k_fold_split(labels, parameters):
+def k_fold_split(labels, parameters, root=None):
     """Return train and valid indices as in K-Fold Cross-Validation.
 
     If the split already exists it loads it automatically, otherwise it creates the
@@ -98,6 +100,8 @@ def k_fold_split(labels, parameters):
         Label tensor.
     parameters : DictConfig
         Configuration parameters.
+    root : str, optional
+        Root directory for data splits. Overwrite the default directory.
 
     Returns
     -------
@@ -105,7 +109,11 @@ def k_fold_split(labels, parameters):
         Dictionary containing the train, validation and test indices, with keys "train", "valid", and "test".
     """
 
-    data_dir = parameters.data_split_dir
+    data_dir = (
+        parameters["data_split_dir"]
+        if root is None
+        else os.path.join(root, "data_splits")
+    )
     k = parameters.k
     fold = parameters.data_seed
     assert fold < k, "data_seed needs to be less than k"
@@ -120,7 +128,7 @@ def k_fold_split(labels, parameters):
 
     split_path = os.path.join(split_dir, f"{fold}.npz")
     if not os.path.isfile(split_path):
-        n = labels.shape[0]
+        n = len(labels)
         x_idx = np.arange(n)
         x_idx = np.random.permutation(x_idx)
         labels = labels[x_idx]
@@ -154,21 +162,18 @@ def k_fold_split(labels, parameters):
     split_idx = np.load(split_path)
 
     # Check that all nodes/graph have been assigned to some split
-    assert (
-        np.unique(
-            np.array(
-                split_idx["train"].tolist()
-                + split_idx["valid"].tolist()
-                + split_idx["test"].tolist()
-            )
-        ).shape[0]
-        == labels.shape[0]
-    ), "Not all nodes within splits"
+    assert np.unique(
+        np.array(
+            split_idx["train"].tolist()
+            + split_idx["valid"].tolist()
+            + split_idx["test"].tolist()
+        )
+    ).shape[0] == len(labels), "Not all nodes within splits"
 
     return split_idx
 
 
-def random_splitting(labels, parameters, global_data_seed=42):
+def random_splitting(labels, parameters, root=None, global_data_seed=42):
     r"""Randomly splits label into train/valid/test splits.
 
     Adapted from https://github.com/CUAI/Non-Homophily-Benchmarks.
@@ -179,6 +184,8 @@ def random_splitting(labels, parameters, global_data_seed=42):
         Label tensor.
     parameters : DictConfig
         Configuration parameter.
+    root : str, optional
+        Root directory for data splits. Overwrite the default directory.
     global_data_seed : int
         Seed for the random number generator.
 
@@ -188,7 +195,11 @@ def random_splitting(labels, parameters, global_data_seed=42):
         Dictionary containing the train, validation and test indices with keys "train", "valid", and "test".
     """
     fold = parameters["data_seed"]
-    data_dir = parameters["data_split_dir"]
+    data_dir = (
+        parameters["data_split_dir"]
+        if root is None
+        else os.path.join(root, "data_splits")
+    )
     train_prop = parameters["train_prop"]
     valid_prop = (1 - train_prop) / 2
 
@@ -207,7 +218,7 @@ def random_splitting(labels, parameters, global_data_seed=42):
         torch.manual_seed(global_data_seed)
         np.random.seed(global_data_seed)
         # Generate a split
-        n = labels.shape[0]
+        n = len(labels)
         train_num = int(n * train_prop)
         valid_num = int(n * valid_prop)
 
@@ -234,16 +245,13 @@ def random_splitting(labels, parameters, global_data_seed=42):
     split_idx = np.load(split_path)
 
     # Check that all nodes/graph have been assigned to some split
-    assert (
-        np.unique(
-            np.array(
-                split_idx["train"].tolist()
-                + split_idx["valid"].tolist()
-                + split_idx["test"].tolist()
-            )
-        ).shape[0]
-        == labels.shape[0]
-    ), "Not all nodes within splits"
+    assert np.unique(
+        np.array(
+            split_idx["train"].tolist()
+            + split_idx["valid"].tolist()
+            + split_idx["test"].tolist()
+        )
+    ).shape[0] == len(labels), "Not all nodes within splits"
 
     return split_idx
 
@@ -415,14 +423,20 @@ def load_transductive_splits(dataset, parameters):
     # Ensure labels are one dimensional array
     assert len(labels.shape) == 1, "Labels should be one dimensional array"
 
+    root = (
+        dataset.dataset.get_data_dir()
+        if hasattr(dataset.dataset, "get_data_dir")
+        else None
+    )
+
     if parameters.split_type == "random":
-        splits = random_splitting(labels, parameters)
+        splits = random_splitting(labels, parameters, root=root)
 
     elif parameters.split_type == "stratified":
         splits = stratified_splitting(labels, parameters)
 
     elif parameters.split_type == "k-fold":
-        splits = k_fold_split(labels, parameters)
+        splits = k_fold_split(labels, parameters, root=root)
 
     else:
         raise NotImplementedError(
@@ -469,24 +483,41 @@ def load_inductive_splits(dataset, parameters):
     assert len(dataset) > 1, (
         "Datasets should have more than one graph in an inductive setting."
     )
-    labels = np.array(
-        [data.y.squeeze(0).numpy() for data in dataset.data_list]
+    # Check if labels are ragged (different sizes across graphs)
+    label_list = [data.y.squeeze(0).numpy() for data in dataset]
+    label_shapes = [label.shape for label in label_list]
+    # Use dtype=object only if labels have different shapes (ragged)
+    labels = (
+        np.array(label_list, dtype=object)
+        if len(set(label_shapes)) > 1
+        else np.array(label_list)
+    )
+
+    root = (
+        dataset.dataset.get_data_dir()
+        if hasattr(dataset.dataset, "get_data_dir")
+        else None
     )
 
     if parameters.split_type == "random":
-        split_idx = random_splitting(labels, parameters)
+        split_idx = random_splitting(labels, parameters, root=root)
 
     elif parameters.split_type == "stratified":
         split_idx = stratified_splitting(labels, parameters)
 
     elif parameters.split_type == "k-fold":
-        split_idx = k_fold_split(labels, parameters)
+        assert type(labels) is not object, (
+            "K-Fold splitting not supported for ragged labels."
+        )
+        split_idx = k_fold_split(labels, parameters, root=root)
 
     elif parameters.split_type == "fixed" and hasattr(dataset, "split_idx"):
         split_idx = dataset.split_idx
 
     elif parameters.split_type == "k-fold-fixed":
-        split_idx = k_fold_split_fixed(labels, parameters, dataset.split_idx_list)
+        split_idx = k_fold_split_fixed(
+            labels, parameters, dataset.split_idx_list
+        )
 
     else:
         raise NotImplementedError(

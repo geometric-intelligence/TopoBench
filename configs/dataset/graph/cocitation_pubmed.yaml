@@ -11,6 +11,7 @@ loader:
 parameters:
   num_features: 500
   num_classes: 3
+  num_nodes: 19717
   task: classification
   loss_type: cross_entropy
   monitor_metric: accuracy
