@@ -17,7 +17,7 @@ class PropagateSignalDown(AbstractZeroCellReadOut):
     **kwargs : dict
         Additional keyword arguments. It should contain the following keys:
         - num_cell_dimensions (int): Highest order of cells considered by the model.
-        - hidden_dim (int): Dimension of the cells representations.
+        - self.hidden_dim (int): Dimension of the cells representations.
         - readout_name (str): Readout name.
     """
 
@@ -26,23 +26,23 @@ class PropagateSignalDown(AbstractZeroCellReadOut):
 
         self.name = kwargs["readout_name"]
         self.dimensions = range(kwargs["num_cell_dimensions"] - 1, 0, -1)
-        hidden_dim = kwargs["hidden_dim"]
+        self.hidden_dim = kwargs["hidden_dim"]
 
         for i in self.dimensions:
             setattr(
                 self,
                 f"agg_conv_{i}",
                 topomodelx.base.conv.Conv(
-                    hidden_dim, hidden_dim, aggr_norm=False
+                    self.hidden_dim, self.hidden_dim, aggr_norm=False
                 ),
             )
 
-            setattr(self, f"ln_{i}", torch.nn.LayerNorm(hidden_dim))
+            setattr(self, f"ln_{i}", torch.nn.LayerNorm(self.hidden_dim))
 
             setattr(
                 self,
                 f"projector_{i}",
-                torch.nn.Linear(2 * hidden_dim, hidden_dim),
+                torch.nn.Linear(2 * self.hidden_dim, self.hidden_dim),
             )
 
     def forward(self, model_out: dict, batch: torch_geometric.data.Data):
@@ -74,4 +74,4 @@ class PropagateSignalDown(AbstractZeroCellReadOut):
         return model_out
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(num_cell_dimensions={len(self.dimensions)}, hidden_dim={self.hidden_dim}, readout_name={self.name}"
+        return f"{self.__class__.__name__}(num_cell_dimensions={len(self.dimensions)}, self.hidden_dim={self.hidden_dim}, readout_name={self.name}"

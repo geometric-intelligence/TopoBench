@@ -3,6 +3,61 @@
 import os
 
 import omegaconf
+import torch
+
+
+def get_flattened_channels(num_nodes, channels):
+    r"""Get the output dimension of flattening a feature matrix.
+
+    Parameters
+    ----------
+    num_nodes : int
+        Hidden dimension for the first layer.
+    channels : int
+        Channel dimension.
+
+    Returns
+    -------
+    int
+        Flatenned cchannels dimension.
+    """
+    return num_nodes * channels
+
+
+def get_non_relational_out_channels(num_nodes, channels, task_level):
+    r"""Get the output dimension for a non-relational model.
+
+    Parameters
+    ----------
+    num_nodes : int
+        Number of nodes in the input graph.
+    channels : int
+        Channel dimension.
+    task_level : int
+        Task level for the model.
+
+    Returns
+    -------
+    int
+        Output dimension.
+    """
+    if task_level == "node":  # node-level task
+        return num_nodes * channels
+    elif task_level == "graph":  # graph-level task
+        return channels
+    else:
+        raise ValueError(f"Invalid task level {task_level}")
+
+
+def get_default_trainer():
+    r"""Get default trainer configuration.
+
+    Returns
+    -------
+    str
+        Default trainer configuration file name.
+    """
+    return "gpu" if torch.cuda.is_available() else "cpu"
 
 
 def get_default_transform(dataset, model):
@@ -22,6 +77,8 @@ def get_default_transform(dataset, model):
     """
     data_domain, dataset = dataset.split("/")
     model_domain = model.split("/")[0]
+    if model_domain == "non_relational":
+        model_domain = "graph"
     # Check if there is a default transform for the dataset at ./configs/transforms/dataset_defaults/
     # If not, use the default lifting transform for the dataset to be compatible with the model
     base_dir = os.path.dirname(
@@ -316,6 +373,25 @@ def infer_num_cell_dimensions(selected_dimensions, in_channels):
         return len(selected_dimensions)
     else:
         return len(in_channels)
+
+
+def infer_topotune_num_cell_dimensions(neighborhoods):
+    r"""Infer the length of a list.
+
+    Parameters
+    ----------
+    neighborhoods : list
+        List of neighborhoods.
+
+    Returns
+    -------
+    int
+        Length of the input list.
+    """
+    from topobench.data.utils import get_routes_from_neighborhoods
+
+    routes = get_routes_from_neighborhoods(neighborhoods)
+    return max([max(route) for route in routes]) + 1
 
 
 def get_default_metrics(task, metrics=None):

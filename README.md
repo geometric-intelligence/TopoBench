@@ -28,7 +28,7 @@ Assess how your model compares against state-of-the-art topological neural netwo
   <a href="#jigsaw-get-started">Get Started</a> •
   <a href="#anchor-tutorials">Tutorials</a> •
   <a href="#gear-neural-networks">Neural Networks</a> •
-  <a href="#rocket-liftings">Liftings</a> •
+  <a href="#rocket-liftings-and-transforms">Liftings and Transforms</a> •
   <a href="#books-datasets">Datasets</a> •
   <a href="#mag-references">References</a> 
 </p>
@@ -43,21 +43,22 @@ Assess how your model compares against state-of-the-art topological neural netwo
   <img src="resources/workflow.jpg" width="700">
 </p>
 
-The main pipeline trains and evaluates a wide range of state-of-the-art TNNs and Graph Neural Networks (GNNs) (see <a href="#gear-neural-networks">:gear: Neural Networks</a>) on numerous and varied datasets and benchmark tasks (see <a href="#books-datasets">:books: Datasets</a> ). Additionally, the library offers the ability to transform, i.e. _lift_, each dataset from one topological domain to another (see <a href="#rocket-liftings">:rocket: Liftings</a>), enabling for the first time an exhaustive inter-domain comparison of TNNs.
+The main pipeline trains and evaluates a wide range of state-of-the-art TNNs and Graph Neural Networks (GNNs) (see <a href="#gear-neural-networks">:gear: Neural Networks</a>) on numerous and varied datasets and benchmark tasks (see <a href="#books-datasets">:books: Datasets</a> ). Additionally, the library offers the ability to transform, i.e. _lift_, each dataset from one topological domain to another (see <a href="#rocket-liftings-and-transforms">:rocket: Liftings and Transforms</a>), enabling for the first time an exhaustive inter-domain comparison of TNNs.
 
 ## :jigsaw: Get Started
 
 ### Create Environment
-First, clone and navigate to the `TopoBench` repository  
+
+First, ensure `conda` is installed:  
+```bash
+conda --version
+```
+If not, we recommend intalling Miniconda [following the official command line instructions](https://www.anaconda.com/docs/getting-started/miniconda/install).
+
+Then, clone and navigate to the `TopoBench` repository  
 ```bash
 git clone git@github.com:geometric-intelligence/topobench.git
 cd TopoBench
-```
-
-
-Ensure `conda` is installed:  
-```bash
-conda --version || echo "Conda not found! Please install it from https://docs.anaconda.com/free/miniconda/miniconda-install/"
 ```
 
 Next, set up and activate a conda environment `tb` with Python 3.11.3:
@@ -66,11 +67,11 @@ conda create -n tb python=3.11.3
 conda activate tb
 ```
 
-Next, check the CUDA version of your machine:
+If working with GPUs, check the CUDA version of your machine:
 ```bash
 which nvcc && nvcc --version
 ```
-and ensure that it matches the CUDA version specified in the `env_setup.sh` file (`CUDA=cu121` by default). If it does not match, update `env_setup.sh` accordingly by changing both the `CUDA` and `TORCH` environment variables to compatible values as specified on [this website](https://github.com/pyg-team/pyg-lib).
+and ensure that it matches the CUDA version specified in the `env_setup.sh` file (`CUDA=cpu` by default for a broader compatibility). If it does not match, update `env_setup.sh` accordingly by changing both the `CUDA` and `TORCH` environment variables to compatible values as specified on [this website](https://github.com/pyg-team/pyg-lib).
 
 Next, set up the environment with the following command.
 ```bash
@@ -80,7 +81,7 @@ This command installs the `TopoBench` library and its dependencies.
 
 ### Run Training Pipeline
 
-Next, train the neural networks by running the following command:
+Once the setup is completed, train and evaluate a neural network by running the following command:
 
 ```bash
 python -m topobench 
@@ -196,7 +197,7 @@ We list the neural networks trained and evaluated by `TopoBench`, organized by t
 | GCN | [Semi-Supervised Classification with Graph Convolutional Networks](https://arxiv.org/pdf/1609.02907v4) |
 | GraphMLP | [Graph-MLP: Node Classification without Message Passing in Graph](https://arxiv.org/pdf/2106.04051) |
 
-### Simplicial complexes
+### Simplicial Complexes
 | Model | Reference |
 | --- | --- |
 | SAN | [Simplicial Attention Neural Networks](https://arxiv.org/pdf/2203.07485) |
@@ -204,7 +205,7 @@ We list the neural networks trained and evaluated by `TopoBench`, organized by t
 | SCCNN | [Convolutional Learning on Simplicial Complexes](https://arxiv.org/pdf/2301.11163) |
 | SCN | [Simplicial Complex Neural Networks](https://ieeexplore.ieee.org/document/10285604) |
 
-### Cellular complexes
+### Cellular Complexes
 | Model | Reference |
 | --- | --- |
 | CAN | [Cell Attention Network](https://arxiv.org/pdf/2209.08179) |
@@ -221,15 +222,23 @@ We list the neural networks trained and evaluated by `TopoBench`, organized by t
 | UniGNN | [UniGNN: a Unified Framework for Graph and Hypergraph Neural Networks](https://arxiv.org/pdf/2105.00956) |
 | UniGNN2 | [UniGNN: a Unified Framework for Graph and Hypergraph Neural Networks](https://arxiv.org/pdf/2105.00956) |
 
-### Combinatorial complexes
+### Combinatorial Complexes
 | Model | Reference |
 | --- | --- |
 | GCCN | [TopoTune: A Framework for Generalized Combinatorial Complex Neural Networks](https://arxiv.org/pdf/2410.06530) |
 
 **Remark:** TopoBench includes [TopoTune](https://arxiv.org/pdf/2410.06530), a comprehensive framework for easily designing new, general TDL models on any domain using any (graph) neural network as a backbone. Please check out the extended [TopoTune wiki page](https://github.com/geometric-intelligence/TopoBench/wiki/TopoTune) for further details on how to leverage this framework to define and train customized topological neural network architectures.
 
+### Non-relational Models
 
-## :rocket: Liftings & Transforms
+| Model | Reference |
+| --- | --- |
+| MLP | Standard implementation of a Multi-Layer Perceptron. |
+
+**Remark:** Note that MLP only works in single-graph transductive settings or with datasets where all graphs have the same number of nodes.
+
+
+## :rocket: Liftings and Transforms
 
 We list the liftings used in `TopoBench` to transform datasets. Here, a _lifting_ refers to a function that transforms a dataset defined on a topological domain (_e.g._, on a graph) into the same dataset but supported on a different topological domain (_e.g._, on a simplicial complex). 
 
@@ -350,7 +359,7 @@ Specially useful in pre-processing steps, these are the general data manipulatio
 ### Simplicial
 | Dataset | Task | Description | Reference |
 | --- | --- | --- | --- |
-| Mantra |  Classification, Multi-label Classification  |  Predict topological attributes of manifold triangulations |  [Source](https://github.com/aidos-lab/MANTRA)  |
+| Mantra |  Classification, Multi-label Classification  |  Predict topological attributes of manifold triangulations |  [Source](https://github.com/aidos-lab/MANTRA) (This project includes third-party datasets. See third_party_licenses.txt for licensing information.) |
 
 ### Hypergraph
 | Dataset | Task | Description | Reference |
@@ -443,3 +452,14 @@ If you find `TopoBench` useful, we would appreciate if you cite us!
   
   [TopoX: a suite of Python packages for machine learning on topological domains](https://arxiv.org/pdf/2402.02441)	
 </details>
+
+---
+
+### 📢 Get in Touch!
+
+We are always open to collaborations and discussions on TDL research.  
+Feel free to reach out via email if you want to collaborate, do your thesis with our team, or open a discussion for various opportunities.  
+
+📧 **Contact Email:** [topological.intelligence@gmail.com](mailto:topological.intelligence@gmail.com)  
+▶️ **YouTube Channel:** [Topological Intelligence](https://www.youtube.com/@TopologicalIntelligence)
+
