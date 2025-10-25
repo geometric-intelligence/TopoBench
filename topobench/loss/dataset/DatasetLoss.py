@@ -75,8 +75,11 @@ class DatasetLoss(AbstractLoss):
         torch.Tensor
             Loss value.
         """
-        if self.task == "regression":
+        if self.task == "regression" and target.shape[-1] == 1:
             target = target.unsqueeze(1)
+            dataset_loss = self.criterion(logits, target)
+            
+        elif self.task == "regression" and target.shape[-1] > 1:
             dataset_loss = self.criterion(logits, target)
 
         elif self.task == "classification":

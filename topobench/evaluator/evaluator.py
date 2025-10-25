@@ -40,8 +40,12 @@ class TBEvaluator(AbstractEvaluator):
             parameters["num_labels"] = kwargs["num_classes"]
             metric_names = kwargs["metrics"]
 
-        elif self.task == "regression":
+        elif self.task == "regression" and kwargs["num_classes"] == 1:
             parameters = {}
+            metric_names = kwargs["metrics"]
+
+        elif self.task == "regression" and kwargs["num_classes"] > 1:
+            parameters = {"num_outputs": 1}
             metric_names = kwargs["metrics"]
 
         else:

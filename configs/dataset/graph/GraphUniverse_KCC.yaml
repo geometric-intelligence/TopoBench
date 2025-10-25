@@ -1,7 +1,7 @@
 
 loader:
   _target_: topobench.data.loaders.GraphUniverseDatasetLoader
-  task: community_detection
+  task: k_hop_community_counts_k2
   parameters: 
     data_domain: graph
     data_type: GraphUniverse
@@ -12,15 +12,15 @@ loader:
         K: 10
         feature_dim: 15
         center_variance: 0.2
-        cluster_variance: 0.5
+        cluster_variance: 0.3
         edge_propensity_variance: 0.5
         seed: 42
       family_parameters:
         n_graphs: 100
         min_n_nodes: 50
         max_n_nodes: 200
-        min_communities: 4
-        max_communities: 6
+        min_communities: 3
+        max_communities: 7
         homophily_range: [0.4, 0.6]
         avg_degree_range: [1.0, 5.0]
         degree_separation_range: [0.5, 0.8]
@@ -33,9 +33,9 @@ loader:
 parameters:
   num_features: ${dataset.loader.parameters.generation_parameters.universe_parameters.feature_dim}
   num_classes: ${dataset.loader.parameters.generation_parameters.universe_parameters.K}
-  task: classification
-  loss_type: cross_entropy
-  monitor_metric: accuracy
+  task: regression
+  loss_type: mse
+  monitor_metric: mse
   task_level: inductive_node
 
 #splits

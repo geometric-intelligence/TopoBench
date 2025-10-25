@@ -23,8 +23,6 @@ loader:
         max_communities: 6
         homophily_range: [0.4, 0.6]
         avg_degree_range: [2.0, 10.0]
-        degree_heterogeneity: 0.5
-        use_dccc_sbm: true
         degree_separation_range: [0.9, 1.0]
         degree_distribution: power_law
         power_law_exponent_range: [2.0, 2.5]
