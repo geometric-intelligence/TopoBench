@@ -1,0 +1,203 @@
+/* Custom CSS for improved API documentation appearance */
+
+/* Improve section hierarchy visibility */
+div.section > h1 {
+    font-size: 2.5em;
+    border-bottom: 4px solid #2980b9;
+    padding-bottom: 0.3em;
+    margin-bottom: 1em;
+    color: #2c3e50;
+}
+
+div.section > h2 {
+    font-size: 2em;
+    border-bottom: 3px solid #3498db;
+    padding-bottom: 0.3em;
+    margin-top: 1.5em;
+    margin-bottom: 0.8em;
+    color: #34495e;
+}
+
+div.section > h3 {
+    font-size: 1.5em;
+    border-bottom: 2px solid #95a5a6;
+    padding-bottom: 0.2em;
+    margin-top: 1.2em;
+    margin-bottom: 0.6em;
+    color: #546e7a;
+}
+
+div.section > h4 {
+    font-size: 1.2em;
+    color: #607d8b;
+    margin-top: 1em;
+    margin-bottom: 0.5em;
+    font-weight: 600;
+}
+
+/* Improve class and function signatures */
+dl.py.class, dl.py.function, dl.py.method {
+    margin-bottom: 2em;
+    padding: 1em;
+    background-color: #f8f9fa;
+    border-left: 4px solid #3498db;
+    border-radius: 4px;
+}
+
+dt.sig {
+    font-size: 1.1em;
+    padding: 0.5em;
+    background-color: #ecf0f1;
+    border-radius: 4px;
+}
+
+/* Add spacing between items in module index */
+.toctree-wrapper ul {
+    list-style: none;
+    padding-left: 0;
+}
+
+.toctree-wrapper li {
+    margin-bottom: 0.5em;
+    padding: 0.3em 0;
+}
+
+.toctree-wrapper a {
+    font-size: 1.05em;
+    text-decoration: none;
+    color: #2980b9;
+}
+
+.toctree-wrapper a:hover {
+    color: #3498db;
+    text-decoration: underline;
+}
+
+/* Improve parameter lists */
+dl.field-list {
+    margin-top: 1em;
+    margin-bottom: 1em;
+}
+
+dl.field-list dt {
+    font-weight: 600;
+    color: #2c3e50;
+    margin-top: 0.5em;
+}
+
+dl.field-list dd {
+    margin-left: 2em;
+    margin-bottom: 0.8em;
+}
+
+/* Better code block styling */
+div.highlight {
+    margin: 1em 0;
+    border-left: 4px solid #27ae60;
+    border-radius: 4px;
+}
+
+/* Improve note/warning boxes */
+div.admonition {
+    padding: 1em;
+    margin: 1em 0;
+    border-radius: 6px;
+}
+
+div.admonition.note {
+    background-color: #e8f4f8;
+    border-left: 4px solid #3498db;
+}
+
+div.admonition.warning {
+    background-color: #fff3cd;
+    border-left: 4px solid #ffc107;
+}
+
+/* Add visual separation for module sections */
+.section {
+    margin-bottom: 2em;
+}
+
+/* Improve table of contents */
+div.contents {
+    background-color: #f0f4f8;
+    padding: 1.5em;
+    border-radius: 8px;
+    border: 1px solid #d0d7de;
+    margin-bottom: 2em;
+}
+
+div.contents p.topic-title {
+    font-size: 1.3em;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 0.8em;
+}
+
+/* Better module attribute documentation */
+dl.py.attribute {
+    margin-top: 1em;
+    padding: 0.5em;
+    background-color: #fafbfc;
+    border-left: 3px solid #95a5a6;
+}
+
+/* Improve inheritance info */
+p.rubric {
+    font-size: 1.2em;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-top: 1.5em;
+    margin-bottom: 0.8em;
+    border-bottom: 2px solid #bdc3c7;
+    padding-bottom: 0.3em;
+}
+
+/* Better appearance for "Bases:" info */
+p.bases {
+    font-style: italic;
+    color: #7f8c8d;
+    margin-top: 0.5em;
+    margin-bottom: 1em;
+}
+
+/* Improve source code link appearance */
+a.reference.internal .viewcode-link {
+    float: right;
+    font-size: 0.9em;
+    padding: 0.2em 0.5em;
+    background-color: #ecf0f1;
+    border-radius: 3px;
+    color: #7f8c8d;
+}
+
+a.reference.internal .viewcode-link:hover {
+    background-color: #bdc3c7;
+    color: #2c3e50;
+}
+
+/* Add spacing in parameter descriptions */
+dd p {
+    margin-bottom: 0.5em;
+}
+
+/* Improve class method grouping */
+dl.py.method {
+    margin-top: 1.5em;
+}
+
+/* Better header hierarchy in API pages */
+.headerlink {
+    margin-left: 0.5em;
+    font-size: 0.8em;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+h1:hover .headerlink,
+h2:hover .headerlink,
+h3:hover .headerlink,
+h4:hover .headerlink {
+    opacity: 1;
+}

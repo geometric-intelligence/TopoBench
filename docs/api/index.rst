@@ -1,17 +1,63 @@
-API Documentation
-=================
+================================================================================
+API Reference
+================================================================================
 
-This section contains the API documentation for the TopoBench package,
-automatically generated from the source code.
+This section contains the complete API documentation for the TopoBench package.
+The documentation is automatically generated from the source code and organized
+into logical categories for easy navigation.
+
+Overview
+--------------------------------------------------------------------------------
+
+TopoBench provides a comprehensive framework for topological deep learning, including:
+
+* **Core**: Core TopoBench functionality and main entry points
+* **Data Loading & Datasets**: Dataset loaders for different topological domains
+* **Neural Network Architectures**: Neural network backbones, encoders, readouts, and wrappers
+* **Transformations & Liftings**: Data transformations and topological lifting operations
+* **Training & Evaluation**: Loss functions, optimizers, metrics, and evaluation tools
+* **Utilities**: Helper functions and utility modules
+
+.. contents:: Quick Navigation
+   :local:
+   :depth: 2
+
+
+Core
+----
+
+Core TopoBench functionality and main entry points
 
 .. toctree::
-   :maxdepth: 2
-   :caption: Modules
+   :maxdepth: 1
 
    topobench
    topobench.callbacks
-   topobench.callbacks.timer_callback
    topobench.data
+   topobench.evaluator
+   topobench.loss
+   topobench.model
+   topobench.nn
+   topobench.optimizer
+   topobench.run
+
+
+Data Loading & Datasets
+-----------------------
+
+Dataset loaders for different topological domains
+
+.. toctree::
+   :maxdepth: 1
+
+   topobench.dataloader
+
+Data
+^^^^
+
+.. toctree::
+   :maxdepth: 1
+
    topobench.data.datasets
    topobench.data.datasets.citation_hypergaph_dataset
    topobench.data.datasets.hypergraph_datasets
@@ -37,30 +83,46 @@ automatically generated from the source code.
    topobench.data.loaders.simplicial.mantra_dataset_loader
    topobench.data.preprocessor
    topobench.data.preprocessor.preprocessor
-   topobench.data.utils
-   topobench.data.utils.io_utils
-   topobench.data.utils.split_utils
-   topobench.data.utils.utils
-   topobench.dataloader
+
+Dataloader
+^^^^^^^^^^
+
+.. toctree::
+   :maxdepth: 1
+
    topobench.dataloader.dataload_dataset
    topobench.dataloader.dataloader
    topobench.dataloader.utils
-   topobench.evaluator
-   topobench.evaluator.base
-   topobench.evaluator.evaluator
-   topobench.evaluator.metrics
-   topobench.evaluator.metrics.example
-   topobench.loss
-   topobench.loss.base
-   topobench.loss.dataset
-   topobench.loss.dataset.DatasetLoss
-   topobench.loss.loss
-   topobench.loss.model
+
+
+Neural Network Architectures
+----------------------------
+
+Neural network backbones, encoders, readouts, and wrappers
+
+Loss
+^^^^
+
+.. toctree::
+   :maxdepth: 1
+
    topobench.loss.model.DGMLoss
    topobench.loss.model.GraphMLPLoss
-   topobench.model
+
+Model
+^^^^^
+
+.. toctree::
+   :maxdepth: 1
+
    topobench.model.model
-   topobench.nn
+
+Nn
+^^
+
+.. toctree::
+   :maxdepth: 1
+
    topobench.nn.backbones
    topobench.nn.backbones.cell
    topobench.nn.backbones.cell.cccn
@@ -109,11 +171,24 @@ automatically generated from the source code.
    topobench.nn.wrappers.simplicial.sccn_wrapper
    topobench.nn.wrappers.simplicial.sccnn_wrapper
    topobench.nn.wrappers.simplicial.scn_wrapper
-   topobench.optimizer
-   topobench.optimizer.base
-   topobench.optimizer.optimizer
-   topobench.run
+
+
+Transformations & Liftings
+--------------------------
+
+Data transformations and topological lifting operations
+
+.. toctree::
+   :maxdepth: 1
+
    topobench.transforms
+
+Transforms
+^^^^^^^^^^
+
+.. toctree::
+   :maxdepth: 1
+
    topobench.transforms.data_manipulations
    topobench.transforms.data_manipulations.calculate_simplicial_curvature
    topobench.transforms.data_manipulations.equal_gaus_features
@@ -182,10 +257,85 @@ automatically generated from the source code.
    topobench.transforms.liftings.simplicial2combinatorial
    topobench.transforms.liftings.simplicial2combinatorial.base
    topobench.transforms.liftings.simplicial2combinatorial.coface_cc_lifting
+
+
+Training & Evaluation
+---------------------
+
+Loss functions, optimizers, metrics, and evaluation tools
+
+Callbacks
+^^^^^^^^^
+
+.. toctree::
+   :maxdepth: 1
+
+   topobench.callbacks.timer_callback
+
+Evaluator
+^^^^^^^^^
+
+.. toctree::
+   :maxdepth: 1
+
+   topobench.evaluator.base
+   topobench.evaluator.evaluator
+   topobench.evaluator.metrics
+   topobench.evaluator.metrics.example
+
+Loss
+^^^^
+
+.. toctree::
+   :maxdepth: 1
+
+   topobench.loss.base
+   topobench.loss.dataset
+   topobench.loss.dataset.DatasetLoss
+   topobench.loss.loss
+   topobench.loss.model
+
+Optimizer
+^^^^^^^^^
+
+.. toctree::
+   :maxdepth: 1
+
+   topobench.optimizer.base
+   topobench.optimizer.optimizer
+
+
+Utilities
+---------
+
+Helper functions and utility modules
+
+.. toctree::
+   :maxdepth: 1
+
    topobench.utils
+
+Data
+^^^^
+
+.. toctree::
+   :maxdepth: 1
+
+   topobench.data.utils
+   topobench.data.utils.io_utils
+   topobench.data.utils.split_utils
+   topobench.data.utils.utils
+
+Utils
+^^^^^
+
+.. toctree::
+   :maxdepth: 1
+
    topobench.utils.config_resolvers
    topobench.utils.instantiators
    topobench.utils.logging_utils
    topobench.utils.pylogger
    topobench.utils.rich_utils
    topobench.utils.utils
+
