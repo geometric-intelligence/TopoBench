@@ -342,3 +342,51 @@ html[data-theme="dark"] a.reference.internal .viewcode-link {
 html[data-theme="dark"] a.reference.internal .viewcode-link:hover {
     background-color: rgba(255, 255, 255, 0.15);
 }
+
+/* Package Reference page styling */
+/* Style the main section headers */
+.section > h1 {
+    text-align: center;
+    margin-bottom: 1.5em;
+}
+
+/* Style the module links on the Package Reference page */
+.section dl.simple dt {
+    font-size: 1.1em;
+    font-weight: 600;
+    margin-top: 0.8em;
+    margin-bottom: 0.3em;
+}
+
+.section dl.simple dd {
+    margin-left: 2em;
+    margin-bottom: 1.2em;
+    line-height: 1.6;
+}
+
+.section dl.simple dd ul {
+    margin-top: 0.5em;
+}
+
+.section dl.simple dd p {
+    margin-bottom: 0.3em;
+}
+
+/* Improve spacing for categorized sections */
+.section > .section {
+    margin-top: 2.5em;
+    margin-bottom: 2em;
+}
+
+.section > .section > h1 {
+    font-size: 1.8em;
+    border-bottom: 2px solid #3498db;
+    padding-bottom: 0.4em;
+    margin-bottom: 1.2em;
+    text-align: left;
+}
+
+/* Dark mode for package reference */
+html[data-theme="dark"] .section > .section > h1 {
+    border-bottom-color: #5dade2;
+}
