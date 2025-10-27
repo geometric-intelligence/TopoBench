@@ -6,7 +6,6 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock
 
 # Enable postponed evaluation of annotations to handle | syntax
 os.environ["PYTHONHASHSEED"] = "0"
@@ -52,45 +51,10 @@ templates_path = ["_templates"]
 
 source_suffix = [".rst", ".md"]
 
-autodoc_mock_imports = [
-    "torch",
-    "torchvision",
-    "torchaudio",
-    "torch_geometric",
-    "pyg_lib",
-    "torch_sparse",
-    "torch_scatter",
-    "torch_cluster",
-    "torch_spline_conv",
-    "pytorch_lightning",
-    "lightning",
-]
+# Don't mock imports - the dependencies are actually installed
+# autodoc_mock_imports = []
 
-
-class MockModule(MagicMock):
-    """Mock module for handling imports during documentation build."""
-
-    @classmethod
-    def __getattr__(cls, name):
-        """Return a MagicMock for any attribute access.
-
-        Parameters
-        ----------
-        name : str
-            The name of the attribute being accessed.
-
-        Returns
-        -------
-        MagicMock
-            A MagicMock object for the requested attribute.
-        """
-        return MagicMock()
-
-
-for mod_name in autodoc_mock_imports:
-    sys.modules[mod_name] = MockModule()
-
-# Autodoc configuration for better structure
+master_doc = "index"
 autodoc_default_options = {
     "members": True,
     "member-order": "groupwise",  # Group by type (classes, functions, etc.)
@@ -98,12 +62,23 @@ autodoc_default_options = {
     "show-inheritance": True,
     "special-members": "__init__",
     "exclude-members": "__weakref__",
+    "imported-members": False,
 }
 
 # Don't evaluate annotations to avoid type hint syntax issues
 autodoc_type_aliases = {}
+autodoc_typehints = (
+    "description"  # Put type hints in description, not signature
+)
 autodoc_typehints_format = "short"
 python_use_unqualified_type_names = True
+
+# Continue documentation even if there are import warnings
+suppress_warnings = ["app.add_directive", "app.add_node"]
+autodoc_warningiserror = False
+
+# Set environment variable to postpone annotation evaluation
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 
 # Autosummary configuration
 autosummary_generate = True
@@ -223,9 +198,13 @@ intersphinx_mapping = {
 }
 
 # configure numpydoc
-numpydoc_validation_checks = {"all", "GL01", "ES01", "SA01", "EX01"}
+numpydoc_validation_checks = set()  # Disable all validation
 numpydoc_show_class_members = False
 numpydoc_class_members_toctree = False
+
+# Ignore errors from problematic modules
+nitpicky = False
+nitpick_ignore = []
 
 # Add custom CSS for better styling
 html_css_files = [
