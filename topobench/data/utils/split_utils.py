@@ -116,7 +116,9 @@ def random_splitting(labels, parameters, root=None, global_data_seed=42):
     dict:
         Dictionary containing the train, validation and test indices with keys "train", "valid", and "test".
     """
-    fold = parameters["data_seed"]
+    fold = (
+        parameters["data_seed"] % 10
+    )  # Ensure fold is between 0 and 9, TODO: Modify hardcoded 10 split number
     data_dir = (
         parameters["data_split_dir"]
         if root is None
