@@ -66,7 +66,7 @@ k_values=(3 5 10)
 # --- 2. Initialize counters for tracking runs and managing parallel jobs ---
 run_counter=1
 job_counter=0
-MAX_PARALLEL=1 # Set the max number of jobs to run at once
+MAX_PARALLEL=8 # Set the max number of jobs to run at once
 
 # Loop over datasets and batch sizes using array indexing for zipping
 num_datasets=${#datasets[@]}
