@@ -102,7 +102,7 @@ for model in "${models[@]}"; do
                         "dataset.dataloader_params.batch_size=${batch_size}"
                         "transforms=[${lifting}]"
                         "transforms.liftings.graph2hypergraph.threshold=${t}" 
-                        "dataset.split_params.data_seed=0"
+                        "dataset.split_params.data_seed=0,3,5,7,9"
                         "trainer.max_epochs=500"
                         "trainer.min_epochs=50"
                         "trainer.check_val_every_n_epoch=5"

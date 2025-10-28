@@ -105,7 +105,7 @@ for model in "${models[@]}"; do
                             "transforms=[${lifting}]"
                             "transforms.liftings.graph2hypergraph.num_communities=${nc}"
                             "transforms.liftings.graph2hypergraph.k_neighbors=${k}"
-                            "dataset.split_params.data_seed=0"
+                            "dataset.split_params.data_seed=0,3,5,7,9"
                             "trainer.max_epochs=500"
                             "trainer.min_epochs=50"
                             "trainer.check_val_every_n_epoch=5"
