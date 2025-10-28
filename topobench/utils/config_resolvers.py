@@ -403,7 +403,12 @@ def infer_in_channels(dataset, transforms):
             dataset.loader.parameters.get("model_domain", "graph")
             == dataset.loader.parameters.data_domain
             and dataset.loader.parameters.data_domain
-            in ["simplicial", "cell", "combinatorial", "hypergraph"]
+            in [
+                "simplicial",
+                "cell",
+                "combinatorial",
+                "hypergraph",
+            ]
         ):
             if isinstance(
                 num_features,
@@ -492,8 +497,18 @@ def get_default_metrics(task, metrics=None):
         return metrics
     else:
         if "classification" in task:
-            return ["accuracy", "precision", "recall", "auroc"]
+            return [
+                "accuracy",
+                "precision",
+                "recall",
+                "auroc",
+                "f1_score",
+                "average_precision",
+                "cohen_kappa",
+                "mcc",
+                "jaccard",
+            ]
         elif "regression" in task:
-            return ["mse", "mae"]
+            return ["mse", "mae", "r2"]
         else:
             raise ValueError(f"Invalid task {task}")
