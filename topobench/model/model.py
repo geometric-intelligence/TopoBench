@@ -166,9 +166,6 @@ class TBModel(LightningModule):
             batch_size=1,
         )
 
-        # Track best train loss in evaluator
-        self.evaluator.update_best_loss(loss_value, "train")
-
         # Return loss for backpropagation step
         return model_out["loss"]
 
@@ -196,9 +193,6 @@ class TBModel(LightningModule):
             batch_size=1,
         )
 
-        # Track best validation loss in evaluator
-        self.evaluator.update_best_loss(loss_value, "val")
-
     def test_step(self, batch: Data, batch_idx: int) -> None:
         r"""Perform a single test step on a batch of data.
 
@@ -222,9 +216,6 @@ class TBModel(LightningModule):
             prog_bar=True,
             batch_size=1,
         )
-
-        # Track best test loss in evaluator
-        self.evaluator.update_best_loss(loss_value, "test")
 
     def process_outputs(self, model_out: dict, batch: Data) -> dict:
         r"""Handle model outputs.
@@ -269,9 +260,6 @@ class TBModel(LightningModule):
         """
         metrics_dict = self.evaluator.compute()
 
-        # Update best metrics tracking in evaluator
-        self.evaluator.update_best_metrics(metrics_dict, mode)
-
         # Log current metrics
         for key in metrics_dict:
             self.log(
@@ -280,17 +268,6 @@ class TBModel(LightningModule):
                 prog_bar=True,
                 on_step=False,
             )
-
-        # Log best metrics from evaluator
-        best_metrics = self.evaluator.get_best_metrics()
-        for metric_key, best_value in best_metrics.items():
-            if metric_key.startswith(f"{mode}/"):
-                self.log(
-                    f"best_{metric_key}",
-                    best_value,
-                    prog_bar=False,
-                    on_step=False,
-                )
 
         # Reset evaluator for next epoch
         self.evaluator.reset()
@@ -334,9 +311,6 @@ class TBModel(LightningModule):
         This hook is used to log the test metrics.
         """
         self.log_metrics(mode="test")
-        # DISABLED: Log best metrics summary at the end of testing
-        # self.evaluator.log_best_metrics_summary()
-        print()
 
     def on_train_epoch_start(self) -> None:
         r"""Lightning hook that is called when a train epoch begins.
