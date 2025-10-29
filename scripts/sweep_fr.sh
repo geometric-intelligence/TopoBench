@@ -64,6 +64,8 @@ thresholds=(0.1 0.2 0.5)
 # ========================================================================
 
 # --- 2. Initialize counters for tracking runs and managing parallel jobs ---
+gpu_id=0  # Specify which GPU to use
+ROOT_LOG_DIR="$LOG_DIR"
 run_counter=1
 job_counter=0
 MAX_PARALLEL=2 # Set the max number of jobs to run at once
@@ -84,12 +86,11 @@ for model in "${models[@]}"; do
             # Loop over hidden channels
             for h in "${hidden_channels[@]}"; do
                 
-                # --- NEW LOOP: Iterate over k_values ---
                 for t in "${thresholds[@]}"; do
                 
                     # Define a descriptive run name for logging
-                    run_name="${model##*/}_${dataset##*/}_${lifting##*/}_k${k}_lr${lr}_h${h}"
-                    
+                    run_name="${model##*/}_${dataset##*/}_${lifting##*/}_t${t}_lr${lr}_h${h}"
+                    log_group="sweep_fr"
                     # Construct the command array.
                     cmd=(
                         "python" "-m" "topobench"
@@ -106,6 +107,7 @@ for model in "${models[@]}"; do
                         "trainer.max_epochs=500"
                         "trainer.min_epochs=50"
                         "trainer.check_val_every_n_epoch=5"
+                        "trainer.devices=[${gpu_id}]"
                         "callbacks.early_stopping.patience=10"
                         "logger.wandb.project=hypergraph_liftings"
                     )
@@ -113,7 +115,7 @@ for model in "${models[@]}"; do
                         cmd+=("model.backbone.n_layers=2")
                     fi
                     cmd+=("--multirun")
-                    run_and_log "${cmd[*]}" "$run_name" &
+                    run_and_log "${cmd[*]}" "$log_group" "$run_name" "$ROOT_LOG_DIR"
 
                     # --- 6. Increment counters and manage parallel jobs ---
                     # ... (Parallel job management remains the same) ...
