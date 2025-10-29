@@ -1,6 +1,11 @@
 topobench.evaluator package
 ===========================
 
+.. automodule:: topobench.evaluator
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Subpackages
 -----------
 
@@ -12,26 +17,8 @@ Subpackages
 Submodules
 ----------
 
-topobench.evaluator.base module
--------------------------------
+.. toctree::
+   :maxdepth: 4
 
-.. automodule:: topobench.evaluator.base
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-topobench.evaluator.evaluator module
-------------------------------------
-
-.. automodule:: topobench.evaluator.evaluator
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Module contents
----------------
-
-.. automodule:: topobench.evaluator
-   :members:
-   :undoc-members:
-   :show-inheritance:
+   topobench.evaluator.base
+   topobench.evaluator.evaluator

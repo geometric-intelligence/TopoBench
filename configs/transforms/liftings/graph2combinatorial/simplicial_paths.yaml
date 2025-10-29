@@ -1,5 +1,4 @@
 # Defines the default parameters of the implemented transform.
-_target_: topobench.transforms.data_transform.DataTransform
 transform_type: 'lifting'
 transform_name: "SimplicialPathsLifting"
 d1: 2

@@ -12,7 +12,7 @@ feature_encoder:
 backbone:
   _target_: topobench.nn.backbones.MLP
   in_channels: ${model.feature_encoder.out_channels}
-  hidden_channels: [128, 64, 32]
+  hidden_layers: [128, 64, 32]
   out_channels: ${get_non_relational_out_channels:${dataset.parameters.num_nodes},${dataset.parameters.num_classes},${dataset.parameters.task_level}}
   dropout: 0.25
   norm: null

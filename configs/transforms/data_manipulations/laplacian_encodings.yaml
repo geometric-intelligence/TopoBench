@@ -1,0 +1,6 @@
+transform_name: "LapPE"
+transform_type: "data manipulation"
+max_pe_dim: 10
+include_eigenvalues: false
+include_first: false
+concat_to_x: true
