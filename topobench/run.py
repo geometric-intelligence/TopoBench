@@ -231,9 +231,7 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
                     {"checkpoint": trainer.checkpoint_callback.best_model_path}
                 )
                 logger_elem.experiment.log(
-                    {
-                        "best_monitored_score": trainer.checkpoint_callback.best_model_score
-                    }
+                    {"monitored_score": trainer.checkpoint_callback.monitor}
                 )
 
     train_metrics = trainer.callback_metrics
