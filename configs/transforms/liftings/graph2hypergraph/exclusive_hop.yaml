@@ -5,5 +5,5 @@ k_value: 2
 feature_lifting: ProjectionSum
 # Required for all liftings to make the pipeline executable 
 preserve_edge_attr: False
-complex_dim: 0
+complex_dim: 1
 neighborhoods: ${oc.select:model.backbone.neighborhoods,null}

@@ -6,5 +6,5 @@ gain: 0.3
 filter_func:
 # Required for all liftings to make the pipeline executable 
 preserve_edge_attr: False
-complex_dim: 0
+complex_dim: 1
 neighborhoods: ${oc.select:model.backbone.neighborhoods,null}
