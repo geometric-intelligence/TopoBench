@@ -58,17 +58,17 @@ lifting="liftings/graph2hypergraph/knn"
 lrs=(0.001 0.01 0.1)
 hidden_channels=(32 64 128)
 k_values=(3 5 10)
-
+DATA_SEEDS=(0 3 5 7 9)
 # ========================================================================
 # Main Loop with Execution Tracking
 # ========================================================================
 
 # --- 2. Initialize counters for tracking runs and managing parallel jobs ---
-gpu_id=0  # Specify which GPU to use
+gpu_id=5  # Specify which GPU to use
 ROOT_LOG_DIR="$LOG_DIR"
 run_counter=1
 job_counter=0
-MAX_PARALLEL=8 # Set the max number of jobs to run at once
+MAX_PARALLEL=4 # Set the max number of jobs to run at once
 
 # Loop over datasets and batch sizes using array indexing for zipping
 num_datasets=${#datasets[@]}
@@ -87,45 +87,46 @@ for model in "${models[@]}"; do
             for h in "${hidden_channels[@]}"; do
                 
                 for k in "${k_values[@]}"; do
+                    for data_seed in "${DATA_SEEDS[@]}"; do
                 
-                    # Define a descriptive run name for logging
-                    run_name="${model##*/}_${dataset##*/}_${lifting##*/}_k${k}_lr${lr}_h${h}"
-                    log_group="sweep_knn"
-                    # Construct the command array.
-                    cmd=(
-                        "python" "-m" "topobench"
-                        "model=${model}"
-                        "dataset=${dataset}"
-                        "optimizer.parameters.lr=${lr}"
-                        "model.feature_encoder.out_channels=${h}"
-                        "model.readout.readout_name=PropagateSignalDown"
-                        "model.feature_encoder.proj_dropout=0.5"
-                        "dataset.dataloader_params.batch_size=${batch_size}"
-                        "transforms=[${lifting}]"
-                        "transforms.liftings.graph2hypergraph.k_value=${k}" 
-                        "dataset.split_params.data_seed=0,3,5,7,9"
-                        "trainer.max_epochs=500"
-                        "trainer.min_epochs=50"
-                        "trainer.check_val_every_n_epoch=5"
-                        "trainer.devices=[${gpu_id}]"
-                        "callbacks.early_stopping.patience=10"
-                        "logger.wandb.project=hypergraph_liftings"
-                    )
-                    if [[ "${model##*/}" != "edgnn" ]]; then
-                        cmd+=("model.backbone.n_layers=2")
-                    fi
-                    cmd+=("--multirun")
+                        # Define a descriptive run name for logging
+                        run_name="${model##*/}_${dataset##*/}_${lifting##*/}_k${k}_lr${lr}_h${h}"
+                        log_group="sweep_knn"
+                        # Construct the command array.
+                        cmd=(
+                            "python" "-m" "topobench"
+                            "model=${model}"
+                            "dataset=${dataset}"
+                            "optimizer.parameters.lr=${lr}"
+                            "model.feature_encoder.out_channels=${h}"
+                            "model.readout.readout_name=PropagateSignalDown"
+                            "model.feature_encoder.proj_dropout=0.5"
+                            "dataset.dataloader_params.batch_size=${batch_size}"
+                            "transforms=[${lifting}]"
+                            "transforms.liftings.graph2hypergraph.k_value=${k}" 
+                            "dataset.split_params.data_seed=${data_seed}"
+                            "trainer.max_epochs=500"
+                            "trainer.min_epochs=50"
+                            "trainer.check_val_every_n_epoch=5"
+                            "trainer.devices=[${gpu_id}]"
+                            "callbacks.early_stopping.patience=10"
+                            "logger.wandb.project=hypergraph_liftings"
+                        )
+                        if [[ "${model##*/}" != "edgnn" ]]; then
+                            cmd+=("model.backbone.n_layers=2")
+                        fi
 
-                    run_and_log "${cmd[*]}" "$log_group" "$run_name" "$ROOT_LOG_DIR"
+                        run_and_log "${cmd[*]}" "$log_group" "$run_name" "$ROOT_LOG_DIR" &
 
-                    # --- 6. Increment counters and manage parallel jobs ---
-                    # ... (Parallel job management remains the same) ...
-                    ((run_counter++))
-                    ((job_counter++))
-                    if [[ "$job_counter" -ge "$MAX_PARALLEL" ]]; then
-                        wait -n
-                        ((job_counter--))
-                    fi
+                        # --- 6. Increment counters and manage parallel jobs ---
+                        # ... (Parallel job management remains the same) ...
+                        ((run_counter++))
+                        ((job_counter++))
+                        if [[ "$job_counter" -ge "$MAX_PARALLEL" ]]; then
+                            wait -n
+                            ((job_counter--))
+                        fi
+                    done # END data_seed loop
                 done # END k_values loop
             done
         done
