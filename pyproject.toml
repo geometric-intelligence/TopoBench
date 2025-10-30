@@ -55,11 +55,6 @@ dependencies=[
     "topomodelx @ git+https://github.com/pyt-team/TopoModelX.git",
     "toponetx @ git+https://github.com/pyt-team/TopoNetX.git",
     "lightning==2.4.0",
-    # PyTorch and PyG dependencies (will be overridden by uv_setup.sh for CUDA versions)
-    "torch",
-    "torch-scatter",
-    "torch-sparse",
-    "torch-cluster",
 ]
 
 [project.optional-dependencies]

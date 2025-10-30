@@ -28,7 +28,7 @@ mkdir -p "$API_DIR"
 
 # Generate API documentation using sphinx-apidoc
 echo "Running sphinx-apidoc..."
-sphinx-apidoc \
+uv run sphinx-apidoc \
     --force \
     --separate \
     --module-first \
