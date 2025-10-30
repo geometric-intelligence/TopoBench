@@ -14,35 +14,35 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        python-version: [3.11.3]
-        torch-version: [2.0.1]
-        include:
-          - torch-version: 2.0.1
+        python-version: [3.12]
 
     steps:
-      - uses: actions/checkout@v3
-      - name: Build using Python ${{matrix.python-version}}
-        uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
         with:
-          python-version: ${{matrix.python-version}}
-          cache: "pip"
-          cache-dependency-path: "pyproject.toml"
-      - name: Install dependencies [pip]
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      
+      - name: Set up Python ${{matrix.python-version}}
+        run: uv python install ${{matrix.python-version}}
+
+      - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install pytest
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          source env_setup.sh
+          TORCH_VERSION=2.9.0 CUDA_VERSION=cpu bash uv_setup.sh
+          
       - name: Install Pandoc [apt-get]
         run: |
           sudo apt-get -y install pandoc
+          
       - name: Generate API Documentation
         run: |
           cd docs
           bash generate_api_docs.sh
+          
       - name: Generate Docs [Sphinx]
         run: |
-          sphinx-build  -b html -D version=latest -D release=latest docs docs/_build
+          uv run sphinx-build -b html -D version=latest -D release=latest docs docs/_build
       - name: Deploy Docs
         uses: JamesIves/github-pages-deploy-action@v4
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'geometric-intelligence/TopoBench' }}

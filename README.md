@@ -64,44 +64,65 @@ The main pipeline trains and evaluates a wide range of state-of-the-art TNNs and
 
 ## :jigsaw: Get Started
 
-### Create Environment
+### Installation
 
-First, ensure `conda` is installed:  
-```bash
-conda --version
-```
-If not, we recommend intalling Miniconda [following the official command line instructions](https://www.anaconda.com/docs/getting-started/miniconda/install).
+TopoBench uses [`uv`](https://docs.astral.sh/uv/), a Python package manager written in Rust. It's 10-100x faster than pip/conda and provides reliable, reproducible installations with automatic dependency resolution. Learn more at [astral.sh/uv](https://astral.sh/uv).
 
-Then, clone and navigate to the `TopoBench` repository  
+#### Step 1: Clone the Repository
+
 ```bash
 git clone git@github.com:geometric-intelligence/topobench.git
 cd TopoBench
 ```
 
-Next, set up and activate a conda environment `tb` with Python 3.11.3:
+#### Step 2: Run Setup
+
 ```bash
-conda create -n tb python=3.11.3
-conda activate tb
+# Fully automatic (recommended) - installs uv, detects CUDA, and selects compatible PyTorch:
+bash uv_setup.sh
+
+# Or manually specify versions:
+CUDA_VERSION=cpu bash uv_setup.sh              # Force CPU → PyTorch 2.9
+CUDA_VERSION=cu118 bash uv_setup.sh            # CUDA 11.8 → PyTorch 2.5
+CUDA_VERSION=cu121 bash uv_setup.sh            # CUDA 12.1 → PyTorch 2.5
+CUDA_VERSION=cu124 bash uv_setup.sh            # CUDA 12.4 → PyTorch 2.6
+CUDA_VERSION=cu129 bash uv_setup.sh            # CUDA 12.9 → PyTorch 2.8
+TORCH_VERSION=2.9.0 bash uv_setup.sh           # Override PyTorch version
 ```
 
-If working with GPUs, check the CUDA version of your machine:
-```bash
-which nvcc && nvcc --version
-```
-and ensure that it matches the CUDA version specified in the `env_setup.sh` file (`CUDA=cpu` by default for a broader compatibility). If it does not match, update `env_setup.sh` accordingly by changing both the `CUDA` and `TORCH` environment variables to compatible values as specified on [this website](https://github.com/pyg-team/pyg-lib).
+The setup script will **automatically**:
+- Install `uv` if not already present
+- Install Python 3.12
+- Detect your CUDA installation via `nvcc` or `nvidia-smi`
+- Select the optimal PyTorch version for your CUDA (2.5-2.9)
+- Install all dependencies including PyTorch Geometric
+- Set up pre-commit hooks
 
-Next, set up the environment with the following command.
+**Requirements:** CUDA 11.8 or newer (older CUDA versions will use CPU mode). See [PyG installation guide](https://github.com/pyg-team/pyg-lib) for full compatibility.
+
+#### Step 3: Run TopoBench
+
+You can either activate the environment:
 ```bash
-source env_setup.sh
+source .venv/bin/activate
+python -m topobench
 ```
-This command installs the `TopoBench` library and its dependencies. 
+
+Or run commands directly without activation:
+```bash
+uv run python -m topobench
+```
 
 ### Run Training Pipeline
 
-Once the setup is completed, train and evaluate a neural network by running the following command:
+Train and evaluate a neural network:
 
 ```bash
-python -m topobench 
+# With activated environment:
+python -m topobench
+
+# Or without activation:
+uv run python -m topobench
 ```
 
 ---

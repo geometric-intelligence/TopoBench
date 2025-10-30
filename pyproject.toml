@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "TopoBench"
@@ -10,7 +10,7 @@ authors = [
 ]
 readme = "README.md"
 description = "Topological Deep Learning"
-license = {file = "LICENSE.txt"}
+license = {file = "LICENSE"}
 classifiers = [
     "License :: OSI Approved :: MIT License",
     "Development Status :: 4 - Beta",
@@ -21,7 +21,8 @@ classifiers = [
     "Natural Language :: English",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11"
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12"
 ]
 requires-python = ">= 3.10"
 dependencies=[
@@ -54,6 +55,11 @@ dependencies=[
     "topomodelx @ git+https://github.com/pyt-team/TopoModelX.git",
     "toponetx @ git+https://github.com/pyt-team/TopoNetX.git",
     "lightning==2.4.0",
+    # PyTorch and PyG dependencies (will be overridden by uv_setup.sh for CUDA versions)
+    "torch",
+    "torch-scatter",
+    "torch-sparse",
+    "torch-cluster",
 ]
 
 [project.optional-dependencies]
@@ -137,14 +143,26 @@ convention = "numpy"
 "__init__.py" = ["F403"]
 "tests/*" = ["D"]
 
-[tool.setuptools.dynamic]
-version = {attr = "topobench.__version__"}
+[tool.hatch.version]
+path = "topobench/__init__.py"
 
-[tool.setuptools.packages.find]
-include = [
-    "topobench",
-    "topobench.*"
-]
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["topobench"]
+
+[tool.uv]
+
+[tool.uv.sources]
+topomodelx = { git = "https://github.com/pyt-team/TopoModelX.git" }
+toponetx = { git = "https://github.com/pyt-team/TopoNetX.git" }
+
+# PyTorch Geometric packages need torch as a build dependency
+[tool.uv.extra-build-dependencies]
+torch-cluster = ["torch"]
+torch-scatter = ["torch"]
+torch-sparse = ["torch"]
 
 [tool.mypy]
 warn_redundant_casts = true
