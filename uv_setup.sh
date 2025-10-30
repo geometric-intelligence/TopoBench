@@ -121,7 +121,7 @@ if [ -z "$TORCH_VERSION" ]; then
             ;;
         cpu)
             # CPU version - use latest stable
-            TORCH_VERSION="2.9.0"
+            TORCH_VERSION="2.8.0"
             ;;
         *)
             echo "   ⚠️  CUDA version ${CUDA_VERSION} is not supported"

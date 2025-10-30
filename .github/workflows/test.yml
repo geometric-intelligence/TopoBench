@@ -36,7 +36,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          TORCH_VERSION=2.9.0 CUDA_VERSION=cpu bash uv_setup.sh
+          TORCH_VERSION=2.8.0 CUDA_VERSION=cpu bash uv_setup.sh
 
       - name: Test with pytest
         run: |
