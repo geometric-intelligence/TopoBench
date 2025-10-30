@@ -1,0 +1,8 @@
+# Callback to track all metrics at the epoch when the monitored metric is best
+# This captures both training and validation metrics from the same epoch where
+# the monitored metric (e.g., val/loss) achieves its best value
+
+best_epoch_metrics:
+  _target_: topobench.callbacks.BestEpochMetricsCallback
+  monitor: ${get_monitor_metric:${dataset.parameters.task},${dataset.parameters.monitor_metric}}
+  mode: "${get_monitor_mode:${dataset.parameters.task}}"
