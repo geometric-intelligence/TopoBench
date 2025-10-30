@@ -40,6 +40,9 @@ class OGBGDatasetLoader(AbstractLoader):
         RuntimeError
             If dataset loading fails.
         """
+        # Set environment variable to allow loading PyG objects with torch.load
+        # This is needed for PyTorch 2.6+ which defaults to weights_only=True
+        os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
         dataset = PygGraphPropPredDataset(
             name=self.parameters.data_name, root=self.root_data_dir
