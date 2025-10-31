@@ -1,43 +1,72 @@
-import torch
-import torch.nn as nn
-from torch.nn import Module
-from torch_geometric.nn import GraphNorm
+"""This module implements a Discrete Neural Sheaf Diffusion-based model[1] that can be used with the training framework.
 
-from topobench.nn.backbones.graph.sheaf_model_utils.inductive_discrete_models import (
+Neural Sheaf Diffusion is a method for learning representations of graphs using sheaf structure: node and edge stalks communicating via transport maps / restriction maps.
+Adapted and simplified from Bodnar et al. [1]
+
+[1] Bodnar et al. "Neural Sheaf Diffusion: A Topological Perspective on Heterophily and Oversmoothing in GNNs"
+https://arxiv.org/abs/2202.04579
+"""
+
+from torch.nn import Module
+from torch_geometric.utils import to_undirected
+
+from topobench.nn.backbones.graph.nsd_utils.inductive_discrete_models import (
     InductiveDiscreteBundleSheafDiffusion,
     InductiveDiscreteDiagSheafDiffusion,
     InductiveDiscreteGeneralSheafDiffusion,
 )
 
 
-class NSD(Module):
+class NSDEncoder(Module):
+    """
+    Neural Sheaf Diffusion Encoder that can be used with the training framework.
+
+    This encoder learns representations using sheaf structure with node and edge stalks
+    communicating via transport maps / restriction maps. Supports three types of sheaf
+    structures: diagonal, bundle, and general.
+
+    Parameters
+    ----------
+    input_dim : int
+        Dimension of input node features.
+    hidden_dim : int
+        Dimension of hidden layers. Must be divisible by d.
+    num_layers : int, optional
+        Number of sheaf diffusion layers. Default is 2.
+    sheaf_type : str, optional
+        Type of sheaf structure. Options are 'diag', 'bundle', or 'general'.
+        Default is 'diag'.
+    d : int, optional
+        Dimension of the stalk space. For 'diag', d >= 1. For 'bundle' and 'general', d > 1.
+        Default is 2.
+    dropout : float, optional
+        Dropout rate for hidden layers. Default is 0.1.
+    input_dropout : float, optional
+        Dropout rate for input layer. Default is 0.1.
+    device : str, optional
+        Device to run the model on ('cpu' or 'cuda'). Default is 'cpu'.
+    sheaf_act : str, optional
+        Activation function for sheaf learning. Options are 'tanh', 'elu', 'id'.
+        Default is 'tanh'.
+    orth : str, optional
+        Orthogonalization method for bundle sheaf type. Options are 'cayley' or 'matrix_exp'.
+        Default is 'cayley'.
+    **kwargs : dict
+        Additional keyword arguments (not used).
+    """
+
     def __init__(
         self,
         input_dim,
         hidden_dim,
+        num_layers=2,
         sheaf_type="diag",
         d=2,
-        num_layers=2,
         dropout=0.1,
         input_dropout=0.1,
         device="cpu",
-        normalised=False,
-        deg_normalised=False,
-        linear=False,
-        left_weights=True,
-        right_weights=True,
-        sparse_learner=False,
-        use_act=True,
         sheaf_act="tanh",
-        second_linear=False,
-        orth="cayley", # SWEEP: [euler, cayley, householder, matrix_exp]
-        edge_weights=False,
-        max_t=1.0,
-        add_lp=False,
-        add_hp=False,
-        pe_type=None,
-        pe_dim=16,
-        pe_norm=False,
+        orth="cayley",  # cayley or matrix_exp
         **kwargs,
     ):
         super().__init__()
@@ -48,35 +77,6 @@ class NSD(Module):
         self.d = d
         self.num_layers = num_layers
         self.device = device
-
-        # PE configuration
-        self.pe_type = pe_type
-        self.pe_dim = pe_dim
-        self.pe_norm = pe_norm
-
-        # Input projection setup similar to GPS
-        if pe_type in ["laplacian", "degree", "rwse"]:
-            # If using PE, split channels between node features and PE
-            self.node_proj = nn.Linear(input_dim, hidden_dim - pe_dim)
-            self.pe_proj = nn.Linear(pe_dim, pe_dim)
-            if self.pe_norm:
-                print("Using GraphNorm for PE normalization")
-                self.pe_norm_layer = GraphNorm(pe_dim)
-            else:
-                self.pe_norm_layer = None
-            self.actual_input_dim = (
-                hidden_dim  # Full hidden_dim after concatenation
-            )
-        elif pe_type is None or pe_type == "None":
-            # No PE, use full hidden_dim for node features
-            self.node_proj = nn.Identity()  # nn.Linear(input_dim, hidden_dim)
-            self.pe_proj = None
-            self.pe_norm_layer = None
-            self.actual_input_dim = hidden_dim
-        else:
-            raise ValueError(
-                f"Invalid PE type: {pe_type}. Supported: 'laplacian', 'degree', 'rwse', 'None"
-            )
 
         if sheaf_type == "diag":
             assert d >= 1
@@ -94,29 +94,16 @@ class NSD(Module):
             "d": d,
             "layers": num_layers,
             "hidden_channels": hidden_dim // d,
-            "input_dim": self.actual_input_dim,  # Use adjusted input dimension
+            "input_dim": input_dim,
             "output_dim": hidden_dim,
             "device": device,
-            "normalised": normalised,
-            "deg_normalised": deg_normalised,
-            "linear": linear,
             "input_dropout": input_dropout,
             "dropout": dropout,
-            "left_weights": left_weights,
-            "right_weights": right_weights,
-            "sparse_learner": sparse_learner,
-            "use_act": use_act,
             "sheaf_act": sheaf_act,
-            "second_linear": second_linear,
             "orth": orth,
-            "edge_weights": edge_weights,
-            "max_t": max_t,
-            "add_lp": add_lp,
-            "add_hp": add_hp,
-            "graph_size": None,
         }
 
-        # Create the sheaf model immediately (no lazy initialization)
+        # Create the sheaf model
         self.sheaf_model = self.sheaf_class(self.sheaf_config)
 
     def forward(
@@ -126,47 +113,45 @@ class NSD(Module):
         edge_attr=None,
         edge_weight=None,
         batch=None,
-        pe: torch.Tensor | None = None,
         **kwargs,
     ):
         """
-        Forward pass with PE handling
+        Forward pass of Neural Sheaf Diffusion encoder.
 
-        Args:
-            x: Node features [num_nodes, input_dim]
-            edge_index: Edge indices [2, num_edges]
-            edge_attr: Edge attributes (optional)
-            edge_weight: Edge weights (optional)
-            batch: Batch indices [num_nodes] (optional)
-            pe: Positional encodings [num_nodes, pe_dim] (optional)
+        Parameters
+        ----------
+        x : torch.Tensor
+            Node feature matrix of shape [num_nodes, input_dim].
+        edge_index : torch.Tensor
+            Edge indices of shape [2, num_edges]. Will be automatically converted to undirected.
+        edge_attr : torch.Tensor, optional
+            Edge feature matrix (not used). Default is None.
+        edge_weight : torch.Tensor, optional
+            Edge weights (not used). Default is None.
+        batch : torch.Tensor, optional
+            Batch vector assigning each node to a specific graph (not used). Default is None.
+        **kwargs : dict
+            Additional arguments (not used).
 
-        Returns:
-            Node embeddings [num_nodes, hidden_dim]
+        Returns
+        -------
+        torch.Tensor
+            Output node feature matrix of shape [num_nodes, hidden_dim].
         """
-        # Process node features similar to GPS
-        h = self.node_proj(x)
+        # Neural Sheaf Diffusion requires undirected graphs (bidirectional edges)
+        # Convert to undirected if not already
+        edge_index = to_undirected(edge_index)
 
-        # Add positional encoding if available
-        if self.pe_proj is not None:
-            if pe is not None:
-                # Normalize PE
-                if self.pe_norm_layer is not None and pe.size(0) > 1:
-                    pe_normalized = self.pe_norm_layer(pe, batch=batch)
-                else:
-                    pe_normalized = pe
-
-                # Project PE
-                pe_proj = self.pe_proj(pe_normalized)
-
-                # Concatenate node features with PE
-                h = torch.cat([h, pe_proj], dim=-1)
-            else:
-                raise ValueError(
-                    "If PE type is not None, PE must be provided in forward pass"
-                )
-
-        # Pass processed features to sheaf model
-        return self.sheaf_model(h, edge_index)
+        # Run through the sheaf model (no edge attributes)
+        return self.sheaf_model(x, edge_index)
 
     def get_sheaf_model(self):
+        """
+        Get the underlying sheaf model.
+
+        Returns
+        -------
+        SheafDiffusion
+            The sheaf diffusion model instance.
+        """
         return self.sheaf_model

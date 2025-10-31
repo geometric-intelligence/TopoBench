@@ -1,6 +1,11 @@
 topobench.nn package
 ====================
 
+.. automodule:: topobench.nn
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Subpackages
 -----------
 
@@ -11,11 +16,3 @@ Subpackages
    topobench.nn.encoders
    topobench.nn.readouts
    topobench.nn.wrappers
-
-Module contents
----------------
-
-.. automodule:: topobench.nn
-   :members:
-   :undoc-members:
-   :show-inheritance:

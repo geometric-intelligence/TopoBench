@@ -1,4 +1,4 @@
-"""TopoBench: A library for benchmarking topological models."""
+"""Callback for timing the execution of training, validation, and testing stages."""
 
 import time
 
@@ -46,6 +46,31 @@ class PipelineTimer(pl.Callback):
             self.sums[stage].append(elapsed)
             self.counts[stage] += 1
 
+    def _log_hyperparams(self, trainer, params_dict):
+        """Safely log hyperparameters to avoid adding to wandb summary.
+
+        Parameters
+        ----------
+        trainer : object
+            The PyTorch Lightning trainer instance used for logging.
+        params_dict : dict
+            Dictionary of hyperparameters to log.
+        """
+        import contextlib
+
+        if trainer.logger is not None:
+            # Handle case where logger is a list
+            loggers = (
+                trainer.logger
+                if isinstance(trainer.logger, list)
+                else [trainer.logger]
+            )
+            for logger in loggers:
+                if hasattr(logger, "log_hyperparams"):
+                    # Some loggers may not support logging hyperparams
+                    with contextlib.suppress(Exception):
+                        logger.log_hyperparams(params_dict)
+
     def _log_averages(self, trainer):
         """Compute and log average times for all tracked stages.
 
@@ -70,8 +95,8 @@ class PipelineTimer(pl.Callback):
                     )
                     avg_times[f"AvgTime/{stage}_std"] = 0.0
 
-        if trainer.logger:
-            trainer.logger.log_metrics(avg_times)
+        # Use log_hyperparams to avoid adding to wandb summary
+        self._log_hyperparams(trainer, avg_times)
 
     # Training Timing
     def on_train_batch_start(self, *args):
