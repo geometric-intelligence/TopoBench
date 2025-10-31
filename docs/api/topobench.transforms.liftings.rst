@@ -1,6 +1,11 @@
 topobench.transforms.liftings package
 =====================================
 
+.. automodule:: topobench.transforms.liftings
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Subpackages
 -----------
 
@@ -19,26 +24,8 @@ Subpackages
 Submodules
 ----------
 
-topobench.transforms.liftings.base module
------------------------------------------
+.. toctree::
+   :maxdepth: 4
 
-.. automodule:: topobench.transforms.liftings.base
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-topobench.transforms.liftings.liftings module
----------------------------------------------
-
-.. automodule:: topobench.transforms.liftings.liftings
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Module contents
----------------
-
-.. automodule:: topobench.transforms.liftings
-   :members:
-   :undoc-members:
-   :show-inheritance:
+   topobench.transforms.liftings.base
+   topobench.transforms.liftings.liftings

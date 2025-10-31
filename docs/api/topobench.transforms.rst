@@ -1,6 +1,11 @@
 topobench.transforms package
 ============================
 
+.. automodule:: topobench.transforms
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Subpackages
 -----------
 
@@ -14,18 +19,7 @@ Subpackages
 Submodules
 ----------
 
-topobench.transforms.data\_transform module
--------------------------------------------
+.. toctree::
+   :maxdepth: 4
 
-.. automodule:: topobench.transforms.data_transform
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Module contents
----------------
-
-.. automodule:: topobench.transforms
-   :members:
-   :undoc-members:
-   :show-inheritance:
+   topobench.transforms.data_transform

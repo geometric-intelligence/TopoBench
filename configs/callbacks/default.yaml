@@ -3,12 +3,13 @@ defaults:
   - early_stopping
   - model_summary
   - model_timer
+  - best_epoch_metrics
   - _self_
 
 model_checkpoint:
   dirpath: ${paths.output_dir}/checkpoints
-  filename: "epoch{epoch:03d}-val_loss{val/loss:.2f}" #"epoch_{epoch:03d}"
-  monitor: ${get_monitor_metric:${dataset.parameters.task},${dataset.parameters.monitor_metric}} #
+  filename: "epoch_{epoch:03d}"
+  monitor: ${get_monitor_metric:${dataset.parameters.task},${dataset.parameters.monitor_metric}}
   mode: "${get_monitor_mode:${dataset.parameters.task}}"
   auto_insert_metric_name: False
   save_weights_only: False
@@ -17,9 +18,9 @@ model_checkpoint:
   #filename: 'epoch{epoch:02d}-val_loss{val/loss:.2f}'
 
 early_stopping:
-  monitor: ${get_monitor_metric:${dataset.parameters.task},${dataset.parameters.monitor_metric}} #${callbacks.model_checkpoint.monitor}
+  monitor: ${get_monitor_metric:${dataset.parameters.task},${dataset.parameters.monitor_metric}}
   patience: 25
-  mode: "${get_monitor_mode:${dataset.parameters.task}}" #${callbacks.model_checkpoint.mode}
+  mode: "${get_monitor_mode:${dataset.parameters.task}}"
 
 model_summary:
   max_depth: -1

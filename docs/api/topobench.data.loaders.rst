@@ -1,6 +1,11 @@
 topobench.data.loaders package
 ==============================
 
+.. automodule:: topobench.data.loaders
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Subpackages
 -----------
 
@@ -15,18 +20,7 @@ Subpackages
 Submodules
 ----------
 
-topobench.data.loaders.base module
-----------------------------------
+.. toctree::
+   :maxdepth: 4
 
-.. automodule:: topobench.data.loaders.base
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Module contents
----------------
-
-.. automodule:: topobench.data.loaders
-   :members:
-   :undoc-members:
-   :show-inheritance:
+   topobench.data.loaders.base

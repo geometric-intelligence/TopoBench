@@ -28,7 +28,7 @@ class TBEvaluator(AbstractEvaluator):
         # Define the metrics depending on the task
         if kwargs["num_classes"] > 1 and self.task == "classification":
             # Note that even for binary classification, we use multiclass metrics
-            # Accoding to the torchmetrics documentation (https://lightning.ai/docs/torchmetrics/stable/classification/accuracy.html#torchmetrics.classification.MulticlassAccuracy)
+            # According to the torchmetrics documentation (https://lightning.ai/docs/torchmetrics/stable/classification/accuracy.html#torchmetrics.classification.MulticlassAccuracy)
             # This setup should work correctly
             parameters = {"num_classes": kwargs["num_classes"]}
             parameters["task"] = "multiclass"
@@ -49,9 +49,15 @@ class TBEvaluator(AbstractEvaluator):
 
         metrics = {}
         for name in metric_names:
-            if name in ["recall", "precision", "auroc", "f1"]:
+            if name in ["recall", "precision", "auroc", "f1", "f1_macro"]:
                 metrics[name] = METRICS[name](average="macro", **parameters)
-
+            elif name == "f1_weighted":
+                metrics[name] = METRICS[name](average="weighted", **parameters)
+            elif name == "confusion_matrix":
+                metrics[name] = METRICS[name](**parameters)
+            elif name == "rmse":
+                # RMSE is MSE with squared=False
+                metrics[name] = METRICS[name](squared=False, **parameters)
             else:
                 metrics[name] = METRICS[name](**parameters)
         self.metrics = MetricCollection(metrics)
@@ -72,6 +78,8 @@ class TBEvaluator(AbstractEvaluator):
             The model predictions.
             - labels : torch.Tensor
             The ground truth labels.
+            - batch : torch_geometric.data.Data (optional)
+            The batch data containing target normalizer stats.
 
         Raises
         ------
