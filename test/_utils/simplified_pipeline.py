@@ -1,12 +1,9 @@
 """Test pipeline for a particular dataset and model."""
 
-from omegaconf import OmegaConf
 import hydra
-from lightning import Callback, Trainer
-from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig, OmegaConf
 
-from topobench.data.preprocessor import PreProcessor
+from topobench.data.preprocessor import OnDiskPreProcessor, PreProcessor
 from topobench.dataloader import TBDataloader
 from topobench.utils import instantiate_callbacks
 from topobench.utils.config_resolvers import (
@@ -61,7 +58,9 @@ def run(cfg: DictConfig) -> DictConfig:
     dataset, dataset_dir = dataset_loader.load()
     # Preprocess dataset and load the splits
     transform_config = cfg.get("transforms", None)
-    preprocessor = PreProcessor(dataset, dataset_dir, transform_config)
+    memory_type = cfg.dataset.loader.parameters.get("memory_type", "in_memory")
+    preprocessor_cls = OnDiskPreProcessor if memory_type == "on_disk" else PreProcessor
+    preprocessor = preprocessor_cls(dataset, dataset_dir, transform_config)
     dataset_train, dataset_val, dataset_test = (
         preprocessor.load_dataset_splits(cfg.dataset.split_params)
     )

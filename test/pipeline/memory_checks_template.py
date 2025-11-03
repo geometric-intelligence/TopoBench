@@ -5,9 +5,8 @@ import hydra
 from test._utils.simplified_pipeline import run
 
 # Use your contributed dataset + a lightweight, well-supported model
-DATASET = "graph/fake"
-MODELS   = ["graph/gcn", "cell/topotune", "simplicial/topotune"]
-# MODELS = ["graph/gcn"]
+DATASET = "placeholder/dataset"
+MODELS = ["placeholder/model"]
 
 class TestPipeline:
     """Test pipeline for a particular dataset and model."""
@@ -40,4 +39,5 @@ class TestPipeline:
                     ],
                     return_hydra_config=True,
                 )
+                # print(cfg)
                 run(cfg)

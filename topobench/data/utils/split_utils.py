@@ -1,6 +1,7 @@
 """Split utilities."""
 
 import os
+from collections.abc import Sequence
 
 import numpy as np
 import torch
@@ -10,7 +11,7 @@ from topobench.dataloader import DataloadDataset
 
 
 # Generate splits in different fasions
-def k_fold_split(labels, parameters, root=None):
+def k_fold_split(labels, parameters):
     """Return train and valid indices as in K-Fold Cross-Validation.
 
     If the split already exists it loads it automatically, otherwise it creates the
@@ -22,8 +23,6 @@ def k_fold_split(labels, parameters, root=None):
         Label tensor.
     parameters : DictConfig
         Configuration parameters.
-    root : str, optional
-        Root directory for data splits. Overwrite the default directory.
 
     Returns
     -------
@@ -31,11 +30,7 @@ def k_fold_split(labels, parameters, root=None):
         Dictionary containing the train, validation and test indices, with keys "train", "valid", and "test".
     """
 
-    data_dir = (
-        parameters["data_split_dir"]
-        if root is None
-        else os.path.join(root, "data_splits")
-    )
+    data_dir = parameters.data_split_dir
     k = parameters.k
     fold = parameters.data_seed
     assert fold < k, "data_seed needs to be less than k"
@@ -50,7 +45,7 @@ def k_fold_split(labels, parameters, root=None):
 
     split_path = os.path.join(split_dir, f"{fold}.npz")
     if not os.path.isfile(split_path):
-        n = len(labels)
+        n = labels.shape[0]
         x_idx = np.arange(n)
         x_idx = np.random.permutation(x_idx)
         labels = labels[x_idx]
@@ -84,18 +79,21 @@ def k_fold_split(labels, parameters, root=None):
     split_idx = np.load(split_path)
 
     # Check that all nodes/graph have been assigned to some split
-    assert np.unique(
-        np.array(
-            split_idx["train"].tolist()
-            + split_idx["valid"].tolist()
-            + split_idx["test"].tolist()
-        )
-    ).shape[0] == len(labels), "Not all nodes within splits"
+    assert (
+        np.unique(
+            np.array(
+                split_idx["train"].tolist()
+                + split_idx["valid"].tolist()
+                + split_idx["test"].tolist()
+            )
+        ).shape[0]
+        == labels.shape[0]
+    ), "Not all nodes within splits"
 
     return split_idx
 
 
-def random_splitting(labels, parameters, root=None, global_data_seed=42):
+def random_splitting(labels, parameters, global_data_seed=42):
     r"""Randomly splits label into train/valid/test splits.
 
     Adapted from https://github.com/CUAI/Non-Homophily-Benchmarks.
@@ -106,8 +104,6 @@ def random_splitting(labels, parameters, root=None, global_data_seed=42):
         Label tensor.
     parameters : DictConfig
         Configuration parameter.
-    root : str, optional
-        Root directory for data splits. Overwrite the default directory.
     global_data_seed : int
         Seed for the random number generator.
 
@@ -117,11 +113,7 @@ def random_splitting(labels, parameters, root=None, global_data_seed=42):
         Dictionary containing the train, validation and test indices with keys "train", "valid", and "test".
     """
     fold = parameters["data_seed"]
-    data_dir = (
-        parameters["data_split_dir"]
-        if root is None
-        else os.path.join(root, "data_splits")
-    )
+    data_dir = parameters["data_split_dir"]
     train_prop = parameters["train_prop"]
     valid_prop = (1 - train_prop) / 2
 
@@ -140,7 +132,7 @@ def random_splitting(labels, parameters, root=None, global_data_seed=42):
         torch.manual_seed(global_data_seed)
         np.random.seed(global_data_seed)
         # Generate a split
-        n = len(labels)
+        n = labels.shape[0]
         train_num = int(n * train_prop)
         valid_num = int(n * valid_prop)
 
@@ -167,13 +159,16 @@ def random_splitting(labels, parameters, root=None, global_data_seed=42):
     split_idx = np.load(split_path)
 
     # Check that all nodes/graph have been assigned to some split
-    assert np.unique(
-        np.array(
-            split_idx["train"].tolist()
-            + split_idx["valid"].tolist()
-            + split_idx["test"].tolist()
-        )
-    ).shape[0] == len(labels), "Not all nodes within splits"
+    assert (
+        np.unique(
+            np.array(
+                split_idx["train"].tolist()
+                + split_idx["valid"].tolist()
+                + split_idx["test"].tolist()
+            )
+        ).shape[0]
+        == labels.shape[0]
+    ), "Not all nodes within splits"
 
     return split_idx
 
@@ -245,23 +240,19 @@ def load_transductive_splits(dataset, parameters):
         "Dataset should have only one graph in a transductive setting."
     )
 
+    print(dataset.data_list[0].y)
+
     data = dataset.data_list[0]
     labels = data.y.numpy()
 
     # Ensure labels are one dimensional array
     assert len(labels.shape) == 1, "Labels should be one dimensional array"
 
-    root = (
-        dataset.dataset.get_data_dir()
-        if hasattr(dataset.dataset, "get_data_dir")
-        else None
-    )
-
     if parameters.split_type == "random":
-        splits = random_splitting(labels, parameters, root=root)
+        splits = random_splitting(labels, parameters)
 
     elif parameters.split_type == "k-fold":
-        splits = k_fold_split(labels, parameters, root=root)
+        splits = k_fold_split(labels, parameters)
 
     else:
         raise NotImplementedError(
@@ -304,19 +295,21 @@ def load_inductive_splits(dataset, parameters):
     assert len(dataset) > 1, (
         "Datasets should have more than one graph in an inductive setting."
     )
-    labels = np.array([data.y.squeeze(0).numpy() for data in dataset])
 
-    root = (
-        dataset.dataset.get_data_dir()
-        if hasattr(dataset.dataset, "get_data_dir")
-        else None
+    print(len(dataset.data_list))
+    print(dataset.data_list[0].y)
+
+    labels = np.array(
+        [data.y.squeeze(0).numpy() for data in dataset.data_list]
     )
 
+    print(labels, labels.shape)
+
     if parameters.split_type == "random":
-        split_idx = random_splitting(labels, parameters, root=root)
+        split_idx = random_splitting(labels, parameters)
 
     elif parameters.split_type == "k-fold":
-        split_idx = k_fold_split(labels, parameters, root=root)
+        split_idx = k_fold_split(labels, parameters)
 
     elif parameters.split_type == "fixed" and hasattr(dataset, "split_idx"):
         split_idx = dataset.split_idx
@@ -371,3 +364,154 @@ def load_coauthorship_hypergraph_splits(data, parameters, train_prop=0.5):
         == data.num_nodes
     ), "Not all nodes within splits"
     return DataloadDataset([data]), None, None
+
+# List-like view over a subset of an on-disk dataset
+class _LazySplitList(Sequence):
+    """
+    A lightweight, list-like view over a subset of an on-disk dataset.
+
+    - Holds only the indices for this split (train/valid/test).
+    - On access (self[i]), loads that ONE graph from disk.
+    - Injects the appropriate split masks into the returned Data object.
+    - Supports __len__ so DataloadDataset.len() works.
+    - Supports integer indexing so DataloadDataset.get() works.
+    """
+
+    def __init__(self, base_dataset, indices, split_name: str):
+        self.base_dataset = base_dataset
+        self._idx = [int(i) for i in indices]  # e.g. split_idx["train"], etc.
+
+        assert split_name in ("train", "valid", "test")
+        self._split_name = split_name
+
+        # Prebuild the masks once, reuse them for every item
+        if split_name == "train":
+            self._train_mask = torch.tensor([1], dtype=torch.long)
+            self._val_mask   = torch.tensor([0], dtype=torch.long)
+            self._test_mask  = torch.tensor([0], dtype=torch.long)
+        elif split_name == "valid":
+            self._train_mask = torch.tensor([0], dtype=torch.long)
+            self._val_mask   = torch.tensor([1], dtype=torch.long)
+            self._test_mask  = torch.tensor([0], dtype=torch.long)
+        else:  # "test"
+            self._train_mask = torch.tensor([0], dtype=torch.long)
+            self._val_mask   = torch.tensor([0], dtype=torch.long)
+            self._test_mask  = torch.tensor([1], dtype=torch.long)
+
+    def __len__(self):
+        # Allows DataloadDataset.len() to work
+        return len(self._idx)
+
+    def _load_one(self, real_idx: int):
+        """
+        Load a single graph from disk, attach masks, return it as a Data object.
+        """
+        data = self.base_dataset[real_idx]  # OnDiskDataset __getitem__ -> loads from disk
+
+        # tag membership so downstream has train/val/test info
+        data.train_mask = self._train_mask
+        data.val_mask   = self._val_mask
+        data.test_mask  = self._test_mask
+
+        return data
+
+    def __getitem__(self, pos):
+        """
+        DataloadDataset.get(idx) will call self.data_lst[idx] with idx an int.
+        So we MUST support integer indexing and return a single Data object.
+
+        We'll also add best-effort slice support for debugging, but that isn't
+        hit in the training loop.
+        """
+        if isinstance(pos, slice):
+            start, stop, step = pos.indices(len(self._idx))
+            # returning a plain list of Data objects here is fine for debugging,
+            # and does not break training (training only ever uses int indexing)
+            return [
+                self._load_one(self._idx[i])
+                for i in range(start, stop, step)
+            ]
+
+        # integer index path (the only one real training uses)
+        real_idx = self._idx[pos]
+        return self._load_one(real_idx)
+
+def assign_train_val_test_mask_to_graphs_on_disk(dataset, split_idx):
+    """
+    Build train/val/test datasets WITHOUT materializing the entire split in RAM.
+
+    It gives DataloadDataset a lazy, list-like object (_LazySplitList)
+    that loads each graph from disk on demand.
+    """
+
+    train_list = _LazySplitList(
+        base_dataset=dataset,
+        indices=split_idx["train"],
+        split_name="train",
+    )
+
+    val_list = _LazySplitList(
+        base_dataset=dataset,
+        indices=split_idx["valid"],
+        split_name="valid",
+    )
+
+    test_list = _LazySplitList(
+        base_dataset=dataset,
+        indices=split_idx["test"],
+        split_name="test",
+    )
+
+    train_dataset = DataloadDataset(train_list)
+    val_dataset   = DataloadDataset(val_list)
+    test_dataset  = DataloadDataset(test_list)
+
+    return train_dataset, val_dataset, test_dataset
+
+def load_inductive_splits_on_disk(dataset, parameters):
+    r"""Load multiple-graph datasets with the specified split.
+
+    Parameters
+    ----------
+    dataset : torch_geometric.data.Dataset
+        Graph dataset.
+    parameters : DictConfig
+        Configuration parameters.
+
+    Returns
+    -------
+    list:
+        List containing the train, validation, and test splits.
+    """
+    # Extract labels from dataset object
+    assert len(dataset) > 1, (
+        "Datasets should have more than one graph in an inductive setting."
+    )
+
+    print(len(dataset.data_list))
+    print(dataset.data_list[0].y)
+
+    labels = np.array(
+        [data.y.squeeze(0).numpy() for data in dataset.data_list]
+    )
+
+    if parameters.split_type == "random":
+        split_idx = random_splitting(labels, parameters)
+
+    elif parameters.split_type == "k-fold":
+        split_idx = k_fold_split(labels, parameters)
+
+    elif parameters.split_type == "fixed" and hasattr(dataset, "split_idx"):
+        split_idx = dataset.split_idx
+
+    else:
+        raise NotImplementedError(
+            f"split_type {parameters.split_type} not valid. Choose either 'random', 'k-fold' or 'fixed'.\
+            If 'fixed' is chosen, the dataset should have the attribute split_idx"
+        )
+
+    train_dataset, val_dataset, test_dataset = (
+        assign_train_val_test_mask_to_graphs_on_disk(dataset, split_idx)
+    )
+
+    return train_dataset, val_dataset, test_dataset

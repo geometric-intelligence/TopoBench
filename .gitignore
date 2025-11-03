@@ -185,6 +185,8 @@ notebooks/tmp
 /tutorials/datasets/
 /tutorials/lightning_logs/
 /tutorials/datasets/
+# Memory usage tracking outputs
+test/memory_usage_tracking/outputs/
 
 # wandb
 wandb/
