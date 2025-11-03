@@ -140,11 +140,6 @@ def collate_fn(batch):
 
     batch = torch_geometric.data.Batch.from_data_list(data_list)
 
-    # # Rename batch.batch to batch.batch_0 for consistency
-    # if batch.get("shape") is not None:
-    #     assert torch.all(batch["batch_0"] == batch.pop("batch"))
-    #     # batch["batch_0"] = batch.pop("batch")
-
     # Add batch slices to batch
     for key, value in batch_idx_dict.items():
         batch[key] = torch.cat(value, dim=1).squeeze(0).long()
