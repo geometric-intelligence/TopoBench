@@ -171,8 +171,6 @@ class FakeOnDiskDataset(OnDiskDataset):
                 # free the batch from RAM
                 data_list = []
 
-        print("Finished.")
-
     # Mirrors torch_geometric.FakeDataset.generate_data():
     def generate_data(self) -> Data:
         num_nodes = get_num_nodes(self.avg_num_nodes, self.avg_degree)
