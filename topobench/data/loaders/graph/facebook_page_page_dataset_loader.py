@@ -1,7 +1,6 @@
 """Loader for FacebookPagePage Graph dataset."""
 
 from torch_geometric.data import Dataset
-from torch_geometric.datasets import FacebookPagePage
 
 from topobench.data.loaders.base import AbstractLoader
 
