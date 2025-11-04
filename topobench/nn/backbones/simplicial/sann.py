@@ -2,8 +2,6 @@
 
 import torch
 import torch.nn.functional
-from torch.nn import ParameterList
-from torch.nn.parameter import Parameter
 
 
 class SANN(torch.nn.Module):
@@ -226,7 +224,8 @@ class SANNLayer(torch.nn.Module):
             Output tensors for each 2-cell.
         """
         y_k_t = [
-            linear_layer(x) for x, linear_layer in zip(x_all, self.list_linear)
+            linear_layer(x)
+            for x, linear_layer in zip(x_all, self.list_linear, strict=False)
         ]
 
         if self.update_func is None:
@@ -237,7 +236,7 @@ class SANNLayer(torch.nn.Module):
         # x_all = tuple([self.update(y_t) for y_t in y_k_t.values()])
 
         x_out = []
-        for ln, y, x in zip(self.LN, y_k_t, x_all):
+        for ln, y, x in zip(self.LN, y_k_t, x_all, strict=False):
             y_t = self.update(y + x)
             y_t = ln(y_t)
             x_out.append(y_t)

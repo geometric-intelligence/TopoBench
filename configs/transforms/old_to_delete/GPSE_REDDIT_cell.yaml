@@ -1,7 +1,0 @@
-defaults:
-  - data_manipulations@equal_gaus_features: equal_gaus_features
-  - liftings@_here_: graph2cell_default
-  - data_manipulations@sann_encoding: add_gpse_information
-
-graph2cell_lifting:
-  max_cell_length: 10

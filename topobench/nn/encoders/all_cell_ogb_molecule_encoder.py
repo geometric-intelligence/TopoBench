@@ -2,11 +2,10 @@
 
 import torch
 import torch_geometric
+from ogb.graphproppred.mol_encoder import AtomEncoder, BondEncoder
 from torch_geometric.nn.norm import GraphNorm
 
 from topobench.nn.encoders.base import AbstractFeatureEncoder
-
-from ogb.graphproppred.mol_encoder import AtomEncoder, BondEncoder
 
 
 class AllCellMoleculeFeatureEncoder(AbstractFeatureEncoder):

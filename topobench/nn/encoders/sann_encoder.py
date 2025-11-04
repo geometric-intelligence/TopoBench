@@ -87,7 +87,7 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
 
         # Rebuttal update
         self.fuse_pse2cell = fuse_pse2cell
-        if self.fuse_pse2cell == True:
+        if self.fuse_pse2cell:
             # Instantiate self.hops layer normalization
             self.LN_pse2cell = torch.nn.ModuleList(
                 torch.nn.LayerNorm(self.out_channels) for _ in range(self.hops)
@@ -124,7 +124,7 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
                     data[f"x{i}_{j}"], batch
                 )
 
-        if self.fuse_pse2cell == True:
+        if self.fuse_pse2cell:
             for i in self.dimensions:
                 node_and_pse_encodings = [
                     self.LN_pse2cell[j](data[f"x{i}_{j}"])

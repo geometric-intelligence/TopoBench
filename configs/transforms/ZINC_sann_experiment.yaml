@@ -1,9 +1,0 @@
-defaults:
-  # - data_manipulations: node_degrees # 16/04/2025 commented out this as for now it should be redundant, ZINC default has been commented out in 42058c5
-  - data_manipulations@one_hot_node_degree_features: one_hot_node_degree_features
-  - liftings@_here_: graph2cell_default
-  - data_manipulations@sann_encoding: add_gpse_information 
-
-one_hot_node_degree_features: 
-  degrees_field: x
-  features_field: x

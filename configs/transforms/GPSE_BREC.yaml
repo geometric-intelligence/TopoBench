@@ -1,3 +1,0 @@
-defaults:
-  - liftings@_here_: graph2simplicial_default
-  - data_manipulations@sann_encoding: add_gpse_information
