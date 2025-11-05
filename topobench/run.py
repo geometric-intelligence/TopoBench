@@ -30,8 +30,8 @@ from topobench.utils.config_resolvers import (
     get_default_metrics,
     get_default_trainer,
     get_default_transform,
-    get_list_element,
     get_flattened_channels,
+    get_list_element,
     get_monitor_metric,
     get_monitor_mode,
     get_non_relational_out_channels,
@@ -42,8 +42,8 @@ from topobench.utils.config_resolvers import (
     infer_list_length,
     infer_list_length_plus_one,
     infer_num_cell_dimensions,
-    set_preserve_edge_attr,
     infer_topotune_num_cell_dimensions,
+    set_preserve_edge_attr,
 )
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)

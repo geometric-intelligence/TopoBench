@@ -58,19 +58,16 @@ class MantraDataset(InMemoryDataset):
         self.manifold_dim = parameters.manifold_dim
         self.version = parameters.version
         self.task_variable = parameters.task_variable
-        self.load_as_graph = parameters.load_as_graph
         self.name = "_".join(
             [name, str(self.version), f"manifold_dim_{self.manifold_dim}"]
         )
-        if kwargs.get("slice"):
-            print(
-                "Slicing MANTRA dataset to 100 samples. Useful for debugging and testing purposes."
-            )
-            self.slice = 100
-        else:
-            self.slice = None
+        self.neighborhoods = parameters.get("neighborhoods", None)
+        self.signed = parameters.get("signed", True)
+        self.slice = 100 if kwargs.get("slice") else None
+
         super().__init__(
             root,
+            pre_transform=parameters.get("pre_transform", None),
         )
 
         out = fs.torch_load(self.processed_paths[0])
@@ -193,11 +190,16 @@ class MantraDataset(InMemoryDataset):
             osp.join(self.raw_dir, self.raw_file_names[0]),
             self.manifold_dim,
             self.task_variable,
-            self.slice,
-            self.load_as_graph,
+            neighborhoods=self.neighborhoods,
+            signed=self.signed,
+            slice=self.slice,
         )
 
-        data_list = data
+        data_list = (
+            [self.pre_transform(d) for d in data]
+            if self.pre_transform is not None
+            else data
+        )
         self.data, self.slices = self.collate(data_list)
         self._data_list = None  # Reset cache.
         fs.torch_save(

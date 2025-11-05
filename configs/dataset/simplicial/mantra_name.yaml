@@ -10,6 +10,8 @@ loader:
     load_as_graph: False
     task_variable: "name" # Options: ['name', 'genus', 'orientable'] To use 'torsion_coefficients', 'betti_numbers' fix multilabel multiclass issue
     model_domain: ${model.model_domain}
+    neighborhoods: ${oc.select:model.backbone.neighborhoods,null}
+    signed: True
     slice: False
 
 # Data definition
