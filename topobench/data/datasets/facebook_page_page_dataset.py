@@ -1,20 +1,21 @@
 """Dataset class for Facebook Page Page dataset."""
 
+import json
 import os
 import os.path as osp
 import shutil
-import json
-import pandas as pd
 from typing import ClassVar
 
-from omegaconf import DictConfig
+import pandas as pd
 import torch
+from omegaconf import DictConfig
 from torch_geometric.data import Data, InMemoryDataset, extract_zip
 from torch_geometric.io import fs
 
 from topobench.data.utils import (
     download_file_from_link,
 )
+
 
 class FacebookPagePageDataset(InMemoryDataset):
     r"""Dataset class for Facebook Page Page dataset.
@@ -36,11 +37,11 @@ class FacebookPagePageDataset(InMemoryDataset):
     """
 
     URLS: ClassVar = {
-        "Facebook-page-page": "https://snap.stanford.edu/data/facebook_large.zip",
+        "facebook_page_page": "https://snap.stanford.edu/data/facebook_large.zip",
     }
 
     FILE_FORMAT: ClassVar = {
-        "Facebook-page-page": "zip",
+        "facebook_page_page": "zip",
     }
 
     RAW_FILE_NAMES: ClassVar = {}
@@ -52,6 +53,7 @@ class FacebookPagePageDataset(InMemoryDataset):
         parameters: DictConfig,
     ) -> None:
         self.name = name
+        self.raw_name = "facebook_large"
         self.parameters = parameters
         super().__init__(
             root,
@@ -133,23 +135,23 @@ class FacebookPagePageDataset(InMemoryDataset):
         download_file_from_link(
             file_link=self.url,
             path_to_save=self.raw_dir,
-            dataset_name=self.name,
+            dataset_name=self.raw_name,
             file_format=self.file_format,
         )
 
         # Extract zip file
         folder = self.raw_dir
-        filename = f"{self.name}.{self.file_format}"
+        filename = f"{self.raw_name}.{self.file_format}"
         path = osp.join(folder, filename)
         extract_zip(path, folder)
         # Delete zip file
         os.unlink(path)
 
         # Move files from osp.join(folder, name_download) to folder
-        for file in os.listdir(osp.join(folder, self.name)):
-            shutil.move(osp.join(folder, self.name, file), folder)
+        for file in os.listdir(osp.join(folder, self.raw_name)):
+            shutil.move(osp.join(folder, self.raw_name, file), folder)
         # Delete osp.join(folder, self.name) dir
-        shutil.rmtree(osp.join(folder, self.name))
+        shutil.rmtree(osp.join(folder, self.raw_name))
 
     def process(self) -> None:
         r"""Handle the data for the dataset.
@@ -167,7 +169,7 @@ class FacebookPagePageDataset(InMemoryDataset):
         tmp = pd.read_csv(osp.join(folder,"musae_facebook_target.csv")).sort_values("id")["page_type"].to_numpy()
         y = torch.tensor(pd.Categorical(tmp, set(tmp)).codes, dtype=torch.long)
         # Node features:
-        with open(osp.join(folder,"musae_facebook_features.json"), "r") as infile:
+        with open(osp.join(folder,"musae_facebook_features.json")) as infile:
             featdict = json.load(infile)
         unique_values_set = set()
         for values_list in featdict.values():
