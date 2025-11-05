@@ -12,60 +12,6 @@ from topomodelx.utils.sparse import from_sparse
 from toponetx.classes import SimplicialComplex
 
 
-# def get_routes_from_neighborhoods_simplex(neighborhoods):
-#     """Get the routes from the neighborhoods using SC notation for adjacencies.
-
-#     Combination of src_rank, dst_rank. ex: [[0, 0], [1, 0], [1, 1], [1, 1], [2, 1]].
-
-#     Parameters
-#     ----------
-#     neighborhoods : list
-#         List of neighborhoods of interest.
-
-#     Returns
-#     -------
-#     list
-#         List of routes.
-#     """
-#     routes = []
-#     for neighborhood in neighborhoods:
-#         split = neighborhood.split("_")
-#         src_rank = int(split[-1])
-#         r = int(split[0]) if len(split) == 3 else 1
-#         route = [src_rank, src_rank + r]
-#         routes.append(route)
-#     return routes
-
-
-# def get_routes_from_neighborhoods(neighborhoods):
-#     """Get the routes from the neighborhoods.
-
-#     Combination of src_rank, dst_rank. ex: [[0, 0], [1, 0], [1, 1], [1, 1], [2, 1]].
-
-#     Parameters
-#     ----------
-#     neighborhoods : list
-#         List of neighborhoods of interest.
-
-#     Returns
-#     -------
-#     list
-#         List of routes.
-#     """
-#     routes = []
-#     for neighborhood in neighborhoods:
-#         split = neighborhood.split("-")
-#         src_rank = int(split[-1])
-#         r = int(split[0]) if len(split) == 3 else 1
-#         route = (
-#             [src_rank, src_rank - r]
-#             if "down" in neighborhood
-#             else [src_rank, src_rank + r]
-#         )
-#         routes.append(route)
-#     return routes
-
-
 def get_routes_from_neighborhoods(neighborhoods):
     """Get the routes from the neighborhoods.
 
