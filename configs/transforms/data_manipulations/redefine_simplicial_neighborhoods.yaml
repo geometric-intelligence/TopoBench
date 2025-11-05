@@ -1,6 +1,0 @@
-transform_name: "RedefineSimplicialNeighborhoods"
-transform_type: null
-keys_to_keep: ["x", "x_0", "x_1", "x_2", "y", "edge_index", "edge_attr", "shape"]
-complex_dim: ${oc.select:dataset.parameters.max_dim_if_lifted,3}
-neighborhoods: ${oc.select:model.backbone.neighborhoods,null}
-signed: False
