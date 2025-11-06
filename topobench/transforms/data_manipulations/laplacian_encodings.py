@@ -104,7 +104,7 @@ class LapPE(BaseTransform):
         k = min(self.max_pe_dim, max(1, num_nodes - 1))
 
         try:
-            evals, evecs = eigsh(L, k=k, which="SM", tol=1e-6)
+            evals, evecs = eigsh(L, k=k, which="SM", tol=0.001)
             idx = np.argsort(evals)
             evals, evecs = evals[idx], evecs[:, idx]
         except Exception:
