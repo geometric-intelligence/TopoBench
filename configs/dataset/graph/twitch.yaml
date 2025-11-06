@@ -2,12 +2,12 @@
 
 # Dataset loader config
 loader:
-  _target_: topobench.data.loaders.graph.twitch_dataset_loader.TwitchDataset
+  _target_: topobench.data.loaders.graph.twitch_dataset_loader.TwitchDatasetLoader
   parameters:
     data_domain: graph
     data_type: social
-    data_name: Twitch
     language: EN        # Language subset to use: 'DE', 'EN', 'ES', 'FR', 'PT', 'RU'
+    data_name: Twitch
     subset_size: null
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
 
@@ -24,8 +24,8 @@ parameters:
 
 # Splits
 split_params:
-  learning_setting: inductive # Nodes in train/val/test are separate
-  data_split_dir: ${paths.data_dir}/data_splits/${dataset.parameters.language}
+  learning_setting: transductive 
+  data_split_dir: ${paths.data_dir}/data_splits/${..loader.parameters.language}
   data_seed: 42
   split_type: random
   train_prop: 0.8
@@ -35,7 +35,7 @@ split_params:
 
 # Dataloader parameters
 dataloader_params:
-  batch_size: 1         # Node-level single graph dataset
+  batch_size: 1       # Node-level single graph dataset
   num_workers: 4
   pin_memory: True
   shuffle: False      

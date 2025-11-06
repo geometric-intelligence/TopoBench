@@ -4,7 +4,7 @@ import hydra
 from test._utils.simplified_pipeline import run
 
 
-DATASET = "graph/twitch"                                                 # ADD YOUR DATASET HERE
+DATASET = "graph/twitch"                                            # ADD YOUR DATASET HERE
 MODELS   = ["graph/gcn"]        # ADD ONE OR SEVERAL MODELS OF YOUR CHOICE HERE
 
 
