@@ -48,9 +48,8 @@ class TwitchDataset(InMemoryDataset):
 
     def __init__(self, root: str, name: str, parameters: DictConfig) -> None:
         self.name = name.upper()  # Ensure language code is uppercase
-        self.raw_name = "twitch"
         self.parameters = parameters
-
+        assert self.name in ['DE', 'EN', 'ES', 'FR', 'PT', 'RU']
         # Map simplified language code
         self.mapped_name = self.LANGUAGE_MAP.get(self.name, self.name)
 
@@ -103,9 +102,9 @@ class TwitchDataset(InMemoryDataset):
         """
         # Files are stored in subfolder per language in the ZIP
         return [
-            f"{self.mapped_name}/musae_{self.mapped_name}_edges.csv",
-            f"{self.mapped_name}/musae_{self.mapped_name}_features.json",
-            f"{self.mapped_name}/musae_{self.mapped_name}_target.csv",
+            f"twitch/{self.mapped_name}/musae_{self.mapped_name}_edges.csv",
+            f"twitch/{self.mapped_name}/musae_{self.mapped_name}_features.json",
+            f"twitch/{self.mapped_name}/musae_{self.mapped_name}_target.csv",
         ]
 
     @property
@@ -114,60 +113,57 @@ class TwitchDataset(InMemoryDataset):
         return "data.pt"
 
     def download(self) -> None:
-        r"""Download Twitch dataset (all languages as one zip)."""
+        r"""Download Twitch dataset (all languages in one zip)."""
         # Download zip file
         download_file_from_link(
             file_link=self.URLS["twitch"],
             path_to_save=self.raw_dir,
-            dataset_name=self.raw_name,
+            dataset_name="twitch",
             file_format=self.FILE_FORMAT["twitch"],
         )
 
         # Extract downloaded zip
-        zip_path = osp.join(self.raw_dir, f"{self.raw_name}.zip")
+        zip_path = osp.join(self.raw_dir, f"twitch.zip")
         extract_zip(zip_path, self.raw_dir)
         os.unlink(zip_path)  # Remove .zip after extraction
 
     def process(self) -> None:
         r"""Process Twitch dataset for a specific language.
 
-        Step 1. Load edge list (user-user connections)
-        Step 2. Load target labels (binary boolean for partnered status)
-        Step 3. Load and one-hot encode node features
+        Step 1. Load edge list 
+        Step 2. Load target labels (binary whether channel streams mature content or not)
+        Step 3. Load features
         Step 4. Create torch_geometric.data.Data object
         Step 5. Save processed dataset to disk
         """
-        lang = self.mapped_name
-        folder = osp.join(self.raw_dir, lang)
-
+        
         # 1. Load edge list
-        edge_path = osp.join(folder, f"musae_{lang}_edges.csv")
-        edges = pd.read_csv(edge_path)[["from_id", "to_id"]].to_numpy()
+        edges = pd.read_csv(self.raw_paths[0])[["from", "to"]].to_numpy()
         edge_index = torch.tensor(edges, dtype=torch.long).t().contiguous()
 
         # 2. Load labels
-        target_path = osp.join(folder, f"musae_{lang}_target.csv")
-        y_raw = pd.read_csv(target_path).sort_values("id")["target"].to_numpy()
-        y = torch.tensor(pd.Categorical(y_raw).codes, dtype=torch.long)
-
+        target_raw = pd.read_csv(self.raw_paths[2])
+        y = torch.tensor(pd.Categorical(target_raw["mature"]).codes, dtype=torch.long)
+        
         # 3. Load node features
-        feat_path = osp.join(folder, f"musae_{lang}_features.json")
-        with open(feat_path) as f:
+        with open(self.raw_paths[1]) as f:
             feat_dict = json.load(f)
 
-        unique_feats = sorted({feat for feats in feat_dict.values() for feat in feats})
-        num_feats = len(unique_feats)
-        feat_index = {feat: i for i, feat in enumerate(unique_feats)}
-
-        # Convert features to one-hot vectors
+        # Get feature vectors with padding 
         x = []
-        for node_id in range(len(feat_dict)):
-            one_hot = [0] * num_feats
-            for f in feat_dict[str(node_id)]:
-                one_hot[feat_index[f]] = 1
-            x.append(one_hot)
-        x = torch.tensor(x, dtype=torch.float)
+        
+        amount_features = 128
+        for i in target_raw['id'].values:
+            feature = [0] * amount_features
 
+            if str(i) in feat_dict:
+                n_len = len(feat_dict[str(i)])
+                feature = feat_dict[str(i)] + [0] * (amount_features - n_len)
+
+            x.append(feature)
+
+        x = torch.tensor(x, dtype=torch.float)
+        
         # 4. Create Data object
         data = Data(x=x, y=y, edge_index=edge_index)
         data_list = [data]
