@@ -12,7 +12,7 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
     r"""Encoder class to apply SimpleEncoder.
 
     The SimpleEncoder is applied to the features of each cell
-    according to a simp
+    according to a simple
 
     Parameters
     ----------
@@ -88,7 +88,7 @@ class SANNFeatureEncoder(AbstractFeatureEncoder):
         # Rebuttal update
         self.fuse_pse2cell = fuse_pse2cell
         if self.fuse_pse2cell:
-            # Instantiate self.hops layer normalization
+            # Instantiate PSEs layer normalization
             self.LN_pse2cell = torch.nn.ModuleList(
                 torch.nn.LayerNorm(self.out_channels) for _ in range(self.hops)
             )
