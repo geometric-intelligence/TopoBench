@@ -5,7 +5,7 @@
 # ==========================================================
 # SETUP: Clean and prepare the logs directory for a fresh run
 # ==========================================================
-LOG_DIR="./logs"
+LOG_DIR="./logs_scripts"
 echo "Preparing a clean log directory at: $LOG_DIR"
 
 # If the log directory exists, delete it and everything inside it
@@ -69,7 +69,7 @@ gpu_id=6  # Specify which GPU to use
 ROOT_LOG_DIR="$LOG_DIR"
 run_counter=1
 job_counter=0
-MAX_PARALLEL=4 # Set the max number of jobs to run at once
+MAX_PARALLEL=3 # Set the max number of jobs to run at once
 
 # Loop over datasets and batch sizes using array indexing for zipping
 num_datasets=${#datasets[@]}
@@ -111,7 +111,7 @@ for model in "${models[@]}"; do
                             "trainer.check_val_every_n_epoch=5"
                             "trainer.devices=[${gpu_id}]"
                             "callbacks.early_stopping.patience=10"
-                            "logger.wandb.project=hypergraph_liftings_main"
+                            "logger.wandb.project=hypergraph_liftings_main2"
                         )
                         if [[ "${model##*/}" != "edgnn" ]]; then
                             cmd+=("model.backbone.n_layers=2")

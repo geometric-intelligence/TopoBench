@@ -5,7 +5,7 @@
 # ==========================================================
 # SETUP: Clean and prepare the logs directory for a fresh run
 # ==========================================================
-LOG_DIR="./logs"
+LOG_DIR="./logs/sweep_modularity"
 echo "Preparing a clean log directory at: $LOG_DIR"
 
 # If the log directory exists, delete it and everything inside it
@@ -58,14 +58,15 @@ lifting="liftings/graph2hypergraph/modularity_maximization"
 lrs=(0.001 0.01 0.1)
 hidden_channels=(32 64 128)
 num_communities=(2 5 10)
-k_neighbors=(3 5 10)
+k_neighbors=(3 5 7)
+DATA_SEEDS=(0 3 5 7 9)
 
 # ========================================================================
 # Main Loop with Execution Tracking
 # ========================================================================
 
 # --- 2. Initialize counters for tracking runs and managing parallel jobs ---
-gpu_id=0  # Specify which GPU to use
+gpu_id=6  # Specify which GPU to use
 ROOT_LOG_DIR="$LOG_DIR"
 run_counter=1
 job_counter=0
@@ -89,47 +90,48 @@ for model in "${models[@]}"; do
 
                 for nc in "${num_communities[@]}"; do
                     for k in "${k_neighbors[@]}"; do
-                        
-                        # Define a descriptive run name for logging
-                        run_name="${model##*/}_${dataset##*/}_${lifting##*/}_k${k}_nc${nc}_h${h}_lr${lr}"
-                        log_group="sweep_modularity"
-                        # Construct the command array.
-                        cmd=(
-                            "python" "-m" "topobench"
-                            "model=${model}"
-                            "dataset=${dataset}"
-                            "optimizer.parameters.lr=${lr}"
-                            "model.feature_encoder.out_channels=${h}"
-                            "model.readout.readout_name=PropagateSignalDown"
-                            "model.feature_encoder.proj_dropout=0.5"
-                            "dataset.dataloader_params.batch_size=${batch_size}"
-                            "transforms=[${lifting}]"
-                            "transforms.liftings.graph2hypergraph.num_communities=${nc}"
-                            "transforms.liftings.graph2hypergraph.k_neighbors=${k}"
-                            "dataset.split_params.data_seed=0,3,5,7,9"
-                            "trainer.max_epochs=500"
-                            "trainer.min_epochs=50"
-                            "trainer.check_val_every_n_epoch=5"
-                            "trainer.devices=[${gpu_id}]"
-                            "callbacks.early_stopping.patience=10"
-                            "logger.wandb.project=hypergraph_liftings"
-                        )
-                        # 2. Check if the model is NOT the edgnn model.
-                        if [[ "${model##*/}" != "edgnn" ]]; then
-                            cmd+=("model.backbone.n_layers=2")
-                        fi
-                        cmd+=("--multirun")
-                        
-                        run_and_log "${cmd[*]}" "$log_group" "$run_name" "$ROOT_LOG_DIR"
+                        for data_seed in "${DATA_SEEDS[@]}"; do
+                            # Define a descriptive run name for logging
+                            run_name="${model##*/}_${dataset##*/}_${lifting##*/}_k${k}_nc${nc}_h${h}_lr${lr}"
+                            log_group="sweep_modularity"
+                            # Construct the command array.
+                            cmd=(
+                                "python" "-m" "topobench"
+                                "model=${model}"
+                                "dataset=${dataset}"
+                                "optimizer.parameters.lr=${lr}"
+                                "model.feature_encoder.out_channels=${h}"
+                                "model.readout.readout_name=PropagateSignalDown"
+                                "model.feature_encoder.proj_dropout=0.5"
+                                "dataset.dataloader_params.batch_size=${batch_size}"
+                                "transforms=[${lifting}]"
+                                "transforms.liftings.graph2hypergraph.num_communities=${nc}"
+                                "transforms.liftings.graph2hypergraph.k_neighbors=${k}"
+                                "dataset.split_params.data_seed=${data_seed}"
+                                "trainer.max_epochs=500"
+                                "trainer.min_epochs=50"
+                                "trainer.check_val_every_n_epoch=5"
+                                "trainer.devices=[${gpu_id}]"
+                                "callbacks.early_stopping.patience=10"
+                                "logger.wandb.project=hypergraph_liftings2"
+                            )
+                            # 2. Check if the model is NOT the edgnn model.
+                            if [[ "${model##*/}" != "edgnn" ]]; then
+                                cmd+=("model.backbone.n_layers=2")
+                            fi
+                            cmd+=("--multirun")
+                            
+                            run_and_log "${cmd[*]}" "$log_group" "$run_name" "$ROOT_LOG_DIR" &
 
-                        # --- 6. Increment counters and manage parallel jobs ---
-                        # ... (Parallel job management remains the same) ...
-                        ((run_counter++))
-                        ((job_counter++))
-                        if [[ "$job_counter" -ge "$MAX_PARALLEL" ]]; then
-                            wait -n
-                            ((job_counter--))
-                        fi
+                            # --- 6. Increment counters and manage parallel jobs ---
+                            # ... (Parallel job management remains the same) ...
+                            ((run_counter++))
+                            ((job_counter++))
+                            if [[ "$job_counter" -ge "$MAX_PARALLEL" ]]; then
+                                wait -n
+                                ((job_counter--))
+                            fi
+                        done
                     done
                 done 
             done

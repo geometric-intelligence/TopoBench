@@ -68,7 +68,7 @@ gpu_id=5  # Specify which GPU to use
 ROOT_LOG_DIR="$LOG_DIR"
 run_counter=1
 job_counter=0
-MAX_PARALLEL=4 # Set the max number of jobs to run at once
+MAX_PARALLEL=3 # Set the max number of jobs to run at once
 
 # Loop over datasets and batch sizes using array indexing for zipping
 num_datasets=${#datasets[@]}
