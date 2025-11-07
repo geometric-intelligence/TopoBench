@@ -16,6 +16,7 @@ from topobench.data.utils import (
     download_file_from_link,
 )
 
+
 class MusaeGitHubDataset(InMemoryDataset):
     r"""Dataset class for MUSAE GitHub dataset.
 
