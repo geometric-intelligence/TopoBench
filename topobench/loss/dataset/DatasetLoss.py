@@ -34,7 +34,7 @@ class DatasetLoss(AbstractLoss):
             self.task == "regression"
             and self.loss_type == "mse"
             or (
-                self.task == "multivariate regression"
+                self.task == "multioutput classification"
                 and self.loss_type == "mse"
             )
         ):
@@ -87,7 +87,7 @@ class DatasetLoss(AbstractLoss):
             target = target.unsqueeze(1)
             dataset_loss = self.criterion(logits, target)
 
-        elif self.task == "multivariate regression":
+        elif self.task == "multioutput classification":
             dataset_loss = self.criterion(logits, target.float())
 
         elif self.task == "classification":
