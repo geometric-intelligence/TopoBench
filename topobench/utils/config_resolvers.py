@@ -200,7 +200,7 @@ def get_monitor_metric(task, metric):
     if (
         task == "classification"
         or task == "regression"
-        or task == "multivariate regression"
+        or task == "multioutput classification"
         or task == "multilabel classification"
     ):
         return f"val/{metric}"
@@ -229,7 +229,7 @@ def get_monitor_mode(task):
     if task == "classification" or task == "multilabel classification":
         return "max"
 
-    elif task == "regression" or task == "multivariate regression":
+    elif task == "regression" or task == "multioutput classification":
         return "min"
 
     else:
@@ -544,13 +544,15 @@ def infer_topotune_num_cell_dimensions(neighborhoods):
     return max([max(route) for route in routes]) + 1
 
 
-def get_default_metrics(task, metrics=None):
+def get_default_metrics(task, num_classes, metrics=None):
     r"""Get default metrics for a given task.
 
     Parameters
     ----------
     task : str
         Task, either "classification" or "regression".
+    num_classes : int
+        Number of classes, relevant for multilabel and multioutput tasks.
     metrics : list, optional
         List of metrics to be used. If None, the default metrics will be used.
 
@@ -567,8 +569,15 @@ def get_default_metrics(task, metrics=None):
     if metrics is not None:
         return metrics
     else:
-        if "classification" in task:
-            return ["accuracy", "precision", "recall", "auroc"]
+        if task in ["multioutput classification", "multilabel classification"]:
+            metric_names = ["accuracy", "precision", "recall", "f1"]
+            metrics = []
+            for dim in range(num_classes):
+                for name in metric_names:
+                    metrics.append(f"{name}-{dim}")
+            return metrics
+        elif "classification" in task:
+            return ["accuracy", "precision", "recall", "auroc", "f1"]
         elif "regression" in task:
             return ["mse", "mae"]
         else:
