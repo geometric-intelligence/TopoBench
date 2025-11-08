@@ -43,13 +43,10 @@ run_and_log() {
     local root_dir="${4:-$LOGGING_ROOT_DIR}"
 
     # --- 1. Path Definitions ---
-
-    # [CHANGED]
     # This is now the *only* directory we need to create and log to.
     local specific_log_dir="$root_dir/$log_group"
     mkdir -p "$specific_log_dir"
     
-    # [CHANGED]
     # Summary logs are now *inside* the specific log directory
     local success_log="$specific_log_dir/SUCCESSFUL_RUNS.log"
     local failed_log="$specific_log_dir/FAILED_RUNS.log"
