@@ -1,6 +1,11 @@
 topobench.loss package
 ======================
 
+.. automodule:: topobench.loss
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Subpackages
 -----------
 
@@ -13,26 +18,8 @@ Subpackages
 Submodules
 ----------
 
-topobench.loss.base module
---------------------------
+.. toctree::
+   :maxdepth: 4
 
-.. automodule:: topobench.loss.base
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-topobench.loss.loss module
---------------------------
-
-.. automodule:: topobench.loss.loss
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Module contents
----------------
-
-.. automodule:: topobench.loss
-   :members:
-   :undoc-members:
-   :show-inheritance:
+   topobench.loss.base
+   topobench.loss.loss

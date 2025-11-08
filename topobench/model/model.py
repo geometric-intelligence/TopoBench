@@ -15,12 +15,12 @@ class TBModel(LightningModule):
     ----------
     backbone : torch.nn.Module
         The backbone model to train.
-    backbone_wrapper : torch.nn.Module
-        The backbone wrapper class.
     readout : torch.nn.Module
         The readout class.
     loss : torch.nn.Module
         The loss class.
+    backbone_wrapper : torch.nn.Module, optional
+        The backbone wrapper class (default: None).
     feature_encoder : torch.nn.Module, optional
         The feature encoder (default: None).
     evaluator : Any, optional
@@ -34,9 +34,9 @@ class TBModel(LightningModule):
     def __init__(
         self,
         backbone: torch.nn.Module,
-        backbone_wrapper: torch.nn.Module,
         readout: torch.nn.Module,
         loss: torch.nn.Module,
+        backbone_wrapper: torch.nn.Module | None = None,
         feature_encoder: torch.nn.Module | None = None,
         evaluator: Any = None,
         optimizer: Any = None,
@@ -50,7 +50,11 @@ class TBModel(LightningModule):
             logger=False, ignore=["backbone", "readout", "feature_encoder"]
         )
 
-        self.feature_encoder = feature_encoder
+        self.feature_encoder = (
+            feature_encoder
+            if feature_encoder is not None
+            else torch.nn.Identity()
+        )
         if backbone_wrapper is None:
             self.backbone = backbone
         else:
@@ -78,7 +82,7 @@ class TBModel(LightningModule):
         return f"{self.__class__.__name__}(backbone={self.backbone}, readout={self.readout}, loss={self.loss}, feature_encoder={self.feature_encoder})"
 
     def forward(self, batch: Data) -> dict:
-        r"""Perform a forward pass through the model `self.backbone`.
+        r"""Perform a forward pass through the model.
 
         Parameters
         ----------
@@ -88,9 +92,18 @@ class TBModel(LightningModule):
         Returns
         -------
         dict
-            Dictionary containing the model output.
+            Dictionary containing the model output, which includes the logits and other relevant information.
         """
-        return self.backbone(batch)
+        # Feature Encoder
+        model_out = self.feature_encoder(batch)
+
+        # Domain model
+        model_out = self.backbone(model_out)
+
+        # Readout
+        model_out = self.readout(model_out=model_out, batch=batch)
+
+        return model_out
 
     def model_step(self, batch: Data) -> dict:
         r"""Perform a single model step on a batch of data.
@@ -108,21 +121,18 @@ class TBModel(LightningModule):
         # Allow batch object to know the phase of the training
         batch["model_state"] = self.state_str
 
-        # Feature Encoder
-        batch = self.feature_encoder(batch)
-
-        # Domain model
+        # Forward pass
         model_out = self.forward(batch)
-
-        # Readout
-        if self.readout is not None:
-            model_out = self.readout(model_out=model_out, batch=batch)
 
         # Loss
         model_out = self.process_outputs(model_out=model_out, batch=batch)
 
         # Metric
         model_out = self.loss(model_out=model_out, batch=batch)
+
+        # Add batch to model_out for evaluator access to target normalizer stats
+        model_out["batch"] = batch
+
         self.evaluator.update(model_out)
 
         return model_out
@@ -146,9 +156,10 @@ class TBModel(LightningModule):
         model_out = self.model_step(batch)
 
         # Update and log metrics
+        loss_value = model_out["loss"].item()
         self.log(
             "train/loss",
-            model_out["loss"],
+            loss_value,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
@@ -172,9 +183,10 @@ class TBModel(LightningModule):
         model_out = self.model_step(batch)
 
         # Log Loss
+        loss_value = model_out["loss"].item()
         self.log(
             "val/loss",
-            model_out["loss"],
+            loss_value,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
@@ -195,9 +207,10 @@ class TBModel(LightningModule):
         model_out = self.model_step(batch)
 
         # Log loss
+        loss_value = model_out["loss"].item()
         self.log(
             "test/loss",
-            model_out["loss"],
+            loss_value,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
@@ -246,6 +259,8 @@ class TBModel(LightningModule):
             The mode of the model, either "train", "val", or "test" (default: None).
         """
         metrics_dict = self.evaluator.compute()
+
+        # Log current metrics
         for key in metrics_dict:
             self.log(
                 f"{mode}/{key}",
@@ -260,8 +275,8 @@ class TBModel(LightningModule):
     def on_validation_epoch_start(self) -> None:
         r"""Hook called when a validation epoch begins.
 
-        According pytorch lightning documentation this hook is called at the
-        beginning of the validation epoch.
+        According pytorch lightning documentation this hook is called at the beginning of the
+        validation epoch.
 
         https://lightning.ai/docs/pytorch/stable/common/lightning_module.html#hooks
 
@@ -296,7 +311,6 @@ class TBModel(LightningModule):
         This hook is used to log the test metrics.
         """
         self.log_metrics(mode="test")
-        print()
 
     def on_train_epoch_start(self) -> None:
         r"""Lightning hook that is called when a train epoch begins.

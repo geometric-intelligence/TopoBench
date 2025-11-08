@@ -36,6 +36,10 @@ jobs:
       - name: Install Pandoc [apt-get]
         run: |
           sudo apt-get -y install pandoc
+      - name: Generate API Documentation
+        run: |
+          cd docs
+          bash generate_api_docs.sh
       - name: Generate Docs [Sphinx]
         run: |
           sphinx-build  -b html -D version=latest -D release=latest docs docs/_build

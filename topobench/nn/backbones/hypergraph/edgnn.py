@@ -142,7 +142,7 @@ class EDGNN(nn.Module):
         return x, None
 
 
-class MLP(nn.Module):
+class customMLP(nn.Module):
     """Class implementing a multi-layer perceptron.
 
     Adapted from https://github.com/CUAI/CorrectAndSmooth/blob/master/gen_models.py
@@ -413,7 +413,7 @@ class EquivSetConv(nn.Module):
         super().__init__()
 
         if mlp1_layers > 0:
-            self.W1 = MLP(
+            self.W1 = customMLP(
                 in_features,
                 out_features,
                 out_features,
@@ -426,7 +426,7 @@ class EquivSetConv(nn.Module):
             self.W1 = nn.Identity()
 
         if mlp2_layers > 0:
-            self.W2 = MLP(
+            self.W2 = customMLP(
                 in_features + out_features,
                 out_features,
                 out_features,
@@ -439,7 +439,7 @@ class EquivSetConv(nn.Module):
             self.W2 = lambda X: X[..., in_features:]
 
         if mlp3_layers > 0:
-            self.W = MLP(
+            self.W = customMLP(
                 out_features,
                 out_features,
                 out_features,
@@ -456,11 +456,11 @@ class EquivSetConv(nn.Module):
 
     def reset_parameters(self):
         """Reset parameters."""
-        if isinstance(self.W1, MLP):
+        if isinstance(self.W1, customMLP):
             self.W1.reset_parameters()
-        if isinstance(self.W2, MLP):
+        if isinstance(self.W2, customMLP):
             self.W2.reset_parameters()
-        if isinstance(self.W, MLP):
+        if isinstance(self.W, customMLP):
             self.W.reset_parameters()
 
     def forward(self, X, vertex, edges, X0):
@@ -524,7 +524,7 @@ class JumpLinkConv(nn.Module):
         self, in_features, out_features, mlp_layers=2, aggr="add", alpha=0.5
     ):
         super().__init__()
-        self.W = MLP(
+        self.W = customMLP(
             in_features,
             out_features,
             out_features,
@@ -613,7 +613,7 @@ class MeanDegConv(nn.Module):
         super().__init__()
         if init_features is None:
             init_features = out_features
-        self.W1 = MLP(
+        self.W1 = customMLP(
             in_features,
             out_features,
             out_features,
@@ -622,7 +622,7 @@ class MeanDegConv(nn.Module):
             Normalization="None",
             InputNorm=False,
         )
-        self.W2 = MLP(
+        self.W2 = customMLP(
             in_features + out_features + 1,
             out_features,
             out_features,
@@ -631,7 +631,7 @@ class MeanDegConv(nn.Module):
             Normalization="None",
             InputNorm=False,
         )
-        self.W3 = MLP(
+        self.W3 = customMLP(
             in_features + out_features + init_features + 1,
             out_features,
             out_features,

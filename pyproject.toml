@@ -26,6 +26,7 @@ classifiers = [
 requires-python = ">= 3.10"
 dependencies=[
     "tqdm",
+    "charset-normalizer",
     "numpy",
     "scipy",
     "requests",
@@ -117,7 +118,6 @@ select = [
     "SIM", # code simplifications
     "NPY", # numpy rules
     "PERF", # performance rules
-    "RUF", # miscellaneous rules
 ]
 fixable = ["ALL"]
 ignore = [

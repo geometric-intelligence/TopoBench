@@ -15,7 +15,7 @@ def testGraphMLP(random_graph_input):
         A tuple of input tensors for testing EDGNN.
     """
     x, x_1, x_2, edges_1, edges_2 = random_graph_input
-    batch = torch_geometric.data.Data(x_0=x, y=x, edge_index=edges_1, batch_0=torch.zeros(x.shape[0], dtype=torch.long))
+    batch = torch_geometric.data.Data(x_0=x, y=x, x=x, edge_index=edges_1, batch_0=torch.zeros(x.shape[0], dtype=torch.long))
     model = GraphMLP(x.shape[1], x.shape[1])
     wrapper = GraphMLPWrapper(model, **{"out_channels": x.shape[1], "num_cell_dimensions": 1})
     loss_fn = GraphMLPLoss()

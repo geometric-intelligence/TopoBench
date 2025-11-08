@@ -1,4 +1,3 @@
-_target_: topobench.transforms.data_transform.DataTransform
 transform_type: 'lifting'
 transform_name: "LatentCliqueLifting"
 edge_prob_mean: 0.95  # Mean of the prior distribution of pie ~ Beta where edge_prob_mean must be in (0, 1). When edge_prob_mean is one, the value of edge_prob is fixed and not sampled.

@@ -1,6 +1,11 @@
 topobench.nn.wrappers package
 =============================
 
+.. automodule:: topobench.nn.wrappers
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Subpackages
 -----------
 
@@ -11,23 +16,13 @@ Subpackages
    topobench.nn.wrappers.combinatorial
    topobench.nn.wrappers.graph
    topobench.nn.wrappers.hypergraph
+   topobench.nn.wrappers.pointcloud
    topobench.nn.wrappers.simplicial
 
 Submodules
 ----------
 
-topobench.nn.wrappers.base module
----------------------------------
+.. toctree::
+   :maxdepth: 4
 
-.. automodule:: topobench.nn.wrappers.base
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Module contents
----------------
-
-.. automodule:: topobench.nn.wrappers
-   :members:
-   :undoc-members:
-   :show-inheritance:
+   topobench.nn.wrappers.base
