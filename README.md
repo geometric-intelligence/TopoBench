@@ -379,6 +379,7 @@ Specially useful in pre-processing steps, these are the general data manipulatio
 | Empire | Classification | Heterophilic dataset. | [Source](https://arxiv.org/pdf/2302.11640) |
 | Tolokers | Classification | Heterophilic dataset. | [Source](https://arxiv.org/pdf/2302.11640) |
 | US-county-demos | Regression | In turn each node attribute is used as the target label. | [Source](https://arxiv.org/pdf/2002.08274) |
+| US-county-fb | Regression | U.S. county network with Facebook social connectedness and demographic features. | [Source](https://arxiv.org/abs/2101.07730) |
 | ZINC | Regression | Graph-level regression. | [Source](https://pubs.acs.org/doi/10.1021/ci3001277) |
 
 
