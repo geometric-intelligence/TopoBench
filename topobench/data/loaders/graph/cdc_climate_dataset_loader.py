@@ -47,7 +47,7 @@ class CDCClimateDatasetLoader(AbstractLoader):
 
         Returns
         -------
-        USCountyDemosDataset
+        CDCClimateDataset
             The initialized dataset instance.
         """
         return CDCClimateDataset(
