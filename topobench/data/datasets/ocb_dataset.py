@@ -205,7 +205,7 @@ class OCBDataset(InMemoryDataset):
 
 
 class OCB101Dataset(OCBDataset):
-    """OCB101: Outdoor Circuit Benchmark 101 (10K circuits).
+    """OCB101: Open Circuit Benchmark 101 (10K circuits).
 
     Parameters
     ----------
@@ -240,7 +240,7 @@ class OCB101Dataset(OCBDataset):
 
 
 class OCB301Dataset(OCBDataset):
-    """OCB301: Outdoor Circuit Benchmark 301 (30.1K circuits).
+    """OCB301: Open Circuit Benchmark 301 (30.1K circuits).
 
     Parameters
     ----------
