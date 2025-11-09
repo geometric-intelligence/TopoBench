@@ -1,4 +1,4 @@
-# OCB101 (Outdoor Circuit Benchmark 101) Dataset Configuration
+# OCB101 (Open Circuit Benchmark 101) Dataset Configuration
 # Graph-level regression task: Predict circuit performance metrics.
 
 # Dataset loader config
