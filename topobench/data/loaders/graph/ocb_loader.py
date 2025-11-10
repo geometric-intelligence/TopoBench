@@ -1,6 +1,7 @@
-"""OCB Circuit Dataset Loaders for TopoBench."""
+"""OCB Circuit Dataset Loader for TopoBench."""
 
-from pathlib import Path
+from __future__ import annotations
+
 from typing import Any
 
 from omegaconf import DictConfig
@@ -10,105 +11,58 @@ from topobench.data.loaders.base import AbstractLoader
 
 
 class OCBDatasetLoader(AbstractLoader):
-    """Base loader for OCB datasets.
+    """Single loader that dispatches to the correct OCB dataset class.
 
     Parameters
     ----------
     parameters : DictConfig
-        A dictionary-like object containing parameters for the dataset loader.
+        Configuration with ``data_name`` specifying the desired OCB dataset.
     """
+
+    _DATASETS: dict[str, type[Any]] = {
+        "OCB101": OCB101Dataset,
+        "OCB301": OCB301Dataset,
+    }
 
     def __init__(self, parameters: DictConfig) -> None:
         super().__init__(parameters)
-        self.dataset_class = None  # To be defined in subclasses
 
     def load_dataset(self) -> Any:
-        """Load and return the specified OCB dataset.
+        """Load the requested OCB dataset.
 
         Returns
         -------
         Any
-            The loaded OCB dataset.
+            Instantiated PyG dataset.
 
         Raises
         ------
+        ValueError
+            If ``data_name`` is missing or unsupported.
         RuntimeError
-            If there is an error loading the dataset.
+            If dataset initialization fails.
         """
-        try:
-            dataset = self._initialize_dataset()
-            self.data_dir = self._redefine_data_dir(dataset)
-            return dataset
-        except Exception as e:
-            raise RuntimeError(
-                f"Error loading {self.parameters.data_name} dataset: {e}"
-            ) from e
-
-    def _initialize_dataset(self) -> Any:
-        """Initialize the dataset instance.
-
-        Raises
-        ------
-        NotImplementedError
-            If `dataset_class` is not set in the subclass.
-
-        Returns
-        -------
-        Any
-            An instance of the dataset class.
-        """
-        if self.dataset_class is None:
-            raise NotImplementedError(
-                "dataset_class must be set in the subclass."
+        data_name = getattr(self.parameters, "data_name", None)
+        if data_name is None:
+            raise ValueError(
+                "parameters.data_name must be provided for OCBDatasetLoader"
             )
 
-        # The root directory will be .../data/graph/circuits/
-        # The OCB101Dataset will create a .../circuits/OCB101/ folder within it
-        return self.dataset_class(
-            root=str(self.get_data_dir()), parameters=self.parameters
-        )
+        try:
+            dataset_cls = self._DATASETS[data_name]
+        except KeyError as exc:
+            supported = ", ".join(sorted(self._DATASETS))
+            raise ValueError(
+                f"Unsupported OCB dataset '{data_name}'. "
+                f"Supported datasets: {supported}"
+            ) from exc
 
-    def _redefine_data_dir(self, dataset: Any) -> Path:
-        """Redefine data directory to the processed data path.
-
-        Parameters
-        ----------
-        dataset : Any
-            The dataset instance.
-
-        Returns
-        -------
-        Path
-            The redefined data directory path.
-        """
-        # This ensures the framework looks for data in the correct processed folder
-        # e.g., .../data/graph/circuits/OCB101/processed
-        return Path(dataset.processed_dir)
-
-
-class OCB101DatasetLoader(OCBDatasetLoader):
-    """Loader for OCB101 circuit graph dataset.
-
-    Parameters
-    ----------
-    parameters : DictConfig
-        A dictionary-like object containing parameters for the dataset loader.
-    """
-
-    def __init__(self, parameters: DictConfig) -> None:
-        super().__init__(parameters)
-        self.dataset_class = OCB101Dataset
-
-
-class OCB301DatasetLoader(OCBDatasetLoader):
-    """Loader for OCB301 circuit graph dataset.
-
-    Parameters
-    ----------
-    parameters : DictConfig
-        A dictionary-like object containing parameters for the dataset loader.
-    """
-
-    def __init__(self, parameters: DictConfig) -> None:
-        super().__init__(parameters)
-        self.dataset_class = OCB301Dataset
+        try:
+            # Each dataset manages its own processed/raw sub-folders under this root.
+            return dataset_cls(
+                root=str(self.get_data_dir()), parameters=self.parameters
+            )
+        except Exception as exc:  # pragma: no cover - rethrow context
+            raise RuntimeError(
+                f"Error loading OCB dataset '{data_name}': {exc}"
+            ) from exc

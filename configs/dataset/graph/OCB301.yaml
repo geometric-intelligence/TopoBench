@@ -3,7 +3,7 @@
 
 # Dataset loader config
 loader:
-  _target_: topobench.data.loaders.graph.ocb_loader.OCB301DatasetLoader
+  _target_: topobench.data.loaders.graph.ocb_loader.OCBDatasetLoader
   parameters:
     data_domain: graph
     data_type: circuits # A new type for circuit graphs
