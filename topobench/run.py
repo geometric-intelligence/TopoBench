@@ -222,6 +222,16 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
         trainer.fit(
             model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path")
         )
+        # BACKWARD COMPATIBILITY: Log the best model score into wandb
+        for logger_elem in logger:
+            if isinstance(
+                logger_elem, L.pytorch.loggers.wandb.WandbLogger
+            ) and hasattr(logger_elem, "experiment"):
+                logger_elem.experiment.log(
+                    {
+                        "best_monitored_score": trainer.checkpoint_callback.best_model_score
+                    }
+                )
 
     train_metrics = trainer.callback_metrics
 

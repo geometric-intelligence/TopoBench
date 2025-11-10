@@ -1,6 +1,6 @@
 #!/bin/bash
 
-data_seeds=(1 3 5)
+data_seeds=(1 3 5 7 9)
 for i in ${data_seeds[@]}; do
 
     python -m topobench \
@@ -11,13 +11,13 @@ for i in ${data_seeds[@]}; do
         model=graph/gcn \
         model.feature_encoder.out_channels=32,64,128 \
         model.feature_encoder.proj_dropout=0.3 \
-        model.backbone.num_layers=2,4 \
+        model.backbone.num_layers=2,4,6 \
         model.backbone.dropout=0.2,0.4 \
         model.readout.hidden_layers=\[16\],\[\] \
         model.readout.dropout=0.3 \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=32 \
-        logger.wandb.project=final_homophily_experiments \
+        logger.wandb.project=homophily \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[0\] \
@@ -25,6 +25,8 @@ for i in ${data_seeds[@]}; do
         callbacks.early_stopping.patience=50 \
         tags="[homophily]" \
         --multirun &
+
+    sleep 200
     
     python -m topobench \
         dataset=graph/GraphUniverse_CD \
@@ -34,7 +36,7 @@ for i in ${data_seeds[@]}; do
         model=graph/gps \
         model.feature_encoder.out_channels=32,64,128 \
         model.feature_encoder.proj_dropout=0.3 \
-        model.backbone.num_layers=2,4 \
+        model.backbone.num_layers=2,4,6 \
         model.backbone.heads=4 \
         model.backbone.dropout=0.2,0.4 \
         model.backbone.attn_type=multihead \
@@ -43,7 +45,7 @@ for i in ${data_seeds[@]}; do
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=32 \
         transforms.CombinedPSEs.encodings=\[RWSE\],\[\] \
-        logger.wandb.project=final_homophily_experiments \
+        logger.wandb.project=homophily \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[1\] \
@@ -60,7 +62,7 @@ for i in ${data_seeds[@]}; do
         model=graph/nsd \
         model.feature_encoder.out_channels=32,64,128 \
         model.feature_encoder.proj_dropout=0.3 \
-        model.backbone.num_layers=4,6 \
+        model.backbone.num_layers=2,4,6 \
         model.backbone.dropout=0.0,0.2 \
         model.backbone.sheaf_type=bundle \
         model.readout.hidden_layers=\[16\],\[\] \
@@ -68,7 +70,7 @@ for i in ${data_seeds[@]}; do
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=32 \
         transforms.CombinedPSEs.encodings=\[RWSE\],\[\] \
-        logger.wandb.project=final_homophily_experiments \
+        logger.wandb.project=homophily \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[2\] \
@@ -86,13 +88,13 @@ for i in ${data_seeds[@]}; do
         model.feature_encoder.out_channels=32,64,128 \
         model.feature_encoder.proj_dropout=0.3 \
         model.backbone.heads=2,4,8 \
-        model.backbone.num_layers=2,4 \
+        model.backbone.num_layers=2,4,6 \
         model.backbone.dropout=0.0,0.2 \
         model.readout.dropout=0.3 \
         model.readout.hidden_layers=\[16\],\[\] \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=32 \
-        logger.wandb.project=final_homophily_experiments \
+        logger.wandb.project=homophily \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[3\] \
@@ -109,13 +111,13 @@ for i in ${data_seeds[@]}; do
         model=graph/sage \
         model.feature_encoder.out_channels=32,64,128 \
         model.feature_encoder.proj_dropout=0.3 \
-        model.backbone.num_layers=2,4 \
+        model.backbone.num_layers=2,4,6 \
         model.backbone.dropout=0.2,0.4 \
         model.readout.dropout=0.3 \
         model.readout.hidden_layers=\[16\],\[\] \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=32 \
-        logger.wandb.project=final_homophily_experiments \
+        logger.wandb.project=homophily \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[0\] \
@@ -132,13 +134,13 @@ for i in ${data_seeds[@]}; do
         model=graph/gin \
         model.feature_encoder.out_channels=32,64,128 \
         model.feature_encoder.proj_dropout=0.3 \
-        model.backbone.num_layers=2,4 \
+        model.backbone.num_layers=2,4,6 \
         model.backbone.dropout=0.2,0.4 \
         model.readout.dropout=0.3 \
         model.readout.hidden_layers=\[16\],\[\] \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=32 \
-        logger.wandb.project=final_homophily_experiments \
+        logger.wandb.project=homophily \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[1\] \
@@ -160,7 +162,7 @@ for i in ${data_seeds[@]}; do
         model.readout.dropout=0.3 \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=32 \
-        logger.wandb.project=final_homophily_experiments \
+        logger.wandb.project=homophily \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[2\] \
@@ -183,7 +185,7 @@ for i in ${data_seeds[@]}; do
         model.readout.hidden_layers=\[16\],\[\] \
         dataset.split_params.data_seed=$i \
         dataset.dataloader_params.batch_size=32 \
-        logger.wandb.project=final_homophily_experiments \
+        logger.wandb.project=homophily \
         trainer.max_epochs=1000 \
         trainer.min_epochs=50 \
         trainer.devices=\[3\] \
