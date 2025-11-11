@@ -1,0 +1,44 @@
+Each timestamped simplex dataset consists of three files:
+1. dataset-nverts.txt
+2. dataset-simplices.txt
+3. dataset-times.txt
+
+All three files represent a vector of integers. There is one integer per line.
+
+The first file contains the number of vertices within each simplex. The second
+file is a contiguous list of the nodes comprising the simplices, where the
+ordering of the simplices is the same as in the first file. The third file
+contains the timestamps for each simplex. The length of the vectors in the first
+and third files is the same, and the length of the vector in the second file is
+the sum of the integers in the first file.
+
+Consider an example dataset consisting of three simplices:
+1. {1, 2, 3} at time 10
+2. {2, 4} at time 15.
+3. {1, 3, 4, 5} at time 21.
+Then files would look as follows:
+
+example-nverts.txt
+3
+2
+4
+
+example-simplices.xt
+1
+2
+3
+2
+4
+1
+3
+4
+5
+
+example-times.txt
+10
+15
+21
+
+
+
+For problems, please contact Austin Benson at arb@cs.cornell.edu.
