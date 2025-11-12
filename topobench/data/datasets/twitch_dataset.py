@@ -49,7 +49,7 @@ class TwitchDataset(InMemoryDataset):
     def __init__(self, root: str, name: str, parameters: DictConfig) -> None:
         self.name = name.upper()  # Ensure language code is uppercase
         self.parameters = parameters
-        assert self.name in ['DE', 'EN', 'ES', 'FR', 'PT', 'RU']
+        assert self.name in ["DE", "EN", "ES", "FR", "PT", "RU"]
         # Map simplified language code
         self.mapped_name = self.LANGUAGE_MAP.get(self.name, self.name)
 
@@ -123,20 +123,20 @@ class TwitchDataset(InMemoryDataset):
         )
 
         # Extract downloaded zip
-        zip_path = osp.join(self.raw_dir, f"twitch.zip")
+        zip_path = osp.join(self.raw_dir, "twitch.zip")
         extract_zip(zip_path, self.raw_dir)
         os.unlink(zip_path)  # Remove .zip after extraction
 
     def process(self) -> None:
         r"""Process Twitch dataset for a specific language.
 
-        Step 1. Load edge list 
+        Step 1. Load edge list
         Step 2. Load target labels (binary whether channel streams mature content or not)
         Step 3. Load features
         Step 4. Create torch_geometric.data.Data object
         Step 5. Save processed dataset to disk
         """
-        
+
         # 1. Load edge list
         edges = pd.read_csv(self.raw_paths[0])[["from", "to"]].to_numpy()
         edge_index = torch.tensor(edges, dtype=torch.long).t().contiguous()
@@ -149,11 +149,11 @@ class TwitchDataset(InMemoryDataset):
         with open(self.raw_paths[1]) as f:
             feat_dict = json.load(f)
 
-        # Get feature vectors with padding 
+        # Get feature vectors with padding
         x = []
-        
+
         amount_features = 128
-        for i in target_raw['id'].values:
+        for i in target_raw["id"].values:
             feature = [0] * amount_features
 
             if str(i) in feat_dict:
