@@ -58,7 +58,9 @@ class DawnDataset(InMemoryDataset):
         pre_filter : callable, optional
             A function that decides whether a `Data` object should be included.
         """
+        # Call the parent InMemoryDataset constructor
         super().__init__(root, transform, pre_transform, pre_filter)
+        # Load the processed dataset from disk
         self.data, self.slices = torch.load(self.processed_paths[0])
 
     @property
@@ -94,12 +96,14 @@ class DawnDataset(InMemoryDataset):
         for fname in self.raw_file_names:
             gz_path = os.path.join(self.raw_dir, fname + ".gz")
             txt_path = os.path.join(self.raw_dir, fname)
+            # Extract .gz only if the corresponding .txt does not already exist
             if os.path.exists(gz_path) and not os.path.exists(txt_path):
                 print(f"Extracting {gz_path} → {txt_path}")
                 with (
                     gzip.open(gz_path, "rb") as f_in,
                     open(txt_path, "wb") as f_out,
                 ):
+                    # Copy contents of gzipped file to txt
                     shutil.copyfileobj(f_in, f_out)
 
     def validate_and_normalize(
@@ -137,16 +141,18 @@ class DawnDataset(InMemoryDataset):
             If edge_index is empty, if x/y dimensions are invalid, if x/y have
             fewer entries than required, or if labels contain negative values.
         """
+        # Ensure that there is at least one hyperedge
         if edge_index.numel() == 0:
             raise ValueError(
                 "Parsed edge_index is empty — no hyperedges found in simplices.txt."
             )
 
+        # Infer number of nodes from edges
         max_node_id = int(edge_index[0].max().item())
         inferred_num_nodes = max_node_id + 1
         num_nodes = max(num_nodes, inferred_num_nodes)
 
-        # Validate features
+        # Validate node features tensor
         if x is not None:
             if x.dim() != 2:
                 raise ValueError(
@@ -163,7 +169,7 @@ class DawnDataset(InMemoryDataset):
                     stacklevel=2,
                 )
 
-        # Validate and normalize labels
+        # Validate and normalize label tensor
         if y is not None:
             if y.dim() != 1:
                 raise ValueError(
@@ -181,7 +187,7 @@ class DawnDataset(InMemoryDataset):
                 )
                 y = y[:num_nodes]
 
-            # Normalize common 1-indexed labels → 0-indexed
+            # Convert 1-indexed labels to 0-indexed
             y_min = int(y.min().item())
             if y_min == 1:
                 warnings.warn(
@@ -190,17 +196,11 @@ class DawnDataset(InMemoryDataset):
                 )
                 y = y - 1
 
+            # Ensure no negative labels remain
             if int(y.min().item()) < 0:
                 raise ValueError(
                     "Labels contain negative values after normalization."
                 )
-
-            # Optional: remap arbitrary labels to contiguous 0..C-1
-            # If labels are not contiguous, uncomment remapping below:
-            # unique = torch.unique(y)
-            # if unique[0] != 0 or unique[-1] != unique.numel() - 1:
-            #     mapping = {int(v): i for i, v in enumerate(unique.tolist())}
-            #     y = torch.tensor([mapping[int(v)] for v in y.tolist()], dtype=torch.long)
 
         return num_nodes, x, y
 
@@ -218,18 +218,19 @@ class DawnDataset(InMemoryDataset):
             If the number of nodes in features or labels does not match the
             number of nodes inferred from simplices.
         """
-        # Ensure .gz files are extracted
+        # Ensure raw files are extracted from .gz if necessary
         self.download()
 
+        # Paths to raw files
         raw_nodes_path = os.path.join(self.raw_dir, "nodes.txt")
         raw_simplices_path = os.path.join(self.raw_dir, "simplices.txt")
         raw_labels_path = os.path.join(self.raw_dir, "labels.txt")
 
-        # Load node features
+        # Load node features if present
         if os.path.exists(raw_nodes_path):
             with open(raw_nodes_path) as f:
                 node_feats = [
-                    [1.0]
+                    [1.0]  # default feature if only node ID is present
                     if len(line.strip().split()) == 1
                     else [float(x) for x in line.strip().split()[1:]]
                     for line in f
@@ -238,6 +239,7 @@ class DawnDataset(InMemoryDataset):
             node_feats = []
             print("No nodes.txt found. Using default features for nodes.")
 
+        # Convert features list to tensor if not empty
         x = torch.tensor(node_feats, dtype=torch.float) if node_feats else None
         num_nodes = x.size(0) if x is not None else 0
 
@@ -249,32 +251,40 @@ class DawnDataset(InMemoryDataset):
         else:
             y = None
 
-        # Load simplices
+        # Load simplices (hyperedges) and timestamps
         edge_index = []
         edge_timestamps = []
         with open(raw_simplices_path) as f:
             for e_idx, line in enumerate(f):
                 parts = line.strip().split()
-                timestamp = float(parts[0])
-                node_ids = [int(x) for x in parts[1:]]
+                timestamp = float(parts[0])  # first entry is timestamp
+                node_ids = [
+                    int(x) for x in parts[1:]
+                ]  # remaining entries are node IDs
                 if not num_nodes:
-                    num_nodes = max(node_ids) + 1
+                    num_nodes = (
+                        max(node_ids) + 1
+                    )  # infer num_nodes if not already known
+                # Create COO-style edge index (node, hyperedge)
                 edge_index.extend([[n, e_idx] for n in node_ids])
                 edge_timestamps.append(timestamp)
 
+        # Convert to torch tensor and transpose to shape [2, num_edges]
         edge_index = (
             torch.tensor(edge_index, dtype=torch.long).t().contiguous()
         )
         edge_timestamps = torch.tensor(edge_timestamps, dtype=torch.float)
 
-        # Validate and normalize using helper method
+        # Validate and normalize features and labels
         num_nodes, x, y = self.validate_and_normalize(
             num_nodes, x, y, edge_index
         )
 
+        # If no features provided, use default all-ones feature
         if x is None:
             x = torch.ones((num_nodes, 1), dtype=torch.float)
 
+        # Construct PyG Data object
         data = Data(
             x=x,
             y=y,
@@ -283,13 +293,14 @@ class DawnDataset(InMemoryDataset):
             num_nodes=num_nodes,
         )
 
-        # Apply pre-filter and pre-transform if provided
+        # Apply optional pre-filter
         if self.pre_filter is not None and not self.pre_filter(data):
             return
+        # Apply optional pre-transform
         if self.pre_transform is not None:
             data = self.pre_transform(data)
 
-        # Save processed data
+        # Save the processed dataset to disk
         torch.save(self.collate([data]), self.processed_paths[0])
         print(f"Processed DAWN dataset saved to {self.processed_paths[0]}")
         return
