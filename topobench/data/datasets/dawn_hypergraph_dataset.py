@@ -25,9 +25,9 @@ class DawnDataset(InMemoryDataset):
 
     Handles raw files (gz or txt) located in `raw_dir`:
 
-    - `simplices.txt.gz` / `simplices.txt` : timestamped simplices
-    - `nodes.txt.gz` / `nodes.txt`         : optional node features
-    - `labels.txt.gz` / `labels.txt`       : optional node labels
+    - `simplices.txt.gz` / `simplices.txt`: timestamped simplices
+    - `nodes.txt.gz` / `nodes.txt`: optional node features
+    - `labels.txt.gz` / `labels.txt`: optional node labels
 
     Produces a single processed file: `data.pt`.
 
@@ -35,6 +35,10 @@ class DawnDataset(InMemoryDataset):
     ----------
     root : str
         Root directory where the dataset should be saved.
+    name : str, optional
+        Name of the dataset. Defaults to "DAWN".
+    parameters : DictConfig, optional
+        Configuration parameters for the dataset.
     transform : callable, optional
         A function/transform that takes in a `Data` object and returns a
         transformed version.
@@ -166,7 +170,9 @@ class DawnDataset(InMemoryDataset):
 
         # Try to copy from configs directory (relative to project root)
         # Get project root by going up from topobench/data/datasets/
-        project_root = osp.dirname(osp.dirname(osp.dirname(osp.dirname(__file__))))
+        project_root = osp.dirname(
+            osp.dirname(osp.dirname(osp.dirname(__file__)))
+        )
         configs_dir = osp.join(
             project_root,
             "configs",
@@ -297,7 +303,7 @@ class DawnDataset(InMemoryDataset):
         return num_nodes, x, y
 
     def process(self) -> None:
-        """Process the DAWN dataset files into a PyG Data object.
+        """Make the DAWN dataset files into a PyG Data object.
 
         Reads the nverts, simplices, and times files and constructs
         a hypergraph with timestamps.
@@ -311,13 +317,13 @@ class DawnDataset(InMemoryDataset):
         times_path = osp.join(self.raw_dir, f"{self.name}-times.txt")
 
         # Read nverts (number of vertices per simplex)
-        with open(nverts_path, "r") as f:
+        with open(nverts_path) as f:
             nverts = [int(line.strip()) for line in f if line.strip()]
 
         num_simplices = len(nverts)
 
         # Read simplices (contiguous list of node IDs)
-        with open(simplices_path, "r") as f:
+        with open(simplices_path) as f:
             all_node_ids = [int(line.strip()) for line in f if line.strip()]
 
         # Verify the total number of nodes matches sum of nverts
@@ -328,7 +334,7 @@ class DawnDataset(InMemoryDataset):
         )
 
         # Read timestamps
-        with open(times_path, "r") as f:
+        with open(times_path) as f:
             timestamps = [int(line.strip()) for line in f if line.strip()]
 
         assert len(timestamps) == num_simplices, (
@@ -364,9 +370,7 @@ class DawnDataset(InMemoryDataset):
         edge_index = torch.tensor([node_list, edge_list], dtype=torch.long)
 
         # Coalesce to remove duplicates and sort
-        edge_index, _ = coalesce(
-            edge_index, None, num_nodes, num_simplices
-        )
+        edge_index, _ = coalesce(edge_index, None, num_nodes, num_simplices)
 
         # Create node features (default: ones)
         x = torch.ones((num_nodes, 1), dtype=torch.float)
