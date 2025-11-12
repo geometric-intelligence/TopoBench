@@ -1,0 +1,55 @@
+name: "Docs: Check and Deploy"
+
+on:
+  push:
+    branches: [main, github-actions-test]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ${{matrix.os}}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        python-version: [3.11.3]
+        torch-version: [2.0.1]
+        include:
+          - torch-version: 2.0.1
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build using Python ${{matrix.python-version}}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{matrix.python-version}}
+          cache: "pip"
+          cache-dependency-path: "pyproject.toml"
+      - name: Install dependencies [pip]
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          source env_setup.sh
+      - name: Install Pandoc [apt-get]
+        run: |
+          sudo apt-get -y install pandoc
+      - name: Generate API Documentation
+        run: |
+          cd docs
+          bash generate_api_docs.sh
+      - name: Generate Docs [Sphinx]
+        run: |
+          sphinx-build  -b html -D version=latest -D release=latest docs docs/_build
+      - name: Deploy Docs
+        uses: JamesIves/github-pages-deploy-action@v4
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'geometric-intelligence/TopoBench' }}
+        with:
+          branch: main
+          folder: docs/_build
+          token: ${{ secrets.DOCUMENTATION_KEY }}
+          repository-name: geometric-intelligence/geometric-intelligence.github.io
+          target-folder: topobench
+          clean: true
