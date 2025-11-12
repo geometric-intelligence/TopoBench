@@ -1,12 +1,14 @@
-"""Loaders for Citation Hypergraph dataset."""
+"""Loaders for Dawn Temporal Hypergraph dataset."""
 
 from omegaconf import DictConfig
 
-from topobench.data.datasets import HypergraphDataset
+from topobench.data.datasets.dawn_hypergraph_dataset import (
+    DawnHypergraphDataset as HypergraphDataset,
+)
 from topobench.data.loaders.base import AbstractLoader
 
 
-class HypergraphDatasetLoader(AbstractLoader):
+class DawnDatasetLoader(AbstractLoader):
     """Load Citation Hypergraph dataset with configurable parameters.
 
     Parameters
