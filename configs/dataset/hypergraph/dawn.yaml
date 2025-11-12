@@ -1,6 +1,6 @@
 # Dataset loader config
 loader:
-  _target_: topobench.data.loaders.HypergraphDatasetLoader
+  _target_: topobench.data.loaders.hypergraph.dawn_dataset_loader.DawnDatasetLoader
   parameters: 
     data_domain: hypergraph
     data_type: temporal

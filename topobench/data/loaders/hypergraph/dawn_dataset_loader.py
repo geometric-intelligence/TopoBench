@@ -3,7 +3,7 @@
 from omegaconf import DictConfig
 
 from topobench.data.datasets.dawn_hypergraph_dataset import (
-    DawnHypergraphDataset as HypergraphDataset,
+    DawnDataset as HypergraphDataset,
 )
 from topobench.data.loaders.base import AbstractLoader
 
