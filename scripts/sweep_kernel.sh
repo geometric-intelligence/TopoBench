@@ -46,7 +46,7 @@ datasets=(
     "graph/roman_empire"
     "graph/MUTAG"
     "graph/PROTEINS"
-    # "graph/hm-categories"
+    "graph/hm-categories"
     "graph/pokec-regions"
     "graph/web-topics"
     "graph/tolokers-2"
@@ -54,7 +54,7 @@ datasets=(
     "graph/artnet-exp"
     "graph/web-fraud"
 )
-batch_sizes=(1 1 1 1 1 256 256 1 1 1 1 1 1) # 1)
+batch_sizes=(1 1 1 1 1 256 256 1 1 1 1 1 1 1)
 
 lifting="liftings/graph2hypergraph/kernel"
 
