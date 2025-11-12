@@ -1,0 +1,41 @@
+# Dataset loader config
+loader:
+  _target_: topobench.data.loaders.MusaeDeezerEuropeDatasetLoader
+  parameters: 
+    data_domain: graph
+    data_type: MUSAE
+    data_name: musae_deezer_europe
+    graph_representation: "pyg" # options: ["networkx", "pyg"]
+    features:
+      matrix_type: "dense" # options: ["dense", "sparse"]
+      dim_reduction: # through scikit-learn Truncated SVD
+        apply: true
+        reduced_dim: 128 #128
+        svd_iter: 20
+    data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+
+# Dataset parameters
+parameters:
+  # Dataset parameters
+  num_features: 128 # without reduction: 30978 
+  num_classes: 2
+  num_nodes: 28281
+  task: classification
+  loss_type: cross_entropy
+  monitor_metric: accuracy
+  task_level: node
+
+#splits
+split_params:
+  learning_setting: transductive
+  data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}
+  data_seed: 0
+  split_type: random #'k-fold' # either "k-fold" or "random" strategies
+  k: 10 # for "k-fold" Cross-Validation
+  train_prop: 0.5 # for "random" strategy splitting
+
+# Dataloader parameters
+dataloader_params:
+  batch_size: 1 # Fixed
+  num_workers: 1
+  pin_memory: False
