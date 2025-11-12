@@ -46,18 +46,22 @@ datasets=(
     "graph/roman_empire"
     "graph/MUTAG"
     "graph/PROTEINS"
-    # "graph/ZINC"
+    # "graph/hm-categories"
+    "graph/pokec-regions"
+    "graph/web-topics"
+    "graph/tolokers-2"
+    "graph/city-reviews"
+    "graph/artnet-exp"
+    "graph/web-fraud"
 )
-
-# NOTE: The batch_sizes array must match the length and order of datasets
-batch_sizes=(1 1 1 1 1 256 256 256)
+batch_sizes=(1 1 1 1 1 256 256 1 1 1 1 1 1) # 1)
 
 lifting="liftings/graph2hypergraph/khop"
 
 
 lrs=(0.001 0.01 0.1)
 hidden_channels=(32 64 128)
-k_values=(1 2 3 5 10)
+k_values=(1 2 3)
 DATA_SEEDS=(0 3 5 7 9)
 
 # ========================================================================
@@ -116,7 +120,6 @@ for model in "${models[@]}"; do
                         if [[ "${model##*/}" != "edgnn" ]]; then
                             cmd+=("model.backbone.n_layers=2")
                         fi
-                        cmd+=("--multirun")
                         
                         run_and_log "${cmd[*]}" "$log_group" "$run_name" "$ROOT_LOG_DIR" &
 

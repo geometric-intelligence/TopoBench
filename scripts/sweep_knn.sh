@@ -46,11 +46,15 @@ datasets=(
     "graph/roman_empire"
     "graph/MUTAG"
     "graph/PROTEINS"
-    # "graph/ZINC"
+    # "graph/hm-categories"
+    "graph/pokec-regions"
+    "graph/web-topics"
+    "graph/tolokers-2"
+    "graph/city-reviews"
+    "graph/artnet-exp"
+    "graph/web-fraud"
 )
-
-# NOTE: The batch_sizes array must match the length and order of datasets
-batch_sizes=(1 1 1 1 1 256 256 256)
+batch_sizes=(1 1 1 1 1 256 256 1 1 1 1 1 1) # 1)
 
 lifting="liftings/graph2hypergraph/knn"
 
