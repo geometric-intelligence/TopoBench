@@ -5,6 +5,7 @@ from .utils import (
     # import function here, add noqa: F401 for PR
     ensure_serializable,  # noqa: F401
     generate_zero_sparse_connectivity,  # noqa: F401
+    get_colored_hypergraph_connectivity,  # noqa: F401
     get_combinatorial_complex_connectivity,  # noqa: F401
     get_complex_connectivity,  # noqa: F401
     get_routes_from_neighborhoods,  # noqa: F401
@@ -16,6 +17,7 @@ from .utils import (
 )
 
 utils_functions = [
+    "get_colored_hypergraph_connectivity",
     "get_combinatorial_complex_connectivity",
     "get_complex_connectivity",
     "get_routes_from_neighborhoods",

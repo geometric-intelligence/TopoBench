@@ -111,7 +111,7 @@ def get_combinatorial_complex_connectivity(
 
     Parameters
     ----------
-    complex : topnetx.CombinatorialComplex
+    complex : toponetx.CombinatorialComplex
         Cell complex.
     max_rank : int
         Maximum rank of the complex.
@@ -183,6 +183,55 @@ def get_combinatorial_complex_connectivity(
                             n=practical_shape[rank_idx],
                         )
                     )
+    if neighborhoods is not None:
+        connectivity = select_neighborhoods_of_interest(
+            connectivity, neighborhoods
+        )
+    connectivity["shape"] = practical_shape
+    return connectivity
+
+
+def get_colored_hypergraph_connectivity(complex, max_rank, neighborhoods=None):
+    """Get the connectivity information of the colored hypergraph.
+    
+    Parameters
+    ----------
+    complex : ColoredHyperGraph
+        The colored hypergraph to extract connectivity from.
+    max_rank : int
+        The maximum rank of the complex.
+    neighborhoods : dict, optional
+        List of neighborhoods to consider, by default None.
+
+    Returns
+    -------
+    Data
+        A Data object containing the connectivity information.
+    """
+    
+    practical_shape = list(
+        np.pad(list(complex.shape), (0, max_rank + 1 - len(complex.shape)))
+    )
+    connectivity = {}
+    for rank_idx in range(max_rank + 1):
+        for connectivity_info in [
+            "adjacency",
+            "coadjacency",
+        ]:
+                connectivity[f"{connectivity_info}_{rank_idx}"] = from_sparse(
+                    getattr(complex, f"{connectivity_info}_matrix")(
+                        rank_idx, rank_idx - 1 if connectivity_info == "coadjacency" else rank_idx + 1
+                    )
+                )
+        connectivity[f"incidence_{rank_idx}"] = from_sparse(
+            complex.incidence_matrix(
+                rank_idx - 1, rank_idx
+            )
+        ) if rank_idx > 0 else generate_zero_sparse_connectivity(
+            m=0,
+            n=practical_shape[rank_idx],
+        )
+    neighborhoods = ["2-up_incidence-0", "4-down_incidence-4"]
     if neighborhoods is not None:
         connectivity = select_neighborhoods_of_interest(
             connectivity, neighborhoods
