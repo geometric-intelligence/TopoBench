@@ -1,0 +1,45 @@
+# MUV Dataset
+# Description: Maximum Unbiased Validation (MUV) datasets designed for validation of 
+#              virtual screening techniques.
+# Source: MoleculeNet benchmark collection
+# Statistics: 93,087 graphs (reported) | ~24.2 nodes/graph | ~52.6 edges/graph | 9 features | 17 tasks
+# Task: Multi-label classification (biological activity prediction)
+# 
+# ⚠️ CRITICAL ISSUE: In current PyTorch Geometric versions, ALL molecules in this dataset
+# fail to parse due to invalid SMILES strings, resulting in an empty dataset.
+# This is a known issue with the MoleculeNet MUV dataset.
+# DO NOT USE THIS CONFIG until the upstream data issue is resolved.
+# See: https://github.com/deepchem/deepchem/issues/2336
+
+# Dataset loader config
+loader:
+  _target_: topobench.data.loaders.MoleculeNetDatasetLoader
+  parameters: 
+    data_domain: graph
+    data_type: MoleculeNet
+    data_name: MUV
+    data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+
+# Dataset parameters
+parameters:
+  num_features: 9
+  num_classes: 17
+  task: classification
+  loss_type: bce
+  monitor_metric: accuracy
+  task_level: graph
+
+# Splits
+split_params:
+  learning_setting: inductive
+  data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}
+  data_seed: 0
+  split_type: random
+  k: 10  # for k-fold CV
+  train_prop: 0.8  # for random split
+
+# Dataloader parameters
+dataloader_params:
+  batch_size: 32
+  num_workers: 0
+  pin_memory: False
