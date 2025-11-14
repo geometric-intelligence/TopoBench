@@ -400,9 +400,10 @@ def infer_in_channels(dataset, transforms):
         # TODO: Does this if statement ever execute? model_domain == data_domain and data_domain in ["simplicial", "cell", "combinatorial", "hypergraph"]
         # BUT get_default_transform() returns "no_transform" when model_domain == data_domain
         if (
-            dataset.loader.parameters.get("model_domain", "graph")
-            == dataset.loader.parameters.data_domain
-            and dataset.loader.parameters.data_domain
+            # dataset.loader.parameters.get("model_domain", "graph")
+            # == dataset.loader.parameters.data_domain
+            # and 
+            dataset.loader.parameters.data_domain
             in ["simplicial", "cell", "combinatorial", "hypergraph"]
         ):
             if isinstance(

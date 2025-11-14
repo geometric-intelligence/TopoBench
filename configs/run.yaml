@@ -5,7 +5,7 @@
 defaults:
   - _self_
   - dataset: hypergraph/twitter_arlequin
-  - model: hypergraph/unignn
+  - model: hypergraph/topotune
   - transforms: ${get_default_transform:${dataset},${model}} #no_transform
   - optimizer: default
   - loss: default

@@ -6,11 +6,17 @@ loader:
     data_type: social
     data_name: TwitterArlequin
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+    # Hypergraph construction parameters
+    cluster_level_posts: 1
+    cluster_level_users: 0
+    max_rank: 4
+    cluster_seed: 42
+    neighborhoods: ${oc.select:model.backbone.neighborhoods,null}
 
 # Dataset parameters
 parameters:
-  num_features: 100
-  num_classes: 40
+  num_features: [1024, 44, 1024, 1024, 44]
+  num_classes: 44
   task: classification
   loss_type: cross_entropy
   monitor_metric: accuracy

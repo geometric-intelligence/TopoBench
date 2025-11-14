@@ -1,18 +1,16 @@
 """Dataset class for US County Demographics dataset."""
 
-import os
 import os.path as osp
-import shutil
 from typing import ClassVar
 
 import numpy as np
 import pandas as pd
 import polars as pl
 import toponetx as tnx
+import torch
 from hnne.finch_clustering import FINCH
 from omegaconf import DictConfig
-import torch
-from torch_geometric.data import Data, InMemoryDataset, extract_zip
+from torch_geometric.data import Data, InMemoryDataset
 from torch_geometric.io import fs
 
 from topobench.data.utils import get_colored_hypergraph_connectivity
@@ -55,6 +53,13 @@ class TwitterArlequinDataset(InMemoryDataset):
     ) -> None:
         self.name = name
         self.parameters = parameters
+        # hypergraph construction parameters
+        self.cluster_level_posts = parameters.get("cluster_level_posts", 1)
+        self.cluster_level_users = parameters.get("cluster_level_users", 0)
+        self.max_rank = parameters.get("max_rank", 4)
+        self.cluster_seed = parameters.get("cluster_seed", 42)
+        self.neighborhoods = parameters.get("neighborhoods", None)
+        self.hypergraph_id = f"{self.cluster_level_posts}_{self.cluster_level_users}_{self.max_rank}_{self.cluster_seed}_{self.neighborhoods}"
         super().__init__(
             root,
         )
@@ -87,7 +92,7 @@ class TwitterArlequinDataset(InMemoryDataset):
         str
             Path to the raw directory.
         """
-        return osp.join(self.root, self.name, "raw")
+        return osp.join(self.root, self.name, self.hypergraph_id, "raw")
 
     @property
     def processed_dir(self) -> str:
@@ -99,7 +104,7 @@ class TwitterArlequinDataset(InMemoryDataset):
             Path to the processed directory.
         """
 
-        return osp.join(self.root, self.name, "processed")
+        return osp.join(self.root, self.name, self.hypergraph_id, "processed")
 
     @property
     def raw_file_names(self) -> list[str]:
@@ -193,47 +198,39 @@ class TwitterArlequinDataset(InMemoryDataset):
                     self.mentions.append(combined_posts)
                     self.complex.add_cell(mention, rank=rank)
 
-    def cluster_posts(self, embeddings, cluster_level_posts=2, random_seed=57):
+    def cluster_posts(self, embeddings):
         """Cluster posts based on embeddings and add semantic hyperedges to complex.
         
         Parameters
         ----------
         embeddings : np.ndarray
             Array containing the post embeddings.
-        cluster_level_posts : int, optional
-            Clustering level for posts, by default 2.
-        random_seed : int, optional
-            Random seed for clustering, by default 57.
         """
-        clusters, n_clusters, _, _ = FINCH(data=embeddings, distance="cosine", verbose=0, random_state=random_seed)
+        clusters, n_clusters, _, _ = FINCH(data=embeddings, distance="cosine", verbose=0, random_state=self.cluster_seed)
         print("Embeddings: ", n_clusters)
-        self.semantics = clusters[:, -cluster_level_posts]
-        self.n_clusters_posts = n_clusters[-cluster_level_posts]
+        self.semantics = clusters[:, self.cluster_level_posts]
+        self.n_clusters_posts = n_clusters[self.cluster_level_posts]
 
-    def build_semantic_hyperedges(self):
-        """Build semantic hyperedges from clustered posts and add to complex."""
+    def build_semantic_hyperedges(self, rank=4):
+        """Build semantic hyperedges from clustered posts and add to complex.
+        
+        Parameters
+        ----------
+        rank : int, optional
+            Rank of the hyperedges, by default 4.
+        """
         self.semantic_hyperedges = []
         for label in range(self.n_clusters_posts):
             # get users in cluster
             mask = self.semantics == label
             cluster_posts = np.array(self.posts)[mask]
             # create hyperedge
-            cluster = tnx.HyperEdge(cluster_posts, rank=4)
+            cluster = tnx.HyperEdge(cluster_posts, rank=rank)
             self.semantic_hyperedges.append(cluster_posts)
-            self.complex.add_cell(cluster, rank=4)
+            self.complex.add_cell(cluster, rank=rank)
 
-    def compute_and_cluster_user_feature_vectors(self, cluster_level_users=0, random_seed=57):
-        """Compute feature vectors for each user based on clustered posts.
-        
-        Parameters
-        ----------
-        embedding_ids : list
-            List of embedding IDs for the posts.
-        cluster_level_users : int, optional
-            Clustering level for users, by default 0.
-        random_seed : int, optional
-            Random seed for clustering, by default 57.
-        """
+    def compute_and_cluster_user_feature_vectors(self):
+        """Compute feature vectors for each user based on clustered posts."""
         feature_vectors = []
         for user in self.user_ids:
             feature = [0.0 for _ in range(self.n_clusters_posts)]
@@ -242,16 +239,22 @@ class TwitterArlequinDataset(InMemoryDataset):
                 cluster = self.semantics[index]
                 feature[cluster] += 1
             feature_vectors.append([f / sum(feature) for f in feature])
-        self.feature_vectors = np.array(feature_vectors)
+        self.user_feature_vectors = np.array(feature_vectors)
         
         # cluster feature vectors
-        clusters, n_clusters, _, _ = FINCH(data=self.feature_vectors, distance="euclidean", verbose=0, random_state=random_seed)
+        clusters, n_clusters, _, _ = FINCH(data=self.user_feature_vectors, distance="euclidean", verbose=0, random_state=self.cluster_seed)
         print("Users: ", n_clusters)
-        self.user_clusters = clusters[:, cluster_level_users]
-        self.n_clusters_users = n_clusters[cluster_level_users]
+        self.user_clusters = clusters[:, self.cluster_level_users]
+        self.n_clusters_users = n_clusters[self.cluster_level_users]
+
+    def build_community_hyperedges(self, rank=3):
+        """Build community hyperedges from clustered users and add to complex.
         
-    def build_community_hyperedges(self):
-        """Build community hyperedges from clustered users and add to complex."""
+        Parameters
+        ----------
+        rank : int, optional
+            Rank of the hyperedges, by default 3.
+        """
         self.community_hyperedges = []
         for label in range(self.n_clusters_users):
             # get users in cluster
@@ -262,17 +265,12 @@ class TwitterArlequinDataset(InMemoryDataset):
             for user in cluster_users:
                 cluster_posts.extend(self.users_to_posts[user])
             # create hyperedge
-            cluster = tnx.HyperEdge(cluster_posts, rank=3)
+            cluster = tnx.HyperEdge(cluster_posts, rank=rank)
             self.community_hyperedges.append(cluster_posts)
-            self.complex.add_cell(cluster, rank=3)
-            
+            self.complex.add_cell(cluster, rank=rank)
+
     def get_connectivity(self):
         """Get connectivity of the complex."""
-        # parameters
-        cluster_lvl_posts = 1 # cluster level for posts
-        cluster_lvl_users = 0 # cluster level for users
-        max_rank = 4 # maximum rank of the complex
-        random_seed = 57
 
         # open dataset
         df = pd.read_parquet(self.RAW_FILE_NAMES["processed_data"])
@@ -300,23 +298,25 @@ class TwitterArlequinDataset(InMemoryDataset):
         self.build_connection_hyperedges(rank=2)
 
         # cluster posts based on embeddings and create hyperedge for semantic clusters
-        self.cluster_posts(embeddings, cluster_level_posts=cluster_lvl_posts, random_seed=random_seed)
-        self.build_semantic_hyperedges()
+        self.cluster_posts(embeddings)
+        self.build_semantic_hyperedges(rank=4)
 
         # compute feature vectors for each user
-        self.compute_and_cluster_user_feature_vectors(cluster_level_users=cluster_lvl_users, random_seed=random_seed)
-        self.build_community_hyperedges()
+        self.compute_and_cluster_user_feature_vectors()
+        self.build_community_hyperedges(rank=3)
 
-        connectivity = get_colored_hypergraph_connectivity(self.complex, max_rank=max_rank)
+        connectivity = get_colored_hypergraph_connectivity(self.complex, max_rank=self.max_rank, neighborhoods=self.neighborhoods)
         return connectivity, embeddings
     
-    def get_node_features_and_labels(self, embeddings):
+    def get_node_features_and_labels(self, embeddings, connectivity):
         """Get node features and labels for the dataset.
         
         Parameters
         ----------
         embeddings : np.ndarray
             Array containing the post embeddings.
+        connectivity : dict
+            Dictionary containing the connectivity of the complex.
 
         Returns
         -------
@@ -324,10 +324,18 @@ class TwitterArlequinDataset(InMemoryDataset):
             Dictionary containing the features and labels for each node.
         """
         features_and_labels = dict()
+        # Rank 0 nodes (posts)
         features_and_labels["x_0"] = torch.tensor(embeddings, dtype=torch.float32)
-        features_and_labels["x_1"] = torch.tensor(self.feature_vectors, dtype=torch.float32)
-        # features_and_labels["x_2"] = torch.zeros_like(features_and_labels["x_0"])
-        features_and_labels["x_3"] = torch.zeros_like(features_and_labels["x_0"])
+        # Rank 1 (users)
+        features_and_labels["x_1"] = torch.tensor(self.user_feature_vectors, dtype=torch.float32)
+        # Rank 2 (connections)
+        features_and_labels["x_2"] = torch.zeros(connectivity["shape"][2], features_and_labels["x_0"].shape[1], dtype=torch.float32)
+        # Rank 3 (communities)
+        features_and_labels["x_3"] = torch.zeros(connectivity["shape"][3], features_and_labels["x_0"].shape[1], dtype=torch.float32)
+        # Rank 4 (semantic clusters) - convert to one-hot encoding
+        num_classes = connectivity["shape"][4]
+        features_and_labels["x_4"] = torch.eye(num_classes, dtype=torch.float32)
+        # Labels (semantic clusters of posts)
         features_and_labels["y"] = torch.tensor(self.semantics, dtype=torch.long)
         return features_and_labels
 
@@ -335,7 +343,7 @@ class TwitterArlequinDataset(InMemoryDataset):
         r"""Handle the data for the dataset.
         """
         connectivity, embeddings = self.get_connectivity()
-        features_and_labels = self.get_node_features_and_labels(embeddings)
+        features_and_labels = self.get_node_features_and_labels(embeddings, connectivity)
         data = Data(**connectivity, **features_and_labels)
 
         data_list = [data]
@@ -349,6 +357,21 @@ class TwitterArlequinDataset(InMemoryDataset):
 
 # node class
 class Post:
+    """Class representing a Twitter post node.
+    
+    Parameters
+    ----------
+    id : int
+        Unique identifier for the post.
+    msg : str
+        Content of the post.
+    user_id : int
+        Identifier of the user who created the post.
+    reply_to_user_id : list
+        List of user IDs that the post replies to.
+    mentions_user_id : list
+        List of user IDs that the post mentions.
+    """
     def __init__(self, id, msg, user_id, reply_to_user_id, mentions_user_id):
         self.id = id
         self.msg = msg
