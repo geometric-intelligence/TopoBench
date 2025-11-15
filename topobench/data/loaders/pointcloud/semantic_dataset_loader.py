@@ -1,4 +1,4 @@
-"""Loaders for Citation Hypergraph dataset."""
+"""Loaders for Semantic representation dataset."""
 
 from omegaconf import DictConfig
 
@@ -7,15 +7,16 @@ from topobench.data.loaders.base import AbstractLoader
 
 
 class SemanticDatasetLoader(AbstractLoader):
-    """Load Semantic dataset with configurable parameters.
+    """Load Semantic representations dataset with configurable parameters.
 
     Parameters
     ----------
     parameters : DictConfig
         Configuration parameters containing:
-            - data_name: Name of the dataset
-            - models: a list of model names used to build semantic representations
-            - other relevant parameters
+            - data_dir: Root directory for data.
+            - data_name: Name of the dataset.
+            - models: a list of model names used to build semantic representations.
+            - other relevant parameters.
     """
 
     def __init__(self, parameters: DictConfig,) -> None:
@@ -28,7 +29,7 @@ class SemanticDatasetLoader(AbstractLoader):
         Returns
         -------
         SemanticDataset
-            The loaded a Semantic dataset with the appropriate `data_name`.
+            The loaded a Semantic dataset with the appropriate `name`.
 
         Raises
         ------
@@ -45,9 +46,22 @@ class SemanticDatasetLoader(AbstractLoader):
 
         Returns
         -------
-        HypergraphDataset
+        SemanticDataset
             The initialized dataset instance.
         """
         return SemanticDataset(
+            root=str(self.root_data_dir),
             parameters=self.parameters,
         )
+
+
+if __name__ == '__main__':
+    # Some Variables
+    parameters: dict[str] = DictConfig({
+        'data_dir': 'example',
+        'data_name': 'cifar10',
+        'models': ['aimv2_1b_patch14_224.apple_pt', 'aimv2_1b_patch14_336.apple_pt', 'aimv2_1b_patch14_448.apple_pt'],
+    })
+
+    # Initialize a Semantic Dataset
+    dataloader = SemanticDatasetLoader(parameters=parameters)

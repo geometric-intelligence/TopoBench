@@ -11,10 +11,11 @@ loader:
 
 # Dataset parameters
 parameters:
-  # task: classification
-  # loss_type: cross_entropy
-  # monitor_metric: accuracy
-  # task_level: node
+  data_name: ${loader.parameters.data_name}
+  models:
+    - aimv2_1b_patch14_224.apple_pt
+    - aimv2_1b_patch14_336.apple_pt
+    - aimv2_1b_patch14_448.apple_pt
 
 #splits
 split_params:
