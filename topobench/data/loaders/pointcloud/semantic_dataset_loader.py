@@ -14,16 +14,16 @@ class SemanticDatasetLoader(AbstractLoader):
     parameters : DictConfig
         Configuration parameters containing:
             - data_name: Name of the dataset
+            - models: a list of model names used to build semantic representations
             - other relevant parameters
     """
 
-    def __init__(self, models: list(str), parameters: DictConfig,) -> None:
+    def __init__(self, parameters: DictConfig,) -> None:
         super().__init__(parameters)
-        self.models = models
         self.parameters = parameters
 
     def load_dataset(self) -> SemanticDataset:
-        """Load the Citation Hypergraph dataset.
+        """Load the Semantic dataset.
 
         Returns
         -------
@@ -41,7 +41,7 @@ class SemanticDatasetLoader(AbstractLoader):
         return dataset
 
     def _initialize_dataset(self) -> SemanticDataset:
-        """Initialize the Citation Hypergraph dataset.
+        """Initialize the Semantic dataset.
 
         Returns
         -------
@@ -49,7 +49,5 @@ class SemanticDatasetLoader(AbstractLoader):
             The initialized dataset instance.
         """
         return SemanticDataset(
-            name=self.parameters.data_name,
-            models=self.models,
             parameters=self.parameters,
         )
