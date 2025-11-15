@@ -2,8 +2,8 @@ _target_: lightning.pytorch.trainer.Trainer
 
 default_root_dir: ${paths.output_dir}
 
-min_epochs: 1 # prevents early stopping
-max_epochs: 300
+min_epochs: 100 # prevents early stopping
+max_epochs: 1000
 #accumulate_grad_batches: 1 #${dataset.parameters.batch_size}
 
 accelerator: gpu
@@ -13,7 +13,7 @@ devices: [0]
 # precision: 16
 
 # perform a validation loop every N training epochs
-check_val_every_n_epoch: 5
+check_val_every_n_epoch: 1
 
 # set True to to ensure deterministic results
 # makes training slower but gives more reproducibility than just setting seeds

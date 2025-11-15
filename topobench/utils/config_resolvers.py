@@ -464,9 +464,11 @@ def infer_topotune_num_cell_dimensions(neighborhoods):
         Length of the input list.
     """
     from topobench.data.utils import get_routes_from_neighborhoods
-
-    routes = get_routes_from_neighborhoods(neighborhoods)
-    return max([max(route) for route in routes]) + 1
+    if neighborhoods is None or len(neighborhoods) == 0:
+        return 3  # Default to 3 dimensions
+    else:
+        routes = get_routes_from_neighborhoods(neighborhoods)
+        return max([max(route) for route in routes]) + 1
 
 
 def get_default_metrics(task, metrics=None):
