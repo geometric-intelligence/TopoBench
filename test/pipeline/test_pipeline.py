@@ -11,7 +11,7 @@ MODELS   = [
 ]
 
 OVERRIDES = [
-    "dataset.loader.parameters.city=paris",
+    "dataset.loader.parameters.name=paris",
     "dataset.loader.parameters.augmented=true"
 ]
 
