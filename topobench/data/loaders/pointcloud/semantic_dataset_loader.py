@@ -17,9 +17,9 @@ class SemanticDatasetLoader(AbstractLoader):
             - other relevant parameters
     """
 
-    def __init__(self, parameters: DictConfig,) -> None:
+    def __init__(self, models: list(str), parameters: DictConfig,) -> None:
         super().__init__(parameters)
-
+        self.models = models
         self.parameters = parameters
 
     def load_dataset(self) -> SemanticDataset:
@@ -50,6 +50,6 @@ class SemanticDatasetLoader(AbstractLoader):
         """
         return SemanticDataset(
             name=self.parameters.data_name,
-            model=self.parameters.model,
+            models=self.models,
             parameters=self.parameters,
         )
