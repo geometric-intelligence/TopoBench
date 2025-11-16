@@ -1,16 +1,17 @@
 # Dataset loader config
 loader:
   _target_: topobench.data.loaders.hypergraph.dawn_dataset_loader.DawnDatasetLoader
+  # topobench.data.loaders.DawnDatasetLoader
   parameters: 
     data_domain: hypergraph
-    data_type: temporal
-    data_name: DAWN
+    data_type: dawn
+    data_name: dawn
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
 
 # Dataset parameters
 parameters:
   num_features: 1  # Default feature dimension (may need adjustment based on actual features)
-  num_classes: 2  # Default number of classes (may need adjustment based on task)
+  num_classes: 2558 # Default number of classes (may need adjustment based on task)
   task: classification
   loss_type: cross_entropy
   monitor_metric: accuracy
