@@ -3,10 +3,6 @@ from topobench.nn.wrappers.graph.sklearn.sklearn_wrappers.base import (
 )
 import torch
 import numpy as np
-from sklearn.metrics import accuracy_score
-from typing import Dict
-from tqdm import tqdm
-
 
 class ClassifierWrapper(BaseWrapper):
     def _init_targets(self, y_train):
