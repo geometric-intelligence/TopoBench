@@ -82,9 +82,7 @@ class AllPCAFeatureEncoder(AbstractFeatureEncoder):
         for i in self.dimensions:
             if hasattr(data, f"x_{i}") and hasattr(self, f"encoder_{i}"):
                 batch = getattr(data, f"batch_{i}")
-                data["x_0"] = getattr(self, f"encoder_{i}")(
-                    data["x_0"], batch
-                )
+                data["x_0"] = getattr(self, f"encoder_{i}")(data["x_0"], batch)
         return data
 
 

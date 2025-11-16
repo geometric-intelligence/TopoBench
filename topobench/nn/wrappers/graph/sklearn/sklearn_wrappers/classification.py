@@ -1,4 +1,6 @@
-from topobench.nn.wrappers.graph.sklearn.sklearn_wrappers.base import BaseWrapper
+from topobench.nn.wrappers.graph.sklearn.sklearn_wrappers.base import (
+    BaseWrapper,
+)
 import torch
 import numpy as np
 from sklearn.metrics import accuracy_score
@@ -12,16 +14,10 @@ class ClassifierWrapper(BaseWrapper):
         self.num_classes_ = len(self.classes_)
         self.uniform_ = np.ones(len(self.classes_)) / len(self.classes_)
 
-    def get_predictions(
-            self,
-            node_features,
-            test_mask
-            ):
+    def get_predictions(self, node_features, test_mask):
         output = self.backbone.predict_proba(node_features[test_mask])
 
-        prob_tensor = (
-           torch.from_numpy(output).float()
-        )
+        prob_tensor = torch.from_numpy(output).float()
 
         # Prepare the output
         prob_logits = torch.zeros(len(node_features), self.num_classes_)

@@ -13,9 +13,9 @@ class BaseWrapper(torch.nn.Module, ABC):
         self.use_node_features = kwargs.get("use_node_features", True)
         self.sampler = kwargs.get("sampler", None)
 
-        assert self.use_embeddings or self.use_node_features, (
-            "Either use_embeddings or use_node_features could be False, not both."
-        )
+        assert (
+            self.use_embeddings or self.use_node_features
+        ), "Either use_embeddings or use_node_features could be False, not both."
         self.logger = kwargs.get("logger", None)
         # Initialize the counters
         self.num_no_neighbors = 0
@@ -27,7 +27,7 @@ class BaseWrapper(torch.nn.Module, ABC):
     def fit(self, x: np.ndarray, y: np.ndarray):
         # common: store target dtype, do nothing else
         return self
- 
+
     def log_model_stat(self, num_test_points):
         total_ratio = (
             self.num_no_neighbors / num_test_points
@@ -37,9 +37,9 @@ class BaseWrapper(torch.nn.Module, ABC):
             + self.num_all_same_label / num_test_points
         )
 
-        assert math.isclose(total_ratio, 1.0, rel_tol=1e-9, abs_tol=1e-6), (
-            f"The sum of the ratios should be 1 (within tolerance), but got {total_ratio:.10f}"
-        )
+        assert math.isclose(
+            total_ratio, 1.0, rel_tol=1e-9, abs_tol=1e-6
+        ), f"The sum of the ratios should be 1 (within tolerance), but got {total_ratio:.10f}"
         self.logger(
             "test/no_neighbors",
             np.round((100 * self.num_no_neighbors / num_test_points), 2),
@@ -106,8 +106,7 @@ class BaseWrapper(torch.nn.Module, ABC):
         self.backbone.fit(X_train, y_train)
 
         prob_logits = self.get_predictions(
-            node_features = node_features,
-            test_mask = test_mask
+            node_features=node_features, test_mask=test_mask
         ).to(batch["x_0"].device)
 
         self.num_model_trained += len(test_mask)

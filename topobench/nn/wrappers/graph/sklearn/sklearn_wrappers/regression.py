@@ -1,7 +1,9 @@
 from typing import Optional, Any
 import numpy as np
 import torch
-from topobench.nn.wrappers.graph.sklearn.sklearn_wrappers.base import BaseWrapper
+from topobench.nn.wrappers.graph.sklearn.sklearn_wrappers.base import (
+    BaseWrapper,
+)
 from typing import Any
 
 
@@ -20,17 +22,11 @@ class RegressorWrapper(BaseWrapper):
     def _init_targets(self, y_train: np.ndarray) -> None:
         self.global_mean_ = torch.tensor(float(np.mean(y_train)))
 
-    def get_predictions(
-            self,
-            node_features,
-            test_mask
-            ):
-         # Predict probabilities for the whole dataset (to allow compatibility with the rest of the code)
+    def get_predictions(self, node_features, test_mask):
+        # Predict probabilities for the whole dataset (to allow compatibility with the rest of the code)
         output = self.backbone.predict(node_features[test_mask])
 
-        preds_tensor = (
-            torch.from_numpy(output).float().view(-1, 1)
-        )
+        preds_tensor = torch.from_numpy(output).float().view(-1, 1)
 
         # Prepare the output
         preds = torch.zeros(len(node_features), 1)
