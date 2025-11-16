@@ -41,11 +41,18 @@ class TestLoaders:
                             # Below the datasets that have some default transforms with we manually overriten with no_transform,
                             # due to lack of default transform for domain2domain
                             "REDDIT-BINARY.yaml", "IMDB-MULTI.yaml", "IMDB-BINARY.yaml", "ZINC.yaml",
-                            "ogbg-molpcba.yaml", "manual_dataset.yaml", "ogbg-molhiv.yaml"
+                            "ogbg-molpcba.yaml", "manual_dataset.yaml", "ogbg-molhiv.yaml",
+                            'mutag.yaml', 'PROTEINS.yaml',
+                            # Avoid datasets already tested
+                            "geometric_shapes.yaml", 'amazon_ratings.yaml', 'AQSOL.yaml', 
+                            "cocitation_citeseer.yaml", "cocitation_cora.yaml",
+                            "cocitation_pubmed.yaml", 'minesweeper.yaml', 'roman_empire.yaml',
+                            'tolokers.yaml'
+                            # Avoid datasets that take too long to load
+                            "artnet-views.yaml", 
                             "artnet-exp.yaml", "avazu-ctr.yaml", "city-reviews.yaml", "city-roads-L.yaml",
-                            "artnet-views.yaml", "hm-prices.yaml", "pokec-regions.yaml", "tolokers-2.yaml",
-                            "twitch-views.yaml", "web-fraud.yaml", "web-traffic.yaml", "web-topic.yaml",
-                            "geometric_shapes.yaml"
+                            "artnet-views.yaml", "hm-prices.yaml", "hm-categories.yaml", "pokec-regions.yaml", "tolokers-2.yaml",
+                            "twitch-views.yaml", "web-fraud.yaml", "web-traffic.yaml", "web-topics.yaml",
                             }
         
         # Below the datasets that takes quite some time to load and process                            
