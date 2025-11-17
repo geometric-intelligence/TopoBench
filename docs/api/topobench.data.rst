@@ -1,6 +1,11 @@
 topobench.data package
 ======================
 
+.. automodule:: topobench.data
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Subpackages
 -----------
 
@@ -11,11 +16,3 @@ Subpackages
    topobench.data.loaders
    topobench.data.preprocessor
    topobench.data.utils
-
-Module contents
----------------
-
-.. automodule:: topobench.data
-   :members:
-   :undoc-members:
-   :show-inheritance:
