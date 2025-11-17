@@ -366,6 +366,7 @@ Specially useful in pre-processing steps, these are the general data manipulatio
 | Cora | Classification | Cocitation dataset. | [Source](https://link.springer.com/article/10.1023/A:1009953814988) |
 | Citeseer | Classification | Cocitation dataset. | [Source](https://dl.acm.org/doi/10.1145/276675.276685) |
 | Pubmed | Classification | Cocitation dataset. | [Source](https://ojs.aaai.org/aimagazine/index.php/aimagazine/article/view/2157) |
+| ogbn-arxiv | Classification | ogbn-arxiv dataset (node classification) | [Source](https://arxiv.org/abs/2005.00687) |
 | MUTAG | Classification | Graph-level classification. | [Source](https://pubs.acs.org/doi/abs/10.1021/jm00106a046) |
 | PROTEINS | Classification | Graph-level classification. | [Source](https://academic.oup.com/bioinformatics/article/21/suppl_1/i47/202991) |
 | NCI1 | Classification | Graph-level classification. | [Source](https://ieeexplore.ieee.org/document/4053093) |
@@ -378,7 +379,6 @@ Specially useful in pre-processing steps, these are the general data manipulatio
 | Empire | Classification | Heterophilic dataset. | [Source](https://arxiv.org/pdf/2302.11640) |
 | Tolokers | Classification | Heterophilic dataset. | [Source](https://arxiv.org/pdf/2302.11640) |
 | US-county-demos | Regression | In turn each node attribute is used as the target label. | [Source](https://arxiv.org/pdf/2002.08274) |
-| ogbn-arxiv | Classification | ogbn-arxiv dataset (node classification) | [Source](https://arxiv.org/abs/2005.00687) |
 | ZINC | Regression | Graph-level regression. | [Source](https://pubs.acs.org/doi/10.1021/ci3001277) |
 
 
