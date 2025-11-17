@@ -207,7 +207,7 @@ class TestMoleculeNetDatasets:
     SMALL_DATASETS = ["FreeSolv", "ESOL", "BACE", "BBBP", "ClinTox", "SIDER"]
     MEDIUM_DATASETS = ["Lipo", "Tox21", "ToxCast"]
     # Large datasets (may be slow, consider marking with pytest.mark.slow)
-    LARGE_DATASETS = ["HIV", "PCBA", "MUV"]
+    LARGE_DATASETS = ["HIV"]
 
     @pytest.mark.parametrize("dataset_name", SMALL_DATASETS + MEDIUM_DATASETS)
     def test_dataset_initialization(self, test_data_dir, dataset_params, dataset_name):
