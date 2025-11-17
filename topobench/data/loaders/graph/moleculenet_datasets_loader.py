@@ -44,4 +44,32 @@ class MoleculeNetDatasetLoader(AbstractLoader):
         print(
             f"Loading MoleculeNet dataset: {dataset_name} from {self.data_dir}"
         )
-        return MoleculeNet(root=self.data_dir, name=dataset_name)
+        dataset = MoleculeNet(root=self.data_dir, name=dataset_name)
+        self._ensure_scalar_targets(dataset)
+        return dataset
+
+    @staticmethod
+    def _ensure_scalar_targets(dataset: Dataset) -> None:
+        """Squeeze singleton label dimensions for scalar targets.
+
+        Some MoleculeNet tasks (e.g., single-target regression) return labels with
+        an extra trailing singleton dimension (shape [num_graphs, 1]). Downstream
+        training code expects 1D tensors so we squeeze that axis while leaving
+        multi-target datasets untouched.
+
+        Parameters
+        ----------
+        dataset : Dataset
+            The dataset to process.
+        """
+
+        data_store = getattr(dataset, "_data", None)
+        if data_store is None:
+            return
+
+        labels = getattr(data_store, "y", None)
+        if labels is None or labels.ndim <= 1:
+            return
+
+        if labels.size(-1) == 1:
+            dataset._data.y = labels.squeeze(-1)
