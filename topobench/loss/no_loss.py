@@ -4,7 +4,6 @@ import torch
 import torch_geometric
 
 from topobench.loss.base import AbstractLoss
-from topobench.loss.dataset import DatasetLoss
 
 
 class TBNoLoss(AbstractLoss):
@@ -50,6 +49,6 @@ class TBNoLoss(AbstractLoss):
         """
         # losses = [loss(model_out, batch) for loss in self.losses]
 
-        model_out["loss"] = torch.Tensor(([0]))
+        model_out["loss"] = torch.Tensor([0])
 
         return model_out

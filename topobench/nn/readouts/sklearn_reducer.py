@@ -1,9 +1,9 @@
 """Readout layer that does not perform any operation on the node embeddings."""
 
 import torch_geometric
+from torch_geometric.utils import scatter
 
 from topobench.nn.readouts.base import AbstractZeroCellReadOut
-from torch_geometric.utils import scatter
 
 
 class SklearnReadOut(AbstractZeroCellReadOut):

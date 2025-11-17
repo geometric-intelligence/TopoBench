@@ -1,8 +1,10 @@
+import numpy as np
+import torch
+
 from topobench.nn.wrappers.graph.sklearn.sklearn_wrappers.base import (
     BaseWrapper,
 )
-import torch
-import numpy as np
+
 
 class ClassifierWrapper(BaseWrapper):
     def _init_targets(self, y_train):

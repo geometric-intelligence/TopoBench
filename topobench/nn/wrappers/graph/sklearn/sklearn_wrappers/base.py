@@ -1,8 +1,9 @@
-from abc import ABC, abstractmethod
-from typing import Any, Dict, Union
-import torch
-import numpy as np
 import math
+from abc import ABC, abstractmethod
+from typing import Any
+
+import numpy as np
+import torch
 
 
 class BaseWrapper(torch.nn.Module, ABC):
@@ -11,12 +12,12 @@ class BaseWrapper(torch.nn.Module, ABC):
         self.backbone = backbone
         self.use_embeddings = kwargs.get("use_embeddings", True)
         self.use_node_features = kwargs.get("use_node_features", True)
-        self.sampler = kwargs.get("sampler", None)
+        self.sampler = kwargs.get("sampler")
 
-        assert (
-            self.use_embeddings or self.use_node_features
-        ), "Either use_embeddings or use_node_features could be False, not both."
-        self.logger = kwargs.get("logger", None)
+        assert self.use_embeddings or self.use_node_features, (
+            "Either use_embeddings or use_node_features could be False, not both."
+        )
+        self.logger = kwargs.get("logger")
         # Initialize the counters
         self.num_no_neighbors = 0
         self.num_one_neighbor = 0
@@ -37,9 +38,9 @@ class BaseWrapper(torch.nn.Module, ABC):
             + self.num_all_same_label / num_test_points
         )
 
-        assert math.isclose(
-            total_ratio, 1.0, rel_tol=1e-9, abs_tol=1e-6
-        ), f"The sum of the ratios should be 1 (within tolerance), but got {total_ratio:.10f}"
+        assert math.isclose(total_ratio, 1.0, rel_tol=1e-9, abs_tol=1e-6), (
+            f"The sum of the ratios should be 1 (within tolerance), but got {total_ratio:.10f}"
+        )
         self.logger(
             "test/no_neighbors",
             np.round((100 * self.num_no_neighbors / num_test_points), 2),
@@ -72,11 +73,11 @@ class BaseWrapper(torch.nn.Module, ABC):
         )
 
     def forward(
-        self, batch: Dict[str, torch.Tensor]
-    ) -> Dict[str, torch.Tensor]:
-        train_mask = batch.get("train_mask", None).cpu().numpy().copy()
-        val_mask = batch.get("val_mask", None).cpu().numpy().copy()
-        test_mask = batch.get("test_mask", None).cpu().numpy().copy()
+        self, batch: dict[str, torch.Tensor]
+    ) -> dict[str, torch.Tensor]:
+        train_mask = batch.get("train_mask").cpu().numpy().copy()
+        # val_mask = batch.get("val_mask").cpu().numpy().copy()
+        test_mask = batch.get("test_mask").cpu().numpy().copy()
 
         # encoded node features
         rank0_features = []
@@ -124,11 +125,9 @@ class BaseWrapper(torch.nn.Module, ABC):
         }
 
     @abstractmethod
-    def get_predictions(self, batch: Dict[str, torch.Tensor]) -> np.ndarray:
+    def get_predictions(self, batch: dict[str, torch.Tensor]) -> np.ndarray:
         """Implement forward pass"""
-        pass
 
     @abstractmethod
-    def _init_targets(self, batch: Dict[str, torch.Tensor]) -> np.ndarray:
+    def _init_targets(self, batch: dict[str, torch.Tensor]) -> np.ndarray:
         """Implement forward pass"""
-        pass

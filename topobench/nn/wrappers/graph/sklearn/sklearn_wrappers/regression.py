@@ -1,10 +1,11 @@
-from typing import Optional, Any
+from typing import Any
+
 import numpy as np
 import torch
+
 from topobench.nn.wrappers.graph.sklearn.sklearn_wrappers.base import (
     BaseWrapper,
 )
-from typing import Any
 
 
 class RegressorWrapper(BaseWrapper):
@@ -15,7 +16,7 @@ class RegressorWrapper(BaseWrapper):
     - trains backbone per‐node on its sampled neighbours
     """
 
-    def __init__(self, backbone: Any, sampler: Optional[Any] = None, **kwargs):
+    def __init__(self, backbone: Any, sampler: Any | None = None, **kwargs):
         super().__init__(backbone, sampler=sampler, **kwargs)
         self.global_mean_: float = 0.0
 

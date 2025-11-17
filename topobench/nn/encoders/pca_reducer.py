@@ -1,7 +1,9 @@
 """Class to apply BaseEncoder to the features of higher order structures."""
 
+import sklearn
 import torch
 import torch_geometric
+
 from topobench.nn.encoders.base import AbstractFeatureEncoder
 
 
@@ -84,9 +86,6 @@ class AllPCAFeatureEncoder(AbstractFeatureEncoder):
                 batch = getattr(data, f"batch_{i}")
                 data["x_0"] = getattr(self, f"encoder_{i}")(data["x_0"], batch)
         return data
-
-
-import sklearn
 
 
 class BasePCA(torch.nn.Module):
