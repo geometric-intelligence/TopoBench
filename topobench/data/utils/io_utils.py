@@ -1,15 +1,21 @@
 """Data IO utilities."""
 
 import json
+import os
 import os.path as osp
 import pickle
+import tempfile
+import warnings
+import zipfile
 from urllib.parse import parse_qs, urlparse
 
+import gdown
 import numpy as np
 import pandas as pd
 import requests
 import torch
 import torch_geometric
+from pybiomart import Dataset as BioMartDataset
 from toponetx.classes import SimplicialComplex
 from torch_geometric.data import Data
 from torch_sparse import coalesce
@@ -50,6 +56,218 @@ def get_file_id_from_url(url):
     return file_id
 
 
+def get_folder_id_from_url(url):
+    """Extract the folder ID from a Google Drive folder URL or return ID if already provided.
+
+    Parameters
+    ----------
+    url : str
+        The Google Drive folder URL or folder ID.
+
+    Returns
+    -------
+    str
+        The folder ID extracted from the URL, or the ID itself if already an ID.
+
+    Raises
+    ------
+    ValueError
+        If the provided string is not a valid Google Drive folder URL or ID.
+    """
+    # If it doesn't look like a URL (no scheme), assume it's already an ID
+    if "://" not in url and "/" not in url:
+        return url
+
+    parsed_url = urlparse(url)
+    query_params = parse_qs(parsed_url.query)
+
+    if "id" in query_params:  # Case 1: URL format contains '?id='
+        folder_id = query_params["id"][0]
+    elif (
+        "folders/" in parsed_url.path
+    ):  # Case 2: URL format contains '/folders/'
+        folder_id = parsed_url.path.split("/folders/")[1].split("/")[0]
+    else:
+        raise ValueError(
+            "The provided string is not a valid Google Drive folder URL or ID."
+        )
+    return folder_id
+
+
+def download_file(url, output_path, timeout=30, verify_ssl=True):
+    """Download a file from URL and save it.
+
+    Parameters
+    ----------
+    url : str
+        URL of the file to download.
+    output_path : str
+        Path where the file will be saved.
+    timeout : int, optional
+        Request timeout in seconds. Defaults to 30.
+    verify_ssl : bool, optional
+        Whether to verify SSL certificates. Defaults to True.
+
+    Returns
+    -------
+    bool
+        True if download succeeded, False otherwise.
+
+    Raises
+    ------
+    RuntimeError
+        If download fails.
+    """
+    if not verify_ssl:
+        warnings.warn(
+            "SSL certificate verification is disabled",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    try:
+        response = requests.get(url, timeout=timeout, verify=verify_ssl)
+        response.raise_for_status()
+
+        with open(output_path, "wb") as f:
+            f.write(response.content)
+
+        return True
+
+    except Exception as e:
+        raise RuntimeError(f"Failed to download from {url}: {e}") from e
+
+
+def download_and_extract_zip(
+    url, output_dir, filename_to_extract=None, timeout=30, verify_ssl=True
+):
+    """Download a zip file from URL and extract it.
+
+    Parameters
+    ----------
+    url : str
+        URL of the zip file to download.
+    output_dir : str
+        Directory where files will be extracted.
+    filename_to_extract : str, optional
+        If provided, only extract this specific file from the zip.
+        If None, extract all files.
+    timeout : int, optional
+        Request timeout in seconds. Defaults to 30.
+    verify_ssl : bool, optional
+        Whether to verify SSL certificates. Defaults to True.
+
+    Returns
+    -------
+    bool
+        True if download and extraction succeeded, False otherwise.
+
+    Raises
+    ------
+    RuntimeError
+        If download or extraction fails.
+    """
+    if not verify_ssl:
+        warnings.warn(
+            "SSL certificate verification is disabled",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    try:
+        response = requests.get(url, timeout=timeout, verify=verify_ssl)
+        response.raise_for_status()
+
+        # Save to temporary file
+        with tempfile.NamedTemporaryFile(
+            delete=False, suffix=".zip"
+        ) as tmp_file:
+            tmp_file.write(response.content)
+            zip_path = tmp_file.name
+
+        # Extract
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            if filename_to_extract:
+                zip_ref.extract(filename_to_extract, output_dir)
+            else:
+                zip_ref.extractall(output_dir)
+
+        # Clean up temp file
+        os.remove(zip_path)
+        return True
+
+    except Exception as e:
+        raise RuntimeError(
+            f"Failed to download and extract from {url}: {e}"
+        ) from e
+
+
+def download_ensembl_biomart_mapping(
+    output_path,
+    dataset="hsapiens_gene_ensembl",
+    attributes=None,
+    id_prefix="9606.",
+    timeout=120,
+):
+    """Download ID mappings from Ensembl BioMart using pybiomart library.
+
+    Note: Requires 'pybiomart' package. Install with: pip install pybiomart
+
+    Parameters
+    ----------
+    output_path : str
+        Path where the mapping file will be saved.
+    dataset : str, optional
+        BioMart dataset name. Defaults to "hsapiens_gene_ensembl".
+    attributes : list of str, optional
+        Attributes to retrieve. Defaults to ["ensembl_peptide_id", "uniprotswissprot"].
+    id_prefix : str, optional
+        Prefix to add to IDs (e.g., "9606." for taxon). Defaults to "9606.".
+    timeout : int, optional
+        Request timeout in seconds. Defaults to 120.
+
+    Returns
+    -------
+    bool
+        True if download succeeded, False otherwise.
+
+    Raises
+    ------
+    RuntimeError
+        If download fails.
+    """
+
+    if attributes is None:
+        attributes = ["ensembl_peptide_id", "uniprotswissprot"]
+
+    try:
+        # Query BioMart using the library
+        biomart_dataset = BioMartDataset(
+            name=dataset, host="http://www.ensembl.org"
+        )
+        result_df = biomart_dataset.query(attributes=attributes)
+
+        # Save to file with optional prefix
+        with open(output_path, "w") as f:
+            for _, row in result_df.iterrows():
+                # Skip rows with missing values
+                if row.isnull().any():
+                    continue
+
+                values = row.tolist()
+                # Add prefix to first column (ID) if specified
+                if id_prefix:
+                    values[0] = f"{id_prefix}{values[0]}"
+                f.write("\t".join(str(v) for v in values) + "\n")
+
+        return True
+
+    except Exception as e:
+        raise RuntimeError(
+            f"Failed to download from Ensembl BioMart: {e}"
+        ) from e
+
+
 def download_file_from_drive(
     file_link, path_to_save, dataset_name, file_format="tar.gz"
 ):
@@ -82,6 +300,44 @@ def download_file_from_drive(
         print("Download complete.")
     else:
         print("Failed to download the file.")
+
+
+def download_folder_from_drive(folder_link, output_dir, quiet=False):
+    """Download an entire folder from Google Drive using gdown.
+
+    Parameters
+    ----------
+    folder_link : str
+        The Google Drive folder URL or folder ID.
+    output_dir : str
+        The directory where the folder contents will be saved.
+    quiet : bool, optional
+        If True, suppress download progress messages. Defaults to False.
+
+    Returns
+    -------
+    bool
+        True if download succeeded, False otherwise.
+
+    Raises
+    ------
+    ValueError
+        If the provided link is not a valid Google Drive folder URL.
+    """
+    # Extract folder ID from URL if needed
+    folder_id = get_folder_id_from_url(folder_link)
+
+    try:
+        gdown.download_folder(
+            id=folder_id,
+            output=output_dir,
+            quiet=quiet,
+            use_cookies=False,
+        )
+        return True
+    except Exception as e:
+        print(f"Failed to download folder from Google Drive: {e}")
+        return False
 
 
 def download_file_from_link(

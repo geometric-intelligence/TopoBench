@@ -248,16 +248,19 @@ def load_transductive_splits(dataset, parameters):
     )
 
     data = dataset.data_list[0]
+
+    # Check if this is multi-rank cell prediction
+    target_ranks = getattr(dataset, "target_ranks", None)
+    if target_ranks is not None and len(target_ranks) > 1:
+        return load_multirank_transductive_splits(dataset, parameters)
+
+    # Single rank or node/graph prediction
     labels = data.y.numpy()
 
     # Ensure labels are one dimensional array
     assert len(labels.shape) == 1, "Labels should be one dimensional array"
 
-    root = (
-        dataset.dataset.get_data_dir()
-        if hasattr(dataset.dataset, "get_data_dir")
-        else None
-    )
+    root = dataset.get_data_dir() if hasattr(dataset, "get_data_dir") else None
 
     if parameters.split_type == "random":
         splits = random_splitting(labels, parameters, root=root)
@@ -265,9 +268,18 @@ def load_transductive_splits(dataset, parameters):
     elif parameters.split_type == "k-fold":
         splits = k_fold_split(labels, parameters, root=root)
 
+    elif parameters.split_type == "fixed" and hasattr(dataset, "split_idx"):
+        splits = dataset.split_idx
+        if splits is None:
+            raise ValueError(
+                "Dataset has split_type='fixed' but split_idx property returned None. "
+                "Either the dataset doesn't support fixed splits or they failed to load."
+            )
+
     else:
         raise NotImplementedError(
-            f"split_type {parameters.split_type} not valid. Choose either 'random' or 'k-fold'"
+            f"split_type {parameters.split_type} not valid. Choose 'random', 'k-fold', or 'fixed'.\n"
+            f"If 'fixed' is chosen, the dataset must have a split_idx property."
         )
 
     # Assign train val test masks to the graph
@@ -283,6 +295,105 @@ def load_transductive_splits(dataset, parameters):
         data.y = (data.y - data.y[data.train_mask].mean(0)) / data.y[
             data.train_mask
         ].std(0)
+
+    return DataloadDataset([data]), None, None
+
+
+def load_multirank_transductive_splits(dataset, parameters):
+    r"""Load dataset with multi-rank cell-level splits.
+
+    For datasets with cell-level predictions across multiple ranks (e.g., edges,
+    triangles, tetrahedra simultaneously), this function creates independent
+    train/val/test splits for each rank.
+
+    Parameters
+    ----------
+    dataset : torch_geometric.data.Dataset
+        Dataset with multi-rank cell labels.
+    parameters : DictConfig
+        Configuration parameters containing split_type and train_prop.
+
+    Returns
+    -------
+    list:
+        List containing the train dataset (validation and test are None for transductive).
+
+    Notes
+    -----
+    Expects dataset to have:
+    - target_ranks: list of ranks to split
+    - data.cell_labels_{rank}: labels for each rank
+
+    Creates per-rank masks:
+    - data.train_mask_{rank}: training indices for rank
+    - data.val_mask_{rank}: validation indices for rank
+    - data.test_mask_{rank}: test indices for rank
+    """
+    assert len(dataset) == 1, (
+        "Dataset should have only one graph/complex in a transductive setting."
+    )
+
+    data = dataset.data_list[0]
+    target_ranks = dataset.target_ranks
+
+    root = dataset.get_data_dir() if hasattr(dataset, "get_data_dir") else None
+
+    # Split each rank independently
+    for rank in target_ranks:
+        label_attr = f"cell_labels_{rank}"
+
+        if not hasattr(data, label_attr):
+            raise ValueError(
+                f"Data object missing {label_attr} for rank {rank}. "
+                f"Available attributes: {list(data.keys())}"
+            )
+
+        labels = getattr(data, label_attr).numpy()
+
+        # Handle multi-dimensional labels (e.g., multi-label classification)
+        if len(labels.shape) > 1:
+            # Use first column for stratification (common practice)
+            stratify_labels = (
+                labels[:, 0] if labels.shape[1] > 0 else labels.flatten()
+            )
+        else:
+            stratify_labels = labels
+
+        # Create rank-specific root directory for splits
+        # This ensures each rank gets independent splits
+        rank_root = os.path.join(root, f"rank_{rank}") if root else None
+
+        # Perform splitting
+        if parameters.split_type == "random":
+            splits = random_splitting(
+                stratify_labels, parameters, root=rank_root
+            )
+        elif parameters.split_type == "k-fold":
+            splits = k_fold_split(stratify_labels, parameters, root=root)
+        elif parameters.split_type == "fixed" and hasattr(
+            dataset, "split_idx"
+        ):
+            splits = dataset.split_idx
+            if splits is None:
+                raise ValueError(
+                    "Dataset has split_type='fixed' but split_idx property returned None. "
+                    "Either the dataset doesn't support fixed splits or they failed to load."
+                )
+        else:
+            raise NotImplementedError(
+                f"split_type {parameters.split_type} not valid. "
+                f"Choose 'random', 'k-fold', or 'fixed'.\n"
+                f"If 'fixed' is chosen, the dataset must have a split_idx property."
+            )
+
+        # Store per-rank masks
+        train_mask = torch.from_numpy(splits["train"])
+        val_mask = torch.from_numpy(splits["valid"])
+        test_mask = torch.from_numpy(splits["test"])
+
+        setattr(data, f"train_mask_{rank}", train_mask)
+        setattr(data, f"val_mask_{rank}", val_mask)
+        setattr(data, f"test_mask_{rank}", test_mask)
 
     return DataloadDataset([data]), None, None
 
