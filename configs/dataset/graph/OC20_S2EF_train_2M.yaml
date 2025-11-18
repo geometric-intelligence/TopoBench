@@ -1,14 +1,18 @@
-# OC20 IS2RE task
-# Train/val/test splits are precomputed in the LMDB archive
+# OC20 S2EF dataset with 2M training samples
+# Validation: all 4 validation splits aggregated (val_id, val_ood_ads, val_ood_cat, val_ood_both)
+# Test: official test split
 
 loader:
   _target_: topobench.data.loaders.OC20DatasetLoader
   parameters:
     data_domain: graph
     data_type: oc20
-    data_name: OC20_IS2RE
+    data_name: OC20_S2EF_2M
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
-    task: is2re
+    task: s2ef
+    train_split: "2M"
+    val_splits: null  # null means use all 4 validation splits
+    test_split: "test"
     download: true
     legacy_format: false
     dtype: float32
@@ -23,7 +27,7 @@ parameters:
 
 split_params:
   learning_setting: inductive
-  split_type: fixed  # splits are precomputed in the dataset
+  split_type: fixed  # splits are provided by the dataset
   data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}
   data_seed: 0
 

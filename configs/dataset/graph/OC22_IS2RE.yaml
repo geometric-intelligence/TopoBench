@@ -1,5 +1,5 @@
-# OC22 IS2RE task (LMDB mode for local use)
-# Switch mode to 'lmdb' to download and use the real dataset
+# OC22 IS2RE task
+# Train/val/test splits are precomputed in the LMDB archive
 
 loader:
   _target_: topobench.data.loaders.OC20DatasetLoader
@@ -8,15 +8,13 @@ loader:
     data_type: oc20
     data_name: OC22_IS2RE
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
-    mode: tiny # change to 'lmdb' to download real dataset
-    split: oc22_is2re
-    download: false
-    num_samples: 64
-    num_node_features: 6
-    seed: 0
+    task: oc22_is2re
+    download: true
+    legacy_format: false
+    dtype: float32
 
 parameters:
-  num_features: 6
+  num_features: 6  # Will be determined by the actual data
   num_classes: 1
   task: regression
   loss_type: mse
@@ -25,12 +23,12 @@ parameters:
 
 split_params:
   learning_setting: inductive
-  split_type: fixed
+  split_type: fixed  # splits are precomputed in the dataset
   data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}
   data_seed: 0
 
 dataloader_params:
-  batch_size: 64
-  num_workers: 0
-  pin_memory: False
-  persistent_workers: False
+  batch_size: 32
+  num_workers: 4
+  pin_memory: true
+  persistent_workers: true

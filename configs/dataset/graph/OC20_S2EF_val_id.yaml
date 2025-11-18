@@ -1,22 +1,24 @@
-# OC20 S2EF validation ID split (LMDB mode for local use)
-# Switch mode to 'lmdb' to download and use the real dataset
+# OC20 S2EF dataset with 200K training samples
+# Validation: only val_id split (for faster testing/iteration)
+# Test: official test split
 
 loader:
   _target_: topobench.data.loaders.OC20DatasetLoader
   parameters:
     data_domain: graph
     data_type: oc20
-    data_name: OC20_S2EF_val_id
+    data_name: OC20_S2EF_200K_val_id
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
-    mode: tiny # change to 'lmdb' to download real dataset
-    split: s2ef_val_id
-    download: false
-    num_samples: 64
-    num_node_features: 6
-    seed: 0
+    task: s2ef
+    train_split: "200K"
+    val_splits: ["val_id"]  # Use only val_id for faster validation
+    test_split: "test"
+    download: true
+    legacy_format: false
+    dtype: float32
 
 parameters:
-  num_features: 6
+  num_features: 6  # Will be determined by the actual data
   num_classes: 1
   task: regression
   loss_type: mse
@@ -25,12 +27,12 @@ parameters:
 
 split_params:
   learning_setting: inductive
-  split_type: fixed
+  split_type: fixed  # splits are provided by the dataset
   data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}
   data_seed: 0
 
 dataloader_params:
-  batch_size: 64
-  num_workers: 0
-  pin_memory: False
-  persistent_workers: False
+  batch_size: 32
+  num_workers: 4
+  pin_memory: true
+  persistent_workers: true
