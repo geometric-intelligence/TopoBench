@@ -17,6 +17,7 @@ loader:
     include_test: false  # Skip test download, reuse validation as test
     legacy_format: false
     dtype: float32
+    max_samples: 10  # Set to integer (e.g., 1000) to limit dataset size for fast experiments
 
 parameters:
   num_features: 6  # Will be determined by the actual data
@@ -28,9 +29,12 @@ parameters:
 
 split_params:
   learning_setting: inductive
-  split_type: fixed  # splits are provided by the dataset
+  split_type: random  # Use random splits for small test datasets
   data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}
   data_seed: 0
+  train_prop: 0.6  # 60% training
+  val_prop: 0.2    # 20% validation
+  test_prop: 0.2   # 20% test
 
 dataloader_params:
   batch_size: 32

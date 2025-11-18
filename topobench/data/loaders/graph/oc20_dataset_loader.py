@@ -7,36 +7,47 @@ Supported tasks:
   - Train splits: 200K, 2M, 20M, all
   - Validation splits: val_id, val_ood_ads, val_ood_cat, val_ood_both (can aggregate)
   - Test split: test (can be optionally skipped with include_test=False)
-  - Automatic preprocessing from extxyz/txt to LMDB format
-- IS2RE (Initial Structure to Relaxed Energy): Predict relaxed energy from initial structure
-  - Pre-split train/val/test datasets
+  - Automatic preprocessing from extxyz to ASE DB format
 
-The LMDB backend is integrated directly to avoid external file dependencies.
+The ASE DB backend with PyG conversion is used for efficient data loading.
 """
 
 from __future__ import annotations
 
 import logging
-import lzma
+
+# Added missing imports
+import lzma  # needed by _uncompress_xz
 import os
-import pickle
-import shutil
+import pickle  # needed to deserialize LMDB records
+import shutil  # needed by _uncompress_xz
 import tarfile
 import urllib.request
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-import lmdb
 import torch
 from omegaconf import DictConfig
 from torch_geometric.data import Data, Dataset
 from tqdm import tqdm
 
+try:
+    import lmdb  # LMDB backend
+
+    HAS_LMDB = True
+except ImportError:  # optional dependency
+    lmdb = None  # type: ignore
+    HAS_LMDB = False
+
 from topobench.data.loaders.base import AbstractLoader
+
+# ASE DB fallback dataset
+from topobench.data.loaders.graph.oc20_asedbs2ef_loader import OC20ASEDBDataset
 from topobench.data.preprocessor.oc20_s2ef_preprocessor import (
+    HAS_ASE,
     needs_preprocessing,
-    preprocess_s2ef_dataset,
+    preprocess_s2ef_split_ase,
 )
 
 logger = logging.getLogger(__name__)
@@ -67,6 +78,18 @@ CACHE_DIR = Path.home() / ".cache" / "oc20"
 
 
 def _uncompress_xz(file_path: str) -> str:
+    """Decompress .xz files.
+
+    Parameters
+    ----------
+    file_path : str
+        Path to file to decompress.
+
+    Returns
+    -------
+    str
+        Path to decompressed file.
+    """
     if not file_path.endswith(".xz"):
         return file_path
 
@@ -84,10 +107,29 @@ def _uncompress_xz(file_path: str) -> str:
         return file_path
 
 
-def _download_and_extract(url: str, target_dir: Path) -> Path:
+def _download_and_extract(
+    url: str, target_dir: Path, skip_if_extracted: bool = True
+) -> Path:
+    """Download and extract a tar archive.
+
+    Parameters
+    ----------
+    url : str
+        URL to download from.
+    target_dir : Path
+        Directory to extract to.
+    skip_if_extracted : bool
+        If True, skip extraction if extracted files already exist (default: True).
+
+    Returns
+    -------
+    Path
+        Path to extracted directory.
+    """
     target_dir.mkdir(parents=True, exist_ok=True)
     target_file = target_dir / os.path.basename(url)
 
+    # Download if needed
     if not target_file.exists():
         logger.info(f"Downloading {url}...")
         with tqdm(
@@ -100,7 +142,17 @@ def _download_and_extract(url: str, target_dir: Path) -> Path:
                 pbar.update(block_size)
 
             urllib.request.urlretrieve(url, target_file, reporthook=report)
+    else:
+        logger.info(f"Archive {target_file.name} already downloaded")
 
+    # Check if extraction is needed
+    # Look for extracted subdirectories (common pattern: archive extracts to a subdirectory)
+    extraction_marker = target_dir / ".extracted"
+    if skip_if_extracted and extraction_marker.exists():
+        logger.info(f"Archive {target_file.name} already extracted, skipping")
+        return target_dir
+
+    # Extract
     logger.info(f"Extracting {target_file.name}...")
     if str(target_file).endswith((".tar.gz", ".tgz")):
         with tarfile.open(target_file, "r:gz") as tar:
@@ -111,6 +163,8 @@ def _download_and_extract(url: str, target_dir: Path) -> Path:
     else:
         raise ValueError(f"Unsupported archive format: {target_file}")
 
+    # Mark as extracted
+    extraction_marker.touch()
     return target_dir
 
 
@@ -216,30 +270,55 @@ class _OC20LMDBDataset(Dataset):
     def _download_s2ef(self):
         """Download S2EF train, validation, and test splits."""
         # Download train split
+        # Check for the actual data directory structure: s2ef/{split}/s2ef_train_{split}/s2ef_train_{split}/
         train_url = S2EF_TRAIN_SPLITS[self.train_split]
-        train_dir = self.root / "s2ef" / self.train_split / "train"
+        train_subdir_name = f"s2ef_train_{self.train_split}"
+        train_dir = (
+            self.root
+            / "s2ef"
+            / self.train_split
+            / train_subdir_name
+            / train_subdir_name
+        )
         if not train_dir.exists():
             logger.info(f"Downloading S2EF train split: {self.train_split}")
             _download_and_extract(
                 train_url, self.root / "s2ef" / self.train_split
             )
             self._decompress_xz_files(self.root / "s2ef" / self.train_split)
+        else:
+            logger.info(
+                f"S2EF train split {self.train_split} already exists, skipping download"
+            )
 
         # Download validation splits
         for val_split in self.val_splits:
             val_url = S2EF_VAL_SPLITS[val_split]
-            val_dir = self.root / "s2ef" / "all" / val_split
+            # Check for the actual data directory structure: s2ef/all/s2ef_{val_split}/s2ef_{val_split}/
+            val_subdir_name = f"s2ef_{val_split}"
+            val_dir = (
+                self.root / "s2ef" / "all" / val_subdir_name / val_subdir_name
+            )
             if not val_dir.exists():
                 logger.info(f"Downloading S2EF validation split: {val_split}")
                 _download_and_extract(val_url, self.root / "s2ef" / "all")
                 self._decompress_xz_files(self.root / "s2ef" / "all")
+            else:
+                logger.info(
+                    f"S2EF validation split {val_split} already exists, skipping download"
+                )
 
         # Download test split
-        test_dir = self.root / "s2ef" / "all" / "test"
+        test_subdir_name = "s2ef_test"
+        test_dir = (
+            self.root / "s2ef" / "all" / test_subdir_name / test_subdir_name
+        )
         if self.include_test and not test_dir.exists():
             logger.info("Downloading S2EF test split")
             _download_and_extract(S2EF_TEST_SPLIT, self.root / "s2ef" / "all")
             self._decompress_xz_files(self.root / "s2ef" / "all")
+        elif self.include_test and test_dir.exists():
+            logger.info("S2EF test split already exists, skipping download")
         elif not self.include_test:
             logger.info(
                 "Skipping S2EF test split download (include_test=False); will reuse validation as test"
@@ -249,41 +328,82 @@ class _OC20LMDBDataset(Dataset):
         self._preprocess_s2ef()
 
     def _preprocess_s2ef(self):
-        """Preprocess S2EF data from extxyz/txt to LMDB format if needed."""
-        # Check if any split needs preprocessing
-        train_dir = self.root / "s2ef" / self.train_split / "train"
-        needs_any_preprocessing = needs_preprocessing(train_dir, train_dir)
+        """Preprocess S2EF data from extxyz/txt files to ASE DB format.
 
-        if not needs_any_preprocessing:
-            for val_split in self.val_splits:
-                val_dir = self.root / "s2ef" / "all" / val_split
-                if needs_preprocessing(val_dir, val_dir):
-                    needs_any_preprocessing = True
-                    break
+        This method checks for raw extxyz files and converts them to ASE DB files
+        for efficient loading. It processes train, validation, and test splits.
+        """
+        if not HAS_ASE:
+            logger.warning("ASE not available. Cannot preprocess S2EF data.")
+            return
 
-        if not needs_any_preprocessing and self.include_test:
-            test_dir = self.root / "s2ef" / "all" / "test"
-            needs_any_preprocessing = needs_preprocessing(test_dir, test_dir)
+        s2ef_root = self.root / "s2ef"
 
-        if needs_any_preprocessing:
-            logger.info(
-                "S2EF data needs preprocessing from extxyz/txt to LMDB format"
+        if not s2ef_root.exists():
+            logger.warning(f"S2EF data directory not found: {s2ef_root}")
+            return
+
+        # Get preprocessing parameters (use defaults since they're not available)
+        num_workers = 1
+        max_neigh = 50
+        radius = 6.0
+
+        # Process training data
+        # The actual data is in s2ef/{train_split}/s2ef_train_{train_split}/s2ef_train_{train_split}/
+        train_base = s2ef_root / self.train_split
+        train_subdir_name = f"s2ef_train_{self.train_split}"
+        train_dir = train_base / train_subdir_name / train_subdir_name
+
+        if train_dir.exists() and needs_preprocessing(train_dir):
+            logger.info(f"Preprocessing S2EF training data: {train_dir}")
+            preprocess_s2ef_split_ase(
+                data_path=train_dir,
+                out_path=train_dir,
+                num_workers=num_workers,
+                ref_energy=True,
+                test_data=False,
+                max_neigh=max_neigh,
+                radius=radius,
             )
-            try:
-                preprocess_s2ef_dataset(
-                    root=self.root,
-                    train_split=self.train_split,
-                    val_splits=self.val_splits,
-                    include_test=self.include_test,
+
+        # Process validation splits
+        # The actual data is in s2ef/all/s2ef_{val_split}/s2ef_{val_split}/
+        for val_split in self.val_splits:
+            val_base = s2ef_root / "all"
+            val_subdir_name = f"s2ef_{val_split}"
+            val_dir = val_base / val_subdir_name / val_subdir_name
+
+            if val_dir.exists() and needs_preprocessing(val_dir):
+                logger.info(f"Preprocessing S2EF validation data: {val_dir}")
+                preprocess_s2ef_split_ase(
+                    data_path=val_dir,
+                    out_path=val_dir,
+                    num_workers=num_workers,
+                    ref_energy=True,
+                    test_data=False,
+                    max_neigh=max_neigh,
+                    radius=radius,
                 )
-            except ImportError:
-                logger.error(
-                    "Cannot preprocess S2EF data: fairchem-core or ASE not installed. "
-                    "Install with: pip install fairchem-core ase"
+
+        # Process test split if needed
+        if self.include_test:
+            test_base = s2ef_root / "all"
+            test_subdir_name = "s2ef_test"
+            test_dir = test_base / test_subdir_name / test_subdir_name
+
+            if test_dir.exists() and needs_preprocessing(test_dir):
+                logger.info(f"Preprocessing S2EF test data: {test_dir}")
+                preprocess_s2ef_split_ase(
+                    data_path=test_dir,
+                    out_path=test_dir,
+                    num_workers=num_workers,
+                    ref_energy=False,  # Test data typically doesn't have energy/forces
+                    test_data=True,
+                    max_neigh=max_neigh,
+                    radius=radius,
                 )
-                raise
-        else:
-            logger.info("S2EF data already preprocessed (LMDB files found)")
+
+        logger.info("S2EF preprocessing complete")
 
     def _decompress_xz_files(self, directory: Path):
         """Decompress all .xz files in a directory."""
@@ -569,12 +689,20 @@ class OC20DatasetLoader(AbstractLoader):
     - download: whether to download (default: false)
     - legacy_format: whether to use legacy PyG Data format (default: false)
     - dtype: torch dtype (default: "float32")
+    - max_samples: limit dataset size for fast experimentation (default: None = all samples)
     """
 
     def __init__(self, parameters: DictConfig) -> None:
         super().__init__(parameters)
 
     def load_dataset(self) -> Dataset:
+        """Load OC20 dataset (S2EF or IS2RE).
+
+        Returns
+        -------
+        Dataset
+            Loaded dataset with appropriate splits.
+        """
         task: str = getattr(self.parameters, "task", "s2ef")
         download: bool = bool(getattr(self.parameters, "download", False))
         legacy_format: bool = bool(
@@ -584,6 +712,12 @@ class OC20DatasetLoader(AbstractLoader):
         dtype_t = (
             getattr(torch, str(dtype)) if isinstance(dtype, str) else dtype
         )
+        max_samples = getattr(self.parameters, "max_samples", None)
+        if max_samples is not None:
+            max_samples = int(max_samples)
+            print(
+                f"⚠️  Limiting dataset to {max_samples} samples for fast experimentation"
+            )
 
         if task == "s2ef":
             train_split = getattr(self.parameters, "train_split", "200K")
@@ -615,6 +749,61 @@ class OC20DatasetLoader(AbstractLoader):
                 legacy_format=legacy_format,
             )
 
+            # ASE DB fallback if LMDBs are not present
+            data_root = Path(self.get_data_dir())
+            lmdb_present = any((data_root / "s2ef").glob("**/*.lmdb"))
+            if not lmdb_present and HAS_ASE:
+                # Preprocessing is already done in _OC20LMDBDataset if needed
+                # Now collect DB files
+                train_subdir_name = f"s2ef_train_{train_split}"
+                train_dir = (
+                    data_root
+                    / "s2ef"
+                    / train_split
+                    / train_subdir_name
+                    / train_subdir_name
+                )
+                train_dbs = sorted(train_dir.glob("*.db"))
+                val_dbs = []
+                # Respect empty list for val_splits (for fast prototyping)
+                val_splits_to_use = (
+                    list(S2EF_VAL_SPLITS.keys())
+                    if val_splits is None
+                    else val_splits
+                )
+                for vs in val_splits_to_use:
+                    val_subdir_name = f"s2ef_{vs}"
+                    val_dir = (
+                        data_root
+                        / "s2ef"
+                        / "all"
+                        / val_subdir_name
+                        / val_subdir_name
+                    )
+                    val_dbs.extend(sorted(val_dir.glob("*.db")))
+                test_dbs = []
+                if include_test:
+                    test_dbs = sorted(
+                        (data_root / "s2ef" / "all" / "test").glob("*.db")
+                    )
+
+                if train_dbs:
+                    logger.info(
+                        f"Using ASE DB backend: {len(train_dbs)} train, {len(val_dbs)} val, {len(test_dbs)} test DB files"
+                    )
+                    return OC20ASEDBDataset(
+                        train_db_paths=[str(p) for p in train_dbs],
+                        val_db_paths=[str(p) for p in val_dbs],
+                        test_db_paths=[str(p) for p in test_dbs],
+                        max_neigh=int(
+                            getattr(self.parameters, "max_neigh", 50)
+                        ),
+                        radius=float(getattr(self.parameters, "radius", 6.0)),
+                        dtype=dtype_t,
+                        include_energy=True,
+                        include_forces=True,
+                        max_samples=max_samples,
+                    )
         elif task in ["is2re", "oc22_is2re"]:
             ds = _OC20LMDBDataset(
                 root=self.get_data_dir(),
@@ -631,5 +820,12 @@ class OC20DatasetLoader(AbstractLoader):
         return ds  # type: ignore[return-value]
 
     def get_data_dir(self) -> Path:
+        """Get data directory path.
+
+        Returns
+        -------
+        Path
+            Path to data directory.
+        """
         # Keep default directory convention for TopoBench
         return Path(super().get_data_dir())
