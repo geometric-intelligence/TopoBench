@@ -7,14 +7,36 @@ from torch_geometric.utils import to_undirected
 
 
 class HICDataset(InMemoryDataset):
-    """
-    PyG loader for HIC hypergraph/graph classification datasets.
-    Builds:
-      - x: one-hot vertex features from vertex labels (dataset-wide vocabulary)
-      - y: int class (or multi-hot for multi-label datasets)
-      - edge_index: clique-expanded edges for hypergraphs; raw edges for graphs
-      - hyperedge_index (optional, for hypergraph datasets): [2, num_incidence] (node, hyperedge_id)
-      - num_hyperedges (optional): int
+    """PyG dataset for HIC hypergraph/graph classification.
+
+    Builds node features and labels from the HIC text format and optionally
+    exposes hyperedge incidence for hypergraph datasets.
+
+    Parameters
+    ----------
+    root : str
+        Root directory where the dataset is stored.
+    name : str
+        Name of the dataset (must exist in :attr:`folder_map`).
+    use_degree_as_tag : bool, optional
+        If True, use hypergraph degree as vertex tag instead of raw labels.
+    transform : callable, optional
+        Transform applied on each :class:`~torch_geometric.data.Data` object.
+    pre_transform : callable, optional
+        Transform applied before saving processed data.
+    pre_filter : callable, optional
+        Filter deciding which data objects are kept.
+
+    Attributes
+    ----------
+    name : str
+        Dataset name.
+    use_degree_as_tag : bool
+        Whether degree is used as vertex tag.
+    multi_label_names : set of str
+        Names of datasets with multi-label graph targets.
+    hypergraph_names : set of str
+        Names of datasets treated as hypergraphs.
     """
     base_url = "https://raw.githubusercontent.com/iMoonLab/HIC/main/data/hypergraph"
 
@@ -54,6 +76,7 @@ class HICDataset(InMemoryDataset):
 
     def __init__(self, root: str, name: str, use_degree_as_tag: bool=False,
                  transform=None, pre_transform=None, pre_filter=None):
+        """Initialize the HIC dataset."""
         self.name = name
         self.use_degree_as_tag = use_degree_as_tag
         super().__init__(root, transform, pre_transform, pre_filter)
@@ -61,21 +84,26 @@ class HICDataset(InMemoryDataset):
 
     @property
     def raw_dir(self) -> str:
+        """Directory for raw downloaded files."""
         return osp.join(self.root, self.name, "raw")
 
     @property
     def processed_dir(self) -> str:
+        """Directory for processed PyG data."""
         return osp.join(self.root, self.name, "processed")
 
     @property
     def raw_file_names(self) -> list[str]:
+        """List of expected raw files."""
         return [f"{self.name}.txt"]
 
     @property
     def processed_file_names(self) -> list[str]:
+        """List of processed file names."""
         return ["data.pt"]
 
     def download(self):
+        """Download the raw HIC text file from the official repository."""
         folder = self.folder_map.get(self.name)
         if folder is None:
             raise ValueError(f"Dataset '{self.name}' not recognised.")
@@ -84,6 +112,18 @@ class HICDataset(InMemoryDataset):
 
     @staticmethod
     def _parse_vertex_labels(line: str) -> list[list[int] | int]:
+        """Parse per-vertex labels from a single line.
+
+        Parameters
+        ----------
+        line : str
+            Raw line containing space-separated vertex label tokens.
+
+        Returns
+        -------
+        list of int or list of list of int
+            Parsed labels, with multi-label vertices stored as lists.
+        """
         # Split by space to get per-vertex “label tokens”.
         # Each token is either "a" or "a/b/c".
         toks = line.strip().split()
@@ -97,6 +137,20 @@ class HICDataset(InMemoryDataset):
 
     @staticmethod
     def _clique_expand_edges(hyperedges: list[list[int]], num_v: int) -> torch.Tensor:
+        """Clique-expand hyperedges into a simple edge list.
+
+        Parameters
+        ----------
+        hyperedges : list of list of int
+            Hyperedges given as lists of vertex indices.
+        num_v : int
+            Number of vertices in the graph.
+
+        Returns
+        -------
+        torch.Tensor
+            Undirected ``edge_index`` of shape ``[2, num_edges]``.
+        """
         # Build 2-combinations per hyperedge, both directions; dedup with to_undirected
         ei = []
         for hed in hyperedges:
@@ -112,6 +166,21 @@ class HICDataset(InMemoryDataset):
 
     @staticmethod
     def _build_incidence(hyperedges: list[list[int]], num_v: int) -> tuple[torch.Tensor, int]:
+        """Build node–hyperedge incidence indices.
+
+        Parameters
+        ----------
+        hyperedges : list of list of int
+            Hyperedges given as lists of vertex indices.
+        num_v : int
+            Number of vertices in the graph (unused, for symmetry).
+
+        Returns
+        -------
+        tuple of (torch.Tensor, int)
+            ``hyperedge_index`` of shape ``[2, num_incidence]`` (row0=node,
+            row1=hyperedge_id) and the number of hyperedges.
+        """
         # Returns hyperedge_index: [2, num_incidence] where row0=node, row1=hyperedge_id
         rows = []
         cols = []
@@ -125,7 +194,20 @@ class HICDataset(InMemoryDataset):
         return he_index, len(hyperedges)
 
     def _read_all_graphs(self, path: str):
-        """First pass: read raw structure into memory (no remapping yet)."""
+        """Read all graphs from the raw HIC text file.
+
+        Parameters
+        ----------
+        path : str
+            Path to the raw text file.
+
+        Returns
+        -------
+        tuple
+            ``(entries, v_label_universe, g_label_universe)`` where
+            ``entries`` is a list of per-graph dictionaries and the universes
+            are sets of vertex and graph labels.
+        """
         with open(path) as f:
             n_graphs = int(f.readline().strip())
 
@@ -168,6 +250,7 @@ class HICDataset(InMemoryDataset):
         return entries, v_label_universe, g_label_universe
 
     def process(self):
+        """Process raw HIC data into PyG `Data` objects and save to disk."""
         raw_path = self.raw_paths[0]
 
         # First pass: parse everything and build vocabularies (mirrors HIC utils.py).
@@ -196,9 +279,7 @@ class HICDataset(InMemoryDataset):
                         deg[v] += 1
                 v_lbl = [int(d) for d in deg]  # single label per vertex
 
-                # expand v_map / ft_dim if new degrees appear (rare if used consistently)
-                # In practice, we freeze ft_dim to dataset-wide initial map like HIC.
-                # Any unseen label will KeyError; guard:
+                # Expand v_map if new degrees appear; ft_dim follows the map.
                 for d in v_lbl:
                     if d not in v_map:
                         v_map[d] = len(v_map)
@@ -237,7 +318,7 @@ class HICDataset(InMemoryDataset):
                     num_nodes=num_v,
                 )
             else:
-                # Simple graph: each row in hedges is a pair (u v) or possibly more; guard
+                # Simple graph: treat each row as an edge or clique.
                 edges = []
                 for row in hedges:
                     if len(row) == 2:
@@ -245,7 +326,7 @@ class HICDataset(InMemoryDataset):
                         edges.append([u, v])
                         edges.append([v, u])
                     elif len(row) > 2:
-                        # If a “graph” line has >2 vertices, treat as a clique just in case.
+                        # If a "graph" line has >2 vertices, treat as a clique.
                         for u, v in itertools.combinations(row, 2):
                             edges.append([u, v])
                             edges.append([v, u])

@@ -1,4 +1,4 @@
-"""Loaders for Citation Hypergraph dataset."""
+"""Loaders for HIC hypergraph/graph classification datasets."""
 
 from omegaconf import DictConfig
 
@@ -7,39 +7,39 @@ from topobench.data.loaders.base import AbstractLoader
 
 
 class HICDatasetLoader(AbstractLoader):
-    """Load Citation Hypergraph dataset with configurable parameters.
+    """Loader for HIC datasets with configurable options.
 
     Parameters
     ----------
     parameters : DictConfig
-        Configuration parameters containing:
-            - data_dir: Root directory for data
-            - data_name: Name of the dataset
-            - other relevant parameters
+        Configuration with at least ``data_dir`` and ``data_name`` fields and
+        optional flags such as ``use_degree_as_tag``.
     """
 
     def __init__(self, parameters: DictConfig) -> None:
+        """Initialize the HIC dataset loader."""
         super().__init__(parameters)
         self.data_dir = None
 
     def load_dataset(self) -> HICDataset:
-        """Load the Citation Hypergraph dataset.
+        """Load the HIC dataset based on the configuration.
 
         Returns
         -------
         HICDataset
+            Processed HIC dataset instance.
         """
         self.data_dir = self.get_data_dir()
         dataset = self._initialize_dataset()
         return dataset
 
     def _initialize_dataset(self) -> HICDataset:
-        """Initialize the Citation Hypergraph dataset.
+        """Instantiate the underlying HICDataset.
 
         Returns
         -------
         HICDataset
-            The initialized dataset instance.
+            Initialized HICDataset object.
         """
         use_degree_as_tag = getattr(self.parameters, "use_degree_as_tag", False)
 
