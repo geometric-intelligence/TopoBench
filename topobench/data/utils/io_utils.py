@@ -339,7 +339,7 @@ def load_graph_with_features(
             stat[column] = stat[column].fillna(mean_value)
 
     # Drop any remaining NaN rows
-    stat = stat[config.keep_cols].dropna()
+    stat = stat.dropna()
 
     # Align node IDs with what edges reference
     if not config.edges_use_node_ids:
