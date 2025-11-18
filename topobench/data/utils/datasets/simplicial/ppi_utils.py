@@ -361,25 +361,29 @@ def generate_negative_samples(
     """
     random.seed(42)
 
-    # Count positive samples per rank
-    positive_counts = {}
-    for rank in range(2, sc.dim + 1):
-        if rank in cell_data:
-            positive_counts[rank] = sum(
-                1 for label in cell_data[rank].values() if label == 1
-            )
-        else:
-            positive_counts[rank] = 0
-
-    # Generate negatives per rank
     all_proteins_list = list(all_proteins)
 
-    for rank, n_positive in positive_counts.items():
+    # Generate negatives from highest to rank 2 (top-down)
+    # Note that edges already have score in [-1, 1] so no need to add more negatives
+    for rank in range(sc.dim, 1, -1):
+        # Count positive and existing negative samples at this rank
+        n_positive = 0
+        n_existing_negative = 0
+        if rank in cell_data:
+            n_positive = sum(
+                1 for label in cell_data[rank].values() if label == 1
+            )
+            n_existing_negative = sum(
+                1 for label in cell_data[rank].values() if label == -1
+            )
         if n_positive == 0:
             continue
 
-        n_negative_needed = int(n_positive * neg_ratio)
-        if n_negative_needed == 0:
+        # Calculate how many more negatives we need (accounting for existing ones)
+        n_negative_target = int(n_positive * neg_ratio)
+        n_negative_needed = n_negative_target - n_existing_negative
+        if n_negative_needed <= 0:
+            # Enough negatives
             continue
 
         # Get existing cells at this rank
@@ -402,24 +406,37 @@ def generate_negative_samples(
 
             # Only add if it doesn't exist yet
             if cell_tuple not in existing_cells:
-                # Add to complex and label as negative
+                # Add to complex (automiatically adds faces)
                 sc.add_simplex(list(cell_tuple))
 
                 if rank not in cell_data:
                     cell_data[rank] = {}
+                # Label as negative
                 cell_data[rank][cell_tuple] = -1
 
-                # For edges (rank 1), also create feature vector
-                if rank == 1 and cell_tuple not in edge_data:
-                    edge_data[cell_tuple] = torch.tensor(
-                        [0, 0, 0, 0, 0, 0, 0, 0.0], dtype=torch.float
-                    )
+                # Mark all proper sub-faces as negative (if they don't exist yet)
+                for sub_rank in range(1, rank):
+                    if sub_rank not in cell_data:
+                        cell_data[sub_rank] = {}
+
+                    for sub_face in combinations(cell_tuple, sub_rank + 1):
+                        sub_tuple = tuple(sorted(sub_face))
+                        if sub_rank == 1 and sub_tuple not in edge_data:
+                            # Edge: create feature vector
+                            edge_data[sub_tuple] = torch.tensor(
+                                [0, 0, 0, 0, 0, 0, 0, -1.0], dtype=torch.float
+                            )
+                        elif sub_tuple not in cell_data[sub_rank]:
+                            # Higher-order sub-face: mark as negative
+                            cell_data[sub_rank][sub_tuple] = -1
 
                 existing_cells.add(cell_tuple)
                 negatives_added += 1
 
+        # Calculate total negatives (existing + newly added)
+        n_total_negative = n_existing_negative + negatives_added
         print(
-            f"  Rank {rank}: {n_positive} positive, {negatives_added} negative samples"
+            f"  Rank {rank}: {n_positive} positive, {n_total_negative} negative samples"
         )
 
     return edge_data, cell_data
@@ -499,7 +516,9 @@ def build_data_features_and_labels(
                                 feat_vec[7:8]
                             )  # Last dim = feature
                         elif edge_task == "score":
-                            labels.append(feat_vec[7:8])  # Last dim = label
+                            # Convert score back from [-1, 1] to [0, 1] for standard regression
+                            score_normalized = (feat_vec[7:8] + 1) / 2
+                            labels.append(score_normalized)
                             features.append(
                                 feat_vec[:7]
                             )  # First 7 dims = features
@@ -521,7 +540,8 @@ def build_data_features_and_labels(
                     cell_tuple = tuple(sorted(cell))
                     binary_existence_val = cell_data[rank][cell_tuple]
 
-                    # Features: 0 for target, {-1,+1} for non-target TODO: Bit unsure about this. Non-interacting edges also get 0 and 0 means it will not influence neighbors
+                    # Features: 0 for target, {-1,+1} for non-target TODO: Bit unsure about this.
+                    # Labels (only target): {0, 1} for PyTorch CrossEntropyLoss
                     # TODO: Maybe we should pass some labels as features for true transductivity/semi-supervision?
                     if is_target:
                         # Target rank: features are 0, labels are in {-1, 1}
@@ -542,10 +562,12 @@ def build_data_features_and_labels(
                 x_dict[f"x_{rank}"] = torch.stack(features)
 
                 if is_target:
-                    labels_tensor = torch.tensor(labels, dtype=torch.long)
-                    labels_dict[f"cell_labels_{rank}"] = labels_tensor
-                    n_pos = (labels_tensor == 1).sum().item()
-                    n_neg = (labels_tensor == 0).sum().item()
+                    labels_tensor = torch.stack(labels).squeeze()
+                    # Convert {-1, +1} → {0, 1} for PyTorch CrossEntropyLoss
+                    labels_mapped = ((labels_tensor + 1) / 2).long()
+                    labels_dict[f"cell_labels_{rank}"] = labels_mapped
+                    n_pos = (labels_mapped == 1).sum().item()
+                    n_neg = (labels_mapped == 0).sum().item()
                     print(
                         f"  Rank {rank}: {n_pos} positive, {n_neg} negative labels"
                     )
