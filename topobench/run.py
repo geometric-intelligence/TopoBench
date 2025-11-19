@@ -34,6 +34,7 @@ from topobench.utils.config_resolvers import (
     get_required_lifting,
     infer_in_channels,
     infer_num_cell_dimensions,
+    infer_ppi_num_features,
     infer_topotune_num_cell_dimensions,
 )
 
@@ -94,6 +95,9 @@ OmegaConf.register_new_resolver(
     "infer_topotune_num_cell_dimensions",
     infer_topotune_num_cell_dimensions,
     replace=True,
+)
+OmegaConf.register_new_resolver(
+    "infer_ppi_num_features", infer_ppi_num_features, replace=True
 )
 OmegaConf.register_new_resolver(
     "parameter_multiplication", lambda x, y: int(int(x) * int(y)), replace=True
@@ -171,7 +175,7 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
     )
     # Prepare datamodule
     log.info("Instantiating datamodule...")
-    if cfg.dataset.parameters.task_level in ["node", "graph"]:
+    if cfg.dataset.parameters.task_level in ["node", "graph", "cell"]:
         datamodule = TBDataloader(
             dataset_train=dataset_train,
             dataset_val=dataset_val,
@@ -179,7 +183,9 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
             **cfg.dataset.get("dataloader_params", {}),
         )
     else:
-        raise ValueError("Invalid task_level")
+        raise ValueError(
+            f"Invalid task_level: {cfg.dataset.parameters.task_level}. Must be 'node', 'graph', or 'cell'."
+        )
 
     # Model for us is Network + logic: inputs backbone, readout, losses
     log.info(f"Instantiating model <{cfg.model._target_}>")

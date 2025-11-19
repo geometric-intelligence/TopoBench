@@ -49,11 +49,9 @@ loader:
 
 # Model training configuration
 parameters:
-  # Feature dimensions: [rank-0, rank-1, ..., rank-max]
-  # rank-0: One-hot encoded proteins TODO: Replace with richer embedding
-  # rank-1: 8-dim edge features (7 interaction types + 1 confidence score)
-  # rank-2+: 1-dim features (binary existence)
-  num_features: [1553, 8, 1, 1, 1, 1]
+  _num_proteins: 1553  # HIGH-PPI has 1,553 proteins
+  
+  num_features: ${infer_ppi_num_features:${dataset.parameters._num_proteins},${dataset.loader.parameters.edge_task},${dataset.loader.parameters.max_complex_size}}
   
   num_classes: 2                    # Depends on task:
                                     # - Higher-order (ranks 2+): 2 (exists/doesn't exist)
