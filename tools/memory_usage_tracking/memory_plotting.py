@@ -10,7 +10,9 @@ import sys
 import tempfile
 import time
 
+import matplotlib.cm as cm
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import psutil
 
@@ -385,6 +387,7 @@ def main() -> None:
     # Display-friendly dataset names and filesystem-safe names
     dataset_disps = [dataset_short(d) for d in args.datasets]
     dataset_fs = [model_fs(d) for d in args.datasets]
+    colors = cm.jet(np.linspace(0, 1, len(dataset_fs)))
 
     os.makedirs(OUTPUT_ROOT, exist_ok=True)
 
@@ -431,14 +434,14 @@ def main() -> None:
             csv_outputs_for_model,
             labels=labels,
             plot_path=norm_plot_path,
-            colors=("blue", "red", "green"),
+            colors=colors,
         )
         plot_raw_time_memory(
             model_label,
             csv_outputs_for_model,
             labels=labels,
             plot_path=raw_plot_path,
-            colors=("blue", "red", "green"),
+            colors=colors,
         )
 
 
