@@ -242,8 +242,8 @@ class TBModel(LightningModule):
         else:
             raise ValueError("Invalid state_str")
 
-        if self.task_level == "node":
-            # Keep only train data points
+        if self.task_level in ["node", "cell"]:
+            # Keep only train data points (for node-level or cell-level tasks)
             for key, val in model_out.items():
                 if key in ["logits", "labels"]:
                     model_out[key] = val[mask]

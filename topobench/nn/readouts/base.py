@@ -42,7 +42,9 @@ class AbstractZeroCellReadOut(torch.nn.Module):
             if hidden_dim != out_channels or logits_linear_layer
             else torch.nn.Identity()
         )
-        assert task_level in ["graph", "node"], "Invalid task_level"
+        assert task_level in ["graph", "node", "cell"], (
+            "Invalid task_level. Must be 'graph', 'node', or 'cell'."
+        )
         self.task_level = task_level
         self.logits_linear_layer = logits_linear_layer
 
@@ -84,7 +86,7 @@ class AbstractZeroCellReadOut(torch.nn.Module):
         Parameters
         ----------
         x : torch.Tensor
-            Node embeddings.
+            Cell embeddings.
         batch : torch.Tensor
             Batch index tensor.
 
@@ -94,8 +96,9 @@ class AbstractZeroCellReadOut(torch.nn.Module):
             Logits tensor.
         """
         if self.task_level == "graph":
+            # Graph-level: pool across batch (one prediction per graph)
             x = scatter(x, batch, dim=0, reduce=self.pooling_type)
-
+        # Cell-level: no pooling (one prediction per Cell)
         return self.linear(x)
 
     @abstractmethod
