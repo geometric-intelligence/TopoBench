@@ -248,19 +248,19 @@ class TBModel(LightningModule):
                 if key in ["logits", "labels"]:
                     model_out[key] = val[mask]
             # Note: Rank-specific masks are applied in readout
-            # The readout stores which indices it kept in cell_indices
-            if "cell_indices" in model_out:
+            # The readout stores which indices it kept in valid_indices
+            if "valid_indices" in model_out:
                 # Find intersection: which readout outputs are in this split?
                 # Note: The split respects the masks applied in the readout
-                cell_indices = model_out["cell_indices"]
-                keep_mask = torch.isin(cell_indices, mask)
+                valid_indices = model_out["valid_indices"]
+                keep_mask = torch.isin(valid_indices, mask)
 
                 # Filter logits and labels
                 for key, val in model_out.items():
                     if key in ["logits", "labels"]:
                         model_out[key] = val[keep_mask]
             else:
-                # No cell_indices: standard filtering (for non-masked tasks)
+                # No valid_indices: standard filtering (for non-masked tasks)
                 for key, val in model_out.items():
                     if key in ["logits", "labels"]:
                         model_out[key] = val[mask]
