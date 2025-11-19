@@ -1,4 +1,4 @@
-"""Preprocessor for datasets, backed by PyG OnDiskDataset."""
+"""Preprocessor for datasets using PyG OnDiskDataset."""
 
 import json
 import os
@@ -11,7 +11,6 @@ from torch_geometric.data.data import BaseData
 from topobench.data.utils import (
     ensure_serializable,
     load_inductive_splits_on_disk,
-    # load_transductive_splits,
     make_hash,
 )
 from topobench.dataloader import DataloadDataset
@@ -19,11 +18,17 @@ from topobench.transforms.data_transform import DataTransform
 
 
 class _LazyDataList(Sequence):
+    """Lazy sequence wrapper around an OnDiskDataset.
+
+    Provides a list-like interface over data stored on disk, avoiding
+    loading the whole dataset into memory.
+
+    Parameters
+    ----------
+    dataset : OnDiskDataset
+        Underlying on-disk dataset accessed on demand.
     """
-    Lazy list-like wrapper around an OnDiskDataset to preserve compatibility
-    with TopoBench split utilities that expect `dataset.data_list`.
-    Does NOT load the whole dataset into memory.
-    """
+
     def __init__(self, dataset):
         self._ds = dataset
 
@@ -34,7 +39,7 @@ class _LazyDataList(Sequence):
         if isinstance(idx, slice):
             start, stop, step = idx.indices(len(self))
             return [self._ds[i] for i in range(start, stop, step)]
-        return self._ds[idx]  # fetches on demand from disk
+        return self._ds[idx]
 
     def __iter__(self):
         for i in range(len(self)):
@@ -42,6 +47,24 @@ class _LazyDataList(Sequence):
 
 
 class OnDiskPreProcessor(torch_geometric.data.OnDiskDataset):
+    """Preprocess datasets and persist results using OnDiskDataset.
+
+    Applies heavy (offline) transforms once and stores processed samples
+    on disk. Lightweight (online) transforms are composed and applied at
+    access time through ``self.transform``.
+
+    Parameters
+    ----------
+    dataset : Dataset
+        Source dataset yielding PyG ``BaseData`` objects.
+    data_dir : str
+        Directory where processed data versions are stored.
+    transforms_config : dict, optional
+        Hydra-style configuration for heavy and easy transforms.
+    **kwargs
+        Additional arguments forwarded to ``OnDiskDataset``.
+    """
+
     def __init__(
         self,
         dataset,
@@ -71,33 +94,29 @@ class OnDiskPreProcessor(torch_geometric.data.OnDiskDataset):
             self.heavy_transforms = self._compose_from_dict(heavy_transform_dict)
 
             self.transforms_parameters = ensure_serializable(
-                {
-                    name: transform.parameters
-                    for name, transform in heavy_transform_dict.items()
-                }
+                {name: transform.parameters for name, transform in heavy_transform_dict.items()}
             )
             params_hash = make_hash(self.transforms_parameters)
             repo_name = "_".join(list(self.heavy_transforms_config.keys()))
 
             if repo_name:
-                root_for_this_version = os.path.join(
-                    data_dir, repo_name, f"{params_hash}"
-                )
+                root_for_this_version = os.path.join(data_dir, repo_name, f"{params_hash}")
             else:
                 root_for_this_version = os.path.join(data_dir, f"{params_hash}")
+
             super().__init__(
-            root=root_for_this_version,
-            transform=None,  # Online transforms are set manually later
-            pre_filter=None,
-            **kwargs,
+                root=root_for_this_version,
+                transform=None,
+                pre_filter=None,
+                **kwargs,
             )
         else:
             root_for_this_version = data_dir
             super().__init__(
-            root=root_for_this_version,
-            transform=None,  # Online transforms are set manually later
-            pre_filter=None,
-            **kwargs,
+                root=root_for_this_version,
+                transform=None,
+                pre_filter=None,
+                **kwargs,
             )
             # Attach dataset to OnDiskPreProcessor class
             if len(self) == 0:
@@ -105,23 +124,21 @@ class OnDiskPreProcessor(torch_geometric.data.OnDiskDataset):
                     self.append(sample)
                 
         # Prepare online transforms and save metadata.
-        # The `self.transform` attribute is used by PyG during data loading.
         self.transform = self._prepare_online_transforms()
         if self.transforms_applied:
             self.save_transform_parameters()
 
-        # Preserve split_idx if the original dataset had fixed splits.
         if hasattr(dataset, "split_idx"):
             self.split_idx = dataset.split_idx
 
     @property
     def processed_dir(self) -> str:
-        """Return the path to the processed directory.
+        """Return directory containing processed samples.
 
         Returns
         -------
         str
-            Path to the processed directory.
+            Path to processed directory.
         """
         if self.transforms_applied:
             return self.root
@@ -130,44 +147,54 @@ class OnDiskPreProcessor(torch_geometric.data.OnDiskDataset):
                     
     @property
     def data_list(self):
-        """
-        Compatibility with original PreProcessor.
-        Returns a sequence-like object, but keeps data on disk.
+        """Return a lazy list-like interface to on-disk samples.
+
+        Returns
+        -------
+        _LazyDataList
+            Sequence-like wrapper over stored data.
         """
         if not hasattr(self, "_lazy_data_list"):
             self._lazy_data_list = _LazyDataList(self)
         return self._lazy_data_list
 
     def process(self) -> None:
-        """
-        Called (once per cache dir) by Dataset._process() if the DB does not
-        already exist. We iterate over `self.dataset`, apply heavy transforms,
-        optionally apply `pre_filter`, and append each sample to the on-disk DB.
+        """Apply heavy transforms and store processed samples.
+
+        Iterates over the source dataset, applies heavy transforms if
+        defined, applies optional ``pre_filter``, and appends results to
+        the on-disk database.
+
+        Raises
+        ------
+        TypeError
+            If a sample is not a ``BaseData`` instance.
         """
         for sample in self.dataset:
             if not isinstance(sample, BaseData):
                 raise TypeError(
-                    f"Source dataset must yield PyG BaseData objects, "
-                    f"but got {type(sample)}"
+                    f"Source dataset must yield PyG BaseData objects, but got {type(sample)}"
                 )
 
             if self.heavy_transforms is not None:
                 sample = self.heavy_transforms(sample)
 
-            # Respect PyG-style pre_filter semantics if provided:
             if getattr(self, "pre_filter", None) is not None and not self.pre_filter(sample):
                 continue
 
-            # Insert into the underlying DB (self.db):
             self.append(sample)
 
     def save_transform_parameters(self) -> None:
+        """Save or validate heavy transform parameters on disk.
+
+        Ensures reproducibility by writing parameters to a JSON file.
+        If an existing file contains mismatched parameters, an error is raised.
+
+        Raises
+        ------
+        ValueError
+            If stored parameters differ from current parameters.
         """
-        Save (or verify) the parameters of the heavy/offline transforms.
-        Raises if an existing cache directory corresponds to a different set
-        of transform parameters.
-        """
-        # self.processed_dir now correctly points to the hashed directory
         os.makedirs(self.processed_dir, exist_ok=True)
 
         path_transform_parameters = os.path.join(
@@ -182,60 +209,57 @@ class OnDiskPreProcessor(torch_geometric.data.OnDiskDataset):
                 saved_transform_parameters = json.load(f)
 
             if saved_transform_parameters != self.transforms_parameters:
-                raise ValueError(
-                    "Different transform parameters for the same data_dir"
-                )
+                raise ValueError("Different transform parameters for the same data_dir")
 
             print(
-                "Transform parameters are the same, "
-                f"using existing data_dir: {self.processed_dir}"
+                "Transform parameters are the same, using existing data_dir: "
+                f"{self.processed_dir}"
             )
 
     def _prepare_online_transforms(self) -> Callable | None:
-        """
-        Compose lightweight/easy transforms (feature tweaks, etc.) with the
-        dataset's intrinsic transform, and return a callable.
-        This becomes `self.transform`, which PyG applies at access time.
+        """Compose online (easy) transforms with dataset-level transforms.
+
+        Returns
+        -------
+        callable or None
+            One transform, composed transforms, or None if no online
+            transforms exist.
         """
         transforms_list: Sequence[Callable] = []
 
-        # 1. Dataset's intrinsic transform, if present:
         if hasattr(self.dataset, "transform") and self.dataset.transform is not None:
             transforms_list.append(self.dataset.transform)
 
-        # 2. Easy transforms from config:
-        easy_transform_dict, _ = self._build_transform_dict(
-            self.easy_transforms_config
-        )
+        easy_transform_dict, _ = self._build_transform_dict(self.easy_transforms_config)
         easy_compose = self._compose_from_dict(easy_transform_dict)
         if easy_compose is not None:
             transforms_list.append(easy_compose)
 
-        # Return None / single transform / composed pipeline:
         if not transforms_list:
             return None
         if len(transforms_list) == 1:
             return transforms_list[0]
         return torch_geometric.transforms.Compose(list(transforms_list))
 
-    # Transform config utilities
     def _split_transforms(
         self, transforms_config: dict[str, Any]
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        """
-        Split a Hydra-style transforms config into:
-          heavy_config = {name: cfg} for lifting / feature_lifting
-          easy_config  = {name: cfg} for the rest
+        """Split transform config into heavy and easy components.
 
-        We support:
-          - dict-of-dicts
-          - or a single dict with keys like "transform_name", "transform_type".
+        Parameters
+        ----------
+        transforms_config : dict
+            Raw transform configuration.
+
+        Returns
+        -------
+        tuple of dict
+            ``(heavy_config, easy_config)``.
         """
         heavy_config: dict[str, Any] = {}
         easy_config: dict[str, Any] = {}
         heavy_types = {"lifting", "feature_lifting"}
 
-        # Normalize to {name: cfg} form:
         if "transform_name" in transforms_config:
             cfg_items = {"single": transforms_config}
         else:
@@ -253,11 +277,17 @@ class OnDiskPreProcessor(torch_geometric.data.OnDiskDataset):
     def _build_transform_dict(
         self, subset_cfg: dict[str, Any]
     ) -> tuple[dict[str, DataTransform], dict[str, Any]]:
-        """
-        Instantiate DataTransform objects from a subset config.
-        Returns both:
-          transform_dict: {name: DataTransform(...)}
-          params_dict:    {name: parameters}  # for hashing/metadata
+        """Build transform instances from config.
+
+        Parameters
+        ----------
+        subset_cfg : dict
+            Mapping from transform names to configs.
+
+        Returns
+        -------
+        tuple of dict
+            ``(transform_dict, params_dict)``.
         """
         transform_dict: dict[str, DataTransform] = {}
         params_dict: dict[str, Any] = {}
@@ -273,35 +303,50 @@ class OnDiskPreProcessor(torch_geometric.data.OnDiskDataset):
     def _compose_from_dict(
         transform_dict: dict[str, Callable]
     ) -> Callable | None:
-        """
-        Turn {name: transform} into:
-          None  (if empty),
-          that single transform (if only one),
-          or a torch_geometric.transforms.Compose([...]) (if multiple).
+        """Compose transforms stored in a mapping.
+
+        Parameters
+        ----------
+        transform_dict : dict
+            Mapping from names to transform callables.
+
+        Returns
+        -------
+        callable or None
+            Composed transform or single transform.
         """
         if len(transform_dict) == 0:
             return None
         if len(transform_dict) == 1:
             return list(transform_dict.values())[0]
-        return torch_geometric.transforms.Compose(
-            list(transform_dict.values())
-        )
+        return torch_geometric.transforms.Compose(list(transform_dict.values()))
 
-    # Split loading
     def load_dataset_splits(
         self, split_params: dict[str, Any]
-    ) -> tuple[
-        DataloadDataset, DataloadDataset | None, DataloadDataset | None
-    ]:
-        """
-        Load or generate train/val/test splits using project utilities.
+    ) -> tuple[DataloadDataset, DataloadDataset | None, DataloadDataset | None]:
+        """Load or generate dataset splits.
+
+        Supports inductive learning settings backed by on-disk splits.
+
+        Parameters
+        ----------
+        split_params : dict
+            Dictionary containing at least ``learning_setting``.
+
+        Returns
+        -------
+        tuple
+            ``(train, val, test)`` datasets.
+
+        Raises
+        ------
+        ValueError
+            If learning setting is missing or invalid.
         """
         if not split_params.get("learning_setting", False):
             raise ValueError("No learning setting specified in split_params")
         if split_params.learning_setting == "inductive":
             return load_inductive_splits_on_disk(self, split_params)
-        # elif split_params.learning_setting == "transductive":
-        #     return load_transductive_splits(self, split_params)
         else:
             raise ValueError(
                 f"Invalid '{split_params.learning_setting}' learning setting. "

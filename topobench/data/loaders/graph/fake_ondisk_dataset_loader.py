@@ -13,17 +13,7 @@ class FakeOnDiskDatasetLoader(AbstractLoader):
     Parameters
     ----------
     parameters : DictConfig
-        Configuration parameters containing:
-            - data_dir: Root directory for data
-            - num_graphs: Number of graphs to generate
-            - avg_num_nodes: Average number of nodes per graph
-            - avg_degree: Average degree per node
-            - num_channels: Node feature dimension
-            - edge_dim: Edge feature dimension
-            - num_classes: Number of classes
-            - task: 'node' or 'graph'
-            - is_undirected: Whether the graph is undirected
-            - backend: 'sqlite' or 'rocksdb'
+        Configuration.
     """
 
     def __init__(self, parameters: DictConfig) -> None:

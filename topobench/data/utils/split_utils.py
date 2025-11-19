@@ -388,14 +388,19 @@ def load_coauthorship_hypergraph_splits(data, parameters, train_prop=0.5):
     
 # List-like view over a subset of an on-disk dataset
 class _LazySplitList(Sequence):
-    """
-    A lightweight, list-like view over a subset of an on-disk dataset.
+    """Lazy list-like view over a split of an on-disk dataset.
 
-    - Holds only the indices for this split (train/valid/test).
-    - On access (self[i]), loads that ONE graph from disk.
-    - Injects the appropriate split masks into the returned Data object.
-    - Supports __len__ so DataloadDataset.len() works.
-    - Supports integer indexing so DataloadDataset.get() works.
+    Provides indexed and sliced access to a subset of graphs, loading
+    each graph from disk on demand and attaching split masks.
+
+    Parameters
+    ----------
+    base_dataset :
+        Underlying on-disk dataset.
+    indices : sequence of int
+        Indices belonging to this split.
+    split_name : {"train", "valid", "test"}
+        Name of the split.
     """
 
     def __init__(self, base_dataset, indices, split_name: str):
@@ -424,8 +429,17 @@ class _LazySplitList(Sequence):
         return len(self._idx)
 
     def _load_one(self, real_idx: int):
-        """
-        Load a single graph from disk, attach masks, return it as a Data object.
+        """Load a single graph from disk and attach split masks.
+
+        Parameters
+        ----------
+        real_idx : int
+            Index into the underlying base dataset.
+
+        Returns
+        -------
+        Data
+            Graph with ``train_mask``, ``val_mask`` and ``test_mask`` set.
         """
         data = self.base_dataset[real_idx]  # OnDiskDataset __getitem__ -> loads from disk
 
@@ -437,12 +451,20 @@ class _LazySplitList(Sequence):
         return data
 
     def __getitem__(self, pos):
-        """
-        DataloadDataset.get(idx) will call self.data_lst[idx] with idx an int.
-        So we MUST support integer indexing and return a single Data object.
+        """Return one or more graphs for the given position.
 
-        We'll also add best-effort slice support for debugging, but that isn't
-        hit in the training loop.
+        Supports integer indexing (training use case) and slicing
+        (for debugging).
+
+        Parameters
+        ----------
+        pos : int or slice
+            Position within the split.
+
+        Returns
+        -------
+        Data or list of Data
+            Single graph for integer index, or list of graphs for a slice.
         """
         if isinstance(pos, slice):
             start, stop, step = pos.indices(len(self._idx))
@@ -458,13 +480,23 @@ class _LazySplitList(Sequence):
         return self._load_one(real_idx)
 
 def assign_train_val_test_mask_to_graphs_on_disk(dataset, split_idx):
-    """
-    Build train/val/test datasets WITHOUT materializing the entire split in RAM.
+    """Create lazy train/val/test datasets without loading all graphs.
 
-    It gives DataloadDataset a lazy, list-like object (_LazySplitList)
-    that loads each graph from disk on demand.
-    """
+    Builds :class:`DataloadDataset` objects backed by :class:`_LazySplitList`,
+    which load graphs and attach split masks on demand.
 
+    Parameters
+    ----------
+    dataset :
+        On-disk dataset providing graph objects.
+    split_idx : dict
+        Mapping with keys ``"train"``, ``"valid"``, ``"test"`` to index lists.
+
+    Returns
+    -------
+    tuple of DataloadDataset
+        ``(train_dataset, val_dataset, test_dataset)``.
+    """
     train_list = _LazySplitList(
         base_dataset=dataset,
         indices=split_idx["train"],
@@ -490,19 +522,23 @@ def assign_train_val_test_mask_to_graphs_on_disk(dataset, split_idx):
     return train_dataset, val_dataset, test_dataset
     
 def load_inductive_splits_on_disk(dataset, parameters):
-    r"""Load multiple-graph datasets with the specified split.
+    """Load inductive train/val/test splits for multi-graph datasets.
+
+    Splits graphs into train, validation and test sets according to the
+    requested split type (random, k-fold or fixed), handling ragged labels
+    if needed.
 
     Parameters
     ----------
     dataset : torch_geometric.data.Dataset
-        Graph dataset.
+        Graph dataset in an inductive setting.
     parameters : DictConfig
-        Configuration parameters.
+        Split configuration, including ``split_type`` and related options.
 
     Returns
     -------
-    list:
-        List containing the train, validation, and test splits.
+    tuple of DataloadDataset
+        ``(train_dataset, val_dataset, test_dataset)``.
     """
     # Extract labels from dataset object
     assert len(dataset) > 1, (

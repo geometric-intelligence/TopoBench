@@ -10,12 +10,38 @@ from torch_geometric.utils import coalesce, remove_self_loops, to_undirected
 
 # Helpers taken from their torch_gometric.FakeDataset, unchanged
 def get_num_nodes(avg_num_nodes: int, avg_degree: float) -> int:
+    """Generate a random number of nodes.
+
+    Parameters
+    ----------
+    avg_num_nodes : int
+        Target average number of nodes.
+    avg_degree : float
+        Target average node degree.
+
+    Returns
+    -------
+    int
+        Sampled number of nodes.
+    """
     min_num_nodes = max(3 * avg_num_nodes // 4, int(avg_degree))
     max_num_nodes = 5 * avg_num_nodes // 4
     return random.randint(min_num_nodes, max_num_nodes)
 
 
 def get_num_channels(num_channels: int) -> int:
+    """Generate a random number of feature channels.
+
+    Parameters
+    ----------
+    num_channels : int
+        Target average number of channels.
+
+    Returns
+    -------
+    int
+        Sampled number of channels.
+    """
     min_num_channels = 3 * num_channels // 4
     max_num_channels = 5 * num_channels // 4
     return random.randint(min_num_channels, max_num_channels)
@@ -28,6 +54,26 @@ def get_edge_index(
     is_undirected: bool = False,
     remove_loops: bool = False,
 ) -> Tensor:
+    """Generate a random edge index tensor.
+
+    Parameters
+    ----------
+    num_src_nodes : int
+        Number of source nodes.
+    num_dst_nodes : int
+        Number of destination nodes.
+    avg_degree : float
+        Target average node degree.
+    is_undirected : bool, optional
+        If True, return an undirected graph. Default is False.
+    remove_loops : bool, optional
+        If True, remove self-loops. Default is False.
+
+    Returns
+    -------
+    torch.Tensor
+        Edge index tensor of shape (2, num_edges).
+    """
     num_edges = int(num_src_nodes * avg_degree)
     row = torch.randint(num_src_nodes, (num_edges,), dtype=torch.int64)
     col = torch.randint(num_dst_nodes, (num_edges,), dtype=torch.int64)
@@ -48,24 +94,61 @@ def get_edge_index(
 # FakeOnDiskDataset: API & generation logic taken from torch_geometric FakeDataset,
 # but persisted via OnDiskDataset.
 class FakeOnDiskDataset(OnDiskDataset):
-    r"""A fake dataset that returns randomly generated Data objects,
+    r"""A fake on-disk dataset of random graphs.
+
+    Randomly generated :class:`~torch_geometric.data.Data` objects are
     persisted to disk via :class:`~torch_geometric.data.OnDiskDataset`.
 
-    Args:
-        root (str): Root directory where the processed DB will live.
-        num_graphs (int, optional): Number of graphs. (default: 1)
-        avg_num_nodes (int, optional): Average nodes per graph. (default: 1000)
-        avg_degree (float, optional): Average degree per node. (default: 10.0)
-        num_channels (int, optional): Node feature dimension. (default: 64)
-        edge_dim (int, optional): Edge feature dimension. (default: 0)
-        num_classes (int, optional): Number of classes. (default: 10)
-        task (str, optional): 'node', 'graph', or 'auto'. (default: 'auto')
-        is_undirected (bool, optional): Make edges undirected. (default: True)
-        transform (callable, optional): Applied on read. (default: None)
-        pre_transform (callable, optional): (unused, kept for parity)
-        backend (str, optional): 'sqlite' or 'rocksdb'. (default: 'sqlite')
-        force_reload (bool, optional): Rebuild DB even if present. (default: False)
-        **kwargs (optional): Extra attributes & shapes, e.g. global_features=5.
+    Parameters
+    ----------
+    root : str
+        Root directory where the processed DB will live.
+    name : str
+        Dataset name used as a subdirectory.
+    num_graphs : int, optional
+        Number of graphs to generate. Default is 1.
+    avg_num_nodes : int, optional
+        Average number of nodes per graph. Default is 1000.
+    avg_degree : float, optional
+        Average degree per node. Default is 10.0.
+    num_channels : int, optional
+        Node feature dimension. Default is 64.
+    edge_dim : int, optional
+        Edge feature dimension. Default is 0.
+    num_classes : int, optional
+        Number of target classes. Default is 10.
+    task : {"node", "graph", "auto"}, optional
+        Prediction task type. If "auto", inferred from ``num_graphs``.
+        Default is "auto".
+    is_undirected : bool, optional
+        If True, edges are made undirected. Default is True.
+    transform : callable, optional
+        Transform applied on each graph at read time. Default is None.
+    pre_transform : callable, optional
+        Unused, kept for API parity. Default is None.
+    backend : {"sqlite", "rocksdb"}, optional
+        On-disk backend for storage. Default is "sqlite".
+    **kwargs
+        Extra attributes and shapes, e.g. ``global_features=5``.
+
+    Attributes
+    ----------
+    name : str
+        Dataset name.
+    num_graphs : int
+        Number of graphs.
+    avg_num_nodes : int
+        Average nodes per graph.
+    avg_degree : float
+        Average node degree.
+    num_channels : int
+        Node feature dimension.
+    edge_dim : int
+        Edge feature dimension.
+    task : {"node", "graph"}
+        Prediction task type.
+    is_undirected : bool
+        Whether edges are undirected.
     """
 
     def __init__(
@@ -122,11 +205,18 @@ class FakeOnDiskDataset(OnDiskDataset):
 
     @property
     def raw_file_names(self) -> list[str]:
+        """Names of raw files in the dataset.
+
+        Returns
+        -------
+        list of str
+            List of raw file names (empty for this dataset).
+        """
         return []
-        
+
     @property
     def raw_dir(self) -> str:
-        """Return the path to the raw directory of the dataset.
+        """Path to the raw directory.
 
         Returns
         -------
@@ -137,7 +227,7 @@ class FakeOnDiskDataset(OnDiskDataset):
 
     @property
     def processed_dir(self) -> str:
-        """Return the path to the processed directory of the dataset.
+        """Path to the processed directory.
 
         Returns
         -------
@@ -146,15 +236,23 @@ class FakeOnDiskDataset(OnDiskDataset):
         """
         return osp.join(self.root, self.name, "processed")
 
-
     def download(self) -> None:
-        pass
+        """Download raw data.
+
+        Notes
+        -----
+        This dataset is fully synthetic, so nothing is downloaded.
+        """
 
     def process(self) -> None:
-        """Generate synthetic graphs and write them to disk in batches.
+        """Generate synthetic graphs and write them to disk.
 
-        This mirrors the batch-writing logic from pcqm4m: we never keep
-        all graphs in memory at once, only up to `batch_size` at a time.
+        Graphs are generated and written in batches to avoid storing
+        all graphs in memory at once.
+
+        Returns
+        -------
+        None
         """
         batch_size = 1000  # same idea as pcqm4m
 
@@ -171,8 +269,17 @@ class FakeOnDiskDataset(OnDiskDataset):
                 # free the batch from RAM
                 data_list = []
 
+        print("Finished.")
+
     # Mirrors torch_geometric.FakeDataset.generate_data():
     def generate_data(self) -> Data:
+        """Generate a single random graph.
+
+        Returns
+        -------
+        torch_geometric.data.Data
+            Generated graph with features and labels.
+        """
         num_nodes = get_num_nodes(self.avg_num_nodes, self.avg_degree)
 
         data = Data()
@@ -206,6 +313,18 @@ class FakeOnDiskDataset(OnDiskDataset):
 
     # Map Data -> dict following the schema (always include num_nodes).
     def serialize(self, data: Data) -> dict[str, object]:
+        """Serialize a graph to a row dictionary.
+
+        Parameters
+        ----------
+        data : torch_geometric.data.Data
+            Graph data object to serialize.
+
+        Returns
+        -------
+        dict
+            Dictionary matching the on-disk schema.
+        """
         row: dict[str, object] = {
             "edge_index": data.edge_index,
             "num_nodes": torch.tensor([data.num_nodes], dtype=torch.int64),
@@ -218,6 +337,18 @@ class FakeOnDiskDataset(OnDiskDataset):
 
     # Map dict -> Data; only set optional fields if present/non-None.
     def deserialize(self, row: dict[str, object]) -> Data:
+        """Deserialize a row dictionary to a graph.
+
+        Parameters
+        ----------
+        row : dict
+            Dictionary produced by :meth:`serialize`.
+
+        Returns
+        -------
+        torch_geometric.data.Data
+            Reconstructed graph data object.
+        """
         d = Data()
         d.edge_index = row["edge_index"]  # type: ignore[assignment]
         # num_nodes is guaranteed present & typed
