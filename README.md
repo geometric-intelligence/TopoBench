@@ -351,6 +351,7 @@ Specially useful in pre-processing steps, these are the general data manipulatio
 | InfereKNNConnectivity | Generates the k-nearest neighbor connectivity of the input point cloud. |
 | IdentityTransform | An identity transform that does nothing to the input data. |
 |  EqualGausFeatures | Generates equal Gaussian features for all nodes. |
+| FeatureDimensionalityReduction | Reduces feature dimensionality through SVD. |
 |  CalculateSimplicialCurvature |  Calculates the simplicial curvature of the input graph.  |
 |  LapPE |  Computes Laplacian eigenvectors positional encodings.  |
 |  RWSE |  Computes Random Walk structural encodings.  |

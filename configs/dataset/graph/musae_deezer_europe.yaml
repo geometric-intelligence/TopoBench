@@ -5,19 +5,12 @@ loader:
     data_domain: graph
     data_type: MUSAE
     data_name: musae_deezer_europe
-    graph_representation: "pyg" # options: ["networkx", "pyg"]
-    features:
-      matrix_type: "dense" # options: ["dense", "sparse"]
-      dim_reduction: # through scikit-learn Truncated SVD
-        apply: true
-        reduced_dim: 128 #128
-        svd_iter: 20
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
 
 # Dataset parameters
 parameters:
   # Dataset parameters
-  num_features: 128 # without reduction: 30978 
+  num_features: 128 # Default feature dimension after reduction 128 (Rozemberczki & Sarkar 2020), without reduction: 30978 
   num_classes: 2
   num_nodes: 28281
   task: classification

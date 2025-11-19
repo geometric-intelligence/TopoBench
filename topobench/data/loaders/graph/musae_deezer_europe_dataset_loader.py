@@ -41,21 +41,4 @@ class MusaeDeezerEuropeDatasetLoader(AbstractLoader):
             name=self.parameters.data_name,
             parameters=self.parameters,
         )
-        self.data_dir = self._redefine_data_dir(dataset)
         return dataset
-
-    def _redefine_data_dir(self, dataset: MusaeDeezerEuropeDataset) -> Path:
-        """Redefine the data directory based on the chosen 
-        loader.parameters.features configuration parameters.
-
-        Parameters
-        ----------
-        dataset : MusaeDeezerEuropeDataset
-            The dataset instance.
-
-        Returns
-        -------
-        Path
-            The redefined data directory path.
-        """
-        return dataset.processed_root
