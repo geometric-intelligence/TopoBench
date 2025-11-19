@@ -1,6 +1,8 @@
 """Data IO utilities."""
 
+import glob
 import json
+import os
 import os.path as osp
 import pickle
 from urllib.parse import parse_qs, urlparse
@@ -104,7 +106,7 @@ def download_file_from_link(
     ------
     None
     """
-    response = requests.get(file_link)
+    response = requests.get(file_link, verify=False)
 
     output_path = f"{path_to_save}/{dataset_name}.{file_format}"
     if response.status_code == 200:
@@ -580,3 +582,113 @@ def load_hypergraph_content_dataset(data_dir, data_name):
     print("Final num_class", data.num_class)
 
     return data, data_dir
+
+
+def collect_mat_files(data_dir: str) -> list:
+    """Collect all .mat files from a directory recursively.
+
+    Excludes files containing "diffxy" in their names.
+
+    Parameters
+    ----------
+    data_dir : str
+        Root directory to search for .mat files.
+
+    Returns
+    -------
+    list
+        Sorted list of .mat file paths.
+    """
+    patterns = [os.path.join(data_dir, "**", "*.mat")]
+    files = []
+    for p in patterns:
+        files.extend(glob.glob(p, recursive=True))
+    files = [f for f in files if "diffxy" not in f]
+    files.sort()
+    return files
+
+
+def mat_cell_to_dict(mt) -> dict:
+    """Convert MATLAB cell array to dictionary.
+
+    Parameters
+    ----------
+    mt : np.ndarray
+        MATLAB cell array (structured array).
+
+    Returns
+    -------
+    dict
+        Dictionary with keys from cell array field names and squeezed values.
+    """
+    clean_data = {}
+    keys = mt.dtype.names
+    for key_idx, key in enumerate(keys):
+        clean_data[key] = (
+            np.squeeze(mt[key_idx])
+            if isinstance(mt[key_idx], np.ndarray)
+            else mt[key_idx]
+        )
+    return clean_data
+
+
+def planewise_mat_cell_to_dict(mt) -> dict:
+    """Convert plane-wise MATLAB cell array to nested dictionary.
+
+    Parameters
+    ----------
+    mt : np.ndarray
+        MATLAB cell array with plane dimension.
+
+    Returns
+    -------
+    dict
+        Nested dictionary with plane IDs as keys.
+    """
+    clean_data = {}
+    for plane_id in range(len(mt[0])):
+        keys = mt[0, plane_id].dtype.names
+        clean_data[plane_id] = {}
+        for key_idx, key in enumerate(keys):
+            clean_data[plane_id][key] = (
+                np.squeeze(mt[0, plane_id][key_idx])
+                if isinstance(mt[0, plane_id][key_idx], np.ndarray)
+                else mt[0, plane_id][key_idx]
+            )
+    return clean_data
+
+
+def process_mat(mat_data) -> dict:
+    """Generate MATLAB data structure into organized dictionary.
+
+    Converts MATLAB cell arrays for BFInfo, CellInfo, CorrInfo, and other
+    experimental metadata into nested Python dictionaries.
+
+    Parameters
+    ----------
+    mat_data : dict
+        Dictionary loaded from MATLAB .mat file via scipy.io.loadmat.
+
+    Returns
+    -------
+    dict
+        Processed data structure with organized BFInfo, CellInfo, CorrInfo,
+        coordinate arrays, and experimental variables.
+    """
+    mt = {}
+    mt["BFInfo"] = planewise_mat_cell_to_dict(mat_data["BFinfo"])
+    mt["CellInfo"] = planewise_mat_cell_to_dict(mat_data["CellInfo"])
+    mt["CorrInfo"] = planewise_mat_cell_to_dict(mat_data["CorrInfo"])
+    mt["allZCorrInfo"] = mat_cell_to_dict(mat_data["allZCorrInfo"][0, 0])
+
+    for cord_key in ["allxc", "allyc", "allzc", "zDFF"]:
+        mt[cord_key] = {}
+        for p in range(mat_data[cord_key].shape[0]):
+            mt[cord_key][p] = mat_data[cord_key][p, 0]
+
+    mt["exptVars"] = mat_cell_to_dict(mat_data["exptVars"][0, 0])
+    mt["selectZCorrInfo"] = mat_cell_to_dict(mat_data["selectZCorrInfo"][0, 0])
+    mt["stimInfo"] = planewise_mat_cell_to_dict(mat_data["stimInfo"])
+    mt["zStuff"] = planewise_mat_cell_to_dict(mat_data["zStuff"])
+
+    return mt
