@@ -167,17 +167,18 @@ class PPIHighPPIDataset(InMemoryDataset):
     def processed_file_names(self) -> list[str]:
         """Return the name of the processed file.
 
-        Filename includes target_ranks to avoid cache conflicts when
-        different ranks are requested.
+        Filename includes target_ranks and edge_task to avoid cache conflicts
+        when different ranks or tasks are requested.
 
         Returns
         -------
         List[str]
             List containing the name of the processed file.
         """
-        # Include target_ranks in filename to prevent cache conflicts
+        # Include target_ranks and edge_task in filename to prevent cache conflicts
         ranks_str = "_".join(map(str, self.target_ranks))
-        return [f"data_ranks_{ranks_str}.pt"]
+        task_str = self.edge_task if self.edge_task else "none"
+        return [f"data_ranks_{ranks_str}_task_{task_str}.pt"]
 
     def download(self) -> None:
         """Download HIGH-PPI and CORUM data files."""
