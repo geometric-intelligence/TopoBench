@@ -17,30 +17,32 @@ class ChordonomiconDataset(InMemoryDataset):
 
     Parameters
     ----------
-    data_dir : str
+    root : str
         Directory where the dataset will be stored, raw
-        and processed will be subdirectories.
-    data_name : str
+        and processed will be subdirectories of it.
+    name : str
         Name of the dataset (e.g., 'Chordonomicon').
     """
 
     URL = "https://huggingface.co/datasets/PierrickLeKing/topobench-music-synergy/resolve/main/dataframe.zip"  # pylint: disable=line-too-long
-    RAW_FILE_NAMES = ["dataframe.csv"]
 
-    def __init__(self, data_dir, data_name):
-        self.name = data_name
-        self.data_dir = data_dir
-        self.folder_chordonomicon = osp.join(self.data_dir, self.name)
-        self.root = osp.join(data_dir, data_name)
-        super().__init__(self.root)
+    def __init__(self, root, name):
+        self.name = name
+        self.root = root
+        self.folder_chordonomicon = osp.join(self.root, self.name)
+        super().__init__(
+            root,
+        )
+        out = fs.torch_load(self.processed_paths[0])
+        data, self.slices, self.sizes, data_cls = out
+        self.data = data_cls.from_dict(data)
 
-    def download(self) -> None:
+    def download(self):
         """Download the Chordonomicon dataset.
 
         Raises:
             requests.exceptions.HTTPError: If the download fails.
         """
-        print("Downloading...")
         r = requests.get(self.URL, timeout=30)
         r.raise_for_status()
         with open(
@@ -53,13 +55,13 @@ class ChordonomiconDataset(InMemoryDataset):
         )
         os.unlink(osp.join(self.folder_chordonomicon, "dataframe.zip"))
 
-    def process(self) -> None:
+    def process(self):
         """Handle the Chordonomicon dataset.
 
         Convert the raw data into a PyTorch Geometric Data object and save it.
         """
         df = pd.read_csv(
-            osp.join(self.folder_chordonomicon, "raw", self.RAW_FILE_NAMES[0])
+            osp.join(self.folder_chordonomicon, "raw", self.raw_file_names[0])
         )
         df["chords"] = (
             df["chords"].apply(ast.literal_eval).apply(list).apply(np.array)
@@ -80,14 +82,15 @@ class ChordonomiconDataset(InMemoryDataset):
             x_hyperedges=x_hyperedges,
             y_hyperedges=y_hyperedges,
         )
+        print("Balise 3: data created", data)
         data_list = [data]
-        self.data, self.slices = self.collate(data_list)
+        data, slices = self.collate(data_list)
         fs.torch_save(
             (
-                self._data.to_dict(),
-                self.slices,
+                data.to_dict(),
+                slices,
                 {},
-                self._data.__class__,
+                data.__class__,
             ),
             self.processed_paths[0],
         )
@@ -101,7 +104,7 @@ class ChordonomiconDataset(InMemoryDataset):
         list[str]
             List of raw file names.
         """
-        return self.RAW_FILE_NAMES
+        return ["dataframe.csv"]
 
     @property
     def processed_file_names(self) -> str:
@@ -113,3 +116,25 @@ class ChordonomiconDataset(InMemoryDataset):
             Processed file name.
         """
         return "data.pt"
+
+    @property
+    def raw_dir(self) -> str:
+        """Return the path to the raw directory of the dataset.
+
+        Returns
+        -------
+        str
+            Path to the raw directory.
+        """
+        return osp.join(self.root, self.name, "raw")
+
+    @property
+    def processed_dir(self) -> str:
+        """Return the path to the processed directory of the dataset.
+
+        Returns
+        -------
+        str
+            Path to the processed directory.
+        """
+        return osp.join(self.root, self.name, "processed")
