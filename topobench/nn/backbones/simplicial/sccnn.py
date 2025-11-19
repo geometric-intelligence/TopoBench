@@ -181,7 +181,7 @@ class SCCNNLayer(torch.nn.Module):
 
         # Self messages
         if rank == 0:
-            # Rank 0: identity + Hodge Laplacian convolutions
+            # Rank 0: identity + up Laplacian convolutions
             count += 1 + self.conv_order
         else:
             # Rank k>0: identity + down Laplacian + up Laplacian convolutions
@@ -189,13 +189,17 @@ class SCCNNLayer(torch.nn.Module):
 
         # Lower messages (from rank-1 projected to rank)
         if rank > 0:
-            # Identity + convolutions with down/up Laplacians at current rank
-            count += 1 + self.conv_order
+            # Identity + convolutions with down and up Laplacians at current rank
+            count += 1 + self.conv_order + self.conv_order
 
         # Upper messages (from rank+1 projected to rank)
         if rank < self.max_rank:
-            # Identity + convolutions with down/up Laplacians at current rank
-            count += 1 + self.conv_order
+            # Identity + convolutions with down and up Laplacians at current rank
+            # Special case: rank 0 only has up Laplacian
+            if rank == 0:
+                count += 1 + self.conv_order
+            else:
+                count += 1 + self.conv_order + self.conv_order
 
         return count
 
@@ -433,36 +437,7 @@ class SCCNNLayer(torch.nn.Module):
         """
         message_list = []
 
-        # 1. Self messages (identity + convolutions)
-        if rank == 0:
-            # Identity message
-            message_list.append(x_rank.unsqueeze(2))
-
-            # Hodge Laplacian convolutions
-            if laplacians["hodge"] is not None:
-                x_conv = self.chebyshev_conv(
-                    laplacians["hodge"], self.conv_order, x_rank
-                )
-                message_list.append(x_conv)
-        else:
-            # Identity message
-            message_list.append(x_rank.unsqueeze(2))
-
-            # Down Laplacian convolutions
-            if laplacians["down"] is not None:
-                x_down = self.chebyshev_conv(
-                    laplacians["down"], self.conv_order, x_rank
-                )
-                message_list.append(x_down)
-
-            # Up Laplacian convolutions
-            if laplacians["up"] is not None:
-                x_up = self.chebyshev_conv(
-                    laplacians["up"], self.conv_order, x_rank
-                )
-                message_list.append(x_up)
-
-        # 2. Lower messages (from rank-1)
+        # 1. Lower messages (from rank-1)
         if rank > 0 and incidence_lower is not None and rank - 1 < len(x_all):
             x_lower = x_all[rank - 1]
             # Only process if lower rank is not empty
@@ -470,27 +445,41 @@ class SCCNNLayer(torch.nn.Module):
                 # Project features from rank-1 to rank
                 x_lower_proj = torch.mm(incidence_lower.T, x_lower)
 
-                # Identity
                 message_list.append(x_lower_proj.unsqueeze(2))
 
-                # Apply Laplacian convolutions at the current rank
-                # Use the appropriate Laplacian (down for rank 0, down for rank > 0)
-                if rank == 0:
-                    if laplacians["hodge"] is not None:
-                        x_lower_conv = self.chebyshev_conv(
-                            laplacians["hodge"],
-                            self.conv_order,
-                            x_lower_proj,
-                        )
-                        message_list.append(x_lower_conv)
-                else:
-                    if laplacians["down"] is not None:
-                        x_lower_conv = self.chebyshev_conv(
-                            laplacians["down"],
-                            self.conv_order,
-                            x_lower_proj,
-                        )
-                        message_list.append(x_lower_conv)
+                # Apply down and up Laplacians
+                if laplacians["down"] is not None:
+                    x_lower_down = self.chebyshev_conv(
+                        laplacians["down"], self.conv_order, x_lower_proj
+                    )
+                    message_list.append(x_lower_down)
+
+                if laplacians["up"] is not None:
+                    x_lower_up = self.chebyshev_conv(
+                        laplacians["up"], self.conv_order, x_lower_proj
+                    )
+                    message_list.append(x_lower_up)
+
+        # 2. Self messages (identity + convolutions)
+        if rank == 0:
+            message_list.append(x_rank.unsqueeze(2))
+            if laplacians["hodge"] is not None:
+                x_conv = self.chebyshev_conv(
+                    laplacians["hodge"], self.conv_order, x_rank
+                )
+                message_list.append(x_conv)
+        else:
+            message_list.append(x_rank.unsqueeze(2))
+            if laplacians["down"] is not None:
+                x_down = self.chebyshev_conv(
+                    laplacians["down"], self.conv_order, x_rank
+                )
+                message_list.append(x_down)
+            if laplacians["up"] is not None:
+                x_up = self.chebyshev_conv(
+                    laplacians["up"], self.conv_order, x_rank
+                )
+                message_list.append(x_up)
 
         # 3. Upper messages (from rank+1)
         if (
@@ -499,21 +488,29 @@ class SCCNNLayer(torch.nn.Module):
             and rank + 1 < len(x_all)
         ):
             x_upper = x_all[rank + 1]
-            # Only process if upper rank is not empty
             if x_upper.shape[0] > 0:
-                # Project features from rank+1 to rank
                 x_upper_proj = torch.mm(incidence_upper, x_upper)
-
-                # Identity
                 message_list.append(x_upper_proj.unsqueeze(2))
 
-                # Apply Laplacian convolutions at the current rank
-                # Use up Laplacian for rank > 0
-                if laplacians["up"] is not None:
-                    x_upper_conv = self.chebyshev_conv(
-                        laplacians["up"], self.conv_order, x_upper_proj
-                    )
-                    message_list.append(x_upper_conv)
+                # Apply Laplacians (Hodge for rank 0, both down/up for rank > 0)
+                if rank == 0:
+                    if laplacians["hodge"] is not None:
+                        x_upper_hodge = self.chebyshev_conv(
+                            laplacians["hodge"], self.conv_order, x_upper_proj
+                        )
+                        message_list.append(x_upper_hodge)
+                else:
+                    if laplacians["down"] is not None:
+                        x_upper_down = self.chebyshev_conv(
+                            laplacians["down"], self.conv_order, x_upper_proj
+                        )
+                        message_list.append(x_upper_down)
+
+                    if laplacians["up"] is not None:
+                        x_upper_up = self.chebyshev_conv(
+                            laplacians["up"], self.conv_order, x_upper_proj
+                        )
+                        message_list.append(x_upper_up)
 
         # Concatenate all messages
         messages = torch.cat(message_list, dim=2)
