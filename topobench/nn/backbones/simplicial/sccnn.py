@@ -13,13 +13,13 @@ class SCCNNCustom(torch.nn.Module):
     Parameters
     ----------
     in_channels_all : tuple of int
-        Dimension of input features on (nodes, edges, faces).
+        Dimension of input features on each rank (nodes, edges, faces, ...).
     hidden_channels_all : tuple of int
-        Dimension of features of hidden layers on (nodes, edges, faces).
+        Dimension of features of hidden layers on each rank.
     conv_order : int
         Order of convolutions, we consider the same order for all convolutions.
     sc_order : int
-        Order of simplicial complex.
+        Order of simplicial complex (max_rank + 1).
     aggr_norm : bool, optional
         Whether to normalize the aggregation (default: False).
     update_func : str, optional
@@ -39,16 +39,15 @@ class SCCNNCustom(torch.nn.Module):
         n_layers=2,
     ):
         super().__init__()
-        # first layer
-        # we use an MLP to map the features on simplices of different dimensions to the same dimension
-        self.in_linear_0 = torch.nn.Linear(
-            in_channels_all[0], hidden_channels_all[0]
-        )
-        self.in_linear_1 = torch.nn.Linear(
-            in_channels_all[1], hidden_channels_all[1]
-        )
-        self.in_linear_2 = torch.nn.Linear(
-            in_channels_all[2], hidden_channels_all[2]
+
+        self.max_rank = len(in_channels_all) - 1
+
+        # Create input linear layers for each rank dynamically
+        self.in_linears = torch.nn.ModuleList(
+            [
+                torch.nn.Linear(in_channels_all[i], hidden_channels_all[i])
+                for i in range(len(in_channels_all))
+            ]
         )
 
         self.layers = torch.nn.ModuleList(
@@ -69,28 +68,29 @@ class SCCNNCustom(torch.nn.Module):
         Parameters
         ----------
         x_all : tuple(tensors)
-            Tuple of feature tensors (node, edge, face).
+            Tuple of feature tensors for each rank (x_0, x_1, ..., x_k).
         laplacian_all : tuple(tensors)
-            Tuple of Laplacian tensors (graph laplacian L0, down edge laplacian L1_d, upper edge laplacian L1_u, face laplacian L2).
+            Tuple of Laplacian tensors.
         incidence_all : tuple(tensors)
-            Tuple of order 1 and 2 incidence matrices.
+            Tuple of incidence matrices.
 
         Returns
         -------
         tuple(tensors)
-            Tuple of final hidden state tensors (node, edge, face).
+            Tuple of final hidden state tensors for each rank.
         """
-        x_0, x_1, x_2 = x_all
-        in_x_0 = self.in_linear_0(x_0)
-        in_x_1 = self.in_linear_1(x_1)
-        in_x_2 = self.in_linear_2(x_2)
+        # Apply input linear transformations to each rank
+        x_all_transformed = tuple(
+            self.in_linears[i](x_all[i]) for i in range(len(x_all))
+        )
 
-        # Forward through SCCNN
-        x_all = (in_x_0, in_x_1, in_x_2)
+        # Forward through SCCNN layers
         for layer in self.layers:
-            x_all = layer(x_all, laplacian_all, incidence_all)
+            x_all_transformed = layer(
+                x_all_transformed, laplacian_all, incidence_all
+            )
 
-        return x_all
+        return x_all_transformed
 
 
 class SCCNNLayer(torch.nn.Module):
@@ -99,13 +99,13 @@ class SCCNNLayer(torch.nn.Module):
     Parameters
     ----------
     in_channels : tuple of int
-        Dimensions of input features on nodes, edges, and faces.
+        Dimensions of input features for each rank.
     out_channels : tuple of int
-        Dimensions of output features on nodes, edges, and faces.
+        Dimensions of output features for each rank.
     conv_order : int
         Convolution order of the simplicial filters.
     sc_order : int
-        SC order.
+        SC order (max_rank + 1).
     aggr_norm : bool, optional
         Whether to normalize the aggregated message by the neighborhood size (default: False).
     update_func : str, optional
@@ -126,15 +126,9 @@ class SCCNNLayer(torch.nn.Module):
     ) -> None:
         super().__init__()
 
-        in_channels_0, in_channels_1, in_channels_2 = in_channels
-        out_channels_0, out_channels_1, out_channels_2 = out_channels
-
-        self.in_channels_0 = in_channels_0
-        self.in_channels_1 = in_channels_1
-        self.in_channels_2 = in_channels_2
-        self.out_channels_0 = out_channels_0
-        self.out_channels_1 = out_channels_1
-        self.out_channels_2 = out_channels_2
+        self.in_channels = tuple(in_channels)
+        self.out_channels = tuple(out_channels)
+        self.max_rank = len(in_channels) - 1
 
         self.conv_order = conv_order
         self.sc_order = sc_order
@@ -146,46 +140,64 @@ class SCCNNLayer(torch.nn.Module):
         assert initialization in ["xavier_uniform", "xavier_normal"]
         assert self.conv_order > 0
 
-        self.weight_0 = Parameter(
-            torch.Tensor(
-                self.in_channels_0,
-                self.out_channels_0,
-                1 + conv_order + 1 + conv_order,
-            )
-        )
+        # Create weight parameters for each rank
+        self.weights = torch.nn.ParameterList()
 
-        self.weight_1 = Parameter(
-            torch.Tensor(
-                self.in_channels_1,
-                self.out_channels_1,
-                6 * conv_order + 3,
-            )
-        )
+        for rank in range(self.max_rank + 1):
+            # Calculate weight tensor dimensions based on message types
+            # For rank k, we have:
+            # - Identity: 1
+            # - Self convolutions: conv_order (down) + conv_order (up) for k>0, or just conv_order for k=0
+            # - Lower messages (from k-1): 1 + conv_order (identity + convolutions)
+            # - Upper messages (from k+1): 1 + conv_order (identity + convolutions)
 
-        # determine the third dimensions of the weights
-        # because when SC order is larger than 2, there are lower and upper
-        # parts for L_2; otherwise, L_2 contains only the lower part
+            num_message_types = self._compute_message_types(rank)
 
-        if sc_order > 2:
-            self.weight_2 = Parameter(
+            weight = Parameter(
                 torch.Tensor(
-                    self.in_channels_2,
-                    self.out_channels_2,
-                    4 * conv_order
-                    + 2,  # in the future for arbitrary sc_order we should have this 6*conv_order + 3,
+                    self.in_channels[rank],
+                    self.out_channels[rank],
+                    num_message_types,
                 )
             )
-
-        elif sc_order == 2:
-            self.weight_2 = Parameter(
-                torch.Tensor(
-                    self.in_channels_2,
-                    self.out_channels_2,
-                    4 * conv_order + 2,
-                )
-            )
+            self.weights.append(weight)
 
         self.reset_parameters()
+
+    def _compute_message_types(self, rank):
+        """Compute the maximum number of message types for a given rank.
+
+        Parameters
+        ----------
+        rank : int
+            Rank to consider.
+
+        Returns
+        -------
+        int
+            Number of message types for the given rank.
+        """
+        count = 0
+
+        # Self messages
+        if rank == 0:
+            # Rank 0: identity + Hodge Laplacian convolutions
+            count += 1 + self.conv_order
+        else:
+            # Rank k>0: identity + down Laplacian + up Laplacian convolutions
+            count += 1 + self.conv_order + self.conv_order
+
+        # Lower messages (from rank-1 projected to rank)
+        if rank > 0:
+            # Identity + convolutions with down/up Laplacians at current rank
+            count += 1 + self.conv_order
+
+        # Upper messages (from rank+1 projected to rank)
+        if rank < self.max_rank:
+            # Identity + convolutions with down/up Laplacians at current rank
+            count += 1 + self.conv_order
+
+        return count
 
     def reset_parameters(self, gain: float = 1.414):
         r"""Reset learnable parameters.
@@ -196,13 +208,11 @@ class SCCNNLayer(torch.nn.Module):
             Gain for the weight initialization.
         """
         if self.initialization == "xavier_uniform":
-            torch.nn.init.xavier_uniform_(self.weight_0, gain=gain)
-            torch.nn.init.xavier_uniform_(self.weight_1, gain=gain)
-            torch.nn.init.xavier_uniform_(self.weight_2, gain=gain)
+            for weight in self.weights:
+                torch.nn.init.xavier_uniform_(weight, gain=gain)
         elif self.initialization == "xavier_normal":
-            torch.nn.init.xavier_normal_(self.weight_0, gain=gain)
-            torch.nn.init.xavier_normal_(self.weight_1, gain=gain)
-            torch.nn.init.xavier_normal_(self.weight_2, gain=gain)
+            for weight in self.weights:
+                torch.nn.init.xavier_normal_(weight, gain=gain)
         else:
             raise RuntimeError(
                 "Initialization method not recognized. "
@@ -286,201 +296,226 @@ class SCCNNLayer(torch.nn.Module):
         return X
 
     def forward(self, x_all, laplacian_all, incidence_all):
-        r"""Forward computation.
+        r"""Forward computation for arbitrary ranks.
 
         Parameters
         ----------
         x_all : tuple of tensors
-            Tuple of input feature tensors (node, edge, face).
+            Tuple of input feature tensors for each rank.
         laplacian_all : tuple of tensors
-            Tuple of Laplacian tensors (graph laplacian L0, down edge laplacian L1_d, upper edge laplacian L1_u, face laplacian L2).
+            Tuple of Laplacian tensors organized as:
+            (L_0, L_down_1, L_up_1, L_down_2, L_up_2, ...).
         incidence_all : tuple of tensors
-            Tuple of order 1 and 2 incidence matrices.
+            Tuple of incidence matrices (B_1, B_2, ..., B_k).
 
         Returns
         -------
-        torch.Tensor
-            Output tensor for each 0-cell.
-        torch.Tensor
-            Output tensor for each 1-cell.
-        torch.Tensor
-            Output tensor for each 2-cell.
+        tuple of tensors
+            Output tensors for each rank after message passing.
         """
-        x_0, x_1, x_2 = x_all
+        outputs = []
 
-        if self.sc_order == 2:
-            laplacian_0, laplacian_down_1, laplacian_up_1, laplacian_2 = (
-                laplacian_all
+        for rank in range(self.max_rank + 1):
+            x_rank = x_all[rank]
+
+            # Skip empty ranks (no cells at this dimension)
+            if x_rank.shape[0] == 0:
+                # Create empty output tensor for this rank
+                outputs.append(
+                    torch.zeros(
+                        0, self.out_channels[rank], device=x_rank.device
+                    )
+                )
+                continue
+
+            # Get Laplacians for this rank
+            laplacians = self._get_laplacians_for_rank(rank, laplacian_all)
+
+            # Get incidence matrices
+            incidence_lower = (
+                incidence_all[rank - 1]
+                if rank > 0 and rank - 1 < len(incidence_all)
+                else None
             )
-        elif self.sc_order > 2:
-            (
-                laplacian_0,
-                laplacian_down_1,
-                laplacian_up_1,
-                laplacian_down_2,
-                laplacian_up_2,
-            ) = laplacian_all
+            incidence_upper = (
+                incidence_all[rank] if rank < len(incidence_all) else None
+            )
 
-        # num_nodes, num_edges, num_triangles = x_0.shape[0], x_1.shape[0], x_2.shape[0]
+            # Compute all messages for this rank
+            messages = self._compute_messages_for_rank(
+                rank,
+                x_rank,
+                x_all,
+                laplacians,
+                incidence_lower,
+                incidence_upper,
+            )
 
-        b1, b2 = incidence_all
+            # Apply weight and aggregate
+            # Use only the first k dimensions of weights that match the number of messages
+            num_messages = messages.shape[2]
+            weight_slice = self.weights[rank][:, :, :num_messages]
+            y_rank = torch.einsum("nik,iok->no", messages, weight_slice)
 
-        # identity_0, identity_1, identity_2 = (
-        #     torch.eye(num_nodes).to(x_0.device),
-        #     torch.eye(num_edges).to(x_0.device),
-        #     torch.eye(num_triangles).to(x_0.device),
-        # )
+            # Apply activation if specified
+            if self.update_func is not None:
+                y_rank = self.update(y_rank)
+
+            outputs.append(y_rank)
+
+        return tuple(outputs)
+
+    def _get_laplacians_for_rank(self, rank, laplacian_all):
+        """Extract Laplacians for a given rank from laplacian_all.
+
+        Parameters
+        ----------
+        rank : int
+            The rank to extract Laplacians for.
+        laplacian_all : tuple
+            All Laplacians organized as (L_0, L_down_1, L_up_1, L_down_2, L_up_2, ...).
+
+        Returns
+        -------
+        dict
+            Dictionary with keys 'hodge', 'down', 'up' containing the relevant Laplacians.
         """
-        Convolution in the node space
+        laplacians = {}
+
+        if rank == 0:
+            # Rank 0 only has Hodge Laplacian
+            laplacians["hodge"] = (
+                laplacian_all[0] if len(laplacian_all) > 0 else None
+            )
+            laplacians["down"] = None
+            laplacians["up"] = None
+        else:
+            # For rank k > 0: index is 1 + 2*(k-1) for down, 1 + 2*(k-1) + 1 for up
+            idx_down = 1 + 2 * (rank - 1)
+            idx_up = idx_down + 1
+
+            laplacians["hodge"] = None
+            laplacians["down"] = (
+                laplacian_all[idx_down]
+                if idx_down < len(laplacian_all)
+                else None
+            )
+            laplacians["up"] = (
+                laplacian_all[idx_up] if idx_up < len(laplacian_all) else None
+            )
+
+        return laplacians
+
+    def _compute_messages_for_rank(
+        self, rank, x_rank, x_all, laplacians, incidence_lower, incidence_upper
+    ):
+        """Compute all messages for a given rank.
+
+        Parameters
+        ----------
+        rank : int
+            The rank to compute messages for.
+        x_rank : tensor
+            Features of cells at this rank.
+        x_all : tuple
+            Features of all ranks.
+        laplacians : dict
+            Dictionary of Laplacians for this rank.
+        incidence_lower : tensor or None
+            Incidence matrix from rank-1 to rank.
+        incidence_upper : tensor or None
+            Incidence matrix from rank to rank+1.
+
+        Returns
+        -------
+        tensor
+            Concatenated messages of shape (num_cells, num_channels, num_message_types).
         """
-        # -----------Logic to obtain update for 0-cells --------
-        # x_identity_0 = torch.unsqueeze(identity_0 @ x_0, 2)
-        # x_0_to_0 = self.chebyshev_conv(laplacian_0, self.conv_order, x_0)
-        # x_0_to_0 = torch.cat((x_identity_0, x_0_to_0), 2)
+        message_list = []
 
-        x_0_laplacian = self.chebyshev_conv(laplacian_0, self.conv_order, x_0)
-        x_0_to_0 = torch.cat([x_0.unsqueeze(2), x_0_laplacian], dim=2)
-        # -------------------
+        # 1. Self messages (identity + convolutions)
+        if rank == 0:
+            # Identity message
+            message_list.append(x_rank.unsqueeze(2))
 
-        # x_1_to_0 = torch.mm(b1, x_1)
-        # x_1_to_0_identity = torch.unsqueeze(identity_0 @ x_1_to_0, 2)
-        # x_1_to_0 = self.chebyshev_conv(laplacian_0, self.conv_order, x_1_to_0)
-        # x_1_to_0 = torch.cat((x_1_to_0_identity, x_1_to_0), 2)
+            # Hodge Laplacian convolutions
+            if laplacians["hodge"] is not None:
+                x_conv = self.chebyshev_conv(
+                    laplacians["hodge"], self.conv_order, x_rank
+                )
+                message_list.append(x_conv)
+        else:
+            # Identity message
+            message_list.append(x_rank.unsqueeze(2))
 
-        x_1_to_0_upper = torch.mm(b1, x_1)
-        x_1_to_0_laplacian = self.chebyshev_conv(
-            laplacian_0, self.conv_order, x_1_to_0_upper
-        )
-        x_1_to_0 = torch.cat(
-            [x_1_to_0_upper.unsqueeze(2), x_1_to_0_laplacian], dim=2
-        )
-        # -------------------
+            # Down Laplacian convolutions
+            if laplacians["down"] is not None:
+                x_down = self.chebyshev_conv(
+                    laplacians["down"], self.conv_order, x_rank
+                )
+                message_list.append(x_down)
 
-        x_0_all = torch.cat((x_0_to_0, x_1_to_0), 2)
+            # Up Laplacian convolutions
+            if laplacians["up"] is not None:
+                x_up = self.chebyshev_conv(
+                    laplacians["up"], self.conv_order, x_rank
+                )
+                message_list.append(x_up)
 
-        # -------------------
-        """
-        Convolution in the edge space
-        """
+        # 2. Lower messages (from rank-1)
+        if rank > 0 and incidence_lower is not None and rank - 1 < len(x_all):
+            x_lower = x_all[rank - 1]
+            # Only process if lower rank is not empty
+            if x_lower.shape[0] > 0:
+                # Project features from rank-1 to rank
+                x_lower_proj = torch.mm(incidence_lower.T, x_lower)
 
-        # -----------Logic to obtain update for 1-cells --------
-        # x_identity_1 = torch.unsqueeze(identity_1 @ x_1, 2)
-        # x_1_down = self.chebyshev_conv(laplacian_down_1, self.conv_order, x_1)
-        # x_1_up = self.chebyshev_conv(laplacian_up_1, self.conv_order, x_1)
-        # x_1_to_1 = torch.cat((x_identity_1, x_1_down, x_1_up), 2)
+                # Identity
+                message_list.append(x_lower_proj.unsqueeze(2))
 
-        x_1_down = self.chebyshev_conv(laplacian_down_1, self.conv_order, x_1)
-        x_1_up = self.chebyshev_conv(laplacian_down_1, self.conv_order, x_1)
-        x_1_to_1 = torch.cat((x_1.unsqueeze(2), x_1_down, x_1_up), 2)
+                # Apply Laplacian convolutions at the current rank
+                # Use the appropriate Laplacian (down for rank 0, down for rank > 0)
+                if rank == 0:
+                    if laplacians["hodge"] is not None:
+                        x_lower_conv = self.chebyshev_conv(
+                            laplacians["hodge"],
+                            self.conv_order,
+                            x_lower_proj,
+                        )
+                        message_list.append(x_lower_conv)
+                else:
+                    if laplacians["down"] is not None:
+                        x_lower_conv = self.chebyshev_conv(
+                            laplacians["down"],
+                            self.conv_order,
+                            x_lower_proj,
+                        )
+                        message_list.append(x_lower_conv)
 
-        # -------------------
+        # 3. Upper messages (from rank+1)
+        if (
+            rank < self.max_rank
+            and incidence_upper is not None
+            and rank + 1 < len(x_all)
+        ):
+            x_upper = x_all[rank + 1]
+            # Only process if upper rank is not empty
+            if x_upper.shape[0] > 0:
+                # Project features from rank+1 to rank
+                x_upper_proj = torch.mm(incidence_upper, x_upper)
 
-        # x_0_to_1 = torch.mm(b1.T, x_0)
-        # x_0_to_1_identity = torch.unsqueeze(identity_1 @ x_0_to_1, 2)
-        # x_0_to_1 = self.chebyshev_conv(laplacian_down_1, self.conv_order, x_0_to_1)
-        # x_0_to_1 = torch.cat((x_0_to_1_identity, x_0_to_1), 2)
+                # Identity
+                message_list.append(x_upper_proj.unsqueeze(2))
 
-        # Lower projection
-        x_0_1_lower = torch.mm(b1.T, x_0)
+                # Apply Laplacian convolutions at the current rank
+                # Use up Laplacian for rank > 0
+                if laplacians["up"] is not None:
+                    x_upper_conv = self.chebyshev_conv(
+                        laplacians["up"], self.conv_order, x_upper_proj
+                    )
+                    message_list.append(x_upper_conv)
 
-        # Calculate lowwer chebyshev_conv
-        x_0_1_down = self.chebyshev_conv(
-            laplacian_down_1, self.conv_order, x_0_1_lower
-        )
+        # Concatenate all messages
+        messages = torch.cat(message_list, dim=2)
 
-        # Calculate upper chebyshev_conv (Note: in case of signed incidence should be always zero)
-        x_0_1_up = self.chebyshev_conv(
-            laplacian_up_1, self.conv_order, x_0_1_lower
-        )
-
-        # Concatenate output of filters
-        x_0_to_1 = torch.cat(
-            [x_0_1_lower.unsqueeze(2), x_0_1_down, x_0_1_up], dim=2
-        )
-        # -------------------
-
-        # x_2_to_1 = torch.mm(b2, x_2)
-        # x_2_to_1_identity = torch.unsqueeze(identity_1 @ x_2_to_1, 2)
-        # x_2_to_1 = self.chebyshev_conv(laplacian_up_1, self.conv_order, x_2_to_1)
-        # x_2_to_1 = torch.cat((x_2_to_1_identity, x_2_to_1), 2)
-
-        x_2_1_upper = torch.mm(b2, x_2)
-
-        # Calculate lowwer chebyshev_conv (Note: In case of signed incidence should be always zero)
-        x_2_1_down = self.chebyshev_conv(
-            laplacian_down_1, self.conv_order, x_2_1_upper
-        )
-
-        # Calculate upper chebyshev_conv
-        x_2_1_up = self.chebyshev_conv(
-            laplacian_up_1, self.conv_order, x_2_1_upper
-        )
-
-        x_2_to_1 = torch.cat(
-            [x_2_1_upper.unsqueeze(2), x_2_1_down, x_2_1_up], dim=2
-        )
-
-        # -------------------
-        x_1_all = torch.cat((x_0_to_1, x_1_to_1, x_2_to_1), 2)
-        """Convolution in the face (triangle) space, depending on the SC order,
-        the exact form maybe a little different."""
-        # -------------------Logic to obtain update for 2-cells --------
-        # x_identity_2 = torch.unsqueeze(identity_2 @ x_2, 2)
-
-        # if self.sc_order == 2:
-        #     x_2 = self.chebyshev_conv(laplacian_2, self.conv_order, x_2)
-        #     x_2_to_2 = torch.cat((x_identity_2, x_2), 2)
-        # elif self.sc_order > 2:
-        #     x_2_down = self.chebyshev_conv(laplacian_down_2, self.conv_order, x_2)
-        #     x_2_up = self.chebyshev_conv(laplacian_up_2, self.conv_order, x_2)
-        #     x_2_to_2 = torch.cat((x_identity_2, x_2_down, x_2_up), 2)
-        x_2_down = self.chebyshev_conv(laplacian_down_2, self.conv_order, x_2)
-        x_2_up = self.chebyshev_conv(laplacian_up_2, self.conv_order, x_2)
-        x_2_to_2 = torch.cat((x_2.unsqueeze(2), x_2_down, x_2_up), 2)
-
-        # -------------------
-
-        # x_1_to_2 = torch.mm(b2.T, x_1)
-        # x_1_to_2_identity = torch.unsqueeze(identity_2 @ x_1_to_2, 2)
-        # if self.sc_order == 2:
-        #     x_1_to_2 = self.chebyshev_conv(laplacian_2, self.conv_order, x_1_to_2)
-        # elif self.sc_order > 2:
-        #     x_1_to_2 = self.chebyshev_conv(laplacian_down_2, self.conv_order, x_1_to_2)
-        # x_1_to_2 = torch.cat((x_1_to_2_identity, x_1_to_2), 2)
-
-        x_1_2_lower = torch.mm(b2.T, x_1)
-        x_1_2_down = self.chebyshev_conv(
-            laplacian_down_2, self.conv_order, x_1_2_lower
-        )
-        x_1_2_down = self.chebyshev_conv(
-            laplacian_up_2, self.conv_order, x_1_2_lower
-        )
-
-        x_1_to_2 = torch.cat(
-            [x_1_2_lower.unsqueeze(2), x_1_2_down, x_1_2_down], dim=2
-        )
-
-        # That is my code, but to execute this part we need to have simplices order of k+1 in this case order of 3
-        # x_3_2_upper = x_1_to_2 = torch.mm(b2, x_3)
-        # x_3_2_down = self.chebyshev_conv(laplacian_down_2, self.conv_order, x_3_2_upper)
-        # x_3_2_up = self.chebyshev_conv(laplacian_up_2, self.conv_order, x_3_2_upper)
-
-        # x_3_to_2 = torch.cat([x_3_2_upper.unsueeze(2), x_3_2_down, x_3_2_up], dim=2)
-
-        # -------------------
-
-        x_2_all = torch.cat([x_1_to_2, x_2_to_2], dim=2)
-        # The final version of this model should have the following line
-        # x_2_all = torch.cat([x_1_to_2, x_2_to_2, x_3_to_2], dim=2)
-
-        # -------------------
-
-        # Need to check that this einsums are correct
-        y_0 = torch.einsum("nik,iok->no", x_0_all, self.weight_0)
-        y_1 = torch.einsum("nik,iok->no", x_1_all, self.weight_1)
-        y_2 = torch.einsum("nik,iok->no", x_2_all, self.weight_2)
-
-        if self.update_func is None:
-            return y_0, y_1, y_2
-
-        return self.update(y_0), self.update(y_1), self.update(y_2)
+        return messages
