@@ -1,6 +1,5 @@
 """Loader for MUSAE Deezer Europe dataset."""
 
-from pathlib import Path
 
 from omegaconf import DictConfig
 

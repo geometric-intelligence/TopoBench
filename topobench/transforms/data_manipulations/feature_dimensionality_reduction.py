@@ -1,10 +1,11 @@
 """This module contains a transform that reduces feature dimensionality for the input graph."""
 
+import numpy as np
 import torch
 import torch_geometric
-import numpy as np
 from scipy.sparse import coo_matrix
 from sklearn.decomposition import TruncatedSVD
+
 
 class FeatureDimensionalityReduction(torch_geometric.transforms.BaseTransform):
     r"""A transform that reduces dimensionality of node features.

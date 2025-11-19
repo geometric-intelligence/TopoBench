@@ -6,13 +6,12 @@ import os.path as osp
 import shutil
 from typing import ClassVar
 
+import numpy as np
 import pandas as pd
 import torch
 from omegaconf import DictConfig
 from torch_geometric.data import Data, InMemoryDataset, extract_zip
 from torch_geometric.io import fs
-
-import numpy as np
 
 from topobench.data.utils import (
     download_file_from_link,
