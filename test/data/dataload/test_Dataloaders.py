@@ -1,16 +1,12 @@
 """Test the Dataloader class."""
 
+
 import hydra
-import rootutils
 import torch
 
 from topobench.data.preprocessor import PreProcessor
 from topobench.dataloader import TBDataloader
 from topobench.dataloader.utils import to_data_list
-
-from omegaconf import OmegaConf
-import os
-from topobench.run import initialize_hydra
 
 # rootutils.setup_root("./", indicator=".project-root", pythonpath=True)
 
@@ -47,7 +43,7 @@ class TestCollateFunction:
     def test_lift_features(self):
         """Test the collate funciton.
 
-        To test the collate function we use the TBDataloader class to create a dataloader that uses the collate function. 
+        To test the collate function we use the TBDataloader class to create a dataloader that uses the collate function.
         We then first check that the batched data has the expected shape. We then convert the batched data back to a list and check that the data in the list is the same as the original data.
         """
 
@@ -124,11 +120,11 @@ class TestCollateFunction:
         elems = [self.val_dataset.data_lst[i] for i in range(self.batch_size)]
 
         # Check shape
-        for key, val in batch:
+        for key, _val in batch:
             check_shape(batch, elems, key)
 
         # Check that the batched data is separated correctly and the values are correct
-        for key, val in batch:
+        for key, _val in batch:
             if "incidence_" in key:
                 i = int(key.split("_")[1])
                 if i == 0:

@@ -1,13 +1,11 @@
 """Tests for the OnDiskPreProcessor class."""
 
-import json
-import os
-from unittest.mock import MagicMock, ANY, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import torch_geometric
-from torch_geometric.data import Data
 from omegaconf import DictConfig
+from torch_geometric.data import Data
 
 from topobench.data.preprocessor.on_disk_preprocessor import (
     OnDiskPreProcessor,

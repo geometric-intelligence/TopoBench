@@ -64,4 +64,20 @@ io_helper_functions = [
     # add function name here
 ]
 
-__all__ = utils_functions + split_helper_functions + io_helper_functions
+from .cluster_utils import (  # noqa: E402
+    ClusterOnDisk,  # noqa: F401
+    _tensor_schema_entry,  # noqa: F401
+    build_cluster_transform,  # noqa: F401
+    # import function here, add noqa: F401 for PR
+    to_bool_mask,  # noqa: F401
+)
+
+cluster_helpers = [
+    "ClusterOnDisk",
+    "to_bool_mask",
+    "build_cluster_transform",
+    "_tensor_schema_entry",
+    # add function name here
+    ]
+
+__all__ = utils_functions + split_helper_functions + io_helper_functions + cluster_helpers

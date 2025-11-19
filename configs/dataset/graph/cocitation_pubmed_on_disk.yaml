@@ -1,0 +1,55 @@
+# Dataset loader config
+loader:
+  _target_: topobench.data.loaders.OnDiskDatasetLoader
+  parameters: 
+    data_domain: graph
+    data_type: cocitation_on_disk
+    data_name: PubMed_on_disk
+    data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+
+    # Choose memory mode
+    memory_type: on_disk          # "in_memory", "on_disk", or "on_disk_cluster"
+
+    # Global partition setting
+    cluster:
+      num_parts: 64                       # number of clusters for single global partition
+      recursive: false                    # forwarded to PyG ClusterData
+      keep_inter_cluster_edges: false     # standard Cluster-GCN style
+      sparse_format: csr                  # required by our block-stream loader
+
+    # Streaming / loader settings for block-wise training
+    stream:
+      q: 4                               # clusters per batch (Cluster-GCN "bsize")
+      num_workers: 0                      # increase if needed
+      pin_memory: false                   # true if you want faster H2D
+      with_edge_attr: false               # WebKB has no edge_attr
+      precompute_split_parts: true        # write parts_with_{train,val,test}.npy
+
+    # How to store features on disk
+    dtype_policy: float32                 # current ClusterOnDisk uses float32
+
+# Dataset parameters (unchanged)
+parameters:
+  num_features: 500
+  num_classes: 3
+  num_nodes: 19717
+  task: classification
+  loss_type: cross_entropy
+  monitor_metric: accuracy
+  task_level: node
+
+# Splits (unchanged; used by pack_global_partition)
+split_params:
+  learning_setting: transductive # transductive # inductive
+  data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}
+  data_seed: 0
+  split_type: random
+  k: 10
+  train_prop: 0.5
+
+# Dataloader parameters for legacy paths (kept; ignored in on_disk_cluster mode)
+dataloader_params:
+  batch_size: 1
+  drop_last: True  
+  num_workers: 0
+  pin_memory: False

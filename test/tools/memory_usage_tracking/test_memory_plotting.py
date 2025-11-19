@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import builtins
-import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -126,8 +124,9 @@ class TestMemoryPlotting:
         def fake_popen(args, cwd=None, env=None):
             return fake_proc
 
-        import psutil as real_psutil
         import subprocess as real_subprocess
+
+        import psutil as real_psutil
 
         monkeypatch.setattr(real_subprocess, "Popen", fake_popen)
         monkeypatch.setattr(real_psutil, "Process", FakePsutilProcess)

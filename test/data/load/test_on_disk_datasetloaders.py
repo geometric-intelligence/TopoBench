@@ -139,18 +139,13 @@ class TestOnDiskLoaders:
                 continue
 
             # Check that the returned dataset is backed by OnDiskDataset.
-            assert isinstance(dataset, OnDiskDataset) or isinstance(
-                dataset, torch_geometric.data.OnDiskDataset
-            )
+            assert isinstance(dataset, (OnDiskDataset, torch_geometric.data.OnDiskDataset))
 
             # Dataset must contain at least one graph.
             assert len(dataset) > 0
 
             # Single-graph style (dataset.data) or multi-graph style (dataset[0]).
-            if hasattr(dataset, "data"):
-                data = dataset.data
-            else:
-                data = dataset[0]
+            data = dataset.data if hasattr(dataset, "data") else dataset[0]
 
             # Basic feature and label checks.
             assert hasattr(data, "x"), "Missing node features"

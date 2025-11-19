@@ -5,7 +5,7 @@ import hydra
 from test._utils.simplified_pipeline import run
 
 # Use your contributed dataset + a lightweight, well-supported model
-DATASET = "graph/fake"
+DATASET = "graph/cocitation_cora_on_disk"
 MODELS   = ["graph/gcn", "cell/topotune", "simplicial/topotune"]
 # MODELS = ["graph/gcn"]
 
