@@ -517,7 +517,9 @@ def build_data_features_and_labels(
                             )  # Last dim = feature
                         elif edge_task == "score":
                             # Convert score back from [-1, 1] to [0, 1] for standard regression
-                            score_normalized = (feat_vec[7:8] + 1) / 2
+                            score_normalized = (
+                                (feat_vec[7] + 1) / 2
+                            ).item()  # Scalar value
                             labels.append(score_normalized)
                             features.append(
                                 feat_vec[:7]
@@ -529,7 +531,14 @@ def build_data_features_and_labels(
                 x_dict["x_1"] = torch.stack(features)
 
                 if is_target:
-                    labels_dict["cell_labels_1"] = torch.stack(labels)
+                    if edge_task == "score":
+                        # For regression: 1D tensor of scalar values
+                        labels_dict["cell_labels_1"] = torch.tensor(
+                            labels, dtype=torch.float
+                        )
+                    else:
+                        # For multi-label classification: 2D tensor
+                        labels_dict["cell_labels_1"] = torch.stack(labels)
 
             case _:
                 # Higher-order cells
