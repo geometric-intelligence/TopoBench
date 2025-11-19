@@ -449,6 +449,7 @@ def build_data_features_and_labels(
     target_ranks: list[int],
     max_rank: int,
     edge_task: str = None,
+    highppi_edge_set: set[tuple] = None,
 ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     """Create feature and label tensors for all ranks.
 
@@ -467,6 +468,9 @@ def build_data_features_and_labels(
     edge_task : str, optional
         Edge prediction task: "interaction_type" or "score".
         Only used if rank 1 is in target_ranks.
+    highppi_edge_set : set, optional
+        Set of edge tuples from HIGH-PPI.
+        Used to filter edges for edge-level tasks.
 
     Returns
     -------
@@ -501,12 +505,18 @@ def build_data_features_and_labels(
                 # Edges: 8-dim features (7 interaction types + 1 confidence)
                 features = []
                 labels = [] if is_target else None
+                # Track HIGH-PPI edges for loss filtering (all edge tasks)
+                highppi_mask = [] if (is_target and highppi_edge_set) else None
 
                 for edge in cells:
                     edge_tuple = tuple(sorted(edge))
                     feat_vec = edge_data[edge_tuple]
 
                     if is_target:
+                        # Track if this edge is from HIGH-PPI (not CORUM-generated)
+                        if highppi_mask is not None:
+                            highppi_mask.append(edge_tuple in highppi_edge_set)
+
                         # Split features/labels based on edge_task
                         if edge_task == "interaction_type":
                             labels.append(
@@ -539,6 +549,13 @@ def build_data_features_and_labels(
                     else:
                         # For multi-label classification: 2D tensor
                         labels_dict["cell_labels_1"] = torch.stack(labels)
+
+                    # Store mask to filter out CORUM-generated edges during training
+                    # This applies to ALL edge tasks (score regression, interaction type, etc.)
+                    if highppi_mask is not None:
+                        labels_dict["mask_1"] = torch.tensor(
+                            highppi_mask, dtype=torch.bool
+                        )
 
             case _:
                 # Higher-order cells
