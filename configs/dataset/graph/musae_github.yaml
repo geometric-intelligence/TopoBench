@@ -10,7 +10,7 @@ loader:
 # Dataset parameters
 parameters:
   # Dataset parameters
-  num_features: 4005
+  num_features: 128 # Default feature dimension after reduction 128 (Rozemberczki & Sarkar 2020), without reduction: 4005
   num_classes: 2
   num_nodes: 37700
   task: classification

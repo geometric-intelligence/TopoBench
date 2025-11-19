@@ -6,6 +6,7 @@ import os.path as osp
 import shutil
 from typing import ClassVar
 
+import numpy as np
 import pandas as pd
 import torch
 from omegaconf import DictConfig
@@ -76,7 +77,8 @@ class MusaeGitHubDataset(InMemoryDataset):
         assert isinstance(self._data, Data)
 
     def __repr__(self) -> str:
-        return f"{self.name}(self.root={self.root}, self.name={self.name}, self.parameters={self.parameters}, self.force_reload={self.force_reload})"
+        return f"{self.name}(self.root={self.root}, self.name={self.name}, " \
+               f"self.parameters={self.parameters}, self.force_reload={self.force_reload})"
 
     @property
     def raw_dir(self) -> str:
@@ -156,7 +158,7 @@ class MusaeGitHubDataset(InMemoryDataset):
     def process(self) -> None:
         r"""Handle the data for the dataset.
 
-        This method loads the US county demographics data, applies any pre-
+        This method loads the MUSAE GitHub data, applies any pre-
         processing transformations if specified, and saves the processed data
         to the appropriate location.
         """
@@ -167,20 +169,26 @@ class MusaeGitHubDataset(InMemoryDataset):
         edge_index = torch.tensor(tmp, dtype=torch.long).t().contiguous()
         # Targets:
         tmp = pd.read_csv(osp.join(folder,"musae_git_target.csv")).sort_values("id")["ml_target"].to_numpy()
-        y = torch.tensor(pd.Categorical(tmp, set(tmp)).codes, dtype=torch.long)
+        y = torch.tensor(tmp, dtype=torch.long)
         # Node features:
         with open(osp.join(folder,"musae_git_features.json")) as infile:
             featdict = json.load(infile)
-        unique_values_set = set()
-        for values_list in featdict.values():
-            unique_values_set.update(values_list)
-        num_features = len(list(unique_values_set))
-        node_features = []
-        for ind in range(len(list(featdict.keys()))):
-            # Convert features to one-hot encoded vector
-            one_hot_features = [1 if i in featdict[str(ind)] else 0 for i in range(num_features)]
-            node_features.append(one_hot_features)
-        x = torch.tensor(node_features, dtype=torch.float)
+        row = []
+        col = []
+        values = []
+        for node_id_str, feature_list in featdict.items():
+            node_id = int(node_id_str)
+            for feature_id in feature_list:
+                row.append(node_id)
+                col.append(int(feature_id))
+                values.append(1)
+        row = np.array(row, dtype=int)
+        col = np.array(col, dtype=int)
+        values = np.array(values, dtype=int)
+        node_count = row.max() + 1
+        feature_count = col.max() + 1
+        shape = (node_count, feature_count)
+        x = torch.sparse_coo_tensor(np.stack([row, col], axis=0), values, shape)
         data = Data(x=x, y=y, edge_index=edge_index)
         data_list = [data]
 
