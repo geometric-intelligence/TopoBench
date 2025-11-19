@@ -49,9 +49,6 @@ class TestLoaders:
             "roman_empire.yaml",  # Corrupted data file (BadZipFile error)
             "Mushroom.yaml",  # Duplicate .ipynb_checkpoints folder (shutil.Error)
             "ModelNet40.yaml",  # Large download - prone to network errors (ChunkedEncodingError)
-            # OGBN datasets require an interactive confirmation prompt and multi-GB
-            # download, which is not suitable for automated CI runs.
-            "ogbn_arxiv.yaml",
             "ogbn_products.yaml",
         }
 
@@ -61,6 +58,7 @@ class TestLoaders:
             "mantra_orientation.yaml",
             "mantra_genus.yaml",
             "mantra_betti_numbers.yaml",
+            "ogbn_arxiv.yaml",
         }
 
         
