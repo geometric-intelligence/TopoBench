@@ -1,6 +1,6 @@
 # Dataset loader config
 loader:
-  _target_: topobench.data.loaders.graph.ogbn_arxiv.OgbnArxivDatasetLoader
+  _target_: topobench.data.loaders.graph.ogbn_arxiv_dataset_loader.OgbnArxivDatasetLoader
   parameters:
     data_domain: graph
     data_type: ogb
