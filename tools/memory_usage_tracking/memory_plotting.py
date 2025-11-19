@@ -16,7 +16,7 @@ import psutil
 
 # Constants & paths
 SCRIPT_FILE_PATH = "test/pipeline/memory_checks_template.py"
-OUTPUT_ROOT = "test/memory_usage_tracking/outputs"
+OUTPUT_ROOT = "tools/memory_usage_tracking/outputs"
 
 
 def dataset_short(name: str) -> str:
