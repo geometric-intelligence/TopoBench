@@ -20,8 +20,18 @@ class OGBNDatasetLoader(AbstractLoader):
     def __init__(self, parameters: DictConfig) -> None:
         super().__init__(parameters)
 
-    def load_dataset(self) -> PygNodePropPredDataset:
+    def load_dataset(self, **kwargs) -> PygNodePropPredDataset:
         """Load an OGB node property prediction dataset.
+
+        Additional keyword arguments are accepted for API compatibility with
+        other loaders (e.g. ``slice`` used in tests for long-running datasets),
+        but are currently ignored because OGBN datasets are represented as a
+        single large graph.
+
+        Parameters
+        ----------
+        **kwargs : dict
+            Additional keyword arguments accepted for API compatibility.
 
         Returns
         -------
