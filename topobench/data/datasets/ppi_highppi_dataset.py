@@ -253,6 +253,11 @@ class PPIHighPPIDataset(InMemoryDataset):
             highppi_path, self.INTERACTION_TYPES
         )
 
+        # Create set of HIGH-PPI edges to use as prediction-target for edge level tasks
+        highppi_edge_set = {
+            tuple(sorted([p1, p2])) for p1, p2, _, _ in self.highppi_edges
+        }
+
         # Load CORUM complexes, filter to SHS27k proteins
         corum_path = osp.join(self.raw_dir, self.CORUM_COMPLEXES_FILE)
         self.corum_complexes = load_corum_complexes(
@@ -288,6 +293,7 @@ class PPIHighPPIDataset(InMemoryDataset):
             self.target_ranks,
             self.max_rank,
             edge_task=self.edge_task,
+            highppi_edge_set=highppi_edge_set,
         )
 
         # Get connectivity

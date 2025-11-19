@@ -497,3 +497,51 @@ def get_default_metrics(task, metrics=None):
             return ["mse", "mae"]
         else:
             raise ValueError(f"Invalid task {task}")
+
+
+def infer_ppi_num_features(num_proteins, edge_task, max_complex_size):
+    r"""Infer feature dimensions for HIGH-PPI dataset.
+
+    For simplicial complexes from HIGH-PPI:
+    - Rank 0 (proteins): One-hot encoding (num_proteins features)
+    - Rank 1 (edges): 7 or 8 features depending on edge_task
+      - If edge_task="score": 7 features (8th is label)
+      - If edge_task="type": 8 features (all features)
+    - Rank 2+: 1 feature (binary existence)
+
+    Parameters
+    ----------
+    num_proteins : int
+        Number of proteins (for one-hot encoding dimension).
+    edge_task : str
+        Edge task type: "score" (regression) or "type" (classification).
+    max_complex_size : int
+        Maximum number of proteins per complex (determines number of ranks).
+
+    Returns
+    -------
+    list
+        List of feature dimensions per rank: [rank_0, rank_1, rank_2, ...].
+
+    Examples
+    --------
+    >>> infer_ppi_num_features(1553, "score", 6)
+    [1553, 7, 1, 1, 1, 1]  # 7 edge features (score is label)
+
+    >>> infer_ppi_num_features(1553, "type", 6)
+    [1553, 8, 1, 1, 1, 1]  # 8 edge features (all features)
+    """
+    # Rank 0: protein features (one-hot)
+    features = [num_proteins]
+
+    # Rank 1: edge features (depends on task)
+    if edge_task == "score":
+        features.append(7)  # 7 features, 8th (score) becomes label
+    else:
+        features.append(1)
+
+    # Rank 2+: cell features (binary existence)
+    num_higher_ranks = max_complex_size - 2  # Subtract rank 0 and rank 1
+    features.extend([1] * num_higher_ranks)
+
+    return features
