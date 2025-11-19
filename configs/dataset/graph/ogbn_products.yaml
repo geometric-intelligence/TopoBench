@@ -1,16 +1,15 @@
-# Dataset loader config
 loader:
   _target_: topobench.data.loaders.graph.ogbn_dataset_loader.OGBNDatasetLoader
   parameters:
     data_domain: graph
     data_type: ogb
-    data_name: ogbn-arxiv
+    data_name: ogbn-products
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
 
 # Dataset parameters
 parameters:
-  num_features: 128
-  num_classes: 40
+  num_features: 100
+  num_classes: 47
   task: classification
   loss_type: cross_entropy
   monitor_metric: accuracy
@@ -27,3 +26,5 @@ dataloader_params:
   batch_size: 1
   num_workers: 1
   pin_memory: False
+
+

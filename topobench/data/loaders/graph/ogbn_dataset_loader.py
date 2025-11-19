@@ -1,4 +1,4 @@
-"""Loader for the OGBN-Arxiv dataset."""
+"""Loader for OGB node property prediction datasets."""
 
 from pathlib import Path
 
@@ -8,8 +8,8 @@ from omegaconf import DictConfig
 from topobench.data.loaders.base import AbstractLoader
 
 
-class OgbnArxivDatasetLoader(AbstractLoader):
-    """Load the OGBN-Arxiv dataset.
+class OGBNDatasetLoader(AbstractLoader):
+    """Load OGB node property prediction datasets (ogbn-*).
 
     Parameters
     ----------
@@ -21,19 +21,19 @@ class OgbnArxivDatasetLoader(AbstractLoader):
         super().__init__(parameters)
 
     def load_dataset(self) -> PygNodePropPredDataset:
-        """Load the OGBN-Arxiv dataset.
+        """Load an OGB node property prediction dataset.
 
         Returns
         -------
         PygNodePropPredDataset
-            The loaded OGBN-Arxiv dataset.
+            The loaded OGBN dataset.
         """
         dataset = self._initialize_dataset()
         self.data_dir = self._redefine_data_dir(dataset)
         return dataset
 
     def _initialize_dataset(self) -> PygNodePropPredDataset:
-        """Initialize the OGBN-Arxiv dataset.
+        """Initialize the OGBN dataset specified by ``parameters.data_name``.
 
         Returns
         -------
@@ -45,7 +45,7 @@ class OgbnArxivDatasetLoader(AbstractLoader):
         )
 
     def _redefine_data_dir(self, dataset: PygNodePropPredDataset) -> Path:
-        """Redefine the data directory for OGBN-Arxiv dataset.
+        """Redefine the data directory for the OGBN dataset.
 
         Parameters
         ----------
