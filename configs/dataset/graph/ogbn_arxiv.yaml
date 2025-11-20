@@ -3,7 +3,7 @@ loader:
   _target_: topobench.data.loaders.graph.ogbn_dataset_loader.OGBNDatasetLoader
   parameters:
     data_domain: graph
-    data_type: ogb
+    data_type: OGBNDataset
     data_name: ogbn-arxiv
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
 
