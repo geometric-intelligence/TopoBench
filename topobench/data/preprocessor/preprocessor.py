@@ -244,9 +244,9 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             raise ValueError("No learning setting specified in split_params")
 
         if split_params.learning_setting == "inductive":
-            return load_inductive_splits(self, split_params)
+            return load_inductive_splits(self.dataset, split_params)
         elif split_params.learning_setting == "transductive":
-            return load_transductive_splits(self, split_params)
+            return load_transductive_splits(self.dataset, split_params)
         else:
             raise ValueError(
                 f"Invalid '{split_params.learning_setting}' learning setting.\

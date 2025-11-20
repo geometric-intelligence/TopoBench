@@ -532,11 +532,7 @@ def load_inductive_splits(dataset, parameters):
         else np.array(label_list)
     )
 
-    root = (
-        dataset.dataset.get_data_dir()
-        if hasattr(dataset.dataset, "get_data_dir")
-        else None
-    )
+    root = dataset.get_data_dir() if hasattr(dataset, "get_data_dir") else None
 
     if parameters.split_type == "random":
         split_idx = random_splitting(labels, parameters, root=root)
