@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import torch
 from ogb.nodeproppred import PygNodePropPredDataset
 from omegaconf import DictConfig
 
@@ -40,6 +41,13 @@ class OGBNDatasetLoader(AbstractLoader):
         """
         dataset = self._initialize_dataset()
         self.data_dir = self._redefine_data_dir(dataset)
+
+        # Conver attributes to float
+        dataset._data.x = dataset._data.x.to(torch.float)
+        # Squeeze the target tensor
+        dataset._data.y = dataset._data.y.squeeze(1)
+        dataset.split_idx = dataset.get_idx_split()
+
         return dataset
 
     def _initialize_dataset(self) -> PygNodePropPredDataset:
