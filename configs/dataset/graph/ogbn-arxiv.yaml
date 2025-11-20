@@ -19,8 +19,10 @@ parameters:
 # Split parameters
 split_params:
   learning_setting: transductive
-  split_type: predefined
+  data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}
+  split_type: random
   data_seed: 0
+  train_prop: 0.5 # for "random" strategy splitting
 
 # Dataloader parameters
 dataloader_params:
