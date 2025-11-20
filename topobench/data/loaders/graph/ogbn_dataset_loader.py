@@ -10,7 +10,7 @@ from topobench.data.loaders.base import AbstractLoader
 
 
 class OGBNDatasetLoader(AbstractLoader):
-    """Load OGB node property prediction datasets (ogbn-*).
+    """Load OGB node property prediction datasets (ogbn-arxiv, ogbn-products).
 
     Parameters
     ----------
