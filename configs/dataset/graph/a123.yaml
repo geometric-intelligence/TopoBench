@@ -25,6 +25,7 @@ parameters:
   hodge_k: 10
   min_neurons: 3
   corr_threshold: 0.2
+  use_stream_download: True
 
 # Splits
 split_params:

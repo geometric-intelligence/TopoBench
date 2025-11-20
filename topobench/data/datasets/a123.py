@@ -165,6 +165,7 @@ class A123CortexMDataset(InMemoryDataset):
             path_to_save=self.raw_dir,
             dataset_name=self.name,
             file_format=self.file_format,
+            verify=False,
         )
 
         # Extract zip file
