@@ -6,7 +6,6 @@ import os.path as osp
 import shutil
 from typing import Any
 
-import hydra
 import numpy as np
 import torch
 import torch_geometric
@@ -50,14 +49,21 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             super().__init__(
                 self.processed_data_dir, None, pre_transform, **kwargs
             )
+            self.transform = (
+                dataset.transform if hasattr(dataset, "transform") else None
+            )
             self.save_transform_parameters()
             self.load(self.processed_paths[0])
+            self.data_list = [data for data in self]
         else:
             self.transforms_applied = False
-            super().__init__(str(data_dir), None, None, **kwargs)
-            self.load(data_dir + "/processed/data.pt")
+            super().__init__(data_dir, None, None, **kwargs)
+            self.transform = (
+                dataset.transform if hasattr(dataset, "transform") else None
+            )
+            self.data, self.slices = dataset._data, dataset.slices
+            self.data_list = [data for data in dataset]
 
-        self.data_list = [self.get(idx) for idx in range(len(self))]
         # Some datasets have fixed splits, and those are stored as split_idx during loading
         # We need to store this information to be able to reproduce the splits afterwards
         if hasattr(dataset, "split_idx"):
@@ -72,11 +78,11 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         str
             Path to the processed directory.
         """
-        if self.transforms_applied:
+        if not self.transforms_applied:
             return self.root
         else:
             return self.root + "/processed"
-            
+
     @property
     def processed_file_names(self) -> str:
         """Return the name of the processed file.
@@ -107,11 +113,21 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         """
         if transforms_config.keys() == {"liftings"}:
             transforms_config = transforms_config.liftings
-        pre_transforms_dict = hydra.utils.instantiate(transforms_config)
-        pre_transforms_dict = {
-            key: DataTransform(**value)
-            for key, value in transforms_config.items()
-        }
+        # Check if this is a single transform config (has transform_name key)
+        # or multiple transforms config (each value is a dict with transform_name)
+        if "transform_name" in transforms_config:
+            # Single transform configuration
+            pre_transforms_dict = {
+                transforms_config.transform_name: DataTransform(
+                    **transforms_config
+                )
+            }
+        else:
+            # Multiple transforms configuration
+            pre_transforms_dict = {
+                key: DataTransform(**value)
+                for key, value in transforms_config.items()
+            }
         pre_transforms = torch_geometric.transforms.Compose(
             list(pre_transforms_dict.values())
         )
@@ -171,12 +187,11 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
 
     def process(self) -> None:
         """Method that processes the data."""
-        if isinstance(self.dataset, torch_geometric.data.Dataset):
-            data_list = [
-                self.dataset.get(idx) for idx in range(len(self.dataset))
-            ]
-        elif isinstance(self.dataset, torch.utils.data.Dataset):
-            data_list = [self.dataset[idx] for idx in range(len(self.dataset))]
+        if isinstance(
+            self.dataset,
+            (torch_geometric.data.Dataset, torch.utils.data.Dataset),
+        ):
+            data_list = [data for data in self.dataset]
         elif isinstance(self.dataset, torch_geometric.data.Data):
             data_list = [self.dataset]
 
@@ -244,7 +259,7 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
                 f"Invalid '{split_params.learning_setting}' learning setting.\
                 Please define either 'inductive' or 'transductive'."
             )
-            
+                        
     def pack_global_partition(
         self,
         *,
