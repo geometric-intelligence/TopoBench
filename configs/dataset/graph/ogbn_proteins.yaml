@@ -1,0 +1,29 @@
+# Dataset loader config
+loader:
+  _target_: topobench.data.loaders.graph.ogbn_dataset_loader.OGBNDatasetLoader
+  parameters:
+    data_domain: graph
+    data_type: OGBNDataset
+    data_name: ogbn-proteins
+    data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+
+# Dataset parameters
+parameters:
+  num_features: 8
+  num_classes: 112
+  task: classification
+  loss_type: cross_entropy
+  monitor_metric: accuracy
+  task_level: node
+
+# Split parameters
+split_params:
+  learning_setting: transductive
+  split_type: predefined
+  data_seed: 0
+
+# Dataloader parameters
+dataloader_params:
+  batch_size: 1
+  num_workers: 1
+  pin_memory: False
