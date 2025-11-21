@@ -14,12 +14,12 @@ class CityNetworkDatasetLoader(AbstractLoader):
 
     Parameters
     ----------
-    config : DictConfig
+    parameters : DictConfig
         Configuration object containing dataset parameters.
     """
 
-    def __init__(self, config: DictConfig):
-        super().__init__(config)
+    def __init__(self, parameters: DictConfig):
+        super().__init__(parameters)
 
     def load_dataset(self) -> CityNetworkDataset:
         """
@@ -31,7 +31,7 @@ class CityNetworkDatasetLoader(AbstractLoader):
             Loaded dataset instance.
         """
         dataset = self._initialize_dataset()
-        self.data_dir = self._redefine_data_dir(dataset)
+        self.data_dir = self._redefine_data_dir()
         return dataset
 
     def _initialize_dataset(self) -> CityNetworkDataset:
@@ -44,15 +44,22 @@ class CityNetworkDatasetLoader(AbstractLoader):
             Initialized CityNetwork dataset instance.
         """
         return CityNetworkDataset(
-            root=str(self.config.data_dir),
-            name=self.config.get("name", "paris"),
-            augmented=self.config.get("augmented", True),
+            root=str(self.parameters.data_dir),
+            name=self.parameters.get("name", "paris"),
+            augmented=self.parameters.get("augmented", True),
         )
 
-    def _redefine_data_dir(self) -> None:
-        """Redefine the data directory path."""
-        self.config.data_dir = (
-            Path(self.config.data_dir)
+    def _redefine_data_dir(self) -> Path:
+        r"""Redefine the data directory path.
+
+        Returns
+        -------
+        Path
+            Path to the redefined data directory.
+        """
+        self.parameters.data_dir = (
+            Path(self.parameters.data_dir)
             / "CityNetwork"
-            / self.config.get("name", "paris")
+            / self.parameters.get("name", "paris")
         )
+        return self.parameters.data_dir
