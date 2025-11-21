@@ -21,6 +21,19 @@ class CityNetworkDatasetLoader(AbstractLoader):
     def __init__(self, config: DictConfig):
         super().__init__(config)
 
+    def load_dataset(self) -> CityNetworkDataset:
+        """
+        Load the CityNetwork dataset.
+
+        Returns
+        -------
+        CityNetworkDataset
+            Loaded dataset instance.
+        """
+        dataset = self._initialize_dataset()
+        self.data_dir = self._redefine_data_dir(dataset)
+        return dataset
+
     def _initialize_dataset(self) -> CityNetworkDataset:
         """
         Initialize the CityNetwork dataset.
