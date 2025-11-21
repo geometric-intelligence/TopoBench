@@ -45,7 +45,9 @@ def k_fold_split(labels, parameters, root=None):
     torch.manual_seed(0)
     np.random.seed(0)
 
-    split_dir = os.path.join(data_dir, f"{k}-fold")
+    # Include dataset size in split directory to avoid reusing splits from different dataset sizes
+    n = len(labels)
+    split_dir = os.path.join(data_dir, f"{k}-fold_n={n}")
 
     if not os.path.isdir(split_dir):
         os.makedirs(split_dir)
@@ -129,9 +131,13 @@ def random_splitting(labels, parameters, root=None, global_data_seed=42):
     train_prop = parameters["train_prop"]
     valid_prop = (1 - train_prop) / 2
 
+    # Include dataset size in split directory to avoid reusing splits from different dataset sizes
+    n = len(labels)
+
     # Create split directory if it does not exist
     split_dir = os.path.join(
-        data_dir, f"train_prop={train_prop}_global_seed={global_data_seed}"
+        data_dir,
+        f"train_prop={train_prop}_global_seed={global_data_seed}_n={n}",
     )
     generate_splits = False
     if not os.path.isdir(split_dir):

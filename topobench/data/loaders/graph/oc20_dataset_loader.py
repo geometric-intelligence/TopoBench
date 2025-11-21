@@ -1,831 +1,286 @@
-"""Loader for OC20 family datasets (S2EF/IS2RE).
-
-This loader integrates the Open Catalyst 2020 (OC20/OC22) datasets into TopoBench.
-
-Supported tasks:
-- S2EF (Structure to Energy and Forces): Predict energy/forces from atomic structure
-  - Train splits: 200K, 2M, 20M, all
-  - Validation splits: val_id, val_ood_ads, val_ood_cat, val_ood_both (can aggregate)
-  - Test split: test (can be optionally skipped with include_test=False)
-  - Automatic preprocessing from extxyz to ASE DB format
-
-The ASE DB backend with PyG conversion is used for efficient data loading.
-"""
-
-from __future__ import annotations
+"""Loader for OC20 family datasets (S2EF/IS2RE)."""
 
 import logging
-
-# Added missing imports
-import lzma  # needed by _uncompress_xz
-import os
-import pickle  # needed to deserialize LMDB records
-import shutil  # needed by _uncompress_xz
-import tarfile
-import urllib.request
-from collections.abc import Iterator
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import torch
 from omegaconf import DictConfig
-from torch_geometric.data import Data, Dataset
-from tqdm import tqdm
+from torch_geometric.data import Dataset
 
-try:
-    import lmdb  # LMDB backend
-
-    HAS_LMDB = True
-except ImportError:  # optional dependency
-    lmdb = None  # type: ignore
-    HAS_LMDB = False
-
+from topobench.data.datasets.oc20_dataset import OC20Dataset
 from topobench.data.loaders.base import AbstractLoader
-
-# ASE DB fallback dataset
-from topobench.data.loaders.graph.oc20_asedbs2ef_loader import OC20ASEDBDataset
-from topobench.data.preprocessor.oc20_s2ef_preprocessor import (
-    HAS_ASE,
-    needs_preprocessing,
-    preprocess_s2ef_split_ase,
+from topobench.data.utils.oc20_download import (
+    download_is2re_dataset,
+    download_s2ef_dataset,
 )
+
+# Import ASE DB fallback
+try:
+    from topobench.data.loaders.graph.oc20_asedbs2ef_loader import (
+        OC20ASEDBDataset,
+    )
+
+    HAS_ASEDB = True
+except ImportError:
+    HAS_ASEDB = False
 
 logger = logging.getLogger(__name__)
 
-# OC20 dataset split URLs
-# S2EF dataset URLs
-S2EF_TRAIN_SPLITS = {
-    "200K": "https://dl.fbaipublicfiles.com/opencatalystproject/data/s2ef_train_200K.tar",
-    "2M": "https://dl.fbaipublicfiles.com/opencatalystproject/data/s2ef_train_2M.tar",
-    "20M": "https://dl.fbaipublicfiles.com/opencatalystproject/data/s2ef_train_20M.tar",
-    "all": "https://dl.fbaipublicfiles.com/opencatalystproject/data/s2ef_train_all.tar",
-}
-
-S2EF_VAL_SPLITS = {
-    "val_id": "https://dl.fbaipublicfiles.com/opencatalystproject/data/s2ef_val_id.tar",
-    "val_ood_ads": "https://dl.fbaipublicfiles.com/opencatalystproject/data/s2ef_val_ood_ads.tar",
-    "val_ood_cat": "https://dl.fbaipublicfiles.com/opencatalystproject/data/s2ef_val_ood_cat.tar",
-    "val_ood_both": "https://dl.fbaipublicfiles.com/opencatalystproject/data/s2ef_val_ood_both.tar",
-}
-
-S2EF_TEST_SPLIT = "https://dl.fbaipublicfiles.com/opencatalystproject/data/s2ef_test_lmdbs.tar.gz"
-
-# IS2RE dataset URLs (contains train/val/test in one archive)
-IS2RE_URL = "https://dl.fbaipublicfiles.com/opencatalystproject/data/is2res_train_val_test_lmdbs.tar.gz"
-OC22_IS2RE_URL = "https://dl.fbaipublicfiles.com/opencatalystproject/data/oc22/is2res_total_train_val_test_lmdbs.tar.gz"
-
-CACHE_DIR = Path.home() / ".cache" / "oc20"
-
-
-def _uncompress_xz(file_path: str) -> str:
-    """Decompress .xz files.
-
-    Parameters
-    ----------
-    file_path : str
-        Path to file to decompress.
-
-    Returns
-    -------
-    str
-        Path to decompressed file.
-    """
-    if not file_path.endswith(".xz"):
-        return file_path
-
-    output_path = file_path.replace(".xz", "")
-    try:
-        with (
-            lzma.open(file_path, "rb") as f_in,
-            open(output_path, "wb") as f_out,
-        ):
-            shutil.copyfileobj(f_in, f_out)
-        os.remove(file_path)
-        return output_path
-    except Exception as e:
-        logger.error(f"Error uncompressing {file_path}: {e}")
-        return file_path
-
-
-def _download_and_extract(
-    url: str, target_dir: Path, skip_if_extracted: bool = True
-) -> Path:
-    """Download and extract a tar archive.
-
-    Parameters
-    ----------
-    url : str
-        URL to download from.
-    target_dir : Path
-        Directory to extract to.
-    skip_if_extracted : bool
-        If True, skip extraction if extracted files already exist (default: True).
-
-    Returns
-    -------
-    Path
-        Path to extracted directory.
-    """
-    target_dir.mkdir(parents=True, exist_ok=True)
-    target_file = target_dir / os.path.basename(url)
-
-    # Download if needed
-    if not target_file.exists():
-        logger.info(f"Downloading {url}...")
-        with tqdm(
-            unit="B", unit_scale=True, desc=f"Downloading {target_file.name}"
-        ) as pbar:
-
-            def report(block_num, block_size, total_size):
-                if total_size > 0 and block_num == 0:
-                    pbar.total = total_size
-                pbar.update(block_size)
-
-            urllib.request.urlretrieve(url, target_file, reporthook=report)
-    else:
-        logger.info(f"Archive {target_file.name} already downloaded")
-
-    # Check if extraction is needed
-    # Look for extracted subdirectories (common pattern: archive extracts to a subdirectory)
-    extraction_marker = target_dir / ".extracted"
-    if skip_if_extracted and extraction_marker.exists():
-        logger.info(f"Archive {target_file.name} already extracted, skipping")
-        return target_dir
-
-    # Extract
-    logger.info(f"Extracting {target_file.name}...")
-    if str(target_file).endswith((".tar.gz", ".tgz")):
-        with tarfile.open(target_file, "r:gz") as tar:
-            tar.extractall(path=target_dir)
-    elif str(target_file).endswith(".tar"):
-        with tarfile.open(target_file, "r:") as tar:
-            tar.extractall(path=target_dir)
-    else:
-        raise ValueError(f"Unsupported archive format: {target_file}")
-
-    # Mark as extracted
-    extraction_marker.touch()
-    return target_dir
-
-
-class _OC20LMDBDataset(Dataset):
-    """LMDB-based dataset for OC20/OC22.
-
-    Supports:
-    - S2EF task with flexible train/val/test split specification
-    - IS2RE/OC22_IS2RE tasks with pre-computed train/val/test splits
-    """
-
-    def __init__(
-        self,
-        root: str | Path,
-        task: str = "s2ef",
-        train_split: str | None = "200K",
-        val_splits: list[str] | None = None,
-        test_split: str = "test",
-        download: bool = True,
-        include_test: bool = True,
-        dtype: torch.dtype = torch.float32,
-        legacy_format: bool = False,
-    ):
-        """Initialize OC20 LMDB dataset.
-
-        Parameters
-        ----------
-        root : str | Path
-            Root directory for storing datasets.
-        task : str
-            Task type: "s2ef", "is2re", or "oc22_is2re".
-        train_split : Optional[str]
-            For S2EF: one of ["200K", "2M", "20M", "all"].
-            For IS2RE: ignored (uses precomputed split).
-        val_splits : Optional[list[str]]
-            For S2EF: list of validation splits to use.
-            Can be ["val_id", "val_ood_ads", "val_ood_cat", "val_ood_both"] or subset.
-            If None, uses all 4 validation splits.
-            For IS2RE: ignored (uses precomputed split).
-        test_split : str
-            For S2EF: "test" (default).
-            For IS2RE: ignored (uses precomputed split).
-        download : bool
-            Whether to download if not present.
-        include_test : bool
-            Whether to download/include test split. If False, validation indices are reused for test.
-        dtype : torch.dtype
-            Data type for tensors.
-        legacy_format : bool
-            Whether to use legacy PyG Data format.
-        """
-        super().__init__()
-        self.root = Path(root)
-        self.task = task.lower()
-        self.dtype = dtype
-        self.legacy_format = legacy_format
-        self.download_flag = download
-        self.include_test = include_test
-
-        if self.task == "s2ef":
-            if train_split not in S2EF_TRAIN_SPLITS:
-                raise ValueError(
-                    f"Invalid S2EF train split: {train_split}. "
-                    f"Choose from {list(S2EF_TRAIN_SPLITS.keys())}"
-                )
-            self.train_split = train_split
-
-            # Default: use all validation splits
-            if val_splits is None:
-                val_splits = list(S2EF_VAL_SPLITS.keys())
-            else:
-                for vs in val_splits:
-                    if vs not in S2EF_VAL_SPLITS:
-                        raise ValueError(
-                            f"Invalid S2EF val split: {vs}. "
-                            f"Choose from {list(S2EF_VAL_SPLITS.keys())}"
-                        )
-            self.val_splits = val_splits
-            self.test_split = test_split
-
-        elif self.task in ["is2re", "oc22_is2re"]:
-            # IS2RE datasets have precomputed train/val/test splits
-            pass
-        else:
-            raise ValueError(
-                f"Unknown task: {task}. Choose from ['s2ef', 'is2re', 'oc22_is2re']"
-            )
-
-        if download:
-            self._download_and_prepare()
-
-        self._open_lmdbs()
-
-    def _download_and_prepare(self):
-        """Download and prepare the dataset based on task."""
-        if self.task == "s2ef":
-            self._download_s2ef()
-        elif self.task == "is2re":
-            self._download_is2re(IS2RE_URL, "is2re")
-        elif self.task == "oc22_is2re":
-            self._download_is2re(OC22_IS2RE_URL, "oc22_is2re")
-
-    def _download_s2ef(self):
-        """Download S2EF train, validation, and test splits."""
-        # Download train split
-        # Check for the actual data directory structure: s2ef/{split}/s2ef_train_{split}/s2ef_train_{split}/
-        train_url = S2EF_TRAIN_SPLITS[self.train_split]
-        train_subdir_name = f"s2ef_train_{self.train_split}"
-        train_dir = (
-            self.root
-            / "s2ef"
-            / self.train_split
-            / train_subdir_name
-            / train_subdir_name
-        )
-        if not train_dir.exists():
-            logger.info(f"Downloading S2EF train split: {self.train_split}")
-            _download_and_extract(
-                train_url, self.root / "s2ef" / self.train_split
-            )
-            self._decompress_xz_files(self.root / "s2ef" / self.train_split)
-        else:
-            logger.info(
-                f"S2EF train split {self.train_split} already exists, skipping download"
-            )
-
-        # Download validation splits
-        for val_split in self.val_splits:
-            val_url = S2EF_VAL_SPLITS[val_split]
-            # Check for the actual data directory structure: s2ef/all/s2ef_{val_split}/s2ef_{val_split}/
-            val_subdir_name = f"s2ef_{val_split}"
-            val_dir = (
-                self.root / "s2ef" / "all" / val_subdir_name / val_subdir_name
-            )
-            if not val_dir.exists():
-                logger.info(f"Downloading S2EF validation split: {val_split}")
-                _download_and_extract(val_url, self.root / "s2ef" / "all")
-                self._decompress_xz_files(self.root / "s2ef" / "all")
-            else:
-                logger.info(
-                    f"S2EF validation split {val_split} already exists, skipping download"
-                )
-
-        # Download test split
-        test_subdir_name = "s2ef_test"
-        test_dir = (
-            self.root / "s2ef" / "all" / test_subdir_name / test_subdir_name
-        )
-        if self.include_test and not test_dir.exists():
-            logger.info("Downloading S2EF test split")
-            _download_and_extract(S2EF_TEST_SPLIT, self.root / "s2ef" / "all")
-            self._decompress_xz_files(self.root / "s2ef" / "all")
-        elif self.include_test and test_dir.exists():
-            logger.info("S2EF test split already exists, skipping download")
-        elif not self.include_test:
-            logger.info(
-                "Skipping S2EF test split download (include_test=False); will reuse validation as test"
-            )
-
-        # Preprocess S2EF data (convert extxyz/txt to LMDB if needed)
-        self._preprocess_s2ef()
-
-    def _preprocess_s2ef(self):
-        """Preprocess S2EF data from extxyz/txt files to ASE DB format.
-
-        This method checks for raw extxyz files and converts them to ASE DB files
-        for efficient loading. It processes train, validation, and test splits.
-        """
-        if not HAS_ASE:
-            logger.warning("ASE not available. Cannot preprocess S2EF data.")
-            return
-
-        s2ef_root = self.root / "s2ef"
-
-        if not s2ef_root.exists():
-            logger.warning(f"S2EF data directory not found: {s2ef_root}")
-            return
-
-        # Get preprocessing parameters (use defaults since they're not available)
-        num_workers = 1
-        max_neigh = 50
-        radius = 6.0
-
-        # Process training data
-        # The actual data is in s2ef/{train_split}/s2ef_train_{train_split}/s2ef_train_{train_split}/
-        train_base = s2ef_root / self.train_split
-        train_subdir_name = f"s2ef_train_{self.train_split}"
-        train_dir = train_base / train_subdir_name / train_subdir_name
-
-        if train_dir.exists() and needs_preprocessing(train_dir):
-            logger.info(f"Preprocessing S2EF training data: {train_dir}")
-            preprocess_s2ef_split_ase(
-                data_path=train_dir,
-                out_path=train_dir,
-                num_workers=num_workers,
-                ref_energy=True,
-                test_data=False,
-                max_neigh=max_neigh,
-                radius=radius,
-            )
-
-        # Process validation splits
-        # The actual data is in s2ef/all/s2ef_{val_split}/s2ef_{val_split}/
-        for val_split in self.val_splits:
-            val_base = s2ef_root / "all"
-            val_subdir_name = f"s2ef_{val_split}"
-            val_dir = val_base / val_subdir_name / val_subdir_name
-
-            if val_dir.exists() and needs_preprocessing(val_dir):
-                logger.info(f"Preprocessing S2EF validation data: {val_dir}")
-                preprocess_s2ef_split_ase(
-                    data_path=val_dir,
-                    out_path=val_dir,
-                    num_workers=num_workers,
-                    ref_energy=True,
-                    test_data=False,
-                    max_neigh=max_neigh,
-                    radius=radius,
-                )
-
-        # Process test split if needed
-        if self.include_test:
-            test_base = s2ef_root / "all"
-            test_subdir_name = "s2ef_test"
-            test_dir = test_base / test_subdir_name / test_subdir_name
-
-            if test_dir.exists() and needs_preprocessing(test_dir):
-                logger.info(f"Preprocessing S2EF test data: {test_dir}")
-                preprocess_s2ef_split_ase(
-                    data_path=test_dir,
-                    out_path=test_dir,
-                    num_workers=num_workers,
-                    ref_energy=False,  # Test data typically doesn't have energy/forces
-                    test_data=True,
-                    max_neigh=max_neigh,
-                    radius=radius,
-                )
-
-        logger.info("S2EF preprocessing complete")
-
-    def _decompress_xz_files(self, directory: Path):
-        """Decompress all .xz files in a directory."""
-        xz_files = list(directory.glob("**/*.xz"))
-        if xz_files:
-            logger.info(
-                f"Decompressing {len(xz_files)} .xz files in {directory}..."
-            )
-            num_workers = max(1, os.cpu_count() - 1)
-            # Use threads to avoid pickling/import issues with processes on macOS
-            with ThreadPoolExecutor(max_workers=num_workers) as executor:
-                futures = [
-                    executor.submit(_uncompress_xz, str(f)) for f in xz_files
-                ]
-                for future in as_completed(futures):
-                    future.result()
-
-    def _download_is2re(self, url: str, name: str):
-        """Download IS2RE or OC22 IS2RE dataset."""
-        target_dir = self.root / name
-        if not target_dir.exists():
-            logger.info(f"Downloading {name} dataset")
-            _download_and_extract(url, self.root)
-            self._decompress_xz_files(self.root)
-
-    def _open_lmdbs(self):
-        """Open LMDB files for train/val/test splits."""
-        if self.task == "s2ef":
-            self._open_s2ef_lmdbs()
-        elif self.task in ["is2re", "oc22_is2re"]:
-            self._open_is2re_lmdbs()
-
-    def _open_s2ef_lmdbs(self):
-        """Open S2EF LMDB files and create split mappings."""
-        # Train
-        train_dir = self.root / "s2ef" / self.train_split / "train"
-        train_lmdbs = self._collect_lmdb_files(train_dir)
-
-        # Validation (can be multiple)
-        val_lmdbs = []
-        for val_split in self.val_splits:
-            val_dir = self.root / "s2ef" / "all" / val_split
-            val_lmdbs.extend(self._collect_lmdb_files(val_dir))
-
-        # Test
-        test_dir = self.root / "s2ef" / "all" / "test"
-        test_lmdbs = (
-            self._collect_lmdb_files(test_dir) if self.include_test else []
-        )
-
-        # Open all LMDBs and create split index mapping
-        self.envs = []
-        self.cumulative_sizes = [0]
-        self.split_idx = {"train": [], "valid": [], "test": []}
-
-        current_idx = 0
-
-        # Process train LMDBs
-        for lmdb_path in train_lmdbs:
-            env, size = self._open_single_lmdb(lmdb_path)
-            self.envs.append((lmdb_path, env, size))
-            self.cumulative_sizes.append(self.cumulative_sizes[-1] + size)
-            self.split_idx["train"].extend(
-                range(current_idx, current_idx + size)
-            )
-            current_idx += size
-
-        # Process validation LMDBs
-        for lmdb_path in val_lmdbs:
-            env, size = self._open_single_lmdb(lmdb_path)
-            self.envs.append((lmdb_path, env, size))
-            self.cumulative_sizes.append(self.cumulative_sizes[-1] + size)
-            self.split_idx["valid"].extend(
-                range(current_idx, current_idx + size)
-            )
-            current_idx += size
-
-        # Process test LMDBs
-        for lmdb_path in test_lmdbs:
-            env, size = self._open_single_lmdb(lmdb_path)
-            self.envs.append((lmdb_path, env, size))
-            self.cumulative_sizes.append(self.cumulative_sizes[-1] + size)
-            self.split_idx["test"].extend(
-                range(current_idx, current_idx + size)
-            )
-            current_idx += size
-
-        # If no test data, reuse validation indices
-        if not self.include_test or len(self.split_idx["test"]) == 0:
-            self.split_idx["test"] = list(self.split_idx["valid"])
-
-        # Convert to tensors
-        self.split_idx = {
-            k: torch.tensor(v, dtype=torch.long)
-            for k, v in self.split_idx.items()
-        }
-
-        logger.info(
-            f"Loaded S2EF dataset: {len(self.split_idx['train'])} train, "
-            f"{len(self.split_idx['valid'])} val, {len(self.split_idx['test'])} test"
-        )
-
-    def _open_is2re_lmdbs(self):
-        """Open IS2RE LMDB files with precomputed splits."""
-        # IS2RE datasets have structure: data/is2re/train, data/is2re/val_id, data/is2re/test_id
-        # or data/is2re/all/train, etc.
-        base_dir = self.root / (
-            "is2re" if self.task == "is2re" else "oc22_is2re"
-        )
-
-        # Try different possible structures
-        possible_structures = [
-            base_dir,
-            base_dir / "data" / "is2re",
-            self.root / "data" / "is2re",
-        ]
-
-        found_dir = None
-        for poss_dir in possible_structures:
-            if poss_dir.exists():
-                found_dir = poss_dir
-                break
-
-        if found_dir is None:
-            raise ValueError(f"Cannot find IS2RE data directory in {base_dir}")
-
-        # Look for train/val/test subdirectories
-        train_lmdbs = self._collect_lmdb_files(found_dir / "train")
-        val_lmdbs = self._collect_lmdb_files(
-            found_dir / "val_id"
-        ) or self._collect_lmdb_files(found_dir / "val")
-        test_lmdbs = self._collect_lmdb_files(
-            found_dir / "test_id"
-        ) or self._collect_lmdb_files(found_dir / "test")
-
-        # Open all LMDBs
-        self.envs = []
-        self.cumulative_sizes = [0]
-        self.split_idx = {"train": [], "valid": [], "test": []}
-
-        current_idx = 0
-
-        for lmdb_path in train_lmdbs:
-            env, size = self._open_single_lmdb(lmdb_path)
-            self.envs.append((lmdb_path, env, size))
-            self.cumulative_sizes.append(self.cumulative_sizes[-1] + size)
-            self.split_idx["train"].extend(
-                range(current_idx, current_idx + size)
-            )
-            current_idx += size
-
-        for lmdb_path in val_lmdbs:
-            env, size = self._open_single_lmdb(lmdb_path)
-            self.envs.append((lmdb_path, env, size))
-            self.cumulative_sizes.append(self.cumulative_sizes[-1] + size)
-            self.split_idx["valid"].extend(
-                range(current_idx, current_idx + size)
-            )
-            current_idx += size
-
-        for lmdb_path in test_lmdbs:
-            env, size = self._open_single_lmdb(lmdb_path)
-            self.envs.append((lmdb_path, env, size))
-            self.cumulative_sizes.append(self.cumulative_sizes[-1] + size)
-            self.split_idx["test"].extend(
-                range(current_idx, current_idx + size)
-            )
-            current_idx += size
-
-        # Convert to tensors
-        self.split_idx = {
-            k: torch.tensor(v, dtype=torch.long)
-            for k, v in self.split_idx.items()
-        }
-
-        logger.info(
-            f"Loaded {self.task.upper()} dataset: {len(self.split_idx['train'])} train, "
-            f"{len(self.split_idx['valid'])} val, {len(self.split_idx['test'])} test"
-        )
-
-    def _collect_lmdb_files(self, directory: Path) -> list[Path]:
-        """Collect all .lmdb files in a directory."""
-        if not directory.exists():
-            return []
-        lmdb_files = sorted(directory.glob("**/*.lmdb"))
-        return lmdb_files
-
-    def _open_single_lmdb(self, lmdb_path: Path) -> tuple:
-        """Open a single LMDB file and return (env, size)."""
-        env = lmdb.open(
-            str(lmdb_path.resolve()),
-            subdir=False,
-            readonly=True,
-            lock=False,
-            readahead=True,
-            meminit=False,
-            max_readers=1,
-        )
-        size = env.stat()["entries"]
-        return env, size
-
-    def _find_lmdb_and_local_idx(self, idx: int) -> tuple:
-        if idx < 0 or idx >= len(self):
-            raise IndexError(f"Index {idx} out of range [0, {len(self)})")
-
-        left, right = 0, len(self.envs)
-        while left < right - 1:
-            mid = (left + right) // 2
-            if self.cumulative_sizes[mid] <= idx:
-                left = mid
-            else:
-                right = mid
-
-        lmdb_idx = left
-        local_idx = idx - self.cumulative_sizes[lmdb_idx]
-        return lmdb_idx, local_idx
-
-    def len(self) -> int:
-        return self.cumulative_sizes[-1]
-
-    def get(self, idx: int) -> Data:
-        lmdb_idx, local_idx = self._find_lmdb_and_local_idx(idx)
-        lmdb_path, env, _ = self.envs[lmdb_idx]
-
-        with env.begin() as txn:
-            cursor = txn.cursor()
-            if not cursor.first():
-                raise RuntimeError(f"Empty LMDB at {lmdb_path}")
-
-            for _ in range(local_idx):
-                if not cursor.next():
-                    raise RuntimeError(
-                        f"Index {local_idx} out of range in {lmdb_path}"
-                    )
-
-            key, value = cursor.item()
-            data = pickle.loads(value)
-
-        if self.legacy_format and isinstance(data, Data):
-            data = Data(
-                **{k: v for k, v in data.__dict__.items() if v is not None}
-            )
-
-        return data
-
-    def __len__(self) -> int:
-        return self.len()
-
-    def __getitem__(self, idx: int) -> Data:
-        return self.get(idx)
-
-    def __iter__(self) -> Iterator[Data]:
-        for i in range(len(self)):
-            yield self[i]
-
-    def __del__(self):
-        if hasattr(self, "envs"):
-            for _, env, _ in self.envs:
-                env.close()
-
 
 class OC20DatasetLoader(AbstractLoader):
-    """Load OC20 family datasets.
+    """Load OC20 family datasets for catalyst discovery and materials science.
 
-    This loader supports all OC20/OC22 dataset splits including S2EF and IS2RE tasks.
+    Supports:
+    - S2EF (Structure to Energy and Forces): Predict energy/forces from atomic structure
+    - IS2RE (Initial Structure to Relaxed Energy): Predict relaxed energy
+    - OC22 IS2RE: Extended IS2RE dataset
 
-    Parameters in the Hydra config (dataset.loader.parameters):
-    - data_domain: graph
-    - data_type: oc20
-    - data_name: Logical name for the dataset (e.g., OC20_S2EF_200K)
-    - task: "s2ef", "is2re", or "oc22_is2re"
+    Parameters
+    ----------
+    parameters : DictConfig
+        Configuration parameters containing:
+            - data_dir: Root directory for data
+            - data_name: Name of the dataset
+            - task: Task type ("s2ef", "is2re", "oc22_is2re")
+            - download: Whether to download if not present (default: False)
 
-    For S2EF task:
-    - train_split: one of ["200K", "2M", "20M", "all"]
-    - val_splits: list of validation splits (default: all 4)
-      Options: ["val_id", "val_ood_ads", "val_ood_cat", "val_ood_both"]
-    - test_split: "test" (default)
+            For S2EF:
+            - train_split: Training split size ("200K", "2M", "20M", "all")
+            - val_splits: List of validation splits or None for all
+            - include_test: Whether to download test split (default: True)
 
-    For IS2RE/OC22 tasks:
-    - Uses precomputed train/val/test splits from the LMDB archives
-
-    Common parameters:
-    - download: whether to download (default: false)
-    - legacy_format: whether to use legacy PyG Data format (default: false)
-    - dtype: torch dtype (default: "float32")
-    - max_samples: limit dataset size for fast experimentation (default: None = all samples)
+            Additional options:
+            - dtype: Data type for tensors (default: "float32")
+            - legacy_format: Use legacy PyG Data format (default: False)
+            - max_samples: Limit dataset size for testing (default: None)
     """
 
     def __init__(self, parameters: DictConfig) -> None:
         super().__init__(parameters)
 
     def load_dataset(self) -> Dataset:
-        """Load OC20 dataset (S2EF or IS2RE).
+        """Load the OC20 dataset.
 
         Returns
         -------
         Dataset
-            Loaded dataset with appropriate splits.
+            The loaded OC20 dataset with the appropriate configuration.
+
+        Raises
+        ------
+        RuntimeError
+            If dataset loading fails.
         """
-        task: str = getattr(self.parameters, "task", "s2ef")
-        download: bool = bool(getattr(self.parameters, "download", False))
-        legacy_format: bool = bool(
-            getattr(self.parameters, "legacy_format", False)
-        )
-        dtype = getattr(self.parameters, "dtype", "float32")
-        dtype_t = (
-            getattr(torch, str(dtype)) if isinstance(dtype, str) else dtype
-        )
-        max_samples = getattr(self.parameters, "max_samples", None)
-        if max_samples is not None:
-            max_samples = int(max_samples)
-            print(
-                f"⚠️  Limiting dataset to {max_samples} samples for fast experimentation"
-            )
+        # Download if requested
+        if self.parameters.get("download", False):
+            self._download_dataset()
+
+        # Check if we have LMDB files or need ASE DB fallback
+        data_root = Path(self.get_data_dir())
+        task = self.parameters.get("task", "s2ef").lower()
+
+        # Try LMDB first
+        lmdb_present = any(data_root.glob("**/*.lmdb"))
+
+        if not lmdb_present and task == "s2ef" and HAS_ASEDB:
+            # Fallback to ASE DB dataset
+            logger.info("No LMDB files found, using ASE DB backend")
+            return self._load_asedb_dataset(data_root)
+
+        # Initialize LMDB dataset
+        dataset = self._initialize_dataset()
+        self.data_dir = self._redefine_data_dir(dataset)
+        return dataset
+
+    def _download_dataset(self):
+        """Download the OC20 dataset based on task configuration."""
+        task = self.parameters.get("task", "s2ef").lower()
+        root = Path(self.get_data_dir())
 
         if task == "s2ef":
-            train_split = getattr(self.parameters, "train_split", "200K")
-            val_splits_param = getattr(self.parameters, "val_splits", None)
+            train_split = self.parameters.get("train_split", "200K")
+            val_splits = self.parameters.get("val_splits", None)
+            include_test = self.parameters.get("include_test", True)
 
             # Parse val_splits
-            if val_splits_param is None:
-                val_splits = None  # Use all by default
-            elif isinstance(val_splits_param, str):
-                # Single validation split as string
-                val_splits = [val_splits_param]
-            elif isinstance(val_splits_param, (list, tuple)):
-                val_splits = list(val_splits_param)
-            else:
-                val_splits = None
+            if val_splits is not None and isinstance(val_splits, str):
+                val_splits = [val_splits]
 
-            test_split = getattr(self.parameters, "test_split", "test")
-            include_test = bool(getattr(self.parameters, "include_test", True))
-
-            ds = _OC20LMDBDataset(
-                root=self.get_data_dir(),
-                task="s2ef",
+            download_s2ef_dataset(
+                root=root,
                 train_split=train_split,
                 val_splits=val_splits,
-                test_split=test_split,
-                download=download,
                 include_test=include_test,
-                dtype=dtype_t,
-                legacy_format=legacy_format,
+            )
+        elif task in ["is2re", "oc22_is2re"]:
+            download_is2re_dataset(root=root, task=task)
+        else:
+            raise ValueError(
+                f"Unknown task: {task}. Choose from ['s2ef', 'is2re', 'oc22_is2re']"
             )
 
-            # ASE DB fallback if LMDBs are not present
-            data_root = Path(self.get_data_dir())
-            lmdb_present = any((data_root / "s2ef").glob("**/*.lmdb"))
-            if not lmdb_present and HAS_ASE:
-                # Preprocessing is already done in _OC20LMDBDataset if needed
-                # Now collect DB files
-                train_subdir_name = f"s2ef_train_{train_split}"
-                train_dir = (
-                    data_root
+    def _initialize_dataset(self) -> OC20Dataset:
+        """Initialize the OC20 dataset.
+
+        Returns
+        -------
+        OC20Dataset
+            The initialized OC20 dataset.
+
+        Raises
+        ------
+        RuntimeError
+            If dataset initialization fails.
+        """
+        try:
+            dataset = OC20Dataset(
+                root=str(self.get_data_dir()),
+                name=self.parameters.data_name,
+                parameters=self.parameters,
+            )
+            return dataset
+        except Exception as e:
+            msg = f"Error initializing OC20 dataset: {e}"
+            raise RuntimeError(msg) from e
+
+    def _load_asedb_dataset(self, data_root: Path) -> OC20ASEDBDataset:
+        """Load dataset using ASE DB backend (fallback when no LMDBs).
+
+        Parameters
+        ----------
+        data_root : Path
+            Root directory for data.
+
+        Returns
+        -------
+        OC20ASEDBDataset
+            Dataset using ASE DB backend.
+        """
+        train_split = self.parameters.get("train_split", "200K")
+        val_splits = self.parameters.get("val_splits", None)
+        include_test = self.parameters.get("include_test", True)
+
+        # Parse val_splits
+        if val_splits is None:
+            val_splits = [
+                "val_id",
+                "val_ood_ads",
+                "val_ood_cat",
+                "val_ood_both",
+            ]
+        elif isinstance(val_splits, str):
+            val_splits = [val_splits]
+
+        # Collect DB files
+        # The data_root might already include the dataset name (e.g., datasets/graph/oc20/OC20_S2EF_200K)
+        # or just the base (e.g., datasets/graph/oc20)
+        # Try both patterns
+        train_subdir_name = f"s2ef_train_{train_split}"
+
+        # Pattern 1: data_root already includes dataset name
+        train_dir_pattern1 = (
+            data_root
+            / "s2ef"
+            / train_split
+            / train_subdir_name
+            / train_subdir_name
+        )
+        # Pattern 2: data_root is just base, dataset name in separate dir
+        if not train_dir_pattern1.exists():
+            # Try finding s2ef directory anywhere under data_root
+            s2ef_roots = list(data_root.glob("**/s2ef"))
+            if s2ef_roots:
+                s2ef_root = s2ef_roots[0].parent
+                train_dir_pattern1 = (
+                    s2ef_root
                     / "s2ef"
                     / train_split
                     / train_subdir_name
                     / train_subdir_name
                 )
-                train_dbs = sorted(train_dir.glob("*.db"))
-                val_dbs = []
-                # Respect empty list for val_splits (for fast prototyping)
-                val_splits_to_use = (
-                    list(S2EF_VAL_SPLITS.keys())
-                    if val_splits is None
-                    else val_splits
+
+        train_dbs = (
+            sorted(train_dir_pattern1.glob("*.db"))
+            if train_dir_pattern1.exists()
+            else []
+        )
+
+        val_dbs = []
+        for vs in val_splits:
+            val_subdir_name = f"s2ef_{vs}"
+            val_dir = (
+                data_root / "s2ef" / "all" / val_subdir_name / val_subdir_name
+            )
+            if (
+                not val_dir.exists()
+                and "s2ef_roots" in locals()
+                and s2ef_roots
+            ):
+                val_dir = (
+                    s2ef_roots[0].parent
+                    / "s2ef"
+                    / "all"
+                    / val_subdir_name
+                    / val_subdir_name
                 )
-                for vs in val_splits_to_use:
-                    val_subdir_name = f"s2ef_{vs}"
-                    val_dir = (
-                        data_root
-                        / "s2ef"
-                        / "all"
-                        / val_subdir_name
-                        / val_subdir_name
-                    )
-                    val_dbs.extend(sorted(val_dir.glob("*.db")))
-                test_dbs = []
-                if include_test:
-                    test_dbs = sorted(
-                        (data_root / "s2ef" / "all" / "test").glob("*.db")
-                    )
+            if val_dir.exists():
+                val_dbs.extend(sorted(val_dir.glob("*.db")))
 
-                if train_dbs:
-                    logger.info(
-                        f"Using ASE DB backend: {len(train_dbs)} train, {len(val_dbs)} val, {len(test_dbs)} test DB files"
-                    )
-                    return OC20ASEDBDataset(
-                        train_db_paths=[str(p) for p in train_dbs],
-                        val_db_paths=[str(p) for p in val_dbs],
-                        test_db_paths=[str(p) for p in test_dbs],
-                        max_neigh=int(
-                            getattr(self.parameters, "max_neigh", 50)
-                        ),
-                        radius=float(getattr(self.parameters, "radius", 6.0)),
-                        dtype=dtype_t,
-                        include_energy=True,
-                        include_forces=True,
-                        max_samples=max_samples,
-                    )
-        elif task in ["is2re", "oc22_is2re"]:
-            ds = _OC20LMDBDataset(
-                root=self.get_data_dir(),
-                task=task,
-                download=download,
-                dtype=dtype_t,
-                legacy_format=legacy_format,
-            )
-        else:
-            raise ValueError(
-                f"Unsupported task '{task}'. Use 's2ef', 'is2re', or 'oc22_is2re'."
-            )
+        test_dbs = []
+        if include_test:
+            test_dir = data_root / "s2ef" / "all" / "s2ef_test" / "s2ef_test"
+            if (
+                not test_dir.exists()
+                and "s2ef_roots" in locals()
+                and s2ef_roots
+            ):
+                test_dir = (
+                    s2ef_roots[0].parent
+                    / "s2ef"
+                    / "all"
+                    / "s2ef_test"
+                    / "s2ef_test"
+                )
+            if test_dir.exists():
+                test_dbs = sorted(test_dir.glob("*.db"))
 
-        return ds  # type: ignore[return-value]
+        logger.info(
+            f"Using ASE DB backend: {len(train_dbs)} train, "
+            f"{len(val_dbs)} val, {len(test_dbs)} test DB files"
+        )
 
-    def get_data_dir(self) -> Path:
-        """Get data directory path.
+        # Parse dtype
+        dtype = self.parameters.get("dtype", "float32")
+        if isinstance(dtype, str):
+            dtype = getattr(torch, dtype)
+
+        max_samples = self.parameters.get("max_samples", None)
+        if max_samples is not None:
+            max_samples = int(max_samples)
+
+        return OC20ASEDBDataset(
+            train_db_paths=[str(p) for p in train_dbs],
+            val_db_paths=[str(p) for p in val_dbs],
+            test_db_paths=[str(p) for p in test_dbs],
+            max_neigh=int(self.parameters.get("max_neigh", 50)),
+            radius=float(self.parameters.get("radius", 6.0)),
+            dtype=dtype,
+            include_energy=True,
+            include_forces=True,
+            max_samples=max_samples,
+        )
+
+    def _redefine_data_dir(self, dataset: Dataset) -> Path:
+        """Redefine the data directory based on dataset configuration.
+
+        Parameters
+        ----------
+        dataset : Dataset
+            The OC20 dataset instance.
 
         Returns
         -------
         Path
-            Path to data directory.
+            The redefined data directory path.
         """
-        # Keep default directory convention for TopoBench
-        return Path(super().get_data_dir())
+        return self.get_data_dir()

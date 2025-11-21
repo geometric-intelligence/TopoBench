@@ -193,6 +193,11 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             transform_name: transform.parameters
             for transform_name, transform in pre_transforms_dict.items()
         }
+
+        # Include dataset size in hash to avoid reusing cached data from different dataset sizes
+        # This is crucial when max_samples changes
+        transforms_parameters["_dataset_size"] = len(self.dataset)
+
         params_hash = make_hash(transforms_parameters)
         self.transforms_parameters = ensure_serializable(transforms_parameters)
         self.processed_data_dir = os.path.join(
