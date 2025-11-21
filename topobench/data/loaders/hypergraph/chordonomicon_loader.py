@@ -22,5 +22,5 @@ class ChordonomiconDatasetLoader(AbstractLoader):
             The loaded Chordonomicon dataset.
         """
         return ChordonomiconDataset(
-            data_dir=self.root_data_dir, data_name=self.parameters.data_name
+            root=self.root_data_dir, name=self.parameters.data_name
         )

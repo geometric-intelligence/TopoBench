@@ -81,8 +81,9 @@ class ChordonomiconDataset(InMemoryDataset):
             num_hyperedges=incidence_hyperedges.size(1),
             x_hyperedges=x_hyperedges,
             y_hyperedges=y_hyperedges,
+            y=y_hyperedges,
+            x=torch.eye(incidence_hyperedges.size(0)),
         )
-        print("Balise 3: data created", data)
         data_list = [data]
         data, slices = self.collate(data_list)
         fs.torch_save(
