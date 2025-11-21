@@ -3,7 +3,7 @@ loader:
   _target_: topobench.data.loaders.RedditDatasetLoader
   parameters: 
     data_domain: graph
-    data_type: graph
+    data_type: reddit
     data_name: reddit
     subsample_nodes: 2000
     subsample_seed: 42

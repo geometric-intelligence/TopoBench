@@ -1,32 +1,44 @@
 """Loaders for Reddit dataset."""
 
-from pathlib import Path
-
 from omegaconf import DictConfig
-from torch_geometric.data import Dataset
 from torch_geometric.datasets import Reddit
 
 from topobench.data.loaders.base import AbstractLoader
 
 
 class RedditDatasetLoader(AbstractLoader):
+    """Loader for the Reddit graph dataset.
+
+    Parameters
+    ----------
+    parameters : DictConfig
+        Configuration with data directory and dataset name.
+    """
+
     def __init__(self, parameters: DictConfig) -> None:
+        """Initialize the Reddit dataset loader."""
         super().__init__(parameters)
 
-    def load_dataset(self) -> Dataset:
+    def load_dataset(self) -> Reddit:
+        """Load the Reddit dataset.
+
+        Returns
+        -------
+        Reddit
+            Loaded Reddit dataset instance.
+        """
         dataset = self._initialize_dataset()
-        self.data_dir = self._redefine_data_dir(dataset)
+        self.data_dir = self.get_data_dir()
         return dataset
 
-    def _initialize_dataset(self) -> Dataset:
-        return Reddit(
-            root=str(self.root_data_dir),
-        )
+    def _initialize_dataset(self) -> Reddit:
+        """Initialize the Reddit dataset instance.
 
-    def _redefine_data_dir(self, dataset: Dataset) -> Path:
-        return str(Path(dataset.processed_dir))
-
-
-
-
-
+        Returns
+        -------
+        Reddit
+            Initialized Reddit dataset.
+        """
+        # root = <base_dir>/<data_name>
+        root = str(self.root_data_dir / self.parameters.data_name)
+        return Reddit(root=root)
