@@ -328,7 +328,6 @@ class OC22IS2REDataset(Dataset):
                         if not key.startswith("_") and val is not None
                     }
 
-
                     # Convert y_relaxed to y before creating new Data object
                     if "y_relaxed" in data_dict:
                         data_dict["y"] = torch.tensor(
