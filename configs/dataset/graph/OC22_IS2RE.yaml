@@ -2,7 +2,7 @@
 # Train/val/test splits are precomputed in the LMDB archive
 
 loader:
-  _target_: topobench.data.loaders.OC20DatasetLoader
+  _target_: topobench.data.loaders.graph.oc22_is2re_dataset_loader.OC22IS2REDatasetLoader
   parameters:
     data_domain: graph
     data_type: oc20
@@ -12,6 +12,7 @@ loader:
     download: true
     legacy_format: false
     dtype: float32
+    max_samples: 100  # Set to integer (e.g., 1000) to limit dataset size for fast experiments, or null for full dataset
 
 parameters:
   num_features: 6  # Will be determined by the actual data

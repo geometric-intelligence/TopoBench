@@ -1,4 +1,4 @@
-"""Loader for OC20 family datasets (S2EF/IS2RE)."""
+"""Loader for OC20 S2EF dataset."""
 
 import logging
 from pathlib import Path
@@ -10,7 +10,6 @@ from torch_geometric.data import Dataset
 from topobench.data.datasets.oc20_dataset import OC20Dataset
 from topobench.data.loaders.base import AbstractLoader
 from topobench.data.utils.oc20_download import (
-    download_is2re_dataset,
     download_s2ef_dataset,
 )
 
@@ -28,12 +27,10 @@ logger = logging.getLogger(__name__)
 
 
 class OC20DatasetLoader(AbstractLoader):
-    """Load OC20 family datasets for catalyst discovery and materials science.
+    """Load OC20 S2EF dataset for catalyst discovery and materials science.
 
-    Supports:
-    - S2EF (Structure to Energy and Forces): Predict energy/forces from atomic structure
-    - IS2RE (Initial Structure to Relaxed Energy): Predict relaxed energy
-    - OC22 IS2RE: Extended IS2RE dataset
+    Supports S2EF (Structure to Energy and Forces) to predict energy/forces
+    from atomic structure.
 
     Parameters
     ----------
@@ -41,15 +38,10 @@ class OC20DatasetLoader(AbstractLoader):
         Configuration parameters containing:
             - data_dir: Root directory for data
             - data_name: Name of the dataset
-            - task: Task type ("s2ef", "is2re", "oc22_is2re")
             - download: Whether to download if not present (default: False)
-
-            For S2EF:
             - train_split: Training split size ("200K", "2M", "20M", "all")
             - val_splits: List of validation splits or None for all
             - include_test: Whether to download test split (default: True)
-
-            Additional options:
             - dtype: Data type for tensors (default: "float32")
             - legacy_format: Use legacy PyG Data format (default: False)
             - max_samples: Limit dataset size for testing (default: None)
@@ -77,12 +69,11 @@ class OC20DatasetLoader(AbstractLoader):
 
         # Check if we have LMDB files or need ASE DB fallback
         data_root = Path(self.get_data_dir())
-        task = self.parameters.get("task", "s2ef").lower()
 
         # Try LMDB first
         lmdb_present = any(data_root.glob("**/*.lmdb"))
 
-        if not lmdb_present and task == "s2ef" and HAS_ASEDB:
+        if not lmdb_present and HAS_ASEDB:
             # Fallback to ASE DB dataset
             logger.info("No LMDB files found, using ASE DB backend")
             return self._load_asedb_dataset(data_root)
@@ -93,31 +84,22 @@ class OC20DatasetLoader(AbstractLoader):
         return dataset
 
     def _download_dataset(self):
-        """Download the OC20 dataset based on task configuration."""
-        task = self.parameters.get("task", "s2ef").lower()
+        """Download the S2EF dataset."""
         root = Path(self.get_data_dir())
+        train_split = self.parameters.get("train_split", "200K")
+        val_splits = self.parameters.get("val_splits", None)
+        include_test = self.parameters.get("include_test", True)
 
-        if task == "s2ef":
-            train_split = self.parameters.get("train_split", "200K")
-            val_splits = self.parameters.get("val_splits", None)
-            include_test = self.parameters.get("include_test", True)
+        # Parse val_splits
+        if val_splits is not None and isinstance(val_splits, str):
+            val_splits = [val_splits]
 
-            # Parse val_splits
-            if val_splits is not None and isinstance(val_splits, str):
-                val_splits = [val_splits]
-
-            download_s2ef_dataset(
-                root=root,
-                train_split=train_split,
-                val_splits=val_splits,
-                include_test=include_test,
-            )
-        elif task in ["is2re", "oc22_is2re"]:
-            download_is2re_dataset(root=root, task=task)
-        else:
-            raise ValueError(
-                f"Unknown task: {task}. Choose from ['s2ef', 'is2re', 'oc22_is2re']"
-            )
+        download_s2ef_dataset(
+            root=root,
+            train_split=train_split,
+            val_splits=val_splits,
+            include_test=include_test,
+        )
 
     def _initialize_dataset(self) -> OC20Dataset:
         """Initialize the OC20 dataset.

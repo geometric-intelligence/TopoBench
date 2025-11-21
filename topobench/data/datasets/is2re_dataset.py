@@ -1,4 +1,4 @@
-"""Dataset class for Open Catalyst 2020 (OC20) family of datasets."""
+"""Dataset class for Open Catalyst 2020 (OC20) IS2RE dataset."""
 
 from __future__ import annotations
 
@@ -6,7 +6,6 @@ import logging
 import pickle
 from collections.abc import Iterator
 from pathlib import Path
-from typing import ClassVar
 
 import torch
 from omegaconf import DictConfig
@@ -23,15 +22,15 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-class OC20Dataset(Dataset):
-    """Dataset class for Open Catalyst 2020 (OC20) family.
+class IS2REDataset(Dataset):
+    """Dataset class for Open Catalyst 2020 (OC20) IS2RE task.
 
-    Supports S2EF (Structure to Energy and Forces) task for catalyst
+    IS2RE (Initial Structure to Relaxed Energy) is a task for catalyst
     discovery and materials science.
 
     The OC20 dataset contains DFT calculations for catalyst-adsorbate systems,
-    enabling machine learning models to predict energies and forces for
-    accelerated materials discovery.
+    enabling machine learning models to predict energies for accelerated
+    materials discovery.
 
     Parameters
     ----------
@@ -41,27 +40,7 @@ class OC20Dataset(Dataset):
         Name of the dataset.
     parameters : DictConfig
         Configuration parameters for the dataset.
-
-    Attributes
-    ----------
-    task : str
-        Task type: "s2ef", "is2re", or "oc22_is2re".
-    train_split : str
-        Training split size for S2EF (e.g., "200K", "2M", "20M", "all").
-    val_splits : list[str]
-        Validation splits to use.
     """
-
-    # S2EF validation splits
-    VALID_VAL_SPLITS: ClassVar = [
-        "val_id",
-        "val_ood_ads",
-        "val_ood_cat",
-        "val_ood_both",
-    ]
-
-    # S2EF train splits
-    VALID_TRAIN_SPLITS: ClassVar = ["200K", "2M", "20M", "all"]
 
     def __init__(
         self,
@@ -73,39 +52,10 @@ class OC20Dataset(Dataset):
         self.parameters = parameters
 
         # Task configuration
-        self.task = parameters.get("task", "s2ef").lower()
-        if self.task != "s2ef":
-            raise ValueError(f"Unsupported task: {self.task}")
+        self.task = "is2re"
         self.dtype = self._parse_dtype(parameters.get("dtype", "float32"))
         self.legacy_format = parameters.get("legacy_format", False)
         self.include_test = parameters.get("include_test", True)
-
-        # S2EF-specific configuration
-        self.train_split = parameters.get("train_split", "200K")
-        if self.train_split not in self.VALID_TRAIN_SPLITS:
-            raise ValueError(
-                f"Invalid S2EF train split: {self.train_split}. "
-                f"Choose from {self.VALID_TRAIN_SPLITS}"
-            )
-
-        # Parse validation splits
-        val_splits = parameters.get("val_splits", None)
-        if val_splits is None:
-            self.val_splits = self.VALID_VAL_SPLITS
-        elif isinstance(val_splits, str):
-            self.val_splits = [val_splits]
-        else:
-            self.val_splits = list(val_splits)
-
-        # Validate splits
-        for vs in self.val_splits:
-            if vs not in self.VALID_VAL_SPLITS:
-                raise ValueError(
-                    f"Invalid S2EF val split: {vs}. "
-                    f"Choose from {self.VALID_VAL_SPLITS}"
-                )
-
-        self.test_split = parameters.get("test_split", "test")
 
         # Limit for fast experimentation
         self.max_samples = parameters.get("max_samples", None)
@@ -121,10 +71,7 @@ class OC20Dataset(Dataset):
         self._open_lmdbs()
 
     def __repr__(self) -> str:
-        task_info = f"task={self.task}"
-        if self.task == "s2ef":
-            task_info += f", train={self.train_split}"
-        return f"{self.name}(root={self.root}, {task_info}, size={len(self)})"
+        return f"{self.name}(root={self.root}, task={self.task}, size={len(self)})"
 
     @staticmethod
     def _parse_dtype(dtype) -> torch.dtype:
@@ -144,23 +91,27 @@ class OC20Dataset(Dataset):
         root = Path(self.root)
         paths = {"train": [], "val": [], "test": []}
 
-        # Training data path structure
-        train_subdir = f"s2ef_train_{self.train_split}"
-        train_dir = (
-            root / "s2ef" / self.train_split / train_subdir / train_subdir
+        # The downloaded data is extracted to:
+        # root/is2res_train_val_test_lmdbs/data/is2re/all/{train,val_id,test_id}/data.lmdb
+        base_path = (
+            root / "is2res_train_val_test_lmdbs" / "data" / "is2re" / "all"
         )
-        paths["train"] = sorted(train_dir.glob("**/*.lmdb"))
 
-        # Validation data paths
-        for val_split in self.val_splits:
-            val_subdir = f"s2ef_{val_split}"
-            val_dir = root / "s2ef" / "all" / val_subdir / val_subdir
-            paths["val"].extend(sorted(val_dir.glob("**/*.lmdb")))
+        if base_path.exists():
+            # Train data
+            train_lmdb = base_path / "train" / "data.lmdb"
+            if train_lmdb.exists():
+                paths["train"] = [train_lmdb]
 
-        # Test data path
-        if self.include_test:
-            test_dir = root / "s2ef" / "all" / "s2ef_test" / "s2ef_test"
-            paths["test"] = sorted(test_dir.glob("**/*.lmdb"))
+            # Validation data
+            val_lmdb = base_path / "val_id" / "data.lmdb"
+            if val_lmdb.exists():
+                paths["val"] = [val_lmdb]
+
+            # Test data
+            test_lmdb = base_path / "test_id" / "data.lmdb"
+            if test_lmdb.exists():
+                paths["test"] = [test_lmdb]
 
         return paths
 
@@ -168,7 +119,7 @@ class OC20Dataset(Dataset):
         """Open LMDB files and create split mappings."""
         if not HAS_LMDB:
             raise ImportError(
-                "LMDB is required for OC20 dataset. Install with: pip install lmdb"
+                "LMDB is required for IS2RE dataset. Install with: pip install lmdb"
             )
 
         paths = self._get_data_paths()
@@ -183,6 +134,9 @@ class OC20Dataset(Dataset):
         # Open train LMDBs
         for lmdb_path in paths["train"]:
             env, size = self._open_single_lmdb(lmdb_path)
+            # Apply max_samples limit if specified
+            if self.max_samples is not None:
+                size = min(size, self.max_samples)
             self.envs.append((lmdb_path, env, size))
             self.cumulative_sizes.append(self.cumulative_sizes[-1] + size)
             self.split_idx["train"].extend(
@@ -193,6 +147,11 @@ class OC20Dataset(Dataset):
         # Open validation LMDBs
         for lmdb_path in paths["val"]:
             env, size = self._open_single_lmdb(lmdb_path)
+            # Apply max_samples limit if specified
+            if self.max_samples is not None:
+                size = min(
+                    size, max(1, self.max_samples // 10)
+                )  # Use 10% for validation
             self.envs.append((lmdb_path, env, size))
             self.cumulative_sizes.append(self.cumulative_sizes[-1] + size)
             self.split_idx["valid"].extend(
@@ -203,6 +162,11 @@ class OC20Dataset(Dataset):
         # Open test LMDBs
         for lmdb_path in paths["test"]:
             env, size = self._open_single_lmdb(lmdb_path)
+            # Apply max_samples limit if specified
+            if self.max_samples is not None:
+                size = min(
+                    size, max(1, self.max_samples // 10)
+                )  # Use 10% for test
             self.envs.append((lmdb_path, env, size))
             self.cumulative_sizes.append(self.cumulative_sizes[-1] + size)
             self.split_idx["test"].extend(
@@ -315,6 +279,69 @@ class OC20Dataset(Dataset):
 
             key, value = cursor.item()
             data = pickle.loads(value)
+
+        # Convert old PyG Data objects to new format by extracting all attributes
+        if isinstance(data, Data):
+            try:
+                # Check if this is old format data
+                # Old PyG format has attributes directly in __dict__ without proper _store
+                if "_store" not in data.__dict__ or any(
+                    k in data.__dict__ for k in ["x", "edge_index", "pos"]
+                ):
+                    # Extract all data attributes
+                    data_dict = {}
+                    # Get all tensor/data attributes from __dict__
+                    data_dict = {
+                        key: val
+                        for key, val in data.__dict__.items()
+                        if not key.startswith("_") and val is not None
+                    }
+                    # Convert y_relaxed to y before creating new Data object
+                    if "y_relaxed" in data_dict:
+                        data_dict["y"] = torch.tensor(
+                            [data_dict["y_relaxed"]]
+                        ).float()
+                    elif "y" not in data_dict:
+                        data_dict["y"] = torch.tensor([float("nan")]).float()
+
+                    # Use atomic numbers as node features (x)
+                    if "atomic_numbers" in data_dict:
+                        data_dict["x"] = (
+                            data_dict["atomic_numbers"].view(-1, 1).float()
+                        )
+                    elif "x" not in data_dict and "pos" in data_dict:
+                        data_dict["x"] = torch.ones(
+                            (data_dict["pos"].shape[0], 1)
+                        )
+
+                    # Create edge_index from atomic positions using radius graph
+                    if "edge_index" not in data_dict and "pos" in data_dict:
+                        from torch_geometric.nn import radius_graph
+
+                        data_dict["edge_index"] = radius_graph(
+                            data_dict["pos"], r=5.0, max_num_neighbors=50
+                        )
+
+                    # Keep only standard PyG attributes
+                    standard_attrs = [
+                        "x",
+                        "edge_index",
+                        "edge_attr",
+                        "pos",
+                        "y",
+                        "batch",
+                    ]
+                    cleaned_dict = {
+                        k: v
+                        for k, v in data_dict.items()
+                        if k in standard_attrs
+                    }
+
+                    # Create a completely new Data object with current PyG format
+                    data = Data(**cleaned_dict)
+            except (AttributeError, KeyError, RuntimeError, TypeError):
+                # If extraction fails, pass through
+                pass
 
         # Convert to legacy format if needed
         if self.legacy_format and isinstance(data, Data):
