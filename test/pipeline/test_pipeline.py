@@ -6,8 +6,8 @@ from test._utils.simplified_pipeline import run
 
 # Use a dataset whose labels are 1D so it is compatible with the current split utilities.
 # This keeps changes confined to tests, as required.
-DATASET = "graph/cocitation_cora"  # ADD YOUR DATASET HERE
-MODELS = ["graph/gcn", "cell/topotune", "simplicial/topotune"]  # ADD ONE OR SEVERAL MODELS OF YOUR CHOICE HERE
+DATASET = "graph/ogbn-arxiv"  # ADD YOUR DATASET HERE
+MODELS = ["graph/gcn", "cell/topotune"]  # ADD ONE OR SEVERAL MODELS OF YOUR CHOICE HERE
 
 
 class TestPipeline:
