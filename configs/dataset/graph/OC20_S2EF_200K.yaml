@@ -13,11 +13,11 @@ loader:
     task: s2ef
     train_split: "200K"
     val_splits: null  # null means use all 4 validation splits (val_id, val_ood_ads, val_ood_cat, val_ood_both)
-    include_test: false  # Skip test download, reuse validation as test
+    include_test: false  # S2EF test data is LMDB format (incompatible with .extxyz/ASE DB train/val)
     download: true
     dtype: float32
     legacy_format: false
-    max_samples: 100  # Set to integer (e.g., 1000) to limit dataset size for fast experiments, or null for full dataset
+    max_samples: 10  # Set to integer (e.g., 1000) to limit dataset size for fast experiments, or null for full dataset
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
 
 parameters:

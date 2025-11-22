@@ -134,7 +134,7 @@ class IS2REDataset(Dataset):
         # Open train LMDBs
         for lmdb_path in paths["train"]:
             env, size = self._open_single_lmdb(lmdb_path)
-            # Apply max_samples limit if specified
+            # Apply max_samples limit if specified (per split)
             if self.max_samples is not None:
                 size = min(size, self.max_samples)
             self.envs.append((lmdb_path, env, size))
@@ -147,11 +147,9 @@ class IS2REDataset(Dataset):
         # Open validation LMDBs
         for lmdb_path in paths["val"]:
             env, size = self._open_single_lmdb(lmdb_path)
-            # Apply max_samples limit if specified
+            # Apply max_samples limit if specified (per split)
             if self.max_samples is not None:
-                size = min(
-                    size, max(1, self.max_samples // 10)
-                )  # Use 10% for validation
+                size = min(size, self.max_samples)
             self.envs.append((lmdb_path, env, size))
             self.cumulative_sizes.append(self.cumulative_sizes[-1] + size)
             self.split_idx["valid"].extend(
@@ -162,11 +160,9 @@ class IS2REDataset(Dataset):
         # Open test LMDBs
         for lmdb_path in paths["test"]:
             env, size = self._open_single_lmdb(lmdb_path)
-            # Apply max_samples limit if specified
+            # Apply max_samples limit if specified (per split)
             if self.max_samples is not None:
-                size = min(
-                    size, max(1, self.max_samples // 10)
-                )  # Use 10% for test
+                size = min(size, self.max_samples)
             self.envs.append((lmdb_path, env, size))
             self.cumulative_sizes.append(self.cumulative_sizes[-1] + size)
             self.split_idx["test"].extend(

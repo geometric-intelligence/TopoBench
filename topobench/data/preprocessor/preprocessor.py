@@ -65,10 +65,20 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             self.transform = (
                 dataset.transform if hasattr(dataset, "transform") else None
             )
-            # Directly use the dataset's data and slices
-            self.data, self.slices = dataset._data, dataset.slices
-            # Make data_list creation lazy to avoid loading large datasets into memory
-            self._data_list = None
+            # Check if dataset is an InMemoryDataset with _data and slices
+            if hasattr(dataset, "_data") and hasattr(dataset, "slices"):
+                # Directly use the dataset's data and slices
+                self._data, self.slices = dataset._data, dataset.slices
+                # Make data_list creation lazy to avoid loading large datasets into memory
+                self._data_list = None
+                self._is_inmemory = True
+            else:
+                # For non-InMemoryDataset (like LMDB-based datasets), we can't use _data/slices
+                # The dataset will be accessed directly via indexing
+                self._data = None
+                self.slices = None
+                self._data_list = None
+                self._is_inmemory = False
 
         # Some datasets have fixed splits, and those are stored as split_idx during loading
         # We need to store this information to be able to reproduce the splits afterwards
@@ -102,6 +112,41 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             New list of data objects to use as the dataset's data_list.
         """
         self._data_list = value
+
+    def __len__(self) -> int:
+        """Return the number of samples in the dataset.
+
+        Returns
+        -------
+        int
+            Number of samples.
+        """
+        if not self.transforms_applied and not self._is_inmemory:
+            # For non-InMemoryDataset, delegate to the wrapped dataset
+            return len(self.dataset)
+        else:
+            # For InMemoryDataset or transformed data, use parent implementation
+            return super().__len__()
+
+    def __getitem__(self, idx):
+        """Get item at index.
+
+        Parameters
+        ----------
+        idx : int or slice
+            Index or slice to retrieve.
+
+        Returns
+        -------
+        Data or list[Data]
+            Data object(s) at the given index/slice.
+        """
+        if not self.transforms_applied and not self._is_inmemory:
+            # For non-InMemoryDataset, delegate to the wrapped dataset
+            return self.dataset[idx]
+        else:
+            # For InMemoryDataset or transformed data, use parent implementation
+            return super().__getitem__(idx)
 
     @property
     def processed_dir(self) -> str:
@@ -235,26 +280,64 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         None
             Writes processed data to disk as a side effect.
         """
+        # Skip processing if no transforms are applied
+        if hasattr(self, "_skip_processing") and self._skip_processing:
+            return
+
         from tqdm import tqdm
 
-        print(f"Processing dataset with {len(self.dataset)} samples...")
+        # If dataset has split_idx, only process those samples (for efficiency with large datasets)
+        if hasattr(self.dataset, "split_idx") and self.dataset.split_idx:
+            # Collect all unique indices from all splits
+            all_indices = []
+            for split_name in ["train", "valid", "test"]:
+                if split_name in self.dataset.split_idx:
+                    indices = self.dataset.split_idx[split_name]
+                    # Convert tensor to list if needed
+                    if hasattr(indices, "tolist"):
+                        indices = indices.tolist()
+                    elif hasattr(indices, "__iter__"):
+                        indices = list(indices)
+                    all_indices.extend(indices)
+            # Remove duplicates and sort
+            all_indices = sorted(set(all_indices))
 
-        if isinstance(
-            self.dataset,
-            (torch_geometric.data.Dataset, torch.utils.data.Dataset),
-        ):
-            # Use tqdm to show progress for large datasets
-            if len(self.dataset) > 1000:
+            print(
+                f"Processing dataset with {len(all_indices)} samples (from split_idx)..."
+            )
+
+            # Load only the samples specified in split_idx
+            if len(all_indices) > 1000:
                 print(
-                    f"Loading {len(self.dataset)} graphs (this may take a while)..."
+                    f"Loading {len(all_indices)} graphs from split indices (this may take a while)..."
                 )
                 data_list = [
-                    data for data in tqdm(self.dataset, desc="Loading graphs")
+                    self.dataset[idx]
+                    for idx in tqdm(all_indices, desc="Loading graphs")
                 ]
             else:
-                data_list = [data for data in self.dataset]
-        elif isinstance(self.dataset, torch_geometric.data.Data):
-            data_list = [self.dataset]
+                data_list = [self.dataset[idx] for idx in all_indices]
+        else:
+            # No split_idx, process all samples
+            print(f"Processing dataset with {len(self.dataset)} samples...")
+
+            if isinstance(
+                self.dataset,
+                (torch_geometric.data.Dataset, torch.utils.data.Dataset),
+            ):
+                # Use tqdm to show progress for large datasets
+                if len(self.dataset) > 1000:
+                    print(
+                        f"Loading {len(self.dataset)} graphs (this may take a while)..."
+                    )
+                    data_list = [
+                        data
+                        for data in tqdm(self.dataset, desc="Loading graphs")
+                    ]
+                else:
+                    data_list = [data for data in self.dataset]
+            elif isinstance(self.dataset, torch_geometric.data.Data):
+                data_list = [self.dataset]
 
         if self.pre_transform is not None:
             print(f"Applying transforms to {len(data_list)} graphs...")
@@ -268,9 +351,49 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         print("Collating data...")
         self._data, self.slices = self.collate(transformed_data_list)
 
+        # If we processed only samples from split_idx, remap split_idx to new indices
+        if hasattr(self.dataset, "split_idx") and self.dataset.split_idx:
+            print("Remapping split_idx to new indices after processing...")
+            # Create mapping from old indices to new indices
+            old_to_new = {
+                old_idx: new_idx for new_idx, old_idx in enumerate(all_indices)
+            }
+
+            # Remap split_idx
+            new_split_idx = {}
+            for split_name in ["train", "valid", "test"]:
+                if split_name in self.dataset.split_idx:
+                    old_indices = self.dataset.split_idx[split_name]
+                    # Convert tensor to list if needed
+                    if hasattr(old_indices, "tolist"):
+                        old_indices = old_indices.tolist()
+                    elif hasattr(old_indices, "__iter__"):
+                        old_indices = list(old_indices)
+                    else:
+                        old_indices = [old_indices]
+
+                    # Map old indices to new indices
+                    new_indices = [
+                        old_to_new[idx]
+                        for idx in old_indices
+                        if idx in old_to_new
+                    ]
+                    new_split_idx[split_name] = new_indices
+
+            # Store the remapped split_idx on the dataset itself
+            self.dataset.split_idx = new_split_idx
+            print(
+                f"Remapped split_idx: train={len(new_split_idx.get('train', []))}, "
+                f"valid={len(new_split_idx.get('valid', []))}, test={len(new_split_idx.get('test', []))}"
+            )
+
         assert isinstance(self._data, torch_geometric.data.Data)
-        print(f"Saving processed data to {self.processed_paths[0]}...")
-        self.save(transformed_data_list, self.processed_paths[0])
+        # Guard against empty processed_paths
+        if self.processed_paths and len(self.processed_paths) > 0:
+            print(f"Saving processed data to {self.processed_paths[0]}...")
+            self.save(transformed_data_list, self.processed_paths[0])
+        else:
+            print("Warning: No processed paths available, skipping save.")
 
         # Reset cache after saving
         self._data_list = None
