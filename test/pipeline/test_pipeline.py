@@ -4,8 +4,8 @@ import hydra
 from test._utils.simplified_pipeline import run
 
 
-DATASET = "graph/MUTAG"                                                 # ADD YOUR DATASET HERE
-MODELS   = ["graph/gcn", "cell/topotune", "simplicial/topotune"]        # ADD ONE OR SEVERAL MODELS OF YOUR CHOICE HERE
+DATASET = "graph/PPI_link_pred"                                                 # ADD YOUR DATASET HERE
+MODELS   = ["graph/gcn_link_pred"]        # ADD ONE OR SEVERAL MODELS OF YOUR CHOICE HERE
 
 
 class TestPipeline:
