@@ -1,0 +1,42 @@
+# OC20 S2EF Dataset Configuration
+# Structure to Energy and Forces prediction for catalyst discovery
+# Dataset: 200K training samples with multiple validation splits
+# Validation: all 4 validation splits aggregated (val_id, val_ood_ads, val_ood_cat, val_ood_both)
+# Test: official test split
+
+loader:
+  _target_: topobench.data.loaders.graph.oc20_dataset_loader.OC20DatasetLoader
+  parameters:
+    data_domain: graph
+    data_type: oc20
+    data_name: OC20_S2EF_200K
+    task: s2ef
+    train_split: "200K"
+    val_splits: null  # null means use all 4 validation splits (val_id, val_ood_ads, val_ood_cat, val_ood_both)
+    include_test: false  # Skip test download, reuse validation as test
+    download: true
+    dtype: float32
+    legacy_format: false
+    max_samples: 100  # Set to integer (e.g., 1000) to limit dataset size for fast experiments, or null for full dataset
+    data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+
+parameters:
+  num_features: 1        # Number of node features (atomic numbers)
+  num_classes: 1         # Regression task (energy prediction)
+  task: regression
+  loss_type: mse
+  monitor_metric: mae
+  task_level: graph      # Graph-level prediction
+
+
+split_params:
+  learning_setting: inductive
+  split_type: fixed  # Splits are provided by the dataset
+  data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}
+  data_seed: 0
+
+dataloader_params:
+  batch_size: 32
+  num_workers: 4
+  pin_memory: true
+  persistent_workers: true

@@ -34,6 +34,10 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
 
     def __init__(self, dataset, data_dir, transforms_config=None, **kwargs):
         self.dataset = dataset
+        self._skip_processing = (
+            False  # Flag to skip processing for no-transform case
+        )
+
         if transforms_config is not None:
             self.transforms_applied = True
             pre_transform = self.instantiate_pre_transform(
@@ -49,18 +53,55 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             self.load(self.processed_paths[0])
             self.data_list = [data for data in self]
         else:
+            print(
+                "No transforms to apply, using dataset directly (skipping processing)..."
+            )
             self.transforms_applied = False
+            self._skip_processing = True  # Skip parent class processing
+
+            # Call parent init but it should skip processing
             super().__init__(data_dir, None, None, **kwargs)
+
             self.transform = (
                 dataset.transform if hasattr(dataset, "transform") else None
             )
+            # Directly use the dataset's data and slices
             self.data, self.slices = dataset._data, dataset.slices
-            self.data_list = [data for data in dataset]
+            # Make data_list creation lazy to avoid loading large datasets into memory
+            self._data_list = None
 
         # Some datasets have fixed splits, and those are stored as split_idx during loading
         # We need to store this information to be able to reproduce the splits afterwards
         if hasattr(dataset, "split_idx"):
             self.split_idx = dataset.split_idx
+
+    @property
+    def data_list(self):
+        """Lazy loading of data_list to avoid loading large datasets into memory.
+
+        Returns
+        -------
+        list
+            List of data objects when transforms are not applied; otherwise the processed data list.
+        """
+        if not self.transforms_applied and self._data_list is None:
+            # Only create data_list when actually needed
+            print(
+                "Warning: Creating data_list from large dataset - this may take a while..."
+            )
+            self._data_list = [data for data in self.dataset]
+        return self._data_list
+
+    @data_list.setter
+    def data_list(self, value):
+        """Setter for data_list.
+
+        Parameters
+        ----------
+        value : list
+            New list of data objects to use as the dataset's data_list.
+        """
+        self._data_list = value
 
     @property
     def processed_dir(self) -> str:
@@ -77,14 +118,17 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             return self.root + "/processed"
 
     @property
-    def processed_file_names(self) -> str:
+    def processed_file_names(self) -> str | list[str]:
         """Return the name of the processed file.
 
         Returns
         -------
-        str
-            Name of the processed file.
+        str | list[str]
+            Name of the processed file, or empty list to skip processing.
         """
+        # If no transforms, return empty list to skip processing check
+        if hasattr(self, "_skip_processing") and self._skip_processing:
+            return []
         return "data.pt"
 
     def instantiate_pre_transform(
@@ -149,6 +193,11 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             transform_name: transform.parameters
             for transform_name, transform in pre_transforms_dict.items()
         }
+
+        # Include dataset size in hash to avoid reusing cached data from different dataset sizes
+        # This is crucial when max_samples changes
+        transforms_parameters["_dataset_size"] = len(self.dataset)
+
         params_hash = make_hash(transforms_parameters)
         self.transforms_parameters = ensure_serializable(transforms_parameters)
         self.processed_data_dir = os.path.join(
@@ -179,26 +228,52 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             )
 
     def process(self) -> None:
-        """Method that processes the data."""
+        """Method that processes the data.
+
+        Returns
+        -------
+        None
+            Writes processed data to disk as a side effect.
+        """
+        from tqdm import tqdm
+
+        print(f"Processing dataset with {len(self.dataset)} samples...")
+
         if isinstance(
             self.dataset,
             (torch_geometric.data.Dataset, torch.utils.data.Dataset),
         ):
-            data_list = [data for data in self.dataset]
+            # Use tqdm to show progress for large datasets
+            if len(self.dataset) > 1000:
+                print(
+                    f"Loading {len(self.dataset)} graphs (this may take a while)..."
+                )
+                data_list = [
+                    data for data in tqdm(self.dataset, desc="Loading graphs")
+                ]
+            else:
+                data_list = [data for data in self.dataset]
         elif isinstance(self.dataset, torch_geometric.data.Data):
             data_list = [self.dataset]
 
-        self.data_list = (
-            [self.pre_transform(d) for d in data_list]
-            if self.pre_transform is not None
-            else data_list
-        )
+        if self.pre_transform is not None:
+            print(f"Applying transforms to {len(data_list)} graphs...")
+            transformed_data_list = [
+                self.pre_transform(d)
+                for d in tqdm(data_list, desc="Applying transforms")
+            ]
+        else:
+            transformed_data_list = data_list
 
-        self._data, self.slices = self.collate(self.data_list)
-        self._data_list = None  # Reset cache.
+        print("Collating data...")
+        self._data, self.slices = self.collate(transformed_data_list)
 
         assert isinstance(self._data, torch_geometric.data.Data)
-        self.save(self.data_list, self.processed_paths[0])
+        print(f"Saving processed data to {self.processed_paths[0]}...")
+        self.save(transformed_data_list, self.processed_paths[0])
+
+        # Reset cache after saving
+        self._data_list = None
 
     def load(self, path: str) -> None:
         r"""Load the dataset from the file path `path`.
