@@ -31,12 +31,9 @@ parameters:
 
 split_params:
   learning_setting: inductive
-  split_type: random     # random (random split of train set) or fixed (used for official splits)
+  split_type: fixed  # Splits are provided by the dataset
   data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}
   data_seed: 0
-  train_prop: 0.6
-  val_prop: 0.2
-  test_prop: 0.2
 
 dataloader_params:
   batch_size: 32

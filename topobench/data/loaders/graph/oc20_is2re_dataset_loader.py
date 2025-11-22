@@ -6,7 +6,7 @@ from pathlib import Path
 from omegaconf import DictConfig
 from torch_geometric.data import Dataset
 
-from topobench.data.datasets.is2re_dataset import IS2REDataset
+from topobench.data.datasets.oc20_is2re_dataset import IS2REDataset
 from topobench.data.loaders.base import AbstractLoader
 from topobench.data.utils.oc20_download import download_is2re_dataset
 
