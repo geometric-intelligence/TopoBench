@@ -1,5 +1,5 @@
-TAG-DS Topological Deep Learning Challenge 2025: Expanding the Data Landscape
------------------------------------------------------------------------------
+TAG-DS TDL Challenge 2025
+-------------------------
 
 Welcome to the **Topological Deep Learning Challenge 2025: Expanding the Data Landscape**, sponsored by `Arlequin AI <https://www.arlq.ai/>`__ and hosted at the first `Topology, Algebra, and Geometry in Data Science (TAG-DS) Conference <https://www.tagds.com/events/tag-ds-2025>`__.
 
