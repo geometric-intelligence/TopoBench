@@ -12,9 +12,10 @@ class DataloadDataset(torch_geometric.data.Dataset):
         List of torch_geometric.data.Data objects.
     """
 
-    def __init__(self, data_lst):
+    def __init__(self, data_lst, _dynamic_transform=None):
         super().__init__()
         self.data_lst = data_lst
+        self._dynamic_transform = _dynamic_transform
 
     def __repr__(self):
         return f"{self.__class__.__name__}({len(self.data_lst)})"
@@ -33,6 +34,10 @@ class DataloadDataset(torch_geometric.data.Dataset):
             Tuple containing a list of all the values for the data and the corresponding keys.
         """
         data = self.data_lst[idx]
+        
+        if self._dynamic_transform is not None:
+            data = self._dynamic_transform(data)
+        
         keys = list(data.keys())
         return ([data[key] for key in keys], keys)
 

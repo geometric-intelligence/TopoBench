@@ -66,7 +66,9 @@ def run(cfg: DictConfig) -> DictConfig:
         preprocessor.load_dataset_splits(cfg.dataset.split_params)
     )
     # Prepare datamodule
-    if cfg.dataset.parameters.task_level in ["node", "graph"]:
+    task_level = cfg.dataset.parameters.task_level
+    
+    if task_level in ["node", "graph", "edge"]:
         datamodule = TBDataloader(
             dataset_train=dataset_train,
             dataset_val=dataset_val,
@@ -74,7 +76,7 @@ def run(cfg: DictConfig) -> DictConfig:
             **cfg.dataset.get("dataloader_params", {}),
         )
     else:
-        raise ValueError("Invalid task_level")
+        raise ValueError(f"Invalid task_level: {task_level}")
 
     # Model for us is Network + logic: inputs backbone, readout, losses
     model = hydra.utils.instantiate(

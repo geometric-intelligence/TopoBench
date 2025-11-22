@@ -232,17 +232,17 @@ class TBModel(LightningModule):
         dict
             Dictionary containing the updated model output.
         """
-        # Get the correct mask
-        if self.state_str == "Training":
-            mask = batch.train_mask
-        elif self.state_str == "Validation":
-            mask = batch.val_mask
-        elif self.state_str == "Test":
-            mask = batch.test_mask
-        else:
-            raise ValueError("Invalid state_str")
-
         if self.task_level == "node":
+            # Get the correct mask
+            if self.state_str == "Training":
+                mask = batch.train_mask
+            elif self.state_str == "Validation":
+                mask = batch.val_mask
+            elif self.state_str == "Test":
+                mask = batch.test_mask
+            else:
+                raise ValueError("Invalid state_str")
+                
             # Keep only train data points
             for key, val in model_out.items():
                 if key in ["logits", "labels"]:
