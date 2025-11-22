@@ -227,9 +227,10 @@ def create_subset_splits(dataset, split_idx):
     )
 
     # Create subsets using lazy indexing
+    # Always create a Subset even if indices are empty, to maintain consistent API
     train_dataset = Subset(dataset, train_indices)
-    val_dataset = Subset(dataset, valid_indices) if valid_indices else None
-    test_dataset = Subset(dataset, test_indices) if test_indices else None
+    val_dataset = Subset(dataset, valid_indices)
+    test_dataset = Subset(dataset, test_indices)
 
     return train_dataset, val_dataset, test_dataset
 
@@ -257,7 +258,16 @@ def assign_train_val_test_mask_to_graphs(dataset, split_idx):
     for i in tqdm(
         split_idx["train"], desc="Loading train graphs", leave=False
     ):
-        graph = dataset[i]
+        # Convert tensor index to Python int if needed
+        idx = (
+            i.item()
+            if isinstance(i, torch.Tensor) and i.dim() == 0
+            else int(i)
+        )
+        graph = dataset[idx]
+        # Clone if possible to avoid modifying original data
+        if hasattr(graph, "clone"):
+            graph = graph.clone()
         graph.train_mask = torch.tensor([1], dtype=torch.long)
         graph.val_mask = torch.tensor([0], dtype=torch.long)
         graph.test_mask = torch.tensor([0], dtype=torch.long)
@@ -269,7 +279,16 @@ def assign_train_val_test_mask_to_graphs(dataset, split_idx):
     for i in tqdm(
         split_idx["valid"], desc="Loading validation graphs", leave=False
     ):
-        graph = dataset[i]
+        # Convert tensor index to Python int if needed
+        idx = (
+            i.item()
+            if isinstance(i, torch.Tensor) and i.dim() == 0
+            else int(i)
+        )
+        graph = dataset[idx]
+        # Clone if possible to avoid modifying original data
+        if hasattr(graph, "clone"):
+            graph = graph.clone()
         graph.train_mask = torch.tensor([0], dtype=torch.long)
         graph.val_mask = torch.tensor([1], dtype=torch.long)
         graph.test_mask = torch.tensor([0], dtype=torch.long)
@@ -277,7 +296,16 @@ def assign_train_val_test_mask_to_graphs(dataset, split_idx):
 
     print(f"Creating test split with {len(split_idx['test'])} samples...")
     for i in tqdm(split_idx["test"], desc="Loading test graphs", leave=False):
-        graph = dataset[i]
+        # Convert tensor index to Python int if needed
+        idx = (
+            i.item()
+            if isinstance(i, torch.Tensor) and i.dim() == 0
+            else int(i)
+        )
+        graph = dataset[idx]
+        # Clone if possible to avoid modifying original data
+        if hasattr(graph, "clone"):
+            graph = graph.clone()
         graph.train_mask = torch.tensor([0], dtype=torch.long)
         graph.val_mask = torch.tensor([0], dtype=torch.long)
         graph.test_mask = torch.tensor([1], dtype=torch.long)

@@ -137,25 +137,28 @@ class OC20ASEDBDataset(Dataset):
                 self.split_idx[split_name].extend(range(start, end))
                 self._num_samples = end
 
-        # Apply max_samples limit if specified
-        if max_samples is not None and max_samples < self._num_samples:
-            logger.info(
-                f"Limiting dataset from {self._num_samples} to {max_samples} samples"
-            )
-            # Truncate all splits proportionally
+        # Apply max_samples limit if specified (per split, not total)
+        if max_samples is not None:
+            logger.info(f"Limiting each split to {max_samples} samples")
+            # When limiting, we need to:
+            # 1. Truncate the split_idx lists
+            # 2. Update _num_samples to reflect the new total
+            # 3. Keep _db_ranges unchanged (they map indices to DB files)
+            # The split_idx values remain valid as indices into the full dataset
             for split_name in ("train", "valid", "test"):
                 if self.split_idx[split_name]:
                     original_len = len(self.split_idx[split_name])
-                    new_len = int(
-                        original_len * max_samples / self._num_samples
+                    new_len = min(max_samples, original_len)
+                    self.split_idx[split_name] = self.split_idx[split_name][
+                        :new_len
+                    ]
+                    logger.info(
+                        f"  {split_name}: {original_len} -> {new_len} samples"
                     )
-                    if new_len > 0:
-                        self.split_idx[split_name] = self.split_idx[
-                            split_name
-                        ][:new_len]
-                    else:
-                        self.split_idx[split_name] = []
-            self._num_samples = max_samples
+
+            # Important: Do NOT change _num_samples here. The dataset still contains
+            # all samples indexed by the original _db_ranges. The split_idx just
+            # selects which subset to use for each split.
 
         logger.info(
             f"Loaded {len(self.db_paths)} DB files with {self._num_samples} total structures"

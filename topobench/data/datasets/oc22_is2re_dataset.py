@@ -135,7 +135,7 @@ class OC22IS2REDataset(Dataset):
 
         current_idx = 0
 
-        # Open train LMDBs with cumulative max_samples limiting
+        # Open train LMDBs with cumulative max_samples limiting (per split)
         train_samples_remaining = (
             self.max_samples if self.max_samples is not None else None
         )
@@ -157,11 +157,9 @@ class OC22IS2REDataset(Dataset):
             )
             current_idx += size
 
-        # Open validation LMDBs with cumulative max_samples limiting (10% of max_samples)
+        # Open validation LMDBs with cumulative max_samples limiting (per split)
         val_samples_remaining = (
-            max(1, self.max_samples // 10)
-            if self.max_samples is not None
-            else None
+            self.max_samples if self.max_samples is not None else None
         )
         for lmdb_path in paths["val"]:
             if (
@@ -181,11 +179,9 @@ class OC22IS2REDataset(Dataset):
             )
             current_idx += size
 
-        # Open test LMDBs with cumulative max_samples limiting (10% of max_samples)
+        # Open test LMDBs with cumulative max_samples limiting (per split)
         test_samples_remaining = (
-            max(1, self.max_samples // 10)
-            if self.max_samples is not None
-            else None
+            self.max_samples if self.max_samples is not None else None
         )
         for lmdb_path in paths["test"]:
             if (

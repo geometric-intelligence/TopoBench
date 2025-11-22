@@ -153,6 +153,17 @@ class OC20DatasetLoader(AbstractLoader):
         elif isinstance(val_splits, str):
             val_splits = [val_splits]
 
+        # Import preprocessing utilities
+
+        # Get preprocessing parameters
+        max_neigh = int(self.parameters.get("max_neigh", 50))
+        radius = float(self.parameters.get("radius", 6.0))
+
+        # Ensure preprocessing is done for all required splits
+        self._ensure_asedb_preprocessed(
+            data_root, train_split, val_splits, include_test, max_neigh, radius
+        )
+
         # Collect DB files
         # The data_root might already include the dataset name (e.g., datasets/graph/oc20/OC20_S2EF_200K)
         # or just the base (e.g., datasets/graph/oc20)
@@ -251,6 +262,92 @@ class OC20DatasetLoader(AbstractLoader):
             include_forces=True,
             max_samples=max_samples,
         )
+
+    def _ensure_asedb_preprocessed(
+        self,
+        root: Path,
+        train_split: str,
+        val_splits: list[str],
+        include_test: bool,
+        max_neigh: int,
+        radius: float,
+    ) -> None:
+        """Ensure ASE DB files are preprocessed for the requested splits.
+
+        Parameters
+        ----------
+        root : Path
+            Root data directory containing the S2EF dataset.
+        train_split : str
+            Name of the training split (e.g. "200K").
+        val_splits : list[str]
+            List of validation split names.
+        include_test : bool
+            Whether to ensure preprocessing for the test split.
+        max_neigh : int
+            Maximum number of neighbors per atom.
+        radius : float
+            Cutoff radius for neighbor search in Angstroms.
+
+        Returns
+        -------
+        None
+            Performs preprocessing as a side-effect; no value is returned.
+        """
+        from topobench.data.preprocessor.oc20_s2ef_preprocessor import (
+            needs_preprocessing,
+            preprocess_s2ef_split_ase,
+        )
+
+        # Find s2ef root directory
+        s2ef_roots = list(root.glob("**/s2ef"))
+        if not s2ef_roots:
+            logger.warning(f"No s2ef directory found under {root}")
+            return
+
+        s2ef_root = s2ef_roots[0].parent / "s2ef"
+
+        # Train directory
+        train_subdir_name = f"s2ef_train_{train_split}"
+        train_dir = (
+            s2ef_root / train_split / train_subdir_name / train_subdir_name
+        )
+        if train_dir.exists() and needs_preprocessing(train_dir):
+            logger.info(f"Preprocessing {train_dir}")
+            preprocess_s2ef_split_ase(
+                data_path=train_dir,
+                out_path=train_dir,
+                num_workers=4,
+                max_neigh=max_neigh,
+                radius=radius,
+            )
+
+        # Validation directories
+        for val_split in val_splits:
+            val_subdir_name = f"s2ef_{val_split}"
+            val_dir = s2ef_root / "all" / val_subdir_name / val_subdir_name
+            if val_dir.exists() and needs_preprocessing(val_dir):
+                logger.info(f"Preprocessing {val_dir}")
+                preprocess_s2ef_split_ase(
+                    data_path=val_dir,
+                    out_path=val_dir,
+                    num_workers=4,
+                    max_neigh=max_neigh,
+                    radius=radius,
+                )
+
+        # Test directory
+        if include_test:
+            test_dir = s2ef_root / "all" / "s2ef_test" / "s2ef_test"
+            if test_dir.exists() and needs_preprocessing(test_dir):
+                logger.info(f"Preprocessing {test_dir}")
+                preprocess_s2ef_split_ase(
+                    data_path=test_dir,
+                    out_path=test_dir,
+                    num_workers=4,
+                    max_neigh=max_neigh,
+                    radius=radius,
+                )
 
     def _redefine_data_dir(self, dataset: Dataset) -> Path:
         """Redefine the data directory based on dataset configuration.
