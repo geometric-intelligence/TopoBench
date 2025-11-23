@@ -202,7 +202,7 @@ class WDNDataset(InMemoryDataset):
 
         # --- Variables to retain ---
         regressors = getattr(self.parameters, "regressors", [])
-        targets = getattr(self.parameters, "targets", [])
+        targets = getattr(self.parameters, "target", [])
 
         assert len(targets) == 1, (
             f"Expected exactly one target variable, got {len(targets)}."
