@@ -1,0 +1,48 @@
+# Dataset loader config
+loader:
+  _target_: topobench.data.loaders.WDNDatasetLoader
+  parameters: 
+    data_domain: graph
+    data_type: wdn_dataset
+    data_name: exn
+    data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+    regressors: ["pressure", "demand", "flowrate"]  
+    target: ["head"]
+    temporal: False
+    num_scenarios: 1  
+    num_instants: 1
+
+# Variables among which one can choose as regressors and target variables
+# pressure            NODE
+# demand              NODE
+# flowrate            EDGE
+# velocity            EDGE
+# head                NODE
+# head_loss           EDGE
+# friction_factor     EDGE
+# Be careful when overriding task_level, num_features and num_edge_features
+
+# Dataset parameters
+parameters:
+  task: regression         
+  task_level: node         
+  num_features: 2  
+  num_edge_features: 1
+  num_classes: 1        
+  loss_type: mse
+  monitor_metric: mse      
+
+# splits
+split_params:
+  learning_setting: transductive    
+  data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}
+  data_seed: 0
+  split_type: random
+  train_prop: 0.8                  
+  k: 10                            
+
+# Dataloader parameters
+dataloader_params:
+  batch_size: 1
+  num_workers: 1
+  pin_memory: False
