@@ -74,8 +74,12 @@ class ChordonomiconDataset(InMemoryDataset):
         incidence_hyperedges = torch.sparse_coo_tensor(
             indices, torch.ones(indices.shape[1])
         ).coalesce()
-        x_hyperedges = torch.tensor(df["frequency"].values).unsqueeze(1)
-        y_hyperedges = torch.tensor(df["local_o_info"].values)
+        x_hyperedges = torch.tensor(
+            df["frequency"].values, dtype=torch.float32
+        ).unsqueeze(1)
+        y_hyperedges = torch.tensor(
+            df["local_o_info"].values, dtype=torch.float32
+        )
         data = Data(
             incidence_hyperedges=incidence_hyperedges,
             num_hyperedges=incidence_hyperedges.size(1),
