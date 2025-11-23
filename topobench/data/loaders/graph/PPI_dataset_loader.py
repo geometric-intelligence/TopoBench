@@ -5,8 +5,8 @@ from pathlib import Path
 import numpy as np
 from omegaconf import DictConfig
 from torch_geometric.data import Dataset
-from torch_geometric.datasets import PPI
 
+from topobench.data.datasets.PPI_dataset import PPI
 from topobench.data.loaders.base import AbstractLoader
 
 

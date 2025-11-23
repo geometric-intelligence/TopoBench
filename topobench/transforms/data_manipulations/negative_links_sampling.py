@@ -25,7 +25,7 @@ class NegativeSamplingTransform(BaseTransform):
         if seed is not None:
             torch.manual_seed(int(seed))
 
-    def __call__(self, data: Data) -> Data:
+    def forward(self, data: Data) -> Data:
         """
         Sample fresh negative edges and update edge labels.
 
