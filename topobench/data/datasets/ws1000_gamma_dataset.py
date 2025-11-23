@@ -1,21 +1,3 @@
-"""
-Location:
-topobench/data/datasets/ws1000_gamma_dataset.py
-
-Implemented a dataset from
-@misc{katsman2024revisitingnecessitygraphlearning,
-      title={Revisiting the Necessity of Graph Learning and Common Graph Benchmarks},
-      author={Isay Katsman and Ethan Lou and Anna Gilbert},
-      year={2024},
-      eprint={2412.06173},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2412.06173},
-}
-Note that we do not evaluate on edge prediction, instead we evaluate node lenght classification.
-Hopefully, edge prediction will be added.
-"""
-
 import os
 import os.path as osp
 from typing import List
@@ -27,18 +9,60 @@ import random
 
 
 class WS1000GammaDataset(InMemoryDataset):
-    r"""Synthetic Watts–Strogatz dataset WS1000_gamma.
+	"""
+	WS1000-Gamma Synthetic Dataset
+	==============================
 
-    - Graph: Watts–Strogatz (N nodes, mean degree K, rewiring prob beta)
-      constructed exactly as in Watts & Strogatz (1998):
-        1) regular ring lattice
-        2) rewire each edge (i, i+j) with prob beta, keeping i fixed
-    - Features: R^d, generated via BFS "parental dependence"
-        x_root ~ N(0, I_d)
-        x_child = gamma * x_parent + noise_scale * z,  z ~ N(0, I_d)
+	This module implements the WS1000-Gamma dataset introduced in:
 
-    """
+	    Katsman, I., Lou, E., & Gilbert, A. (2024).
+	    *Revisiting the Necessity of Graph Learning and Common Graph Benchmarks*.
+	    arXiv:2412.06173
+	    https://arxiv.org/abs/2412.06173
 
+	The dataset is a synthetic Watts–Strogatz small-world graph with
+	BFS-dependent Gaussian node features. It is designed as a principled
+	benchmark that requires graph structure to perform EDGE-level tasks (see Note c).
+
+	Notes
+	-----
+	a.- This implementation follows the Watts & Strogatz (1998) construction:
+	  1. Create a regular ring lattice with mean degree ``K``.
+	  2. Rewire each oriented ring edge ``(i, i+j)`` with probability ``beta``.
+
+	b.- Node features are generated via **BFS parental dependence**:
+	  ``x_child = gamma * x_parent + noise_scale * z``, where ``z ~ N(0, I_d)``.
+
+	c.- The current implementation evaluates NODE-level distance classification  
+	  (predict BFS distance to the root).  
+	  EDGE prediction is NOT yet implemented.
+
+	Dataset Structure
+	-----------------
+	The output is a single :class:`torch_geometric.data.Data` object with:
+
+	- ``x`` : ``[num_nodes, feature_dim]`` float tensor  
+	- ``edge_index`` : ``[2, 2 * num_edges]`` long tensor (undirected)
+	- ``y`` : ``[num_nodes]`` long tensor of BFS distances from the root node  
+	- metadata fields: ``gamma``, ``beta``, ``mean_degree``, ``feature_dim``, ``seed``
+
+	Configuration Parameters
+	------------------------
+	The dataset accepts the following Hydra parameters:
+
+	- ``num_nodes`` : int  
+	- ``feature_dim`` : int  
+	- ``mean_degree`` : int (must be even)  
+	- ``beta`` : float  
+	- ``gamma`` : float  
+	- ``noise_scale`` : float  
+	- ``seed`` : int  
+
+	These are typically defined in:
+
+	    ``configs/dataset/graph/WS1000-gamma.yaml``
+
+	"""
     def __init__(
         self,
         root: str,
