@@ -1,4 +1,6 @@
 """Configuration file for pytest."""
+import os
+from pathlib import Path
 import networkx as nx
 import pytest
 import torch
@@ -9,6 +11,13 @@ from topobench.transforms.liftings.graph2simplicial import (
 from topobench.transforms.liftings.graph2cell import (
     CellCycleLifting
 )
+
+
+# Set PROJECT_ROOT environment variable if not already set
+if "PROJECT_ROOT" not in os.environ:
+    # Get the project root (parent of test directory)
+    project_root = Path(__file__).parent.parent.absolute()
+    os.environ["PROJECT_ROOT"] = str(project_root)
 
 
 @pytest.fixture

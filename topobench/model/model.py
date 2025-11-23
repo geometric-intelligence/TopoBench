@@ -232,21 +232,26 @@ class TBModel(LightningModule):
         dict
             Dictionary containing the updated model output.
         """
-        # Get the correct mask
-        if self.state_str == "Training":
-            mask = batch.train_mask
-        elif self.state_str == "Validation":
-            mask = batch.val_mask
-        elif self.state_str == "Test":
-            mask = batch.test_mask
-        else:
-            raise ValueError("Invalid state_str")
-
+        # Get the correct mask (only for node-level tasks or when masks exist)
+        # For graph-level tasks with explicit splits (e.g., OC20 S2EF), masks don't exist
+        mask = None
         if self.task_level == "node":
-            # Keep only train data points
-            for key, val in model_out.items():
-                if key in ["logits", "labels"]:
-                    model_out[key] = val[mask]
+            if self.state_str == "Training":
+                mask = (
+                    batch.train_mask if hasattr(batch, "train_mask") else None
+                )
+            elif self.state_str == "Validation":
+                mask = batch.val_mask if hasattr(batch, "val_mask") else None
+            elif self.state_str == "Test":
+                mask = batch.test_mask if hasattr(batch, "test_mask") else None
+            else:
+                raise ValueError("Invalid state_str")
+
+            # Keep only relevant data points if mask exists
+            if mask is not None:
+                for key, val in model_out.items():
+                    if key in ["logits", "labels"]:
+                        model_out[key] = val[mask]
 
         return model_out
 

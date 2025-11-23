@@ -11,6 +11,58 @@ from tqdm import tqdm
 from topobench.dataloader import DataloadDataset
 
 
+class DatasetWrapper:
+    """Wrapper that converts dataset items to (values, keys) format.
+
+    This makes any dataset (including Subset) compatible with TopoBench's
+    custom collate function which expects (values, keys) tuples instead of Data objects.
+
+    Parameters
+    ----------
+    dataset : torch_geometric.data.Dataset or torch.utils.data.Subset
+        The underlying dataset.
+    """
+
+    def __init__(self, dataset):
+        """Initialize wrapper with dataset."""
+        self.dataset = dataset
+
+    def __len__(self):
+        """Return length of wrapped dataset."""
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        """Get item at index in (values, keys) format.
+
+        Parameters
+        ----------
+        idx : int
+            Index of the data object to get.
+
+        Returns
+        -------
+        tuple
+            Tuple containing a list of all the values for the data and the corresponding keys.
+        """
+        # Get the data object from the wrapped dataset
+        data = self.dataset[idx]
+        # Convert to (values, keys) format expected by collate_fn
+        if hasattr(data, "keys"):
+            keys = list(data.keys())
+            return ([data[key] for key in keys], keys)
+        else:
+            # Fallback for non-Data objects
+            return data
+
+    def __getstate__(self):
+        """Return state for pickling (multiprocessing compatibility)."""
+        return {"dataset": self.dataset}
+
+    def __setstate__(self, state):
+        """Restore state from unpickling (multiprocessing compatibility)."""
+        self.dataset = state["dataset"]
+
+
 # Generate splits in different fasions
 def k_fold_split(labels, parameters, root=None):
     """Return train and valid indices as in K-Fold Cross-Validation.
@@ -227,10 +279,11 @@ def create_subset_splits(dataset, split_idx):
     )
 
     # Create subsets using lazy indexing
+    # Wrap subsets with DatasetWrapper to make them compatible with TopoBench's collate_fn
     # Always create a Subset even if indices are empty, to maintain consistent API
-    train_dataset = Subset(dataset, train_indices)
-    val_dataset = Subset(dataset, valid_indices)
-    test_dataset = Subset(dataset, test_indices)
+    train_dataset = DatasetWrapper(Subset(dataset, train_indices))
+    val_dataset = DatasetWrapper(Subset(dataset, valid_indices))
+    test_dataset = DatasetWrapper(Subset(dataset, test_indices))
 
     return train_dataset, val_dataset, test_dataset
 
@@ -444,14 +497,16 @@ def load_inductive_splits(dataset, parameters):
                 If 'fixed' is chosen, the dataset should have the attribute split_idx"
             )
 
-    # Use optimized subset-based splitting for large datasets
-    # This avoids loading all graphs into memory at once
-    use_subset_split = len(dataset) > 10000  # Use subset for large datasets
+    # Use optimized subset-based splitting for large datasets OR when using fixed splits
+    # This avoids loading all graphs into memory at once for large datasets
+    # For fixed splits, subset-based splitting preserves the original dataset indices
+    use_subset_split = len(dataset) > 10000 or parameters.split_type == "fixed"
 
     if use_subset_split:
-        print(
-            f"Using optimized subset-based splitting for large dataset ({len(dataset)} graphs)"
-        )
+        if len(dataset) > 10000:
+            print(
+                f"Using optimized subset-based splitting for large dataset ({len(dataset)} graphs)"
+            )
         train_dataset, val_dataset, test_dataset = create_subset_splits(
             dataset, split_idx
         )
