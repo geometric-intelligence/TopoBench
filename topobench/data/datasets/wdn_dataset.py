@@ -307,6 +307,9 @@ class WDNDataset(InMemoryDataset):
                 edge_attr = edge_attr.squeeze(dim=2)
                 y = y.squeeze(dim=2)
 
+            # Label must be one-dimensional (only one feature supported currently)
+            y = y.squeeze(dim=1)
+
             # Create Data object
             data = Data(
                 x=x,

@@ -3,8 +3,7 @@
 import hydra
 from test._utils.simplified_pipeline import run
 
-print('Performing test pipeline...')
-DATASET = "graph/balerman"         # ADD YOUR DATASET HERE
+DATASET = "graph/anytown"         # ADD YOUR DATASET HERE
 MODELS   = ["graph/gcn", ]        # ADD ONE OR SEVERAL MODELS OF YOUR CHOICE HERE
 
 
@@ -34,9 +33,3 @@ class TestPipeline:
                 )
                 run(cfg)
                 print('Done!')
-
-# --- Run the pipeline ---
-if __name__ == "__main__":
-    pipeline = TestPipeline()
-    pipeline.setup_method()
-    pipeline.test_pipeline()
