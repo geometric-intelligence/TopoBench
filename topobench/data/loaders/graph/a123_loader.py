@@ -1,4 +1,17 @@
-"""A123 dataset loader module."""
+"""
+Data loader for the Bowen et al. mouse auditory cortex calcium imaging dataset.
+
+This script downloads and processes the original dataset introduced in:
+
+[Citation] Bowen et al. (2024), "Fractured columnar small-world functional network
+organization in volumes of L2/3 of mouse auditory cortex," PNAS Nexus, 3(2): pgae074.
+https://doi.org/10.1093/pnasnexus/pgae074
+
+We apply the preprocessing and graph-construction steps defined in this module to obtain
+a representation of neuronal activity suitable for our experiments.
+
+Please cite the original paper when using this dataset or any derivatives.
+"""
 
 import torch
 from omegaconf import DictConfig
@@ -76,8 +89,9 @@ class A123DatasetLoader(AbstractLoader):
         # determine dataset name from parameters, fallback to expected id
         name = self.parameters.data_name
 
-        # root path for dataset: use the root_data_dir (Path) as string
-        root = str(self.root_data_dir)
+        # root path for dataset: use the parent of root_data_dir since the dataset
+        # constructs its own subdirectory based on name
+        root = str(self.root_data_dir.parent)
 
         # Construct dataset; A123CortexMDataset expects (root, name, parameters)
         self.dataset = A123CortexMDataset(

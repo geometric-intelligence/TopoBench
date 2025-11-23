@@ -5,6 +5,7 @@ import json
 import os
 import os.path as osp
 import pickle
+import time
 from urllib.parse import parse_qs, urlparse
 
 import numpy as np
@@ -87,9 +88,18 @@ def download_file_from_drive(
 
 
 def download_file_from_link(
-    file_link, path_to_save, dataset_name, file_format="tar.gz"
+    file_link,
+    path_to_save,
+    dataset_name,
+    file_format="tar.gz",
+    verify=True,
+    timeout=None,
+    retries=3,
 ):
     """Download a file from a link and saves it to the specified path.
+
+    Uses streaming with chunked download and includes retry logic for
+    resilience against network interruptions.
 
     Parameters
     ----------
@@ -101,20 +111,132 @@ def download_file_from_link(
         The name of the dataset.
     file_format : str, optional
         The format of the downloaded file. Defaults to "tar.gz".
+    verify : bool, optional
+        Whether to verify SSL certificates. Defaults to True.
+    timeout : float, optional
+        Timeout in seconds per chunk read (not for entire download). For very slow
+        servers, increase this value. Default: 60 seconds per chunk.
+    retries : int, optional
+        Number of retry attempts if download fails. Defaults to 3.
 
     Raises
     ------
     None
     """
-    response = requests.get(file_link, verify=False)
-
+    # Ensure output directory exists
+    os.makedirs(path_to_save, exist_ok=True)
     output_path = f"{path_to_save}/{dataset_name}.{file_format}"
-    if response.status_code == 200:
-        with open(output_path, "wb") as f:
-            f.write(response.content)
-        print("Download complete.")
-    else:
-        print("Failed to download the file.")
+
+    # Default timeout: 60 seconds per chunk read (for very slow servers)
+    if timeout is None:
+        timeout = 60
+
+    for attempt in range(retries):
+        try:
+            print(
+                f"[Download] Starting download from: {file_link} (attempt {attempt + 1}/{retries})"
+            )
+
+            # Use tuple (connect_timeout, read_timeout) for proper streaming
+            response = requests.get(
+                file_link,
+                verify=verify,
+                stream=True,  # Force streaming for chunked download
+                timeout=(
+                    30,
+                    timeout,
+                ),  # (connect timeout, read timeout per chunk)
+            )
+
+            if response.status_code != 200:
+                print(
+                    f"[Download] Failed to download the file. HTTP {response.status_code}"
+                )
+                return
+
+            # Streaming download with progress reporting
+            total_size = int(response.headers.get("content-length", 0))
+            downloaded = 0
+            start_time = time.time()
+
+            if total_size > 0:
+                print(
+                    f"[Download] Total file size: {total_size / (1024**3):.2f} GB"
+                )
+            else:
+                print("[Download] Total file size: unknown")
+
+            # Stream download in chunks
+            chunk_size = 5 * 1024 * 1024  # 5MB chunks for faster throughput
+            progress_interval = (
+                10 * 1024 * 1024
+            )  # Report progress every 10MB (for slow connections)
+            last_reported = 0
+
+            with open(output_path, "wb") as f:
+                for chunk in response.iter_content(
+                    chunk_size=chunk_size, decode_unicode=False
+                ):
+                    if chunk:
+                        f.write(chunk)
+                        f.flush()  # Ensure data is written to disk
+                        downloaded += len(chunk)
+
+                        # Print progress every 10MB
+                        if (
+                            total_size > 0
+                            and (downloaded - last_reported)
+                            >= progress_interval
+                        ):
+                            percent = (downloaded / total_size) * 100
+                            remaining = total_size - downloaded
+                            elapsed_time = time.time() - start_time
+                            speed_mbps = (downloaded / (1024**2)) / (
+                                elapsed_time + 0.001
+                            )
+
+                            # Calculate ETA
+                            if speed_mbps > 0:
+                                eta_seconds = (
+                                    remaining / (1024**2) / speed_mbps
+                                )
+                                eta_hours = eta_seconds / 3600
+                                eta_minutes = (eta_seconds % 3600) / 60
+                                eta_str = (
+                                    f"{eta_hours:.0f}h {eta_minutes:.0f}m"
+                                )
+                            else:
+                                eta_str = "calculating..."
+
+                            print(
+                                f"[Download] {downloaded / (1024**3):.2f} / {total_size / (1024**3):.2f} GB ({percent:.1f}%) | Speed: {speed_mbps:.2f} MB/s | ETA: {eta_str}"
+                            )
+                            last_reported = downloaded
+
+            print(f"[Download] Download complete! Saved to: {output_path}")
+            break
+
+        except (
+            requests.exceptions.Timeout,
+            requests.exceptions.ConnectionError,
+            Exception,
+        ) as e:
+            print(
+                f"[Download] Download failed with error: {type(e).__name__}: {str(e)}"
+            )
+            if attempt < retries - 1:
+                wait_time = 5 * (
+                    attempt + 1
+                )  # Exponential backoff: 5s, 10s, 15s
+                print(
+                    f"[Download] Retrying in {wait_time} seconds... (attempt {attempt + 2}/{retries})"
+                )
+                time.sleep(wait_time)
+            else:
+                print(
+                    f"[Download] Failed after {retries} attempts. Please check your connection and try again."
+                )
+                raise e
 
 
 def read_ndim_manifolds(

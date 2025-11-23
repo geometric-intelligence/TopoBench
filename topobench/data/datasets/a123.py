@@ -1,4 +1,17 @@
-"""Dataset class for Auditory Cortex Mouse dataset."""
+"""
+Dataset class for the Bowen et al. mouse auditory cortex calcium imaging dataset.
+
+This script downloads and processes the original dataset introduced in:
+
+[Citation] Bowen et al. (2024), "Fractured columnar small-world functional network
+organization in volumes of L2/3 of mouse auditory cortex," PNAS Nexus, 3(2): pgae074.
+https://doi.org/10.1093/pnasnexus/pgae074
+
+We apply the preprocessing and graph-construction steps defined in this module to obtain
+a representation of neuronal activity suitable for our experiments.
+
+Please cite the original paper when using this dataset or any derivatives.
+"""
 
 import os
 import os.path as osp
@@ -44,11 +57,11 @@ class A123CortexMDataset(InMemoryDataset):
     """
 
     URLS: ClassVar = {
-        "a123_cortex_m": "https://gcell.umd.edu/data/Auditory_cortex_data.zip",
+        "Auditory cortex data": "https://gcell.umd.edu/data/Auditory_cortex_data.zip",
     }
 
     FILE_FORMAT: ClassVar = {
-        "a123_cortex_m": "zip",
+        "Auditory cortex data": "zip",
     }
 
     RAW_FILE_NAMES: ClassVar = {}
@@ -156,8 +169,9 @@ class A123CortexMDataset(InMemoryDataset):
     def download(self) -> None:
         """Download the dataset from a URL and extract to the raw directory."""
         # Download data from the source
-        self.url = self.URLS[self.name]
-        self.file_format = self.FILE_FORMAT[self.name]
+        dataset_key = "Auditory cortex data"
+        self.url = self.URLS[dataset_key]
+        self.file_format = self.FILE_FORMAT[dataset_key]
 
         # Use self.name as the downloadable dataset name
         download_file_from_link(
@@ -166,6 +180,8 @@ class A123CortexMDataset(InMemoryDataset):
             dataset_name=self.name,
             file_format=self.file_format,
             verify=False,
+            timeout=60,  # 60 seconds per chunk read timeout
+            retries=3,  # Retry up to 3 times
         )
 
         # Extract zip file
@@ -176,11 +192,16 @@ class A123CortexMDataset(InMemoryDataset):
         # Delete zip file
         os.unlink(path)
 
-        # Move files from osp.join(folder, name_download) to folder
+        # Move files from extracted "Auditory cortex data/" directory to raw_dir
         downloaded_dir = osp.join(folder, self.name)
         if osp.exists(downloaded_dir):
             for file in os.listdir(downloaded_dir):
-                shutil.move(osp.join(downloaded_dir, file), folder)
+                src = osp.join(downloaded_dir, file)
+                dst = osp.join(folder, file)
+                if osp.isdir(src):
+                    shutil.copytree(src, dst, dirs_exist_ok=True)
+                else:
+                    shutil.move(src, dst)
             # Delete the extracted top-level directory
             shutil.rmtree(downloaded_dir)
         self.data_dir = folder

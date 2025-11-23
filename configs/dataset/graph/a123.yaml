@@ -1,10 +1,23 @@
+# Config file for loading Bowen et al. mouse auditory cortex calcium imaging dataset.
+
+# This script downloads and processes the original dataset introduced in:
+
+# [Citation] Bowen et al. (2024), "Fractured columnar small-world functional network
+# organization in volumes of L2/3 of mouse auditory cortex," PNAS Nexus, 3(2): pgae074.
+# https://doi.org/10.1093/pnasnexus/pgae074
+
+# We apply the preprocessing and graph-construction steps defined in this module to obtain
+# a representation of neuronal activity suitable for our experiments.
+
+# Please cite the original paper when using this dataset or any derivatives.
+
 # Dataset loader config for A123 Cortex M
 loader:
   _target_: topobench.data.loaders.A123DatasetLoader
   parameters:
     data_domain: graph
     data_type: A123CortexM
-    data_dir: ${dataset.parameters.data_dir} # Use data_dir from dataset config
+    data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type} # Use data_dir from dataset config
     data_name: ${dataset.parameters.data_name} # Use data_name from dataset config
     num_graphs: 10
     is_undirected: True
@@ -21,11 +34,9 @@ parameters:
   monitor_metric: accuracy
   task_level: graph
   data_name: a123_cortex_m
-  data_dir: ${paths.data_dir}/graph/a123
   hodge_k: 10
   min_neurons: 3
   corr_threshold: 0.2
-  use_stream_download: True
 
 # Splits
 split_params:
