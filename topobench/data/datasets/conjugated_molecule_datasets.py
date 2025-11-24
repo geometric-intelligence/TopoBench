@@ -5,7 +5,6 @@ from collections.abc import Callable
 
 import pandas as pd
 import torch
-import tqdm
 from torch_geometric.data import (
     Data,
     InMemoryDataset,
@@ -278,7 +277,7 @@ class ConjugatedMoleculeDataset(InMemoryDataset):
 
         smiles_list = df[smiles_col].tolist()
 
-        for idx, smiles in enumerate(tqdm.tqdm(smiles_list)):
+        for idx, smiles in enumerate(smiles_list):
             try:
                 atom_fvs, incidence_list, bond_fvs = (
                     get_hypergraph_data_from_smiles(smiles)
