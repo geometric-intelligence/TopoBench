@@ -3,19 +3,30 @@
 # Dataset loader config
 loader:
   _target_: topobench.data.loaders.SemanticDatasetLoader
-  parameters: 
+  parameters:
+    n_subsampling: 1000
     data_domain: pointcloud
     data_type: semantic
     data_name: cifar10
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+    models:
+      - aimv2_1b_patch14_224.apple_pt
+      # - aimv2_1b_patch14_336.apple_pt
+      # - aimv2_1b_patch14_448.apple_pt
 
 # Dataset parameters
 parameters:
-  data_name: ${loader.parameters.data_name}
-  models:
-    - aimv2_1b_patch14_224.apple_pt
-    - aimv2_1b_patch14_336.apple_pt
-    - aimv2_1b_patch14_448.apple_pt
+  data_name: cifar10
+  num_features: 2048
+  num_nodes: 1000
+  num_classes: 10
+  loss_type: cross_entropy
+  monitor_metric: accuracy
+  task: classification
+  task_level: node
+  # Lifting parameters
+  max_dim_if_lifted: 3 # This is the maximum dimension of the simplicial complex in the dataset
+  preserve_edge_attr_if_lifted: True
 
 #splits
 split_params:

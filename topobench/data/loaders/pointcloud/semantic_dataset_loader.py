@@ -15,11 +15,14 @@ class SemanticDatasetLoader(AbstractLoader):
         Configuration parameters containing:
             - data_dir: Root directory for data.
             - data_name: Name of the dataset.
-            - models: a list of model names used to build semantic representations.
+            - models: a list of (neural) model names used to build semantic representations.
             - other relevant parameters.
     """
 
-    def __init__(self, parameters: DictConfig,) -> None:
+    def __init__(
+        self,
+        parameters: DictConfig,
+    ) -> None:
         super().__init__(parameters)
         self.parameters = parameters
 
@@ -55,13 +58,19 @@ class SemanticDatasetLoader(AbstractLoader):
         )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Some Variables
-    parameters: dict[str] = DictConfig({
-        'data_dir': 'example',
-        'data_name': 'cifar10',
-        'models': ['aimv2_1b_patch14_224.apple_pt', 'aimv2_1b_patch14_336.apple_pt', 'aimv2_1b_patch14_448.apple_pt'],
-    })
+    parameters: dict[str] = DictConfig(
+        {
+            "data_dir": "example",
+            "data_name": "cifar10",
+            "models": [
+                "aimv2_1b_patch14_224.apple_pt",
+                "aimv2_1b_patch14_336.apple_pt",
+                "aimv2_1b_patch14_448.apple_pt",
+            ],
+        }
+    )
 
     # Initialize a Semantic Dataset
     dataloader = SemanticDatasetLoader(parameters=parameters)
