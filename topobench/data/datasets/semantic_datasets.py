@@ -3,12 +3,11 @@
 import os.path as osp
 
 import torch
+from datasets import concatenate_datasets, load_dataset
 from omegaconf import DictConfig
 from torch_geometric.data import Data, InMemoryDataset
 from torch_geometric.io import fs
 from tqdm.auto import tqdm
-
-from datasets import concatenate_datasets, load_dataset
 
 
 class SemanticDataset(InMemoryDataset):
