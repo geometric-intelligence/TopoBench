@@ -1,6 +1,6 @@
 # location: topobench/data/loaders/graph/ws1000_gamma_dataset_loader.py
-
 from pathlib import Path
+
 from omegaconf import DictConfig
 
 from topobench.data.datasets import WS1000GammaDataset
@@ -19,16 +19,16 @@ class WS1000GammaDatasetLoader(AbstractLoader):
         contain at least the following fields:
 
         - ``data_domain`` : str  
-        - ``data_type`` : str  
-        - ``data_name`` : str  
-        - ``data_dir`` : str  
-        - ``num_nodes`` : int  
-        - ``feature_dim`` : int  
-        - ``mean_degree`` : int  
-        - ``beta`` : float  
-        - ``gamma`` : float  
-        - ``noise_scale`` : float  
-        - ``seed`` : int  
+        - ``data_type`` : str
+        - ``data_name`` : str
+        - ``data_dir`` : str
+        - ``num_nodes`` : int
+        - ``feature_dim`` : int
+        - ``mean_degree`` : int
+        - ``beta`` : float
+        - ``gamma`` : float
+        - ``noise_scale`` : float
+        - ``seed`` : int
     """
     def __init__(self, parameters: DictConfig) -> None:
         super().__init__(parameters)
