@@ -32,30 +32,30 @@ class WS1000GammaDataset(InMemoryDataset):
     b.- Node features are generated via **BFS parental dependence**:
       ``x_child = gamma * x_parent + noise_scale * z``, where ``z ~ N(0, I_d)``.
 
-    c.- The current implementation evaluates NODE-level distance classification  
-      (predict BFS distance to the root).  
+    c.- The current implementation evaluates NODE-level distance classification
+      (predict BFS distance to the root).
       EDGE prediction is NOT yet implemented.
 
     Dataset Structure
     -----------------
     The output is a single :class:`torch_geometric.data.Data` object with:
 
-    - ``x`` : ``[num_nodes, feature_dim]`` float tensor  
+    - ``x`` : ``[num_nodes, feature_dim]`` float tensor
     - ``edge_index`` : ``[2, 2 * num_edges]`` long tensor (undirected)
-    - ``y`` : ``[num_nodes]`` long tensor of BFS distances from the root node  
+    - ``y`` : ``[num_nodes]`` long tensor of BFS distances from the root node
     - metadata fields: ``gamma``, ``beta``, ``mean_degree``, ``feature_dim``, ``seed``
 
     Configuration Parameters
     ------------------------
     The dataset accepts the following Hydra parameters:
 
-    - ``num_nodes`` : int  
-    - ``feature_dim`` : int  
-    - ``mean_degree`` : int (must be even)  
-    - ``beta`` : float  
-    - ``gamma`` : float  
-    - ``noise_scale`` : float  
-    - ``seed`` : int  
+    - ``num_nodes`` : int
+    - ``feature_dim`` : int
+    - ``mean_degree`` : int (must be even)
+    - ``beta`` : float
+    - ``gamma`` : float
+    - ``noise_scale`` : float
+    - ``seed`` : int
 
     These are typically defined in:
 

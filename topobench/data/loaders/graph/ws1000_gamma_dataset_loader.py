@@ -18,7 +18,7 @@ class WS1000GammaDatasetLoader(AbstractLoader):
         ``dataset.loader.parameters`` in the Hydra config. It must
         contain at least the following fields:
 
-        - ``data_domain`` : str  
+        - ``data_domain`` : str
         - ``data_type`` : str
         - ``data_name`` : str
         - ``data_dir`` : str
