@@ -9,7 +9,7 @@ import random
 
 
 class WS1000GammaDataset(InMemoryDataset):
-	"""
+    """
 	WS1000-Gamma Synthetic Dataset
 	==============================
 
@@ -63,6 +63,7 @@ class WS1000GammaDataset(InMemoryDataset):
 	    ``configs/dataset/graph/WS1000-gamma.yaml``
 
 	"""
+    
     def __init__(
         self,
         root: str,
