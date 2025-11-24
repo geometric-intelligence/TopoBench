@@ -90,6 +90,7 @@ HYPERGRAPH_LOADERS_list = list(HYPERGRAPH_LOADERS.keys())
 __all__ = [
     # Loader collections
     "HYPERGRAPH_LOADERS",
+    "OMol25MetalsDatasetLoader",
     "HYPERGRAPH_LOADERS_list",
     # Individual loader classes
     *HYPERGRAPH_LOADERS.keys(),
