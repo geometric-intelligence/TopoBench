@@ -22,14 +22,19 @@ class ChordonomiconDataset(InMemoryDataset):
         and processed will be subdirectories of it.
     name : str
         Name of the dataset (e.g., 'Chordonomicon').
+    version : str
+        Version of the dataset, options are 'single_scale' or 'all_scales'.
     """
 
-    URL = "https://huggingface.co/datasets/PierrickLeKing/topobench-music-synergy/resolve/main/dataframe.zip"  # pylint: disable=line-too-long
-
-    def __init__(self, root, name):
+    def __init__(self, root, name, version):
         self.name = name
         self.root = root
+        self.version = version
         self.folder_chordonomicon = osp.join(self.root, self.name)
+        if self.version == "single_scale":
+            self.url = "https://huggingface.co/datasets/PierrickLeKing/topobench-music-synergy/resolve/main/dataframe_226.zip"  # pylint: disable=line-too-long
+        elif self.version == "all_scales":
+            self.url = "https://huggingface.co/datasets/PierrickLeKing/topobench-music-synergy/resolve/main/dataframe_4313.zip"  # pylint: disable=line-too-long
         super().__init__(
             root,
         )
@@ -43,7 +48,7 @@ class ChordonomiconDataset(InMemoryDataset):
         Raises:
             requests.exceptions.HTTPError: If the download fails.
         """
-        r = requests.get(self.URL, timeout=30)
+        r = requests.get(self.url, timeout=30)
         r.raise_for_status()
         with open(
             osp.join(self.folder_chordonomicon, "dataframe.zip"), "wb"
@@ -109,7 +114,12 @@ class ChordonomiconDataset(InMemoryDataset):
         list[str]
             List of raw file names.
         """
-        return ["dataframe.csv"]
+        if self.version == "single_scale":
+            return ["dataframe_226.csv"]
+        elif self.version == "all_scales":
+            return ["dataframe_4313.csv"]
+        else:
+            raise ValueError(f"Unknown version: {self.version}")
 
     @property
     def processed_file_names(self) -> str:
@@ -120,7 +130,12 @@ class ChordonomiconDataset(InMemoryDataset):
         str
             Processed file name.
         """
-        return "data.pt"
+        if self.version == "single_scale":
+            return "data_226.pt"
+        elif self.version == "all_scales":
+            return "data_4313.pt"
+        else:
+            raise ValueError(f"Unknown version: {self.version}")
 
     @property
     def raw_dir(self) -> str:

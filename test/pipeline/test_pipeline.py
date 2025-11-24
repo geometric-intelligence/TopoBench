@@ -23,37 +23,26 @@ class TestPipeline:
 
     def test_pipeline(self):
         """Test pipeline."""
+        
+        # configs
         config_dataset = OmegaConf.load("configs/dataset/hypergraph/chordonomicon.yaml")
-        config_dataset.split_params.data_split_dir = "datasets/data_splits/chordonomicon"
+        config_dataset.split_params.data_split_dir = f"datasets/data_splits/chordonomicon/{config_dataset.loader.parameters.version}"  # pylint: disable=line-too-long
         config_dataset.loader.parameters.data_dir = "datasets/hypergraph/chords"
-        config_loader = {"_target_":"topobench.data.loaders.ChordonomiconDatasetLoader",
-                        "parameters":
-                        {"data_domain": "hypergraph",
-                            "data_type": "chords",
-                            "data_name": "chordonomicon",
-                            "data_dir": "datasets/hypergraph/chords"
-                            }
-                        }
-
         config_evaluator = {"task": "regression",
                             "num_classes": config_dataset.parameters.num_classes,
                             "metrics": ["rmse", "mse", "mae"]}
-
-        config_loss = {
-            "dataset_loss": 
-                {
-                    "task": "regression", 
-                    "loss_type": "mse"
+        config_loss = {"dataset_loss":
+            {
+                "task": "regression", 
+                "loss_type": "mse"
                 }
-        }
-
+            }
         config_readout = {
             "hidden_dim": config_dataset.parameters.num_classes,
             "out_channels": config_dataset.parameters.num_classes,
             "task_level": config_dataset.parameters.task_level,
             "logits_linear_layer": False,
-        }
-
+            }
         config_optimizer = {"optimizer_id": "Adam",
                             "parameters":
                                 {"lr": 0.01,"weight_decay": 0.0005}
@@ -109,7 +98,7 @@ class TestPipeline:
                 return model_out
 
         # dataset
-        dataset_loader = instantiate(config_loader)
+        dataset_loader = instantiate(config_dataset.loader)
         dataset, dataset_dir = dataset_loader.load()
         preprocessor = PreProcessor(dataset, dataset_dir)
         dataset_train, dataset_val, dataset_test = preprocessor.load_dataset_splits(config_dataset.split_params)  #pylint: disable=line-too-long
@@ -121,7 +110,12 @@ class TestPipeline:
                 )
 
         # model
-        backbone = ModelPipeLine(dim_in_node=config_dataset.parameters.num_node_features+config_dataset.parameters.num_edge_features,  #pylint: disable=line-too-long
+        if config_dataset.loader.parameters.version == "single_scale":
+            input_dim = config_dataset.parameters.num_node_features_single_scale
+        elif config_dataset.loader.parameters.version == "all_scales":
+            input_dim = config_dataset.parameters.num_node_features_all_scales
+        input_dim += config_dataset.parameters.num_edge_features
+        backbone = ModelPipeLine(dim_in_node=input_dim,
                                 dim_hidden=10,
                                 dim_out=config_dataset.parameters.num_classes)
         loss = TBLoss(config_loss["dataset_loss"])
