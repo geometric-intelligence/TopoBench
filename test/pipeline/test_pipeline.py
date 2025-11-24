@@ -1,7 +1,6 @@
 """Test pipeline for a particular dataset and model."""
 
 import hydra
-from test._utils.simplified_pipeline import run
 import lightning as pl
 import torch
 from omegaconf import OmegaConf
@@ -21,7 +20,7 @@ class TestPipeline:
     def setup_method(self):
         """Setup method."""
         hydra.core.global_hydra.GlobalHydra.instance().clear()
-    
+
     def test_pipeline(self):
         """Test pipeline."""
         config_dataset = OmegaConf.load("configs/dataset/hypergraph/chordonomicon.yaml")
@@ -83,7 +82,7 @@ class TestPipeline:
                 self.linear_node_0 = torch.nn.Linear(dim_in_node, dim_hidden)
                 self.linear_hyperedge_0 = torch.nn.Linear(dim_hidden, dim_out)
 
-            def forward(self, batch):
+            def forward(self, batch):  #pylint: disable=arguments-differ
                 """Forward pass.
 
                 Parameters
@@ -96,7 +95,9 @@ class TestPipeline:
                 dict
                     Output dictionary containing node representation and hyperedge logits.
                 """
-                x_node = torch.concat((batch.x, torch.sparse.mm(batch.incidence_hyperedges, batch.x_hyperedges)), dim=1)
+                x_node = torch.concat((batch.x,
+                                torch.sparse.mm(batch.incidence_hyperedges, batch.x_hyperedges)),  #pylint: disable=not-callable
+                                      dim=1)
                 h_node = self.linear_node_0(x_node)
                 h_node = torch.relu(h_node)
                 h_hyperedge = torch.mm(batch.incidence_hyperedges.T, h_node)
@@ -111,17 +112,16 @@ class TestPipeline:
         dataset_loader = instantiate(config_loader)
         dataset, dataset_dir = dataset_loader.load()
         preprocessor = PreProcessor(dataset, dataset_dir)
-        dataset_train, dataset_val, dataset_test = preprocessor.load_dataset_splits(config_dataset.split_params)
+        dataset_train, dataset_val, dataset_test = preprocessor.load_dataset_splits(config_dataset.split_params)  #pylint: disable=line-too-long
         datamodule = TBDataloader(
                     dataset_train=dataset_train,
                     dataset_val=dataset_val,
                     dataset_test=dataset_test,
                     **config_dataset.get("dataloader_params", {}),
                 )
-        dataloader_train = datamodule.train_dataloader()
 
         # model
-        backbone = ModelPipeLine(dim_in_node=config_dataset.parameters.num_node_features+config_dataset.parameters.num_edge_features,
+        backbone = ModelPipeLine(dim_in_node=config_dataset.parameters.num_node_features+config_dataset.parameters.num_edge_features,  #pylint: disable=line-too-long
                                 dim_hidden=10,
                                 dim_out=config_dataset.parameters.num_classes)
         loss = TBLoss(config_loss["dataset_loss"])
@@ -137,7 +137,10 @@ class TestPipeline:
                         compile=False)
 
         # train
-        trainer = pl.Trainer(max_epochs=3, accelerator="cpu", enable_progress_bar=False, log_every_n_steps=1)
+        trainer = pl.Trainer(max_epochs=3,
+                             accelerator="cpu",
+                             enable_progress_bar=False,
+                             log_every_n_steps=1)
         trainer.fit(model, datamodule)
         trainer.test(model, datamodule)
         test_metrics = trainer.callback_metrics
