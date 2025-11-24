@@ -135,7 +135,7 @@ class WDNDataset(InMemoryDataset):
         extract_zip(path, self.raw_dir)
 
         # Delete zip file
-        os.unlink(path)
+        # os.unlink(path)
 
         # Remove unretained files
         retain_files = getattr(
