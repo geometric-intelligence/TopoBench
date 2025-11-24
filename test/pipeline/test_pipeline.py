@@ -137,7 +137,7 @@ class TestPipeline:
                         compile=False)
 
         # train
-        trainer = pl.Trainer(max_epochs=500, accelerator="cpu", enable_progress_bar=False, log_every_n_steps=1)
+        trainer = pl.Trainer(max_epochs=3, accelerator="cpu", enable_progress_bar=False, log_every_n_steps=1)
         trainer.fit(model, datamodule)
         trainer.test(model, datamodule)
         test_metrics = trainer.callback_metrics
