@@ -16,7 +16,6 @@ from topobench.data.datasets.wdn_dataset import (
     KY1Dataset,
     KY6Dataset,
     KY8Dataset,
-    KY10Dataset,
     LTownDataset,
     ModenaDataset,
 )
@@ -51,7 +50,6 @@ class WDNDatasetLoader(AbstractLoader):
         "ky1": KY1Dataset,
         "ky6": KY6Dataset,
         "ky8": KY8Dataset,
-        "ky10": KY10Dataset,
         "ltown": LTownDataset,
         "modena": ModenaDataset,
     }
