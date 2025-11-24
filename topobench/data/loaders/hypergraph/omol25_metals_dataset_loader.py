@@ -6,14 +6,16 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from torch.utils.data import random_split
+from omegaconf import DictConfig
+from torch.utils.data import Subset, random_split
 from torch_geometric.loader import DataLoader
 
 from topobench.data.datasets.omol25_metals_dataset import OMol25MetalsDataset
+from topobench.data.loaders.base import AbstractLoader
 
 
 @dataclass
-class OMol25MetalsDatasetLoader:
+class OMol25MetalsDatasetLoader(AbstractLoader):
     """Loader for the OMol25 metal-complex subset.
 
     Attributes
@@ -34,6 +36,26 @@ class OMol25MetalsDatasetLoader:
     data_type: str
     data_name: str
     data_dir: str
+
+    def __post_init__(self) -> None:
+        """Post-initialization setup required by the base AbstractLoader."""
+        # Create a DictConfig-like structure for the base class
+        self.parameters = DictConfig(
+            {
+                "data_dir": self.data_dir,
+                "data_name": self.data_name,
+            }
+        )
+
+    def load_dataset(self) -> OMol25MetalsDataset:
+        """Load the OMol25 metals dataset.
+
+        Returns
+        -------
+        OMol25MetalsDataset
+            The loaded dataset.
+        """
+        return self._load_full_dataset()
 
     def _get_dataset_root(self) -> Path:
         """Resolve the root path passed to :class:`OMol25MetalsDataset`.
@@ -211,3 +233,26 @@ class OMol25MetalsDatasetLoader:
         splits = self.get_splits(split_params)
         loaders = self.get_dataloaders(split_params, dataloader_params)
         return splits, loaders
+
+    def load(
+        self,
+        slice: int | None = None,
+    ) -> tuple[OMol25MetalsDataset, str]:
+        """Load the full dataset without splits.
+
+        Parameters
+        ----------
+        slice : int, optional
+            If provided, limit the dataset to the first ``slice`` samples
+            for quick testing. If None, load the entire dataset.
+
+        Returns
+        -------
+        tuple
+            Two-element tuple ``(dataset, data_dir)`` containing the loaded
+            dataset and the data directory path.
+        """
+        dataset = self._load_full_dataset()
+        if slice is not None and slice > 0:
+            dataset = Subset(dataset, range(min(slice, len(dataset))))
+        return dataset, str(self._get_dataset_root())
