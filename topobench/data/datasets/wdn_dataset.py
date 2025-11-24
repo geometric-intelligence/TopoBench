@@ -172,11 +172,12 @@ class WDNDataset(InMemoryDataset):
         # --- Build edge_index with edge IDs ---
         adj_list = attributes_data["adj_list"]
 
-        # Extract all unique nodes
+        # Extract all unique nodes and remap them to contiguous indices
         all_nodes = {src for src, _, _ in adj_list} | {
             dst for _, dst, _ in adj_list
         }
-        node_id_map = {old: i for i, old in enumerate(sorted(all_nodes))}
+        node_id_map = {node: i for i, node in enumerate(sorted(all_nodes))}
+        id_node_map_pivot = {v: k for k, v in node_id_map.items()}
 
         # Remap edges to integers and collect edge IDs
         edge_index_list = []
@@ -217,11 +218,13 @@ class WDNDataset(InMemoryDataset):
             df = pd.read_csv(csv_path, index_col=0)
             csv_columns[file_name] = df.columns.tolist()
             tensor = torch.tensor(df.values, dtype=torch.float32)
-            # reshape to (scenarios, duration, features)
+
+            # Reshape to (scenarios, duration, features)
             tensor = tensor.reshape(
                 total_scenarios, total_duration, df.shape[1]
             )
-            # select temporal subset
+
+            # Select temporal subset
             tensor = tensor[:num_scenarios, :num_instants, :]
             data_tensors[file_name] = tensor
 
@@ -281,7 +284,9 @@ class WDNDataset(InMemoryDataset):
                     tensor = tensor[
                         :,
                         [
-                            csv_columns[var_name].index(str(n))
+                            csv_columns[var_name].index(
+                                str(id_node_map_pivot[n])
+                            )
                             for n in node_order
                         ],
                     ]

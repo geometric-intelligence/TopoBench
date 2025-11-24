@@ -33,3 +33,9 @@ class TestPipeline:
                 )
                 run(cfg)
                 print('Done!')
+
+# --- Run the pipeline ---
+if __name__ == "__main__":
+    pipeline = TestPipeline()
+    pipeline.setup_method()
+    pipeline.test_pipeline()
