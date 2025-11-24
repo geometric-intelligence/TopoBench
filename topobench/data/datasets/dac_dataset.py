@@ -60,7 +60,16 @@ class DACDataset(InMemoryDataset):
         list[str]
             List of raw file names.
         """
-        return ["all_edges.pt", "all_x.pt", "y.pt"]
+        return [
+            "all_edges.pt",
+            "all_x.pt",
+            "y.pt",
+            "split_0.pt",
+            "split_1.pt",
+            "split_2.pt",
+            "split_3.pt",
+            "split_4.pt",
+        ]
 
     @property
     def processed_file_names(self):
