@@ -23,7 +23,7 @@ class TestPipeline:
 
     def test_pipeline(self):
         """Test pipeline."""
-        
+
         # configs
         config_dataset = OmegaConf.load("configs/dataset/hypergraph/chordonomicon.yaml")
         config_dataset.split_params.data_split_dir = f"datasets/data_splits/chordonomicon/{config_dataset.loader.parameters.version}"  # pylint: disable=line-too-long
@@ -110,11 +110,11 @@ class TestPipeline:
                 )
 
         # model
+        input_dim = config_dataset.parameters.num_edge_features
         if config_dataset.loader.parameters.version == "single_scale":
-            input_dim = config_dataset.parameters.num_node_features_single_scale
+            input_dim += config_dataset.parameters.num_node_features_single_scale
         elif config_dataset.loader.parameters.version == "all_scales":
-            input_dim = config_dataset.parameters.num_node_features_all_scales
-        input_dim += config_dataset.parameters.num_edge_features
+            input_dim += config_dataset.parameters.num_node_features_all_scales
         backbone = ModelPipeLine(dim_in_node=input_dim,
                                 dim_hidden=10,
                                 dim_out=config_dataset.parameters.num_classes)
