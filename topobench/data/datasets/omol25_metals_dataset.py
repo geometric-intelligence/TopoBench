@@ -29,7 +29,7 @@ class OMol25MetalsDataset(InMemoryDataset):
     """
 
     url: str = (
-        "https://github.nrel.gov/yqin/omol25_metals/raw/main/"
+        "https://github.com/demiqin/omol25_metals/raw/main/"
         "data/omol25_metals/subset/processed/data.pt"
     )
 
