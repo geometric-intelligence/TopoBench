@@ -169,28 +169,25 @@ class WDNDataset(InMemoryDataset):
         with open(attributes_path) as f:
             attributes_data = json.load(f)
 
-        # --- Build edge_index ---
+        # --- Build edge_index with edge IDs ---
         adj_list = attributes_data["adj_list"]
-        edge_index, _ = zip(
-            *[((int(src), int(dst)), eid) for src, dst, eid in adj_list],
-            strict=False,
-        )
+
+        # Extract all unique nodes
+        all_nodes = {src for src, _, _ in adj_list} | {
+            dst for _, dst, _ in adj_list
+        }
+        node_id_map = {old: i for i, old in enumerate(sorted(all_nodes))}
+
+        # Remap edges to integers and collect edge IDs
+        edge_index_list = []
+        edge_ids = []
+        for src, dst, eid in adj_list:
+            edge_index_list.append((node_id_map[src], node_id_map[dst]))
+            edge_ids.append(eid)
 
         edge_index = (
-            torch.tensor(edge_index, dtype=torch.long).t().contiguous()
+            torch.tensor(edge_index_list, dtype=torch.long).t().contiguous()
         )
-
-        # --- Remapping nodes to common ids ---
-        # Suppose original node IDs are in 'edge_index'
-        edge_index = edge_index.clone()
-
-        # Map node IDs to 0..num_nodes-1
-        unique_nodes = torch.unique(edge_index)
-        node_id_map = {old.item(): i for i, old in enumerate(unique_nodes)}
-
-        for i in range(edge_index.size(1)):
-            edge_index[0, i] = node_id_map[edge_index[0, i].item()]
-            edge_index[1, i] = node_id_map[edge_index[1, i].item()]
 
         # --- Scenarios and time-instants selection ---
         total_scenarios = attributes_data["gen_batch_size"]
@@ -212,20 +209,19 @@ class WDNDataset(InMemoryDataset):
 
         # --- Load all requested CSVs ---
         data_tensors = {}
+        csv_columns = {}  # store column names for each CSV
         for file_name in retain_files:
             csv_path = osp.join(self.raw_dir, f"{file_name}.csv")
             if not osp.exists(csv_path):
                 continue
             df = pd.read_csv(csv_path, index_col=0)
-            regressor_shape = df.shape[1]
-
-            # Convert to (num_scenarios, duration, n)
+            csv_columns[file_name] = df.columns.tolist()
             tensor = torch.tensor(df.values, dtype=torch.float32)
+            # reshape to (scenarios, duration, features)
             tensor = tensor.reshape(
-                total_scenarios, total_duration, regressor_shape
+                total_scenarios, total_duration, df.shape[1]
             )
-
-            # Select temporal subset
+            # select temporal subset
             tensor = tensor[:num_scenarios, :num_instants, :]
             data_tensors[file_name] = tensor
 
@@ -251,64 +247,74 @@ class WDNDataset(InMemoryDataset):
                 "friction_factor",
             ]
 
-        # --- Build graph samples ---
+        # --- Reorder node features according to node_id_map ---
+        unique_nodes = torch.unique(edge_index)
+        node_order = [n.item() for n in unique_nodes]
+
         graph_samples = []
         for i in range(num_scenarios):
             node_regressors, edge_regressors = [], []
             target_signals = []
 
-            # Separate by type and purpose
-            for var_name in regressors:
+            # Node features
+            for var_name in regressors + targets:
                 if var_name not in data_tensors:
                     continue
+                tensor = data_tensors[var_name][
+                    i
+                ]  # shape [T, num_edges or num_nodes]
                 if is_edge_var(var_name):
-                    edge_regressors.append(
-                        data_tensors[var_name][i].unsqueeze(0)
-                    )
+                    # Reorder columns to match edge_index order via edge_ids
+                    tensor = tensor[
+                        :,
+                        [
+                            csv_columns[var_name].index(str(eid))
+                            for eid in edge_ids
+                        ],
+                    ]
+                    if var_name in regressors:
+                        edge_regressors.append(tensor.unsqueeze(0))
+                    else:
+                        target_signals.append(tensor.unsqueeze(0))
                 else:
-                    node_regressors.append(
-                        data_tensors[var_name][i].unsqueeze(0)
-                    )
+                    # Node-level features: reorder according to node_order
+                    tensor = tensor[
+                        :,
+                        [
+                            csv_columns[var_name].index(str(n))
+                            for n in node_order
+                        ],
+                    ]
+                    if var_name in regressors:
+                        node_regressors.append(tensor.unsqueeze(0))
+                    else:
+                        target_signals.append(tensor.unsqueeze(0))
 
-            for var_name in targets:
-                if var_name not in data_tensors:
-                    continue
-                if is_edge_var(var_name):
-                    target_signals.append(
-                        data_tensors[var_name][i].unsqueeze(0)
-                    )
-                else:
-                    target_signals.append(
-                        data_tensors[var_name][i].unsqueeze(0)
-                    )
-
-            # Assemble node and edge attributes
+            # Assemble features
             x = torch.cat(node_regressors, dim=0) if node_regressors else None
             edge_attr = (
                 torch.cat(edge_regressors, dim=0) if edge_regressors else None
             )
-
-            # Assemble target signals
             y = torch.cat(target_signals, dim=0)
 
-            # Permute to shape [F, T, N] -> [N, F, T]
+            # Permute to [N, F, T]
             if x is not None and x.dim() == 3:
                 x = x.permute(2, 0, 1)
-
             if edge_attr is not None and edge_attr.dim() == 3:
                 edge_attr = edge_attr.permute(2, 0, 1)
-
             if y is not None and y.dim() == 3:
                 y = y.permute(2, 0, 1)
 
-            # Get ride of last channel if temporal parameter is False
+            # Drop last dim if temporal=False
             if not self.parameters.temporal:
-                x = x.squeeze(dim=2)
-                edge_attr = edge_attr.squeeze(dim=2)
-                y = y.squeeze(dim=2)
+                x = x.squeeze(-1) if x is not None else None
+                edge_attr = (
+                    edge_attr.squeeze(-1) if edge_attr is not None else None
+                )
+                y = y.squeeze(-1) if y is not None else None
 
-            # Label must be one-dimensional (only one feature supported currently)
-            y = y.squeeze(dim=1)
+            # Squeeze feature dim for targets (currently only one target allowed)
+            y = y.squeeze(1) if y is not None else None
 
             # Create Data object
             data = Data(
@@ -318,16 +324,12 @@ class WDNDataset(InMemoryDataset):
                 y=y,
             )
 
-            # Add a graph identifier for the chosen scenario
             data.scenario_id = i
-
-            # Collect generated graph samples
             graph_samples.append(data)
 
         # --- Collate and save ---
         self.data, self.slices = self.collate(graph_samples)
         self._data_list = None
-
         fs.torch_save(
             (self._data.to_dict(), self.slices, {}, self._data.__class__),
             self.processed_paths[0],
