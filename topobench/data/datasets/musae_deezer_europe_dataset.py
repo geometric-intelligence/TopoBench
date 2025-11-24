@@ -158,7 +158,7 @@ class MusaeDeezerEuropeDataset(InMemoryDataset):
     def process(self) -> None:
         r"""Handle the data for the dataset.
 
-        This method loads the US county demographics data, applies any pre-
+        This method loads the MUSAE Deezer Europe data, applies any pre-
         processing transformations if specified, and saves the processed data
         to the appropriate location.
         """
@@ -169,7 +169,7 @@ class MusaeDeezerEuropeDataset(InMemoryDataset):
         edge_index = torch.tensor(tmp, dtype=torch.long).t().contiguous()
         # Targets:
         tmp = pd.read_csv(osp.join(folder,"deezer_europe_target.csv")).sort_values("id")["target"].to_numpy()
-        y = torch.tensor(pd.Categorical(tmp, set(tmp)).codes, dtype=torch.long)
+        y = torch.tensor(tmp, dtype=torch.long)
         # Node features:
         with open(osp.join(folder,"deezer_europe_features.json")) as infile:
             featdict = json.load(infile)
