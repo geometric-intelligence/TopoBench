@@ -3,7 +3,7 @@
 import hydra
 from test._utils.simplified_pipeline import run
 
-DATASET = "graph/anytown"         # ADD YOUR DATASET HERE
+DATASET = "graph/WDN"     # ADD YOUR DATASET HERE
 MODELS   = ["graph/gcn", ]        # ADD ONE OR SEVERAL MODELS OF YOUR CHOICE HERE
 
 

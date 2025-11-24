@@ -7,18 +7,7 @@ from typing import Any
 from omegaconf import DictConfig
 from torch_geometric.data import Dataset
 
-from topobench.data.datasets.wdn_dataset import (
-    AnytownDataset,
-    BalermanDataset,
-    CTownDataset,
-    DTownDataset,
-    EXNDataset,
-    KY1Dataset,
-    KY6Dataset,
-    KY8Dataset,
-    LTownDataset,
-    ModenaDataset,
-)
+from topobench.data.datasets.wdn_dataset import WDNDataset
 from topobench.data.loaders.base import AbstractLoader
 
 
@@ -41,18 +30,18 @@ class WDNDatasetLoader(AbstractLoader):
 
     # This map routes a data_name to a class of WDNDataset
 
-    _DATASETS: dict[str, type[Any]] = {
-        "anytown": AnytownDataset,
-        "balerman": BalermanDataset,
-        "ctown": CTownDataset,
-        "dtown": DTownDataset,
-        "exn": EXNDataset,
-        "ky1": KY1Dataset,
-        "ky6": KY6Dataset,
-        "ky8": KY8Dataset,
-        "ltown": LTownDataset,
-        "modena": ModenaDataset,
-    }
+    _DATASETS: list[str, type[Any]] = [
+        "anytown",
+        "balerman",
+        "ctown",
+        "dtown",
+        "exn",
+        "ky1",
+        "ky6",
+        "ky8",
+        "ltown",
+        "modena",
+    ]
 
     def __init__(self, parameters: DictConfig) -> None:
         super().__init__(parameters)
@@ -73,15 +62,13 @@ class WDNDatasetLoader(AbstractLoader):
         """
         name = self.parameters.data_name.lower()
 
-        try:
-            dataset_cls = type(self)._DATASETS[name]
-        except KeyError as err:
+        if name not in type(self)._DATASETS:
             raise RuntimeError(
                 f"Unknown dataset '{name}'. "
-                f"Available datasets: {list(type(self)._DATASETS.keys())}"
-            ) from err
+                f"Available datasets: {type(self)._DATASETS}"
+            )
 
-        return dataset_cls(
+        return WDNDataset(
             root=str(self.root_data_dir),
             parameters=self.parameters,
         )

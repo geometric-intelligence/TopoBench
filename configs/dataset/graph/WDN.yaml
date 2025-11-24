@@ -4,7 +4,7 @@ loader:
   parameters: 
     data_domain: graph
     data_type: wdn_dataset
-    data_name: ky1
+    data_name: anytown                  # ['balerman','ctown','dtown','exn','ky1','ky6','ky8','ltown','modena']
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
     regressors: ["pressure", "demand", "flowrate"]  
     target: ["head"]

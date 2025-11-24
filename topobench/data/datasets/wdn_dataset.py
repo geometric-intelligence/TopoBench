@@ -28,12 +28,24 @@ class WDNDataset(InMemoryDataset):
 
     Attributes
     ----------
-    URLS (dict): Name of the specific dataset to be istantiated.
+    URLs (dict): Name of the specific dataset to be istantiated.
     FILE_FORMAT (dict): File format of the dataset.
     RAW_FILE_NAMES (dict): List of file names of the dataset.
     """
 
-    URL: ClassVar[str] = None
+    URLs: ClassVar = {
+        "anytown": "https://zenodo.org/records/11353195/files/simgen_Anytown_20240524_1202_csvdir_20240527_1205.zip?download=1",
+        "balerman": "https://zenodo.org/records/11353195/files/simgen_balerman_20240524_1233_csvdir_20240527_1205.zip?download=1",
+        "ctown": "https://zenodo.org/records/11353195/files/simgen_ctown_20240524_1231_csvdir_20240527_1208.zip?download=1",
+        "dtown": "https://zenodo.org/records/11353195/files/simgen_d-town_20240525_1755_csvdir_20240527_1210.zip?download=1",
+        "exn": "https://zenodo.org/records/11353195/files/simgen_EXN_20240525_0928_csvdir_20240527_1237.zip?download=1",
+        "ky1": "https://zenodo.org/records/11353195/files/simgen_ky1_20240524_1229_csvdir_20240527_1218.zip?download=1",
+        "ky6": "https://zenodo.org/records/11353195/files/simgen_ky6_20240524_1228_csvdir_20240527_1223.zip?download=1",
+        "ky8": "https://zenodo.org/records/11353195/files/simgen_ky8_20240524_1228_csvdir_20240527_1225.zip?download=1",
+        "ltown": "https://zenodo.org/records/11353195/files/simgen_L-TOWN_Real_20240524_1228_csvdir_20240527_1232.zip?download=1",
+        "modena": "https://zenodo.org/records/11353195/files/simgen_moderna_20240524_1230_csvdir_20240527_1212.zip?download=1",
+    }
+
     FILE_FORMAT: ClassVar[str] = "zip"
 
     def __init__(self, root: str, parameters: DictConfig) -> None:
@@ -116,14 +128,14 @@ class WDNDataset(InMemoryDataset):
         Raises:
             FileNotFoundError: If the dataset URL is not found.
         """
-        if self.URL is None or self.FILE_FORMAT is None:
+        if self.parameters.data_name not in self.URLs:
             raise FileNotFoundError(
-                f"URL or FILE_FORMAT not set for {self.parameters.data_name}"
+                f"URL not set for {self.parameters.data_name}"
             )
 
         # Download data from the source
         download_file_from_link(
-            file_link=self.URL,
+            file_link=self.URLs[self.parameters.data_name],
             path_to_save=self.raw_dir,
             dataset_name=self.parameters.data_name,
             file_format=self.FILE_FORMAT,
@@ -346,68 +358,68 @@ class WDNDataset(InMemoryDataset):
 # Subclasses for each dataset #
 
 
-class AnytownDataset(WDNDataset):
-    """Dataset generated with the Anytown WDN model."""
+# class AnytownDataset(WDNDataset):
+#     """Dataset generated with the Anytown WDN model."""
 
-    URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_Anytown_20240524_1202_csvdir_20240527_1205.zip?download=1"
-
-
-class BalermanDataset(WDNDataset):
-    """Dataset generated with the Balerma WDN model."""
-
-    URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_balerman_20240524_1233_csvdir_20240527_1205.zip?download=1"
+#     URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_Anytown_20240524_1202_csvdir_20240527_1205.zip?download=1"
 
 
-class CTownDataset(WDNDataset):
-    """Dataset generated with the C-Town WDN model."""
+# class BalermanDataset(WDNDataset):
+#     """Dataset generated with the Balerma WDN model."""
 
-    URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_ctown_20240524_1231_csvdir_20240527_1208.zip?download=1"
-
-
-class DTownDataset(WDNDataset):
-    """Dataset generated with the D-Town WDN model."""
-
-    URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_d-town_20240525_1755_csvdir_20240527_1210.zip?download=1"
+#     URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_balerman_20240524_1233_csvdir_20240527_1205.zip?download=1"
 
 
-class EXNDataset(WDNDataset):
-    """Dataset generated with the EXN WDN model."""
+# class CTownDataset(WDNDataset):
+#     """Dataset generated with the C-Town WDN model."""
 
-    URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_EXN_20240525_0928_csvdir_20240527_1237.zip?download=1"
-
-
-class KY1Dataset(WDNDataset):
-    """Dataset generated with the K1 WDN model."""
-
-    URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_ky1_20240524_1229_csvdir_20240527_1218.zip?download=1"
+#     URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_ctown_20240524_1231_csvdir_20240527_1208.zip?download=1"
 
 
-class KY6Dataset(WDNDataset):
-    """Dataset generated with the K6 WDN model."""
+# class DTownDataset(WDNDataset):
+#     """Dataset generated with the D-Town WDN model."""
 
-    URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_ky6_20240524_1228_csvdir_20240527_1223.zip?download=1"
-
-
-class KY8Dataset(WDNDataset):
-    """Dataset generated with the K8 WDN model."""
-
-    URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_ky8_20240524_1228_csvdir_20240527_1225.zip?download=1"
+#     URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_d-town_20240525_1755_csvdir_20240527_1210.zip?download=1"
 
 
-# This went offline
-# class KY10Dataset(WDNDataset):
-#     """Dataset generated with the K10 WDN model."""
+# class EXNDataset(WDNDataset):
+#     """Dataset generated with the EXN WDN model."""
 
-#     URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_ky10_20240524_1229_csvdir_20240527_1218.zip?download=1"
-
-
-class LTownDataset(WDNDataset):
-    """Dataset generated with the L-Town WDN model."""
-
-    URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_L-TOWN_Real_20240524_1228_csvdir_20240527_1232.zip?download=1"
+#     URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_EXN_20240525_0928_csvdir_20240527_1237.zip?download=1"
 
 
-class ModenaDataset(WDNDataset):
-    """Dataset generated with the Modena WDN model."""
+# class KY1Dataset(WDNDataset):
+#     """Dataset generated with the K1 WDN model."""
 
-    URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_moderna_20240524_1230_csvdir_20240527_1212.zip?download=1"
+#     URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_ky1_20240524_1229_csvdir_20240527_1218.zip?download=1"
+
+
+# class KY6Dataset(WDNDataset):
+#     """Dataset generated with the K6 WDN model."""
+
+#     URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_ky6_20240524_1228_csvdir_20240527_1223.zip?download=1"
+
+
+# class KY8Dataset(WDNDataset):
+#     """Dataset generated with the K8 WDN model."""
+
+#     URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_ky8_20240524_1228_csvdir_20240527_1225.zip?download=1"
+
+
+# # This went offline
+# # class KY10Dataset(WDNDataset):
+# #     """Dataset generated with the K10 WDN model."""
+
+# #     URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_ky10_20240524_1229_csvdir_20240527_1218.zip?download=1"
+
+
+# class LTownDataset(WDNDataset):
+#     """Dataset generated with the L-Town WDN model."""
+
+#     URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_L-TOWN_Real_20240524_1228_csvdir_20240527_1232.zip?download=1"
+
+
+# class ModenaDataset(WDNDataset):
+#     """Dataset generated with the Modena WDN model."""
+
+#     URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_moderna_20240524_1230_csvdir_20240527_1212.zip?download=1"
