@@ -119,9 +119,48 @@ def download_file_from_link(
     retries : int, optional
         Number of retry attempts if download fails. Defaults to 3.
 
+    Notes
+    -----
+    This function downloads files in 5MB chunks for memory efficiency. Progress is
+    reported every 10MB. Timeouts apply per chunk, not to the entire download,
+    making it suitable for very large files and slow connections.
+
+    If a download fails, it retries with exponential backoff (5s, 10s, 15s).
+
+    Examples
+    --------
+    Basic download:
+
+    >>> from topobench.data.utils import download_file_from_link
+    >>> download_file_from_link(
+    ...     file_link="https://example.com/dataset.tar.gz",
+    ...     path_to_save="./data/",
+    ...     dataset_name="my_dataset"
+    ... )
+
+    Download with custom timeout for slow servers:
+
+    >>> download_file_from_link(
+    ...     file_link="https://slow-server.com/dataset.zip",
+    ...     path_to_save="./data/",
+    ...     dataset_name="my_dataset",
+    ...     file_format="zip",
+    ...     timeout=300  # 5 minutes per chunk
+    ... )
+
+    Download with increased retries for unreliable connections:
+
+    >>> download_file_from_link(
+    ...     file_link="https://example.com/dataset.tar.gz",
+    ...     path_to_save="./data/",
+    ...     dataset_name="my_dataset",
+    ...     retries=5  # Try up to 5 times
+    ... )
+
     Raises
     ------
-    None
+    Exception
+        If download fails after all retry attempts.
     """
     # Ensure output directory exists
     os.makedirs(path_to_save, exist_ok=True)
