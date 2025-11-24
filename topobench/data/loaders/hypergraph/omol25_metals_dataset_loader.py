@@ -1,7 +1,6 @@
 """Dataset loader for OMol25 metals in hypergraph domain."""
 
 from collections.abc import Mapping
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -14,38 +13,33 @@ from topobench.data.datasets.omol25_metals_dataset import OMol25MetalsDataset
 from topobench.data.loaders.base import AbstractLoader
 
 
-@dataclass
 class OMol25MetalsDatasetLoader(AbstractLoader):
     """Loader for the OMol25 metal-complex subset.
 
-    Attributes
+    Parameters
     ----------
-    data_domain : str
-        Domain string used in configs (for example ``"hypergraph"``).
-    data_type : str
-        Dataset family identifier (for example ``"omol25"``).
-    data_name : str
-        Specific dataset name (for example ``"omol25_metals"``).
-    data_dir : str
-        Base directory where the data live. The dataset root is
-        ``data_dir / data_name`` and is expected to contain a
-        ``processed/data.pt`` file.
+    parameters : DictConfig
+        Configuration dictionary containing:
+            - data_domain: Domain string (e.g., "hypergraph")
+            - data_type: Dataset family identifier (e.g., "omol25_metals")
+            - data_name: Specific dataset name (e.g., "omol25_metals")
+            - data_dir: Base directory containing the dataset
     """
 
-    data_domain: str
-    data_type: str
-    data_name: str
-    data_dir: str
+    def __init__(self, parameters: DictConfig) -> None:
+        """Initialize the OMol25 metals dataset loader.
 
-    def __post_init__(self) -> None:
-        """Post-initialization setup required by the base AbstractLoader."""
-        # Create a DictConfig-like structure for the base class
-        self.parameters = DictConfig(
-            {
-                "data_dir": self.data_dir,
-                "data_name": self.data_name,
-            }
-        )
+        Parameters
+        ----------
+        parameters : DictConfig
+            Configuration parameters for the loader.
+        """
+        super().__init__(parameters)
+        # Extract parameters for convenience
+        self.data_domain = parameters.get("data_domain")
+        self.data_type = parameters.get("data_type")
+        self.data_name = parameters.get("data_name")
+        self.data_dir = parameters.get("data_dir")
 
     def load_dataset(self) -> OMol25MetalsDataset:
         """Load the OMol25 metals dataset.

@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import torch
+from omegaconf import DictConfig
 from torch_geometric.data import Data, InMemoryDataset
 
 from topobench.data.datasets.omol25_metals_dataset import OMol25MetalsDataset
@@ -86,10 +87,12 @@ def test_omol25_metals_loader_splits(tmp_path):
     _create_dummy_omol25_metals_root(base_dir)
 
     loader = OMol25MetalsDatasetLoader(
-        data_domain="hypergraph",
-        data_type="omol25_metals",
-        data_name="omol25_metals",
-        data_dir=str(base_dir),
+        parameters=DictConfig({
+            "data_domain": "hypergraph",
+            "data_type": "omol25_metals",
+            "data_name": "omol25_metals",
+            "data_dir": str(base_dir),
+        })
     )
 
     split_params = {
@@ -122,10 +125,12 @@ def test_omol25_metals_loader_dataloaders(tmp_path):
     _create_dummy_omol25_metals_root(base_dir)
 
     loader = OMol25MetalsDatasetLoader(
-        data_domain="hypergraph",
-        data_type="omol25_metals",
-        data_name="omol25_metals",
-        data_dir=str(base_dir),
+        parameters=DictConfig({
+            "data_domain": "hypergraph",
+            "data_type": "omol25_metals",
+            "data_name": "omol25_metals",
+            "data_dir": str(base_dir),
+        })
     )
 
     split_params = {

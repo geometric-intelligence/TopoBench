@@ -1,6 +1,7 @@
 """Pipeline test for OMol25 metals dataset loader and training."""
 
 import torch
+from omegaconf import DictConfig
 from torch import nn
 from torch_geometric.nn import GCNConv, global_mean_pool
 
@@ -31,10 +32,12 @@ def _make_omol25_metals_loaders(tmp_path):
     data_root.mkdir(parents=True, exist_ok=True)
 
     loader = OMol25MetalsDatasetLoader(
-        data_domain="hypergraph",
-        data_type="omol25_metals",
-        data_name="omol25_metals",
-        data_dir=str(data_root),
+        parameters=DictConfig({
+            "data_domain": "hypergraph",
+            "data_type": "omol25_metals",
+            "data_name": "omol25_metals",
+            "data_dir": str(data_root),
+        })
     )
 
     split_params = {
