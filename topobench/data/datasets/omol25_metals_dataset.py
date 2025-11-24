@@ -1,7 +1,9 @@
 """OMol25 metals dataset integration for TopoBench."""
 
 import os
+import time
 from collections.abc import Callable
+from urllib.error import URLError
 
 import torch
 from torch_geometric.data import InMemoryDataset, download_url
@@ -67,14 +69,49 @@ class OMol25MetalsDataset(InMemoryDataset):
     def download(self) -> None:
         """Download the preprocessed file into ``processed/data.pt``.
 
-        The file is fetched from the internal NREL GitHub URL defined in
-        :attr:`url`.
+        The file is fetched from the NREL GitHub URL defined in
+        :attr:`url`. Includes retry logic for network resilience.
         """
         os.makedirs(self.processed_dir, exist_ok=True)
-        local_path = download_url(self.url, self.processed_dir)
+
         target_path = self.processed_paths[0]
-        if os.path.abspath(local_path) != os.path.abspath(target_path):
-            os.replace(local_path, target_path)
+        max_retries = 3
+        retry_delay = 2  # seconds
+        last_error = None
+
+        for attempt in range(max_retries):
+            try:
+                # download_url returns the path to the downloaded file
+                # It extracts the filename from the URL, so we get a file
+                # named 'data.pt' in self.processed_dir
+                local_path = download_url(self.url, self.processed_dir)
+
+                # Ensure the downloaded file is at the expected location
+                if os.path.abspath(local_path) != os.path.abspath(target_path):
+                    # If names don't match, rename to expected name
+                    os.replace(local_path, target_path)
+                return  # Success
+            except URLError as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    print(
+                        f"Download attempt {attempt + 1} failed, retrying in {retry_delay}s..."
+                    )
+                    time.sleep(retry_delay)
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    print(
+                        f"Download attempt {attempt + 1} failed with error: {e}, retrying..."
+                    )
+                    time.sleep(retry_delay)
+
+        # If all retries failed, raise the last error
+        if last_error:
+            raise RuntimeError(
+                f"Failed to download {self.url} after {max_retries} "
+                f"attempts: {last_error}"
+            ) from last_error
 
     def process(self) -> None:
         """Convert raw data into processed form.
