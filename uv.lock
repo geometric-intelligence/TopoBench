@@ -3054,10 +3054,6 @@ dependencies = [
     { name = "tensorboard" },
     { name = "topomodelx" },
     { name = "toponetx" },
-    { name = "torch" },
-    { name = "torch-cluster" },
-    { name = "torch-scatter" },
-    { name = "torch-sparse" },
     { name = "tqdm" },
     { name = "trimesh" },
     { name = "wandb" },
@@ -3161,10 +3157,6 @@ requires-dist = [
     { name = "topobench", extras = ["lint", "test"], marker = "extra == 'dev'" },
     { name = "topomodelx", git = "https://github.com/pyt-team/TopoModelX.git" },
     { name = "toponetx", git = "https://github.com/pyt-team/TopoNetX.git" },
-    { name = "torch", specifier = "==2.3.0" },
-    { name = "torch-cluster" },
-    { name = "torch-scatter" },
-    { name = "torch-sparse" },
     { name = "tqdm" },
     { name = "trimesh" },
     { name = "wandb" },
@@ -3235,36 +3227,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/91/3c/98a9b901b40278b40a9ff5b9c6be387b20997269f929f2182d8845c94085/torch-2.3.0-cp311-cp311-manylinux2014_aarch64.whl", hash = "sha256:bce43af735c3da16cc14c7de2be7ad038e2fbf75654c2e274e575c6c05772ace", size = 88536251 },
     { url = "https://files.pythonhosted.org/packages/2a/b7/a3cf5fd40334b9785cc83ee0c96b50603026eb3aa70210a33729018e7029/torch-2.3.0-cp311-cp311-win_amd64.whl", hash = "sha256:729804e97b7cf19ae9ab4181f91f5e612af07956f35c8b2c8e9d9f3596a8e877", size = 159803952 },
     { url = "https://files.pythonhosted.org/packages/ad/08/c5e41eb22323db4a52260607598a207a2e1918916ae8201aa7a8ae005fcd/torch-2.3.0-cp311-none-macosx_11_0_arm64.whl", hash = "sha256:d24e328226d8e2af7cf80fcb1d2f1d108e0de32777fab4aaa2b37b9765d8be73", size = 60998957 },
-]
-
-[[package]]
-name = "torch-cluster"
-version = "1.6.3"
-source = { registry = "https://data.pyg.org/whl/torch-2.3.0+cpu.html" }
-dependencies = [
-    { name = "scipy" },
-]
-wheels = [
-    { url = "https://data.pyg.org/whl/torch-2.3.0%2Bcpu/torch_cluster-1.6.3-cp311-cp311-macosx_10_9_universal2.whl" },
-]
-
-[[package]]
-name = "torch-scatter"
-version = "2.1.2"
-source = { registry = "https://data.pyg.org/whl/torch-2.3.0+cpu.html" }
-wheels = [
-    { url = "https://data.pyg.org/whl/torch-2.3.0%2Bcpu/torch_scatter-2.1.2-cp311-cp311-macosx_10_9_universal2.whl" },
-]
-
-[[package]]
-name = "torch-sparse"
-version = "0.6.18"
-source = { registry = "https://data.pyg.org/whl/torch-2.3.0+cpu.html" }
-dependencies = [
-    { name = "scipy" },
-]
-wheels = [
-    { url = "https://data.pyg.org/whl/torch-2.3.0%2Bcpu/torch_sparse-0.6.18-cp311-cp311-macosx_11_0_universal2.whl" },
 ]
 
 [[package]]

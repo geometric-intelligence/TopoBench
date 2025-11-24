@@ -386,7 +386,7 @@ class ConjugatedMoleculeDataset(InMemoryDataset):
 if __name__ == "__main__":
     """
     Run this script to test the ConjugatedMoleculeDataset.
-    `uv run python -m topobench.data.datasets.conjugated_dataset`
+    `uv run python -m topobench.data.datasets.conjugated_molecule_datasets`
     """
     import rootutils
 
@@ -406,7 +406,7 @@ if __name__ == "__main__":
     print("Testing OCELOTv1 dataset...")
     try:
         dataset = ConjugatedMoleculeDataset(
-            root="data/test",
+            root="datasets/test",
             name="OCELOTv1",
         )
         print(

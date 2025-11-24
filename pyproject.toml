@@ -55,12 +55,6 @@ dependencies = [
     "toponetx @ git+https://github.com/pyt-team/TopoNetX.git",
     "lightning==2.4.0",
     "rdkit",
-
-    # UV-related fixes
-    "torch==2.3.0",
-    "torch-scatter",
-    "torch-sparse",
-    "torch-cluster",
 ]
 
 [project.optional-dependencies]
@@ -164,6 +158,3 @@ pythonpath = ["."]
 [tool.numpydoc_validation]
 checks = ["all", "GL01", "ES01", "EX01", "SA01"]
 exclude = ['\.undocumented_method$', '\.__init__$', '\.__repr__$']
-
-[tool.uv]
-find-links = ["https://data.pyg.org/whl/torch-2.3.0+cpu.html"]
