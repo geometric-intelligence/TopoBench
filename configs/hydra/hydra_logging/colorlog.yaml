@@ -1,0 +1,15 @@
+# @package hydra.hydra_logging
+
+version: 1
+formatters:
+  colorlog:
+    (): "colorlog.ColoredFormatter"
+    format: "[%(levelname)s] %(name)s - %(message)s"
+handlers:
+  console:
+    class: logging.StreamHandler
+    formatter: colorlog
+    stream: ext://sys.stdout
+root:
+  handlers: [console]
+  level: INFO

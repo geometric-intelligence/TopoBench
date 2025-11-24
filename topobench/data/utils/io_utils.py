@@ -3,6 +3,7 @@
 import json
 import os.path as osp
 import pickle
+import zipfile
 from urllib.parse import parse_qs, urlparse
 
 import numpy as np
@@ -113,6 +114,20 @@ def download_file_from_link(
         print("Download complete.")
     else:
         print("Failed to download the file.")
+
+
+def extract_zip(zip_file_path, extract_path):
+    """Extract a zip file to a specified path.
+
+    Parameters
+    ----------
+    zip_file_path : str
+        Path to the zip archive.
+    extract_path : str
+        Destination directory for extraction.
+    """
+    with zipfile.ZipFile(zip_file_path, "r") as zip_ref:
+        zip_ref.extractall(extract_path)
 
 
 def read_ndim_manifolds(
