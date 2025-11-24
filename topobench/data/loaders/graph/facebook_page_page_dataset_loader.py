@@ -2,7 +2,6 @@
 
 
 from omegaconf import DictConfig
-from torch_geometric.data import Dataset
 
 from topobench.data.datasets.facebook_page_page_dataset import (
     FacebookPagePageDataset,
@@ -24,7 +23,7 @@ class FacebookPagePageDatasetLoader(AbstractLoader):
     def __init__(self, parameters: DictConfig) -> None:
         super().__init__(parameters)
 
-    def load_dataset(self) -> Dataset:
+    def load_dataset(self) -> FacebookPagePageDataset:
         """Load FacebookPagePage Graph dataset.
 
         Returns
