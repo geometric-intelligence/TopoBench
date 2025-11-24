@@ -157,7 +157,7 @@ class LastFmAsiaDataset(InMemoryDataset):
     def process(self) -> None:
         r"""Handle the data for the dataset.
 
-        This method loads the US county demographics data, applies any pre-
+        This method loads the LastFM Asia data, applies any pre-
         processing transformations if specified, and saves the processed data
         to the appropriate location.
         """

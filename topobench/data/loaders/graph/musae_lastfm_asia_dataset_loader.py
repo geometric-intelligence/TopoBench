@@ -2,7 +2,6 @@
 
 
 from omegaconf import DictConfig
-from torch_geometric.data import Dataset
 
 from topobench.data.datasets.musae_lastfm_asia_dataset import (
     LastFmAsiaDataset,
@@ -24,7 +23,7 @@ class LastFmAsiaDatasetLoader(AbstractLoader):
     def __init__(self, parameters: DictConfig) -> None:
         super().__init__(parameters)
 
-    def load_dataset(self) -> Dataset:
+    def load_dataset(self) -> LastFmAsiaDataset:
         """Load LastFM Asia Graph dataset.
 
         Returns
