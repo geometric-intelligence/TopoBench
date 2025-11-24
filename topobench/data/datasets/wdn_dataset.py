@@ -394,10 +394,11 @@ class KY8Dataset(WDNDataset):
     URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_ky8_20240524_1228_csvdir_20240527_1225.zip?download=1"
 
 
-class KY10Dataset(WDNDataset):
-    """Dataset generated with the K10 WDN model."""
+# This went offline
+# class KY10Dataset(WDNDataset):
+#     """Dataset generated with the K10 WDN model."""
 
-    URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_ky10_20240524_1229_csvdir_20240527_1218.zip?download=1"
+#     URL: ClassVar = "https://zenodo.org/records/11353195/files/simgen_ky10_20240524_1229_csvdir_20240527_1218.zip?download=1"
 
 
 class LTownDataset(WDNDataset):
