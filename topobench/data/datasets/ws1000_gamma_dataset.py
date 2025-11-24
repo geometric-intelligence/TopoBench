@@ -1,11 +1,10 @@
 import os
 import os.path as osp
-from typing import List
+import random
+from collections import deque
 
 import torch
-from torch_geometric.data import InMemoryDataset, Data
-from collections import deque
-import random
+from torch_geometric.data import Data, InMemoryDataset
 
 
 class WS1000GammaDataset(InMemoryDataset):
@@ -109,12 +108,12 @@ class WS1000GammaDataset(InMemoryDataset):
     # Required PyG properties
     # ---------------------------------------------------------------------
     @property
-    def raw_file_names(self) -> List[str]:
+    def raw_file_names(self) -> list[str]:
         # Dummy file to satisfy InMemoryDataset's bookkeeping.
         return ["synthetic.done"]
 
     @property
-    def processed_file_names(self) -> List[str]:
+    def processed_file_names(self) -> list[str]:
         return ["data_v1.pt"]
 
     # ---------------------------------------------------------------------
