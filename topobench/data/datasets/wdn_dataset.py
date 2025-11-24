@@ -121,6 +121,7 @@ class WDNDataset(InMemoryDataset):
                 f"URL or FILE_FORMAT not set for {self.parameters.data_name}"
             )
 
+        # Download data from the source
         download_file_from_link(
             file_link=self.URL,
             path_to_save=self.raw_dir,
@@ -132,10 +133,11 @@ class WDNDataset(InMemoryDataset):
         path = osp.join(
             self.raw_dir, f"{self.parameters.data_name}.{self.FILE_FORMAT}"
         )
+
         extract_zip(path, self.raw_dir)
 
         # Delete zip file
-        # os.unlink(path)
+        os.unlink(path)
 
         # Remove unretained files
         retain_files = getattr(
