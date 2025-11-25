@@ -250,3 +250,156 @@ class TestATLASDatasetPropertiesValues:
         from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
         dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01)
         assert 'train' in str(dataset.raw_file_names)
+
+class TestATLASDatasetExpectedFilenames:
+    """Test _expected_filenames method comprehensively for full coverage."""
+
+    def test_expected_filenames_zero_padding(self):
+        """Test filenames have correct zero-padding (000, 001, etc.)."""
+        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
+        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01)
+        filenames = dataset._expected_filenames()
+        # Check that first file is 000, properly zero-padded
+        assert 'train_nominal_000.h5.gz' in filenames[0]
+        # If we have more than 1 file, check second one too
+        if len(filenames) > 1:
+            assert 'train_nominal_001.h5.gz' in filenames[1]
+
+    def test_expected_filenames_starts_from_zero(self):
+        """Test filename numbering starts from 0."""
+        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
+        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01)
+        filenames = dataset._expected_filenames()
+        # First filename should contain _000
+        assert '_000.h5.gz' in filenames[0]
+
+    def test_expected_filenames_sequential_numbering(self):
+        """Test filenames are numbered sequentially."""
+        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
+        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.02)
+        filenames = dataset._expected_filenames()
+        # Extract numbers from filenames and verify they're sequential
+        numbers = []
+        for filename in filenames:
+            # Extract number from train_nominal_XXX.h5.gz
+            num_str = filename.split('_')[-1].replace('.h5.gz', '')
+            numbers.append(int(num_str))
+        
+        # Check sequential: 0, 1, 2, ...
+        expected = list(range(len(filenames)))
+        assert numbers == expected
+
+    def test_expected_filenames_full_dataset(self):
+        """Test _expected_filenames with subset=1.0 (full dataset)."""
+        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
+        dataset_train = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=1.0)
+        filenames_train = dataset_train._expected_filenames()
+        # Should return 930 files for train
+        assert len(filenames_train) == 930
+        
+        dataset_test = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='test', subset=1.0)
+        filenames_test = dataset_test._expected_filenames()
+        # Should return 100 files for test
+        assert len(filenames_test) == 100
+
+    def test_expected_filenames_minimum_one_file(self):
+        """Test _expected_filenames returns at least 1 file even with tiny subset."""
+        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
+        # Even with very small subset, should get at least 1 file
+        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.001)
+        filenames = dataset._expected_filenames()
+        assert len(filenames) >= 1
+
+    def test_expected_filenames_different_splits_have_different_prefixes(self):
+        """Test train and test splits have different filename prefixes."""
+        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
+        dataset_train = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01)
+        dataset_test = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='test', subset=0.01)
+        
+        filenames_train = dataset_train._expected_filenames()
+        filenames_test = dataset_test._expected_filenames()
+        
+        # Train filenames should have 'train_nominal' prefix
+        assert all('train_nominal' in fn for fn in filenames_train)
+        # Test filenames should have 'test_nominal' prefix
+        assert all('test_nominal' in fn for fn in filenames_test)
+
+    def test_expected_filenames_calculation_logic(self):
+        """Test the calculation logic: max(1, min(total, int(round(total * subset))))."""
+        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
+        
+        # Test with 10% of train data (930 * 0.1 = 93)
+        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.1)
+        filenames = dataset._expected_filenames()
+        assert len(filenames) == 93
+        
+        # Test with 50% of test data (100 * 0.5 = 50)
+        dataset_test = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='test', subset=0.5)
+        filenames_test = dataset_test._expected_filenames()
+        assert len(filenames_test) == 50
+
+    def test_expected_filenames_exact_format(self):
+        """Test exact filename format matches specification."""
+        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
+        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01)
+        filenames = dataset._expected_filenames()
+        
+        # Each filename should match: {split}_nominal_{number:03d}.h5.gz
+        import re
+        pattern = r'^train_nominal_\d{3}\.h5\.gz$'
+        for filename in filenames:
+            assert re.match(pattern, filename), f"Filename {filename} doesn't match expected pattern"
+
+    def test_expected_filenames_list_comprehension_coverage(self):
+        """Test that exercises the list comprehension on line 278."""
+        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
+        
+        # Create dataset that will generate multiple files
+        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.05)
+        filenames = dataset._expected_filenames()
+        
+        # Verify the list comprehension generates correct range
+        n_files = len(filenames)
+        assert n_files > 1  # Make sure we have multiple files
+        
+        # Verify each index from 0 to n-1 is represented
+        for i in range(n_files):
+            expected_filename = f"train_nominal_{i:03d}.h5.gz"
+            assert expected_filename in filenames[i]
+
+
+class TestATLASDatasetTotalFilesForSplit:
+    """Test _total_files_for_split method for complete coverage."""
+
+    def test_total_files_for_split_train_exact_value(self):
+        """Test train split returns exactly 930 files."""
+        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
+        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01)
+        total = dataset._total_files_for_split()
+        assert total == 930
+        assert isinstance(total, int)
+
+    def test_total_files_for_split_test_exact_value(self):
+        """Test test split returns exactly 100 files."""
+        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
+        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='test', subset=0.01)
+        total = dataset._total_files_for_split()
+        assert total == 100
+        assert isinstance(total, int)
+
+    def test_total_files_consistent_across_calls(self):
+        """Test _total_files_for_split returns same value on multiple calls."""
+        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
+        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01)
+        first_call = dataset._total_files_for_split()
+        second_call = dataset._total_files_for_split()
+        assert first_call == second_call
+
+    def test_total_files_independent_of_subset(self):
+        """Test _total_files_for_split is independent of subset parameter."""
+        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
+        small_subset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01)
+        large_subset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.5)
+        
+        # Both should return same total (subset doesn't affect total count)
+        assert small_subset._total_files_for_split() == large_subset._total_files_for_split()
