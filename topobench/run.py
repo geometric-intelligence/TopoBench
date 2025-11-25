@@ -166,8 +166,9 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
     log.info("Instantiating preprocessor...")
     transform_config = cfg.get("transforms", None)
     preprocessor = PreProcessor(dataset, dataset_dir, transform_config)
+    task_level = cfg.dataset.parameters.get("task_level", None)
     dataset_train, dataset_val, dataset_test = (
-        preprocessor.load_dataset_splits(cfg.dataset.split_params)
+        preprocessor.load_dataset_splits(cfg.dataset.split_params, task_level=task_level)
     )
     # Prepare datamodule
     log.info("Instantiating datamodule...")
@@ -186,6 +187,7 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
     model: LightningModule = hydra.utils.instantiate(
         cfg.model,
         evaluator=cfg.evaluator,
+        learning_setting=cfg.dataset.split_params.learning_setting,
         optimizer=cfg.optimizer,
         loss=cfg.loss,
     )

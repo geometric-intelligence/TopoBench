@@ -224,7 +224,7 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             self.data = data_cls.from_dict(data)
 
     def load_dataset_splits(
-        self, split_params
+        self, split_params, task_level=None
     ) -> tuple[
         DataloadDataset, DataloadDataset | None, DataloadDataset | None
     ]:
@@ -234,6 +234,8 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         ----------
         split_params : dict
             Parameters for loading the dataset splits.
+        task_level : str, optional
+            Task level ('node' or 'graph'). Used to determine split strategy.
 
         Returns
         -------
@@ -244,7 +246,7 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             raise ValueError("No learning setting specified in split_params")
 
         if split_params.learning_setting == "inductive":
-            return load_inductive_splits(self, split_params)
+            return load_inductive_splits(self, split_params, task_level=task_level)
         elif split_params.learning_setting == "transductive":
             return load_transductive_splits(self, split_params)
         else:
