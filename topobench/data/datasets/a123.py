@@ -30,10 +30,19 @@ from torch_geometric.utils import to_undirected
 
 from topobench.data.utils import download_file_from_link
 from topobench.data.utils.io_utils import collect_mat_files, process_mat
+from topobench.data.utils.triangle_classifier import (
+    TriangleClassifier as BaseTriangleClassifier,
+)
 
 
-class TriangleClassifier:
-    """Helper class for extracting and classifying triangles in correlation graphs.
+class TriangleClassifier(BaseTriangleClassifier):
+    """A123-specific triangle classifier for auditory cortex data.
+
+    Extends TriangleClassifier with domain-specific role classification based on:
+    - Embedding class: determined by number of common neighbors (core, bridge, isolated)
+    - Weight class: determined by edge correlation strengths (strong, medium, weak)
+
+    This produces 9 classes combining embedding × weight classes.
 
     Parameters
     ----------
@@ -42,123 +51,14 @@ class TriangleClassifier:
     """
 
     def __init__(self, min_weight: float = 0.2):
-        """Initialize triangle classifier.
+        """Initialize A123 triangle classifier.
 
         Parameters
         ----------
         min_weight : float, optional
             Minimum correlation to consider as edge, by default 0.2
         """
-        self.min_weight = min_weight
-
-    def enumerate_triangles(self, G: nx.Graph) -> list:
-        """Enumerate all triangles in a graph using efficient O(n^3) enumeration.
-
-        Parameters
-        ----------
-        G : nx.Graph
-            NetworkX graph object with edges and optional weights.
-
-        Returns
-        -------
-        list of tuple
-            Each tuple is (a, b, c) representing a triangle.
-        """
-        triangles = []
-        nodes = list(G.nodes())
-        for i, a in enumerate(nodes):
-            neighbors_a = set(G.neighbors(a))
-            for j, b in enumerate(nodes[i + 1 :], start=i + 1):
-                if b not in neighbors_a:
-                    continue
-                neighbors_b = set(G.neighbors(b))
-                for c in nodes[j + 1 :]:
-                    if c in neighbors_a and c in neighbors_b:
-                        # Found triangle (a,b,c)
-                        triangles.append((a, b, c))  # noqa: PERF401 (conditional append, not extend)
-
-        return triangles
-
-    def classify_and_weight_triangles(
-        self, triangles: list, G: nx.Graph
-    ) -> list:
-        """Classify triangles and add edge weights and role information.
-
-        Parameters
-        ----------
-        triangles : list of tuple
-            List of triangles, each as (a, b, c) node indices.
-        G : nx.Graph
-            NetworkX graph with edge weights and adjacency information.
-
-        Returns
-        -------
-        list of dict
-            Each dict contains {'nodes': (a,b,c), 'edge_weights': [w1,w2,w3], 'role': str, 'label': int}.
-        """
-        triangle_data = []
-        for nodes in triangles:
-            a, b, c = nodes
-
-            # Get edge weights
-            w_ab = G[a][b].get("weight", self.min_weight)
-            w_bc = G[b][c].get("weight", self.min_weight)
-            w_ac = G[a][c].get("weight", self.min_weight)
-            edge_weights_tri = [w_ab, w_bc, w_ac]
-
-            # Classify role
-            role = self._classify_role(G, nodes, edge_weights_tri)
-
-            triangle_data.append(
-                {
-                    "nodes": nodes,
-                    "edge_weights": edge_weights_tri,
-                    "role": role,
-                    "label": self._role_to_label(role),
-                }
-            )
-
-        return triangle_data
-
-    def extract_triangles(
-        self,
-        edge_index: torch.Tensor,
-        edge_weights: torch.Tensor,
-        num_nodes: int,
-    ) -> list:
-        """Extract all triangles from graph (convenience method).
-
-        Combines enumerate_triangles and classify_and_weight_triangles.
-
-        Parameters
-        ----------
-        edge_index : torch.Tensor
-            Edge connectivity, shape (2, num_edges).
-        edge_weights : torch.Tensor
-            Correlation values for each edge, shape (num_edges,).
-        num_nodes : int
-            Number of nodes.
-
-        Returns
-        -------
-        list of dict
-            Each dict contains {'nodes': (a,b,c), 'edge_weights': [w1,w2,w3], 'role': str, 'label': int}.
-        """
-        # Build networkx graph
-        G = nx.Graph()
-        G.add_nodes_from(range(num_nodes))
-
-        for i in range(edge_index.shape[1]):
-            u = edge_index[0, i].item()
-            v = edge_index[1, i].item()
-            w = edge_weights[i].item()
-            G.add_edge(u, v, weight=w)
-
-        # Enumerate and classify triangles
-        triangles = self.enumerate_triangles(G)
-        triangle_data = self.classify_and_weight_triangles(triangles, G)
-
-        return triangle_data
+        super().__init__(min_weight=min_weight)
 
     def _classify_role(
         self, G: nx.Graph, nodes: tuple, edge_weights: list

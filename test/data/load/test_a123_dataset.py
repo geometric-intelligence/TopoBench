@@ -21,6 +21,88 @@ from topobench.data.datasets.a123 import A123CortexMDataset, TriangleClassifier
 from topobench.data.loaders.graph.a123_loader import A123DatasetLoader
 
 
+def pytest_addoption(parser):
+    """Add command-line options for pytest.
+
+    Parameters
+    ----------
+    parser : pytest.Parser
+        Pytest command-line parser.
+    """
+    parser.addoption(
+        "--specific-task",
+        action="store",
+        default=None,
+        help="Filter tests by specific_task type: classification, triangle_classification, triangle_common_neighbors. "
+        "If not specified, ALL tests run.",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip tests that don't match the specified task type.
+
+    Parameters
+    ----------
+    config : pytest.Config
+        Pytest configuration object.
+    items : list
+        List of collected test items.
+    """
+    task = config.getoption("--specific-task")
+    if not task:
+        return
+
+    # Map task types to test class names
+    task_mapping = {
+        "classification": [
+            "TestA123GraphDataset",
+            "TestA123Configuration",
+            "TestA123DataIntegrity",
+        ],
+        "triangle_classification": [
+            "TestTriangleClassifier",
+            "TestTriangleTask",
+        ],
+        "triangle_common_neighbors": ["TestTriangleCommonNeighborsTask"],
+    }
+
+    if task not in task_mapping:
+        raise ValueError(
+            f"Invalid --specific-task '{task}'. "
+            f"Must be one of: {', '.join(task_mapping.keys())}"
+        )
+
+    allowed_classes = set(task_mapping[task])
+    skipped = 0
+    kept = 0
+
+    for item in items:
+        # Extract class name from item nodeid
+        # nodeid format: path/to/file.py::ClassName::test_method_name
+        class_name = None
+        if "::" in item.nodeid:
+            parts = item.nodeid.split("::")
+            if len(parts) >= 2:
+                class_name = parts[1]
+
+        if class_name and class_name not in allowed_classes:
+            item.add_marker(
+                pytest.mark.skip(
+                    reason=f"Test class {class_name} not for task '{task}'"
+                )
+            )
+            skipped += 1
+        else:
+            kept += 1
+
+    if kept > 0 or skipped > 0:
+        print(f"\n{'=' * 70}")
+        print(f"[Task Filter] Task: '{task}'")
+        print(f"  ✓ Kept:   {kept} tests  - {', '.join(allowed_classes)}")
+        print(f"  ✗ Skipped: {skipped} tests")
+        print(f"{'=' * 70}\n")
+
+
 class TestA123GraphDataset:
     """Test suite for A123 graph-level dataset."""
 
@@ -33,9 +115,7 @@ class TestA123GraphDataset:
     def test_dataset_loading(self):
         """Test basic dataset loading and instantiation."""
         with hydra.initialize(
-            version_base="1.3",
-            config_path=self.config_path,
-            job_name="test"
+            version_base="1.3", config_path=self.config_path, job_name="test"
         ):
             cfg = hydra.compose(
                 config_name="run.yaml",
@@ -50,7 +130,9 @@ class TestA123GraphDataset:
             # Instantiate loader
             loader = hydra.utils.instantiate(cfg.dataset.loader)
             # Check loader type using class name to handle module reloading issues
-            assert type(loader).__name__ == "A123DatasetLoader" or hasattr(loader, "load_dataset")
+            assert type(loader).__name__ == "A123DatasetLoader" or hasattr(
+                loader, "load_dataset"
+            )
 
             # Load dataset
             dataset = loader.load_dataset()
@@ -61,9 +143,7 @@ class TestA123GraphDataset:
     def test_graph_dataset_properties(self):
         """Test graph-level dataset has correct properties."""
         with hydra.initialize(
-            version_base="1.3",
-            config_path=self.config_path,
-            job_name="test"
+            version_base="1.3", config_path=self.config_path, job_name="test"
         ):
             cfg = hydra.compose(
                 config_name="run.yaml",
@@ -84,7 +164,9 @@ class TestA123GraphDataset:
             # Note: InMemoryDataset doesn't expose num_graphs directly; it uses slices internally
 
             # Check feature dimensions
-            assert dataset.num_node_features == 3  # mean_corr, std_corr, noise_diag
+            assert (
+                dataset.num_node_features == 3
+            )  # mean_corr, std_corr, noise_diag
             assert dataset.num_classes == 9  # 9 frequency bins
 
             # Check data integrity
@@ -99,9 +181,7 @@ class TestA123GraphDataset:
     def test_graph_node_features(self):
         """Test that node features are correctly structured."""
         with hydra.initialize(
-            version_base="1.3",
-            config_path=self.config_path,
-            job_name="test"
+            version_base="1.3", config_path=self.config_path, job_name="test"
         ):
             cfg = hydra.compose(
                 config_name="run.yaml",
@@ -121,6 +201,7 @@ class TestA123GraphDataset:
             assert x.shape[1] == 3  # 3 features per node
             assert torch.isfinite(x).all()  # No NaN or Inf values
 
+
 class TestA123Configuration:
     """Test suite for A123 configuration integrity."""
 
@@ -133,9 +214,7 @@ class TestA123Configuration:
     def test_dataset_parameters(self):
         """Test that all required dataset parameters are configured."""
         with hydra.initialize(
-            version_base="1.3",
-            config_path=self.config_path,
-            job_name="test"
+            version_base="1.3", config_path=self.config_path, job_name="test"
         ):
             cfg = hydra.compose(
                 config_name="run.yaml",
@@ -166,9 +245,7 @@ class TestA123Configuration:
     def test_loader_parameters(self):
         """Test that loader configuration is correct."""
         with hydra.initialize(
-            version_base="1.3",
-            config_path=self.config_path,
-            job_name="test"
+            version_base="1.3", config_path=self.config_path, job_name="test"
         ):
             cfg = hydra.compose(
                 config_name="run.yaml",
@@ -208,9 +285,7 @@ class TestA123DataIntegrity:
     def test_feature_format(self):
         """Test that features are in correct format."""
         with hydra.initialize(
-            version_base="1.3",
-            config_path=self.config_path,
-            job_name="test"
+            version_base="1.3", config_path=self.config_path, job_name="test"
         ):
             cfg = hydra.compose(
                 config_name="run.yaml",
@@ -233,9 +308,7 @@ class TestA123DataIntegrity:
     def test_edge_index_format(self):
         """Test that edge indices are correctly formatted."""
         with hydra.initialize(
-            version_base="1.3",
-            config_path=self.config_path,
-            job_name="test"
+            version_base="1.3", config_path=self.config_path, job_name="test"
         ):
             cfg = hydra.compose(
                 config_name="run.yaml",
@@ -259,9 +332,7 @@ class TestA123DataIntegrity:
     def test_labels_format(self):
         """Test that labels are correctly formatted."""
         with hydra.initialize(
-            version_base="1.3",
-            config_path=self.config_path,
-            job_name="test"
+            version_base="1.3", config_path=self.config_path, job_name="test"
         ):
             cfg = hydra.compose(
                 config_name="run.yaml",
@@ -281,6 +352,7 @@ class TestA123DataIntegrity:
             assert y.dtype == torch.long
             assert torch.all(y >= 0)
             assert torch.all(y < dataset.num_classes)
+
 
 class TestTriangleClassifier:
     """Test suite for TriangleClassifier helper class."""
@@ -335,7 +407,7 @@ class TestTriangleClassifier:
         # Test role classification with the graph
         nodes = (0, 1, 2)
         edge_weights = [0.8, 0.7, 0.6]
-        
+
         role = classifier._classify_role(G, nodes, edge_weights)
         assert role is not None
         assert isinstance(role, str)
@@ -348,11 +420,14 @@ class TestTriangleClassifier:
         # Create a simple graph: complete triangle (3-clique)
         # Nodes: 0, 1, 2
         # Edges: (0,1), (1,2), (0,2)
-        edge_index = torch.tensor([[0, 1, 0, 1, 2, 0],
-                                   [1, 0, 2, 2, 1, 2]])  # Undirected edges
+        edge_index = torch.tensor(
+            [[0, 1, 0, 1, 2, 0], [1, 0, 2, 2, 1, 2]]
+        )  # Undirected edges
         edge_weights = torch.tensor([0.9, 0.9, 0.8, 0.8, 0.9, 0.9])
 
-        triangles = classifier.extract_triangles(edge_index, edge_weights, num_nodes=3)
+        triangles = classifier.extract_triangles(
+            edge_index, edge_weights, num_nodes=3
+        )
 
         # Should find at least one triangle
         assert len(triangles) > 0
@@ -384,9 +459,7 @@ class TestTriangleTask:
     def test_triangle_task_configuration(self):
         """Test that triangle task is properly configured."""
         with hydra.initialize(
-            version_base="1.3",
-            config_path=self.config_path,
-            job_name="test"
+            version_base="1.3", config_path=self.config_path, job_name="test"
         ):
             cfg = hydra.compose(
                 config_name="run.yaml",
@@ -403,19 +476,21 @@ class TestTriangleTask:
             assert hasattr(cfg.dataset.parameters, "specific_task")
             specific_task = cfg.dataset.parameters.specific_task
             assert isinstance(specific_task, str)
-            
+
             # Valid tasks include triangle_classification
-            assert specific_task in ["classification", "triangle_classification", "triangle_common_neighbors"]
-            
+            assert specific_task in [
+                "classification",
+                "triangle_classification",
+                "triangle_common_neighbors",
+            ]
+
             # All tasks use 9 classes
             assert cfg.dataset.parameters.num_classes == 9
 
     def test_minimal_features_in_config(self):
         """Test that triangle features are optimized to minimal set (3D edge weights)."""
         with hydra.initialize(
-            version_base="1.3",
-            config_path=self.config_path,
-            job_name="test"
+            version_base="1.3", config_path=self.config_path, job_name="test"
         ):
             cfg = hydra.compose(
                 config_name="run.yaml",
@@ -439,9 +514,7 @@ class TestTriangleTask:
     def test_triangle_loader_instantiation(self):
         """Test that dataset loader can instantiate with triangle task."""
         with hydra.initialize(
-            version_base="1.3",
-            config_path=self.config_path,
-            job_name="test"
+            version_base="1.3", config_path=self.config_path, job_name="test"
         ):
             cfg = hydra.compose(
                 config_name="run.yaml",
@@ -455,7 +528,9 @@ class TestTriangleTask:
 
             loader = hydra.utils.instantiate(cfg.dataset.loader)
             # Check loader type using class name to handle module reloading issues
-            assert type(loader).__name__ == "A123DatasetLoader" or hasattr(loader, "load_dataset")
+            assert type(loader).__name__ == "A123DatasetLoader" or hasattr(
+                loader, "load_dataset"
+            )
 
             # Verify loader has load_dataset method with task_type parameter
             assert hasattr(loader, "load_dataset")
@@ -463,14 +538,12 @@ class TestTriangleTask:
 
     def test_graph_vs_triangle_task_independent(self):
         """Test that graph and triangle tasks are independent.
-        
+
         Graph task should always work. Triangle task may require
         prior processing, but shouldn't affect graph task.
         """
         with hydra.initialize(
-            version_base="1.3",
-            config_path=self.config_path,
-            job_name="test"
+            version_base="1.3", config_path=self.config_path, job_name="test"
         ):
             cfg = hydra.compose(
                 config_name="run.yaml",
@@ -499,6 +572,7 @@ class TestTriangleTask:
                 # Expected if triangle processing hasn't been run
                 pass
 
+
 class TestTriangleCommonNeighborsTask:
     """Test suite for triangle common-neighbors task (TDL-focused)."""
 
@@ -511,9 +585,7 @@ class TestTriangleCommonNeighborsTask:
     def test_triangle_common_task_configuration(self):
         """Test that triangle common-neighbors task is configured."""
         with hydra.initialize(
-            version_base="1.3",
-            config_path=self.config_path,
-            job_name="test"
+            version_base="1.3", config_path=self.config_path, job_name="test"
         ):
             cfg = hydra.compose(
                 config_name="run.yaml",
@@ -529,20 +601,22 @@ class TestTriangleCommonNeighborsTask:
             # It's a string selector in parameters, not a nested config structure
             assert hasattr(cfg.dataset.parameters, "specific_task")
             specific_task = cfg.dataset.parameters.specific_task
-            
+
             # Verify it's a valid task selector
             assert isinstance(specific_task, str)
-            assert specific_task in ["classification", "triangle_classification", "triangle_common_neighbors"]
-            
+            assert specific_task in [
+                "classification",
+                "triangle_classification",
+                "triangle_common_neighbors",
+            ]
+
             # All tasks use 9 classes (unified output)
             assert cfg.dataset.parameters.num_classes == 9
 
     def test_triangle_common_loader_instantiation(self):
         """Test that loader can instantiate with triangle common-neighbors task."""
         with hydra.initialize(
-            version_base="1.3",
-            config_path=self.config_path,
-            job_name="test"
+            version_base="1.3", config_path=self.config_path, job_name="test"
         ):
             cfg = hydra.compose(
                 config_name="run.yaml",
@@ -567,9 +641,15 @@ class TestTriangleCommonNeighborsTask:
         # Nodes: 0, 1, 2, 3, 4
         # Triangles: (0,1,2) with common neighbor 3, (1,2,3) with common neighbor 4
         edge_list = [
-            (0, 1), (0, 2), (1, 2),  # Triangle 0-1-2
-            (1, 3), (2, 3), (0, 3),  # Add node 3 as common neighbor
-            (1, 4), (2, 4), (3, 4),  # Add node 4 as common neighbor
+            (0, 1),
+            (0, 2),
+            (1, 2),  # Triangle 0-1-2
+            (1, 3),
+            (2, 3),
+            (0, 3),  # Add node 3 as common neighbor
+            (1, 4),
+            (2, 4),
+            (3, 4),  # Add node 4 as common neighbor
         ]
 
         edge_index_list = []
@@ -577,11 +657,15 @@ class TestTriangleCommonNeighborsTask:
             edge_index_list.append([u, v])
             edge_index_list.append([v, u])  # Undirected
 
-        edge_index = torch.tensor(edge_index_list, dtype=torch.long).t().contiguous()
+        edge_index = (
+            torch.tensor(edge_index_list, dtype=torch.long).t().contiguous()
+        )
         edge_weights = torch.ones(edge_index.shape[1])
 
         # Extract triangles
-        triangles = classifier.extract_triangles(edge_index, edge_weights, num_nodes=5)
+        triangles = classifier.extract_triangles(
+            edge_index, edge_weights, num_nodes=5
+        )
 
         # Verify triangles were found
         assert len(triangles) > 0
@@ -598,7 +682,9 @@ class TestTriangleCommonNeighborsTask:
         # For each triangle, compute common neighbors
         for tri in triangles:
             a, b, c = tri["nodes"]
-            common = (set(G.neighbors(a)) & set(G.neighbors(b)) & set(G.neighbors(c))) - {a, b, c}
+            common = (
+                set(G.neighbors(a)) & set(G.neighbors(b)) & set(G.neighbors(c))
+            ) - {a, b, c}
             num_common = len(common)
 
             # Features: node degrees (structural, no weights)
@@ -619,7 +705,9 @@ class TestTriangleCommonNeighborsTask:
         edge_weights = torch.ones(edge_index.shape[1])
 
         classifier = TriangleClassifier(min_weight=0.2)
-        triangles = classifier.extract_triangles(edge_index, edge_weights, num_nodes=3)
+        triangles = classifier.extract_triangles(
+            edge_index, edge_weights, num_nodes=3
+        )
 
         # Build graph
         G = nx.Graph()
@@ -636,7 +724,9 @@ class TestTriangleCommonNeighborsTask:
             deg_b = G.degree(b)
             deg_c = G.degree(c)
 
-            tri_feats = torch.tensor([deg_a, deg_b, deg_c], dtype=torch.float32)
+            tri_feats = torch.tensor(
+                [deg_a, deg_b, deg_c], dtype=torch.float32
+            )
 
             # Features should be non-negative integers (degrees)
             assert tri_feats.shape == (3,)
@@ -670,7 +760,9 @@ class TestTriangleCommonNeighborsTask:
         # Verify CN count for triangle with no external neighbors
         for tri in triangles_no_cn:
             a, b, c = tri["nodes"]
-            common = (set(G.neighbors(a)) & set(G.neighbors(b)) & set(G.neighbors(c))) - {a, b, c}
+            common = (
+                set(G.neighbors(a)) & set(G.neighbors(b)) & set(G.neighbors(c))
+            ) - {a, b, c}
             assert len(common) == 0  # No common neighbors
 
     def test_triangle_common_vs_role_independence(self):
@@ -686,7 +778,9 @@ class TestTriangleCommonNeighborsTask:
         edge_weights = torch.tensor([0.8, 0.7, 0.6, 0.6, 0.7, 0.8])
 
         classifier = TriangleClassifier(min_weight=0.2)
-        triangles = classifier.extract_triangles(edge_index, edge_weights, num_nodes=3)
+        triangles = classifier.extract_triangles(
+            edge_index, edge_weights, num_nodes=3
+        )
 
         # From triangle classifier, we get roles (based on weights + embedding)
         for tri in triangles:
@@ -708,13 +802,17 @@ class TestTriangleCommonNeighborsTask:
         # Empty graph
         empty_edge_index = torch.empty((2, 0), dtype=torch.long)
         empty_weights = torch.empty((0,))
-        triangles_empty = classifier.extract_triangles(empty_edge_index, empty_weights, num_nodes=0)
+        triangles_empty = classifier.extract_triangles(
+            empty_edge_index, empty_weights, num_nodes=0
+        )
         assert len(triangles_empty) == 0
 
         # Graph with no triangles (just edges)
         linear_edge_index = torch.tensor([[0, 1], [1, 2]], dtype=torch.long)
         linear_weights = torch.ones(linear_edge_index.shape[1])
-        triangles_linear = classifier.extract_triangles(linear_edge_index, linear_weights, num_nodes=3)
+        triangles_linear = classifier.extract_triangles(
+            linear_edge_index, linear_weights, num_nodes=3
+        )
         assert len(triangles_linear) == 0  # No triangles in a path
 
         # Single triangle (minimal case)
@@ -729,3 +827,49 @@ class TestTriangleCommonNeighborsTask:
         assert len(triangles_single[0]["nodes"]) == 3
 
 
+if __name__ == "__main__":
+    """Run tests for each task type with clear output."""
+    import sys
+
+    tasks = [
+        "classification",
+        "triangle_classification",
+        "triangle_common_neighbors",
+    ]
+
+    print("\n" + "=" * 80)
+    print("RUNNING A123 DATASET TESTS FOR ALL TASK TYPES")
+    print("=" * 80)
+
+    results = {}
+
+    for task in tasks:
+        print(f"\n{'-' * 80}")
+        print(f"Running tests for: {task}")
+        print(f"{'-' * 80}\n")
+
+        # Use pytest.main programmatically
+        exit_code = pytest.main(
+            [
+                __file__,
+                f"--specific-task={task}",
+                "-v",
+                "--tb=short",
+            ]
+        )
+
+        results[task] = exit_code
+
+    # Summary
+    print("\n" + "=" * 80)
+    print("SUMMARY")
+    print("=" * 80)
+
+    for task, returncode in results.items():
+        status = "✓ PASSED" if returncode == 0 else "✗ FAILED"
+        print(f"{status:12} - {task}")
+
+    print("=" * 80 + "\n")
+
+    # Exit with failure if any task failed
+    sys.exit(max(results.values()))
