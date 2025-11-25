@@ -340,11 +340,14 @@ def single_mesh(directory):
     # Construct the connectivity matrices
     inc_dict = get_complex_connectivity(cx, 2, signed=False)
 
+    edge_index = torch.Tensor(sorted(list(cx.edges))).T.long()
+
     y = torch.tensor([int("Female" in obj[0])])
 
     y1 = torch.tensor(np.load(osp.join(directory,npy[0]))).to(torch.float32)
 
-    data = Data(x_0=cell_0_tensor, x_1=cell_1_tensor, x_2=cell_2_tensor, y=y, y1=y1, **inc_dict)
+    data = Data(x_0=cell_0_tensor, x_1=cell_1_tensor, x_2=cell_2_tensor,
+                x=cell_0_tensor, edge_index=edge_index, y=y, y1=y1, **inc_dict)
 
     return data
 
