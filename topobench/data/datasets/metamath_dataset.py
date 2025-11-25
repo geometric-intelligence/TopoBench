@@ -6,7 +6,6 @@ from typing import ClassVar
 
 import numpy as np
 import torch
-from omegaconf import DictConfig
 from torch_geometric.data import Data, InMemoryDataset
 from torch_geometric.io import fs
 

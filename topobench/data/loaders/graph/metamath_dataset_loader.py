@@ -1,6 +1,7 @@
 """Loader for Metamath proof graph dataset."""
 
 from pathlib import Path
+
 from omegaconf import DictConfig
 from torch_geometric.data import Dataset
 
