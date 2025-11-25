@@ -8,7 +8,7 @@ import gzip
 import os
 import re
 import struct
-from typing import Callable, List, Optional, Tuple
+from collections.abc import Callable
 
 import torch
 from torch_geometric.data import Data, InMemoryDataset, download_google_url
@@ -24,13 +24,13 @@ class DawnDataset(InMemoryDataset):
         Root directory where the dataset should be saved.
     google_drive_url : str
         URL to download the raw dataset.
-    name : str, optional
+    name : str | None, optional
         Name of the dataset (used by TopoBench loader), by default None.
-    parameters : dict, optional
+    parameters : dict | None, optional
         Configuration parameters (used by TopoBench loader), by default None.
-    transform : callable, optional
+    transform : callable | None, optional
         Function/transform applied to Data objects after processing, by default None.
-    pre_transform : callable, optional
+    pre_transform : callable | None, optional
         Function/transform applied before saving the processed data, by default None.
     """
 
@@ -38,10 +38,10 @@ class DawnDataset(InMemoryDataset):
         self,
         root: str,
         google_drive_url: str,
-        name: Optional[str] = None,
-        parameters: Optional[dict] = None,
-        transform: Optional[Callable] = None,
-        pre_transform: Optional[Callable] = None,
+        name: str | None = None,
+        parameters: dict | None = None,
+        transform: Callable | None = None,
+        pre_transform: Callable | None = None,
     ) -> None:
         self.name = name
         self.parameters = parameters
@@ -61,23 +61,23 @@ class DawnDataset(InMemoryDataset):
         self.data, self.slices = torch.load(self.processed_paths[0])
 
     @property
-    def raw_file_names(self) -> List[str]:
+    def raw_file_names(self) -> list[str]:
         """Return the expected raw file names.
 
         Returns
         -------
-        List[str]
+        list[str]
             List containing the raw file name.
         """
         return ["dawn_dataset.gz"]
 
     @property
-    def processed_file_names(self) -> List[str]:
+    def processed_file_names(self) -> list[str]:
         """Return the expected processed file names.
 
         Returns
         -------
-        List[str]
+        list[str]
             List containing the processed file name.
         """
         return ["data.pt"]
