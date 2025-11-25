@@ -54,15 +54,10 @@ dependencies = [
     "topomodelx @ git+https://github.com/pyt-team/TopoModelX.git",
     "toponetx @ git+https://github.com/pyt-team/TopoNetX.git",
     "lightning==2.4.0",
-    # UV-related fixes
-    "torch==2.3.0",
-    "torch-scatter",
-    "torch-sparse",
-    "torch-cluster",
+
     # MIP branch dependencies
     "datasets>=4.4.1",
     "pyscipopt>=5.7.1",
-    "ruff>=0.14.6",
 ]
 
 [dependency-groups]

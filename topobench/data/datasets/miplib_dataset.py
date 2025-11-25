@@ -7,6 +7,7 @@ import shutil
 import zipfile
 from typing import ClassVar
 
+import tqdm
 from omegaconf import DictConfig
 from torch_geometric.data import Data, InMemoryDataset
 from torch_geometric.io import fs
@@ -27,8 +28,11 @@ class MIPLIBDataset(InMemoryDataset):
         Name of the dataset ("benchmark" or "collection") from MIPLIB collection. Default is "benchmark".
     parameters : DictConfig, optional
         Configuration parameters for the dataset.
-    force_reload : bool, optional
-        If True, deletes the raw directory and forces a fresh download. Default is False.
+
+    **kwargs : optional
+        Additional keyword arguments passed to InMemoryDataset.
+        Common options include:
+            - force_reload: bool, whether to re-download and re-process the dataset.
 
     Attributes
     ----------
@@ -47,22 +51,16 @@ class MIPLIBDataset(InMemoryDataset):
         root: str,
         name: str = "benchmark",
         parameters: DictConfig = None,
-        force_reload: bool = False,
+        **kwargs,
     ) -> None:
         # Store original dataset name for URL lookup and directory structure
         dataset_name = name if name in self.URLS else "benchmark"
         self.dataset_name = dataset_name
         self.parameters = parameters
 
-        # Force reload: delete raw directory if it exists
-        if force_reload:
-            raw_dir = osp.join(root, "miplib", "raw", dataset_name)
-            if osp.exists(raw_dir):
-                shutil.rmtree(raw_dir)
-                print(f"Deleted raw directory: {raw_dir}")
-
         super().__init__(
             root,
+            **kwargs,
         )
 
         if osp.exists(self.processed_paths[0]):
@@ -88,7 +86,9 @@ class MIPLIBDataset(InMemoryDataset):
         str
             Path to the raw directory.
         """
-        return osp.join(self.root, "miplib", "raw", self.dataset_name)
+        return osp.join(
+            self.root, "hypergraph", "miplib", "raw", self.dataset_name
+        )
 
     @property
     def processed_dir(self) -> str:
@@ -99,7 +99,9 @@ class MIPLIBDataset(InMemoryDataset):
         str
             Path to the processed directory.
         """
-        return osp.join(self.root, "miplib", "processed", self.dataset_name)
+        return osp.join(
+            self.root, "hypergraph", "miplib", "processed", self.dataset_name
+        )
 
     @property
     def raw_file_names(self) -> list[str]:
@@ -118,6 +120,20 @@ class MIPLIBDataset(InMemoryDataset):
                 for filename in filenames
                 if filename.endswith(".mps")
             ]
+
+            # Check for solutions marker
+            solutions_marker = osp.join(
+                self.root,
+                "hypergraph",
+                "miplib",
+                "raw",
+                "solutions",
+                "solutions_downloaded.txt",
+            )
+            if not osp.exists(solutions_marker):
+                # If solutions are missing, return placeholder to trigger download
+                return ["placeholder.mps"]
+
             return (
                 files if files else ["placeholder.mps"]
             )  # Return placeholder if no files found yet
@@ -142,42 +158,108 @@ class MIPLIBDataset(InMemoryDataset):
         """
         self.url = self.URLS[self.dataset_name]
 
+        # Check if benchmark files already exist
+        mps_files_exist = False
+        if osp.exists(self.raw_dir):
+            mps_files = [
+                f for f in os.listdir(self.raw_dir) if f.endswith(".mps")
+            ]
+            if mps_files:
+                mps_files_exist = True
+                print(
+                    "Benchmark files already exist. Skipping benchmark download."
+                )
+
+        if not mps_files_exist:
+            download_file_from_link(
+                file_link=self.url,
+                path_to_save=self.raw_dir,
+                dataset_name=self.dataset_name,
+                file_format="zip",
+            )
+
+            # Extract zip file
+            folder = self.raw_dir
+            filename = f"{self.dataset_name}.zip"
+            path = osp.join(folder, filename)
+
+            print("Extracting...")
+            with zipfile.ZipFile(path, "r") as zip_ref:
+                zip_ref.extractall(folder)
+            print("Extraction complete!")
+
+            # Delete zip file
+            os.remove(path)
+
+            # We need to find .gz files and decompress them.
+            for root, _, files in os.walk(folder):
+                for file in files:
+                    if file.endswith(".gz"):
+                        instance_gz = osp.join(root, file)
+                        instance_mps = instance_gz.replace(".gz", "")
+
+                        # Decompress
+                        with (
+                            gzip.open(instance_gz, "rb") as f_in,
+                            open(instance_mps, "wb") as f_out,
+                        ):
+                            shutil.copyfileobj(f_in, f_out)
+
+                        # Remove .gz file to save space
+                        os.remove(instance_gz)
+
+        # --- Download Solutions ---
+        miplib_raw_dir = osp.join(self.root, "hypergraph", "miplib", "raw")
+        solutions_dir = osp.join(miplib_raw_dir, "solutions")
+        solutions_marker = osp.join(solutions_dir, "solutions_downloaded.txt")
+
+        if osp.exists(solutions_marker):
+            print("Solutions already downloaded and processed. Skipping.")
+            return
+
+        print("Downloading solutions...")
         download_file_from_link(
-            file_link=self.url,
-            path_to_save=self.raw_dir,
-            dataset_name=self.dataset_name,
+            file_link=self.URLS["solutions"],
+            path_to_save=miplib_raw_dir,
+            dataset_name="solutions",
             file_format="zip",
         )
 
-        # Extract zip file
-        folder = self.raw_dir
-        filename = f"{self.dataset_name}.zip"
-        path = osp.join(folder, filename)
+        sol_zip_path = osp.join(miplib_raw_dir, "solutions.zip")
 
-        print("Extracting...")
-        with zipfile.ZipFile(path, "r") as zip_ref:
-            zip_ref.extractall(folder)
-        print("Extraction complete!")
+        if not osp.exists(solutions_dir):
+            os.makedirs(solutions_dir)
 
-        # Delete zip file
-        os.remove(path)
+        print("Extracting solutions...")
+        with zipfile.ZipFile(sol_zip_path, "r") as zip_ref:
+            zip_ref.extractall(solutions_dir)
 
-        # We need to find .gz files and decompress them.
-        for root, _, files in os.walk(folder):
+        # Recursively find and extract .sol.gz files
+        print("Processing solution files...")
+        for root, _, files in os.walk(solutions_dir):
             for file in files:
-                if file.endswith(".gz"):
-                    instance_gz = osp.join(root, file)
-                    instance_mps = instance_gz.replace(".gz", "")
+                if file.endswith(".sol.gz"):
+                    gz_path = osp.join(root, file)
+                    sol_filename = file.replace(".gz", "")
+                    # We want to place the .sol file directly in solutions_dir
+                    sol_path = osp.join(solutions_dir, sol_filename)
 
-                    # Decompress
-                    with (
-                        gzip.open(instance_gz, "rb") as f_in,
-                        open(instance_mps, "wb") as f_out,
-                    ):
-                        shutil.copyfileobj(f_in, f_out)
+                    try:
+                        with (
+                            gzip.open(gz_path, "rb") as f_in,
+                            open(sol_path, "wb") as f_out,
+                        ):
+                            shutil.copyfileobj(f_in, f_out)
+                    except Exception as e:
+                        print(f"Failed to decompress {gz_path}: {e}")
 
-                    # Remove .gz file to save space
-                    os.remove(instance_gz)
+        print("Solutions extracted and flattened!")
+
+        # Create marker file
+        with open(solutions_marker, "w") as f:
+            f.write("Solutions downloaded and processed.")
+        if osp.exists(sol_zip_path):
+            os.remove(sol_zip_path)
 
     def process(self) -> None:
         r"""Handle the data for the dataset.
@@ -209,12 +291,38 @@ class MIPLIBDataset(InMemoryDataset):
             print("No .mps or .mps.gz files found in raw directory.")
             return
 
-        for path in raw_files:
+        for i, path in enumerate(tqdm.tqdm(raw_files)):
             print(f"Processing {path}...")
 
             # Load model
             model = Model()
             model.readProblem(path)
+
+            instance_name = (
+                osp.basename(path).replace(".mps", "").replace(".gz", "")
+            )
+
+            solutions_dir = osp.join(
+                self.root, "hypergraph", "miplib", "raw", "solutions"
+            )
+            sol_path = osp.join(solutions_dir, f"{instance_name}.sol")
+
+            sol = None
+            obj_val = None
+
+            if osp.exists(sol_path):
+                try:
+                    sol = model.readSolFile(sol_path)
+                    # Note: getSolObjVal might still fail if not solving, but let's try or skip it
+                    # Based on test, getSolVal works. getSolObjVal failed in test_scip_read.py
+                    # Let's try to get obj val if possible, or just ignore it if it fails
+                    # But wait, readSolFile returns a Solution object.
+                except Exception as e:
+                    print(f"Failed to read solution {sol_path}: {e}")
+                    continue  # Skip this MIP if solution reading fails
+            else:
+                print(f"Warning: Solution file not found for {instance_name}")
+                continue  # Skip this MIP if solution doesn't exist
 
             # --- Extract Variable (Node) Features ---
             # Features: [Objective Coeff, Lower Bound, Upper Bound, IsContinuous, IsBinary, IsInteger, IsImplInt]
@@ -226,6 +334,8 @@ class MIPLIBDataset(InMemoryDataset):
 
             # 3 numerical features + 4 one-hot encoded type features
             x = torch.zeros((num_vars, 7), dtype=torch.float)
+            # Labels: optimal value for each variable
+            y = torch.zeros((num_vars, 1), dtype=torch.float)
 
             for i, v in enumerate(vars):
                 x[i, 0] = v.getObj()
@@ -243,6 +353,16 @@ class MIPLIBDataset(InMemoryDataset):
                     x[i, 6] = 1.0
                 else:
                     pass  # Unknown type, leave all zero
+
+                # Set label
+                if sol is not None:
+                    y[i, 0] = model.getSolVal(sol, v)
+                else:
+                    print(
+                        f"Warning: No solution found for {instance_name}, variable {v.name} will have label 0.0"
+                    )
+                    # Default to 0 if no solution
+                    y[i, 0] = 0.0
 
             # --- Extract Constraint (Hyperedge) Features ---
             # Features: [RHS, Sense]
@@ -333,6 +453,7 @@ class MIPLIBDataset(InMemoryDataset):
 
             data = Data(
                 x=x,
+                y=y,
                 edge_index=edge_index,
                 edge_attr=edge_attr.unsqueeze(1),
                 incidence_hyperedges=incidence_hyperedges,
@@ -340,6 +461,9 @@ class MIPLIBDataset(InMemoryDataset):
                 num_nodes=num_vars,
                 num_hyperedges=num_conss,
             )
+
+            if obj_val is not None:
+                data.obj_val = torch.tensor([obj_val], dtype=torch.float)
 
             data_list.append(data)
 
@@ -357,6 +481,15 @@ class MIPLIBDataset(InMemoryDataset):
 
 
 if __name__ == "__main__":
+    import rootutils
+
+    root = rootutils.setup_root(
+        search_from=".",
+        indicator="pyproject.toml",
+        pythonpath=True,
+        cwd=True,
+    )
+
     dataset = MIPLIBDataset(
         root="datasets", name="benchmark", force_reload=False
     )
