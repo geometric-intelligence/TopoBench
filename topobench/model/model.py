@@ -162,7 +162,7 @@ class TBModel(LightningModule):
         model_out = self.model_step(batch)
 
          # Get actual batch size (if graph, num_graphs, if node, num_nodes)
-        actual_batch_size = batch.num_graphs if hasattr(batch, 'num_graphs') else 1
+        actual_batch_size = batch.num_graphs if hasattr(batch, "num_graphs") else 1
 
         # Update and log metrics
         loss_value = model_out["loss"].item()
@@ -192,7 +192,7 @@ class TBModel(LightningModule):
         model_out = self.model_step(batch)
 
         # Get actual batch size (if graph, num_graphs, if node, num_nodes)
-        actual_batch_size = batch.num_graphs if hasattr(batch, 'num_graphs') else 1
+        actual_batch_size = batch.num_graphs if hasattr(batch, "num_graphs") else 1
 
         # Log Loss
         loss_value = model_out["loss"].item()
@@ -219,7 +219,7 @@ class TBModel(LightningModule):
         model_out = self.model_step(batch)
 
         # Get actual batch size (if graph, num_graphs, if node, num_nodes)
-        actual_batch_size = batch.num_graphs if hasattr(batch, 'num_graphs') else 1
+        actual_batch_size = batch.num_graphs if hasattr(batch, "num_graphs") else 1
 
         # Log loss
         loss_value = model_out["loss"].item()
