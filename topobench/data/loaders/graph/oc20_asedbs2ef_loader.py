@@ -146,7 +146,7 @@ class OC20ASEDBDataset(Dataset):
             # 3. Update _num_samples to reflect the new total
             # This ensures len(dataset) returns the correct value and prevents
             # unnecessary iteration over the full dataset during preprocessing
-            
+
             # Collect indices from all splits that we want to keep
             all_limited_indices = []
             for split_name in ("train", "valid", "test"):
@@ -163,22 +163,26 @@ class OC20ASEDBDataset(Dataset):
 
             # Create mapping from old indices to new contiguous indices
             old_to_new_idx = {
-                old_idx: new_idx 
-                for new_idx, old_idx in enumerate(sorted(set(all_limited_indices)))
+                old_idx: new_idx
+                for new_idx, old_idx in enumerate(
+                    sorted(set(all_limited_indices))
+                )
             }
-            
+
             # Remap split_idx to use new contiguous indices
             for split_name in ("train", "valid", "test"):
                 self.split_idx[split_name] = [
                     old_to_new_idx[idx] for idx in self.split_idx[split_name]
                 ]
-            
+
             # Store mapping for __getitem__ to translate back to original indices
             self._index_mapping = sorted(set(all_limited_indices))
-            
+
             # Update _num_samples to the actual limited size
             self._num_samples = len(self._index_mapping)
-            logger.info(f"Dataset length limited to {self._num_samples} samples")
+            logger.info(
+                f"Dataset length limited to {self._num_samples} samples"
+            )
 
         logger.info(
             f"Loaded {len(self.db_paths)} DB files with {self._num_samples} total structures"
@@ -232,13 +236,13 @@ class OC20ASEDBDataset(Dataset):
             PyTorch Geometric Data object.
         """
         # If we have an index mapping (from max_samples limiting), translate the index
-        if hasattr(self, '_index_mapping'):
+        if hasattr(self, "_index_mapping"):
             if idx < 0 or idx >= len(self._index_mapping):
                 raise IndexError(
                     f"Index {idx} out of range [0, {len(self._index_mapping)})"
                 )
             idx = self._index_mapping[idx]
-        
+
         db_path, local_idx = self._get_db_and_idx(idx)
 
         with ase.db.connect(str(db_path)) as db:
