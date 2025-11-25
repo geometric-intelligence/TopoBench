@@ -86,40 +86,44 @@ def get_hypergraph_data_from_smiles(
     """
     RDLogger.DisableLog("rdApp.*")
     try:
-        mol = Chem.MolFromSmiles(smiles_string)
-    except TypeError as err:
-        RDLogger.EnableLog("rdApp.*")
-        raise TypeError from err
-    RDLogger.EnableLog("rdApp.*")
+        try:
+            mol = Chem.MolFromSmiles(smiles_string)
+        except TypeError as err:
+            raise TypeError from err
 
-    # atoms
-    atom_fvs = [atom_to_feature_vector(atom) for atom in mol.GetAtoms()]
+        # atoms
+        atom_fvs = [atom_to_feature_vector(atom) for atom in mol.GetAtoms()]
 
-    # bonds
-    num_bond_features = 1  # bond type (single, double, triple, conjugated)
-    bonds = mol.GetBonds()
-    if len(bonds) > 0:  # mol has bonds
-        incidence_list: list[list] = [[] for _ in range(len(bonds))]
-        bond_fvs: list[list] = [[] for _ in range(len(bonds))]
-        for i, bond in enumerate(bonds):
-            incidence_list[i] = [bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()]
-            bond_type = bond_to_feature_vector(bond)[0]
-            bond_fvs[i] = [bond_type]
+        # bonds
+        num_bond_features = 1  # bond type (single, double, triple, conjugated)
+        bonds = mol.GetBonds()
+        if len(bonds) > 0:  # mol has bonds
+            incidence_list: list[list] = [[] for _ in range(len(bonds))]
+            bond_fvs: list[list] = [[] for _ in range(len(bonds))]
+            for i, bond in enumerate(bonds):
+                incidence_list[i] = [
+                    bond.GetBeginAtomIdx(),
+                    bond.GetEndAtomIdx(),
+                ]
+                bond_type = bond_to_feature_vector(bond)[0]
+                bond_fvs[i] = [bond_type]
 
-    else:  # mol has no bonds
-        incidence_list: list[list] = []
-        bond_fvs: list[list] = []
+        else:  # mol has no bonds
+            incidence_list: list[list] = []
+            bond_fvs: list[list] = []
+            return (atom_fvs, incidence_list, bond_fvs)
+
+        # hyperedges for conjugated bonds
+        he_incidence_list = he_conj(mol)  # [[3,4,5], [0,1,2]]
+        if len(he_incidence_list) != 0:
+            incidence_list.extend(
+                he_incidence_list
+            )  # [[0,1], [1,2], [3,4], [[3,4,5], [0,1,2]]
+            bond_fvs += len(he_incidence_list) * [num_bond_features * [5]]
+
         return (atom_fvs, incidence_list, bond_fvs)
-
-    # hyperedges for conjugated bonds
-    he_incidence_list = he_conj(mol)  # [[3,4,5], [0,1,2]]
-    if len(he_incidence_list) != 0:
-        incidence_list.extend(
-            he_incidence_list
-        )  # [[0,1], [1,2], [3,4], [[3,4,5], [0,1,2]]
-        bond_fvs += len(he_incidence_list) * [num_bond_features * [5]]
-
-    return (atom_fvs, incidence_list, bond_fvs)
+    finally:
+        RDLogger.EnableLog("rdApp.*")
 
 
 def create_incidence_matrix(incidence_list, num_nodes):
