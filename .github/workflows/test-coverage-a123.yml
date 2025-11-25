@@ -1,0 +1,81 @@
+name: A123 Dataset Coverage & Tests
+
+on:
+  push:
+    branches:
+      - main
+      - triangle-classification-task
+      - '**'
+  pull_request:
+    branches:
+      - main
+      - triangle-classification-task
+
+jobs:
+  test-coverage:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PyTorch and dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          # Install PyTorch CPU version via pip (faster than conda in CI)
+          pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+          
+      - name: Install PyTorch Geometric and related packages
+        run: |
+          # Get torch version for wheel URLs
+          TORCH_VERSION=$(python -c "import torch; print(torch.__version__.split('+')[0])")
+          echo "Installing PyG for torch ${TORCH_VERSION}"
+          
+          # Install PyG wheels matching torch version (CPU)
+          pip install --no-deps \
+            torch-scatter -f https://data.pyg.org/whl/torch-${TORCH_VERSION}+cpu.html
+          pip install --no-deps \
+            torch-sparse -f https://data.pyg.org/whl/torch-${TORCH_VERSION}+cpu.html
+          pip install --no-deps \
+            torch-cluster -f https://data.pyg.org/whl/torch-${TORCH_VERSION}+cpu.html
+          pip install --no-deps \
+            torch-spline-conv -f https://data.pyg.org/whl/torch-${TORCH_VERSION}+cpu.html
+          
+          # Install torch-geometric (allows deps to resolve)
+          pip install torch-geometric
+          
+      - name: Install project dependencies
+        run: |
+          pip install hydra-core omegaconf networkx scipy
+          pip install pytest pytest-cov pytest-mock
+          pip install lightning pytorch-lightning
+          pip install torchmetrics
+          pip install -e .
+
+      - name: Run tests with coverage for A123
+        run: |
+          pytest test/data/load/test_a123_dataset.py \
+            --cov=topobench.data.datasets.a123 \
+            --cov=topobench.data.loaders.graph.a123_loader \
+            --cov-report=xml:coverage_a123.xml \
+            --cov-report=term-missing \
+            -v
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage_a123.xml
+          flags: a123-dataset
+          name: a123-coverage
+          fail_ci_if_error: false
+          verbose: true
+
+      - name: Print coverage summary
+        run: |
+          echo "Coverage report generated at coverage_a123.xml"
+          echo "Tests completed. Coverage uploaded to Codecov (if configured)."
