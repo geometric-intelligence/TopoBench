@@ -274,9 +274,6 @@ class ATLASTopTaggingDataset(InMemoryDataset):
                 )
                 time.sleep(0.5)  # Be nice to the server
             except Exception as e:
-                print(f"  ⚠️  Failed to download {filename}: {e}")
-                print(f"  You can manually download from: {file_url}")
-                # Continue with other files
                 continue
 
         print(f"\n{'=' * 60}")
@@ -420,9 +417,6 @@ class ATLASTopTaggingDataset(InMemoryDataset):
                     f"No .h5.gz or .h5 files found in {self.raw_dir}/{self.split}_nominal/"
                 )
 
-            print(
-                f"[Preprocessing] Found {len(h5_files)} decompressed .h5 files"
-            )
             files_to_process = h5_files
             use_compressed = False
         else:
@@ -472,11 +466,6 @@ class ATLASTopTaggingDataset(InMemoryDataset):
 
             all_data.append(data_dict)
             jets_loaded += len(data_dict["labels"])
-
-            if self.verbose:
-                print(
-                    f"[Preprocessing] Loaded {jets_loaded}/{total_jets_needed} jets"
-                )
 
         print(
             f"[Preprocessing] Loaded {jets_loaded} jets from {len(all_data)} files"
@@ -607,22 +596,17 @@ class ATLASTopTaggingDataset(InMemoryDataset):
 
         # Apply filters
         if self.pre_filter is not None:
-            print("[Processing] Applying pre-filter...")
             data_list = [
                 data for data in tqdm(data_list) if self.pre_filter(data)
             ]
-            print(f"[Processing] {len(data_list)} graphs after pre-filter")
 
         if self.pre_transform is not None:
-            print("[Processing] Applying pre-transform...")
             data_list = [self.pre_transform(data) for data in tqdm(data_list)]
 
         if self.post_filter is not None:
-            print("[Processing] Applying post-filter...")
             data_list = [
                 data for data in tqdm(data_list) if self.post_filter(data)
             ]
-            print(f"[Processing] {len(data_list)} graphs after post-filter")
 
         # Collate and save
         print("[Processing] Collating and saving...")
@@ -677,27 +661,13 @@ class ATLASTopTaggingDataset(InMemoryDataset):
 
     def stats(self):
         """Print dataset statistics."""
-        print("\n*** ATLAS Top Tagging Dataset ***\n")
-        print(f"Split: {self.split}")
-        print(f"Number of classes: {self.num_classes}")
-        print(f"Number of jets: {len(self)}")
-        print(f"Number of constituent features: {self.num_features}")
-        print(f"Number of high-level features: {self.num_high_level_features}")
-        print(f"Max constituents per jet: {self.max_constituents}")
 
         # Calculate class distribution
         labels = [self.get(i).y.item() for i in range(len(self))]
         num_signal = sum(labels)
         num_background = len(labels) - num_signal
-        print(
-            f"Signal jets: {num_signal} ({num_signal / len(labels) * 100:.1f}%)"
-        )
-        print(
-            f"Background jets: {num_background} ({num_background / len(labels) * 100:.1f}%)"
-        )
-
+    
         # Average number of constituents
         avg_constituents = sum(
             [self.get(i).num_nodes for i in range(len(self))]
         ) / len(self)
-        print(f"Average constituents per jet: {avg_constituents:.1f}")
