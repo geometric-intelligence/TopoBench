@@ -1,0 +1,42 @@
+# OC20 S2EF Mock Dataset Configuration
+# Mock configuration for testing purposes using the 200K training samples (350MB)
+# This configuration is designed to be used for CI/CD testing without requiring large dataset downloads
+# It downloads only the 200K training split and uses it for train/val/test
+
+loader:
+  _target_: topobench.data.loaders.graph.oc20_dataset_loader.OC20DatasetLoader
+  parameters:
+    data_domain: graph
+    data_type: oc20
+    data_name: OC20_S2EF_200K_mock
+    task: s2ef
+    train_split: "200K"
+    val_splits: []  # Empty list to avoid downloading validation splits
+    include_test: false  # Don't download test data to keep size minimal
+    download: true
+    dtype: float32
+    legacy_format: false
+    max_samples: 10  # Limit to 10 samples for fast testing
+    data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+
+parameters:
+  num_features: 1        # Number of node features (atomic numbers)
+  num_classes: 1         # Regression task (energy prediction)
+  task: regression
+  loss_type: mse
+  monitor_metric: mae
+  task_level: graph      # Graph-level prediction
+
+
+split_params:
+  learning_setting: inductive
+  split_type: random  # Use random splitting since we only download train split
+  data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}
+  data_seed: 0
+  train_prop: 0.6  # 60% train, 20% validation, 20% test
+
+dataloader_params:
+  batch_size: 8  # Smaller batch size for testing
+  num_workers: 0
+  pin_memory: true
+  persistent_workers: false
