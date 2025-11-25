@@ -30,7 +30,7 @@ jobs:
           auto-activate-base: false
 
       - name: Create and prepare tb env
-        shell: bash -l
+        shell: bash -l {0}
         run: |
           conda create -n tb python=3.11 -y
           conda activate tb
