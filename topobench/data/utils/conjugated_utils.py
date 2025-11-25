@@ -2,7 +2,7 @@
 
 import numpy as np
 from ogb.utils.features import atom_to_feature_vector, bond_to_feature_vector
-from rdkit import Chem
+from rdkit import Chem, RDLogger
 
 
 def contains_conjugated_bond(
@@ -84,11 +84,13 @@ def get_hypergraph_data_from_smiles(
     tuple[list, list[list], list]
         Tuple containing atom feature vectors, incidence list, and bond feature vectors.
     """
+    RDLogger.DisableLog("rdApp.*")
     try:
         mol = Chem.MolFromSmiles(smiles_string)
     except TypeError as err:
-        print(f"Invalid SMILES: {smiles_string}")
+        RDLogger.EnableLog("rdApp.*")
         raise TypeError from err
+    RDLogger.EnableLog("rdApp.*")
 
     # atoms
     atom_fvs = [atom_to_feature_vector(atom) for atom in mol.GetAtoms()]
@@ -105,7 +107,6 @@ def get_hypergraph_data_from_smiles(
             bond_fvs[i] = [bond_type]
 
     else:  # mol has no bonds
-        print(f"Invalid SMILES: {smiles_string}")
         incidence_list: list[list] = []
         bond_fvs: list[list] = []
         return (atom_fvs, incidence_list, bond_fvs)

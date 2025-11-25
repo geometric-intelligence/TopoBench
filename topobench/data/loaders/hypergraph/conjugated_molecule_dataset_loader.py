@@ -35,7 +35,7 @@ class ConjugatedMoleculeDatasetLoader(AbstractLoader):
         ConjugatedMoleculeDataset
             The loaded Conjugated Molecule dataset.
         """
-        dataset = self._initialize_dataset()
+        dataset = self._initialize_dataset(**kwargs)
 
         # Handle slicing if requested (e.g. for testing long-running datasets)
         if "slice" in kwargs:
@@ -44,8 +44,13 @@ class ConjugatedMoleculeDatasetLoader(AbstractLoader):
         self.data_dir = self.get_data_dir()
         return dataset
 
-    def _initialize_dataset(self) -> ConjugatedMoleculeDataset:
+    def _initialize_dataset(self, **kwargs) -> ConjugatedMoleculeDataset:
         """Initialize the Conjugated Molecule dataset.
+
+        Parameters
+        ----------
+        **kwargs : dict
+            Additional keyword arguments.
 
         Returns
         -------
@@ -55,9 +60,13 @@ class ConjugatedMoleculeDatasetLoader(AbstractLoader):
         # Check if split is in parameters, default to None
         split = self.parameters.get("split", None)
 
+        # Check if slice is in kwargs
+        slice_val = kwargs.get("slice")
+
         return ConjugatedMoleculeDataset(
             root=str(self.root_data_dir),
             name=self.parameters.data_name,
             split=split,
+            slice=slice_val,
             # Pass other parameters if needed, e.g. transforms from config
         )

@@ -45,6 +45,8 @@ class ConjugatedMoleculeDataset(InMemoryDataset):
         A function that takes in an :obj:`torch_geometric.data.Data` object and
         returns a boolean value, indicating whether the data object should be
         included in the final dataset.
+    slice : int, optional
+        Number of samples to slice from the dataset. Useful for testing.
     **kwargs : optional
         Additional keyword arguments passed to InMemoryDataset.
         Common options include:
@@ -70,6 +72,7 @@ class ConjugatedMoleculeDataset(InMemoryDataset):
         transform: Callable | None = None,
         pre_transform: Callable | None = None,
         pre_filter: Callable | None = None,
+        slice: int | None = None,
         **kwargs,
     ):
         if name not in self.URLS:
@@ -77,6 +80,7 @@ class ConjugatedMoleculeDataset(InMemoryDataset):
         self.name = name
         self.split = split
         self.task = task
+        self.slice = slice
         super().__init__(
             root,
             transform,
@@ -179,6 +183,8 @@ class ConjugatedMoleculeDataset(InMemoryDataset):
         str
             Name of the processed file.
         """
+        if self.slice is not None:
+            return f"data_slice_{self.slice}.pt"
         return "data.pt"
 
     def download(self):
@@ -276,6 +282,9 @@ class ConjugatedMoleculeDataset(InMemoryDataset):
                 )
 
         smiles_list = df[smiles_col].tolist()
+
+        if self.slice is not None:
+            smiles_list = smiles_list[: self.slice]
 
         for idx, smiles in enumerate(smiles_list):
             try:
@@ -405,7 +414,7 @@ if __name__ == "__main__":
     print("Testing OCELOTv1 dataset...")
     try:
         dataset = ConjugatedMoleculeDataset(
-            root="datasets/test",
+            root="datasets/hypergraph/conjugated_molecules",
             name="OCELOTv1",
         )
         print(
@@ -419,7 +428,7 @@ if __name__ == "__main__":
     print("Testing OPV dataset...")
     try:
         dataset = ConjugatedMoleculeDataset(
-            root="data/test",
+            root="datasets/hypergraph/conjugated_molecules",
             name="OPV",
             split="train",  # OPV requires a split
         )
@@ -432,7 +441,7 @@ if __name__ == "__main__":
     print("Testing PCQM4MV2 dataset...")
     try:
         dataset = ConjugatedMoleculeDataset(
-            root="data/test",
+            root="datasets/hypergraph/conjugated_molecules",
             name="PCQM4MV2",
         )
         print(
