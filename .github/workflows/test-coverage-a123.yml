@@ -24,26 +24,20 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
+      - name: Install dependencies via env_setup.sh
+        shell: bash
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          # Install PyTorch CPU version via pip (faster than conda in CI)
-          pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-          
-          # Install PyG wheels with torch available in build environment
-          # Use --no-build-isolation to make torch available during builds
-          pip install --no-cache-dir --no-build-isolation torch-scatter torch-sparse torch-cluster torch-spline-conv
-          
-          # Install torch-geometric (allows deps to resolve)
-          pip install --no-cache-dir torch-geometric
-          
-          # Install other dependencies
-          pip install --no-cache-dir hydra-core omegaconf networkx scipy
+
+          # Make sure no preinstalled torch stack is hanging around
+          pip uninstall -y torch torchvision torchaudio || true
+
+          # Let TopoBench's own script install torch, torch-sparse, torch-geometric, etc.
+          # (TORCH / CUDA versions are controlled inside env_setup.sh)
+          source env_setup.sh
+
+          # Ensure test tools are available
           pip install --no-cache-dir pytest pytest-cov pytest-mock
-          pip install --no-cache-dir lightning pytorch-lightning torchmetrics
-          
-          # Install the package in development mode
-          OUTDATED_IGNORE=1 pip install --no-cache-dir -e .
 
       - name: Run tests with coverage for A123
         run: |
