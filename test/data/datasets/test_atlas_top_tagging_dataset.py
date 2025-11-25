@@ -251,155 +251,553 @@ class TestATLASDatasetPropertiesValues:
         dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01)
         assert 'train' in str(dataset.raw_file_names)
 
-class TestATLASDatasetExpectedFilenames:
-    """Test _expected_filenames method comprehensively for full coverage."""
 
-    def test_expected_filenames_zero_padding(self):
-        """Test filenames have correct zero-padding (000, 001, etc.)."""
-        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
-        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01)
-        filenames = dataset._expected_filenames()
-        # Check that first file is 000, properly zero-padded
-        assert 'train_nominal_000.h5.gz' in filenames[0]
-        # If we have more than 1 file, check second one too
-        if len(filenames) > 1:
-            assert 'train_nominal_001.h5.gz' in filenames[1]
+class TestATLASDatasetDownload:
+    """Extra tests for download() error handling."""
 
-    def test_expected_filenames_starts_from_zero(self):
-        """Test filename numbering starts from 0."""
-        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
-        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01)
-        filenames = dataset._expected_filenames()
-        # First filename should contain _000
-        assert '_000.h5.gz' in filenames[0]
-
-    def test_expected_filenames_sequential_numbering(self):
-        """Test filenames are numbered sequentially."""
-        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
-        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.02)
-        filenames = dataset._expected_filenames()
-        # Extract numbers from filenames and verify they're sequential
-        numbers = []
-        for filename in filenames:
-            # Extract number from train_nominal_XXX.h5.gz
-            num_str = filename.split('_')[-1].replace('.h5.gz', '')
-            numbers.append(int(num_str))
+    def test_download_logs_failures_and_raises(self, tmp_path, monkeypatch, capsys):
+        """Cover error messages and final FileNotFoundError when all downloads fail.
         
-        # Check sequential: 0, 1, 2, ...
-        expected = list(range(len(filenames)))
-        assert numbers == expected
+        Parameters
+        ----------
+        tmp_path : pathlib.Path
+            Temporary directory provided by pytest.
+        monkeypatch : pytest.MonkeyPatch
+            MonkeyPatch fixture for mocking.
+        capsys : pytest.CaptureFixture
+            CaptureFixture for capturing stdout/stderr.
+        """
+        from topobench.data.datasets.atlas_top_tagging_dataset import (
+            ATLASTopTaggingDataset,
+        )
+        import urllib.request
+        import time
 
-    def test_expected_filenames_full_dataset(self):
-        """Test _expected_filenames with subset=1.0 (full dataset)."""
-        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
-        dataset_train = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=1.0)
-        filenames_train = dataset_train._expected_filenames()
-        # Should return 930 files for train
-        assert len(filenames_train) == 930
+        dataset = ATLASTopTaggingDataset.__new__(ATLASTopTaggingDataset)
+        dataset.split = "train"
+        dataset.subset = 0.001
+        # Set root; raw_dir is derived from it by the base class property
+        dataset.root = str(tmp_path)
+
+        def fake_urlretrieve(_url, _path):
+            """Fake urlretrieve that always raises RuntimeError.
+
+            Parameters
+            ----------
+            _url : str
+                URL to download from.
+            _path : str
+                Path to save the file to.
+
+            Raises
+            ------
+            RuntimeError
+                Always raised to simulate download failure.
+            """
+            raise RuntimeError("network down")
+
+        monkeypatch.setattr(urllib.request, "urlretrieve", fake_urlretrieve)
+        monkeypatch.setattr(time, "sleep", lambda *_args, **_kwargs: None)
+
+        # (1) per-file failure messages, (2) final FileNotFoundError when downloaded == 0
+        with pytest.raises(FileNotFoundError):
+            dataset.download()
+
+        out = capsys.readouterr().out
+        assert "Failed to download" in out
+        assert "You can manually download from" in out
+
+
+
+class TestATLASDatasetH5Loading:
+    """Extra tests for flexible HDF5 loading."""
+
+    def test_load_h5_file_uses_suffix_for_compression_flag(self, monkeypatch):
+        """Cover is_compressed flag and delegation to _load_h5_file_flexible().
         
-        dataset_test = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='test', subset=1.0)
-        filenames_test = dataset_test._expected_filenames()
-        # Should return 100 files for test
-        assert len(filenames_test) == 100
+        Parameters
+        ----------
+        monkeypatch : pytest.MonkeyPatch
+            MonkeyPatch fixture for mocking.
+        """
+        from topobench.data.datasets.atlas_top_tagging_dataset import (
+            ATLASTopTaggingDataset,
+        )
 
-    def test_expected_filenames_minimum_one_file(self):
-        """Test _expected_filenames returns at least 1 file even with tiny subset."""
-        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
-        # Even with very small subset, should get at least 1 file
-        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.001)
-        filenames = dataset._expected_filenames()
-        assert len(filenames) >= 1
+        calls: list[tuple[str, bool, int | None]] = []
 
-    def test_expected_filenames_different_splits_have_different_prefixes(self):
-        """Test train and test splits have different filename prefixes."""
-        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
-        dataset_train = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01)
-        dataset_test = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='test', subset=0.01)
+        def fake_flexible(self, file_path, use_compressed=True, num_jets=None):
+            """Fake _load_h5_file_flexible to capture parameters.
+            
+            Parameters
+            ----------
+            file_path : str
+                Path to the HDF5 file.
+            use_compressed : bool
+                Whether the file is compressed.
+            num_jets : int | None
+                Number of jets to load.
+            
+            Returns
+            -------
+            dict
+                Empty dictionary for testing.
+            """
+            calls.append((file_path, use_compressed, num_jets))
+            return {}
+
+        monkeypatch.setattr(
+            ATLASTopTaggingDataset,
+            "_load_h5_file_flexible",
+            fake_flexible,
+            raising=False,
+        )
+
+        dataset = ATLASTopTaggingDataset.__new__(ATLASTopTaggingDataset)
+
+        # (5) .gz → use_compressed=True, .h5 → False
+        dataset._load_h5_file("file.h5.gz", num_jets=3)
+        dataset._load_h5_file("file.h5", num_jets=None)
+
+        assert calls[0] == ("file.h5.gz", True, 3)
+        assert calls[1] == ("file.h5", False, None)
+
+    def test_load_h5_flexible_uncompressed_with_num_jets(self, tmp_path):
+        """Cover uncompressed path + label slicing and total_jets logic.
         
-        filenames_train = dataset_train._expected_filenames()
-        filenames_test = dataset_test._expected_filenames()
+        Parameters
+        ----------
+        tmp_path : pathlib.Path
+            Temporary directory provided by pytest.
+        """
+        from topobench.data.datasets.atlas_top_tagging_dataset import (
+            ATLASTopTaggingDataset,
+        )
+        import h5py
+        import numpy as np
+
+        h5_path = tmp_path / "dummy.h5"
+        with h5py.File(h5_path, "w") as f:
+            f.create_dataset("labels", data=np.array([0, 1, 1], dtype="i4"))
+            # Minimal constituent branches
+            for name in (
+                "fjet_clus_pt",
+                "fjet_clus_eta",
+                "fjet_clus_phi",
+                "fjet_clus_E",
+            ):
+                f.create_dataset(name, data=np.ones((3, 4), dtype="f4"))
+
+        dataset = ATLASTopTaggingDataset.__new__(ATLASTopTaggingDataset)
+        dataset.use_high_level = False  # keep it minimal
+
+        data = dataset._load_h5_file_flexible(
+            str(h5_path),
+            use_compressed=False,
+            num_jets=2,
+        )
+
+        # (3) with h5py.File(..., "r") + (4) label slicing and total_jets
+        assert list(data["labels"]) == [0, 1]
+        assert data["fjet_clus_pt"].shape == (2, 4)
+
+
+class TestATLASDatasetPreprocess:
+    """Extra tests for _preprocess() fallback and error branches."""
+
+    def test_preprocess_falls_back_to_h5_and_prints_progress(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """Cover .h5 fallback, 'Found ... decompressed', and verbose 'Loaded ... jets'.
         
-        # Train filenames should have 'train_nominal' prefix
-        assert all('train_nominal' in fn for fn in filenames_train)
-        # Test filenames should have 'test_nominal' prefix
-        assert all('test_nominal' in fn for fn in filenames_test)
+        Parameters
+        ----------
+        tmp_path : pathlib.Path
+            Temporary directory provided by pytest.
+        monkeypatch : pytest.MonkeyPatch
+            MonkeyPatch fixture for mocking.
+        capsys : pytest.CaptureFixture
+            CaptureFixture for capturing stdout/stderr.
+        """
+        from pathlib import Path
+        from topobench.data.datasets.atlas_top_tagging_dataset import (
+            ATLASTopTaggingDataset,
+        )
+        import numpy as np
+        import torch
 
-    def test_expected_filenames_calculation_logic(self):
-        """Test the calculation logic: max(1, min(total, int(round(total * subset))))."""
-        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
+        dataset = ATLASTopTaggingDataset.__new__(ATLASTopTaggingDataset)
+        dataset.split = "train"
+        dataset.subset = 0.5
+        dataset.verbose = True
+        dataset.root = str(tmp_path)
+
+        # Create a dummy decompressed .h5 file under raw/<split>_nominal
+        split_dir = Path(dataset.raw_dir) / "train_nominal"
+        split_dir.mkdir(parents=True, exist_ok=True)
+        (split_dir / "train_nominal_000.h5").write_text("dummy")
+
+        def fake_load_flexible(self, file_path, use_compressed=True, num_jets=None):
+            """Fake _load_h5_file_flexible returning small arrays.
+
+            Parameters
+            ----------
+            file_path : str
+                Path to the HDF5 file.
+            use_compressed : bool
+                Whether the file is compressed.
+            num_jets : int | None
+                Number of jets to load.
+            
+            Returns
+            -------
+            dict
+                Dictionary with small arrays for testing.
+            """
+            # Return small arrays so concatenation and trimming logic can run
+            labels = np.array([0, 1], dtype="i4")
+            feats = np.ones((2, 4), dtype="f4")
+            return {
+                "labels": labels,
+                "fjet_clus_pt": feats,
+                "fjet_clus_eta": feats,
+                "fjet_clus_phi": feats,
+                "fjet_clus_E": feats,
+            }
+
+        monkeypatch.setattr(
+            ATLASTopTaggingDataset,
+            "_load_h5_file_flexible",
+            fake_load_flexible,
+            raising=False,
+        )
+
+        # Avoid writing anything heavy to disk
+        monkeypatch.setattr(
+            "topobench.data.datasets.atlas_top_tagging_dataset.torch.save",
+            lambda *_args, **_kwargs: None,
+        )
+
+        dataset._preprocess()
+        out = capsys.readouterr().out
+
+        # (6) .h5 fallback branch + verbose progress print
+        assert "Found 1 decompressed .h5 files" in out
+        assert "Loaded" in out
+
+    def test_preprocess_raises_when_no_files_found(self, tmp_path):
+        """Cover FileNotFoundError when no .h5.gz and no .h5 exist.
         
-        # Test with 10% of train data (930 * 0.1 = 93)
-        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.1)
-        filenames = dataset._expected_filenames()
-        assert len(filenames) == 93
+        Parameters
+        ----------
+        tmp_path : pathlib.Path
+            Temporary directory provided by pytest.
+        """
+        from topobench.data.datasets.atlas_top_tagging_dataset import (
+            ATLASTopTaggingDataset,
+        )
+
+        dataset = ATLASTopTaggingDataset.__new__(ATLASTopTaggingDataset)
+        dataset.split = "train"
+        dataset.subset = 0.1
+        dataset.root = str(tmp_path)
+
+        with pytest.raises(FileNotFoundError):
+            dataset._preprocess()
+
+
+class TestATLASDatasetProcess:
+    """Extra tests for process() control flow."""
+
+    def test_process_skips_jets_with_no_constituents(self, tmp_path, monkeypatch):
+        """Cover 'num_valid == 0: continue' skip of empty jets.
         
-        # Test with 50% of test data (100 * 0.5 = 50)
-        dataset_test = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='test', subset=0.5)
-        filenames_test = dataset_test._expected_filenames()
-        assert len(filenames_test) == 50
+        Parameters
+        ----------
+        tmp_path : pathlib.Path
+            Temporary directory provided by pytest.
+        monkeypatch : pytest.MonkeyPatch
+            MonkeyPatch fixture for mocking.
+        """
+        from topobench.data.datasets.atlas_top_tagging_dataset import (
+            ATLASTopTaggingDataset,
+        )
+        import torch
 
-    def test_expected_filenames_exact_format(self):
-        """Test exact filename format matches specification."""
-        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
-        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01)
-        filenames = dataset._expected_filenames()
+        dataset = ATLASTopTaggingDataset.__new__(ATLASTopTaggingDataset)
+        dataset.split = "train"
+        dataset.subset = 0.01
+        dataset.max_constituents = 10
+        dataset.use_high_level = False
+        dataset.pre_filter = None
+        dataset.pre_transform = None
+        dataset.post_filter = None
+        dataset.root = str(tmp_path)
+
+        # Two jets: first empty (pt all 0), second has one valid constituent
+        data_dict = {
+            "labels": torch.tensor([0, 1]),
+            "fjet_clus_pt": torch.tensor([[0.0, 0.0], [1.0, 0.0]]),
+            "fjet_clus_eta": torch.zeros((2, 2)),
+            "fjet_clus_phi": torch.zeros((2, 2)),
+            "fjet_clus_E": torch.ones((2, 2)),
+        }
+
+        # Pretend preprocessed file exists and contains our dict
+        monkeypatch.setattr(
+            "topobench.data.datasets.atlas_top_tagging_dataset.osp.exists",
+            lambda _path: True,
+        )
+        monkeypatch.setattr(
+            "topobench.data.datasets.atlas_top_tagging_dataset.torch.load",
+            lambda _path, weights_only=False: data_dict,
+        )
+        monkeypatch.setattr(
+            "topobench.data.datasets.atlas_top_tagging_dataset.knn_graph",
+            lambda x, k, loop: torch.empty((2, 0), dtype=torch.long),
+        )
+
+        captured: dict[str, list] = {}
+
+        def fake_collate(self, data_list):
+            """Capture data_list passed to collate().
+
+            Parameters
+            ----------
+            data_list : list
+                List of data objects to collate.
+
+            Returns
+            -------
+            tuple
+                The original data_list and an empty dictionary.
+            """
+            captured["data_list"] = list(data_list)
+            return data_list, {}
+
+        monkeypatch.setattr(
+            ATLASTopTaggingDataset,
+            "collate",
+            fake_collate,
+            raising=False,
+        )
+        monkeypatch.setattr(
+            "topobench.data.datasets.atlas_top_tagging_dataset.torch.save",
+            lambda *_args, **_kwargs: None,
+        )
+
+        dataset.process()
+        graphs = captured["data_list"]
+
+        # (7) only the non-empty jet becomes a graph
+        assert len(graphs) == 1
+
+    def test_process_applies_pre_and_post_filters(self, tmp_path, monkeypatch):
+        """Cover pre_filter, pre_transform, and post_filter branches.
         
-        # Each filename should match: {split}_nominal_{number:03d}.h5.gz
-        import re
-        pattern = r'^train_nominal_\d{3}\.h5\.gz$'
-        for filename in filenames:
-            assert re.match(pattern, filename), f"Filename {filename} doesn't match expected pattern"
+        Parameters
+        ----------
+        tmp_path : pathlib.Path
+            Temporary directory provided by pytest.
+        monkeypatch : pytest.MonkeyPatch
+            MonkeyPatch fixture for mocking.
+        """
+        from topobench.data.datasets.atlas_top_tagging_dataset import (
+            ATLASTopTaggingDataset,
+        )
+        import torch
 
-    def test_expected_filenames_list_comprehension_coverage(self):
-        """Test that exercises the list comprehension on line 278."""
-        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
+        dataset = ATLASTopTaggingDataset.__new__(ATLASTopTaggingDataset)
+        dataset.split = "train"
+        dataset.subset = 0.01
+        dataset.max_constituents = 10
+        dataset.use_high_level = False
+        dataset.root = str(tmp_path)
+
+        data_dict = {
+            "labels": torch.tensor([0, 1]),
+            "fjet_clus_pt": torch.tensor([[1.0, 0.0], [1.0, 0.0]]),
+            "fjet_clus_eta": torch.zeros((2, 2)),
+            "fjet_clus_phi": torch.zeros((2, 2)),
+            "fjet_clus_E": torch.ones((2, 2)),
+        }
+
+        monkeypatch.setattr(
+            "topobench.data.datasets.atlas_top_tagging_dataset.osp.exists",
+            lambda _path: True,
+        )
+        monkeypatch.setattr(
+            "topobench.data.datasets.atlas_top_tagging_dataset.torch.load",
+            lambda _path, weights_only=False: data_dict,
+        )
+        monkeypatch.setattr(
+            "topobench.data.datasets.atlas_top_tagging_dataset.knn_graph",
+            lambda x, k, loop: torch.empty((2, 0), dtype=torch.long),
+        )
+
+        def pre_filter(data):
+            """Keep only signal jets (label == 1).
+            
+            Parameters
+            ----------
+            data : Data
+                Data object to filter.
+
+            Returns
+            -------
+            bool
+                True if data.y == 1, False otherwise.
+            """
+            return int(data.y.item()) == 1
+
+        def pre_transform(data):
+            """Set flag attribute to True.
+            
+            Parameters
+            ----------
+            data : Data
+                Data object to transform.
+
+            Returns
+            -------
+            Data
+                Transformed data with flag attribute set to True.
+            """
+            data.flag = True
+            return data
+
+        def post_filter(data):
+            """Keep only data with flag attribute set to True.
+            
+            Parameters
+            ----------
+            data : Data
+                Data object to filter.
+
+            Returns
+            -------
+            bool
+                True if data.flag is True, False otherwise.
+            """
+            return getattr(data, "flag", False)
+
+        dataset.pre_filter = pre_filter
+        dataset.pre_transform = pre_transform
+        dataset.post_filter = post_filter
+
+        captured: dict[str, list] = {}
+
+        def fake_collate(self, data_list):
+            """Capture data_list passed to collate().
+
+            Parameters
+            ----------
+            data_list : list
+                List of data objects to collate.
+            
+            Returns
+            -------
+            tuple
+                The original data_list and an empty dictionary.
+            """
+            captured["data_list"] = list(data_list)
+            return data_list, {}
+
+        monkeypatch.setattr(
+            ATLASTopTaggingDataset,
+            "collate",
+            fake_collate,
+            raising=False,
+        )
+        monkeypatch.setattr(
+            "topobench.data.datasets.atlas_top_tagging_dataset.torch.save",
+            lambda *_args, **_kwargs: None,
+        )
+
+        dataset.process()
+        graphs = captured["data_list"]
+
+        # (10), (11), (12): filter/transform branches executed, one graph survives
+        assert len(graphs) == 1
+        assert getattr(graphs[0], "flag", False)
+
+
+class TestATLASDatasetStats:
+    """Extra test for stats()."""
+
+    def test_stats_prints_summary_and_distribution(self, monkeypatch, capsys):
+        """Cover stats summary and class distribution prints.
         
-        # Create dataset that will generate multiple files
-        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.05)
-        filenames = dataset._expected_filenames()
-        
-        # Verify the list comprehension generates correct range
-        n_files = len(filenames)
-        assert n_files > 1  # Make sure we have multiple files
-        
-        # Verify each index from 0 to n-1 is represented
-        for i in range(n_files):
-            expected_filename = f"train_nominal_{i:03d}.h5.gz"
-            assert expected_filename in filenames[i]
+        Parameters
+        ----------
+        monkeypatch : pytest.MonkeyPatch
+            Pytest fixture for mocking.
+        capsys : pytest.CaptureFixture
+            Pytest fixture for capturing stdout/stderr.
+        """
+        from topobench.data.datasets.atlas_top_tagging_dataset import (
+            ATLASTopTaggingDataset,
+        )
+        import torch
 
+        dataset = ATLASTopTaggingDataset.__new__(ATLASTopTaggingDataset)
+        dataset.split = "train"
+        dataset.max_constituents = 80
+        dataset.use_high_level = True
 
-class TestATLASDatasetTotalFilesForSplit:
-    """Test _total_files_for_split method for complete coverage."""
+        monkeypatch.setattr(
+            ATLASTopTaggingDataset,
+            "__len__",
+            lambda _self: 3,
+            raising=False,
+        )
 
-    def test_total_files_for_split_train_exact_value(self):
-        """Test train split returns exactly 930 files."""
-        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
-        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01)
-        total = dataset._total_files_for_split()
-        assert total == 930
-        assert isinstance(total, int)
+        def fake_get(self, idx):
+            """Create Dummy data with controlled labels and num_nodes.
+            
+            Parameters
+            ----------
+            idx : int
+                Index of the data point to retrieve.
 
-    def test_total_files_for_split_test_exact_value(self):
-        """Test test split returns exactly 100 files."""
-        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
-        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='test', subset=0.01)
-        total = dataset._total_files_for_split()
-        assert total == 100
-        assert isinstance(total, int)
+            Returns
+            -------
+            Dummy
+                Dummy object with y and num_nodes attributes.
+            """
+            labels = [1, 0, 1]
+            nodes = [10, 5, 15]
 
-    def test_total_files_consistent_across_calls(self):
-        """Test _total_files_for_split returns same value on multiple calls."""
-        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
-        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01)
-        first_call = dataset._total_files_for_split()
-        second_call = dataset._total_files_for_split()
-        assert first_call == second_call
+            class Dummy:
+                """Dummy data object with y and num_nodes attributes.
+                
+                Parameters
+                ----------
+                label : int
+                        Class label for the data point.
+                num_nodes : int
+                        Number of nodes (constituents) in the data point.
+                """
+                def __init__(self, label, num_nodes):
+                    self.y = torch.tensor(label)
+                    self.num_nodes = num_nodes
 
-    def test_total_files_independent_of_subset(self):
-        """Test _total_files_for_split is independent of subset parameter."""
-        from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
-        small_subset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01)
-        large_subset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.5)
-        
-        # Both should return same total (subset doesn't affect total count)
-        assert small_subset._total_files_for_split() == large_subset._total_files_for_split()
+            return Dummy(labels[idx], nodes[idx])
+
+        monkeypatch.setattr(
+            ATLASTopTaggingDataset,
+            "get",
+            fake_get,
+            raising=False,
+        )
+
+        dataset.stats()
+        out = capsys.readouterr().out
+
+        # (8) header + basic info
+        assert "ATLAS Top Tagging Dataset" in out
+        assert "Split: train" in out
+        # (9) class distribution + average constituents
+        assert "Signal jets: 2" in out
+        assert "Background jets: 1" in out
+        assert "Average constituents per jet: 10.0" in out
