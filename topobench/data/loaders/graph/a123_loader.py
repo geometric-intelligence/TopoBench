@@ -13,8 +13,11 @@ a representation of neuronal activity suitable for our experiments.
 Please cite the original paper when using this dataset or any derivatives.
 """
 
+import os.path as osp
+
 import torch
 from omegaconf import DictConfig
+from torch_geometric.io import fs
 
 from topobench.data.datasets.a123 import A123CortexMDataset
 from topobench.data.loaders.base import AbstractLoader
@@ -75,16 +78,24 @@ class A123DatasetLoader(AbstractLoader):
         # dataset will be created when load_dataset() is called
         self.dataset = None
 
-    def load_dataset(self) -> torch.utils.data.Dataset:
+    def load_dataset(
+        self, task_type: str = "classification"
+    ) -> torch.utils.data.Dataset:
         """Instantiate and return the underlying dataset.
 
         Returns a `A123CortexMDataset` instance constructed from the loader's
         parameters and root data directory.
 
+        Parameters
+        ----------
+        task_type : str, optional
+            Type of task to load. Options: "classification" (default) or "triangle".
+            If "triangle", loads the triangle classification task dataset.
+
         Returns
         -------
         torch.utils.data.Dataset
-            A123CortexMDataset instance.
+            A123CortexMDataset instance or triangle dataset.
         """
         # determine dataset name from parameters, fallback to expected id
         name = self.parameters.data_name
@@ -97,5 +108,59 @@ class A123DatasetLoader(AbstractLoader):
         self.dataset = A123CortexMDataset(
             root=root, name=name, parameters=self.parameters
         )
+
+        # If triangle task requested, load triangle dataset instead
+        if task_type == "triangle":
+            # Load triangle classification dataset
+            processed_dir = self.dataset.processed_dir
+            triangle_data_path = osp.join(processed_dir, "data_triangles.pt")
+
+            if osp.exists(triangle_data_path):
+                # Load triangle data
+                out = fs.torch_load(triangle_data_path)
+                assert len(out) == 4
+                data, slices, sizes, data_cls = out
+
+                if not isinstance(data, dict):
+                    self.dataset.data = data
+                else:
+                    self.dataset.data = data_cls.from_dict(data)
+
+                self.dataset.slices = slices
+                print(
+                    "[A123 Loader] Loaded triangle classification task dataset"
+                )
+            else:
+                print(
+                    f"[A123 Loader] Warning: Triangle dataset not found at {triangle_data_path}. "
+                    f"Ensure triangle_task.enabled=true in config and dataset has been processed."
+                )
+
+        # Triangle common-neighbours task
+        if task_type == "triangle_common_neighbors":
+            processed_dir = self.dataset.processed_dir
+            triangle_cn_path = osp.join(
+                processed_dir, "data_triangles_common_neighbors.pt"
+            )
+
+            if osp.exists(triangle_cn_path):
+                out = fs.torch_load(triangle_cn_path)
+                assert len(out) == 4
+                data, slices, sizes, data_cls = out
+
+                if not isinstance(data, dict):
+                    self.dataset.data = data
+                else:
+                    self.dataset.data = data_cls.from_dict(data)
+
+                self.dataset.slices = slices
+                print(
+                    "[A123 Loader] Loaded triangle common-neighbours task dataset"
+                )
+            else:
+                print(
+                    f"[A123 Loader] Warning: Triangle CN dataset not found at {triangle_cn_path}. "
+                    f"Ensure triangle_common_task.enabled=true in config and dataset has been processed."
+                )
 
         return self.dataset

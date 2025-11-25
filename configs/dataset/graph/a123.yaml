@@ -34,9 +34,18 @@ parameters:
   monitor_metric: accuracy
   task_level: graph
   data_name: a123_cortex_m
-  hodge_k: 10
   min_neurons: 3
   corr_threshold: 0.2
+  
+  # Triangle classification task (higher-order topological task)
+  triangle_task:
+    enabled: false  # Set to false to disable triangle classification
+    num_triangle_classes: 7  # Role classes: core_strong, core_medium, bridge_strong, bridge_medium, isolated_strong, isolated_medium, isolated_weak
+    num_triangle_features: 3  # Pure topology: only edge weights (3 correlation values)
+
+  # Triangle common-neighbours task: predict number of common neighbours for each triangle
+  triangle_common_task:
+    enabled: false  # Set to true to enable creating/loading this task
 
 # Splits
 split_params:
