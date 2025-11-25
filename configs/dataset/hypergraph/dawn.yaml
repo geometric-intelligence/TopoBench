@@ -7,6 +7,8 @@ loader:
     data_type: dawn
     data_name: dawn
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+    # Google Drive URL for downloading the dataset files
+    google_drive_url: "https://drive.google.com/uc?export=download&id=1wGwoG7oBWnNN7J9TEpjqNpODbsYfMxp4"
 
 # Dataset parameters
 parameters:

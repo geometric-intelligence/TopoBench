@@ -17,6 +17,7 @@ class DawnDatasetLoader(AbstractLoader):
         Configuration parameters containing:
             - data_dir: Root directory for data
             - data_name: Name of the dataset
+            - google_drive_url: URL for downloading the dataset
             - other relevant parameters
     """
 
@@ -36,9 +37,9 @@ class DawnDatasetLoader(AbstractLoader):
         RuntimeError
             If dataset loading fails.
         """
-
         dataset = self._initialize_dataset()
-        self.data_dir = self.get_data_dir()
+        # Update the loader's data_dir to match the dataset's root
+        self.data_dir = dataset.root
         return dataset
 
     def _initialize_dataset(self) -> HypergraphDataset:
@@ -49,8 +50,14 @@ class DawnDatasetLoader(AbstractLoader):
         HypergraphDataset
             The initialized dataset instance.
         """
+        # Retrieve URL from parameters (defined in YAML)
+        google_drive_url = self.parameters.get("google_drive_url", None)
+
+        # Initialize the dataset with all required parameters
+        # We explicitly convert data_dir to string to satisfy PyG's root expectation
         return HypergraphDataset(
-            root=str(self.root_data_dir),
+            root=str(self.parameters.data_dir),
             name=self.parameters.data_name,
             parameters=self.parameters,
+            google_drive_url=google_drive_url,
         )
