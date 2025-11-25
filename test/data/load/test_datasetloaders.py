@@ -41,7 +41,10 @@ class TestLoaders:
                             # Below the datasets that have some default transforms with we manually overriten with no_transform,
                             # due to lack of default transform for domain2domain
                             "REDDIT-BINARY.yaml", "IMDB-MULTI.yaml", "IMDB-BINARY.yaml", #"ZINC.yaml"
-                            "ogbg-molpcba.yaml", "manual_dataset.yaml" # "ogbg-molhiv.yaml"
+                            "ogbg-molpcba.yaml", "manual_dataset.yaml", # "ogbg-molhiv.yaml"
+                            # OC20/OC22 datasets that require large downloads (excluded from tests)
+                            "OC20_S2EF_200K.yaml", "OC20_S2EF_2M.yaml", "OC20_S2EF_20M.yaml", 
+                            "OC20_S2EF_all.yaml", "OC20_IS2RE.yaml", "OC22_IS2RE.yaml"
                             }
         
         # Below the datasets that takes quite some time to load and process                            
