@@ -6,6 +6,7 @@ loader:
     data_type: topological
     data_name: 3D2M
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+    num_slices: null
 
 # Dataset parameters
 parameters:
