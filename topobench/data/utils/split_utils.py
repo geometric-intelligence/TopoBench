@@ -287,7 +287,7 @@ def load_transductive_splits(dataset, parameters):
     return DataloadDataset([data]), None, None
 
 
-def load_inductive_splits(dataset, parameters):
+def load_inductive_splits(dataset, parameters, task_level=None):
     r"""Load multiple-graph datasets with the specified split.
 
     Parameters
@@ -296,6 +296,9 @@ def load_inductive_splits(dataset, parameters):
         Graph dataset.
     parameters : DictConfig
         Configuration parameters.
+    task_level : str, optional
+        Task level ('node' or 'graph'). If 'node', uses graph indices for splitting.
+        If None or 'graph', uses graph-level labels for stratification.
 
     Returns
     -------
@@ -306,15 +309,20 @@ def load_inductive_splits(dataset, parameters):
     assert len(dataset) > 1, (
         "Datasets should have more than one graph in an inductive setting."
     )
-    # Check if labels are ragged (different sizes across graphs)
-    label_list = [data.y.squeeze(0).numpy() for data in dataset]
-    label_shapes = [label.shape for label in label_list]
-    # Use dtype=object only if labels have different shapes (ragged)
-    labels = (
-        np.array(label_list, dtype=object)
-        if len(set(label_shapes)) > 1
-        else np.array(label_list)
-    )
+
+    if task_level == "node":
+        # Use graph indices as pseudo-labels for stratification
+        labels = np.arange(len(dataset))
+    else:
+        # For graph classification, extract graph-level labels for stratification
+        label_list = [data.y.squeeze(0).numpy() for data in dataset]
+        label_shapes = [label.shape for label in label_list]
+        # Use dtype=object only if labels have different shapes (ragged)
+        labels = (
+            np.array(label_list, dtype=object)
+            if len(set(label_shapes)) > 1
+            else np.array(label_list)
+        )
 
     root = (
         dataset.dataset.get_data_dir()
@@ -329,6 +337,12 @@ def load_inductive_splits(dataset, parameters):
         assert type(labels) is not object, (
             "K-Fold splitting not supported for ragged labels."
         )
+        if task_level == "node":
+            raise NotImplementedError(
+                "K-Fold splitting is not supported for node-level tasks in inductive setting. "
+                "Each graph has unique node labels, making stratification impossible. "
+                "Please use 'random' split_type instead."
+            )
         split_idx = k_fold_split(labels, parameters, root=root)
 
     elif parameters.split_type == "fixed" and hasattr(dataset, "split_idx"):
