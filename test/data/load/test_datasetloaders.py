@@ -45,7 +45,7 @@ class TestLoaders:
                             }
         
         # Below the datasets that takes quite some time to load and process                            
-        self.long_running_datasets = {"mantra_name.yaml", "mantra_orientation.yaml", "mantra_genus.yaml", "mantra_betti_numbers.yaml"}
+        self.long_running_datasets = {"mantra_name.yaml", "mantra_orientation.yaml", "mantra_genus.yaml", "mantra_betti_numbers.yaml", "conjugated_pcqm4mv2.yaml"}
 
         
         for dir_path in config_base_dir.iterdir():
