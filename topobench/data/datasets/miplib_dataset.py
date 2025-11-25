@@ -25,7 +25,7 @@ class MIPLIBDataset(InMemoryDataset):
     root : str
         Root directory where the dataset will be saved.
     name : str, optional
-        Name of the dataset ("benchmark" or "collection") from MIPLIB collection. Default is "benchmark".
+        Name of the dataset. Default is "benchmark".
     parameters : DictConfig, optional
         Configuration parameters for the dataset.
 
@@ -41,7 +41,7 @@ class MIPLIBDataset(InMemoryDataset):
 
     URLS: ClassVar = {
         "benchmark": "https://miplib.zib.de/downloads/benchmark.zip",
-        "collection": "https://miplib.zib.de/downloads/collection.zip",
+        # "collection": "https://miplib.zib.de/downloads/collection.zip", - too large for now
         "solutions": "https://miplib.zib.de/downloads/solutions.zip",
         "miplib2017-v35.solu": "https://miplib.zib.de/downloads/miplib2017-v35.solu",
     }
@@ -292,8 +292,6 @@ class MIPLIBDataset(InMemoryDataset):
             return
 
         for i, path in enumerate(tqdm.tqdm(raw_files)):
-            print(f"Processing {path}...")
-
             # Load model
             model = Model()
             model.readProblem(path)
@@ -481,6 +479,10 @@ class MIPLIBDataset(InMemoryDataset):
 
 
 if __name__ == "__main__":
+    """
+    Test the MIPLIB dataset.
+    `uv run -m topobench.data.datasets.miplib_dataset`
+    """
     import rootutils
 
     root = rootutils.setup_root(
@@ -491,6 +493,6 @@ if __name__ == "__main__":
     )
 
     dataset = MIPLIBDataset(
-        root="datasets", name="benchmark", force_reload=False
+        root="datasets", name="benchmark", force_reload=True
     )
     print(dataset)

@@ -9,12 +9,12 @@ loader:
 
 # Dataset parameters
 parameters:
-  num_features: 0
-  num_classes: 0
-  task: classification
-  loss_type: cross_entropy
-  monitor_metric: accuracy
-  task_level: node
+  num_features: 7  # 3 numerical + 4 one-hot encoded variable type features
+  num_classes: 1  # Regression output (continuous value per variable)
+  task: regression
+  loss_type: mse  # Mean Squared Error for regression
+  monitor_metric: mae  # Mean Absolute Error
+  task_level: node  # Predicting value for each variable (node)
 
 #splits
 split_params:
