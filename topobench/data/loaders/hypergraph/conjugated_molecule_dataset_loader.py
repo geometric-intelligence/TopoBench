@@ -22,8 +22,13 @@ class ConjugatedMoleculeDatasetLoader(AbstractLoader):
     def __init__(self, parameters: DictConfig) -> None:
         super().__init__(parameters)
 
-    def load_dataset(self) -> ConjugatedMoleculeDataset:
+    def load_dataset(self, **kwargs) -> ConjugatedMoleculeDataset:
         """Load the Conjugated Molecule dataset.
+
+        Parameters
+        ----------
+        **kwargs : dict
+            Additional keyword arguments.
 
         Returns
         -------
@@ -31,6 +36,11 @@ class ConjugatedMoleculeDatasetLoader(AbstractLoader):
             The loaded Conjugated Molecule dataset.
         """
         dataset = self._initialize_dataset()
+
+        # Handle slicing if requested (e.g. for testing long-running datasets)
+        if "slice" in kwargs:
+            dataset = dataset[: kwargs["slice"]]
+
         self.data_dir = self.get_data_dir()
         return dataset
 
