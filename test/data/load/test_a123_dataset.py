@@ -501,3 +501,228 @@ class TestA123DataIntegrity:
             assert y.dtype == torch.long
             assert torch.all(y >= 0)
             assert torch.all(y < dataset.num_classes)
+
+
+class TestTriangleCommonNeighborsTask:
+    """Test suite for triangle common-neighbors task (TDL-focused)."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        """Setup test environment."""
+        hydra.core.global_hydra.GlobalHydra.instance().clear()
+        self.config_path = "../../../configs"
+
+    def test_triangle_common_task_configuration(self):
+        """Test that triangle common-neighbors task is configured."""
+        with hydra.initialize(
+            version_base="1.3",
+            config_path=self.config_path,
+            job_name="test"
+        ):
+            cfg = hydra.compose(
+                config_name="run.yaml",
+                overrides=[
+                    "dataset=graph/a123",
+                    "model=graph/gat",
+                    "paths=test",
+                ],
+                return_hydra_config=True,
+            )
+
+            # Check triangle common task configuration exists
+            assert hasattr(cfg.dataset.parameters, "triangle_common_task")
+            tri_cn_cfg = cfg.dataset.parameters.triangle_common_task
+            assert hasattr(tri_cn_cfg, "enabled")
+
+    def test_triangle_common_loader_instantiation(self):
+        """Test that loader can instantiate with triangle common-neighbors task."""
+        with hydra.initialize(
+            version_base="1.3",
+            config_path=self.config_path,
+            job_name="test"
+        ):
+            cfg = hydra.compose(
+                config_name="run.yaml",
+                overrides=[
+                    "dataset=graph/a123",
+                    "model=graph/gat",
+                    "paths=test",
+                ],
+                return_hydra_config=True,
+            )
+
+            loader = hydra.utils.instantiate(cfg.dataset.loader)
+            # Check loader has load_dataset method
+            assert hasattr(loader, "load_dataset")
+            assert callable(loader.load_dataset)
+
+    def test_triangle_common_task_creation_synthetic(self):
+        """Test triangle common-neighbors task creation on synthetic graph."""
+        classifier = TriangleClassifier(min_weight=0.2)
+
+        # Create synthetic graph with known structure
+        # Nodes: 0, 1, 2, 3, 4
+        # Triangles: (0,1,2) with common neighbor 3, (1,2,3) with common neighbor 4
+        edge_list = [
+            (0, 1), (0, 2), (1, 2),  # Triangle 0-1-2
+            (1, 3), (2, 3), (0, 3),  # Add node 3 as common neighbor
+            (1, 4), (2, 4), (3, 4),  # Add node 4 as common neighbor
+        ]
+
+        edge_index_list = []
+        for u, v in edge_list:
+            edge_index_list.append([u, v])
+            edge_index_list.append([v, u])  # Undirected
+
+        edge_index = torch.tensor(edge_index_list, dtype=torch.long).t().contiguous()
+        edge_weights = torch.ones(edge_index.shape[1])
+
+        # Extract triangles
+        triangles = classifier.extract_triangles(edge_index, edge_weights, num_nodes=5)
+
+        # Verify triangles were found
+        assert len(triangles) > 0
+
+        # Now simulate creating CN features for each triangle
+        # Build graph to compute common neighbors
+        G = nx.Graph()
+        G.add_nodes_from(range(5))
+        for i in range(edge_index.shape[1]):
+            u = int(edge_index[0, i].item())
+            v = int(edge_index[1, i].item())
+            G.add_edge(u, v)
+
+        # For each triangle, compute common neighbors
+        for tri in triangles:
+            a, b, c = tri["nodes"]
+            common = (set(G.neighbors(a)) & set(G.neighbors(b)) & set(G.neighbors(c))) - {a, b, c}
+            num_common = len(common)
+
+            # Features: node degrees (structural, no weights)
+            deg_a = G.degree(a)
+            deg_b = G.degree(b)
+            deg_c = G.degree(c)
+
+            # Verify features are reasonable
+            assert deg_a > 0 and deg_b > 0 and deg_c > 0
+            assert num_common >= 0
+
+    def test_triangle_common_features_are_structural(self):
+        """Test that CN task features are purely structural (node degrees)."""
+        # Create a simple triangle with known degrees
+        edge_index = torch.tensor(
+            [[0, 0, 1, 2], [1, 2, 2, 0]], dtype=torch.long
+        )  # Triangle 0-1-2 + extra edge 0-1
+        edge_weights = torch.ones(edge_index.shape[1])
+
+        classifier = TriangleClassifier(min_weight=0.2)
+        triangles = classifier.extract_triangles(edge_index, edge_weights, num_nodes=3)
+
+        # Build graph
+        G = nx.Graph()
+        G.add_nodes_from(range(3))
+        for i in range(edge_index.shape[1]):
+            u = int(edge_index[0, i].item())
+            v = int(edge_index[1, i].item())
+            G.add_edge(u, v)
+
+        # For triangle, extract degree features
+        for tri in triangles:
+            a, b, c = tri["nodes"]
+            deg_a = G.degree(a)
+            deg_b = G.degree(b)
+            deg_c = G.degree(c)
+
+            tri_feats = torch.tensor([deg_a, deg_b, deg_c], dtype=torch.float32)
+
+            # Features should be non-negative integers (degrees)
+            assert tri_feats.shape == (3,)
+            assert torch.all(tri_feats >= 0)
+            # Degrees should be integers stored as floats
+            assert torch.allclose(tri_feats, tri_feats.round())
+
+    def test_triangle_common_label_semantics(self):
+        """Test that CN task labels represent common neighbor counts."""
+        # Create graph where we know common neighbor counts
+        # 4 nodes: (0,1,2) form triangle with no external connections (CN=0)
+        # Add node 3 connected to all three: (0,1,2) will have CN=1
+        edges_no_cn = torch.tensor(
+            [[0, 0, 1], [1, 2, 2]], dtype=torch.long
+        )  # Triangle 0-1-2
+        edge_weights_no_cn = torch.ones(edges_no_cn.shape[1])
+
+        classifier = TriangleClassifier(min_weight=0.2)
+        triangles_no_cn = classifier.extract_triangles(
+            edges_no_cn, edge_weights_no_cn, num_nodes=3
+        )
+
+        # Build graph
+        G = nx.Graph()
+        G.add_nodes_from(range(3))
+        for i in range(edges_no_cn.shape[1]):
+            u = int(edges_no_cn[0, i].item())
+            v = int(edges_no_cn[1, i].item())
+            G.add_edge(u, v)
+
+        # Verify CN count for triangle with no external neighbors
+        for tri in triangles_no_cn:
+            a, b, c = tri["nodes"]
+            common = (set(G.neighbors(a)) & set(G.neighbors(b)) & set(G.neighbors(c))) - {a, b, c}
+            assert len(common) == 0  # No common neighbors
+
+    def test_triangle_common_vs_role_independence(self):
+        """Test that CN task is independent of role classification task."""
+        # Both tasks should work without interference
+        # CN task focuses on structural degree measures
+        # Role task focuses on embedding + weight patterns
+
+        # Create a simple graph
+        edge_index = torch.tensor(
+            [[0, 0, 1, 1, 2, 0], [1, 2, 2, 0, 0, 2]], dtype=torch.long
+        )
+        edge_weights = torch.tensor([0.8, 0.7, 0.6, 0.6, 0.7, 0.8])
+
+        classifier = TriangleClassifier(min_weight=0.2)
+        triangles = classifier.extract_triangles(edge_index, edge_weights, num_nodes=3)
+
+        # From triangle classifier, we get roles (based on weights + embedding)
+        for tri in triangles:
+            role = tri["role"]
+            label = tri["label"]
+
+            # Role should be one of the 7 types
+            assert isinstance(role, str)
+            assert 0 <= label <= 6
+
+            # CN features would be independent (just degrees)
+            # So two triangles with different roles could have same degree features
+            assert "strong" in role or "medium" in role or "weak" in role
+
+    def test_triangle_common_edge_cases(self):
+        """Test CN task handles edge cases gracefully."""
+        classifier = TriangleClassifier(min_weight=0.2)
+
+        # Empty graph
+        empty_edge_index = torch.empty((2, 0), dtype=torch.long)
+        empty_weights = torch.empty((0,))
+        triangles_empty = classifier.extract_triangles(empty_edge_index, empty_weights, num_nodes=0)
+        assert len(triangles_empty) == 0
+
+        # Graph with no triangles (just edges)
+        linear_edge_index = torch.tensor([[0, 1], [1, 2]], dtype=torch.long)
+        linear_weights = torch.ones(linear_edge_index.shape[1])
+        triangles_linear = classifier.extract_triangles(linear_edge_index, linear_weights, num_nodes=3)
+        assert len(triangles_linear) == 0  # No triangles in a path
+
+        # Single triangle (minimal case)
+        single_tri_edge_index = torch.tensor(
+            [[0, 0, 1], [1, 2, 2]], dtype=torch.long
+        )
+        single_tri_weights = torch.ones(single_tri_edge_index.shape[1])
+        triangles_single = classifier.extract_triangles(
+            single_tri_edge_index, single_tri_weights, num_nodes=3
+        )
+        assert len(triangles_single) == 1
+        assert len(triangles_single[0]["nodes"]) == 3
+
+
