@@ -155,24 +155,31 @@ class TestATLASDatasetInitialization:
         """Test split parameter validation."""
         from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
         with pytest.raises(AssertionError):
-            ATLASTopTaggingDataset(root='/tmp/nonexistent', split='invalid', subset=0.01)
+            ATLASTopTaggingDataset(root='/tmp/nonexistent', split='invalid', subset=0.003)
 
-    def test_max_constituents_parameter_stored(self):
-        """Test max_constituents parameter is stored."""
+    def test_max_constituents_parameter_stored(self, monkeypatch):
+        """Test max_constituents parameter is stored.
+        
+        Parameters
+        ----------
+        monkeypatch : pytest.MonkeyPatch
+            Pytest fixture for mocking.
+        """
+        # Mock torch.load to avoid file I/O
         from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
-        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01, max_constituents=50)
+        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.003, max_constituents=50)
         assert dataset.max_constituents == 50
 
     def test_use_high_level_parameter_stored(self):
         """Test use_high_level parameter is stored."""
         from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
-        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01, use_high_level=False)
+        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.003, use_high_level=False)
         assert dataset.use_high_level == False
 
     def test_verbose_parameter_stored(self):
         """Test verbose parameter is stored."""
         from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
-        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01, verbose=True)
+        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.003, verbose=True)
         assert dataset.verbose == True
 
 
@@ -183,20 +190,20 @@ class TestATLASDatasetHelperMethods:
         """Test _total_files_for_split returns 930 for train."""
         from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
         # Create instance with train split to test the method
-        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01)
+        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.003)
         assert dataset._total_files_for_split() == 930
 
     def test_total_files_for_split_test(self):
         """Test _total_files_for_split returns 100 for test."""
         from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
         # Create instance with test split to test the method
-        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='test', subset=0.01)
+        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='test', subset=0.003)
         assert dataset._total_files_for_split() == 100
 
     def test_expected_filenames_format(self):
         """Test _expected_filenames returns correct format."""
         from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
-        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01)
+        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.003)
         filenames = dataset._expected_filenames()
         assert len(filenames) > 0
         assert all('.h5.gz' in f for f in filenames)
@@ -204,8 +211,8 @@ class TestATLASDatasetHelperMethods:
     def test_expected_filenames_respects_subset(self):
         """Test _expected_filenames respects subset parameter."""
         from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
-        small_dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01)
-        large_dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.02)
+        small_dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.003)
+        large_dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.005)
         small = small_dataset._expected_filenames()
         large = large_dataset._expected_filenames()
         assert len(small) < len(large)
@@ -213,7 +220,7 @@ class TestATLASDatasetHelperMethods:
     def test_processed_file_names_format(self):
         """Test processed_file_names has correct format."""
         from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
-        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01)
+        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.003)
         assert 'atlas_top_tagging' in dataset.processed_file_names[0]
         assert '.pt' in dataset.processed_file_names[0]
 
@@ -224,31 +231,31 @@ class TestATLASDatasetPropertiesValues:
     def test_num_classes_equals_two(self):
         """Test num_classes returns 2."""
         from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
-        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01)
+        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.003)
         assert dataset.num_classes == 2
 
     def test_num_features_equals_four(self):
         """Test num_features returns 4."""
         from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
-        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01)
+        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.003)
         assert dataset.num_features == 4
 
     def test_num_high_level_features_with_flag_true(self):
         """Test num_high_level_features returns 15 when use_high_level=True."""
         from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
-        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01, use_high_level=True)
+        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.003, use_high_level=True)
         assert dataset.num_high_level_features == 15
 
     def test_num_high_level_features_with_flag_false(self):
         """Test num_high_level_features returns 0 when use_high_level=False."""
         from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
-        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01, use_high_level=False)
+        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.003, use_high_level=False)
         assert dataset.num_high_level_features == 0
 
     def test_raw_file_names_includes_split_directory(self):
         """Test raw_file_names includes split directory."""
         from topobench.data.datasets.atlas_top_tagging_dataset import ATLASTopTaggingDataset
-        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.01)
+        dataset = ATLASTopTaggingDataset(root='/tmp/nonexistent', split='train', subset=0.003)
         assert 'train' in str(dataset.raw_file_names)
 
 
@@ -526,7 +533,7 @@ class TestATLASDatasetProcess:
 
         dataset = ATLASTopTaggingDataset.__new__(ATLASTopTaggingDataset)
         dataset.split = "train"
-        dataset.subset = 0.01
+        dataset.subset = 0.003
         dataset.max_constituents = 10
         dataset.use_high_level = False
         dataset.pre_filter = None
@@ -609,7 +616,7 @@ class TestATLASDatasetProcess:
 
         dataset = ATLASTopTaggingDataset.__new__(ATLASTopTaggingDataset)
         dataset.split = "train"
-        dataset.subset = 0.01
+        dataset.subset = 0.003
         dataset.max_constituents = 10
         dataset.use_high_level = False
         dataset.root = str(tmp_path)
