@@ -7,12 +7,12 @@ import hydra
 from pathlib import Path
 from omegaconf import DictConfig, OmegaConf
 
-from topobench.data.loaders.graph.oc20_is2re_dataset_loader import IS2REDatasetLoader
-from topobench.data.loaders.graph.oc22_is2re_dataset_loader import OC22IS2REDatasetLoader
+# from topobench.data.loaders.graph.oc20_is2re_dataset_loader import IS2REDatasetLoader
+# from topobench.data.loaders.graph.oc22_is2re_dataset_loader import OC22IS2REDatasetLoader
 from topobench.data.loaders.graph.oc20_dataset_loader import OC20DatasetLoader
 from topobench.data.loaders.graph.oc20_asedbs2ef_loader import OC20ASEDBDataset
-from topobench.data.datasets.oc20_is2re_dataset import IS2REDataset
-from topobench.data.datasets.oc22_is2re_dataset import OC22IS2REDataset
+# from topobench.data.datasets.oc20_is2re_dataset import IS2REDataset
+# from topobench.data.datasets.oc22_is2re_dataset import OC22IS2REDataset
 from topobench.data.datasets.oc20_dataset import OC20Dataset
 from topobench.utils.config_resolvers import (
     get_default_metrics,
