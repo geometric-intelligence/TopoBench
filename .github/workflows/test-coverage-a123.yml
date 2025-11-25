@@ -24,31 +24,26 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install PyTorch and dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools wheel
           # Install PyTorch CPU version via pip (faster than conda in CI)
-          pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+          pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
           
-      - name: Install PyTorch Geometric and related packages
-        run: |
           # Install PyG wheels with torch available in build environment
           # Use --no-build-isolation to make torch available during builds
-          pip install --no-build-isolation torch-scatter
-          pip install --no-build-isolation torch-sparse
-          pip install --no-build-isolation torch-cluster
-          pip install --no-build-isolation torch-spline-conv
+          pip install --no-cache-dir --no-build-isolation torch-scatter torch-sparse torch-cluster torch-spline-conv
           
           # Install torch-geometric (allows deps to resolve)
-          pip install torch-geometric
+          pip install --no-cache-dir torch-geometric
           
-      - name: Install project dependencies
-        run: |
-          pip install hydra-core omegaconf networkx scipy
-          pip install pytest pytest-cov pytest-mock
-          pip install lightning pytorch-lightning
-          pip install torchmetrics
-          pip install -e .
+          # Install other dependencies
+          pip install --no-cache-dir hydra-core omegaconf networkx scipy
+          pip install --no-cache-dir pytest pytest-cov pytest-mock
+          pip install --no-cache-dir lightning pytorch-lightning torchmetrics
+          
+          # Install the package in development mode
+          OUTDATED_IGNORE=1 pip install --no-cache-dir -e .
 
       - name: Run tests with coverage for A123
         run: |
