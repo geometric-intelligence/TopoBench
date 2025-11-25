@@ -176,7 +176,7 @@ class ATLASTopTaggingDataset(InMemoryDataset):
     @property
     def raw_file_names(self):
         """Return list of raw file names to download.
-        ️
+
         Returns
         -------
         list
@@ -232,10 +232,7 @@ class ATLASTopTaggingDataset(InMemoryDataset):
 
         # Determine how many files to download based on subset
         # Each file contains ~100k jets, total ~930 files for train, ~100 for test
-        if self.split == "train":
-            total_files = 930
-        else:  # test
-            total_files = 100
+        total_files = 930 if self.split == "train" else 100
 
         num_files_to_download = max(1, int(total_files * self.subset))
 
@@ -320,9 +317,11 @@ class ATLASTopTaggingDataset(InMemoryDataset):
 
         if use_compressed:
             # Open compressed file directly without decompressing to disk
-            with gzip.open(file_path, "rb") as gz_file:
-                with h5py.File(gz_file, "r") as f:
-                    data_dict = self._extract_data_from_h5(f, num_jets)
+            with (
+                gzip.open(file_path, "rb") as gz_file,
+                h5py.File(gz_file, "r") as f,
+            ):
+                data_dict = self._extract_data_from_h5(f, num_jets)
         else:
             # Open regular uncompressed file
             with h5py.File(file_path, "r") as f:
@@ -486,7 +485,7 @@ class ATLASTopTaggingDataset(InMemoryDataset):
         # Concatenate all data
         print("[Preprocessing] Concatenating data from all files...")
         combined_data = {}
-        for key in all_data[0].keys():
+        for key in all_data[0]:
             combined_data[key] = np.concatenate(
                 [d[key] for d in all_data], axis=0
             )
@@ -565,20 +564,22 @@ class ATLASTopTaggingDataset(InMemoryDataset):
             # Add high-level features as graph-level attributes if requested
             graph_attrs = {}
             if self.use_high_level:
-                hl_features = []
-                for branch in self.HIGH_LEVEL_BRANCHES:
-                    if branch in data_dict:
-                        hl_features.append(data_dict[branch][i].unsqueeze(0))
+                hl_features = [
+                    data_dict[branch][i].unsqueeze(0)
+                    for branch in self.HIGH_LEVEL_BRANCHES
+                    if branch in data_dict
+                ]
                 if len(hl_features) > 0:
                     graph_attrs["high_level_features"] = torch.cat(
                         hl_features, dim=0
                     )
 
             # Add jet-level features
-            jet_features = []
-            for branch in self.JET_BRANCHES:
-                if branch in data_dict:
-                    jet_features.append(data_dict[branch][i].unsqueeze(0))
+            jet_features = [
+                data_dict[branch][i].unsqueeze(0)
+                for branch in self.JET_BRANCHES
+                if branch in data_dict
+            ]
             if len(jet_features) > 0:
                 graph_attrs["jet_features"] = torch.cat(jet_features, dim=0)
 

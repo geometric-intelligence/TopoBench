@@ -33,5 +33,5 @@ split_params:
 # Dataloader parameters
 dataloader_params:
   batch_size: 2048  # Batch size (can be adjusted based on memory)
-  num_workers: 0  # Number of workers for data loading
+  num_workers: 3  # Number of workers for data loading
   pin_memory: false  # Pin memory for faster GPU transfer
