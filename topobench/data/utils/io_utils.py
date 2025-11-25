@@ -349,14 +349,14 @@ def single_mesh(directory):
     return data
 
 
-def read_3d2m_meshes(folder, num_slices):
+def read_3d2m_meshes(folder, num_data):
     """Load 3D2M dataset.
 
     Parameters
     ----------
     folder : str
         Path to the dataset.
-    num_slices: int
+    num_data: int
         Number of data objects to process and add to the final list
 
     Returns
@@ -365,7 +365,7 @@ def read_3d2m_meshes(folder, num_slices):
         List wih data objects of the complex of the 3D2M dataset.
     """
     directories = os.listdir(folder)
-    directories_list = directories[:num_slices] if num_slices else directories
+    directories_list = directories[:num_data] if num_data else directories
 
     data_list = []
     for directory in directories_list:

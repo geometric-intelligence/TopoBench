@@ -155,7 +155,7 @@ class D3D2MDataset(InMemoryDataset):
         """
 
         # Step 1: Load raw data files
-        data_list = read_3d2m_meshes(self.raw_dir, self.parameters.num_slices)
+        data_list = read_3d2m_meshes(self.raw_dir, self.parameters.num_data)
 
         # Step 2: collate the graphs
         self.data, self.slices = self.collate(data_list)
