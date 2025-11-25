@@ -78,11 +78,18 @@ class TestLoaders:
             job_name="run"
         ):
             print('Current config file: ', config_file)
-            parameters = hydra.compose(
-                config_name="run.yaml",
-                overrides=[f"dataset={data_domain}/{config_file}", f"model=graph/gat"], 
-                return_hydra_config=True, 
-            )
+            if data_domain == "cell":
+                parameters = hydra.compose(
+                    config_name="run.yaml",
+                    overrides=[f"dataset={data_domain}/{config_file}", f"model=graph/gat", "dataset.loader.parameters.num_data=24"], 
+                    return_hydra_config=True, 
+                )
+            else:
+                parameters = hydra.compose(
+                    config_name="run.yaml",
+                    overrides=[f"dataset={data_domain}/{config_file}", f"model=graph/gat"], 
+                    return_hydra_config=True, 
+                )
             dataset_loader = hydra.utils.instantiate(parameters.dataset.loader)
             print(repr(dataset_loader))
 
