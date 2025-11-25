@@ -32,19 +32,12 @@ jobs:
           
       - name: Install PyTorch Geometric and related packages
         run: |
-          # Get torch version for wheel URLs
-          TORCH_VERSION=$(python -c "import torch; print(torch.__version__.split('+')[0])")
-          echo "Installing PyG for torch ${TORCH_VERSION}"
-          
-          # Install PyG wheels matching torch version (CPU)
-          pip install --no-deps \
-            torch-scatter -f https://data.pyg.org/whl/torch-${TORCH_VERSION}+cpu.html
-          pip install --no-deps \
-            torch-sparse -f https://data.pyg.org/whl/torch-${TORCH_VERSION}+cpu.html
-          pip install --no-deps \
-            torch-cluster -f https://data.pyg.org/whl/torch-${TORCH_VERSION}+cpu.html
-          pip install --no-deps \
-            torch-spline-conv -f https://data.pyg.org/whl/torch-${TORCH_VERSION}+cpu.html
+          # Install PyG wheels with torch available in build environment
+          # Use --no-build-isolation to make torch available during builds
+          pip install --no-build-isolation torch-scatter
+          pip install --no-build-isolation torch-sparse
+          pip install --no-build-isolation torch-cluster
+          pip install --no-build-isolation torch-spline-conv
           
           # Install torch-geometric (allows deps to resolve)
           pip install torch-geometric
