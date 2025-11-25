@@ -29,6 +29,10 @@ class LapPE(BaseTransform):
     concat_to_x : bool, optional
         If True, concatenates the encodings with existing node features in
         ``data.x``. If ``data.x`` is None, creates it. Default is True.
+    eps : float, optional
+        Small value to avoid division by zero. Default is 1e-6.
+    tolerance : float, optional
+        Tolerance for the eigenvalue solver. Default is 0.001.
     **kwargs : dict
         Additional arguments (not used).
     """
@@ -39,12 +43,16 @@ class LapPE(BaseTransform):
         include_eigenvalues: bool = False,
         include_first: bool = False,
         concat_to_x: bool = True,
+        eps: float = 1e-6,
+        tolerance: float = 0.001,
         **kwargs,
     ):
         self.max_pe_dim = max_pe_dim
         self.include_eigenvalues = include_eigenvalues
         self.include_first = include_first
         self.concat_to_x = concat_to_x
+        self.eps = eps
+        self.tolerance = tolerance
 
     def forward(self, data: Data) -> Data:
         """Compute the Laplacian positional encodings for the input graph.
@@ -104,18 +112,13 @@ class LapPE(BaseTransform):
         k = min(self.max_pe_dim, max(1, num_nodes - 1))
 
         try:
-            evals, evecs = eigsh(L, k=k, which="SM", tol=0.001)
-            idx = np.argsort(evals)
-            evals, evecs = evals[idx], evecs[:, idx]
+            evals, evecs = eigsh(L, k=k, which="SM", tol=self.tolerance)
         except Exception:
             evals, evecs = np.linalg.eigh(L.toarray())
-            idx = np.argsort(evals)
-            evals, evecs = evals[idx], evecs[:, idx]
 
         # Drop trivial eigenvectors if requested
-        eps = 1e-6
         if not self.include_first:
-            mask = evals > eps
+            mask = evals > self.eps
             evals, evecs = evals[mask], evecs[:, mask]
 
         # Take up to k

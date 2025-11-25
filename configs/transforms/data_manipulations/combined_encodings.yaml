@@ -1,6 +1,6 @@
 transform_name: "CombinedPSEs"
 transform_type: "data manipulation"
-encodings: ["LapPE", "RWSE"]
+encodings: ["LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE"]
 parameters:
   LapPE:
     max_pe_dim: 10
@@ -9,4 +9,11 @@ parameters:
     concat_to_x: true
   RWSE: 
     max_pe_dim: 10
+    concat_to_x: true
+  ElectrostaticPE:
+    max_pe_dim: 10
+    concat_to_x: true
+  HKdiagSE:
+    max_pe_dim: 10
+    kernel_param_HKdiagSE: [1, 21]
     concat_to_x: true

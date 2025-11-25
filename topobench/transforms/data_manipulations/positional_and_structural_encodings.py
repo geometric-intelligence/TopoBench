@@ -46,7 +46,12 @@ class CombinedPSEs(BaseTransform):
         torch_geometric.data.Data
             The transformed data with added structural encodings.
         """
-        from topobench.transforms.data_manipulations import RWSE, LapPE
+        from topobench.transforms.data_manipulations import (
+            RWSE,
+            ElectrostaticPE,
+            HKdiagSE,
+            LapPE,
+        )
 
         for enc in self.encodings:
             if enc == "LapPE":
@@ -55,6 +60,14 @@ class CombinedPSEs(BaseTransform):
             elif enc == "RWSE":
                 rwse = RWSE(**self.parameters.get("RWSE", {}))
                 data = rwse(data)
+            elif enc == "ElectrostaticPE":
+                electrostatic_pe = ElectrostaticPE(
+                    **self.parameters.get("ElectrostaticPE", {})
+                )
+                data = electrostatic_pe(data)
+            elif enc == "HKdiagSE":
+                hkdiag_se = HKdiagSE(**self.parameters.get("HKdiagSE", {}))
+                data = hkdiag_se(data)
             else:
                 raise ValueError(f"Unsupported encoding type: {enc}")
 
