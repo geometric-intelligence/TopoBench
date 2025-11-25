@@ -4,7 +4,6 @@
 (github: https://github.com/LouisVanLangendonck/GraphUniverse)
 """
 
-import torch_geometric.transforms as T
 from graph_universe import GraphUniverseDataset
 from omegaconf import DictConfig
 from torch_geometric.data import Data, Dataset
