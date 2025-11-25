@@ -335,6 +335,69 @@ class TestLoadInductiveSplits:
         assert len(test_ds) > 0
         assert len(train_ds) + len(val_ds) + len(test_ds) == n_graphs
 
+    def test_node_task_level_random_split(self):
+        """Test with task_level='node' using random split."""
+        n_graphs = 20
+        label_shapes = [()] * n_graphs
+        mock_dataset = self.create_mock_dataset(n_graphs, label_shapes)
+        
+        parameters = DictConfig({
+            "split_type": "random",
+            "data_seed": 0,
+            "train_prop": 0.6,
+            "data_split_dir": os.path.join(self.test_dir, "data_splits")
+        })
+        
+        # Call with task_level='node'
+        train_ds, val_ds, test_ds = load_inductive_splits(
+            mock_dataset, parameters, task_level="node"
+        )
+        
+        # Verify splits exist and are non-empty
+        assert len(train_ds) > 0
+        assert len(val_ds) > 0
+        assert len(test_ds) > 0
+        assert len(train_ds) + len(val_ds) + len(test_ds) == n_graphs
+
+    def test_node_task_level_kfold_raises_error(self):
+        """Test that task_level='node' with k-fold raises NotImplementedError."""
+        n_graphs = 20
+        label_shapes = [()] * n_graphs
+        mock_dataset = self.create_mock_dataset(n_graphs, label_shapes)
+        
+        parameters = DictConfig({
+            "split_type": "k-fold",
+            "data_seed": 0,
+            "k": 5,
+            "data_split_dir": os.path.join(self.test_dir, "data_splits")
+        })
+        
+        # K-fold should not be supported for node-level tasks in inductive setting
+        with pytest.raises(NotImplementedError, match="K-Fold splitting is not supported for node-level tasks"):
+            load_inductive_splits(mock_dataset, parameters, task_level="node")
+
+    def test_graph_task_level_explicit(self):
+        """Test with task_level='graph' explicitly set."""
+        n_graphs = 20
+        label_shapes = [()] * n_graphs
+        mock_dataset = self.create_mock_dataset(n_graphs, label_shapes)
+        
+        parameters = DictConfig({
+            "split_type": "random",
+            "data_seed": 0,
+            "train_prop": 0.6,
+            "data_split_dir": os.path.join(self.test_dir, "data_splits")
+        })
+        
+        # Call with task_level='graph'
+        train_ds, val_ds, test_ds = load_inductive_splits(
+            mock_dataset, parameters, task_level="graph"
+        )
+        
+        assert len(train_ds) > 0
+        assert len(val_ds) > 0
+        assert len(test_ds) > 0
+        assert len(train_ds) + len(val_ds) + len(test_ds) == n_graphs
 
 class TestKFoldSplit:
     """Test k_fold_split function."""

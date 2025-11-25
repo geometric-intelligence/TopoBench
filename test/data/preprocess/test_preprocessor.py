@@ -131,7 +131,7 @@ class TestPreProcessorBasic:
                     preprocessor.load_dataset_splits(split_params)
                     
                     mock_load_inductive_splits.assert_called_once_with(
-                        preprocessor, split_params
+                        preprocessor, split_params, task_level=None
                     )
 
     @patch("topobench.data.preprocessor.preprocessor.load_transductive_splits")
@@ -159,6 +159,32 @@ class TestPreProcessorBasic:
                     
                     mock_load_transductive_splits.assert_called_once_with(
                         preprocessor, split_params
+                    )
+    @patch("topobench.data.preprocessor.preprocessor.load_inductive_splits")
+    def test_load_dataset_splits_with_task_level(self, mock_load_inductive_splits):
+        """Test loading dataset splits with task_level parameter.
+        
+        Parameters
+        ----------
+        mock_load_inductive_splits : MagicMock
+            Mock of the load_inductive_splits function.
+        """
+        mock_dataset = MagicMock(spec=torch_geometric.data.Dataset)
+        mock_dataset.transform = None
+        mock_dataset._data = torch_geometric.data.Data()
+        mock_dataset.slices = {}
+        mock_dataset.__iter__ = MagicMock(return_value=iter([]))
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("torch_geometric.data.InMemoryDataset.__init__"):
+                with patch.object(PreProcessor, "load"):
+                    preprocessor = PreProcessor(mock_dataset, tmpdir, None)
+                    
+                    split_params = DictConfig({"learning_setting": "inductive"})
+                    preprocessor.load_dataset_splits(split_params, task_level="node")
+                    
+                    mock_load_inductive_splits.assert_called_once_with(
+                        preprocessor, split_params, task_level="node"
                     )
 
     def test_invalid_learning_setting(self):
