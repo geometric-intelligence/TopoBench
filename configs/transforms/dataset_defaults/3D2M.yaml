@@ -1,0 +1,3 @@
+# 3D2M dataset needs identity transform to avoid adding random float feature to feature matrix
+defaults:
+  - data_manipulations: identity

@@ -860,3 +860,47 @@ def find_tetrahedrons(incidence_1, incidence_2, incidence_3):
         for i in unique_tetrahedrons
     ]
     return tetrahedron_list
+
+
+def normal(v1, v2, v3):
+    """
+    Normal vector of a face from three vertices in the face.
+
+    Parameters
+    ----------
+    v1 : torch.Tensor
+        Coordinates of a vertex.
+    v2 : torch.Tensor
+        Coordinates of a vertex.
+    v3 : torch.Tensor
+        Coordinates of a vertex.
+
+    Returns
+    -------
+    torch.Tensor
+        The normal of a face.
+    """
+    N = torch.linalg.cross(v2-v1, v3-v1)
+    return N / torch.norm(N)
+
+
+def reindex(x):
+    """
+    Reindexing index that start with 1.
+
+    Parameters
+    ----------
+    x : string
+        String of an index.
+
+    Returns
+    -------
+    int
+        Index.
+    """
+    if isinstance(x,str):
+        return int(x) - 1
+    elif isinstance(x, int):
+        return x - 1
+    else:
+        raise Exception

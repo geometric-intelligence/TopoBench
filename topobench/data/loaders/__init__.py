@@ -1,6 +1,8 @@
 """Init file for load module."""
 
 from .base import AbstractLoader
+from .cell import *
+from .cell import __all__ as cell_all
 from .graph import *
 from .graph import __all__ as graph_all
 from .hypergraph import *
@@ -12,6 +14,7 @@ from .simplicial import __all__ as simplicial_all
 
 __all__ = [
     "AbstractLoader",
+    *cell_all,
     *graph_all,
     *hypergraph_all,
     *simplicial_all,
