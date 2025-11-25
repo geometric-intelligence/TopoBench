@@ -51,43 +51,51 @@ class TriangleClassifier:
         """
         self.min_weight = min_weight
 
-    def extract_triangles(
-        self,
-        edge_index: torch.Tensor,
-        edge_weights: torch.Tensor,
-        num_nodes: int,
-    ) -> list:
-        """Extract all triangles from graph.
+    def enumerate_triangles(self, G: nx.Graph) -> list:
+        """Enumerate all triangles in a graph using efficient O(n^3) enumeration.
 
         Parameters
         ----------
-        edge_index : torch.Tensor
-            Edge connectivity, shape (2, num_edges).
-        edge_weights : torch.Tensor
-            Correlation values for each edge, shape (num_edges,).
-        num_nodes : int
-            Number of nodes.
+        G : nx.Graph
+            NetworkX graph object with edges and optional weights.
+
+        Returns
+        -------
+        list of tuple
+            Each tuple is (a, b, c) representing a triangle.
+        """
+        triangles = []
+        nodes = list(G.nodes())
+        for i, a in enumerate(nodes):
+            neighbors_a = set(G.neighbors(a))
+            for j, b in enumerate(nodes[i + 1 :], start=i + 1):
+                if b not in neighbors_a:
+                    continue
+                neighbors_b = set(G.neighbors(b))
+                for c in nodes[j + 1 :]:
+                    if c in neighbors_a and c in neighbors_b:
+                        # Found triangle (a,b,c)
+                        triangles.append((a, b, c))  # noqa: PERF401 (conditional append, not extend)
+
+        return triangles
+
+    def classify_and_weight_triangles(
+        self, triangles: list, G: nx.Graph
+    ) -> list:
+        """Classify triangles and add edge weights and role information.
+
+        Parameters
+        ----------
+        triangles : list of tuple
+            List of triangles, each as (a, b, c) node indices.
+        G : nx.Graph
+            NetworkX graph with edge weights and adjacency information.
 
         Returns
         -------
         list of dict
             Each dict contains {'nodes': (a,b,c), 'edge_weights': [w1,w2,w3], 'role': str, 'label': int}.
         """
-        # Build networkx graph for easy triangle finding
-        G = nx.Graph()
-        G.add_nodes_from(range(num_nodes))
-
-        for i in range(edge_index.shape[1]):
-            u = edge_index[0, i].item()
-            v = edge_index[1, i].item()
-            w = edge_weights[i].item()
-            G.add_edge(u, v, weight=w)
-
-        # Find all triangles
-        triangles = list(nx.enumerate_all_cliques(G))
-        triangles = [t for t in triangles if len(t) == 3]
-
-        # Classify each triangle
         triangle_data = []
         for nodes in triangles:
             a, b, c = nodes
@@ -109,6 +117,46 @@ class TriangleClassifier:
                     "label": self._role_to_label(role),
                 }
             )
+
+        return triangle_data
+
+    def extract_triangles(
+        self,
+        edge_index: torch.Tensor,
+        edge_weights: torch.Tensor,
+        num_nodes: int,
+    ) -> list:
+        """Extract all triangles from graph (convenience method).
+
+        Combines enumerate_triangles and classify_and_weight_triangles.
+
+        Parameters
+        ----------
+        edge_index : torch.Tensor
+            Edge connectivity, shape (2, num_edges).
+        edge_weights : torch.Tensor
+            Correlation values for each edge, shape (num_edges,).
+        num_nodes : int
+            Number of nodes.
+
+        Returns
+        -------
+        list of dict
+            Each dict contains {'nodes': (a,b,c), 'edge_weights': [w1,w2,w3], 'role': str, 'label': int}.
+        """
+        # Build networkx graph
+        G = nx.Graph()
+        G.add_nodes_from(range(num_nodes))
+
+        for i in range(edge_index.shape[1]):
+            u = edge_index[0, i].item()
+            v = edge_index[1, i].item()
+            w = edge_weights[i].item()
+            G.add_edge(u, v, weight=w)
+
+        # Enumerate and classify triangles
+        triangles = self.enumerate_triangles(G)
+        triangle_data = self.classify_and_weight_triangles(triangles, G)
 
         return triangle_data
 
@@ -161,6 +209,11 @@ class TriangleClassifier:
     def _role_to_label(self, role_str: str) -> int:
         """Convert role string to integer label.
 
+        All 9 combinations of embedding class × weight class are supported:
+
+        Embedding classes: core (high common neighbors), bridge, isolated (low common neighbors)
+        Weight classes: strong (high correlation), medium, weak (low correlation)
+
         Parameters
         ----------
         role_str : str
@@ -169,18 +222,23 @@ class TriangleClassifier:
         Returns
         -------
         int
-            Label (0-6).
+            Label (0-8), mapping all 9 embedding × weight class combinations.
         """
         roles = {
+            # Core triangles (many common neighbors)
             "core_strong": 0,
             "core_medium": 1,
-            "bridge_strong": 2,
-            "bridge_medium": 3,
-            "isolated_strong": 4,
-            "isolated_medium": 5,
-            "isolated_weak": 6,
+            "core_weak": 2,
+            # Bridge triangles (some common neighbors)
+            "bridge_strong": 3,
+            "bridge_medium": 4,
+            "bridge_weak": 5,
+            # Isolated triangles (few/no common neighbors)
+            "isolated_strong": 6,
+            "isolated_medium": 7,
+            "isolated_weak": 8,
         }
-        return roles.get(role_str, 6)
+        return roles.get(role_str, 8)  # Default to isolated_weak if unknown
 
 
 class A123CortexMDataset(InMemoryDataset):
@@ -230,6 +288,7 @@ class A123CortexMDataset(InMemoryDataset):
     ) -> None:
         self.name = name
         self.parameters = parameters
+
         # defensive parameter access with sensible defaults
         try:
             self.corr_threshold = float(parameters.get("corr_threshold", 0.2))
@@ -248,13 +307,15 @@ class A123CortexMDataset(InMemoryDataset):
         except Exception:
             self.min_neurons = int(getattr(parameters, "min_neurons", 8))
 
-        # Triangle classification task settings
+        # Task type from parameters (classification, triangle_classification, or triangle_common_neighbors)
         try:
-            self.triangle_task_enabled = bool(
-                parameters.get("triangle_task", {}).get("enabled", False)
+            self.task_type = str(
+                parameters.get("specific_task", "classification")
             )
         except Exception:
-            self.triangle_task_enabled = False
+            self.task_type = str(
+                getattr(parameters, "specific_task", "classification")
+            )
 
         self.session_map = {}
         super().__init__(
@@ -513,17 +574,28 @@ class A123CortexMDataset(InMemoryDataset):
             - 'G': NetworkX graph object (for structural queries)
             - 'num_nodes': number of nodes in graph
         """
+        import time
+
         classifier = TriangleClassifier(min_weight=self.corr_threshold)
         raw_triangles = []
 
         print("[A123] Starting triangle extraction from graphs...")
 
-        for graph_idx, data in enumerate(self.data):
-            if graph_idx % 100 == 0:
+        num_graphs = len(self)
+        start_time = time.time()
+
+        for graph_idx in range(num_graphs):
+            if graph_idx % 10 == 0 and graph_idx > 0:
+                elapsed = time.time() - start_time
+                avg_time = elapsed / graph_idx
+                remaining = avg_time * (num_graphs - graph_idx)
                 print(
-                    f"[A123] Processing graph {graph_idx}/{len(self.data)} "
-                    f"for triangle extraction..."
+                    f"[A123] Processed {graph_idx}/{num_graphs} graphs "
+                    f"({int(elapsed)}s elapsed, ~{int(remaining)}s remaining)..."
                 )
+
+            # Get individual data object using get() method
+            data = self.get(graph_idx)
 
             # Skip graphs with no edges
             if data.edge_index.shape[1] == 0:
@@ -535,31 +607,39 @@ class A123CortexMDataset(InMemoryDataset):
                 if hasattr(data, "x") and data.x is not None
                 else 0
             )
-            G = nx.Graph()
-            G.add_nodes_from(range(num_nodes))
-            for i in range(data.edge_index.shape[1]):
-                u = int(data.edge_index[0, i].item())
-                v = int(data.edge_index[1, i].item())
-                G.add_edge(u, v)
 
-            # Extract triangles
             try:
-                triangles = classifier.extract_triangles(
-                    data.edge_index,
-                    data.edge_attr.squeeze()
-                    if data.edge_attr is not None
-                    else torch.ones(data.edge_index.shape[1]),
-                    num_nodes,
+                # Build NetworkX graph once (reuse in both enumeration and classification)
+                G = nx.Graph()
+                G.add_nodes_from(range(num_nodes))
+                for i in range(data.edge_index.shape[1]):
+                    u = int(data.edge_index[0, i].item())
+                    v = int(data.edge_index[1, i].item())
+                    w = (
+                        float(data.edge_attr[i].item())
+                        if data.edge_attr is not None
+                        else 1.0
+                    )
+                    G.add_edge(u, v, weight=w)
+
+                # Enumerate triangles and classify them using separate methods
+                triangles = classifier.enumerate_triangles(G)
+                triangle_data = classifier.classify_and_weight_triangles(
+                    triangles, G
                 )
+
             except Exception as e:
                 print(
                     f"[A123] Warning: Could not extract triangles for graph {graph_idx}: {e}"
                 )
+                import traceback
+
+                traceback.print_exc()
                 continue
 
             # Store raw triangle data with graph context
-            for tri in triangles:
-                raw_triangles.extend(
+            for tri in triangle_data:
+                raw_triangles.append(  # noqa: PERF401 (appending dict, not extending)
                     {
                         "graph_idx": graph_idx,
                         "tri": tri,
@@ -568,6 +648,10 @@ class A123CortexMDataset(InMemoryDataset):
                     }
                 )
 
+        elapsed = time.time() - start_time
+        print(
+            f"[A123] Triangle extraction completed in {int(elapsed)}s, found {len(raw_triangles)} triangles"
+        )
         return raw_triangles
 
     def create_triangle_classification_task(self) -> list:
@@ -578,10 +662,21 @@ class A123CortexMDataset(InMemoryDataset):
         are purely topological (edge weights only) - independent of original
         node properties or frequency information.
 
+        Uses 9 classes based on all combinations of embedding class and weight class:
+        - 0: core_strong (high common neighbors, strong correlation)
+        - 1: core_medium (high common neighbors, medium correlation)
+        - 2: core_weak (high common neighbors, weak correlation)
+        - 3: bridge_strong (some common neighbors, strong correlation)
+        - 4: bridge_medium (some common neighbors, medium correlation)
+        - 5: bridge_weak (some common neighbors, weak correlation)
+        - 6: isolated_strong (few common neighbors, strong correlation)
+        - 7: isolated_medium (few common neighbors, medium correlation)
+        - 8: isolated_weak (few common neighbors, weak correlation)
+
         Returns
         -------
         list of torch_geometric.data.Data
-            Triangle-level samples with 3D edge weight features and role labels.
+            Triangle-level samples with 3D edge weight features and role labels (0-8).
         """
         raw_triangles = self._extract_triangles_from_graphs()
         triangle_data_list = []
@@ -597,10 +692,13 @@ class A123CortexMDataset(InMemoryDataset):
                 tri["edge_weights"], dtype=torch.float32
             )  # (3,)
 
+            # Use the role label (0-8) for all 9 triangle topological classes
+            label = tri["label"]  # Now 0-8 from _role_to_label()
+
             # Create data object for this triangle
             tri_data = Data(
                 x=tri_edge_weights.unsqueeze(0),  # (1, 3) - edge weights only
-                y=torch.tensor(tri["label"], dtype=torch.long),
+                y=torch.tensor(label, dtype=torch.long),
                 nodes=torch.tensor(tri["nodes"], dtype=torch.long),
                 role=tri["role"],
                 graph_idx=graph_idx,
@@ -617,11 +715,12 @@ class A123CortexMDataset(InMemoryDataset):
         For each triangle (a,b,c) we compute:
           - feature: the degrees of the three nodes (structural, no weights)
           - label: number of nodes that are neighbours to all three (common neighbours)
+                   Classes: 0-7 neighbors map to classes 0-7, 8+ neighbors map to class 8
 
         Returns
         -------
         list of torch_geometric.data.Data
-            Each Data contains x (1,3) degrees, y (scalar) common-neighbour count,
+            Each Data contains x (1,3) degrees, y (scalar) common-neighbour count (0-8),
             nodes (3,), role (str) optionally, and graph_idx metadata.
         """
         raw_triangles = self._extract_triangles_from_graphs()
@@ -642,6 +741,9 @@ class A123CortexMDataset(InMemoryDataset):
             ) - {a, b, c}
             num_common = len(common)
 
+            # Cap at 8: 0-7 neighbors are their own class, 8+ neighbors are class 8
+            label = min(num_common, 8)
+
             # Node degree features (structural)
             deg_a = G.degree(a)
             deg_b = G.degree(b)
@@ -652,7 +754,7 @@ class A123CortexMDataset(InMemoryDataset):
 
             tri_data = Data(
                 x=tri_feats.unsqueeze(0),  # (1,3)
-                y=torch.tensor([int(num_common)], dtype=torch.long),
+                y=torch.tensor([int(label)], dtype=torch.long),
                 nodes=torch.tensor(tri["nodes"], dtype=torch.long),
                 role=tri.get("role", ""),
                 graph_idx=graph_idx,
@@ -687,16 +789,23 @@ class A123CortexMDataset(InMemoryDataset):
         print(f"[A123] Extracted {len(samples)} samples")
 
         data_list = []
+        skipped_count = 0
         for idx, (_, s) in enumerate(samples.iterrows()):
             if idx % 100 == 0:
                 print(
                     f"[A123] Converting sample {idx}/{len(samples)} to PyG Data..."
                 )
             d = self._sample_to_pyg_data(s, threshold=self.corr_threshold)
-            data_list.append(d)
+            # Filter out empty graphs (graphs with no edges)
+            if d.edge_index is not None and d.edge_index.numel() > 0:
+                data_list.append(d)
+            else:
+                skipped_count += 1
 
         # collate and save processed dataset
-        print(f"[A123] Collating {len(data_list)} samples...")
+        print(
+            f"[A123] Collating {len(data_list)} samples (removed {skipped_count} empty graphs)..."
+        )
         self.data, self.slices = self.collate(data_list)
         self._data_list = None
         print(f"[A123] Saving processed data to {self.processed_paths[0]}...")
@@ -706,7 +815,8 @@ class A123CortexMDataset(InMemoryDataset):
         )
 
         # If triangle task is enabled, create and save triangle classification dataset
-        if self.triangle_task_enabled:
+        specific_task = self.parameters.get("specific_task", "classification")
+        if specific_task == "triangle_classification":
             print(
                 "[A123] Triangle task enabled. Creating triangle classification dataset..."
             )
@@ -733,7 +843,7 @@ class A123CortexMDataset(InMemoryDataset):
             print("[A123] Triangle task dataset saved!")
 
         # If triangle common-neighbours task is enabled, create and save it
-        if self.triangle_common_task_enabled:
+        if specific_task == "triangle_common_neighbors":
             print(
                 "[A123] Triangle common-neighbours task enabled. Creating dataset..."
             )

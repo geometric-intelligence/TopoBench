@@ -79,18 +79,12 @@ class A123DatasetLoader(AbstractLoader):
         self.dataset = None
 
     def load_dataset(
-        self, task_type: str = "classification"
+        self,
     ) -> torch.utils.data.Dataset:
         """Instantiate and return the underlying dataset.
 
         Returns a `A123CortexMDataset` instance constructed from the loader's
         parameters and root data directory.
-
-        Parameters
-        ----------
-        task_type : str, optional
-            Type of task to load. Options: "classification" (default) or "triangle".
-            If "triangle", loads the triangle classification task dataset.
 
         Returns
         -------
@@ -99,6 +93,9 @@ class A123DatasetLoader(AbstractLoader):
         """
         # determine dataset name from parameters, fallback to expected id
         name = self.parameters.data_name
+        task_type = str(
+            getattr(self.parameters, "specific_task", "classification")
+        )
 
         # root path for dataset: use the parent of root_data_dir since the dataset
         # constructs its own subdirectory based on name
@@ -110,7 +107,7 @@ class A123DatasetLoader(AbstractLoader):
         )
 
         # If triangle task requested, load triangle dataset instead
-        if task_type == "triangle":
+        if task_type == "triangle_classification":
             # Load triangle classification dataset
             processed_dir = self.dataset.processed_dir
             triangle_data_path = osp.join(processed_dir, "data_triangles.pt")

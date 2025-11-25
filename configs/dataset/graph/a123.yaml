@@ -18,7 +18,7 @@ loader:
     data_domain: graph
     data_type: A123CortexM
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type} # Use data_dir from dataset config
-    data_name: ${dataset.parameters.data_name} # Use data_name from dataset config
+    data_name: a123_cortex_m # Use data_name from dataset config
     num_graphs: 10
     is_undirected: True
     num_channels: ${dataset.parameters.num_features} # Use num_features for node feature dim
@@ -28,24 +28,15 @@ loader:
 # Dataset-specific parameters
 parameters:
   num_features: 3
-  num_classes: 9
-  task: classification
+  task: classification       
+  specific_task: classification   # Current task selection (classification | triangle_classification | triangle_common_neighbors)
+  num_classes: 9                      
   loss_type: cross_entropy
   monitor_metric: accuracy
   task_level: graph
-  data_name: a123_cortex_m
   min_neurons: 3
   corr_threshold: 0.2
   
-  # Triangle classification task (higher-order topological task)
-  triangle_task:
-    enabled: false  # Set to false to disable triangle classification
-    num_triangle_classes: 7  # Role classes: core_strong, core_medium, bridge_strong, bridge_medium, isolated_strong, isolated_medium, isolated_weak
-    num_triangle_features: 3  # Pure topology: only edge weights (3 correlation values)
-
-  # Triangle common-neighbours task: predict number of common neighbours for each triangle
-  triangle_common_task:
-    enabled: false  # Set to true to enable creating/loading this task
 
 # Splits
 split_params:
