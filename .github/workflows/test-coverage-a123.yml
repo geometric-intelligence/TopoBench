@@ -14,33 +14,46 @@ on:
 jobs:
   test-coverage:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+      # Use conda environment instead of system Python
+      - name: Set up Miniconda
+        uses: conda-incubator/setup-miniconda@v3
         with:
-          python-version: '3.11'
+          auto-update-conda: true
+          python-version: "3.11"
+          activate-environment: tb
+          environment-file: ""      # we will create env manually
+          auto-activate-base: false
 
-      - name: Install dependencies via env_setup.sh
-        shell: bash
+      - name: Create and prepare tb env
+        shell: bash -l
         run: |
+          conda create -n tb python=3.11 -y
+          conda activate tb
+
           python -m pip install --upgrade pip setuptools wheel
 
-          # Make sure no preinstalled torch stack is hanging around
-          pip uninstall -y torch torchvision torchaudio || true
-
-          # Let TopoBench's own script install torch, torch-sparse, torch-geometric, etc.
-          # (TORCH / CUDA versions are controlled inside env_setup.sh)
+          # Let TopoBench's script install torch + PyG stack
           source env_setup.sh
 
           # Ensure test tools are available
-          pip install --no-cache-dir pytest pytest-cov pytest-mock
+          pip install pytest pytest-cov pytest-mock
+
+          # Quick sanity check
+          python - << 'EOF'
+          import torch, torch_geometric
+          print("torch:", torch.__version__)
+          print("torch_geometric:", torch_geometric.__version__)
+          EOF
 
       - name: Run tests with coverage for A123
+        shell: bash -l
         run: |
+          conda activate tb
           pytest test/data/load/test_a123_dataset.py \
             --cov=topobench.data.datasets.a123 \
             --cov=topobench.data.loaders.graph.a123_loader \
@@ -58,6 +71,8 @@ jobs:
           verbose: true
 
       - name: Print coverage summary
+        shell: bash -l
         run: |
+          conda activate tb
           echo "Coverage report generated at coverage_a123.xml"
           echo "Tests completed. Coverage uploaded to Codecov (if configured)."
