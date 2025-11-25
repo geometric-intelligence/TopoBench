@@ -1,11 +1,12 @@
 """Parallel preprocessing for multi-core speedup.
 
-This module implements parallel sample processing using ProcessPoolExecutor
+This module implements parallel sample processing using :class:`ProcessPoolExecutor`
 to achieve speedup on multi-core systems by distributing work across worker
 processes.
 """
 
 import os
+import pickle
 import sys
 import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -239,6 +240,19 @@ class ParallelProcessor:
         dict[str, Any]
             Processing statistics.
         """
+        try:
+            # Test if dataset can be pickled (required for multiprocessing)
+            pickle.dumps(dataset)
+        except (pickle.PicklingError, AttributeError, TypeError) as exc:
+            if self.show_progress:
+                print(
+                    f"\nDataset cannot be pickled ({type(exc).__name__}). "
+                    f"Falling back to sequential processing..."
+                )
+            return self._process_sequential(
+                dataset, transform, output_dir, num_samples
+            )
+
         batches = [
             list(range(i, min(i + self.batch_size, num_samples)))
             for i in range(0, num_samples, self.batch_size)
