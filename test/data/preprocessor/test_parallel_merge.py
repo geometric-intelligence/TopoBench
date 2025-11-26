@@ -151,20 +151,9 @@ class TestParallelMerge:
                 assert len(dataset) == num_samples
 
                 # Verify storage files exist
-                assert (
-                    data_dir
-                    / "transform_chain"
-                    / "DataTransform"
-                    / dataset.transform_chain[0]["hash"]
-                    / "samples.mmap"
-                ).exists()
-                assert (
-                    data_dir
-                    / "transform_chain"
-                    / "DataTransform"
-                    / dataset.transform_chain[0]["hash"]
-                    / "samples.idx.npy"
-                ).exists()
+                transform_dir = Path(dataset.transform_chain[0]["output_dir"])
+                assert (transform_dir / "samples.mmap").exists()
+                assert (transform_dir / "samples.idx.npy").exists()
 
                 # Verify random samples are valid
                 test_indices = [0, num_samples // 2, num_samples - 1]
@@ -237,12 +226,7 @@ class TestParallelMerge:
             )
 
             # Get storage paths
-            storage_dir = (
-                data_dir
-                / "transform_chain"
-                / "DataTransform"
-                / dataset.transform_chain[0]["hash"]
-            )
+            storage_dir = Path(dataset.transform_chain[0]["output_dir"])
             mmap_path = storage_dir / "samples.mmap"
             index_path = storage_dir / "samples.idx.npy"
 
@@ -370,12 +354,7 @@ class TestParallelMerge:
             )
 
             # Check that shard directories are cleaned up
-            storage_dir = (
-                data_dir
-                / "transform_chain"
-                / "DataTransform"
-                / dataset.transform_chain[0]["hash"]
-            )
+            storage_dir = Path(dataset.transform_chain[0]["output_dir"])
             shard_dirs = list(storage_dir.glob("_shard_*"))
 
             assert len(shard_dirs) == 0, (

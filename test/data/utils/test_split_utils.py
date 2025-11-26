@@ -504,9 +504,11 @@ class TestRandomSplitting:
         split_idx = random_splitting(labels, parameters, global_data_seed=999)
 
         assert "train" in split_idx
-        # Verify split directory reflects custom seed
+        # Verify split directory reflects custom seed and dataset size
         split_dir = os.path.join(
-            self.test_dir, "data_splits", "train_prop=0.6_global_seed=999"
+            self.test_dir,
+            "data_splits",
+            f"train_prop=0.6_global_seed=999_size={len(labels)}",
         )
         assert os.path.exists(split_dir)
 

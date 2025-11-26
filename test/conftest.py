@@ -11,6 +11,29 @@ from topobench.transforms.liftings.graph2cell import (
 )
 
 
+@pytest.fixture(autouse=True)
+def patch_torch_load_for_pytorch26(monkeypatch):
+    """Patch torch.load for PyTorch 2.6+ compatibility.
+    
+    PyTorch 2.6 changed the default value of weights_only from False to True,
+    which breaks loading PyG Data objects. This fixture patches torch.load
+    globally for all tests to use weights_only=False.
+    
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Pytest's monkeypatch fixture.
+    """
+    original_load = torch.load
+
+    def patched_load(*args, **kwargs):
+        if "weights_only" not in kwargs:
+            kwargs["weights_only"] = False
+        return original_load(*args, **kwargs)
+
+    monkeypatch.setattr(torch, "load", patched_load)
+
+
 @pytest.fixture
 def mocker_fixture(mocker):
     """Return pytest mocker, used when one want to use mocker in setup_method.
