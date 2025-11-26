@@ -55,6 +55,7 @@ dependencies=[
     "toponetx @ git+https://github.com/pyt-team/TopoNetX.git",
     "lightning==2.4.0",
     "gdown",
+    "pybiomart",
 ]
 
 [project.optional-dependencies]
