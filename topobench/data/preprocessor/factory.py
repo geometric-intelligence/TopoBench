@@ -299,17 +299,16 @@ def create_preprocessor(
         raise NotImplementedError(
             "On-disk preprocessing for transductive learning is not implemented yet."
         )
-    else:
-        # Multiple graphs - use inductive on-disk
-        return OnDiskInductivePreprocessor(
-            dataset=dataset,
-            data_dir=data_dir,
-            transforms_config=transforms_config,
-            force_reload=force_reload,
-            num_workers=num_workers,
-            storage_backend=storage_backend,
-            compression=compression,
-            batch_size=batch_size,
-            cache_size=cache_size,
-            **kwargs,  # Pass any remaining kwargs
-        )
+    # Multiple graphs - use inductive on-disk
+    return OnDiskInductivePreprocessor(
+        dataset=dataset,
+        data_dir=data_dir,
+        transforms_config=transforms_config,
+        force_reload=force_reload,
+        num_workers=num_workers,
+        storage_backend=storage_backend,
+        compression=compression,
+        batch_size=batch_size,
+        cache_size=cache_size,
+        **kwargs,  # Pass any remaining kwargs
+    )
