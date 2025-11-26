@@ -86,13 +86,20 @@ class DatasetManager:
 
             # Import the module
             module_name = f"{__name__}.{file_path.stem}"
-            spec = util.spec_from_file_location(module_name, file_path)
-            if spec and spec.loader:
-                module = util.module_from_spec(spec)
-                spec.loader.exec_module(module)
 
-                # Register in sys.modules for correct pickling
-                sys.modules[module_name] = module
+            # Check if module already imported to avoid duplicate instances
+            if module_name in sys.modules:
+                module = sys.modules[module_name]
+            else:
+                spec = util.spec_from_file_location(module_name, file_path)
+                if spec and spec.loader:
+                    module = util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+
+                    # Register in sys.modules for correct pickling
+                    sys.modules[module_name] = module
+                else:
+                    continue
 
                 # Find all dataset classes in the module
                 new_datasets = {
