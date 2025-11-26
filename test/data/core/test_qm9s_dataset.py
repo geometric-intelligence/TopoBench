@@ -1,11 +1,11 @@
 """Test QM9SDataset class."""
 
 import os
-import torch
+import sys
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+from topobench.data.core.qm9s_dataset import QM9SDataset
 from torch_geometric.data import Data
-
-from qm9s_dataset import QM9SDataset
-
 
 class TestQM9SDataset:
     """Test QM9SDataset class."""
