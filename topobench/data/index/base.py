@@ -83,9 +83,7 @@ class AbstractIndexBackend(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def insert_batch(
-        self, cliques: Iterator[tuple[int, list[int]]]
-    ) -> None:
+    def insert_batch(self, cliques: Iterator[tuple[int, list[int]]]) -> None:
         """Insert multiple cliques efficiently.
 
         Parameters
@@ -175,11 +173,32 @@ class AbstractIndexBackend(ABC):
         raise NotImplementedError
 
     def __enter__(self):
-        """Context manager entry."""
+        """Context manager entry.
+
+        Returns
+        -------
+        AbstractIndexBackend
+            Self instance with opened connection.
+        """
         self.open()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit."""
+        """Context manager exit.
+
+        Parameters
+        ----------
+        exc_type : type or None
+            Exception type if an exception was raised.
+        exc_val : Exception or None
+            Exception instance if an exception was raised.
+        exc_tb : traceback or None
+            Exception traceback if an exception was raised.
+
+        Returns
+        -------
+        bool or None
+            None to propagate exceptions (default behavior).
+        """
         self.close()
         return False

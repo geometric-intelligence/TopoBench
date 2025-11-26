@@ -52,8 +52,8 @@ class OnDiskTransductiveCollate:
 
     See Also
     --------
-    OnDiskTransductiveDataset : Dataset with structure indexing
-    NodeBatchSampler : Helper for creating node batches
+    OnDiskTransductiveDataset : Dataset for on-disk transductive learning.
+    NodeBatchSampler : Helper for creating node batches.
     """
 
     def __init__(
@@ -74,7 +74,7 @@ class OnDiskTransductiveCollate:
         self.ondisk_dataset = ondisk_dataset
         self.fully_contained = fully_contained
         self.graph_data = ondisk_dataset.graph_data
-        
+
         # Initialize transform if transforms_config is provided
         self.transform = None
         if ondisk_dataset.transforms_config is not None:
@@ -327,10 +327,12 @@ class OnDiskTransductiveCollate:
         # Group structures by size
         structures_by_size: dict[int, list[list[int]]] = {}
 
-        for struct_id, node_list in structures:
+        for _struct_id, node_list in structures:
             size = len(node_list)
             # Convert to local indices
-            local_indices = [node_to_idx[n] for n in node_list if n in node_to_idx]
+            local_indices = [
+                node_to_idx[n] for n in node_list if n in node_to_idx
+            ]
 
             # Only add if all nodes are in batch (shouldn't happen with fully_contained=True)
             if len(local_indices) == size:
@@ -353,30 +355,30 @@ class OnDiskTransductiveCollate:
 
                 # Store as x_{size-1} following TopoBench convention
                 # (e.g., triangles (size 3) stored as x_2)
-                setattr(batch_data, f"x_{size-1}", incidence)
+                setattr(batch_data, f"x_{size - 1}", incidence)
 
         return batch_data
-    
+
     def _instantiate_transform(
         self, transforms_config: DictConfig
     ) -> torch_geometric.transforms.Compose:
         """Instantiate transform from configuration.
-        
+
         Transforms are applied at batch-time to create proper simplicial
         complex structures from the queried topological structures. The transform
-        creates individual attributes (x_0, x_1, x_2, hodge_laplacian_0, 
+        creates individual attributes (x_0, x_1, x_2, hodge_laplacian_0,
         down_laplacian_1, incidence_1, etc.) on the batch Data object.
-        
+
         Parameters
         ----------
         transforms_config : DictConfig
             Transform configuration parameters.
-        
+
         Returns
         -------
         torch_geometric.transforms.Compose
             Composed transform object.
-            
+
         Notes
         -----
         Unlike inductive learning where transforms are applied offline during
@@ -389,7 +391,7 @@ class OnDiskTransductiveCollate:
         # Handle nested liftings config (for compatibility)
         if transforms_config.keys() == {"liftings"}:
             transforms_config = transforms_config.liftings
-        
+
         # Check if single or multiple transforms
         if "transform_name" in transforms_config:
             # Single transform
@@ -404,7 +406,7 @@ class OnDiskTransductiveCollate:
                 key: DataTransform(**value)
                 for key, value in transforms_config.items()
             }
-        
+
         # Return composed transform
         return torch_geometric.transforms.Compose(
             list(pre_transforms_dict.values())
@@ -467,5 +469,11 @@ class NodeBatchSampler:
             yield batch
 
     def __len__(self) -> int:
-        """Return number of batches."""
+        """Return number of batches.
+
+        Returns
+        -------
+        int
+            Number of batches that will be yielded.
+        """
         return (self.num_samples + self.batch_size - 1) // self.batch_size

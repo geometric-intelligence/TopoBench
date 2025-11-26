@@ -93,9 +93,7 @@ class TransductiveSplitDataset(Dataset):
         )
 
         # Get parameters from config
-        cliques_per_batch = self.split_config.get(
-            "cliques_per_batch", 500
-        )
+        cliques_per_batch = self.split_config.get("cliques_per_batch", 500)
         node_budget = self.split_config.get("node_budget", 2000)
         shuffle = self.split_config.get("shuffle", self.split_name == "train")
 

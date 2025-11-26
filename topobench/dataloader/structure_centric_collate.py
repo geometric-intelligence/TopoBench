@@ -216,12 +216,12 @@ class StructureCentricCollate:
         self, transforms_config: DictConfig
     ) -> torch_geometric.transforms.Compose:
         """Instantiate transform from configuration.
-        
+
         Parameters
         ----------
         transforms_config : DictConfig
             Transform configuration parameters.
-        
+
         Returns
         -------
         torch_geometric.transforms.Compose
@@ -230,7 +230,7 @@ class StructureCentricCollate:
         # Handle nested liftings config (for compatibility)
         if "liftings" in transforms_config:
             transforms_config = transforms_config.liftings
-        
+
         # Check if single or multiple transforms
         if "transform_name" in transforms_config:
             # Single transform
@@ -245,7 +245,7 @@ class StructureCentricCollate:
                 key: DataTransform(**value)
                 for key, value in transforms_config.items()
             }
-        
+
         # Return composed transform
         return torch_geometric.transforms.Compose(
             list(pre_transforms_dict.values())
