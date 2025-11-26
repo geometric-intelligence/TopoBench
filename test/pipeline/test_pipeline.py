@@ -26,8 +26,6 @@ class TestPipeline:
                         f"dataset={DATASET}", # IF YOU IMPLEMENT A LARGE DATASET WITH AN OPTION TO USE A SLICE OF IT, ADD BELOW THE CORRESPONDING OPTION
                         "trainer.max_epochs=2",
                         "trainer.min_epochs=1",
-                        "dataset.loader.parameters.subset=0.01",
-                        "dataset.dataloader_params.batch_size=32",
                         "trainer.check_val_every_n_epoch=1",
                         "paths=test",
                         "callbacks=model_checkpoint",
