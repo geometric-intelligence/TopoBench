@@ -30,7 +30,7 @@ class TestTransformNode:
     def test_node_creation_and_serialization(self):
         """Test node creation with dependencies and serialization."""
         transform = MockTransform("test")
-        
+
         # Test basic creation
         node = TransformNode(
             transform=transform,
@@ -61,24 +61,24 @@ class TestTransformDAG:
     def test_add_transforms_with_dependencies(self):
         """Test adding single/multiple transforms with dependencies."""
         dag = TransformDAG()
-        
+
         # Empty initialization
         assert len(dag.nodes) == 0
         assert len(dag.execution_order) == 0
-        
+
         # Add first transform
         t1 = MockTransform("transform1")
         id1 = dag.add_transform(t1, tier="heavy")
-        
+
         assert id1 == "MockTransform_0"
         assert id1 in dag.nodes
         assert id1 in dag.execution_order
         assert dag.nodes[id1].tier == "heavy"
-        
+
         # Add second transform with dependency
         t2 = MockTransform("transform2")
         id2 = dag.add_transform(t2, tier="light", dependencies=[id1])
-        
+
         assert id2 == "MockTransform_1"
         assert len(dag.nodes) == 2
         assert len(dag.execution_order) == 2
@@ -96,7 +96,7 @@ class TestTransformDAG:
         # Per-transform hashes
         hash1 = dag.get_transform_hash(id1)
         hash2 = dag.get_transform_hash(id2)
-        
+
         assert hash1 != hash2
         assert isinstance(hash1, str)
         assert len(hash1) > 0
@@ -161,7 +161,7 @@ class TestTransformDAG:
         # Deserialize
         dag2 = TransformDAG.from_dict(data)
         assert dag2.execution_order == dag.execution_order
-        
+
         # Test repr
         repr_str = repr(dag)
         assert "TransformDAG" in repr_str
@@ -179,15 +179,15 @@ class TestTransformPipelineDAGIntegration:
         pipeline = TransformPipeline(transforms, transform_tier="all_heavy")
 
         dag = pipeline.get_dag()
-        
+
         # DAG created with correct size
         assert len(dag.nodes) == 3
         assert len(dag.execution_order) == 3
-        
+
         # All transforms are heavy
         heavy_nodes = [n for n in dag.nodes.values() if n.tier == "heavy"]
         assert len(heavy_nodes) == 3
-        
+
         # Summary includes DAG info
         summary = pipeline.get_summary()
         assert "dag_nodes" in summary

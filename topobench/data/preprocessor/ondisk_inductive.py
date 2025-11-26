@@ -41,7 +41,7 @@ from topobench.transforms.data_transform import DataTransform
 
 def _torch_load_compat(path, **kwargs):
     """Backwards-compatible torch.load wrapper.
-    
+
     PyTorch 2.6+ requires weights_only=False for PyG Data objects.
     Older versions don't have the weights_only parameter.
     """
@@ -782,12 +782,12 @@ class OnDiskInductivePreprocessor(Dataset):
         # Process each uncached transform individually to maintain DAG structure
         # Each transform writes to its own directory
         dag = self.transform_pipeline.get_dag()
-        
+
         for transform_idx in uncached_indices:
             chain_entry = self.transform_chain[transform_idx]
             transform_id = chain_entry["transform_id"]
             output_dir = Path(chain_entry["output_dir"])
-            
+
             # Determine source for this transform
             if transform_idx == 0:
                 # First transform: use original dataset
@@ -797,25 +797,25 @@ class OnDiskInductivePreprocessor(Dataset):
                 prev_entry = self.transform_chain[transform_idx - 1]
                 prev_dir = Path(prev_entry["output_dir"])
                 source_dataset = self._create_cached_dataset(prev_dir)
-            
+
             # Get single transform (not composed)
             node = dag.nodes[transform_id]
             source_transform = node.transform
-            
+
             # Save original processed_dir and metadata_path, temporarily set to this transform's output
             original_processed_dir = self.processed_dir
             original_metadata_path = self.metadata_path
             self.processed_dir = output_dir
             self.metadata_path = output_dir / "dataset_metadata.json"
-            
+
             # Ensure output directory exists
             output_dir.mkdir(parents=True, exist_ok=True)
-            
+
             try:
                 # Process this transform only
                 self._process_samples_full(
-                    source_dataset=source_dataset, 
-                    source_transform=source_transform
+                    source_dataset=source_dataset,
+                    source_transform=source_transform,
                 )
             finally:
                 # Restore original processed_dir and metadata_path
@@ -933,7 +933,9 @@ class OnDiskInductivePreprocessor(Dataset):
         # DEBUG: Print processing results
         print(f"[OnDiskInductivePreprocessor] Processing results: {results}")
         if results["failed"] > 0:
-            print(f"[OnDiskInductivePreprocessor] Errors: {results['errors'][:3]}")  # Show first 3 errors
+            print(
+                f"[OnDiskInductivePreprocessor] Errors: {results['errors'][:3]}"
+            )  # Show first 3 errors
 
         # Save metadata
         self.num_samples = len(source_dataset)

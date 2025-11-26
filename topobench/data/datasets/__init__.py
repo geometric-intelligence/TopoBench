@@ -9,7 +9,7 @@ from typing import ClassVar
 from torch_geometric.data import InMemoryDataset
 
 # Import lazy splits for O(1) memory usage
-from ._lazy import LazySubset, LazyDataloadDataset
+from ._lazy import LazyDataloadDataset, LazySubset
 
 # Import adapters for converting existing PyG datasets
 from .adapters import (

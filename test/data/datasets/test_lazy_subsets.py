@@ -9,8 +9,8 @@ import torch
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
 
-from topobench.data.datasets._lazy import LazySubset
 from topobench.data.datasets import GeneratedInductiveDataset
+from topobench.data.datasets._lazy import LazySubset
 
 
 class SimpleGeneratedDataset(GeneratedInductiveDataset):
@@ -71,7 +71,7 @@ class TestLazySubset:
                 subset_sample = subset[subset_idx]
                 dataset_sample = dataset[dataset_idx]
 
-                assert type(subset_sample) == type(dataset_sample)
+                assert type(subset_sample) is type(dataset_sample)
                 assert hasattr(subset_sample, "x")
                 assert hasattr(subset_sample, "edge_index")
 
@@ -93,7 +93,9 @@ class TestLazySubset:
             mem_growth = mem_after - mem_before
 
             # Memory growth should be minimal (< 10 MB for 100 splits)
-            assert mem_growth < 10, f"Memory growth too high: {mem_growth:.1f} MB"
+            assert mem_growth < 10, (
+                f"Memory growth too high: {mem_growth:.1f} MB"
+            )
 
     def test_dataloader_integration(self):
         """Test LazySubset works with PyTorch DataLoader."""

@@ -37,7 +37,12 @@ class SimpleGraphDataset(GeneratedInductiveDataset):
 
     def _get_pickle_args(self) -> tuple:
         """Return arguments for pickling."""
-        return (str(self.root), self.num_samples, self.seed, self.cache_samples)
+        return (
+            str(self.root),
+            self.num_samples,
+            self.seed,
+            self.cache_samples,
+        )
 
 
 class TestLRUCacheBasicFunctionality:
@@ -217,9 +222,7 @@ class TestLRUEvictionPolicy:
 
         # Cache should be: [2, 3, 4, 0, 5] (1 evicted)
         assert 1 not in preprocessor._cache
-        assert all(
-            idx in preprocessor._cache for idx in [0, 2, 3, 4, 5]
-        )
+        assert all(idx in preprocessor._cache for idx in [0, 2, 3, 4, 5])
 
 
 class TestCacheStatistics:
@@ -378,7 +381,8 @@ class TestCachePerformance:
             for batch_start in range(0, samples_per_epoch, batch_size):
                 # Access batch
                 for idx in range(
-                    batch_start, min(batch_start + batch_size, samples_per_epoch)
+                    batch_start,
+                    min(batch_start + batch_size, samples_per_epoch),
                 ):
                     _ = preprocessor[idx]
 
@@ -409,7 +413,9 @@ class TestBackwardCompatibility:
         dataset_dir = temp_dir / "source"
         return SimpleGraphDataset(dataset_dir, num_samples=20)
 
-    def test_old_code_works_without_cache_param(self, temp_dir, simple_dataset):
+    def test_old_code_works_without_cache_param(
+        self, temp_dir, simple_dataset
+    ):
         """Test code without cache_size parameter still works."""
         # Old code pattern (no cache_size specified)
         preprocessor = OnDiskInductivePreprocessor(

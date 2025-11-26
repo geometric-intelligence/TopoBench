@@ -1,7 +1,6 @@
 """Synthetic large inductive dataset for validation testing."""
 
 import os.path as osp
-from typing import ClassVar
 
 import networkx as nx
 import torch
@@ -126,7 +125,6 @@ class SyntheticLargeInductiveDataset(InMemoryDataset):
 
     def download(self) -> None:
         """Download is not needed for synthetic data."""
-        pass
 
     def process(self) -> None:
         """Generate synthetic graphs and save them.

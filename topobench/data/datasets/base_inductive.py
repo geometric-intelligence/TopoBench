@@ -21,7 +21,7 @@ from torch_geometric.data import Data
 
 def _torch_load_compat(path, **kwargs):
     """Backwards-compatible torch.load wrapper.
-    
+
     PyTorch 2.6+ requires weights_only=False for PyG Data objects.
     Older versions don't have the weights_only parameter.
     """

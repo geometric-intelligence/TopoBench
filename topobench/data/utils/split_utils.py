@@ -95,7 +95,9 @@ def k_fold_split(labels, parameters, root=None):
     return split_idx
 
 
-def random_splitting(labels, parameters, root=None, global_data_seed=42, dataset_size=None):
+def random_splitting(
+    labels, parameters, root=None, global_data_seed=42, dataset_size=None
+):
     r"""Randomly splits label into train/valid/test splits.
 
     Adapted from https://github.com/CUAI/Non-Homophily-Benchmarks.
@@ -133,10 +135,11 @@ def random_splitting(labels, parameters, root=None, global_data_seed=42, dataset
     # Include dataset size in split directory to avoid reusing splits from different sized datasets
     if dataset_size is None:
         dataset_size = len(labels)
-    
+
     # Create split directory if it does not exist
     split_dir = os.path.join(
-        data_dir, f"train_prop={train_prop}_global_seed={global_data_seed}_size={dataset_size}"
+        data_dir,
+        f"train_prop={train_prop}_global_seed={global_data_seed}_size={dataset_size}",
     )
     generate_splits = False
     if not os.path.isdir(split_dir):
@@ -350,7 +353,9 @@ def load_inductive_splits(dataset, parameters, use_lazy=False):
 
     if parameters.split_type == "random":
         # Pass dataset size to ensure splits match current dataset
-        split_idx = random_splitting(labels, parameters, root=root, dataset_size=len(dataset))
+        split_idx = random_splitting(
+            labels, parameters, root=root, dataset_size=len(dataset)
+        )
 
     elif parameters.split_type == "k-fold":
         assert type(labels) is not object, (

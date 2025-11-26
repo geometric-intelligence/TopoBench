@@ -1,4 +1,5 @@
 """Tests for parallel processor."""
+
 import os
 import tempfile
 import time
@@ -239,7 +240,9 @@ class TestParallelProcessor:
             dataset = MockDataset(200)
             transform = MockTransform()
 
-            processor_seq = ParallelProcessor(num_workers=1, show_progress=False)
+            processor_seq = ParallelProcessor(
+                num_workers=1, show_progress=False
+            )
             start = time.time()
             results_seq = processor_seq.process(
                 dataset=dataset,
@@ -249,7 +252,9 @@ class TestParallelProcessor:
             )
             time_seq = time.time() - start
 
-            processor_par = ParallelProcessor(num_workers=4, show_progress=False)
+            processor_par = ParallelProcessor(
+                num_workers=4, show_progress=False
+            )
             start = time.time()
             results_par = processor_par.process(
                 dataset=dataset,
