@@ -152,6 +152,47 @@ class MIPLIBDataset(InMemoryDataset):
             return f"data_slice_{self.slice}_{self.task_level}.pt"
         return f"data_{self.task_level}.pt"
 
+    def _extract_zip(
+        self,
+        zip_path: str,
+        extract_to: str,
+        suffix: str,
+        description: str = "files",
+    ) -> None:
+        """Extract files from a zip archive, applying slicing if configured.
+
+        Parameters
+        ----------
+        zip_path : str
+            Path to the zip file.
+        extract_to : str
+            Directory to extract files to.
+        suffix : str
+            File suffix to filter by (e.g. ".gz").
+        description : str, optional
+            Description of files for logging, by default "files".
+        """
+        print(f"Extracting {description}...")
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            # Get list of all files in zip
+            all_files = zip_ref.namelist()
+            # Filter for relevant files
+            filtered_files = [f for f in all_files if f.endswith(suffix)]
+            # Sort to ensure deterministic order
+            filtered_files.sort()
+
+            # Apply slice if specified
+            if self.slice is not None:
+                print(
+                    f"Slicing {description}: keeping first {self.slice} files out of {len(filtered_files)}"
+                )
+                filtered_files = filtered_files[: self.slice]
+
+            # Extract only selected files
+            for file in filtered_files:
+                zip_ref.extract(file, extract_to)
+        print(f"Extraction of {description} complete!")
+
     def download(self) -> None:
         r"""Download the dataset from a URL and saves it to the raw directory.
 
@@ -185,15 +226,15 @@ class MIPLIBDataset(InMemoryDataset):
             filename = f"{self.dataset_name}.zip"
             path = osp.join(folder, filename)
 
-            print("Extracting...")
-            with zipfile.ZipFile(path, "r") as zip_ref:
-                zip_ref.extractall(folder)
-            print("Extraction complete!")
+            self._extract_zip(
+                path, folder, ".gz", description="benchmark files"
+            )
 
             # Delete zip file
             os.remove(path)
 
             # We need to find .gz files and decompress them.
+            # Since we only extracted the ones we want, we can just process all .gz files in the folder
             for root, _, files in os.walk(folder):
                 for file in files:
                     if file.endswith(".gz"):
@@ -209,22 +250,6 @@ class MIPLIBDataset(InMemoryDataset):
 
                         # Remove .gz file to save space
                         os.remove(instance_gz)
-
-            # Keep only first 100 MPS files to save disk space
-            mps_files = sorted(
-                [
-                    osp.join(root, f)
-                    for root, _, files in os.walk(folder)
-                    for f in files
-                    if f.endswith(".mps")
-                ]
-            )
-            if len(mps_files) > self.slice:
-                print(
-                    f"Keeping only first {self.slice} of {len(mps_files)} MPS files to save disk space"
-                )
-                for file_to_delete in mps_files[self.slice :]:
-                    os.remove(file_to_delete)
 
         # --- Download Solutions ---
         miplib_raw_dir = osp.join(self.root, "raw")
@@ -248,9 +273,9 @@ class MIPLIBDataset(InMemoryDataset):
         if not osp.exists(solutions_dir):
             os.makedirs(solutions_dir)
 
-        print("Extracting solutions...")
-        with zipfile.ZipFile(sol_zip_path, "r") as zip_ref:
-            zip_ref.extractall(solutions_dir)
+        self._extract_zip(
+            sol_zip_path, solutions_dir, ".sol.gz", description="solutions"
+        )
 
         # Recursively find and extract .sol.gz files
         print("Processing solution files...")
@@ -271,23 +296,10 @@ class MIPLIBDataset(InMemoryDataset):
                     except Exception as e:
                         print(f"Failed to decompress {gz_path}: {e}")
 
-        print("Solutions extracted and flattened!")
+                    # Remove .gz file
+                    os.remove(gz_path)
 
-        # Keep only first 100 solution files to save disk space
-        sol_files = sorted(
-            [
-                osp.join(root, f)
-                for root, _, files in os.walk(solutions_dir)
-                for f in files
-                if f.endswith(".sol")
-            ]
-        )
-        if len(sol_files) > self.slice:
-            print(
-                f"Keeping only first {self.slice} of {len(sol_files)} solution files to save disk space"
-            )
-            for file_to_delete in sol_files[self.slice :]:
-                os.remove(file_to_delete)
+        print("Solutions extracted and flattened!")
 
         # Create marker file
         with open(solutions_marker, "w") as f:
