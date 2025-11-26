@@ -198,6 +198,42 @@ class OC20ASEDBDataset(Dataset):
         """
         return self._num_samples
 
+    @property
+    def num_node_features(self) -> int:
+        """Number of node features per atom.
+
+        Returns
+        -------
+        int
+            Number of node features (atomic numbers by default).
+        """
+        return 1  # Atomic numbers
+
+    @property
+    def data(self):
+        """Get combined data view for compatibility with InMemoryDataset API.
+
+        Returns a Data object with x and y attributes representing stacked
+        features from a sample of the dataset.
+
+        Returns
+        -------
+        Data
+            A Data object with x and y attributes for API compatibility.
+        """
+        if not hasattr(self, "_data_cache"):
+            # Get a sample to determine feature dimensions
+            if len(self) > 0:
+                sample = self[0]
+                # Create a mock data object with minimal info for compatibility
+                self._data_cache = Data(
+                    x=sample.x if hasattr(sample, "x") else torch.zeros(1, 1),
+                    y=sample.y if hasattr(sample, "y") else torch.zeros(1),
+                )
+            else:
+                self._data_cache = Data(x=torch.zeros(1, 1), y=torch.zeros(1))
+        return self._data_cache
+
     def _get_db_and_idx(self, idx: int) -> tuple[Path, int]:
         """Get DB path and local index for global index.
 
