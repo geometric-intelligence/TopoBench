@@ -7,6 +7,7 @@ loader:
     data_name: OPV
     split: train  # Options: train, valid, test
     task: default  # Options: default, polymer
+    target_col: ${dataset.parameters.target_col}
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
 
 # Dataset parameters
