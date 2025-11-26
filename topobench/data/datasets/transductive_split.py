@@ -29,7 +29,7 @@ class TransductiveSplitDataset(Dataset):
     >>> # Typically created via preprocessor.load_dataset_splits()
     >>> split_config = OmegaConf.create({
     ...     "strategy": "structure_centric",
-    ...     "structures_per_batch": 500,
+    ...     "cliques_per_batch": 500,
     ...     "node_budget": 2000,
     ... })
     >>> train, val, test = preprocessor.load_dataset_splits(split_config)
@@ -93,8 +93,8 @@ class TransductiveSplitDataset(Dataset):
         )
 
         # Get parameters from config
-        structures_per_batch = self.split_config.get(
-            "structures_per_batch", 500
+        cliques_per_batch = self.split_config.get(
+            "cliques_per_batch", 500
         )
         node_budget = self.split_config.get("node_budget", 2000)
         shuffle = self.split_config.get("shuffle", self.split_name == "train")
@@ -102,10 +102,9 @@ class TransductiveSplitDataset(Dataset):
         # Create loader
         self._loader = create_structure_centric_dataloader(
             self.preprocessor,
-            structures_per_batch=structures_per_batch,
+            cliques_per_batch=cliques_per_batch,
             node_budget=node_budget,
             shuffle=shuffle,
-            mask=self.mask,
             transform=self.preprocessor.transforms_config,
         )
 

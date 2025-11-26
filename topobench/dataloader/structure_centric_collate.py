@@ -7,11 +7,14 @@ sampled structure IDs, ensuring 100% "structure completeness" by construction.
 from collections.abc import Callable
 
 import torch
+import torch_geometric
+from omegaconf import DictConfig
 from torch_geometric.data import Data
 
 from topobench.data.preprocessor.ondisk_transductive import (
     OnDiskTransductivePreprocessor,
 )
+from topobench.transforms.data_transform import DataTransform
 
 
 class StructureCentricCollate:
@@ -56,8 +59,13 @@ class StructureCentricCollate:
             Include structure metadata (default: True).
         """
         self.preprocessor = preprocessor
-        self.transform = transform
         self.include_structure_metadata = include_structure_metadata
+
+        # Handle DictConfig transforms by converting to callable
+        if isinstance(transform, DictConfig):
+            self.transform = self._instantiate_transform(transform)
+        else:
+            self.transform = transform
 
         if not hasattr(preprocessor, "query_engine"):
             raise ValueError(
@@ -203,6 +211,45 @@ class StructureCentricCollate:
         batch_data.num_structures = 0
         batch_data.batch_node_ids = torch.tensor([], dtype=torch.long)
         return batch_data
+
+    def _instantiate_transform(
+        self, transforms_config: DictConfig
+    ) -> torch_geometric.transforms.Compose:
+        """Instantiate transform from configuration.
+        
+        Parameters
+        ----------
+        transforms_config : DictConfig
+            Transform configuration parameters.
+        
+        Returns
+        -------
+        torch_geometric.transforms.Compose
+            Composed transform object.
+        """
+        # Handle nested liftings config (for compatibility)
+        if "liftings" in transforms_config:
+            transforms_config = transforms_config.liftings
+        
+        # Check if single or multiple transforms
+        if "transform_name" in transforms_config:
+            # Single transform
+            pre_transforms_dict = {
+                transforms_config.transform_name: DataTransform(
+                    **transforms_config
+                )
+            }
+        else:
+            # Multiple transforms
+            pre_transforms_dict = {
+                key: DataTransform(**value)
+                for key, value in transforms_config.items()
+            }
+        
+        # Return composed transform
+        return torch_geometric.transforms.Compose(
+            list(pre_transforms_dict.values())
+        )
 
     def __repr__(self) -> str:
         """String representation."""
