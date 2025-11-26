@@ -296,9 +296,9 @@ def create_preprocessor(
     is_transductive = _is_transductive(dataset)
 
     if is_transductive:
-        # Single large graph - use standard in-memory preprocessor
-        # OnDiskTransductivePreprocessor not available in this version
-        return PreProcessor(dataset, data_dir, transforms_config, **kwargs)
+        raise NotImplementedError(
+            "On-disk preprocessing for transductive learning is not implemented yet."
+        )
     else:
         # Multiple graphs - use inductive on-disk
         return OnDiskInductivePreprocessor(

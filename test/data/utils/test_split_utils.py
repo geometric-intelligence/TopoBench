@@ -13,7 +13,6 @@ from topobench.data.utils.split_utils import (
     k_fold_split,
     random_splitting,
     load_inductive_splits,
-    load_transductive_splits,
     assign_train_val_test_mask_to_graphs,
 )
 

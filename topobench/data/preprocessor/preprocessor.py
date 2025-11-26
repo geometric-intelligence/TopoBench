@@ -10,7 +10,6 @@ from torch_geometric.io import fs
 from topobench.data.utils import (
     ensure_serializable,
     load_inductive_splits,
-    load_transductive_splits,
     make_hash,
 )
 from topobench.dataloader import DataloadDataset
@@ -246,7 +245,9 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         if split_params.learning_setting == "inductive":
             return load_inductive_splits(self, split_params)
         elif split_params.learning_setting == "transductive":
-            return load_transductive_splits(self, split_params)
+            raise NotImplementedError(
+                f"Transductive learning is not implemented yet for dataset type {type(self.dataset)}"
+            )
         else:
             raise ValueError(
                 f"Invalid '{split_params.learning_setting}' learning setting.\
