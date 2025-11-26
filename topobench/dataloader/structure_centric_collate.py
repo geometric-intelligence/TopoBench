@@ -136,6 +136,9 @@ class StructureCentricCollate:
 
         # Step 5: Apply transform if provided
         if self.transform is not None:
+            # Safety check: ensure transform is callable (handle DictConfig edge case)
+            if isinstance(self.transform, DictConfig):
+                self.transform = self._instantiate_transform(self.transform)
             batch_data = self.transform(batch_data)
 
         return batch_data
