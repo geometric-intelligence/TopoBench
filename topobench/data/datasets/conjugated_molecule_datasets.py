@@ -88,7 +88,9 @@ class ConjugatedMoleculeDataset(InMemoryDataset):
             pre_filter,
             **kwargs,
         )
-        self.data, self.slices = torch.load(self.processed_paths[0])
+        self.data, self.slices = torch.load(
+            self.processed_paths[0], weights_only=False
+        )
 
     def mean(self, target: int = 0) -> float:
         """Calculate mean of a specific target across the dataset.
@@ -350,7 +352,7 @@ class ConjugatedMoleculeDataset(InMemoryDataset):
             if self.name == "OPV":
                 # OPV has 8 regression targets (columns 2-9)
                 target = df.iloc[idx, 2:].values.astype(float)
-                y = torch.tensor(target, dtype=torch.float).unsqueeze(0)
+                y = torch.tensor(target, dtype=torch.float)
                 data.y = y
             elif self.name == "PCQM4MV2":
                 # PCQM4MV2 has single target: homolumogap
@@ -374,7 +376,7 @@ class ConjugatedMoleculeDataset(InMemoryDataset):
 
                 if len(numeric_cols) > 0:
                     target = df.iloc[idx][numeric_cols].values.astype(float)
-                    y = torch.tensor(target, dtype=torch.float).unsqueeze(0)
+                    y = torch.tensor(target, dtype=torch.float)
                     data.y = y
 
             if self.split:
