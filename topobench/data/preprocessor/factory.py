@@ -12,14 +12,9 @@ if TYPE_CHECKING:
     from omegaconf import DictConfig
 
     from .ondisk_inductive import OnDiskInductivePreprocessor
-    from .ondisk_transductive import OnDiskTransductivePreprocessor
     from .preprocessor import PreProcessor
 
-    PreprocessorType = (
-        PreProcessor
-        | OnDiskInductivePreprocessor
-        | OnDiskTransductivePreprocessor
-    )
+    PreprocessorType = PreProcessor | OnDiskInductivePreprocessor
 
 
 def _is_transductive(
@@ -216,7 +211,7 @@ def create_preprocessor(
 
     Returns
     -------
-    PreProcessor or OnDiskInductivePreprocessor or OnDiskTransductivePreprocessor
+    PreProcessor or OnDiskInductivePreprocessor
         Appropriate preprocessor instance based on dataset and mode.
 
     Examples
@@ -246,7 +241,7 @@ def create_preprocessor(
     Notes
     -----
     - For inductive datasets (many graphs), uses OnDiskInductivePreprocessor
-    - For transductive datasets (single graph), uses OnDiskTransductivePreprocessor
+    - For transductive datasets (single graph), uses PreProcessor
     - In-memory mode uses standard PreProcessor (current TopoBench default)
     - Auto mode estimates memory requirements and chooses appropriately
 
@@ -254,10 +249,8 @@ def create_preprocessor(
     --------
     PreProcessor : Standard in-memory preprocessor
     OnDiskInductivePreprocessor : On-disk preprocessor for inductive learning
-    OnDiskTransductivePreprocessor : On-disk preprocessor for transductive learning
     """
     from .ondisk_inductive import OnDiskInductivePreprocessor
-    from .ondisk_transductive import OnDiskTransductivePreprocessor
     from .preprocessor import PreProcessor
 
     # Determine if on-disk should be used
@@ -303,21 +296,9 @@ def create_preprocessor(
     is_transductive = _is_transductive(dataset)
 
     if is_transductive:
-        # Single large graph - use transductive on-disk
-        graph_data = dataset[0]
-
-        # Extract max_structure_size from transforms_config if present
-        max_structure_size = None
-        if transforms_config is not None:
-            max_structure_size = transforms_config.get("complex_dim", 3)
-
-        return OnDiskTransductivePreprocessor(
-            graph_data=graph_data,
-            data_dir=data_dir,
-            transforms_config=transforms_config,
-            max_structure_size=max_structure_size,
-            **kwargs,
-        )
+        # Single large graph - use standard in-memory preprocessor
+        # OnDiskTransductivePreprocessor not available in this version
+        return PreProcessor(dataset, data_dir, transforms_config, **kwargs)
     else:
         # Multiple graphs - use inductive on-disk
         return OnDiskInductivePreprocessor(
