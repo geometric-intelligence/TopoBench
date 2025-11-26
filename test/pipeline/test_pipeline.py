@@ -30,7 +30,7 @@ class TestPipeline:
                         "trainer.check_val_every_n_epoch=1",
                         "paths=test",
                         "callbacks=model_checkpoint",
-                        "+dataset.slice=10"
+                        "+dataset.slice=30"
                     ],
                     return_hydra_config=True
                 )
