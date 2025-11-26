@@ -68,5 +68,7 @@ class ConjugatedMoleculeDatasetLoader(AbstractLoader):
             name=self.parameters.data_name,
             split=split,
             slice=slice_val,
+            task=self.parameters.get("task", "default"),
+            target_col=self.parameters.get("target_col", None),
             # Pass other parameters if needed, e.g. transforms from config
         )

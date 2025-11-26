@@ -12,7 +12,8 @@ loader:
 # Dataset parameters
 parameters:
   num_features: 9  # OGB atom features
-  num_classes: 8  # 8 molecular property targets (all complete, no NaN)
+  num_classes: 1
+  target_col: 0
   task: regression
   loss_type: mse
   monitor_metric: mae

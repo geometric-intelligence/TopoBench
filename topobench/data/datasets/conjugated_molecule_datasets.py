@@ -47,6 +47,8 @@ class ConjugatedMoleculeDataset(InMemoryDataset):
         included in the final dataset.
     slice : int, optional
         Number of samples to slice from the dataset. Useful for testing.
+    target_col : int | str | None, optional
+        Index or name of the target column to use. If None, all available targets are used.
     **kwargs : optional
         Additional keyword arguments passed to InMemoryDataset.
         Common options include:
@@ -73,6 +75,7 @@ class ConjugatedMoleculeDataset(InMemoryDataset):
         pre_transform: Callable | None = None,
         pre_filter: Callable | None = None,
         slice: int | None = None,
+        target_col: int | str | None = None,
         **kwargs,
     ):
         if name not in self.URLS:
@@ -81,6 +84,7 @@ class ConjugatedMoleculeDataset(InMemoryDataset):
         self.split = split
         self.task = task
         self.slice = slice
+        self.target_col = target_col
         super().__init__(
             root,
             transform,
@@ -185,9 +189,12 @@ class ConjugatedMoleculeDataset(InMemoryDataset):
         str
             Name of the processed file.
         """
+        suffix = ""
+        if self.target_col is not None:
+            suffix += f"_target_{self.target_col}"
         if self.slice is not None:
-            return f"data_slice_{self.slice}.pt"
-        return "data.pt"
+            suffix += f"_slice_{self.slice}"
+        return f"data{suffix}.pt"
 
     def download(self):
         """Download the dataset."""
@@ -222,6 +229,7 @@ class ConjugatedMoleculeDataset(InMemoryDataset):
                 self.raw_dir,
                 dataset_name="PCQM4MV2",
                 file_format="zip",
+                # file_format="csv", # Fix: The URL is a zip file
             )
             extract_zip(path, self.raw_dir)
             # The zip extracts to pcqm4m-v2 folder
@@ -351,14 +359,23 @@ class ConjugatedMoleculeDataset(InMemoryDataset):
             # Extract target labels based on dataset
             if self.name == "OPV":
                 # OPV has 8 regression targets (columns 2-9)
-                target = df.iloc[idx, 2:].values.astype(float)
-                y = torch.tensor(target, dtype=torch.float)
+                if self.target_col is not None:
+                    if isinstance(self.target_col, int):
+                        target = df.iloc[idx, 2 + self.target_col]
+                    else:
+                        target = df.iloc[idx][self.target_col]
+                    # Use scalar tensor for single task so batching gives [N]
+                    y = torch.tensor(target, dtype=torch.float)
+                else:
+                    target = df.iloc[idx, 2:].values.astype(float)
+                    y = torch.tensor(target, dtype=torch.float)
                 data.y = y
             elif self.name == "PCQM4MV2":
                 # PCQM4MV2 has single target: homolumogap
                 if "homolumogap" in df.columns:
+                    # Use scalar tensor for single task
                     y = torch.tensor(
-                        [df.loc[idx, "homolumogap"]], dtype=torch.float
+                        df.loc[idx, "homolumogap"], dtype=torch.float
                     )
                     data.y = y
             elif self.name == "OCELOTv1":
@@ -375,8 +392,25 @@ class ConjugatedMoleculeDataset(InMemoryDataset):
                             pass
 
                 if len(numeric_cols) > 0:
-                    target = df.iloc[idx][numeric_cols].values.astype(float)
-                    y = torch.tensor(target, dtype=torch.float)
+                    if self.target_col is not None:
+                        if isinstance(self.target_col, int):
+                            target_val = df.iloc[idx][
+                                numeric_cols[self.target_col]
+                            ]
+                        elif self.target_col in numeric_cols:
+                            target_val = df.iloc[idx][self.target_col]
+                        else:
+                            raise ValueError(
+                                f"Target column {self.target_col} not found in numeric columns"
+                            )
+
+                        # Use scalar tensor for single task
+                        y = torch.tensor(target_val, dtype=torch.float)
+                    else:
+                        target = df.iloc[idx][numeric_cols].values.astype(
+                            float
+                        )
+                        y = torch.tensor(target, dtype=torch.float)
                     data.y = y
 
             if self.split:

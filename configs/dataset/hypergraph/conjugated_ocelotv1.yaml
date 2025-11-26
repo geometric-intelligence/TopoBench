@@ -6,11 +6,14 @@ loader:
     data_type: conjugated_molecules
     data_name: OCELOTv1
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+    target_col: ${dataset.parameters.target_col}
+    task: ${dataset.parameters.task}
 
 # Dataset parameters
 parameters:
   num_features: 9  # OGB atom features
-  num_classes: 15  # 15 molecular property targets (regression)
+  num_classes: 1  # Single target regression
+  target_col: 0   # Use the first target column
   task: regression
   loss_type: mse
   monitor_metric: mae
