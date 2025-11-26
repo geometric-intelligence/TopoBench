@@ -95,7 +95,7 @@ def k_fold_split(labels, parameters, root=None):
     return split_idx
 
 
-def random_splitting(labels, parameters, root=None, global_data_seed=42):
+def random_splitting(labels, parameters, root=None, global_data_seed=42, dataset_size=None):
     r"""Randomly splits label into train/valid/test splits.
 
     Adapted from https://github.com/CUAI/Non-Homophily-Benchmarks.
@@ -110,6 +110,9 @@ def random_splitting(labels, parameters, root=None, global_data_seed=42):
         Root directory for data splits. Overwrite the default directory.
     global_data_seed : int
         Seed for the random number generator.
+    dataset_size : int, optional
+        Size of dataset. If provided, includes in split directory path to avoid
+        reusing splits from different sized datasets.
 
     Returns
     -------
@@ -127,9 +130,13 @@ def random_splitting(labels, parameters, root=None, global_data_seed=42):
     train_prop = parameters["train_prop"]
     valid_prop = (1 - train_prop) / 2
 
+    # Include dataset size in split directory to avoid reusing splits from different sized datasets
+    if dataset_size is None:
+        dataset_size = len(labels)
+    
     # Create split directory if it does not exist
     split_dir = os.path.join(
-        data_dir, f"train_prop={train_prop}_global_seed={global_data_seed}"
+        data_dir, f"train_prop={train_prop}_global_seed={global_data_seed}_size={dataset_size}"
     )
     generate_splits = False
     if not os.path.isdir(split_dir):
@@ -180,7 +187,7 @@ def random_splitting(labels, parameters, root=None, global_data_seed=42):
     return split_idx
 
 
-def assign_train_val_test_mask_to_graphs(dataset, split_idx):
+def assign_train_val_test_mask_to_graphs(dataset, split_idx, use_lazy=False):
     """Split the graph dataset into train, validation, and test datasets.
 
     Parameters
@@ -189,13 +196,29 @@ def assign_train_val_test_mask_to_graphs(dataset, split_idx):
         Considered dataset.
     split_idx : dict
         Dictionary containing the train, validation, and test indices.
+    use_lazy : bool, optional
+        Use lazy subsets for O(1) memory (default: False for backward compatibility).
+        When True, returns LazyDataloadDataset objects compatible with TBDataloader.
 
     Returns
     -------
     tuple:
         Tuple containing the train, validation, and test datasets.
+        When use_lazy=True, returns LazyDataloadDataset objects.
+        When use_lazy=False, returns DataloadDataset objects (in-memory).
     """
+    if use_lazy:
+        # Use lazy splits for O(1) memory usage with TBDataloader compatibility
+        # Import here to avoid circular dependency
+        from topobench.data.datasets import LazyDataloadDataset
 
+        return (
+            LazyDataloadDataset(dataset, split_idx["train"]),
+            LazyDataloadDataset(dataset, split_idx["valid"]),
+            LazyDataloadDataset(dataset, split_idx["test"]),
+        )
+
+    # Traditional approach: load all samples and assign masks
     data_train_lst, data_val_lst, data_test_lst = [], [], []
 
     # Assign masks directly by iterating over pre-split indices
@@ -287,7 +310,7 @@ def load_transductive_splits(dataset, parameters):
     return DataloadDataset([data]), None, None
 
 
-def load_inductive_splits(dataset, parameters):
+def load_inductive_splits(dataset, parameters, use_lazy=False):
     r"""Load multiple-graph datasets with the specified split.
 
     Parameters
@@ -296,6 +319,9 @@ def load_inductive_splits(dataset, parameters):
         Graph dataset.
     parameters : DictConfig
         Configuration parameters.
+    use_lazy : bool, optional
+        Use lazy subsets for O(1) memory usage (default: False for backward compatibility).
+        Recommended for large on-disk datasets.
 
     Returns
     -------
@@ -323,7 +349,8 @@ def load_inductive_splits(dataset, parameters):
     )
 
     if parameters.split_type == "random":
-        split_idx = random_splitting(labels, parameters, root=root)
+        # Pass dataset size to ensure splits match current dataset
+        split_idx = random_splitting(labels, parameters, root=root, dataset_size=len(dataset))
 
     elif parameters.split_type == "k-fold":
         assert type(labels) is not object, (
@@ -341,7 +368,73 @@ def load_inductive_splits(dataset, parameters):
         )
 
     train_dataset, val_dataset, test_dataset = (
-        assign_train_val_test_mask_to_graphs(dataset, split_idx)
+        assign_train_val_test_mask_to_graphs(
+            dataset, split_idx, use_lazy=use_lazy
+        )
+    )
+
+    return train_dataset, val_dataset, test_dataset
+
+
+def load_transductive_splits(preprocessor, split_config):
+    r"""Load transductive splits with pre-batched loaders.
+
+    This function creates TransductiveSplitDataset wrappers for transductive
+    learning, which handle batching internally. Unlike inductive splits,
+    transductive splits work on a single graph with train/val/test masks.
+
+    Parameters
+    ----------
+    preprocessor : OnDiskTransductivePreprocessor
+        Preprocessor with built index and graph data.
+    split_config : DictConfig
+        Configuration for batching strategy, including:
+        - strategy : str ("structure_centric" or "extended_context")
+        - Strategy-specific parameters (e.g., structures_per_batch, node_budget)
+
+    Returns
+    -------
+    tuple
+        A tuple containing (train_dataset, val_dataset, test_dataset).
+        Each is a TransductiveSplitDataset instance.
+    """
+    # Import here to avoid circular dependency
+    from topobench.data.datasets.transductive_split import (
+        TransductiveSplitDataset,
+    )
+
+    # Build index if not already built
+    if not preprocessor._index_built:
+        print("Building structure index...")
+        preprocessor.build_index()
+        print(f"✓ Index built: {preprocessor.num_structures:,} structures")
+
+    # Create train/val/test splits using masks from graph_data
+    train_dataset = TransductiveSplitDataset(
+        preprocessor=preprocessor,
+        split_config=split_config,
+        mask=preprocessor.graph_data.train_mask
+        if hasattr(preprocessor.graph_data, "train_mask")
+        else None,
+        split_name="train",
+    )
+
+    val_dataset = TransductiveSplitDataset(
+        preprocessor=preprocessor,
+        split_config=split_config,
+        mask=preprocessor.graph_data.val_mask
+        if hasattr(preprocessor.graph_data, "val_mask")
+        else None,
+        split_name="val",
+    )
+
+    test_dataset = TransductiveSplitDataset(
+        preprocessor=preprocessor,
+        split_config=split_config,
+        mask=preprocessor.graph_data.test_mask
+        if hasattr(preprocessor.graph_data, "test_mask")
+        else None,
+        split_name="test",
     )
 
     return train_dataset, val_dataset, test_dataset

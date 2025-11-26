@@ -252,7 +252,6 @@ class ParallelProcessor:
             return self._process_sequential(
                 dataset, transform, output_dir, num_samples
             )
-
         batches = [
             list(range(i, min(i + self.batch_size, num_samples)))
             for i in range(0, num_samples, self.batch_size)
