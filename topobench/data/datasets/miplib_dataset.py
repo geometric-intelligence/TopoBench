@@ -213,6 +213,22 @@ class MIPLIBDataset(InMemoryDataset):
                         # Remove .gz file to save space
                         os.remove(instance_gz)
 
+            # Keep only first 100 MPS files to save disk space
+            mps_files = sorted(
+                [
+                    osp.join(root, f)
+                    for root, _, files in os.walk(folder)
+                    for f in files
+                    if f.endswith(".mps")
+                ]
+            )
+            if len(mps_files) > self.slice:
+                print(
+                    f"Keeping only first {self.slice} of {len(mps_files)} MPS files to save disk space"
+                )
+                for file_to_delete in mps_files[self.slice :]:
+                    os.remove(file_to_delete)
+
         # --- Download Solutions ---
         miplib_raw_dir = osp.join(self.root, "hypergraph", "miplib", "raw")
         solutions_dir = osp.join(miplib_raw_dir, "solutions")
@@ -259,6 +275,22 @@ class MIPLIBDataset(InMemoryDataset):
                         print(f"Failed to decompress {gz_path}: {e}")
 
         print("Solutions extracted and flattened!")
+
+        # Keep only first 100 solution files to save disk space
+        sol_files = sorted(
+            [
+                osp.join(root, f)
+                for root, _, files in os.walk(solutions_dir)
+                for f in files
+                if f.endswith(".sol")
+            ]
+        )
+        if len(sol_files) > self.slice:
+            print(
+                f"Keeping only first {self.slice} of {len(sol_files)} solution files to save disk space"
+            )
+            for file_to_delete in sol_files[self.slice :]:
+                os.remove(file_to_delete)
 
         # Create marker file
         with open(solutions_marker, "w") as f:
