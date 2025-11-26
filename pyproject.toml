@@ -54,6 +54,8 @@ dependencies=[
     "topomodelx @ git+https://github.com/pyt-team/TopoModelX.git",
     "toponetx @ git+https://github.com/pyt-team/TopoNetX.git",
     "lightning==2.4.0",
+    "lz4",
+    "zstandard",
 ]
 
 [project.optional-dependencies]
@@ -177,4 +179,6 @@ exclude = [
     '\.undocumented_method$',
     '\.__init__$',
     '\.__repr__$',
+    '.*test/.*',  # Exclude all test directories
+    '.*test_.*',  # Exclude all test files
 ]

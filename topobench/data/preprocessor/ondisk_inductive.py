@@ -802,9 +802,14 @@ class OnDiskInductivePreprocessor(Dataset):
             node = dag.nodes[transform_id]
             source_transform = node.transform
             
-            # Save original processed_dir and temporarily set to this transform's output
+            # Save original processed_dir and metadata_path, temporarily set to this transform's output
             original_processed_dir = self.processed_dir
+            original_metadata_path = self.metadata_path
             self.processed_dir = output_dir
+            self.metadata_path = output_dir / "dataset_metadata.json"
+            
+            # Ensure output directory exists
+            output_dir.mkdir(parents=True, exist_ok=True)
             
             try:
                 # Process this transform only
@@ -813,8 +818,9 @@ class OnDiskInductivePreprocessor(Dataset):
                     source_transform=source_transform
                 )
             finally:
-                # Restore original processed_dir
+                # Restore original processed_dir and metadata_path
                 self.processed_dir = original_processed_dir
+                self.metadata_path = original_metadata_path
 
     def _create_cached_dataset(self, cached_dir: Path) -> Dataset:
         """Create dataset that loads from cached transform output.

@@ -23,6 +23,14 @@ from topobench.data.datasets import (
 )
 
 
+def _torch_load_compat(path, **kwargs):
+    """Backwards-compatible torch.load wrapper for tests."""
+    try:
+        return torch.load(path, weights_only=False, **kwargs)
+    except TypeError:
+        return torch.load(path, **kwargs)
+
+
 class SimpleGeneratedDataset(GeneratedInductiveDataset):
     """Simple generated dataset for testing.
 
@@ -80,7 +88,7 @@ class SimpleFileDataset(FileBasedInductiveDataset):
         Data
             Loaded data.
         """
-        return torch.load(file_path)
+        return _torch_load_compat(file_path)
 
 
 class TestGeneratedInductiveDataset:
@@ -204,7 +212,7 @@ class TestFileBasedInductiveDataset:
                     super().__init__(root, file_pattern="*.data")
 
                 def _load_file(self, file_path):
-                    return torch.load(file_path)
+                    return _torch_load_compat(file_path)
 
             dataset = CustomFileDataset(tmpdir)
             assert len(dataset) == 5
