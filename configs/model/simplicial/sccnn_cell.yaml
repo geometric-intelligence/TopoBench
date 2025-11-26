@@ -1,0 +1,45 @@
+_target_: topobench.model.TBModel
+
+model_name: sccnn_cell
+model_domain: simplicial
+
+_hidden_dim: 32  # Hidden dimension for all ranks
+
+_in_channels: ${infer_in_channels:${dataset},${oc.select:transforms,null}}
+_num_ranks: ${infer_num_cell_dimensions:null,${model._in_channels}}
+_channel_list: ${infer_channel_list:${model._hidden_dim},${model._num_ranks}}
+
+feature_encoder:
+  _target_: topobench.nn.encoders.AllCellFeatureEncoder
+  encoder_name: AllCellFeatureEncoder
+  in_channels: ${model._in_channels}
+  out_channels: ${model._hidden_dim}
+  proj_dropout: 0.0
+
+backbone:
+  _target_: topobench.nn.backbones.simplicial.sccnn.SCCNNCustom
+  in_channels_all: ${model._channel_list}
+  hidden_channels_all: ${model._channel_list}
+  conv_order: 1
+  sc_order: ${model._num_ranks}
+  aggr_norm: false
+  update_func: sigmoid
+  n_layers: 2
+
+backbone_wrapper:
+  _target_: topobench.nn.wrappers.SCCNNCellWrapper
+  _partial_: true
+  wrapper_name: SCCNNCellWrapper
+  num_cell_dimensions: ${model._num_ranks}
+  target_ranks: ${dataset.parameters.target_ranks}
+  out_channels: ${model._hidden_dim}
+
+readout:
+  _target_: topobench.nn.readouts.LinearCellLevelReadout
+  hidden_dim: ${model._hidden_dim}
+  out_channels: ${dataset.parameters.num_classes}
+  num_cell_dimensions: ${model._num_ranks}
+  target_ranks: ${dataset.parameters.target_ranks}
+
+# Compile model for faster training (pytorch 2.0+)
+compile: false
