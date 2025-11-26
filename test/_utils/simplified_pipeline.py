@@ -58,7 +58,13 @@ def run(cfg: DictConfig) -> DictConfig:
     """
     # Instantiate and load dataset
     dataset_loader = hydra.utils.instantiate(cfg.dataset.loader)
-    dataset, dataset_dir = dataset_loader.load()
+    
+    # Check for slice in dataset config
+    load_kwargs = {}
+    if "slice" in cfg.dataset:
+        load_kwargs["slice"] = cfg.dataset.slice
+
+    dataset, dataset_dir = dataset_loader.load(**load_kwargs)
     # Preprocess dataset and load the splits
     transform_config = cfg.get("transforms", None)
     preprocessor = PreProcessor(dataset, dataset_dir, transform_config)

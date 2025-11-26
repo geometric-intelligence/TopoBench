@@ -60,6 +60,9 @@ class MIPLIBDataset(InMemoryDataset):
         self.dataset_name = dataset_name
         self.parameters = parameters
         self.slice = slice
+        self.task_level = kwargs.get("task_level", "node")
+        if parameters is not None and "task_level" in parameters:
+            self.task_level = parameters.task_level
 
         super().__init__(
             root,
@@ -78,7 +81,7 @@ class MIPLIBDataset(InMemoryDataset):
             self.data = data_cls.from_dict(data)
 
     def __repr__(self) -> str:
-        return f"MIPLIBDataset(root={self.root}, name={self.dataset_name}, parameters={self.parameters})"
+        return f"MIPLIBDataset(root={self.root}, name={self.dataset_name}, parameters={self.parameters}, task_level={self.task_level})"
 
     @property
     def raw_dir(self) -> str:
@@ -89,9 +92,7 @@ class MIPLIBDataset(InMemoryDataset):
         str
             Path to the raw directory.
         """
-        return osp.join(
-            self.root, "hypergraph", "miplib", "raw", self.dataset_name
-        )
+        return osp.join(self.root, "raw", self.dataset_name)
 
     @property
     def processed_dir(self) -> str:
@@ -102,9 +103,7 @@ class MIPLIBDataset(InMemoryDataset):
         str
             Path to the processed directory.
         """
-        return osp.join(
-            self.root, "hypergraph", "miplib", "processed", self.dataset_name
-        )
+        return osp.join(self.root, "processed", self.dataset_name)
 
     @property
     def raw_file_names(self) -> list[str]:
@@ -127,8 +126,6 @@ class MIPLIBDataset(InMemoryDataset):
             # Check for solutions marker
             solutions_marker = osp.join(
                 self.root,
-                "hypergraph",
-                "miplib",
                 "raw",
                 "solutions",
                 "solutions_downloaded.txt",
@@ -152,8 +149,8 @@ class MIPLIBDataset(InMemoryDataset):
             Processed file name.
         """
         if self.slice is not None:
-            return f"data_slice_{self.slice}.pt"
-        return "data.pt"
+            return f"data_slice_{self.slice}_{self.task_level}.pt"
+        return f"data_{self.task_level}.pt"
 
     def download(self) -> None:
         r"""Download the dataset from a URL and saves it to the raw directory.
@@ -230,7 +227,7 @@ class MIPLIBDataset(InMemoryDataset):
                     os.remove(file_to_delete)
 
         # --- Download Solutions ---
-        miplib_raw_dir = osp.join(self.root, "hypergraph", "miplib", "raw")
+        miplib_raw_dir = osp.join(self.root, "raw")
         solutions_dir = osp.join(miplib_raw_dir, "solutions")
         solutions_marker = osp.join(solutions_dir, "solutions_downloaded.txt")
 
@@ -343,9 +340,7 @@ class MIPLIBDataset(InMemoryDataset):
                 osp.basename(path).replace(".mps", "").replace(".gz", "")
             )
 
-            solutions_dir = osp.join(
-                self.root, "hypergraph", "miplib", "raw", "solutions"
-            )
+            solutions_dir = osp.join(self.root, "raw", "solutions")
             sol_path = osp.join(solutions_dir, f"{instance_name}.sol")
 
             sol = None
@@ -371,7 +366,8 @@ class MIPLIBDataset(InMemoryDataset):
             # 3 numerical features + 4 one-hot encoded type features
             x = torch.zeros((num_vars, 7), dtype=torch.float)
             # Labels: optimal value for each variable
-            y = torch.zeros((num_vars, 1), dtype=torch.float)
+            if self.task_level == "node":
+                y = torch.zeros((num_vars, 1), dtype=torch.float)
 
             for i, v in enumerate(vars):
                 x[i, 0] = v.getObj()
@@ -391,14 +387,25 @@ class MIPLIBDataset(InMemoryDataset):
                     pass  # Unknown type, leave all zero
 
                 # Set label
+                if self.task_level == "node":
+                    if sol is not None:
+                        y[i, 0] = model.getSolVal(sol, v)
+                    else:
+                        print(
+                            f"Warning: No solution found for {instance_name}, variable {v.name} will have label 0.0"
+                        )
+                        # Default to 0 if no solution
+                        y[i, 0] = 0.0
+
+            if self.task_level == "graph":
                 if sol is not None:
-                    y[i, 0] = model.getSolVal(sol, v)
+                    obj_val = model.getSolObjVal(sol)
+                    y = torch.tensor([obj_val], dtype=torch.float)
                 else:
                     print(
-                        f"Warning: No solution found for {instance_name}, variable {v.name} will have label 0.0"
+                        f"Warning: No solution found for {instance_name}, obj_val will be 0.0"
                     )
-                    # Default to 0 if no solution
-                    y[i, 0] = 0.0
+                    y = torch.tensor([0.0], dtype=torch.float)
 
             # --- Extract Constraint (Hyperedge) Features ---
             # Features: [RHS, Sense]
@@ -485,8 +492,6 @@ class MIPLIBDataset(InMemoryDataset):
             # edge_index: Bipartite representation (node_idx, hyperedge_idx)
             # edge_attr: Incidence features (coefficients)
             # incidence_hyperedges: Sparse tensor representation
-            # hyperedge_attr: Hyperedge features
-
             data = Data(
                 x=x,
                 y=y,

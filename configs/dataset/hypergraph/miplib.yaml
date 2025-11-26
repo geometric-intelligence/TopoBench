@@ -6,6 +6,7 @@ loader:
     data_type: miplib
     data_name: benchmark
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+    task_level: graph
 
 # Dataset parameters
 parameters:
@@ -14,11 +15,11 @@ parameters:
   task: regression
   loss_type: mse  # Mean Squared Error for regression
   monitor_metric: mae  # Mean Absolute Error
-  task_level: node  # Predicting value for each variable (node)
+  task_level: graph  # Predicting objective value for the graph
 
 #splits
 split_params:
-  learning_setting: transductive
+  learning_setting: inductive
   data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}
   data_seed: 0
   split_type: random 

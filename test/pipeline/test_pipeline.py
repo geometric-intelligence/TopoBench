@@ -4,8 +4,9 @@ import hydra
 from test._utils.simplified_pipeline import run
 
 
-DATASET = "graph/MUTAG"                                                 # ADD YOUR DATASET HERE
-MODELS   = ["graph/gcn", "cell/topotune", "simplicial/topotune"]        # ADD ONE OR SEVERAL MODELS OF YOUR CHOICE HERE
+
+DATASET = "hypergraph/miplib"                                                
+MODELS   = ["hypergraph/edgnn"]        
 
 
 class TestPipeline:
@@ -29,6 +30,7 @@ class TestPipeline:
                         "trainer.check_val_every_n_epoch=1",
                         "paths=test",
                         "callbacks=model_checkpoint",
+                        "+dataset.slice=10"
                     ],
                     return_hydra_config=True
                 )
