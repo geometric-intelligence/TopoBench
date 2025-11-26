@@ -13,7 +13,7 @@ import torch
 from omegaconf import DictConfig
 from torch_geometric.data import Data
 
-from topobench.data.structure_query import StructureQueryEngine
+from topobench.data.clique_query import CliqueQueryEngine
 
 
 class OnDiskTransductivePreprocessor(torch.utils.data.Dataset):
@@ -32,8 +32,8 @@ class OnDiskTransductivePreprocessor(torch.utils.data.Dataset):
         Directory for storing the structure index.
     transforms_config : DictConfig, optional
         Configuration for topological transforms (default: None).
-    max_structure_size : int, optional
-        Maximum size of structures to index (e.g., 3 for triangles).
+    max_clique_size : int, optional
+        Maximum clique size to index (e.g., 3 for triangles).
         If None, indexes all maximal cliques (default: 3).
     force_rebuild : bool, optional
         If True, rebuild index even if it exists (default: False).
@@ -44,8 +44,8 @@ class OnDiskTransductivePreprocessor(torch.utils.data.Dataset):
     ----------
     graph_data : Data
         The input graph data.
-    query_engine : StructureQueryEngine
-        Query engine for structure lookups.
+    query_engine : CliqueQueryEngine
+        Query engine for clique lookups.
     num_nodes : int
         Number of nodes in the graph.
     num_structures : int
@@ -60,7 +60,7 @@ class OnDiskTransductivePreprocessor(torch.utils.data.Dataset):
     >>> with OnDiskTransductiveDataset(
     ...     graph_data=data,
     ...     data_dir=data_set_dir,
-    ...     max_structure_size=3
+    ...     max_clique_size=3
     ... ) as preprocessor:
     ...     preprocessor.build_index()
     ...     structures = preprocessor.query_batch([0, 1, 2, 3, 4])
@@ -77,7 +77,7 @@ class OnDiskTransductivePreprocessor(torch.utils.data.Dataset):
         graph_data: Data,
         data_dir: str | Path,
         transforms_config: DictConfig | None = None,
-        max_structure_size: int | None = 3,
+        max_clique_size: int | None = 3,
         force_rebuild: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -91,8 +91,8 @@ class OnDiskTransductivePreprocessor(torch.utils.data.Dataset):
             Directory for storing the structure index.
         transforms_config : DictConfig, optional
             Configuration for transforms (default: None).
-        max_structure_size : int, optional
-            Maximum structure size to index (default: 3 for triangles).
+        max_clique_size : int, optional
+            Maximum clique size to index (default: 3 for triangles).
         force_rebuild : bool, optional
             Rebuild index if exists (default: False).
         **kwargs : dict
@@ -103,17 +103,17 @@ class OnDiskTransductivePreprocessor(torch.utils.data.Dataset):
         self.data_dir = Path(data_dir)
         # Will be used by OnDiskTransductiveCollate during batch construction.
         self.transforms_config = transforms_config
-        self.max_structure_size = max_structure_size
+        self.max_clique_size = max_clique_size
         self.force_rebuild = force_rebuild
 
         # Convert PyG Data to NetworkX for structure detection
         self.nx_graph = self._pyg_to_networkx(graph_data)
 
         # Initialize query engine
-        self.query_engine = StructureQueryEngine(
+        self.query_engine = CliqueQueryEngine(
             graph=self.nx_graph,
             index_dir=self.data_dir,
-            max_structure_size=self.max_structure_size,
+            max_clique_size=self.max_clique_size,
             force_rebuild=self.force_rebuild,
         )
 
@@ -163,7 +163,7 @@ class OnDiskTransductivePreprocessor(torch.utils.data.Dataset):
 
         self.query_engine.open()
         self.query_engine.build_index()
-        self.num_structures = self.query_engine.num_structures
+        self.num_structures = self.query_engine.num_cliques
         self._index_built = True
 
         print(f"Index ready: {self.num_structures} structures indexed")
@@ -311,6 +311,17 @@ class OnDiskTransductivePreprocessor(torch.utils.data.Dataset):
 
         return load_transductive_splits(self, split_config)
 
+    @property
+    def num_cliques(self) -> int:
+        """Get total number of indexed cliques.
+
+        Returns
+        -------
+        int
+            Total number of cliques indexed.
+        """
+        return self.num_structures
+
     def get_stats(self) -> dict[str, Any]:
         """Get dataset statistics.
 
@@ -323,7 +334,7 @@ class OnDiskTransductivePreprocessor(torch.utils.data.Dataset):
             "num_nodes": self.num_nodes,
             "num_edges": self.nx_graph.number_of_edges(),
             "num_structures": self.num_structures,
-            "max_structure_size": self.max_structure_size,
+            "max_clique_size": self.max_clique_size,
             "index_dir": str(self.data_dir),
         }
         return stats
