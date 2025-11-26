@@ -1,0 +1,51 @@
+# OGBG-molpcba: Large-scale molecular property prediction dataset
+# 437K molecular graphs, 128 binary classification tasks (multi-label)
+# Perfect for testing on-disk inductive learning with topological transforms
+
+# Dataset loader config
+loader:
+  _target_: topobench.data.loaders.OGBGMolPCBALoader
+  parameters:
+    data_domain: graph
+    data_name: ogbg-molpcba
+    data_dir: ${paths.data_dir}/ogbg_molpcba
+    split: train  # Options: "train", "valid", "test"
+    subset_size: null  # null = full dataset, or set to N for first N samples
+    use_mock: false  # Set to true for testing without downloading data
+
+# Dataset parameters
+parameters:
+  num_features: 
+    - 9  # Node features (atom types, etc.)
+    - 3  # Edge features (bond types, etc.)
+  num_classes: 128  # 128 independent binary classification tasks
+  task: multilabel classification  # Multi-label classification (128 binary tasks)
+  loss_type: BCE  # BCEWithLogitsLoss for multi-label
+  monitor_metric: f1_macro  # F1-macro is better for imbalanced multi-label tasks
+  task_level: graph
+  # Lifting parameters
+  max_dim_if_lifted: 2  # Molecules have triangles (cliques of size 3)
+  preserve_edge_attr_if_lifted: true  # Keep bond information
+
+# Splits (for on-disk preprocessing)
+split_params:
+  learning_setting: inductive
+  data_split_dir: ${paths.data_dir}/data_splits/ogbg_molpcba
+  data_seed: 42
+  split_type: random  # Use "random" for custom splits
+  train_prop: 0.8
+  val_prop: 0.1
+  # Note: OGB provides official splits, but OnDiskInductivePreprocessor
+  # creates custom splits based on these proportions
+
+# Dataloader parameters
+dataloader_params:
+  batch_size: 32  # Adjust based on available memory
+  num_workers: 0  # Set to 2-4 for parallel data loading
+  pin_memory: false
+
+# Notes:
+# - First run downloads ~500MB dataset from OGB
+# - Use OnDiskInductivePreprocessor for memory-efficient preprocessing
+# - For testing: set use_mock=true and subset_size=100
+# - For full training: set use_mock=false and subset_size=null
