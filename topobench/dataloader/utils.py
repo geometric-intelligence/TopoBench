@@ -56,6 +56,56 @@ class DomainData(torch_geometric.data.Data):
         else:
             return 0
 
+    def __inc__(self, key: str, value: Any, *args, **kwargs) -> Any:
+        r"""Overwrite the `__inc__` method to handle proper index incrementing for sparse matrices.
+
+        This method tells PyTorch Geometric how to increment indices when batching.
+        For incidence matrices, column indices need to be incremented by the running count
+        of the corresponding entity (e.g., hyperedges, edges, cells).
+
+        Parameters
+        ----------
+        key : str
+            Key of the data.
+        value : Any
+            Value of the data.
+        *args : Any
+            Additional arguments.
+        **kwargs : Any
+            Additional keyword arguments.
+
+        Returns
+        -------
+        Any
+            The increment value for indices.
+        """
+        # Handle incidence matrices with hyperedges
+        if key == "incidence_hyperedges":
+            if hasattr(self, "num_hyperedges"):
+                return torch.tensor([[self.num_nodes], [self.num_hyperedges]])
+            else:
+                # Fall back to using the shape of the incidence matrix
+                return torch.tensor([[self.num_nodes], [value.size(1)]])
+
+        # Handle incidence matrices for different ranks
+        # incidence_0, incidence_1, incidence_2, etc.
+        if key.startswith("incidence_") and key[10:].isdigit():
+            rank = int(key.split("_")[1])
+            num_cells_attr = f"num_cells_{rank}"
+            if hasattr(self, num_cells_attr):
+                return torch.tensor(
+                    [[self.num_nodes], [getattr(self, num_cells_attr)]]
+                )
+            else:
+                # Fall back to using the shape of the incidence matrix
+                return torch.tensor([[self.num_nodes], [value.size(1)]])
+
+        # Default PyG behavior for edge_index and similar
+        if "index" in key or key == "face":
+            return self.num_nodes
+
+        return 0
+
 
 def to_data_list(batch):
     """Workaround needed since `torch_geometric` doesn't work when using `torch.sparse` instead of `torch_sparse`.

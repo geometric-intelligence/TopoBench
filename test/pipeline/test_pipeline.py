@@ -7,6 +7,10 @@ from test._utils.simplified_pipeline import run
 DATASET = "graph/MUTAG"                                                 # ADD YOUR DATASET HERE
 MODELS   = ["graph/gcn", "cell/topotune", "simplicial/topotune"]        # ADD ONE OR SEVERAL MODELS OF YOUR CHOICE HERE
 
+# HIGH-PPI B2 integration (optional - uncomment to test)
+# DATASET = "simplicial/ppi_highppi"
+# MODELS = ["simplicial/sccnn_cell"]
+
 
 class TestPipeline:
     """Test pipeline for a particular dataset and model."""
