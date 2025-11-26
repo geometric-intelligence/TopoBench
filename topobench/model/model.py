@@ -244,6 +244,9 @@ class TBModel(LightningModule):
 
         if self.task_level in ["node", "cell"]:
             # Keep only train data points (for node-level or cell-level tasks)
+            for key, val in model_out.items():
+                if key in ["logits", "labels"]:
+                    model_out[key] = val[mask]
             # Note: Rank-specific masks are applied in readout
             # The readout stores which indices it kept in valid_indices
             if "valid_indices" in model_out:
