@@ -307,15 +307,10 @@ class MIPLIBDataset(InMemoryDataset):
             sol_path = osp.join(solutions_dir, f"{instance_name}.sol")
 
             sol = None
-            obj_val = None
 
             if osp.exists(sol_path):
                 try:
                     sol = model.readSolFile(sol_path)
-                    # Note: getSolObjVal might still fail if not solving, but let's try or skip it
-                    # Based on test, getSolVal works. getSolObjVal failed in test_scip_read.py
-                    # Let's try to get obj val if possible, or just ignore it if it fails
-                    # But wait, readSolFile returns a Solution object.
                 except Exception as e:
                     print(f"Failed to read solution {sol_path}: {e}")
                     continue  # Skip this MIP if solution reading fails
@@ -460,9 +455,6 @@ class MIPLIBDataset(InMemoryDataset):
                 num_nodes=num_vars,
                 num_hyperedges=num_conss,
             )
-
-            if obj_val is not None:
-                data.obj_val = torch.tensor([obj_val], dtype=torch.float)
 
             data_list.append(data)
 

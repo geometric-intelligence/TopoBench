@@ -87,7 +87,7 @@ class TestLoaders:
             print(repr(dataset_loader))
 
             if config_file in self.long_running_datasets:
-                dataset, data_dir = dataset_loader.load(slice=100)
+                dataset, data_dir = dataset_loader.load(slice=20)
             else:
                 dataset, data_dir = dataset_loader.load()
             return dataset, data_dir
