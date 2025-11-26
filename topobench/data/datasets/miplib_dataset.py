@@ -28,7 +28,8 @@ class MIPLIBDataset(InMemoryDataset):
         Name of the dataset. Default is "benchmark".
     parameters : DictConfig, optional
         Configuration parameters for the dataset.
-
+    slice : int, optional
+        Number of samples to process. Useful for testing to limit dataset size.
     **kwargs : optional
         Additional keyword arguments passed to InMemoryDataset.
         Common options include:
@@ -51,12 +52,14 @@ class MIPLIBDataset(InMemoryDataset):
         root: str,
         name: str = "benchmark",
         parameters: DictConfig = None,
+        slice: int | None = None,
         **kwargs,
     ) -> None:
         # Store original dataset name for URL lookup and directory structure
         dataset_name = name if name in self.URLS else "benchmark"
         self.dataset_name = dataset_name
         self.parameters = parameters
+        self.slice = slice
 
         super().__init__(
             root,
@@ -148,6 +151,8 @@ class MIPLIBDataset(InMemoryDataset):
         str
             Processed file name.
         """
+        if self.slice is not None:
+            return f"data_slice_{self.slice}.pt"
         return "data.pt"
 
     def download(self) -> None:
@@ -290,6 +295,11 @@ class MIPLIBDataset(InMemoryDataset):
         if not raw_files:
             print("No .mps or .mps.gz files found in raw directory.")
             return
+
+        # Apply slice if specified (for testing)
+        if self.slice is not None:
+            raw_files = raw_files[: self.slice]
+            print(f"Processing only first {self.slice} files for testing")
 
         for i, path in enumerate(tqdm.tqdm(raw_files)):
             # Load model

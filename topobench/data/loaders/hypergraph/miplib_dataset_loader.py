@@ -40,12 +40,17 @@ class MIPLIBDatasetLoader(AbstractLoader):
             If dataset loading fails.
         """
 
-        dataset = self._initialize_dataset()
+        dataset = self._initialize_dataset(**kwargs)
         self.data_dir = self.get_data_dir()
         return dataset
 
-    def _initialize_dataset(self) -> MIPLIBDataset:
+    def _initialize_dataset(self, **kwargs) -> MIPLIBDataset:
         """Initialize the MIPLIB dataset.
+
+        Parameters
+        ----------
+        **kwargs : dict
+            Additional keyword arguments (e.g., slice for testing).
 
         Returns
         -------
@@ -56,4 +61,5 @@ class MIPLIBDatasetLoader(AbstractLoader):
             root=str(self.root_data_dir),
             name=self.parameters.data_name,
             parameters=self.parameters,
+            **kwargs,
         )
