@@ -258,7 +258,12 @@ def load_transductive_splits(dataset, parameters):
         "Dataset should have only one graph in a transductive setting."
     )
 
-    data = dataset.data_list[0]
+    # Get the single graph - handle PreProcessor (data_list) or raw dataset
+    # PreProcessor.data_list contains the fully transformed data with all simplicial features
+    if hasattr(dataset, "data_list") and dataset.data_list:
+        data = dataset.data_list[0]
+    else:
+        data = dataset[0]
 
     # Check if this is multi-rank cell prediction
     target_ranks = getattr(dataset, "target_ranks", None)
@@ -423,7 +428,12 @@ def load_multirank_transductive_splits(
         "Dataset should have only one graph/complex in a transductive setting."
     )
 
-    data = dataset.data_list[0]
+    # Get the single graph - handle PreProcessor (data_list) or raw dataset
+    # PreProcessor.data_list contains the fully transformed data with all simplicial features
+    if hasattr(dataset, "data_list") and dataset.data_list:
+        data = dataset.data_list[0]
+    else:
+        data = dataset[0]
     target_ranks = dataset.target_ranks
 
     root = dataset.get_data_dir() if hasattr(dataset, "get_data_dir") else None
