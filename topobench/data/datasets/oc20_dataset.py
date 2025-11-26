@@ -350,6 +350,26 @@ class OC20Dataset(Dataset):
         return 1  # Atomic numbers
 
     @property
+    def data(self):
+        """Get combined data view for compatibility with InMemoryDataset API.
+
+        Returns a Data object with x and y attributes representing stacked
+        features from a sample of the dataset.
+        """
+        if not hasattr(self, "_data_cache"):
+            # Get a sample to determine feature dimensions
+            if len(self) > 0:
+                sample = self.get(0)
+                # Create a mock data object with minimal info for compatibility
+                self._data_cache = Data(
+                    x=sample.x if hasattr(sample, "x") else torch.zeros(1, 1),
+                    y=sample.y if hasattr(sample, "y") else torch.zeros(1),
+                )
+            else:
+                self._data_cache = Data(x=torch.zeros(1, 1), y=torch.zeros(1))
+        return self._data_cache
+
+    @property
     def num_classes(self) -> int:
         """Number of classes (regression task)."""
         return 1  # Single regression target (energy)

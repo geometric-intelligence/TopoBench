@@ -5,62 +5,8 @@ import os
 import numpy as np
 import torch
 from sklearn.model_selection import StratifiedKFold
-from torch.utils.data import Subset
-from tqdm import tqdm
 
 from topobench.dataloader import DataloadDataset
-
-
-class DatasetWrapper:
-    """Wrapper that converts dataset items to (values, keys) format.
-
-    This makes any dataset (including Subset) compatible with TopoBench's
-    custom collate function which expects (values, keys) tuples instead of Data objects.
-
-    Parameters
-    ----------
-    dataset : torch_geometric.data.Dataset or torch.utils.data.Subset
-        The underlying dataset.
-    """
-
-    def __init__(self, dataset):
-        """Initialize wrapper with dataset."""
-        self.dataset = dataset
-
-    def __len__(self):
-        """Return length of wrapped dataset."""
-        return len(self.dataset)
-
-    def __getitem__(self, idx):
-        """Get item at index in (values, keys) format.
-
-        Parameters
-        ----------
-        idx : int
-            Index of the data object to get.
-
-        Returns
-        -------
-        tuple
-            Tuple containing a list of all the values for the data and the corresponding keys.
-        """
-        # Get the data object from the wrapped dataset
-        data = self.dataset[idx]
-        # Convert to (values, keys) format expected by collate_fn
-        if hasattr(data, "keys"):
-            keys = list(data.keys())
-            return ([data[key] for key in keys], keys)
-        else:
-            # Fallback for non-Data objects
-            return data
-
-    def __getstate__(self):
-        """Return state for pickling (multiprocessing compatibility)."""
-        return {"dataset": self.dataset}
-
-    def __setstate__(self, state):
-        """Restore state from unpickling (multiprocessing compatibility)."""
-        self.dataset = state["dataset"]
 
 
 # Generate splits in different fasions
@@ -97,9 +43,7 @@ def k_fold_split(labels, parameters, root=None):
     torch.manual_seed(0)
     np.random.seed(0)
 
-    # Include dataset size in split directory to avoid reusing splits from different dataset sizes
-    n = len(labels)
-    split_dir = os.path.join(data_dir, f"{k}-fold_n={n}")
+    split_dir = os.path.join(data_dir, f"{k}-fold")
 
     if not os.path.isdir(split_dir):
         os.makedirs(split_dir)
@@ -183,13 +127,9 @@ def random_splitting(labels, parameters, root=None, global_data_seed=42):
     train_prop = parameters["train_prop"]
     valid_prop = (1 - train_prop) / 2
 
-    # Include dataset size in split directory to avoid reusing splits from different dataset sizes
-    n = len(labels)
-
     # Create split directory if it does not exist
     split_dir = os.path.join(
-        data_dir,
-        f"train_prop={train_prop}_global_seed={global_data_seed}_n={n}",
+        data_dir, f"train_prop={train_prop}_global_seed={global_data_seed}"
     )
     generate_splits = False
     if not os.path.isdir(split_dir):
@@ -240,54 +180,6 @@ def random_splitting(labels, parameters, root=None, global_data_seed=42):
     return split_idx
 
 
-def create_subset_splits(dataset, split_idx):
-    """Create dataset splits using PyTorch Subset (optimized for large datasets).
-
-    This avoids loading all graphs into memory by using lazy indexing.
-
-    Parameters
-    ----------
-    dataset : torch_geometric.data.Dataset
-        Considered dataset.
-    split_idx : dict
-        Dictionary containing the train, validation, and test indices.
-
-    Returns
-    -------
-    tuple:
-        Tuple containing the train, validation, and test datasets as Subsets.
-    """
-    # Convert numpy arrays to lists if needed
-    train_indices = (
-        split_idx["train"].tolist()
-        if hasattr(split_idx["train"], "tolist")
-        else list(split_idx["train"])
-    )
-    valid_indices = (
-        split_idx["valid"].tolist()
-        if hasattr(split_idx["valid"], "tolist")
-        else list(split_idx["valid"])
-    )
-    test_indices = (
-        split_idx["test"].tolist()
-        if hasattr(split_idx["test"], "tolist")
-        else list(split_idx["test"])
-    )
-
-    print(
-        f"Creating subsets: train={len(train_indices)}, val={len(valid_indices)}, test={len(test_indices)}"
-    )
-
-    # Create subsets using lazy indexing
-    # Wrap subsets with DatasetWrapper to make them compatible with TopoBench's collate_fn
-    # Always create a Subset even if indices are empty, to maintain consistent API
-    train_dataset = DatasetWrapper(Subset(dataset, train_indices))
-    val_dataset = DatasetWrapper(Subset(dataset, valid_indices))
-    test_dataset = DatasetWrapper(Subset(dataset, test_indices))
-
-    return train_dataset, val_dataset, test_dataset
-
-
 def assign_train_val_test_mask_to_graphs(dataset, split_idx):
     """Split the graph dataset into train, validation, and test datasets.
 
@@ -307,58 +199,22 @@ def assign_train_val_test_mask_to_graphs(dataset, split_idx):
     data_train_lst, data_val_lst, data_test_lst = [], [], []
 
     # Assign masks directly by iterating over pre-split indices
-    print(f"Creating train split with {len(split_idx['train'])} samples...")
-    for i in tqdm(
-        split_idx["train"], desc="Loading train graphs", leave=False
-    ):
-        # Convert tensor index to Python int if needed
-        idx = (
-            i.item()
-            if isinstance(i, torch.Tensor) and i.dim() == 0
-            else int(i)
-        )
-        graph = dataset[idx]
-        # Clone if possible to avoid modifying original data
-        if hasattr(graph, "clone"):
-            graph = graph.clone()
+    for i in split_idx["train"]:
+        graph = dataset[i]
         graph.train_mask = torch.tensor([1], dtype=torch.long)
         graph.val_mask = torch.tensor([0], dtype=torch.long)
         graph.test_mask = torch.tensor([0], dtype=torch.long)
         data_train_lst.append(graph)
 
-    print(
-        f"Creating validation split with {len(split_idx['valid'])} samples..."
-    )
-    for i in tqdm(
-        split_idx["valid"], desc="Loading validation graphs", leave=False
-    ):
-        # Convert tensor index to Python int if needed
-        idx = (
-            i.item()
-            if isinstance(i, torch.Tensor) and i.dim() == 0
-            else int(i)
-        )
-        graph = dataset[idx]
-        # Clone if possible to avoid modifying original data
-        if hasattr(graph, "clone"):
-            graph = graph.clone()
+    for i in split_idx["valid"]:
+        graph = dataset[i]
         graph.train_mask = torch.tensor([0], dtype=torch.long)
         graph.val_mask = torch.tensor([1], dtype=torch.long)
         graph.test_mask = torch.tensor([0], dtype=torch.long)
         data_val_lst.append(graph)
 
-    print(f"Creating test split with {len(split_idx['test'])} samples...")
-    for i in tqdm(split_idx["test"], desc="Loading test graphs", leave=False):
-        # Convert tensor index to Python int if needed
-        idx = (
-            i.item()
-            if isinstance(i, torch.Tensor) and i.dim() == 0
-            else int(i)
-        )
-        graph = dataset[idx]
-        # Clone if possible to avoid modifying original data
-        if hasattr(graph, "clone"):
-            graph = graph.clone()
+    for i in split_idx["test"]:
+        graph = dataset[i]
         graph.train_mask = torch.tensor([0], dtype=torch.long)
         graph.val_mask = torch.tensor([0], dtype=torch.long)
         graph.test_mask = torch.tensor([1], dtype=torch.long)
@@ -450,6 +306,15 @@ def load_inductive_splits(dataset, parameters):
     assert len(dataset) > 1, (
         "Datasets should have more than one graph in an inductive setting."
     )
+    # Check if labels are ragged (different sizes across graphs)
+    label_list = [data.y.squeeze(0).numpy() for data in dataset]
+    label_shapes = [label.shape for label in label_list]
+    # Use dtype=object only if labels have different shapes (ragged)
+    labels = (
+        np.array(label_list, dtype=object)
+        if len(set(label_shapes)) > 1
+        else np.array(label_list)
+    )
 
     root = (
         dataset.dataset.get_data_dir()
@@ -457,63 +322,27 @@ def load_inductive_splits(dataset, parameters):
         else None
     )
 
-    # Check if we have fixed splits first (avoid loading all data)
-    if parameters.split_type == "fixed" and hasattr(dataset, "split_idx"):
-        print(
-            f"Using pre-computed fixed splits (train: {len(dataset.split_idx['train'])}, "
-            f"val: {len(dataset.split_idx['valid'])}, test: {len(dataset.split_idx['test'])})"
+    if parameters.split_type == "random":
+        split_idx = random_splitting(labels, parameters, root=root)
+
+    elif parameters.split_type == "k-fold":
+        assert type(labels) is not object, (
+            "K-Fold splitting not supported for ragged labels."
         )
+        split_idx = k_fold_split(labels, parameters, root=root)
+
+    elif parameters.split_type == "fixed" and hasattr(dataset, "split_idx"):
         split_idx = dataset.split_idx
+
     else:
-        # For random/k-fold splits, we need to extract labels
-        # Check if labels are ragged (different sizes across graphs)
-        print(
-            f"Extracting labels from {len(dataset)} graphs for split creation..."
-        )
-        label_list = [
-            data.y.squeeze(0).numpy()
-            for data in tqdm(dataset, desc="Extracting labels")
-        ]
-        label_shapes = [label.shape for label in label_list]
-        # Use dtype=object only if labels have different shapes (ragged)
-        labels = (
-            np.array(label_list, dtype=object)
-            if len(set(label_shapes)) > 1
-            else np.array(label_list)
+        raise NotImplementedError(
+            f"split_type {parameters.split_type} not valid. Choose either 'random', 'k-fold' or 'fixed'.\
+            If 'fixed' is chosen, the dataset should have the attribute split_idx"
         )
 
-        if parameters.split_type == "random":
-            split_idx = random_splitting(labels, parameters, root=root)
-
-        elif parameters.split_type == "k-fold":
-            assert type(labels) is not object, (
-                "K-Fold splitting not supported for ragged labels."
-            )
-            split_idx = k_fold_split(labels, parameters, root=root)
-
-        else:
-            raise NotImplementedError(
-                f"split_type {parameters.split_type} not valid. Choose either 'random', 'k-fold' or 'fixed'.\
-                If 'fixed' is chosen, the dataset should have the attribute split_idx"
-            )
-
-    # Use optimized subset-based splitting for large datasets OR when using fixed splits
-    # This avoids loading all graphs into memory at once for large datasets
-    # For fixed splits, subset-based splitting preserves the original dataset indices
-    use_subset_split = len(dataset) > 10000 or parameters.split_type == "fixed"
-
-    if use_subset_split:
-        if len(dataset) > 10000:
-            print(
-                f"Using optimized subset-based splitting for large dataset ({len(dataset)} graphs)"
-            )
-        train_dataset, val_dataset, test_dataset = create_subset_splits(
-            dataset, split_idx
-        )
-    else:
-        train_dataset, val_dataset, test_dataset = (
-            assign_train_val_test_mask_to_graphs(dataset, split_idx)
-        )
+    train_dataset, val_dataset, test_dataset = (
+        assign_train_val_test_mask_to_graphs(dataset, split_idx)
+    )
 
     return train_dataset, val_dataset, test_dataset
 
