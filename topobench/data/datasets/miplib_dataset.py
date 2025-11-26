@@ -294,6 +294,7 @@ class MIPLIBDataset(InMemoryDataset):
         for i, path in enumerate(tqdm.tqdm(raw_files)):
             # Load model
             model = Model()
+            model.hideOutput()
             model.readProblem(path)
 
             instance_name = (

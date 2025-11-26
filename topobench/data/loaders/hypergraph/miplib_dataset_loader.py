@@ -21,8 +21,13 @@ class MIPLIBDatasetLoader(AbstractLoader):
     def __init__(self, parameters: DictConfig) -> None:
         super().__init__(parameters)
 
-    def load_dataset(self) -> MIPLIBDataset:
+    def load_dataset(self, **kwargs) -> MIPLIBDataset:
         """Load the MIPLIB dataset.
+
+        Parameters
+        ----------
+        **kwargs : dict
+            Additional keyword arguments (e.g., slice for testing).
 
         Returns
         -------
