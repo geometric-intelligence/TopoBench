@@ -29,6 +29,7 @@ from pathlib import Path
 
 import lightning as pl
 from omegaconf import OmegaConf
+from topomodelx.nn.simplicial.scn2 import SCN2
 
 from topobench.data.loaders import OGBGMolPCBALoader
 from topobench.data.preprocessor import OnDiskInductivePreprocessor
@@ -36,7 +37,6 @@ from topobench.dataloader import TBDataloader
 from topobench.evaluator.evaluator import TBEvaluator
 from topobench.loss import TBLoss
 from topobench.model import TBModel
-from topomodelx.nn.simplicial.scn2 import SCN2
 from topobench.nn.encoders import AllCellFeatureEncoder
 from topobench.nn.readouts import PropagateSignalDown
 from topobench.nn.wrappers.simplicial import SCNWrapper
@@ -160,7 +160,7 @@ def main():
     print("=" * 80)
     print("Training SCN2 on OGBG-molpcba Dataset")
     print("=" * 80)
-    print(f"Configuration:")
+    print("Configuration:")
     print(f"  Dataset: {'Mock' if args.mock else 'OGBG-molpcba'}")
     print(f"  Subset size: {args.subset if args.subset else 'Full dataset'}")
     print(f"  Split: {args.split}")
@@ -208,11 +208,11 @@ def main():
     )
 
     print(f"✓ Transform: SimplicialCliqueLifting (dim={args.complex_dim})")
-    print(f"  Graph → Simplicial complex (nodes, edges, triangles)")
+    print("  Graph → Simplicial complex (nodes, edges, triangles)")
 
     # Step 3: On-disk preprocessing
     print("\n[3/5] Applying on-disk preprocessing...")
-    print(f"  This processes graphs one-by-one with O(1) memory usage")
+    print("  This processes graphs one-by-one with O(1) memory usage")
     print(f"  Storage backend: {args.storage_backend}")
     print(f"  Workers: {args.num_workers if args.num_workers else 'auto'}")
 
@@ -243,7 +243,7 @@ def main():
         preprocessed_dataset.load_dataset_splits(split_config)
     )
 
-    print(f"✓ Splits created:")
+    print("✓ Splits created:")
     print(f"  Train: {len(dataset_train)} samples")
     print(f"  Val:   {len(dataset_val)} samples")
     print(f"  Test:  {len(dataset_test)} samples")
@@ -330,8 +330,8 @@ def main():
         compile=False,
     )
 
-    print(f"✓ Model created:")
-    print(f"  Architecture: SCN2 (Simplicial Convolutional Network)")
+    print("✓ Model created:")
+    print("  Architecture: SCN2 (Simplicial Convolutional Network)")
     print(f"  Hidden dim: {HIDDEN_DIM}")
     print(f"  Output classes: {NUM_CLASSES}")
     print(f"  Cell dimensions: {NUM_CELL_DIMENSIONS}")

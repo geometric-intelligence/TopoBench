@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal, Union
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -15,11 +15,11 @@ if TYPE_CHECKING:
     from .ondisk_transductive import OnDiskTransductivePreprocessor
     from .preprocessor import PreProcessor
 
-    PreprocessorType = Union[
-        PreProcessor,
-        OnDiskInductivePreprocessor,
-        OnDiskTransductivePreprocessor,
-    ]
+    PreprocessorType = (
+        PreProcessor
+        | OnDiskInductivePreprocessor
+        | OnDiskTransductivePreprocessor
+    )
 
 
 def _is_transductive(
@@ -68,7 +68,6 @@ def _estimate_memory_requirement(
     - 4-cliques (dim=3): O(N × D³) × 12 bytes
     Where N = num_nodes or num_graphs, D = avg_degree
     """
-    import torch
 
     try:
         # Sample first graph to estimate
@@ -288,9 +287,13 @@ def create_preprocessor(
             inmemory_kwargs["force_reload"] = force_reload
 
         # Add any other allowed kwargs from **kwargs
-        for key, value in kwargs.items():
-            if key in allowed_inmemory_args:
-                inmemory_kwargs[key] = value
+        inmemory_kwargs.update(
+            {
+                key: value
+                for key, value in kwargs.items()
+                if key in allowed_inmemory_args
+            }
+        )
 
         return PreProcessor(
             dataset, data_dir, transforms_config, **inmemory_kwargs

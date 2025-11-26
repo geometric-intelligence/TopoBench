@@ -253,8 +253,11 @@ def assign_train_val_test_mask_to_graphs(dataset, split_idx, use_lazy=False):
     )
 
 
-def load_transductive_splits(dataset, parameters):
-    r"""Load the graph dataset with the specified split.
+def load_transductive_splits_legacy(dataset, parameters):
+    r"""Load the graph dataset with the specified split (legacy version).
+
+    .. deprecated::
+        Use the new load_transductive_splits with OnDiskTransductivePreprocessor instead.
 
     Parameters
     ----------
