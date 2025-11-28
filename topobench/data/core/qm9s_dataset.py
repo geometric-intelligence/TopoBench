@@ -1,5 +1,4 @@
 import os
-import torch
 import numpy as np
 import requests
 import gzip
@@ -9,8 +8,8 @@ from tqdm import tqdm
 from urllib.parse import urlparse
 from torch_geometric.data import Data
 from typing import Optional
-      
-from on_disk_dataset import OnDiskDataset
+
+from  topobench.data.core.on_disk_dataset import OnDiskDataset
 
 
 class QM9SDataset(OnDiskDataset):

@@ -33,9 +33,7 @@ class TestQM9SDataset:
         # Create dataset
         dataset = QM9SDataset(
             root=self.test_root,
-            num_molecules=10,
-            force_process=True
-        )
+            num_molecules=10)
         
         # Test dataset length
         assert len(dataset) == 10
