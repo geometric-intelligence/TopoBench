@@ -1,5 +1,4 @@
 import os
-import torch
 from typing import Optional, Callable
 from torch_geometric.data import Dataset
 from urllib.parse import urlparse
