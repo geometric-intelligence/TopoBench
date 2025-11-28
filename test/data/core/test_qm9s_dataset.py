@@ -1,5 +1,5 @@
 """Test QM9SDataset class."""
-
+import torch
 import os
 import sys
 
