@@ -1,7 +1,8 @@
 import os
+from collections.abc import Callable
+
 import torch
-from typing import Callable, Optional
-from torch_geometric.data import Dataset, Data
+from torch_geometric.data import Data, Dataset
 
 
 class RobustOnDiskDataset(Dataset):
@@ -14,9 +15,9 @@ class RobustOnDiskDataset(Dataset):
         self,
         root: str,
         chunk_size: int = 512,
-        transform: Optional[Callable] = None,
-        pre_transform: Optional[Callable] = None,
-        pre_filter: Optional[Callable] = None,
+        transform: Callable | None = None,
+        pre_transform: Callable | None = None,
+        pre_filter: Callable | None = None,
     ):
         self.chunk_size = chunk_size
         super().__init__(root, transform, pre_transform, pre_filter)
@@ -89,7 +90,7 @@ class RobustOnDiskDataset(Dataset):
                 all_data.append(data)
 
             while len(all_data) >= self.chunk_size:
-                self._save_chunk(all_data[:self.chunk_size])
+                self._save_chunk(all_data[: self.chunk_size])
                 all_data = all_data[self.chunk_size:]
 
         if len(all_data) > 0:
