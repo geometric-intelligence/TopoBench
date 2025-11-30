@@ -1,13 +1,13 @@
 import os
 import torch
-from typing import Callable, List, Optional
+from typing import Callable, Optional
 from torch_geometric.data import Dataset, Data
 
 
 class RobustOnDiskDataset(Dataset):
     """
-    A Robust Chunk-based on-disk dataset that processes raw samples individually
-    and saves them in chunks to avoid memory bottlenecks.
+    A robust Chunk-based on-disk dataset that processes raw samples
+    individually and saves them in chunks to avoid memory bottlenecks.
     """
 
     def __init__(
@@ -29,7 +29,7 @@ class RobustOnDiskDataset(Dataset):
         return os.path.join(self.root, "processed")
 
     @property
-    def processed_file_names(self) -> List[str]:
+    def processed_file_names(self) -> list[str]:
         if not os.path.exists(self.processed_dir):
             return []
         files = [
@@ -65,10 +65,10 @@ class RobustOnDiskDataset(Dataset):
     # -------------------------
     # To be implemented by subclass
     # -------------------------
-    def prepare_raw_data(self) -> List[str]:
+    def prepare_raw_data(self) -> list[str]:
         raise NotImplementedError
 
-    def process_raw_file(self, raw_path: str) -> List[Data]:
+    def process_raw_file(self, raw_path: str) -> list[Data]:
         raise NotImplementedError
 
     # -------------------------
@@ -95,7 +95,7 @@ class RobustOnDiskDataset(Dataset):
         if len(all_data) > 0:
             self._save_chunk(all_data)
 
-    def _save_chunk(self, chunk: List[Data]):
+    def _save_chunk(self, chunk: list[Data]):
         chunk_id = len(self.processed_file_names)
         path = os.path.join(self.processed_dir, f"chunk_{chunk_id}.pt")
         torch.save(chunk, path)
