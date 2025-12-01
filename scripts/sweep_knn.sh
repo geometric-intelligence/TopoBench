@@ -5,7 +5,7 @@
 # ==========================================================
 # SETUP: Clean and prepare the logs directory for a fresh run
 # ==========================================================
-LOG_DIR="./logs"
+LOG_DIR="./logs/knn"
 echo "Preparing a clean log directory at: $LOG_DIR"
 
 # If the log directory exists, delete it and everything inside it
@@ -46,33 +46,33 @@ datasets=(
     "graph/roman_empire"
     "graph/MUTAG"
     "graph/PROTEINS"
-    "graph/hm-categories"
-    "graph/pokec-regions"
-    "graph/web-topics"
-    "graph/tolokers-2"
-    "graph/city-reviews"
-    "graph/artnet-exp"
-    "graph/web-fraud"
+    # "graph/hm-categories"
+    # "graph/pokec-regions"
+    # "graph/web-topics"
+    # "graph/tolokers-2"
+    # "graph/city-reviews"
+    # "graph/artnet-exp"
+    # "graph/web-fraud"
 )
-batch_sizes=(1 1 1 1 1 256 256 1 1 1 1 1 1 1)
+batch_sizes=(1 1 1 1 1 256 256) # 1 1 1 1 1 1 1)
 
 lifting="liftings/graph2hypergraph/knn"
 
 
-lrs=(0.001 0.01 0.1)
+lrs=(0.001 0.01)
 hidden_channels=(32 64 128)
-k_values=(3 5 10)
+k_values=(2 3 5 10)
 DATA_SEEDS=(0 3 5 7 9)
 # ========================================================================
 # Main Loop with Execution Tracking
 # ========================================================================
 
 # --- 2. Initialize counters for tracking runs and managing parallel jobs ---
-gpu_id=5  # Specify which GPU to use
+gpu_id=7  # Specify which GPU to use
 ROOT_LOG_DIR="$LOG_DIR"
 run_counter=1
 job_counter=0
-MAX_PARALLEL=3 # Set the max number of jobs to run at once
+MAX_PARALLEL=2 # Set the max number of jobs to run at once
 
 # Loop over datasets and batch sizes using array indexing for zipping
 num_datasets=${#datasets[@]}
@@ -114,7 +114,7 @@ for model in "${models[@]}"; do
                             "trainer.check_val_every_n_epoch=5"
                             "trainer.devices=[${gpu_id}]"
                             "callbacks.early_stopping.patience=10"
-                            "logger.wandb.project=hypergraph_liftings"
+                            "logger.wandb.project=hypergraph_liftings2"
                         )
                         if [[ "${model##*/}" != "edgnn" ]]; then
                             cmd+=("model.backbone.n_layers=2")

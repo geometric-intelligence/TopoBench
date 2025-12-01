@@ -58,7 +58,10 @@ def graph_matern_kernel(
     """
 
     id_matrix = torch.eye(laplacian.shape[0])
-    return torch.tensor(fmp((2 * nu / kappa**2) * id_matrix + laplacian, -nu))
+    return torch.tensor(
+        fmp((2 * nu / kappa**2) * id_matrix + laplacian, -nu),
+        dtype=laplacian.dtype,
+    )
 
 
 def get_graph_kernel(
@@ -114,7 +117,7 @@ def get_feat_kernel(
           - "identity": Returns an identity matrix of size `(N, N)`, where `N` is the number of features.
           - "mse": Computes the Mean Squared Error (MSE) distance matrix between feature vectors.
           - "cosine": Computes the Cosine similarity matrix between feature vectors.
-          - "euclidean": Computes the Euclidean distance matrix between feature vectors.        
+          - "euclidean": Computes the Euclidean distance matrix between feature vectors.
         - If a callable, it should be a function that takes `features` and additional keyword arguments (`**kwargs`)
         as input and returns a kernel matrix.
         Default is "identity".
@@ -160,7 +163,7 @@ def get_feat_kernel(
         squared_norms = torch.sum(features**2, dim=1, keepdim=True)
         B = torch.matmul(features, features.T)
         D_SED = squared_norms - 2 * B + squared_norms.T
-        D_SED = torch.clamp(D_SED, min=0.0) 
+        D_SED = torch.clamp(D_SED, min=0.0)
         D_MSE = D_SED / d
         return D_MSE
     if kernel == "cosine":
@@ -171,8 +174,8 @@ def get_feat_kernel(
         squared_norms = torch.sum(features**2, dim=1, keepdim=True)
         B = torch.matmul(features, features.T)
         D_SED = squared_norms - 2 * B + squared_norms.T
-        D_SED = torch.clamp(D_SED, min=0.0) 
-        D_ED = torch.sqrt(D_SED + 1e-8) 
+        D_SED = torch.clamp(D_SED, min=0.0)
+        D_ED = torch.sqrt(D_SED + 1e-8)
         return D_ED
     raise ValueError(f"Unknown feature kernel type: {kernel}")
 
@@ -229,6 +232,10 @@ def get_combination(c_name_or_func: typing.Callable | str) -> typing.Callable:
         return lambda A, B: A * B
     if c_name_or_func == "sum":
         return lambda A, B: A + B
+    if c_name_or_func == "first":
+        return lambda A, B: A
+    if c_name_or_func == "second":
+        return lambda A, B: B
     raise ValueError(f"Unknown name for kernel combination {c_name_or_func}")
 
 
@@ -297,26 +304,26 @@ class HypergraphKernelLifting(Graph2HypergraphLifting):
         """
         transposed_tensor = incidence.T
         return torch.unique(transposed_tensor, dim=0).T
-    
-    def _fix_incidence(self, incidence_1):
-        """Ensures every node is contained within at least one hyperedge.
 
-        This function modifies the incidence matrix by introducing new, single-node 
-        hyperedges (columns) for any node that currently does not belong to any 
-        existing hyperedge (i.e., rows that sum to zero). This is crucial for 
+    def _fix_incidence(self, incidence_1):
+        """Ensure every node is contained within at least one hyperedge.
+
+        This function modifies the incidence matrix by introducing new, single-node
+        hyperedges (columns) for any node that currently does not belong to any
+        existing hyperedge (i.e., rows that sum to zero). This is crucial for
         maintaining graph connectivity and structural integrity in hypergraph models.
 
         Parameters
         ----------
         incidence_1 : torch.Tensor
-            The incidence matrix of shape [N, M], where N is the number of nodes 
+            The incidence matrix of shape [N, M], where N is the number of nodes
             (vertices) and M is the number of hyperedges (columns).
 
         Returns
         -------
         torch.Tensor
-            The modified incidence matrix of shape [N, M + K], where K is the 
-            number of newly added hyperedges (one for each originally isolated node). 
+            The modified incidence matrix of shape [N, M + K], where K is the
+            number of newly added hyperedges (one for each originally isolated node).
             Returns the original matrix if no isolated nodes are found.
         """
         row_sums = incidence_1.sum(dim=1)
@@ -332,13 +339,15 @@ class HypergraphKernelLifting(Graph2HypergraphLifting):
         k = zero_rows.numel()
 
         # Create new columns: shape [n, k]
-        new_cols = torch.zeros((n, k), dtype=incidence_1.dtype, device=incidence_1.device)
+        new_cols = torch.zeros(
+            (n, k), dtype=incidence_1.dtype, device=incidence_1.device
+        )
         new_cols[zero_rows, torch.arange(k)] = 1
 
         # Concatenate the new columns to the original matrix
         fixed_incidence = torch.cat([incidence_1, new_cols], dim=1)
         return fixed_incidence
-    
+
     def lift_topology(
         self, data: torch_geometric.data.Data
     ) -> dict[str, torch.Tensor]:

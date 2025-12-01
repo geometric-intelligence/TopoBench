@@ -46,24 +46,25 @@ datasets=(
     "graph/roman_empire"
     "graph/MUTAG"
     "graph/PROTEINS"
-    "graph/hm-categories"
-    "graph/pokec-regions"
-    "graph/web-topics"
-    "graph/tolokers-2"
-    "graph/city-reviews"
-    "graph/artnet-exp"
-    "graph/web-fraud"
+    # "graph/hm-categories"
+    # "graph/pokec-regions"
+    # "graph/web-topics"
+    # "graph/tolokers-2"
+    # "graph/city-reviews"
+    # "graph/artnet-exp"
+    # "graph/web-fraud"
 )
-batch_sizes=(1 1 1 1 1 256 256 1 1 1 1 1 1 1)
+batch_sizes=(1 1 1 1 1 256 256) # 1 1 1 1 1 1 1)
 
 lifting="liftings/graph2hypergraph/mapper"
 
 
-lrs=(0.001 0.01 0.1)
+lrs=(0.001 0.01)
 hidden_channels=(32 64 128)
-resolutions=(10 20 50)
-gains=(0.1 0.3)
+resolutions=(5 10 20)
+gains=(0.1 0.2 0.3)
 DATA_SEEDS=(0 3 5 7 9)
+filtr_attr=("laplacian" "svd" "feature_pca" "feature_sum")
 
 # ========================================================================
 # Main Loop with Execution Tracking
@@ -94,45 +95,48 @@ for model in "${models[@]}"; do
 
                 for r in "${resolutions[@]}"; do
                     for g in "${gains[@]}"; do
-                        for data_seed in "${DATA_SEEDS[@]}"; do
-                        
-                            # Define a descriptive run name for logging
-                            run_name="${model##*/}_${dataset##*/}_${lifting##*/}_r${r}_g${g}_lr${lr}_h${h}"
-                            log_group="sweep_mapper"
-                            # Construct the command array.
-                            cmd=(
-                                "python" "-m" "topobench"
-                                "model=${model}"
-                                "dataset=${dataset}"
-                                "optimizer.parameters.lr=${lr}"
-                                "model.feature_encoder.out_channels=${h}"
-                                "model.readout.readout_name=PropagateSignalDown"
-                                "model.feature_encoder.proj_dropout=0.5"
-                                "dataset.dataloader_params.batch_size=${batch_size}"
-                                "transforms=[${lifting}]"
-                                "transforms.liftings.graph2hypergraph.resolution=${r}"
-                                "transforms.liftings.graph2hypergraph.gain=${g}"
-                                "dataset.split_params.data_seed=${data_seed}"
-                                "trainer.max_epochs=500"
-                                "trainer.min_epochs=50"
-                                "trainer.check_val_every_n_epoch=5"
-                                "trainer.devices=[${gpu_id}]"
-                                "callbacks.early_stopping.patience=10"
-                                "logger.wandb.project=hypergraph_liftings2"
-                            )
-                            if [[ "${model##*/}" != "edgnn" ]]; then
-                                cmd+=("model.backbone.n_layers=2")
-                            fi
-                            run_and_log "${cmd[*]}" "$log_group" "$run_name" "$ROOT_LOG_DIR" &
+                        for f in "${filtr_attr[@]}"; do
+                            for data_seed in "${DATA_SEEDS[@]}"; do
+                            
+                                # Define a descriptive run name for logging
+                                run_name="${model##*/}_${dataset##*/}_${lifting##*/}_r${r}_g${g}_f${f}_lr${lr}_h${h}"
+                                log_group="sweep_mapper"
+                                # Construct the command array.
+                                cmd=(
+                                    "python" "-m" "topobench"
+                                    "model=${model}"
+                                    "dataset=${dataset}"
+                                    "optimizer.parameters.lr=${lr}"
+                                    "model.feature_encoder.out_channels=${h}"
+                                    "model.readout.readout_name=PropagateSignalDown"
+                                    "model.feature_encoder.proj_dropout=0.5"
+                                    "dataset.dataloader_params.batch_size=${batch_size}"
+                                    "transforms=[${lifting}]"
+                                    "transforms.liftings.graph2hypergraph.resolution=${r}"
+                                    "transforms.liftings.graph2hypergraph.gain=${g}"
+                                    "transforms.liftings.graph2hypergraph.filter_attr=${f}"
+                                    "dataset.split_params.data_seed=${data_seed}"
+                                    "trainer.max_epochs=500"
+                                    "trainer.min_epochs=50"
+                                    "trainer.check_val_every_n_epoch=5"
+                                    "trainer.devices=[${gpu_id}]"
+                                    "callbacks.early_stopping.patience=10"
+                                    "logger.wandb.project=hypergraph_liftings2"
+                                )
+                                if [[ "${model##*/}" != "edgnn" ]]; then
+                                    cmd+=("model.backbone.n_layers=2")
+                                fi
+                                run_and_log "${cmd[*]}" "$log_group" "$run_name" "$ROOT_LOG_DIR" &
 
-                            # --- 6. Increment counters and manage parallel jobs ---
-                            # ... (Parallel job management remains the same) ...
-                            ((run_counter++))
-                            ((job_counter++))
-                            if [[ "$job_counter" -ge "$MAX_PARALLEL" ]]; then
-                                wait -n
-                                ((job_counter--))
-                            fi
+                                # --- 6. Increment counters and manage parallel jobs ---
+                                # ... (Parallel job management remains the same) ...
+                                ((run_counter++))
+                                ((job_counter++))
+                                if [[ "$job_counter" -ge "$MAX_PARALLEL" ]]; then
+                                    wait -n
+                                    ((job_counter--))
+                                fi
+                            done
                         done
                     done
                 done 

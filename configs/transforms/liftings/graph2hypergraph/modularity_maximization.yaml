@@ -2,6 +2,7 @@ transform_type: 'lifting'
 transform_name: "ModularityMaximizationLifting"
 num_communities: 2
 k_neighbors: 3
+use_graph_connectivity: False
 feature_lifting: ProjectionSum
 # Required for all liftings to make the pipeline executable 
 preserve_edge_attr: False

@@ -20,14 +20,23 @@ class ModularityMaximizationLifting(Graph2HypergraphLifting):
         The number of communities to detect. Default is 2.
     k_neighbors : int, optional
         The number of nearest neighbors to consider within each community. Default is 3.
+    use_graph_connectivity : bool, optional
+        If True include the original edges as hyperedges of dimensions 2. Default if False.
     **kwargs : optional
         Additional arguments for the base class.
     """
 
-    def __init__(self, num_communities=2, k_neighbors=3, **kwargs):
+    def __init__(
+        self,
+        num_communities=2,
+        k_neighbors=3,
+        use_graph_connectivity=False,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.num_communities = num_communities
         self.k_neighbors = k_neighbors
+        self.use_graph_connectivity = use_graph_connectivity
 
     def modularity_matrix(self, data):
         r"""Compute the modularity matrix B of the graph.
@@ -167,6 +176,51 @@ class ModularityMaximizationLifting(Graph2HypergraphLifting):
             incidence_matrix[i, i] = 1  # Include the node itself
 
         incidence_matrix = incidence_matrix.to_sparse_coo()
+
+        if self.use_graph_connectivity and data.edge_index is not None:
+            # 1. Extract unique undirected edges to avoid duplicate hyperedges
+            row, col = data.edge_index
+            mask = row < col
+            unique_edges = data.edge_index[:, mask]  # Shape [2, num_new_edges]
+
+            num_new_edges = unique_edges.shape[1]
+
+            if num_new_edges > 0:
+                # 2. Prepare indices for the new sparse tensor
+                new_row_indices = torch.cat([unique_edges[0], unique_edges[1]])
+
+                # The column indices correspond to the new hyperedge IDs
+                new_col_indices = torch.arange(
+                    num_new_edges, device=data.x.device
+                ).repeat_interleave(2)
+
+                # Stack to create sparse indices [2, nnz]
+                new_indices = torch.stack([new_row_indices, new_col_indices])
+
+                # Values are all 1s
+                new_values = torch.ones(
+                    new_indices.shape[1], device=data.x.device
+                )
+
+                # 3. Concatenate with existing sparse incidence matrix
+                old_indices = incidence_matrix.indices()
+                old_values = incidence_matrix.values()
+                old_shape = incidence_matrix.shape
+
+                # Shift the new column indices by the number of existing hyperedges
+                new_indices[1] += old_shape[1]
+
+                final_indices = torch.cat([old_indices, new_indices], dim=1)
+                final_values = torch.cat([old_values, new_values])
+
+                # Update shape and create new sparse tensor
+                final_shape = (old_shape[0], old_shape[1] + num_new_edges)
+
+                incidence_matrix = torch.sparse_coo_tensor(
+                    final_indices, final_values, final_shape
+                ).coalesce()
+
+                num_hyperedges += num_new_edges
 
         return {
             "incidence_hyperedges": incidence_matrix,

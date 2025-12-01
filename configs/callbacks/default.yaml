@@ -1,4 +1,5 @@
 defaults:
+  - data_statistics
   - model_checkpoint
   - early_stopping
   - model_summary
@@ -26,3 +27,4 @@ model_summary:
 learning_rate_monitor:
   _target_: lightning.pytorch.callbacks.LearningRateMonitor
   logging_interval: "epoch"
+

@@ -5,7 +5,7 @@
 # ==========================================================
 # SETUP: Clean and prepare the logs directory for a fresh run
 # ==========================================================
-LOG_DIR="./logs_scripts_khop"
+LOG_DIR="./logs/khop"
 echo "Preparing a clean log directory at: $LOG_DIR"
 
 # If the log directory exists, delete it and everything inside it
@@ -46,20 +46,20 @@ datasets=(
     "graph/roman_empire"
     "graph/MUTAG"
     "graph/PROTEINS"
-    "graph/hm-categories"
-    "graph/pokec-regions"
-    "graph/web-topics"
-    "graph/tolokers-2"
-    "graph/city-reviews"
-    "graph/artnet-exp"
-    "graph/web-fraud"
+    # "graph/hm-categories"
+    # "graph/pokec-regions"
+    # "graph/web-topics"
+    # "graph/tolokers-2"
+    # "graph/city-reviews"
+    # "graph/artnet-exp"
+    # "graph/web-fraud"
 )
-batch_sizes=(1 1 1 1 1 256 256 1 1 1 1 1 1 1)
+batch_sizes=(1 1 1 1 1 256 256) # 1 1 1 1 1 1 1)
 
 lifting="liftings/graph2hypergraph/khop"
 
 
-lrs=(0.001 0.01 0.1)
+lrs=(0.001 0.01)
 hidden_channels=(32 64 128)
 k_values=(1 2 3)
 DATA_SEEDS=(0 3 5 7 9)
@@ -115,7 +115,7 @@ for model in "${models[@]}"; do
                             "trainer.check_val_every_n_epoch=5"
                             "trainer.devices=[${gpu_id}]"
                             "callbacks.early_stopping.patience=10"
-                            "logger.wandb.project=hypergraph_liftings_main2"
+                            "logger.wandb.project=hypergraph_liftings2"
                         )
                         if [[ "${model##*/}" != "edgnn" ]]; then
                             cmd+=("model.backbone.n_layers=2")
