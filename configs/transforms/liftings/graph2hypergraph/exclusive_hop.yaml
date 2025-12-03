@@ -1,8 +1,7 @@
+_target_: topobench.transforms.data_transform.DataTransform
 transform_type: 'lifting'
-transform_name: "ModularityMaximizationLifting"
-num_communities: 2
-k_neighbors: 3
-use_graph_connectivity: False
+transform_name: "HypergraphExclusiveHopLifting"
+k_value: 2
 feature_lifting: ProjectionSum
 # Required for all liftings to make the pipeline executable 
 preserve_edge_attr: False

@@ -1,27 +1,30 @@
 # Dataset loader config
 loader:
-  _target_: topobench.data.loaders.TUDatasetLoader
+  _target_: topobench.data.loaders.GraphlandDatasetLoader
   parameters: 
     data_domain: graph
-    data_type: TUDataset
-    data_name: MUTAG
+    data_type: graphland
+    data_name: pokec-regions
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+    drop_missing_y: True
+    impute_missing_x: 
+      _target_: sklearn.impute.SimpleImputer
+      strategy: most_frequent
+      copy: true # if false, the input X is modified directly
+      add_indicator: false # if true, adds a boolean indicator for missing values
 
 # Dataset parameters
 parameters:
-  num_features: 7
-  num_classes: 2
+  num_features: 56
+  num_classes: 183
   task: classification
   loss_type: cross_entropy
   monitor_metric: accuracy
-  task_level: graph
-  # Lifting parameters
-  max_dim_if_lifted: 3 # This is the maximum dimension of the simplicial complex in the dataset
-  preserve_edge_attr_if_lifted: True
+  task_level: node
 
 #splits
 split_params:
-  learning_setting: inductive
+  learning_setting: transductive
   data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}
   data_seed: 0
   split_type: random #'k-fold' # either "k-fold" or "random" strategies
@@ -30,6 +33,6 @@ split_params:
 
 # Dataloader parameters
 dataloader_params:
-  batch_size: 10
+  batch_size: 1 # Fixed
   num_workers: 0
   pin_memory: False

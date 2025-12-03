@@ -43,13 +43,15 @@ class HypergraphKHopLifting(Graph2HypergraphLifting):
         dict
             The lifted topology.
         """
-        # Check if data has instance x:
         if hasattr(data, "x") and data.x is not None:
             num_nodes = data.x.shape[0]
         else:
             num_nodes = data.num_nodes
 
-        incidence_1 = torch.zeros(num_nodes, num_nodes)
+        # The number of hyperedges is equal to the number of nodes
+        num_hyperedges = num_nodes
+
+        # Get the undirected edge index
         edge_index = torch_geometric.utils.to_undirected(data.edge_index)
 
         # Detect isolated nodes
@@ -57,25 +59,57 @@ class HypergraphKHopLifting(Graph2HypergraphLifting):
             i for i in range(num_nodes) if i not in edge_index[0]
         ]
         if len(isolated_nodes) > 0:
-            # Add completely isolated nodes to the edge_index
+            # Add self-loops for isolated nodes to ensure they are
+            # included in their own k-hop neighborhood.
+            isolated_tensor = torch.tensor(
+                [isolated_nodes, isolated_nodes], dtype=torch.long
+            ).to(edge_index.device)
+
             edge_index = torch.cat(
                 [
                     edge_index,
-                    torch.tensor(
-                        [isolated_nodes, isolated_nodes], dtype=torch.long
-                    ),
+                    isolated_tensor,
                 ],
                 dim=1,
             )
+        all_indices = []
 
         for n in range(num_nodes):
             neighbors, _, _, _ = torch_geometric.utils.k_hop_subgraph(
                 n, self.k, edge_index
             )
-            incidence_1[n, neighbors] = 1
 
-        num_hyperedges = incidence_1.shape[1]
-        incidence_1 = torch.Tensor(incidence_1).to_sparse_coo()
+            num_neighbors = neighbors.shape[0]
+            if num_neighbors > 0:
+                row = torch.full(
+                    (num_neighbors,), fill_value=n, dtype=torch.long
+                )
+                col = neighbors.to(torch.long)
+
+                hyperedge_indices = torch.stack([row, col], dim=0)
+                all_indices.append(hyperedge_indices)
+
+        if not all_indices:
+            # Handle empty graph
+            indices = torch.empty(
+                (2, 0), dtype=torch.long, device=edge_index.device
+            )
+            values = torch.empty(
+                0, dtype=torch.float32, device=edge_index.device
+            )
+        else:
+            indices = torch.cat(all_indices, dim=1).to(edge_index.device)
+            num_non_zero = indices.shape[1]
+            values = torch.ones(
+                num_non_zero, dtype=torch.float32, device=edge_index.device
+            )
+
+        incidence_1 = torch.sparse_coo_tensor(
+            indices=indices,
+            values=values,
+            size=(num_hyperedges, num_nodes),
+        )
+
         return {
             "incidence_hyperedges": incidence_1,
             "num_hyperedges": num_hyperedges,

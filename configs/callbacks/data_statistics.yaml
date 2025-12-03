@@ -1,0 +1,3 @@
+data_statistics:
+  _target_: topobench.callbacks.data_statistics.DataStatisticsCallback
+  domain: ${model.model_domain}

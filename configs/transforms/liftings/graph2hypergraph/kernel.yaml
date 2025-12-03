@@ -1,8 +1,12 @@
 transform_type: 'lifting'
 transform_name: "HypergraphKernelLifting"
-kernel_graph: heat
-kernel_feat: identity
-t: 1
+graph_kernel: heat
+feat_kernel: identity
+t: 1 # heat kernel
+nu: 0.5 # matern kernel
+kappa: 1.5 # matern kernel
+C: "prod" # choice between prod, sum, first (only graph kernel), second (only feature kernel)
+fraction: 0.1
 feature_lifting: ProjectionSum
 # Required for all liftings to make the pipeline executable 
 preserve_edge_attr: False
