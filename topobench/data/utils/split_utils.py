@@ -8,23 +8,29 @@ from topobench.dataloader import DataloadDataset
 
 
 # Generate splits in different fasions
+
 def k_fold_split(labels, parameters):
     """Return train and valid indices as in K-Fold Cross-Validation.
 
     If the split already exists it loads it automatically, otherwise it creates the
-    split file for the subsequent runs.
+    split files for subsequent runs.
 
     Parameters
     ----------
     labels : torch.Tensor
-        Label tensor.
+        Label tensor. May contain NaN for unlabeled nodes.
     parameters : DictConfig
-        Configuration parameters.
+        Configuration parameters. Must contain:
+            - data_split_dir
+            - k  (number of folds)
+            - data_seed (which fold to use)
 
     Returns
     -------
     dict
-        Dictionary containing the train, validation and test indices, with keys "train", "valid", and "test".
+        Dictionary containing the train, validation and test indices,
+        with keys "train", "valid", and "test".
+        Indices refer to the original node indices (only labeled nodes).
     """
 
     data_dir = parameters.data_split_dir
@@ -32,60 +38,88 @@ def k_fold_split(labels, parameters):
     fold = parameters.data_seed
     assert fold < k, "data_seed needs to be less than k"
 
-    torch.manual_seed(0)
-    np.random.seed(0)
+    # --- ASSERT: regression (float labels) not supported for stratified splitting ---
+    if np.issubdtype(labels.dtype, np.floating):
+        raise AssertionError(
+            "Regression tasks are not compatible with stratified splitting. "
+            "StratifiedKFold requires discrete integer class labels."
+        )
 
+    # Mask for labeled nodes (assumes NaN indicates unlabeled)
+    mask_labeled = labels >= 0   # Mask of labeled nodes (missing values are huge negative numbers when converted to int)
+
+    # Original indices of labeled nodes
+    labeled_indices = np.where(mask_labeled)[0]
+    labels_labeled = labels[mask_labeled]
+    n_labeled = labeled_indices.shape[0]
+
+    # Directory where all K splits will be stored
     split_dir = os.path.join(data_dir, f"{k}-fold")
 
     if not os.path.isdir(split_dir):
         os.makedirs(split_dir)
 
+    # Path for the specific fold we want to use
     split_path = os.path.join(split_dir, f"{fold}.npz")
-    if not os.path.isfile(split_path):
-        n = labels.shape[0]
-        x_idx = np.arange(n)
-        x_idx = np.random.permutation(x_idx)
-        labels = labels[x_idx]
 
+    # If the current fold file does not exist, (re)generate all K folds
+    if not os.path.isfile(split_path):
+        # Set seeds for reproducibility
+        torch.manual_seed(0)
+        np.random.seed(0)
+
+        # Indices in the labeled set (0..n_labeled-1)
+        idx_labeled = np.arange(n_labeled)
+
+        # Stratified K-Fold on labeled nodes
         skf = StratifiedKFold(n_splits=k, shuffle=True, random_state=42)
 
-        for fold_n, (train_idx, valid_idx) in enumerate(
-            skf.split(x_idx, labels)
+        for fold_n, (train_local, valid_local) in enumerate(
+            skf.split(idx_labeled, labels_labeled)
         ):
+            # Map local indices back to original node indices
+            train_idx = labeled_indices[train_local]
+            valid_idx = labeled_indices[valid_local]
+
+            # Here we set "test" equal to "valid" for convenience.
+            # If you have a separate test set, you can change this logic.
             split_idx = {
-                "train": train_idx,
-                "valid": valid_idx,
-                "test": valid_idx,
+                "train": train_idx.astype(np.int64),
+                "valid": valid_idx.astype(np.int64),
+                "test":  valid_idx.astype(np.int64),
             }
 
-            # Check that all nodes/graph have been assigned to some split
-            assert np.all(
-                np.sort(
-                    np.array(
-                        split_idx["train"].tolist()
-                        + split_idx["valid"].tolist()
-                    )
-                )
-                == np.sort(np.arange(len(labels)))
-            ), "Not every sample has been loaded."
-            split_path = os.path.join(split_dir, f"{fold_n}.npz")
-
-            np.savez(split_path, **split_idx)
-
-    split_path = os.path.join(split_dir, f"{fold}.npz")
-    split_idx = np.load(split_path)
-
-    # Check that all nodes/graph have been assigned to some split
-    assert (
-        np.unique(
-            np.array(
-                split_idx["train"].tolist()
-                + split_idx["valid"].tolist()
-                + split_idx["test"].tolist()
+            # Sanity check: train + valid should cover all labeled nodes
+            all_assigned = np.unique(
+                np.concatenate([train_idx, valid_idx])
             )
-        ).shape[0]
-        == labels.shape[0]
-    ), "Not all nodes within splits"
+            assert (
+                all_assigned.shape[0] == n_labeled
+            ), "Not every labeled sample has been assigned in this fold."
+
+            # Save this fold
+            split_path_fold = os.path.join(split_dir, f"{fold_n}.npz")
+            np.savez(split_path_fold, **split_idx)
+
+    # Load the requested fold
+    split_path = os.path.join(split_dir, f"{fold}.npz")
+    split_file = np.load(split_path)
+    split_idx = {
+        "train": split_file["train"],
+        "valid": split_file["valid"],
+        "test":  split_file["test"],
+    }
+
+    # Final sanity check: all indices refer only to labeled nodes
+    all_assigned = np.unique(
+        np.concatenate(
+            [split_idx["train"], split_idx["valid"], split_idx["test"]]
+        )
+    )
+    assert (
+        all_assigned.shape[0] == n_labeled
+    ), "Not all labeled nodes are within splits."
+    assert np.all(mask_labeled[all_assigned]), "Some unlabeled nodes appear in splits."
 
     return split_idx
 
@@ -96,7 +130,7 @@ def stratified_splitting(labels, parameters, global_data_seed=42):
     Parameters
     ----------
     labels : torch.Tensor
-        Label tensor.
+        Label tensor. Può contenere NaN per nodi non etichettati.
     parameters : DictConfig
         Configuration parameter.
     global_data_seed : int
@@ -105,48 +139,61 @@ def stratified_splitting(labels, parameters, global_data_seed=42):
     Returns
     -------
     dict:
-        Dictionary containing the train, validation and test indices with keys "train", "valid", and "test".
+        Dictionary containing the train, validation and test indices with keys
+        "train", "valid", and "test". Gli indici sono riferiti ai nodi originali.
     """
     fold = parameters["data_seed"]
     data_dir = parameters["data_split_dir"]
     train_prop = parameters["train_prop"]
     val_prop = parameters.get("val_prop", (1 - train_prop) / 2)
 
-    # Create split directory if it does not exist
+    # --- ASSERT: regression (float labels) not supported for stratified splitting ---
+    if np.issubdtype(labels.dtype, np.floating):
+        raise AssertionError(
+            "Regression tasks are not compatible with stratified splitting. "
+            "StratifiedKFold requires discrete integer class labels."
+        )
+
     split_dir = os.path.join(
-        data_dir, f"train_prop={train_prop}_val_prop={val_prop}_global_seed={global_data_seed}"
+        data_dir,
+        f"train_prop={train_prop}_val_prop={val_prop}_global_seed={global_data_seed}",
     )
+
+    # Converting array to numpy to easily handle NaN values
+    mask_labeled = labels >= 0    # Mask of labeled nodes (missing values are huge negative numbers when converted to int)
+    labeled_indices = np.where(mask_labeled)[0]  # indexes of labeled nodes
+    labels_labeled = labels[mask_labeled]     # labels of labeled nodes
+    n_labeled = labeled_indices.shape[0]
+
     generate_splits = False
     if not os.path.isdir(split_dir):
         os.makedirs(split_dir)
         generate_splits = True
-        
 
-    # Generate splits if they do not exist
     if generate_splits:
-        # Generate a split
-        n = labels.shape[0]
-        indices = np.arange(n)
-
-        # Generate 10 splits
+        # generate 10 splits
         for fold_n in range(10):
-            # Train vs Temp (Valid+Test)
+            fold_seed = global_data_seed + fold_n
+
+            # Train vs (Valid+Test), stratified
             train_idx, val_test_idx, y_train, y_val_test = train_test_split(
-                indices,
-                labels,
+                labeled_indices,
+                labels_labeled,
                 test_size=(1.0 - train_prop),
-                stratify=labels,
-                random_state=global_data_seed,
+                stratify=labels_labeled,
+                random_state=fold_seed,
                 shuffle=True,
             )
+            
+            test_size_2 = (1.0 - train_prop - val_prop) / (1.0 - train_prop)
 
-            # 2) Split Temp into Valid vs Test
+            # Split (Valid+Test) stratified
             val_idx, test_idx, _, _ = train_test_split(
                 val_test_idx,
                 y_val_test,
-                test_size=(1.0 - val_prop - train_prop),
+                test_size=test_size_2,
                 stratify=y_val_test,
-                random_state=global_data_seed,
+                random_state=fold_seed,
                 shuffle=True,
             )
 
@@ -156,25 +203,31 @@ def stratified_splitting(labels, parameters, global_data_seed=42):
                 "test":  test_idx.astype(np.int64),
             }
 
-            # Save generated split
+            # Save the split
             split_path = os.path.join(split_dir, f"{fold_n}.npz")
             np.savez(split_path, **split_idx)
 
-    # Load the split
+    # Loading the split
     split_path = os.path.join(split_dir, f"{fold}.npz")
-    split_idx = np.load(split_path)
+    split_file = np.load(split_path)
+    split_idx = {
+        "train": split_file["train"],
+        "valid": split_file["valid"],
+        "test":  split_file["test"],
+    }
 
-    # Check that all nodes/graph have been assigned to some split
+    # checking that all labeled nodes are within splits
+    all_assigned = np.concatenate(
+        [split_idx["train"], split_idx["valid"], split_idx["test"]]
+    )
+
+    # All labeled nodes must appear in splits
     assert (
-        np.unique(
-            np.array(
-                split_idx["train"].tolist()
-                + split_idx["valid"].tolist()
-                + split_idx["test"].tolist()
-            )
-        ).shape[0]
-        == labels.shape[0]
-    ), "Not all nodes within splits"
+        np.unique(all_assigned).shape[0] == n_labeled
+    ), "Not all labeled nodes are within splits"
+
+    # No unlabeled nodes in splits
+    assert np.all(mask_labeled[all_assigned]), "Some unlabeled nodes appear in splits"
 
     return split_idx
 
@@ -187,7 +240,7 @@ def random_splitting(labels, parameters, global_data_seed=42):
     Parameters
     ----------
     labels : torch.Tensor
-        Label tensor.
+        Label tensor. Può contenere NaN per i nodi non etichettati.
     parameters : DictConfig
         Configuration parameter.
     global_data_seed : int
@@ -196,65 +249,78 @@ def random_splitting(labels, parameters, global_data_seed=42):
     Returns
     -------
     dict:
-        Dictionary containing the train, validation and test indices with keys "train", "valid", and "test".
+        Dictionary containing the train, validation and test indices with
+        keys "train", "valid", and "test". Gli indici sono riferiti ai nodi
+        originali (solo quelli etichettati).
     """
     fold = parameters["data_seed"]
     data_dir = parameters["data_split_dir"]
     train_prop = parameters["train_prop"]
     val_prop = parameters.get("val_prop", (1 - train_prop) / 2)
 
-    # Create split directory if it does not exist
+    # Directory where to save the splits
     split_dir = os.path.join(
-        data_dir, f"train_prop={train_prop}_val_prop={val_prop}_global_seed={global_data_seed}"
+        data_dir,
+        f"train_prop={train_prop}_val_prop={val_prop}_global_seed={global_data_seed}",
     )
+
+    mask_labeled = labels >= 0    # Mask of labeled nodes (missing values are huge negative numbers when converted to int)
+    labeled_indices = np.where(mask_labeled)[0]     # index of labeled nodes
+    n_labeled = labeled_indices.shape[0]
+
     generate_splits = False
     if not os.path.isdir(split_dir):
         os.makedirs(split_dir)
         generate_splits = True
 
-    # Generate splits if they do not exist
+    # Genereting splits
     if generate_splits:
-        # Set initial seed
+        # Seed globali
         torch.manual_seed(global_data_seed)
         np.random.seed(global_data_seed)
-        # Generate a split
-        n = labels.shape[0]
-        train_num = int(n * train_prop)
-        valid_num = int(n * val_prop)
 
-        # Generate 10 splits
+        # Number of sample in train and valid sets
+        train_num = int(n_labeled * train_prop)
+        valid_num = int(n_labeled * val_prop)
+
+        # Genereate 10 splits
         for fold_n in range(10):
-            # Permute indices
-            perm = torch.as_tensor(np.random.permutation(n))
+            # Permutation of labeled indices
+            perm = np.random.permutation(labeled_indices)
 
             train_indices = perm[:train_num]
             val_indices = perm[train_num : train_num + valid_num]
             test_indices = perm[train_num + valid_num :]
+
             split_idx = {
-                "train": train_indices,
-                "valid": val_indices,
-                "test": test_indices,
+                "train": train_indices.astype(np.int64),
+                "valid": val_indices.astype(np.int64),
+                "test":  test_indices.astype(np.int64),
             }
 
-            # Save generated split
+            # Save the split
             split_path = os.path.join(split_dir, f"{fold_n}.npz")
             np.savez(split_path, **split_idx)
 
-    # Load the split
+    # load the split
     split_path = os.path.join(split_dir, f"{fold}.npz")
-    split_idx = np.load(split_path)
+    split_file = np.load(split_path)
+    split_idx = {
+        "train": split_file["train"],
+        "valid": split_file["valid"],
+        "test":  split_file["test"],
+    }
 
-    # Check that all nodes/graph have been assigned to some split
+    # Check the correctness of the split 
+    all_assigned = np.concatenate(
+        [split_idx["train"], split_idx["valid"], split_idx["test"]]
+    )
     assert (
-        np.unique(
-            np.array(
-                split_idx["train"].tolist()
-                + split_idx["valid"].tolist()
-                + split_idx["test"].tolist()
-            )
-        ).shape[0]
-        == labels.shape[0]
-    ), "Not all nodes within splits"
+        np.unique(all_assigned).shape[0] == n_labeled
+    ), "Not all labeled nodes are within splits"
+
+    # check that no unlabeled nodes are in splits
+    assert np.all(mask_labeled[all_assigned]), "Some unlabeled nodes appear in splits"
 
     return split_idx
 
