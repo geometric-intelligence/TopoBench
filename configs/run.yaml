@@ -4,7 +4,7 @@
 # order of defaults determines the order in which configs override each other
 defaults:
   - _self_
-  - dataset: hypergraph/twitter_arlequin
+  - dataset: hypergraph/maga_arlequin
   - model: hypergraph/topotune_hyp
   - transforms: ${get_default_transform:${dataset},${model}} #no_transform
   - optimizer: default

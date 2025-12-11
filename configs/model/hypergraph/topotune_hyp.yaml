@@ -25,7 +25,7 @@ backbone:
     out_channels: ${model.feature_encoder.out_channels}
     hidden_channels: ${model.feature_encoder.out_channels}
     n_layers: 2
-  neighborhoods: []
+  neighborhoods: [4-down_incidence-4]
   layers: 1
   use_edge_attr: false
   activation: relu

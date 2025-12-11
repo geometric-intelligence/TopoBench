@@ -1,13 +1,13 @@
 # Dataset loader config
 loader:
-  _target_: topobench.data.loaders.TwitterArlequinDatasetLoader
+  _target_: topobench.data.loaders.MAGAArlequinDatasetLoader
   parameters: 
     data_domain: hypergraph
     data_type: social
-    data_name: TwitterArlequin
+    data_name: MAGAArlequin
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
     # Hypergraph construction parameters
-    cluster_level_posts: 1
+    cluster_level_posts: -2
     cluster_level_users: 0
     max_rank: 4
     cluster_seed: 42
