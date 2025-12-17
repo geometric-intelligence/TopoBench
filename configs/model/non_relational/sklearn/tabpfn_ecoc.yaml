@@ -1,0 +1,11 @@
+_target_: sklearn.multiclass.OutputCodeClassifier
+
+estimator:
+  _target_: tabpfn.TabPFNClassifier
+  ignore_pretraining_limits: true
+  random_state: ${seed}
+  device: cuda 
+
+random_state: ${seed}
+code_size: 2.0
+n_jobs: 1
