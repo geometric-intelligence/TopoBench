@@ -1,0 +1,9 @@
+_target_: sklearn.multiclass.OneVsRestClassifier
+
+estimator:
+  _target_: tabpfn.TabPFNClassifier
+  ignore_pretraining_limits: true
+  random_state: ${seed}
+  device: cuda 
+
+n_jobs: 1

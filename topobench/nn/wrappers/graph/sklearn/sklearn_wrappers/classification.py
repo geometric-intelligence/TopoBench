@@ -108,8 +108,16 @@ class ClassifierWrapper(BaseWrapper):
             Predicted class labels (assumes numeric labels).
         """
 
-        # raw_proba: (n_samples, n_local_classes)
-        raw_proba = model.predict_proba(X_test)
+        try:
+            # raw_proba: (n_samples, n_local_classes)
+            raw_proba = model.predict_proba(X_test)
+        except AttributeError:
+            y_pred = model.predict(X_test)
+
+            class_to_idx = {c: i for i, c in self.classes_}
+            indices = np.array([class_to_idx[y] for y in y_pred])
+
+            raw_proba = np.eye(self.num_classes_, dtype=int)[indices]
 
         n_samples = raw_proba.shape[0]
         num_classes = self.num_classes_
@@ -158,10 +166,18 @@ class ClassifierWrapper(BaseWrapper):
         # If sample is None training the network on the whole dataset
         self.backbone.fit(X_train, y_train)
 
-        # Predict probabilities for the whole dataset (to allow compatibility with the rest of the code)
-        output = self.backbone.predict_proba(X_test)
+        try:
+            # raw_proba: (n_samples, n_local_classes)
+            raw_proba = self.backbone.predict_proba(X_test)
+        except AttributeError:
+            y_pred = self.backbone.predict(X_test)
 
-        prob_tensor = torch.from_numpy(output).float().to(device).view(-1, self.num_classes_)
+            class_to_idx = {c: i for i, c in self.classes_}
+            indices = np.array([class_to_idx[y] for y in y_pred])
+
+            raw_proba = np.eye(self.num_classes_, dtype=int)[indices]
+
+        prob_tensor = torch.from_numpy(raw_proba).float().to(device).view(-1, self.num_classes_)
 
         return prob_tensor
 
