@@ -78,6 +78,7 @@ for model in "${models[@]}"; do
     for data_seed in "${DATA_SEEDS[@]}"; do
       for use_nfa in "${USE_NFA[@]}"; do
         for sampler in "${SAMPLERS[@]}"; do
+         sampler_tag="sampler${sampler}"
 
           # ---- build per-run settings ----
           project_name="graph_tabpfn"
@@ -126,3 +127,9 @@ for model in "${models[@]}"; do
         done
       done
     done
+  done
+done
+
+echo "Waiting for the final batch of jobs to finish..."
+wait
+echo "All runs complete."

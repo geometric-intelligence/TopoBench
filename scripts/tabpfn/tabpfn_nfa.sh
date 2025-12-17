@@ -134,3 +134,9 @@ for model in "${models[@]}"; do
         done
       done
     done
+  done
+done
+
+echo "Waiting for the final batch of jobs to finish..."
+wait
+echo "All runs complete."
