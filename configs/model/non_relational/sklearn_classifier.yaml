@@ -20,6 +20,7 @@ backbone_wrapper:
   _partial_: true
   wrapper_name: ClassifierWrapper
   use_embeddings: True
+  num_test_nodes: 1
 
 readout:
   _target_: topobench.nn.readouts.${model.readout.readout_name}

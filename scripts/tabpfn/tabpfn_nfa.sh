@@ -20,31 +20,34 @@ source "$SCRIPT_DIR/base/logging.sh"
 # Sweep grids
 # -------------------------
 models=(
-    "dt_c"
-    "rf_c"
-    "hgb_c"
-    "lgbm_c"
-    "logistic_regression"
-    "mlp_c"
+    "tabpfn_c"
 )
 
 datasets=(
+    "graph/roman_empire"
     "graph/cocitation_cora"
     "graph/cocitation_citeseer"
     "graph/cocitation_pubmed"
     "graph/amazon_ratings"
     "graph/minesweeper"
     "graph/questions"
-    "graph/roman_empire"
-    "graph/hm-categories"
-    "graph/pokec-regions"
-    "graph/web-topics"
     "graph/tolokers"
     "graph/tolokers-2"
-    "graph/city-reviews"
+#  "graph/web-topics"
+  "graph/hm-categories"
+#  "graph/pokec-regions"
+#    "graph/city-reviews"
     "graph/artnet-exp"
-    "graph/web-fraud"
+#    "graph/web-fraud"
     "graph/wiki_cs"
+)
+
+# these datasets have more thant 10 classes, which is over the limit for TabPFN
+OVR_DATASETS=(
+  "graph/roman_empire"
+#  "graph/web-topics"
+  "graph/hm-categories"
+#  "graph/pokec-regions"
 )
 
 DATA_SEEDS=(0 3 5 7 9)
@@ -67,13 +70,18 @@ SAMPLERS=(
 ROOT_LOG_DIR="$LOG_DIR"
 run_counter=1
 job_counter=0
-MAX_PARALLEL=28
+MAX_PARALLEL=1
 
 num_datasets=${#datasets[@]}
 
 for model in "${models[@]}"; do
   for i in $(seq 0 $((num_datasets - 1))); do
     dataset="${datasets[i]}"
+
+    if [[ "$dataset" == "$ovr_ds" ]]; then
+        model_config="tabpfn_ovr"
+        model_tag="tabpfn_ovr"
+    fi
 
     for data_seed in "${DATA_SEEDS[@]}"; do
       for use_nfa in "${USE_NFA[@]}"; do
@@ -102,7 +110,7 @@ for model in "${models[@]}"; do
             "dataset=${dataset}"
             "dataset.split_params.split_type=stratified"
             "train=False"
-            "trainer=cpu"
+            "trainer=cuda"
             "evaluator=classification_extended"
             "dataset.split_params.data_seed=${data_seed}"
             "logger.wandb.project=${project_name}"

@@ -19,6 +19,7 @@ backbone_wrapper:
   _partial_: true
   wrapper_name: RegressorWrapper
   use_embeddings: True
+  num_test_nodes: 1
 
 
 readout:
