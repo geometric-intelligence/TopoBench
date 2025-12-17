@@ -3,8 +3,6 @@ transform_name: "NeighborFeatureAggregation"   # fixed spelling
 transform_type: "data manipulation"
 
 selected_fields: ["edge_index"]              # or ["incidence_1", ...]
-agg: "mean"                                  # "sum" | "mean" | "max"
-self_loops: true
-combine: "store"                            # "store" | "replace"
-out_field: "nfa"                              # e.g., "x_neighbor_mean" if "store"
+agg: ["mean","min","max"]                                 # "sum" | "mean" | "max"                          # e.g., "x_neighbor_mean" if "store"
 x_field: "x"
+num_hops: 3

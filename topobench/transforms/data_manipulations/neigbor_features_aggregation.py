@@ -1,57 +1,189 @@
-"""Neighbor Feature Aggregation."""
+"""Neighbor Feature Aggregation (multi-agg, multi-hop)."""
 
-from typing import List, Optional
+from typing import List, Optional, Dict, Union
 import torch
 from torch import Tensor
 
 from torch_geometric.data import Data
 from torch_geometric.transforms import BaseTransform
-from torch_geometric.utils import add_self_loops
-from torch_geometric.utils import scatter
 
+def get_neighbor_ids(
+    edge_index: Tensor,
+    k: int,
+    num_nodes: Optional[int] = None,
+    directed: bool = True,
+    include_self: bool = False,
+) -> List[List[int]]:
+    """
+    Return a list-of-lists where out[i] contains the node ids that are
+    at EXACTLY k hops from node i (shortest-path distance == k).
+
+    Parameters
+    ----------
+    edge_index : Tensor
+        Shape [2, E], COO format (src -> dst).
+    k : int
+        Hop distance (>= 1).
+    num_nodes : Optional[int]
+        If None, inferred from edge_index.max()+1.
+    directed : bool
+        If False, treats edges as undirected (adds reverse edges).
+    include_self : bool
+        If True, allows returning self if reachable at exactly k hops
+        (rare unless there are cycles). Usually keep False.
+
+    Returns
+    -------
+    List[List[int]]
+        neighbors_k[i] = list of node ids at exactly k hops from i.
+    """
+    if k < 1:
+        raise ValueError("k must be >= 1")
+
+    # Handle empty edge_index (no edges)
+    if edge_index.numel() == 0:
+        if num_nodes is None:
+            return []
+        return [[] for _ in range(num_nodes)]
+
+    if num_nodes is None:
+        num_nodes = int(edge_index.max().item()) + 1
+
+    src = edge_index[0].tolist()
+    dst = edge_index[1].tolist()
+
+    # Build adjacency list
+    adj: List[List[int]] = [[] for _ in range(num_nodes)]
+    for s, d in zip(src, dst):
+        adj[s].append(d)
+
+    if not directed:
+        for s, d in zip(src, dst):
+            adj[d].append(s)
+
+    neighbors_k: List[List[int]] = []
+
+    for start in range(num_nodes):
+        visited = {start}  # nodes within <= current hop
+        frontier = {start}  # nodes at exactly current hop (starts at 0-hop)
+
+        for _ in range(k):
+            next_frontier = set()
+            for u in frontier:
+                next_frontier.update(adj[u])
+
+            # Remove nodes already seen at smaller distance to keep EXACT k-hop
+            next_frontier.difference_update(visited)
+
+            visited.update(next_frontier)
+            frontier = next_frontier
+
+            if not frontier:
+                break  # no more nodes reachable
+
+        if not include_self:
+            frontier.discard(start)
+
+        neighbors_k.append(sorted(frontier))
+
+    return neighbors_k
+
+def aggregate_neighbor_features(
+    x: Tensor,
+    neighbor_ids: List[List[int]],
+    agg: str,
+) -> Tensor:
+    """
+    Aggregate features of neighbors (given as list-of-lists per node).
+
+    Parameters
+    ----------
+    x : Tensor
+        Node features, shape [N, F].
+    neighbor_ids : List[List[int]]
+        neighbor_ids[i] = list of neighbor node indices for node i.
+    agg : str
+        One of {"sum","mean","min","max"}.
+
+    Returns
+    -------
+    Tensor
+        Aggregated features, shape [N, F].
+        For empty neighbor sets -> zeros.
+    """
+    if agg not in {"sum", "mean", "min", "max"}:
+        raise ValueError("agg must be one of {'sum','mean','min','max'}")
+
+    N, F = x.size(0), x.size(1)
+    out = torch.zeros((N, F), device=x.device, dtype=x.dtype)
+
+    for i, nbrs in enumerate(neighbor_ids):
+        if len(nbrs) == 0:
+            continue
+
+        feats = x[nbrs]  # [num_nbrs, F]
+
+        if agg == "sum":
+            out[i] = feats.sum(dim=0)
+        elif agg == "mean":
+            out[i] = feats.mean(dim=0)
+        elif agg == "min":
+            out[i] = feats.min(dim=0).values
+        elif agg == "max":
+            out[i] = feats.max(dim=0).values
+
+    return out
 
 class NeighborFeatureAggregation(BaseTransform):
-    r"""Aggregate neighbor node features and (optionally) combine with `data.x`.
+    r"""Compute neighbor-aggregated features for multiple hops and multiple reducers.
+
+    For each hop k in {1..K} and each agg in aggs, computes:
+        x_{k,agg} = AGG( x_{k-1} over k-hop neighbors )
+    where x_0 is the original x_field.
+
+    Naming:
+        out_field = f"{prefix}{k}_hop_{agg}"  (e.g., "x_1_hop_mean")
 
     Parameters
     ----------
     selected_fields : List[str]
-        Fields to process (e.g., ["edge_index"]
-    agg : {"mean","sum","max"}, default="mean"
-        Aggregation function over neighbor features.
-    self_loops : bool, default=True
-        Whether to include each node's own features as part of aggregation.
-    combine : {"store","replace"}, default="store"
-        - "store": put result in `out_field`.
-        - "replace": `data.x = agg_x`.
-    out_field : Optional[str], default=None
-        Field to store aggregated features when `combine="store"`. If None, uses
-        `"x_neighbor_<agg>"`.
+        Fields to process (e.g., ["edge_index"] or ["adj_t"]).
+        If none match and data.edge_index exists -> uses "edge_index".
+        NOTE: this implementation uses ONE field (the first match) for clarity.
+    aggs : List[str], default=("mean",)
+        Aggregations to compute. Supported: {"sum","mean","min","max"}.
+    num_hops : int, default=1
+        Number of hops K.
+    prefix : Optional[str], default=None
+        Prefix for "store" mode fields. If None, uses f"{x_field}_".
     x_field : str, default="x"
-        Name of the node feature field to aggregate.
+        Node feature field name.
     """
+
+    SUPPORTED_AGGS = {"sum", "mean", "min", "max"}
 
     def __init__(
         self,
-        selected_fields: List[str],
-        agg: str = "mean",
-        self_loops: bool = True,
-        combine: str = "store",
-        out_field: Optional[str] = None,
+        aggs: List[str] = ("mean",),
+        num_hops: int = 1,
+        prefix: Optional[str] = None,
         x_field: str = "x",
+        edge_field: str = "edge_index",
         **kwargs,
     ):
         super().__init__()
-        assert agg in {"mean", "sum", "max"}
-        assert combine in {"store", "replace"}
+        if isinstance(aggs, (tuple, set)):
+            aggs = list(aggs)
+        assert all(a in self.SUPPORTED_AGGS for a in aggs), f"aggs must be in {self.SUPPORTED_AGGS}"
+        assert num_hops >= 1
+
         self.type = "neighbor_feature_aggregation"
         self.parameters = {
-            "selected_fields": selected_fields,
-            "agg": agg,
-            "self_loops": self_loops,
-            "combine": combine,
-            "out_field": out_field,
+            "aggs": aggs,
+            "num_hops": num_hops,
+            "prefix": prefix,
             "x_field": x_field,
+            "edge_field":edge_field,
             **kwargs,
         }
 
@@ -60,106 +192,30 @@ class NeighborFeatureAggregation(BaseTransform):
 
     # ---- public API ----
     def forward(self, data: Data) -> Data:
-        selected_fields = self.parameters["selected_fields"]
         x_field = self.parameters["x_field"]
-
         if not hasattr(data, x_field):
             raise AttributeError(f"`data` has no '{x_field}' features to aggregate.")
 
-        # Pick fields to process, mirroring your selection pattern.
-        field_to_process = [
-            key
-            for key in data.to_dict()
-            for sub in selected_fields
-            if (sub in key) and key != "incidence_0"
-        ]
-        # If none matched, try default to 'edge_index' when present.
-        if not field_to_process and hasattr(data, "edge_index"):
-            field_to_process = ["edge_index"]
+        # Pick connectivity field
+        connectivity_field = self.parameters["edge_field"]
 
-        # Start from the given features
-        x: Tensor = getattr(data, x_field)
+        x0: Tensor = getattr(data, x_field)
+        edge_index: Tensor = getattr(data, connectivity_field)
 
-        # Apply aggregation for each selected connectivity field; if multiple
-        # fields are present, aggregate sequentially (last one wins unless combined).
-        agg_x = None
-        for field in field_to_process:
-            agg_x = self._aggregate_from_field(data, field, x)
+        for k in range(1, self.parameters["num_hops"] + 1):
+            # getting the k-hop neighbors indexes
+            # it is a list of lists where each sublist contains the neighbor ids for each node
+            neighbor_ids = get_neighbor_ids(edge_index, k)
 
-            # If multiple fields, feed the newly aggregated features into next step
-            x = agg_x
-
-        if agg_x is None:
-            # Nothing to do
-            return data
-
-        # Combine strategy ( model only check "x" in the data object)
-        combine = self.parameters["combine"]
-        if combine == "store":
-            out_field = self.parameters["out_field"] or f"{x_field}_neighbor_{self.parameters['agg']}"
-            data[out_field] = agg_x
-        elif combine == "replace":
-            data[x_field] = agg_x
+            for agg in self.parameters["aggs"]:
+                out_field = (
+                    f"{self.parameters['prefix']}{k}_hop_{agg}"
+                    if self.parameters["prefix"] is not None
+                    else f"{x_field}_{k}_hop_{agg}"
+                )
+                aggregated_features = aggregate_neighbor_features(
+                    x0, neighbor_ids, agg
+                )
+                setattr(data, out_field, aggregated_features)
 
         return data
-
-    # ---- helpers ----
-    def _aggregate_from_field(self, data: Data, field: str, x: Tensor) -> Tensor:
-        agg = self.parameters["agg"]
-        include_self = self.parameters["self_loops"]
-
-        # Number of nodes
-        num_nodes = data.num_nodes if data.num_nodes is not None else x.size(0)
-
-        # Case 1: sparse adjacency-like tensor available -> use matmul for sum/mean
-        if hasattr(data, field) and isinstance(data[field], Tensor) and data[field].is_sparse:
-            A = data[field]  # shape [N, N]
-            if include_self:
-                I = torch.eye(num_nodes, device=A.device).to_sparse_coo()
-                A = (A + I).coalesce()
-
-            # Sum aggregation via sparse matmul
-            agg_sum = torch.sparse.mm(A, x)
-
-            if agg == "sum":
-                return agg_sum
-
-            # Degree for mean
-            deg = torch.sparse.sum(A.abs(), dim=1).to_dense().clamp_min(1).unsqueeze(-1)
-            if agg == "mean":
-                return agg_sum / deg
-
-            # Max isn't supported by matmul; fall back to edge-wise scatter
-            # Convert to edge_index
-            edge_index = A.coalesce().indices()
-            return self._scatter_from_edges(edge_index, x, num_nodes, include_self, reduce="max")
-
-        # Case 2: standard edge_index
-        if field == "edge_index":
-            edge_index = data.edge_index
-            reduce = {"sum": "sum", "mean": "mean", "max": "max"}[agg]
-            return self._scatter_from_edges(edge_index, x, num_nodes, include_self, reduce=reduce)
-
-        raise NotImplementedError(
-            f"Aggregation from field '{field}' is only implemented for sparse adjacency or 'edge_index'."
-        )
-
-    @staticmethod
-    def _scatter_from_edges(
-        edge_index: Tensor,
-        x: Tensor,
-        num_nodes: int,
-        include_self: bool,
-        reduce: str,
-    ) -> Tensor:
-        # Optionally add self loops to include own features
-        if include_self:
-            edge_index, _ = add_self_loops(edge_index, num_nodes=num_nodes)
-
-        src, dst = edge_index  # messages from src -> dst
-        # Gather source features and scatter to destination with reduction.
-        out = scatter(x[src], dst, dim=0, dim_size=num_nodes, reduce=reduce)
-
-        # Ensure no NaNs for empty nodes (possible for mean), fill with zeros.
-        out = torch.nan_to_num(out, nan=0.0, posinf=0.0, neginf=0.0)
-        return out
