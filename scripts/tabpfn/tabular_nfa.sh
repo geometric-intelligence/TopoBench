@@ -88,7 +88,7 @@ for model in "${models[@]}"; do
         for data_seed in "${DATA_SEEDS[@]}"; do      
             # Define a descriptive run name for logging
             run_name="${model##*/}_${dataset##*/}_seed${data_seed}"
-            log_group="tabular_nfa"
+            project_name="graph_tabpfn"
             # Construct the command array.
             cmd=(
                 "python" "-m" "topobench"
@@ -100,7 +100,8 @@ for model in "${models[@]}"; do
                 "train=False"
                 "trainer=cpu"
                 "evaluator=classification_extended"
-                "transforms=nfa"
+                "dataset.split_params.data_seed=${data_seed}"
+                "logger.wandb.project=${project_name}"
             )
 
             echo "============================================================"
