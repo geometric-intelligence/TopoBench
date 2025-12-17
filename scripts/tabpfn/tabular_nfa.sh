@@ -16,16 +16,20 @@ fi
 # Create a new, empty log directory
 mkdir -p "$LOG_DIR"
 
+echo "Folder ready: $LOG_DIR"
+
 # ========================================================================
 # Load Utilities and Set Environment
 # ========================================================================
 # Get the absolute path to the directory where this script is located.
-SCRIPT_DIR="$( cd "$( "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+SCRIPT_DIR="$(cd "$(dirname "$(dirname "${BASH_SOURCE[0]}")")" &> /dev/null && pwd)"
+
 
 # Add this line to get detailed errors from Hydra
 export HYDRA_FULL_ERROR=1
 # Source the logging.sh file using the script's directory as an anchor.
 # NOTE: Assumes base/logging.sh exists and defines run_and_log
+
 source "$SCRIPT_DIR/base/logging.sh"
 
 # ========================================================================
@@ -70,7 +74,7 @@ DATA_SEEDS=(0 3 5 7 9)
 ROOT_LOG_DIR="$LOG_DIR"
 run_counter=1
 job_counter=0
-MAX_PARALLEL=28 # Set the max number of jobs to run at once
+MAX_PARALLEL=2 # Set the max number of jobs to run at once
 
 # Loop over datasets and batch sizes using array indexing for zipping
 num_datasets=${#datasets[@]}
@@ -80,45 +84,41 @@ for model in "${models[@]}"; do
     # Loop over datasets and batch sizes
     for i in $(seq 0 $((num_datasets - 1))); do
         dataset="${datasets[i]}"
-        batch_size="${batch_sizes[i]}"
-            
-        # Loop over learning rates
-        for lr in "${lrs[@]}"; do
-            
-            # Loop over hidden channels
-            for h in "${hidden_channels[@]}"; do
-                
-                for k in "${k_values[@]}"; do
-                    for data_seed in "${DATA_SEEDS[@]}"; do
-                
-                        # Define a descriptive run name for logging
-                        run_name="${model##*/}_${dataset##*/}_seed${data_seed}"
-                        log_group="tabular_nfa"
-                        # Construct the command array.
-                        cmd=(
-                            "python" "-m" "topobench"
-                            "model/non_relational/sklearn@model.backbone=${model}"
-                            "model=non_relational/sklearn_classifier"
-                            "dataset=${dataset}"
-                            "dataset.split_params.split_type=stratified"
-                            "transforms=nfa"
-                            "train=False"
-                            "trainer=cpu"
-                            "evaluator=classification_extended"
-                            "transforms=nfa"
-                        )
-                        run_and_log "${cmd[*]}" "$log_group" "$run_name" "$ROOT_LOG_DIR" &
+        
+        for data_seed in "${DATA_SEEDS[@]}"; do      
+            # Define a descriptive run name for logging
+            run_name="${model##*/}_${dataset##*/}_seed${data_seed}"
+            log_group="tabular_nfa"
+            # Construct the command array.
+            cmd=(
+                "python" "-m" "topobench"
+                "model/non_relational/sklearn@model.backbone=${model}"
+                "model=non_relational/sklearn_classifier"
+                "dataset=${dataset}"
+                "dataset.split_params.split_type=stratified"
+                "transforms=nfa"
+                "train=False"
+                "trainer=cpu"
+                "evaluator=classification_extended"
+                "transforms=nfa"
+            )
 
-                        # --- 6. Increment counters and manage parallel jobs ---
-                        # ... (Parallel job management remains the same) ...
-                        ((run_counter++))
-                        ((job_counter++))
-                        if [[ "$job_counter" -ge "$MAX_PARALLEL" ]]; then
-                            wait -n
-                            ((job_counter--))
-                        fi
-                done # END data_seed loop
-                done # END k_values loop
+            echo "============================================================"
+            echo "Starting Run #$run_counter: $run_name"
+            echo "Command: ${cmd[*]}"
+            echo "============================================================"
+
+            run_and_log "${cmd[*]}" "$log_group" "$run_name" "$ROOT_LOG_DIR" &
+
+            # --- 6. Increment counters and manage parallel jobs ---
+            # ... (Parallel job management remains the same) ...
+            ((run_counter++))
+            ((job_counter++))
+            if [[ "$job_counter" -ge "$MAX_PARALLEL" ]]; then
+                wait -n
+                ((job_counter--))
+            fi
+            
             done
         done
     done
