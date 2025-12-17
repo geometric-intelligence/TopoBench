@@ -20,7 +20,7 @@ mkdir -p "$LOG_DIR"
 # Load Utilities and Set Environment
 # ========================================================================
 # Get the absolute path to the directory where this script is located.
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+SCRIPT_DIR="$( cd "$( "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
 # Add this line to get detailed errors from Hydra
 export HYDRA_FULL_ERROR=1
