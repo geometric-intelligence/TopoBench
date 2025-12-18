@@ -114,10 +114,7 @@ class ClassifierWrapper(BaseWrapper):
         except AttributeError:
             y_pred = model.predict(X_test)
 
-            class_to_idx = {c: i for i, c in self.classes_}
-            indices = np.array([class_to_idx[y] for y in y_pred])
-
-            raw_proba = np.eye(self.num_classes_, dtype=int)[indices]
+            raw_proba = np.eye(self.num_classes_, dtype=int)[y_pred]
 
         n_samples = raw_proba.shape[0]
         num_classes = self.num_classes_
@@ -172,10 +169,7 @@ class ClassifierWrapper(BaseWrapper):
         except AttributeError:
             y_pred = self.backbone.predict(X_test)
 
-            class_to_idx = {c: i for i, c in self.classes_}
-            indices = np.array([class_to_idx[y] for y in y_pred])
-
-            raw_proba = np.eye(self.num_classes_, dtype=int)[indices]
+            raw_proba = np.eye(self.num_classes_, dtype=int)[y_pred]
 
         prob_tensor = torch.from_numpy(raw_proba).float().to(device).view(-1, self.num_classes_)
 
