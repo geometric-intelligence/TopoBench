@@ -108,8 +108,8 @@ for model in "${models[@]}"; do
 
           cmd=(
             "python" "-m" "topobench"
-            "model/non_relational/sklearn@model.backbone=${model_tag}"
             "model=non_relational/sklearn_classifier"
+            "model/non_relational/sklearn@model.backbone=${model_tag}"
             "model/non_relational/sklearn/samplers@model.backbone_wrapper.sampler=${sampler}"
             "dataset=${dataset}"
             "dataset.split_params.split_type=stratified"
