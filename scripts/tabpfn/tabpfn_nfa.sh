@@ -110,7 +110,7 @@ for model in "${models[@]}"; do
             "dataset=${dataset}"
             "dataset.split_params.split_type=stratified"
             "train=False"
-            "trainer=cuda"
+            "trainer=gpu"
             "evaluator=classification_extended"
             "dataset.split_params.data_seed=${data_seed}"
             "logger.wandb.project=${project_name}"
