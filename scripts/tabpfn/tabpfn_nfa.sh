@@ -78,14 +78,18 @@ for model in "${models[@]}"; do
   for i in $(seq 0 $((num_datasets - 1))); do
     dataset="${datasets[i]}"
 
-    if [[ "$dataset" == "$ovr_ds" ]]; then
-        model_config="tabpfn_ovr"
-        model_tag="tabpfn_ovr"
-    fi
-
     for data_seed in "${DATA_SEEDS[@]}"; do
       for use_nfa in "${USE_NFA[@]}"; do
         for sampler in "${SAMPLERS[@]}"; do
+
+          # OVR datasets -> change model
+          model_tag="tabpfn_c"
+          for ovr_ds in "${OVR_DATASETS[@]}"; do
+            if [[ "$dataset" == "$ovr_ds" ]]; then
+              model_tag="tabpfn_ovr"
+              break
+              fi
+          done
 
           # ---- build per-run settings ----
           project_name="graph_tabpfn"
@@ -100,11 +104,11 @@ for model in "${models[@]}"; do
           fi
 
           # Run name
-          run_name="${model##*/}_${dataset##*/}_seed${data_seed}_${nfa_tag}_${sampler_tag}"
+          run_name="${model_tag}_${dataset##*/}_seed${data_seed}_${nfa_tag}_${sampler_tag}"
 
           cmd=(
             "python" "-m" "topobench"
-            "model/non_relational/sklearn@model.backbone=${model}"
+            "model/non_relational/sklearn@model.backbone=${model_tag}"
             "model=non_relational/sklearn_classifier"
             "model/non_relational/sklearn/samplers@model.backbone_wrapper.sampler=${sampler}"
             "dataset=${dataset}"

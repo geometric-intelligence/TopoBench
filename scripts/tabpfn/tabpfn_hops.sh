@@ -106,12 +106,10 @@ for model in "${models[@]}"; do
                 "transforms.nfa.test_points=${test_points}"
               )
 
-              # OVR datasets -> cambia modello
-              model_config="non_relational/tabpfn_c"
+              # OVR datasets -> change model
               model_tag="tabpfn_c"
               for ovr_ds in "${OVR_DATASETS[@]}"; do
                 if [[ "$dataset" == "$ovr_ds" ]]; then
-                  model_config="non_relational/tabpfn_ovr"
                   model_tag="tabpfn_ovr"
                   break
                 fi
@@ -121,8 +119,7 @@ for model in "${models[@]}"; do
 
               cmd=(
                 "python" "-m" "topobench"
-                "model/non_relational/sklearn@model.backbone=${model}"
-                "model=${model_config}"
+                "model/non_relational/sklearn@model.backbone=${model_tag}"
                 "model/non_relational/sklearn/samplers@model.backbone_wrapper.sampler=${sampler}"
                 "model.backbone_wrapper.sampler.n_hops=${hop}"
                 "model.backbone_wrapper.num_test_nodes=${test_points}"
