@@ -19,6 +19,7 @@ backbone_wrapper:
   _target_: topobench.nn.wrappers.graph.sklearn.ClassifierWrapper
   _partial_: true
   wrapper_name: ClassifierWrapper
+  sampler_features: all # {"all", "node", "structural"} Features to use from the sampler
   use_embeddings: True
   num_test_nodes: 1
 

@@ -12,6 +12,29 @@ from topobench.nn.wrappers.graph.sklearn.sklearn_wrappers.components import (
     LoggerStats,
 )
 
+# ---- Build SAMPLER features (new) ----
+def _build_sampler_features(
+        batch, 
+        node_features_model,
+        sampler_features: str) -> np.ndarray:
+    if sampler_features == "all":
+        # same as model
+        return node_features_model
+
+    if sampler_features == "node":
+        if "x_0" not in batch:
+            raise KeyError("sampler_features='node' requires batch['x_0']")
+        return batch["x_0"].cpu().numpy().copy()
+
+    # sampler_features == "structural"
+    structural_keys = [k for k in batch.keys() if k.startswith("x_") and k != "x_0"]
+    if len(structural_keys) == 0:
+        raise RuntimeError(
+            "sampler_features='structural' requested but no structural features found "
+            "(expected keys like 'x_1_hop_mean', etc.)."
+        )
+    structural_tensors = [batch[k] for k in structural_keys]
+    return torch.cat(structural_tensors, dim=1).cpu().numpy().copy()
 
 class BaseWrapper(torch.nn.Module, ABC):
     def __init__(self, backbone: Any, **kwargs):
@@ -21,6 +44,7 @@ class BaseWrapper(torch.nn.Module, ABC):
         self.use_node_features = kwargs.get("use_node_features", True)
         self.sampler = kwargs.get("sampler", {})
         self.num_test_nodes = kwargs.get("num_test_nodes", 1)
+        self.sampler_features = kwargs.get("sampler_features", "all")  # {"all", "node", "structural"}
 
         if self.sampler == {}:
             self.sampler = None
@@ -28,6 +52,10 @@ class BaseWrapper(torch.nn.Module, ABC):
         assert self.use_embeddings or self.use_node_features, (
             "Either use_embeddings or use_node_features could be False, not both."
         )
+
+        if self.sampler_features not in {"all", "node", "structural"}:
+            raise ValueError("sampler_features must be one of {'all','node','structural'}")
+        
         self.logger = kwargs.get("logger", None)
 
         # initializzate components
@@ -126,9 +154,13 @@ class BaseWrapper(torch.nn.Module, ABC):
                 X_train, y_train, node_features[test_mask], batch["x_0"].device
             )
         else:
+            # different sampler features 
+            # TODO: testing 
+            node_features_sampler = _build_sampler_features(batch, node_features, self.sampler_features)
+            
             # Fit sampler
             self.sampler.fit(
-                node_features,
+                node_features_sampler,
                 labels,
                 edge_index=edge_index,
                 train_mask=train_mask,
@@ -152,7 +184,7 @@ class BaseWrapper(torch.nn.Module, ABC):
 
                 # Sample neighbours
                 neighbors_id = self.sampler.sample(
-                    x=node_features[test_ids], ids=test_ids
+                    x=node_features_sampler[test_ids], ids=test_ids
                 )
 
                 probs, predictions, case = self.safe.predict_batch(

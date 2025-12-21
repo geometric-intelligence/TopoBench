@@ -19,6 +19,7 @@ backbone_wrapper:
   _partial_: true
   wrapper_name: RegressorWrapper
   use_embeddings: True
+  sampler_features: all # {"all", "node", "structural"} Features to use from the sampler
   num_test_nodes: 1
 
 
