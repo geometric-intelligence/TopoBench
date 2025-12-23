@@ -5,6 +5,11 @@
 # ==========================================================
 # SETUP: Clean and prepare the logs directory for a fresh run
 # ==========================================================
+
+gpu_id=7  # Specify which GPU to use
+script_name="$(basename "${BASH_SOURCE[0]}" .sh)"
+project_name="hypergraph_${script_name}"
+
 LOG_DIR="./logs/khop"
 echo "Preparing a clean log directory at: $LOG_DIR"
 
@@ -69,7 +74,6 @@ DATA_SEEDS=(0 3 5 7 9)
 # ========================================================================
 
 # --- 2. Initialize counters for tracking runs and managing parallel jobs ---
-gpu_id=7  # Specify which GPU to use
 ROOT_LOG_DIR="$LOG_DIR"
 run_counter=1
 job_counter=0
@@ -115,7 +119,7 @@ for model in "${models[@]}"; do
                             "trainer.check_val_every_n_epoch=5"
                             "trainer.devices=[${gpu_id}]"
                             "callbacks.early_stopping.patience=10"
-                            "logger.wandb.project=hypergraph_liftings2"
+                            "logger.wandb.project=${project_name}"
                         )
                         if [[ "${model##*/}" != "edgnn" ]]; then
                             cmd+=("model.backbone.n_layers=2")

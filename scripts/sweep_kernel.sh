@@ -5,6 +5,10 @@
 # ==========================================================
 # SETUP: Clean and prepare the logs directory for a fresh run
 # ==========================================================
+gpu_id=4  # Specify which GPU to use
+script_name="$(basename "${BASH_SOURCE[0]}" .sh)"
+project_name="hypergraph_${script_name}"
+
 LOG_DIR="./logs/kernel"
 echo "Preparing a clean log directory at: $LOG_DIR"
 
@@ -69,7 +73,6 @@ fractions=(0.01 0.05 0.1 0.2)
 # Main Loop with Execution Tracking
 # ========================================================================
 
-gpu_id=7
 ROOT_LOG_DIR="$LOG_DIR"
 run_counter=1
 job_counter=0
@@ -178,7 +181,7 @@ for model in "${models[@]}"; do
                                             "trainer.check_val_every_n_epoch=5"
                                             "trainer.devices=[${gpu_id}]"
                                             "callbacks.early_stopping.patience=10"
-                                            "logger.wandb.project=hypergraph_liftings2"
+                                            "logger.wandb.project=${project_name}"
                                             
                                             # Dynamic Arguments
                                             "transforms.liftings.graph2hypergraph.C=${comb}"
