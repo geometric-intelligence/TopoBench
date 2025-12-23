@@ -3,10 +3,13 @@
 from torchmetrics.classification import (
     AUROC,
     Accuracy,
-    ConfusionMatrix,
-    F1Score,
     Precision,
     Recall,
+    AveragePrecision,
+    F1Score,
+    CohenKappa,
+    JaccardIndex,
+    MatthewsCorrCoef,
 )
 from torchmetrics.regression import (
     MeanAbsoluteError,
@@ -20,7 +23,12 @@ from .metrics import ExampleRegressionMetric
 METRICS = {
     "accuracy": Accuracy,
     "precision": Precision,
+    "average_precision": AveragePrecision,
     "recall": Recall,
+    "f1_score": F1Score,
+    "cohen_kappa": CohenKappa,
+    "jaccard": JaccardIndex,
+    "mcc": MatthewsCorrCoef,
     "auroc": AUROC,
     "f1": F1Score,
     "f1_macro": F1Score,
@@ -28,7 +36,6 @@ METRICS = {
     "confusion_matrix": ConfusionMatrix,
     "mae": MeanAbsoluteError,
     "mse": MeanSquaredError,
-    "rmse": MeanSquaredError,  # We'll configure this with squared=False
     "r2": R2Score,
     "example": ExampleRegressionMetric,
 }

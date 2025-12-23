@@ -1,0 +1,2 @@
+_target_: sklearn.ensemble.RandomForestRegressor
+random_state: ${seed}

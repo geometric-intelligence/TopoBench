@@ -185,6 +185,7 @@ notebooks/tmp
 /tutorials/datasets/
 /tutorials/lightning_logs/
 /tutorials/datasets/
+scripts/runs_to_finish/
 
 # wandb
 wandb/

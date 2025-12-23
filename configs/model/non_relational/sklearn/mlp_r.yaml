@@ -1,0 +1,2 @@
+_target_: sklearn.neural_network.MLPRegressor
+random_state: ${seed}

@@ -1,0 +1,4 @@
+_target_: topobench.nn.wrappers.graph.sklearn.sklearn_wrappers.samplers.${model.backbone_wrapper.sampler.sampler_name}
+sampler_name: KNNSampler
+k: 5 # Number of samples to use fr the sklearn model, define during the run
+random_state: 42

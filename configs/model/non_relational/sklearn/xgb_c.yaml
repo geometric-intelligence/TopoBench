@@ -1,0 +1,2 @@
+_target_: xgboost.XGBClassifier
+random_state: ${seed}

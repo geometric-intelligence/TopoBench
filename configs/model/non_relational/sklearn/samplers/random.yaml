@@ -1,0 +1,3 @@
+_target_: topobench.nn.wrappers.graph.sklearn.sklearn_wrappers.samplers.${model.backbone_wrapper.sampler.sampler_name}
+sampler_name: RandomSampler
+k: 5

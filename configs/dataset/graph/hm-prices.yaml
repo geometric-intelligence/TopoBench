@@ -6,7 +6,7 @@ loader:
     data_type: graphland
     data_name: hm-prices
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
-    drop_missing_y: True
+    drop_missing_y: False
     impute_missing_x: 
       _target_: sklearn.impute.SimpleImputer
       strategy: most_frequent

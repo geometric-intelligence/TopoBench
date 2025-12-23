@@ -1,0 +1,2 @@
+_target_: sklearn.tree.DecisionTreeClassifier
+random_state: ${seed}

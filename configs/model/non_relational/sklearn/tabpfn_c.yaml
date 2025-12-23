@@ -1,0 +1,3 @@
+_target_: tabpfn.TabPFNClassifier
+ignore_pretraining_limits: True
+random_state: ${seed}

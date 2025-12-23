@@ -1,0 +1,2 @@
+_target_: xgboost.XGBRegressor
+random_state: ${seed}

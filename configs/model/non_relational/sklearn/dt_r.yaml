@@ -1,0 +1,2 @@
+_target_: sklearn.tree.DecisionTreeRegressor
+random_state: ${seed}
