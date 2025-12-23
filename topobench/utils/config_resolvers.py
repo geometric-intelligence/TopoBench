@@ -372,9 +372,9 @@ def infer_in_channels(dataset, transforms):
                 return [num_features] * transforms[lifting].complex_dim
         # Case when the dataset has edge attributes (cells attributes)
         else:
-            assert type(num_features) is omegaconf.listconfig.ListConfig, (
-                f"num_features should be a list of integers, not {type(num_features)}"
-            )
+            assert (
+                type(num_features) is omegaconf.listconfig.ListConfig
+            ), f"num_features should be a list of integers, not {type(num_features)}"
             # If preserve_edge_attr == False
             if not transforms[lifting].preserve_edge_attr:
                 if feature_lifting == "Concatenation":
@@ -399,12 +399,14 @@ def infer_in_channels(dataset, transforms):
 
         # TODO: Does this if statement ever execute? model_domain == data_domain and data_domain in ["simplicial", "cell", "combinatorial", "hypergraph"]
         # BUT get_default_transform() returns "no_transform" when model_domain == data_domain
-        if (
-            dataset.loader.parameters.get("model_domain", "graph")
-            == dataset.loader.parameters.data_domain
-            and dataset.loader.parameters.data_domain
-            in ["simplicial", "cell", "combinatorial", "hypergraph"]
-        ):
+        if dataset.loader.parameters.get(
+            "model_domain", "graph"
+        ) == dataset.loader.parameters.data_domain and dataset.loader.parameters.data_domain in [
+            "simplicial",
+            "cell",
+            "combinatorial",
+            "hypergraph",
+        ]:
             if isinstance(
                 num_features,
                 omegaconf.listconfig.ListConfig,
@@ -492,8 +494,18 @@ def get_default_metrics(task, metrics=None):
         return metrics
     else:
         if "classification" in task:
-            return ["accuracy", "precision", "recall", "auroc"]
+            return [
+                "accuracy",
+                "precision",
+                "recall",
+                "auroc",
+                "f1_score",
+                "average_precision",
+                "cohen_kappa",
+                "mcc",
+                "jaccard",
+            ]
         elif "regression" in task:
-            return ["mse", "mae"]
+            return ["mse", "mae", "r2"]
         else:
             raise ValueError(f"Invalid task {task}")

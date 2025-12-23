@@ -10,7 +10,7 @@ from topobench.dataloader import DataloadDataset
 # Generate splits in different fasions
 
 
-def k_fold_split(labels, parameters):
+def k_fold_split(labels, parameters, root=None):
     """Return train and valid indices as in K-Fold Cross-Validation.
 
     If the split already exists it loads it automatically, otherwise it creates the
@@ -98,9 +98,9 @@ def k_fold_split(labels, parameters):
 
             # Sanity check: train + valid should cover all labeled nodes
             all_assigned = np.unique(np.concatenate([train_idx, valid_idx]))
-            assert all_assigned.shape[0] == n_labeled, (
-                "Not every labeled sample has been assigned in this fold."
-            )
+            assert (
+                all_assigned.shape[0] == n_labeled
+            ), "Not every labeled sample has been assigned in this fold."
 
             # Save this fold
             split_path_fold = os.path.join(split_dir, f"{fold_n}.npz")
@@ -121,12 +121,12 @@ def k_fold_split(labels, parameters):
             [split_idx["train"], split_idx["valid"], split_idx["test"]]
         )
     )
-    assert all_assigned.shape[0] == n_labeled, (
-        "Not all labeled nodes are within splits."
-    )
-    assert np.all(mask_labeled[all_assigned]), (
-        "Some unlabeled nodes appear in splits."
-    )
+    assert (
+        all_assigned.shape[0] == n_labeled
+    ), "Not all labeled nodes are within splits."
+    assert np.all(
+        mask_labeled[all_assigned]
+    ), "Some unlabeled nodes appear in splits."
 
     return split_idx
 
@@ -232,14 +232,14 @@ def stratified_splitting(labels, parameters, global_data_seed=42):
     )
 
     # All labeled nodes must appear in splits
-    assert np.unique(all_assigned).shape[0] == n_labeled, (
-        "Not all labeled nodes are within splits"
-    )
+    assert (
+        np.unique(all_assigned).shape[0] == n_labeled
+    ), "Not all labeled nodes are within splits"
 
     # No unlabeled nodes in splits
-    assert np.all(mask_labeled[all_assigned]), (
-        "Some unlabeled nodes appear in splits"
-    )
+    assert np.all(
+        mask_labeled[all_assigned]
+    ), "Some unlabeled nodes appear in splits"
 
     return split_idx
 
@@ -337,14 +337,14 @@ def random_splitting(labels, parameters, root=None, global_data_seed=42):
     all_assigned = np.concatenate(
         [split_idx["train"], split_idx["valid"], split_idx["test"]]
     )
-    assert np.unique(all_assigned).shape[0] == n_labeled, (
-        "Not all labeled nodes are within splits"
-    )
+    assert (
+        np.unique(all_assigned).shape[0] == n_labeled
+    ), "Not all labeled nodes are within splits"
 
     # check that no unlabeled nodes are in splits
-    assert np.all(mask_labeled[all_assigned]), (
-        "Some unlabeled nodes appear in splits"
-    )
+    assert np.all(
+        mask_labeled[all_assigned]
+    ), "Some unlabeled nodes appear in splits"
 
     return split_idx
 
@@ -412,9 +412,9 @@ def load_transductive_splits(dataset, parameters):
         List containing the train, validation, and test splits.
     """
     # Extract labels from dataset object
-    assert len(dataset) == 1, (
-        "Dataset should have only one graph in a transductive setting."
-    )
+    assert (
+        len(dataset) == 1
+    ), "Dataset should have only one graph in a transductive setting."
 
     data = dataset.data_list[0]
     labels = data.y.numpy()
@@ -475,9 +475,9 @@ def load_inductive_splits(dataset, parameters):
         List containing the train, validation, and test splits.
     """
     # Extract labels from dataset object
-    assert len(dataset) > 1, (
-        "Datasets should have more than one graph in an inductive setting."
-    )
+    assert (
+        len(dataset) > 1
+    ), "Datasets should have more than one graph in an inductive setting."
     # Check if labels are ragged (different sizes across graphs)
     label_list = [data.y.squeeze(0).numpy() for data in dataset]
     label_shapes = [label.shape for label in label_list]
@@ -498,9 +498,9 @@ def load_inductive_splits(dataset, parameters):
         split_idx = random_splitting(labels, parameters, root=root)
 
     elif parameters.split_type == "k-fold":
-        assert type(labels) is not object, (
-            "K-Fold splitting not supported for ragged labels."
-        )
+        assert (
+            type(labels) is not object
+        ), "K-Fold splitting not supported for ragged labels."
         split_idx = k_fold_split(labels, parameters, root=root)
 
     elif parameters.split_type == "stratified":

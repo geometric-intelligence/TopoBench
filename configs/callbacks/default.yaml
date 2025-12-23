@@ -1,5 +1,4 @@
 defaults:
-  - data_statistics
   - model_checkpoint
   - early_stopping
   - model_summary
