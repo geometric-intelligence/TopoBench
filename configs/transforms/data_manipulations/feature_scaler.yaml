@@ -1,0 +1,6 @@
+transform_name: "FeatureScaler"
+transform_type: "data manipulation"
+
+scaler_type: "standard-scaler"
+fields: ['x']
+

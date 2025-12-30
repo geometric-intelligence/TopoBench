@@ -1,0 +1,6 @@
+defaults:
+  - data_manipulations@feature_scaler_1: feature_scaler
+  - liftings@_here_: ${get_required_lifting:graph,${model}}
+
+feature_scaler_1:
+  scaler_type: quantile-transform-normal

@@ -15,7 +15,7 @@
 
 # 1.1 Define Project Identifiers
 script_name="$(basename "${BASH_SOURCE[0]}" .sh)"
-project_name="graph_baselines_${script_name}"
+project_name="graph_baselines_normalized_${script_name}"
 log_group="sweep_graphland"
 LOG_DIR="./logs/${log_group}"
 
@@ -99,36 +99,40 @@ datasets=(
     #"graph/web-fraud"
 
     # # Node regression datasets
-    graph/avazu-ctr
-    graph/city-roads-L
-    graph/city-roads-M
-    graph/twitch-views
-    graph/artnet-views
+    # graph/avazu-ctr # Need to figure out what is  --fraction_features_transform none quantile-transform-normal
+    
+    # Uncomment 4 datasets below when graphland classification works fine
+    #graph/city-roads-L
+    #graph/city-roads-M
+    #graph/twitch-views
+    #graph/artnet-views
+    
     #graph/hm-prices
     #graph/web-traffic
 
     # # Reruns
-    "graph/cocitation_cora"
-    "graph/cocitation_citeseer"
-    "graph/cocitation_pubmed"
-    "graph/amazon_ratings"
-    "graph/questions"
-    "graph/roman_empire"
+    # "graph/cocitation_cora"
+    # "graph/cocitation_citeseer"
+    # "graph/cocitation_pubmed"
+    # "graph/amazon_ratings"
+    # "graph/questions"
+    # "graph/roman_empire"
 )
 
 # --- Hyperparameters ---
 batch_sizes=(1)
-lrs=(0.001 0.01)
-hidden_channels=(16 32 64 128) 
-num_layers=(1 2 4 8) 
+lrs=(0.00003 0.0001 0.0003 0.001 0.003)
+hidden_channels=(8 16 32 64) 
+num_layers=(1 2 3 4 8) 
+DROPOUTS=(0.0 0.1 0.2)
 # The Pivotal Parameter
 DATA_SEEDS=(0 3 5 7 9)
 
 # --- Fixed Parameters (Constant for all runs) ---
 FIXED_ARGS=(
-    "model.feature_encoder.proj_dropout=0.25"
-    "model.backbone.dropout=0.25"
-    "trainer.max_epochs=500"
+    #"model.feature_encoder.proj_dropout=0.25"
+    #"model.backbone.dropout=0.25"
+    "trainer.max_epochs=1000"
     "trainer.min_epochs=50"
     "trainer.check_val_every_n_epoch=5"
     "callbacks.early_stopping.patience=10"
@@ -158,6 +162,8 @@ SWEEP_CONFIG=(
     "lr|optimizer.parameters.lr|${lrs[*]}"
     "h|model.feature_encoder.out_channels|${hidden_channels[*]}"
     "bs|dataset.dataloader_params.batch_size|${batch_sizes[*]}"
+    "bdro|model.backbone.dropout|${DROPOUTS[*]}"
+    "pdro|model.feature_encoder.proj_dropout|${DROPOUTS[*]}"
     
     # --- LEVEL 3: FASTEST CHANGING (Inner Loop) ---
     # We keep seeds last so they run consecutively for every config.
