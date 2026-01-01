@@ -44,10 +44,12 @@ class ProjectionSum(torch_geometric.transforms.BaseTransform):
         for elem in keys:
             if f"x_{elem}" not in data:
                 idx_to_project = 0 if elem == "hyperedges" else int(elem) - 1
-                data["x_" + elem] = torch.matmul(
-                    abs(data["incidence_" + elem].t()),
-                    data[f"x_{idx_to_project}"],
-                )
+                features = data[f"x_{idx_to_project}"]
+                incidence = abs(data["incidence_" + elem].t())
+                if incidence.dtype != features.dtype:
+                    incidence = incidence.to(features.dtype)
+
+                data["x_" + elem] = torch.matmul(incidence, features)
         return data
 
     def forward(

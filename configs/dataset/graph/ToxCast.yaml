@@ -1,0 +1,40 @@
+# ToxCast Dataset
+# Description: Toxicology data with qualitative toxicity measurements on 617 assays
+#              from the EPA ToxCast project.
+# Source: MoleculeNet benchmark collection
+# Statistics: 8,579 graphs (8,597 reported, 18 filtered) | ~18.7 nodes/graph | ~38.4 edges/graph | 9 features | 617 tasks
+# Task: Multi-label classification (toxicity prediction)
+# Note: Some molecules with invalid SMILES are automatically filtered during loading
+
+# Dataset loader config
+loader:
+  _target_: topobench.data.loaders.MoleculeNetDatasetLoader
+  parameters: 
+    data_domain: graph
+    data_type: MoleculeNet
+    data_name: ToxCast
+    data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+
+# Dataset parameters
+parameters:
+  num_features: 9
+  num_classes: 617
+  task: classification
+  loss_type: bce
+  monitor_metric: accuracy
+  task_level: graph
+
+# Splits
+split_params:
+  learning_setting: inductive
+  data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}
+  data_seed: 0
+  split_type: random
+  k: 10  # for k-fold CV
+  train_prop: 0.8  # for random split
+
+# Dataloader parameters
+dataloader_params:
+  batch_size: 32
+  num_workers: 0
+  pin_memory: False

@@ -1,0 +1,39 @@
+# HIV Dataset
+# Description: Experimentally measured abilities of molecules to inhibit HIV replication.
+# Source: MoleculeNet benchmark collection
+# Statistics: 41,120 graphs (41,127 reported, 7 filtered) | ~25.5 nodes/graph | ~54.9 edges/graph | 9 features
+# Task: Binary classification (HIV inhibition prediction)
+# Note: Some molecules with invalid SMILES are automatically filtered during loading
+
+# Dataset loader config
+loader:
+  _target_: topobench.data.loaders.MoleculeNetDatasetLoader
+  parameters: 
+    data_domain: graph
+    data_type: MoleculeNet
+    data_name: HIV
+    data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+
+# Dataset parameters
+parameters:
+  num_features: 9
+  num_classes: 2
+  task: classification
+  loss_type: cross_entropy
+  monitor_metric: accuracy
+  task_level: graph
+
+# Splits
+split_params:
+  learning_setting: inductive
+  data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}
+  data_seed: 0
+  split_type: random
+  k: 10  # for k-fold CV
+  train_prop: 0.8  # for random split
+
+# Dataloader parameters
+dataloader_params:
+  batch_size: 64
+  num_workers: 0
+  pin_memory: False
