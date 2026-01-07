@@ -1,4 +1,3 @@
-_target_: topobench.transforms.data_transform.DataTransform
 transform_type: 'lifting'
 transform_name: "SimplicialVietorisRipsLifting"
 complex_dim: 3

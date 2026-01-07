@@ -1,6 +1,11 @@
 topobench package
 =================
 
+.. automodule:: topobench
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Subpackages
 -----------
 
@@ -21,18 +26,7 @@ Subpackages
 Submodules
 ----------
 
-topobench.run module
---------------------
+.. toctree::
+   :maxdepth: 4
 
-.. automodule:: topobench.run
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Module contents
----------------
-
-.. automodule:: topobench
-   :members:
-   :undoc-members:
-   :show-inheritance:
+   topobench.run

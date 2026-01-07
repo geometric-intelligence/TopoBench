@@ -1,4 +1,3 @@
-_target_: topobench.transforms.data_transform.DataTransform
 transform_name: "MessagePassingHomophily"
 transform_type: "data manipulation"
 num_steps: 10

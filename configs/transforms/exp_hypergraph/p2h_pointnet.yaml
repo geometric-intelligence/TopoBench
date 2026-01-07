@@ -1,2 +1,0 @@
-defaults:
-  - /transforms/liftings/pointcloud2hypergraph@pointcloud2hypergraph_lifting: pointnet
