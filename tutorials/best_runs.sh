@@ -14,3 +14,6 @@ python -m topobench model=GCN dataset=city-reviews model.readout.hidden_dim=64 m
 
 python -m topobench model=GCN dataset=artnet-exp model.readout.hidden_dim=64 model.backbone.dropout=0 model.backbone.num_layers=4 model.backbone.in_channels=64 model.backbone.hidden_channels=64 model.feature_encoder.out_channels=64 model.feature_encoder.proj_dropout=0.1 model.backbone_wrapper.out_channels=64 optimizer.parameters.lr=0.003 dataset.split_params.data_seed=0,3,5,7,9 logger.wandb.project=TopoBench_Reproduction --multirun
 
+
+
+python -m topobench model=graph/gcn dataset=graph/hm-categories model.readout.hidden_dim=256 model.backbone.dropout=0 model.backbone.num_layers=2 model.backbone.in_channels=256 model.backbone.hidden_channels=256 model.feature_encoder.out_channels=256 model.feature_encoder.proj_dropout=0 model.backbone_wrapper.out_channels=256 optimizer.parameters.lr=0.003 dataset.split_params.data_seed=0,3,5,7,9 logger.wandb.project=test_graphland dataset.dataloader_params.batch_size=8 --multirun
