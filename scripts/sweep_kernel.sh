@@ -57,18 +57,17 @@ DATA_SEEDS=(0 3 5 7 9)
 # Kernel definitions
 kernel_feats=(
     "identity"
-    "mse"
     "cosine"
     "euclidean"
 )
 graph_kernels=("heat" "matern" "identity")
-combinations=("prod" "sum" "first" "second")
+combinations=("sum" "first" "second")
 
 # Hyperparameters for kernels
-temperatures=(0.1 1.0 10.0)
-nus=(0.5 1.5 2.5 5)
-kappas=(0.05 0.1 0.5 1.0)
-fractions=(0.01 0.05 0.1 0.2)
+temperatures=(0.1 1.0)
+nus=(0.5 1.5 2.5)
+kappas=(0.1 0.5)
+fractions=(0.01 0.05)
 # ========================================================================
 # Main Loop with Execution Tracking
 # ========================================================================
