@@ -1,19 +1,19 @@
 defaults:
-  - model_checkpoint
+#  - model_checkpoint
   - early_stopping
   - model_summary
   - model_timer
   - best_epoch_metrics
   - _self_
 
-model_checkpoint:
-  dirpath: ${paths.output_dir}/checkpoints
-  filename: "epoch_{epoch:03d}"
-  monitor: ${get_monitor_metric:${dataset.parameters.task},${dataset.parameters.monitor_metric}}
-  mode: "${get_monitor_mode:${dataset.parameters.task}}"
-  save_last: False
-  auto_insert_metric_name: False
-  save_weights_only: False
+#model_checkpoint:
+#  dirpath: ${paths.output_dir}/checkpoints
+#  filename: "epoch_{epoch:03d}"
+#  monitor: ${get_monitor_metric:${dataset.parameters.task},${dataset.parameters.monitor_metric}}
+#  mode: "${get_monitor_mode:${dataset.parameters.task}}"
+#  save_last: False
+#  auto_insert_metric_name: False
+#  save_weights_only: False
 
 early_stopping:
   monitor: ${get_monitor_metric:${dataset.parameters.task},${dataset.parameters.monitor_metric}}

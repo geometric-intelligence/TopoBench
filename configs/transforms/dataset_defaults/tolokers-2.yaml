@@ -1,10 +1,30 @@
 defaults:
-  - data_manipulations@feature_scaler_1: feature_scaler
-  - data_manipulations@feature_scaler_2: feature_scaler
+  # Imputers
+  - data_manipulations@impute_num: missing_values
+  - data_manipulations@impute_cat: missing_values
+  # Scalers
+  - data_manipulations@data_preprocessor: features_preprocessor
+  # Others
   - liftings@_here_: ${get_required_lifting:graph,${model}}
 
-feature_scaler_1:
-  scaler_type: quantile-transform-normal
+impute_num:
+  feature_type: "numerical"
+  imputer:
+    _target_: sklearn.impute.SimpleImputer
+    strategy: "most_frequent"
 
-feature_scaler_2:
-  scaler_type: standard-scaler
+impute_cat:
+  feature_type: "categorical"
+  imputer:
+    _target_: sklearn.impute.SimpleImputer
+    strategy: "most_frequent"
+
+data_preprocessor:
+  num_scaler:
+    _target_: sklearn.preprocessing.QuantileTransformer
+    output_distribution: "normal"
+    random_state: 42
+  cat_encoder:
+    _target_: sklearn.preprocessing.OneHotEncoder
+    handle_unknown: "ignore"
+    sparse_output: false

@@ -5,6 +5,7 @@ import pandas as pd
 import torch
 from pandas.api.types import is_integer_dtype
 from torch_geometric.data import Data, InMemoryDataset
+import yaml
 
 from .repository.zenodo import ZenodoZip
 
@@ -33,16 +34,12 @@ class GraphlandDataset(InMemoryDataset):
         self,
         root: str | os.PathLike,
         name: str,
-        drop_missing_y = True,
-        impute_missing_x = None,
         transform=None,
         pre_transform=None,
         pre_filter=None,
     ):
         self.zip_url = f"{ZENODO_BASE}{name}.zip?"
         self.name = name
-        self.drop_missing_y = drop_missing_y
-        self.impute_missing_x = impute_missing_x
         super().__init__(os.path.join(root, name), transform, pre_transform, pre_filter)
 
         # After super().__init__, processed file must exist. Load it:
@@ -78,11 +75,12 @@ class GraphlandDataset(InMemoryDataset):
         feats_df = pd.read_csv(os.path.join(self.raw_dir, "features.csv"), index_col="node_id")
         targs_df = pd.read_csv(os.path.join(self.raw_dir, "targets.csv"))
 
-        # Imputing missing values in X
-        if self.impute_missing_x is not None:
-            x_numpy = self.impute_missing_x.fit_transform(feats_df)
-        else:
-            x_numpy = feats_df.values
+        # Loading additional metadata
+        with open(os.path.join(self.raw_dir, "info.yaml"), 'r', encoding='utf-8') as file:
+            # safe_load prevents code execution
+            metadata = yaml.safe_load(file)
+
+        x_numpy = feats_df.values
 
         # creating X tensor
         x = torch.tensor(x_numpy, dtype=torch.float)
@@ -100,29 +98,42 @@ class GraphlandDataset(InMemoryDataset):
         else:
             y = torch.tensor(targs_df.values, dtype=torch.double).squeeze() # regression
 
-        if self.drop_missing_y:
-            mask = ~torch.tensor(targ_values.isna().values)
-            x = x[mask]
-            y = y[mask]
-            feats_df = feats_df[mask.numpy()]
-            # filter edges to keep only nodes still present
-            old_to_new = {old: new for new, old in enumerate(mask.numpy().nonzero()[0])}
-
-            edges_df = edges_df[
-                edges_df["source"].isin(old_to_new.keys()) &
-                edges_df["target"].isin(old_to_new.keys())
-            ].copy()
-
-            # remap old indices to new consecutive indices
-            edges_df["source"] = edges_df["source"].map(old_to_new)
-            edges_df["target"] = edges_df["target"].map(old_to_new)
-
         # creating the edge indexes
         src = edges_df["source"].to_numpy()
         dst = edges_df["target"].to_numpy()
         edge_index = torch.tensor(np.array([src, dst]), dtype=torch.long)
 
         data = Data(x=x, edge_index=edge_index, y=y)
+
+        # Create a mapping from column name to column index
+        column_to_index = {col_name: idx for idx, col_name in enumerate(feats_df.columns)}
+
+        # Categorical feature indices
+        categorical_feature_names = metadata["categorical_features_names"]
+        data["ids_cols_categorical"] = [
+            column_to_index[col_name]
+            for col_name in categorical_feature_names
+        ]
+
+        # Fraction feature indices
+        fraction_feature_names = metadata["fraction_features_names"]
+        data["ids_cols_fraction"] = [
+            column_to_index[col_name]
+            for col_name in fraction_feature_names
+        ]
+
+        # Numerical feature indices (excluding fraction features)
+        numerical_feature_names = metadata["numerical_features_names"]
+        numerical_only_features = [
+            col_name
+            for col_name in numerical_feature_names
+            if col_name not in fraction_feature_names
+        ]
+
+        data["ids_cols_numerical"] = [
+            column_to_index[col_name]
+            for col_name in numerical_only_features
+        ]
 
         if self.pre_filter is not None and not self.pre_filter(data):
             data_list = []

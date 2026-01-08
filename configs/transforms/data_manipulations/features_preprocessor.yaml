@@ -1,0 +1,11 @@
+transform_name: "ColumnPreprocessor"
+transform_type: "data manipulation"
+
+field: 'x'
+
+num_scaler:
+  _target_: sklearn.preprocessing.StandardScaler
+cat_encoder:
+  _target_: sklearn.preprocessing.OneHotEncoder
+  handle_unknown: "ignore"
+  sparse_output: false

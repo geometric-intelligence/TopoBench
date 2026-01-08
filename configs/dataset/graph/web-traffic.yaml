@@ -6,12 +6,6 @@ loader:
     data_type: graphland
     data_name: web-traffic
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
-    drop_missing_y: False
-    impute_missing_x: 
-      _target_: sklearn.impute.SimpleImputer
-      strategy: most_frequent
-      copy: true # if false, the input X is modified directly
-      add_indicator: false # if true, adds a boolean indicator for missing values
 
 # Dataset parameters
 parameters:

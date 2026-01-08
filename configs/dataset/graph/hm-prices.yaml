@@ -6,13 +6,7 @@ loader:
     data_type: graphland
     data_name: hm-prices
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
-    drop_missing_y: False
-    impute_missing_x: 
-      _target_: sklearn.impute.SimpleImputer
-      strategy: most_frequent
-      copy: true # if false, the input X is modified directly
-      add_indicator: false # if true, adds a boolean indicator for missing values
-
+    
 # Dataset parameters
 parameters:
   num_features: 41
@@ -27,7 +21,7 @@ split_params:
   learning_setting: transductive
   data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}
   data_seed: 0
-  split_type: stratified #'k-fold' # either "k-fold" or "random" strategies
+  split_type: random #'k-fold' # either "k-fold" or "stratified" strategies
   k: 10 # for "k-fold" Cross-Validation
   train_prop: 0.5 # for "random" strategy splitting
 

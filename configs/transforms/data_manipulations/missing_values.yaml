@@ -1,0 +1,8 @@
+transform_name: "FeatureImputer"
+transform_type: "data manipulation"
+
+imputer:
+  _target_: sklearn.impute.SimpleImputer
+  strategy: "most_frequent"
+field: 'x'
+
