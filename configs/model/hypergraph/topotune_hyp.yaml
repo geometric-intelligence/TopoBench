@@ -8,7 +8,7 @@ feature_encoder:
   _target_: topobench.nn.encoders.${model.feature_encoder.encoder_name}
   encoder_name: AllCellFeatureEncoder
   in_channels: ${infer_in_channels:${dataset},${oc.select:transforms,null}} 
-  out_channels: 32
+  out_channels: 64
   proj_dropout: 0.2
   selected_dimensions:
     - 0
@@ -24,8 +24,8 @@ backbone:
     in_channels: ${model.feature_encoder.out_channels}
     out_channels: ${model.feature_encoder.out_channels}
     hidden_channels: ${model.feature_encoder.out_channels}
-    n_layers: 2
-  neighborhoods: [4-down_incidence-4]
+    n_layers: 1
+  neighborhoods: [2-down_incidence-2,3-down_incidence-3]
   layers: 1
   use_edge_attr: false
   activation: relu
@@ -46,7 +46,7 @@ readout:
   task_level: ${dataset.parameters.task_level}
   pooling_type: sum
   hierarchical_propagation: false  # Whether to use hierarchical propagation or direct propagation
-  ranks_to_propagate: [4] # Ranks to propagate signals down from (only used if hierarchical_propagation is True)
+  ranks_to_propagate: [] # Ranks to propagate signals down from (only used if hierarchical_propagation is True)
 
 # compile model for faster training with pytorch 2.0
 compile: false

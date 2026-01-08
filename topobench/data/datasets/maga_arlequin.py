@@ -40,7 +40,7 @@ class MAGAArlequinDataset(InMemoryDataset):
     FILE_FORMAT: ClassVar = {}
 
     RAW_FILE_NAMES: ClassVar = {
-        "raw_data": "/data/gbg141/Arlequin/data/MAGA.parquet",
+        "raw_data": "/data/gbg141/Arlequin/data/Arlequin_twitter_MAGA.csv",
         "embedded_data": "/data/gbg141/Arlequin/data/MAGA_embedded.parquet",
         "processed_data": "/data/gbg141/Arlequin/data/MAGA_embedded.parquet"
     }
@@ -137,6 +137,7 @@ class MAGAArlequinDataset(InMemoryDataset):
             Dataframe containing the twitter data.
         """
         self.posts = []
+        self.id_posts = dict()
         for idx in range(len(df)):
             # get values
             id = df.at[idx,"id"]
@@ -146,11 +147,13 @@ class MAGAArlequinDataset(InMemoryDataset):
             replies = [int(r) for r in replies]
             mentions = df.at[idx, "mentions_user_id"].tolist()
             mentions = [int(m) for m in mentions]
+            parent_id = df.at[idx, "parent_id"]
 
             # create post object and add to chg
-            post = Post(id, msg, user_id, replies, mentions)
+            post = Post(id, msg, user_id, replies, mentions, parent_id)
             self.posts.append(post)
             self.complex.add_node(post)
+            self.id_posts[id] = post
 
     def build_user_hyperedges(self, rank=1):
         """Build user hyperedges from posts and add to complex.
@@ -174,29 +177,74 @@ class MAGAArlequinDataset(InMemoryDataset):
             ids_to_users[user] = user
             self.complex.add_cell(user, rank=rank)
 
-    def build_connection_hyperedges(self, rank=2):
-        """Build user connection hyperedges from posts and add to complex.
+    def build_interaction_hyperedges(self, df, rank=2):
+        """Build interaction hyperedges from posts and add to complex.
         
         Parameters
         ----------
+        df : pd.DataFrame
+            Dataframe containing the twitter data.
         rank : int, optional
             Rank of the hyperedges, by default 2.
         """
-        self.replies = []
-        self.mentions = []
-        for post in self.posts:
-            for r in post.reply_to_user_id:
-                if r in self.user_ids and post.user_id != r:
-                    combined_posts = self.users_to_posts[post.user_id] + self.users_to_posts[r]
-                    reply = tnx.HyperEdge(combined_posts, rank=rank)
-                    self.replies.append(combined_posts)
-                    self.complex.add_cell(reply, rank=rank)
-            for m in post.mentions_user_id:
-                if m in self.user_ids and post.user_id != m:
-                    combined_posts = self.users_to_posts[post.user_id] + self.users_to_posts[m]
-                    mention = tnx.HyperEdge(combined_posts, rank=rank)
-                    self.mentions.append(combined_posts)
-                    self.complex.add_cell(mention, rank=rank)
+        # Create hyperedges: each hyperedge contains the root post and ALL descendants in the thread
+        # First, trace each message back to its root ancestor
+        def find_root_ancestor(msg_id, parent_dict):
+            """Trace back to find the root ancestor of a message."""
+            visited = set()
+            current = msg_id
+            
+            while current in parent_dict and pd.notna(parent_dict[current]):
+                if current in visited:  # Avoid infinite loops
+                    break
+                visited.add(current)
+                current = int(parent_dict[current])
+            
+            return current
+
+        # Create a mapping of message_id -> parent_id for faster lookup
+        parent_dict = df.set_index("id")["parent_id"].to_dict()
+
+        # Find the root ancestor for each message
+        df["root_ancestor"] = df["id"].apply(lambda x: find_root_ancestor(x, parent_dict))
+
+        # Group all messages by their root ancestor (original post)
+        self.interactions = []
+        for root_id, group in df.groupby("root_ancestor"):
+            # Create hyperedge: [root_id, descendant1_id, descendant2_id, ...]
+            all_ids = group["id"].tolist()
+            
+            # Only include if there are replies (hyperedge size > 1) and multiple authors
+            if len(all_ids) > 1:
+                # Ensure root is first in the list
+                if root_id in all_ids:
+                    all_ids.remove(root_id)
+                hyperedge = [self.id_posts[root_id]] + [self.id_posts[i] for i in all_ids]
+                
+                # Check if there are multiple authors in this interaction
+                unique_authors = set([post.user_id for post in hyperedge])
+                if len(unique_authors) > 1:
+                    interaction = tnx.HyperEdge(hyperedge, rank=rank)
+                    self.interactions.append(interaction)
+                    self.complex.add_cell(interaction, rank=rank)
+        
+        
+        # OLD: Create hyperedges based on replies and mentions columns
+        # self.replies = []
+        # self.mentions = []
+        # for post in self.posts:
+        #     for r in post.reply_to_user_id:
+        #         if r in self.user_ids and post.user_id != r:
+        #             combined_posts = self.users_to_posts[post.user_id] + self.users_to_posts[r]
+        #             reply = tnx.HyperEdge(combined_posts, rank=rank)
+        #             self.replies.append(combined_posts)
+        #             self.complex.add_cell(reply, rank=rank)
+        #     for m in post.mentions_user_id:
+        #         if m in self.user_ids and post.user_id != m:
+        #             combined_posts = self.users_to_posts[post.user_id] + self.users_to_posts[m]
+        #             mention = tnx.HyperEdge(combined_posts, rank=rank)
+        #             self.mentions.append(combined_posts)
+        #             self.complex.add_cell(mention, rank=rank)
 
     def cluster_posts(self, embeddings):
         """Cluster posts based on embeddings and add semantic hyperedges to complex.
@@ -229,17 +277,23 @@ class MAGAArlequinDataset(InMemoryDataset):
             self.semantic_hyperedges.append(cluster_posts)
             self.complex.add_cell(cluster, rank=rank)
 
-    def compute_and_cluster_user_feature_vectors(self):
+    def compute_and_cluster_user_feature_vectors(self, df):
         """Compute feature vectors for each user based on clustered posts."""
-        feature_vectors = []
-        for user in self.user_ids:
-            feature = [0.0 for _ in range(self.n_clusters_posts)]
-            for post in self.users_to_posts[user]:
-                index = self.posts_ids.index(post.id)
-                cluster = self.semantics[index]
-                feature[cluster] += 1
-            feature_vectors.append([f / sum(feature) for f in feature])
-        self.user_feature_vectors = np.array(feature_vectors)
+        # Create dictionary mapping user_id to bio_embedding
+        self.user_bio_dict = df.groupby("user_id").first()["bio_embedding"].to_dict()
+        # Instantiate user feature vectors via bio embeddings
+        self.user_feature_vectors = np.array([self.user_bio_dict[user] for user in self.user_ids])
+        
+        # OLD: Use post semantics to generate user feature vectors
+        # feature_vectors = []
+        # for user in self.user_ids:
+        #     feature = [0.0 for _ in range(self.n_clusters_posts)]
+        #     for post in self.users_to_posts[user]:
+        #         index = self.posts_ids.index(post.id)
+        #         cluster = self.semantics[index]
+        #         feature[cluster] += 1
+        #     feature_vectors.append([f / sum(feature) for f in feature])
+        # self.user_feature_vectors = np.array(feature_vectors)
         
         # cluster feature vectors
         clusters, n_clusters, _, _ = FINCH(data=self.user_feature_vectors, distance="euclidean", verbose=0, random_state=self.cluster_seed)
@@ -291,16 +345,17 @@ class MAGAArlequinDataset(InMemoryDataset):
         # build user hyperedges
         self.build_user_hyperedges(rank=1)
 
+        # compute feature vectors for each user
+        self.compute_and_cluster_user_feature_vectors(df)
+        self.build_community_hyperedges(rank=3)
+
         # create user connections as hyperedges
-        self.build_connection_hyperedges(rank=2)
+        # self.build_connection_hyperedges(df, rank=2)
+        self.build_interaction_hyperedges(df, rank=2)
 
         # cluster posts based on embeddings and create hyperedge for semantic clusters
         self.cluster_posts(embeddings)
         self.build_semantic_hyperedges(rank=4)
-
-        # compute feature vectors for each user
-        self.compute_and_cluster_user_feature_vectors()
-        self.build_community_hyperedges(rank=3)
 
         connectivity = get_colored_hypergraph_connectivity(self.complex, max_rank=self.max_rank, neighborhoods=self.neighborhoods)
         return connectivity, embeddings
@@ -321,17 +376,38 @@ class MAGAArlequinDataset(InMemoryDataset):
             Dictionary containing the features and labels for each node.
         """
         features_and_labels = dict()
-        # Rank 0 nodes (posts)
+        # Rank 0 nodes (posts) -> embeddings (dim 1024)
         features_and_labels["x_0"] = torch.tensor(embeddings, dtype=torch.float32)
-        # Rank 1 (users)
+        
+        # Rank 1 (users) -> embeddings of the bio (dim 1024)
         features_and_labels["x_1"] = torch.tensor(self.user_feature_vectors, dtype=torch.float32)
-        # Rank 2 (connections)
-        features_and_labels["x_2"] = torch.zeros(connectivity["shape"][2], features_and_labels["x_0"].shape[1], dtype=torch.float32)
-        # Rank 3 (communities)
-        features_and_labels["x_3"] = torch.zeros(connectivity["shape"][3], features_and_labels["x_0"].shape[1], dtype=torch.float32)
+        
+        # Rank 2 (interactions) -> average of bio embeddings of participating users (dim 1024)
+        interaction_feature_vectors = []
+        for interaction in self.interactions:
+            # Get unique user IDs from posts in this interaction hyperedge
+            user_ids_in_interaction = list(set([post.user_id for post in interaction.elements]))
+            # Average the bio embeddings of these users
+            user_embeddings = [self.user_bio_dict[user_id] for user_id in user_ids_in_interaction]
+            avg_embedding = np.mean(user_embeddings, axis=0)
+            interaction_feature_vectors.append(avg_embedding)
+        features_and_labels["x_2"] = torch.tensor(np.array(interaction_feature_vectors), dtype=torch.float32)
+        
+        # Rank 3 (communities) -> average of bio embeddings of users (dim 1024)
+        community_feature_vectors = []
+        for community_posts in self.community_hyperedges:
+            # Get unique user IDs from posts in this community hyperedge
+            user_ids_in_community = list(set([post.user_id for post in community_posts]))
+            # Average the bio embeddings of these users
+            user_embeddings = [self.user_bio_dict[user_id] for user_id in user_ids_in_community]
+            avg_embedding = np.mean(user_embeddings, axis=0)
+            community_feature_vectors.append(avg_embedding)
+        features_and_labels["x_3"] = torch.tensor(np.array(community_feature_vectors), dtype=torch.float32)
+        
         # Rank 4 (semantic clusters) - convert to one-hot encoding
         num_classes = connectivity["shape"][4]
         features_and_labels["x_4"] = torch.eye(num_classes, dtype=torch.float32)
+        
         # Labels (semantic clusters of posts)
         features_and_labels["y"] = torch.tensor(self.semantics, dtype=torch.long)
         return features_and_labels
@@ -369,12 +445,13 @@ class Post:
     mentions_user_id : list
         List of user IDs that the post mentions.
     """
-    def __init__(self, id, msg, user_id, reply_to_user_id, mentions_user_id):
+    def __init__(self, id, msg, user_id, reply_to_user_id, mentions_user_id, parent_id=None):
         self.id = id
         self.msg = msg
         self.user_id = user_id
         self.reply_to_user_id = reply_to_user_id
         self.mentions_user_id = mentions_user_id
+        self.parent_id = parent_id
         
     def __repr__(self):
         return f"Post(id={self.id}, user_id={self.user_id})"

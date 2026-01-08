@@ -3,7 +3,7 @@
 early_stopping:
   _target_: lightning.pytorch.callbacks.EarlyStopping
   monitor: ${get_monitor_metric:${dataset.parameters.task},${dataset.parameters.monitor_metric}} # quantity to be monitored, must be specified !!!
-  patience: 25 # number of checks with no improvement after which training will be stopped
+  patience: 100 # number of checks with no improvement after which training will be stopped
   mode: "${get_monitor_mode:${dataset.parameters.task}}" # "max" means higher metric value is better, can be also "min"
   min_delta: 0. # minimum change in the monitored quantity to qualify as an improvement
   verbose: True # verbosity mode

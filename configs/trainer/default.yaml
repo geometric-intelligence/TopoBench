@@ -2,7 +2,7 @@ _target_: lightning.pytorch.trainer.Trainer
 
 default_root_dir: ${paths.output_dir}
 
-min_epochs: 100 # prevents early stopping
+min_epochs: 200 # prevents early stopping
 max_epochs: 1000
 #accumulate_grad_batches: 1 #${dataset.parameters.batch_size}
 
