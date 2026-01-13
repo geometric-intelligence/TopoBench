@@ -6,11 +6,11 @@ build-backend = "setuptools.build_meta"
 name = "TopoBench"
 dynamic = ["version"]
 authors = [
-    {name = "Topological Intelligence Team Authors", email = "tlscabinet@gmail.com"}
+    { name = "Topological Intelligence Team Authors", email = "tlscabinet@gmail.com" },
 ]
 readme = "README.md"
 description = "Topological Deep Learning"
-license = {file = "LICENSE.txt"}
+license = { file = "LICENSE.txt" }
 classifiers = [
     "License :: OSI Approved :: MIT License",
     "Development Status :: 4 - Beta",
@@ -21,10 +21,10 @@ classifiers = [
     "Natural Language :: English",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11"
+    "Programming Language :: Python :: 3.11",
 ]
-requires-python = ">= 3.10"
-dependencies=[
+requires-python = "==3.11.3"
+dependencies = [
     "tqdm",
     "charset-normalizer",
     "numpy",
@@ -54,7 +54,15 @@ dependencies=[
     "topomodelx @ git+https://github.com/pyt-team/TopoModelX.git",
     "toponetx @ git+https://github.com/pyt-team/TopoNetX.git@c378925",
     "lightning==2.4.0",
+
+    # MIP branch dependencies
+    "datasets>=4.4.1",
+    "pyscipopt>=5.7.1",
 ]
+
+[dependency-groups]
+dev = ["ipykernel>=6.30.0", "nbformat>=5.10.4"]
+
 
 [project.optional-dependencies]
 doc = [
@@ -65,30 +73,20 @@ doc = [
     "sphinx",
     "sphinx_gallery",
     "pydata-sphinx-theme",
-    "myst_parser"
+    "myst_parser",
 ]
-lint = [
-    "pre-commit",
-    "ruff"
-]
-test = [
-    "pytest",
-    "pytest-cov",
-    "coverage",
-    "jupyter",
-    "mypy",
-    "pytest-mock"
-]
+lint = ["pre-commit", "ruff"]
+test = ["pytest", "pytest-cov", "coverage", "jupyter", "mypy", "pytest-mock"]
 
 dev = ["TopoBench[test, lint]"]
 all = ["TopoBench[dev, doc]"]
 
 [project.urls]
-homepage="https://geometric-intelligence.github.io/topobench/index.html"
-repository="https://github.com/geometric-intelligence/TopoBench"
+homepage = "https://geometric-intelligence.github.io/topobench/index.html"
+repository = "https://github.com/geometric-intelligence/TopoBench"
 
 [tool.black]
-line-length = 79  # PEP 8 standard for maximum line length
+line-length = 79           # PEP 8 standard for maximum line length
 target-version = ['py310']
 
 [tool.docformatter]
@@ -99,35 +97,35 @@ wrap-descriptions = 79
 target-version = "py310"
 #extend-include = ["*.ipynb"]
 extend-exclude = ["test", "tutorials", "notebooks"]
-line-length = 79  # PEP 8 standard for maximum line length
+line-length = 79                                    # PEP 8 standard for maximum line length
 
 [tool.ruff.format]
 docstring-code-format = false
 
 [tool.ruff.lint]
 select = [
-    "F", # pyflakes errors
-    "E", # code style
-    "W", # warnings
-    "I", # import order
-    "UP", # pyupgrade rules
-    "B", # bugbear rules
-    "PIE", # pie rules
-    "Q", # quote rules
-    "RET", # return rules
-    "SIM", # code simplifications
-    "NPY", # numpy rules
+    "F",    # pyflakes errors
+    "E",    # code style
+    "W",    # warnings
+    "I",    # import order
+    "UP",   # pyupgrade rules
+    "B",    # bugbear rules
+    "PIE",  # pie rules
+    "Q",    # quote rules
+    "RET",  # return rules
+    "SIM",  # code simplifications
+    "NPY",  # numpy rules
     "PERF", # performance rules
 ]
 fixable = ["ALL"]
 ignore = [
-    "E501",     # line too long
-    "RET504",   # Unnecessary assignment before return
-    "RET505",   # Unnecessary `elif` after `return` statement
-    "NPY002",   # Replace legacy `np.random.seed` call with `np.random.Generator`
-    "UP038",    # Use `X | Y` in `isinstance` call instead of `(X, Y)` -- not compatible with python 3.9 (even with __future__ import)
-    "W293",     # Does not allow to have empty lines in multiline comments
-    "PERF203",  # [TODO: fix all such issues] `try`-`except` within a loop incurs performance overhead
+    "E501",    # line too long
+    "RET504",  # Unnecessary assignment before return
+    "RET505",  # Unnecessary `elif` after `return` statement
+    "NPY002",  # Replace legacy `np.random.seed` call with `np.random.Generator`
+    "UP038",   # Use `X | Y` in `isinstance` call instead of `(X, Y)` -- not compatible with python 3.9 (even with __future__ import)
+    "W293",    # Does not allow to have empty lines in multiline comments
+    "PERF203", # [TODO: fix all such issues] `try`-`except` within a loop incurs performance overhead
 ]
 
 [tool.ruff.lint.pydocstyle]
@@ -138,13 +136,10 @@ convention = "numpy"
 "tests/*" = ["D"]
 
 [tool.setuptools.dynamic]
-version = {attr = "topobench.__version__"}
+version = { attr = "topobench.__version__" }
 
 [tool.setuptools.packages.find]
-include = [
-    "topobench",
-    "topobench.*"
-]
+include = ["topobench", "topobench.*"]
 
 [tool.mypy]
 warn_redundant_casts = true
@@ -155,26 +150,21 @@ plugins = "numpy.typing.mypy_plugin"
 
 [[tool.mypy.overrides]]
 module = [
-    "torch_cluster.*","networkx.*","scipy.spatial","scipy.sparse","toponetx.classes.simplicial_complex"
+    "torch_cluster.*",
+    "networkx.*",
+    "scipy.spatial",
+    "scipy.sparse",
+    "toponetx.classes.simplicial_complex",
 ]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 addopts = "--capture=no"
-pythonpath = [
-  "."
-]
+pythonpath = ["."]
 
 [tool.numpydoc_validation]
-checks = [
-    "all",
-    "GL01",
-    "ES01",
-    "EX01",
-    "SA01"
-]
-exclude = [
-    '\.undocumented_method$',
-    '\.__init__$',
-    '\.__repr__$',
-]
+checks = ["all", "GL01", "ES01", "EX01", "SA01"]
+exclude = ['\.undocumented_method$', '\.__init__$', '\.__repr__$']
+
+[tool.uv]
+find-links = ["https://data.pyg.org/whl/torch-2.3.0+cpu.html"]

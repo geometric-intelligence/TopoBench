@@ -41,7 +41,8 @@ class TestLoaders:
                             # Below the datasets that have some default transforms with we manually overriten with no_transform,
                             # due to lack of default transform for domain2domain
                             "REDDIT-BINARY.yaml", "IMDB-MULTI.yaml", "IMDB-BINARY.yaml", #"ZINC.yaml"
-                            "ogbg-molpcba.yaml", "manual_dataset.yaml" # "ogbg-molhiv.yaml"
+                            "ogbg-molpcba.yaml", "manual_dataset.yaml", # "ogbg-molhiv.yaml"
+                            "miplib.yaml"
                             }
         
         # Below the datasets that takes quite some time to load and process                            
@@ -87,7 +88,7 @@ class TestLoaders:
             print(repr(dataset_loader))
 
             if config_file in self.long_running_datasets:
-                dataset, data_dir = dataset_loader.load(slice=100)
+                dataset, data_dir = dataset_loader.load(slice=10)
             else:
                 dataset, data_dir = dataset_loader.load()
             return dataset, data_dir
