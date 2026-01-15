@@ -52,7 +52,7 @@ dependencies=[
     "ogb",
     "rootutils",
     "topomodelx @ git+https://github.com/pyt-team/TopoModelX.git",
-    "toponetx @ git+https://github.com/pyt-team/TopoNetX.git",
+    "toponetx @ git+https://github.com/pyt-team/TopoNetX.git@c378925",
     "lightning==2.4.0",
 ]
 
