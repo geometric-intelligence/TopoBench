@@ -67,7 +67,8 @@ doc = [
     "nbsphinx",
     "nbsphinx_link",
     "numpydoc",
-    "sphinx",
+    "sphinx>=7.0,<9.0",   # Sphinx 9 is incompatible with the required docutils
+    "docutils<0.21",      # Required for nbsphinx-link
     "sphinx_gallery",
     "pydata-sphinx-theme",
     "myst_parser"
