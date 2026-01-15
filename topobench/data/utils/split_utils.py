@@ -1,6 +1,7 @@
 """Split utilities."""
 
 import os
+from collections.abc import Sequence
 
 import numpy as np
 import torch
@@ -384,3 +385,201 @@ def load_coauthorship_hypergraph_splits(data, parameters, train_prop=0.5):
         == data.num_nodes
     ), "Not all nodes within splits"
     return DataloadDataset([data]), None, None
+    
+# List-like view over a subset of an on-disk dataset
+class _LazySplitList(Sequence):
+    """Lazy list-like view over a split of an on-disk dataset.
+
+    Provides indexed and sliced access to a subset of graphs, loading
+    each graph from disk on demand and attaching split masks.
+
+    Parameters
+    ----------
+    base_dataset :
+        Underlying on-disk dataset.
+    indices : sequence of int
+        Indices belonging to this split.
+    split_name : {"train", "valid", "test"}
+        Name of the split.
+    """
+
+    def __init__(self, base_dataset, indices, split_name: str):
+        self.base_dataset = base_dataset
+        self._idx = [int(i) for i in indices]  # e.g. split_idx["train"], etc.
+
+        assert split_name in ("train", "valid", "test")
+        self._split_name = split_name
+
+        # Prebuild the masks once, reuse them for every item
+        if split_name == "train":
+            self._train_mask = torch.tensor([1], dtype=torch.long)
+            self._val_mask   = torch.tensor([0], dtype=torch.long)
+            self._test_mask  = torch.tensor([0], dtype=torch.long)
+        elif split_name == "valid":
+            self._train_mask = torch.tensor([0], dtype=torch.long)
+            self._val_mask   = torch.tensor([1], dtype=torch.long)
+            self._test_mask  = torch.tensor([0], dtype=torch.long)
+        else:  # "test"
+            self._train_mask = torch.tensor([0], dtype=torch.long)
+            self._val_mask   = torch.tensor([0], dtype=torch.long)
+            self._test_mask  = torch.tensor([1], dtype=torch.long)
+
+    def __len__(self):
+        # Allows DataloadDataset.len() to work
+        return len(self._idx)
+
+    def _load_one(self, real_idx: int):
+        """Load a single graph from disk and attach split masks.
+
+        Parameters
+        ----------
+        real_idx : int
+            Index into the underlying base dataset.
+
+        Returns
+        -------
+        Data
+            Graph with ``train_mask``, ``val_mask`` and ``test_mask`` set.
+        """
+        data = self.base_dataset[real_idx]  # OnDiskDataset __getitem__ -> loads from disk
+
+        # tag membership so downstream has train/val/test info
+        data.train_mask = self._train_mask
+        data.val_mask   = self._val_mask
+        data.test_mask  = self._test_mask
+
+        return data
+
+    def __getitem__(self, pos):
+        """Return one or more graphs for the given position.
+
+        Supports integer indexing (training use case) and slicing
+        (for debugging).
+
+        Parameters
+        ----------
+        pos : int or slice
+            Position within the split.
+
+        Returns
+        -------
+        Data or list of Data
+            Single graph for integer index, or list of graphs for a slice.
+        """
+        if isinstance(pos, slice):
+            start, stop, step = pos.indices(len(self._idx))
+            # returning a plain list of Data objects here is fine for debugging,
+            # and does not break training (training only ever uses int indexing)
+            return [
+                self._load_one(self._idx[i])
+                for i in range(start, stop, step)
+            ]
+
+        # integer index path (the only one real training uses)
+        real_idx = self._idx[pos]
+        return self._load_one(real_idx)
+
+def assign_train_val_test_mask_to_graphs_on_disk(dataset, split_idx):
+    """Create lazy train/val/test datasets without loading all graphs.
+
+    Builds :class:`DataloadDataset` objects backed by :class:`_LazySplitList`,
+    which load graphs and attach split masks on demand.
+
+    Parameters
+    ----------
+    dataset :
+        On-disk dataset providing graph objects.
+    split_idx : dict
+        Mapping with keys ``"train"``, ``"valid"``, ``"test"`` to index lists.
+
+    Returns
+    -------
+    tuple of DataloadDataset
+        ``(train_dataset, val_dataset, test_dataset)``.
+    """
+    train_list = _LazySplitList(
+        base_dataset=dataset,
+        indices=split_idx["train"],
+        split_name="train",
+    )
+
+    val_list = _LazySplitList(
+        base_dataset=dataset,
+        indices=split_idx["valid"],
+        split_name="valid",
+    )
+
+    test_list = _LazySplitList(
+        base_dataset=dataset,
+        indices=split_idx["test"],
+        split_name="test",
+    )
+
+    train_dataset = DataloadDataset(train_list)
+    val_dataset   = DataloadDataset(val_list)
+    test_dataset  = DataloadDataset(test_list)
+
+    return train_dataset, val_dataset, test_dataset
+    
+def load_inductive_splits_on_disk(dataset, parameters):
+    """Load inductive train/val/test splits for multi-graph datasets.
+
+    Splits graphs into train, validation and test sets according to the
+    requested split type (random, k-fold or fixed), handling ragged labels
+    if needed.
+
+    Parameters
+    ----------
+    dataset : torch_geometric.data.Dataset
+        Graph dataset in an inductive setting.
+    parameters : DictConfig
+        Split configuration, including ``split_type`` and related options.
+
+    Returns
+    -------
+    tuple of DataloadDataset
+        ``(train_dataset, val_dataset, test_dataset)``.
+    """
+    # Extract labels from dataset object
+    assert len(dataset) > 1, (
+        "Datasets should have more than one graph in an inductive setting."
+    )
+    # Check if labels are ragged (different sizes across graphs)
+    label_list = [data.y.squeeze(0).numpy() for data in dataset]
+    label_shapes = [label.shape for label in label_list]
+    # Use dtype=object only if labels have different shapes (ragged)
+    labels = (
+        np.array(label_list, dtype=object)
+        if len(set(label_shapes)) > 1
+        else np.array(label_list)
+    )
+
+    root = (
+        dataset.dataset.get_data_dir()
+        if hasattr(dataset.dataset, "get_data_dir")
+        else None
+    )
+
+    if parameters.split_type == "random":
+        split_idx = random_splitting(labels, parameters, root=root)
+
+    elif parameters.split_type == "k-fold":
+        assert type(labels) is not object, (
+            "K-Fold splitting not supported for ragged labels."
+        )
+        split_idx = k_fold_split(labels, parameters, root=root)
+
+    elif parameters.split_type == "fixed" and hasattr(dataset, "split_idx"):
+        split_idx = dataset.split_idx
+
+    else:
+        raise NotImplementedError(
+            f"split_type {parameters.split_type} not valid. Choose either 'random', 'k-fold' or 'fixed'.\
+            If 'fixed' is chosen, the dataset should have the attribute split_idx"
+        )
+
+    train_dataset, val_dataset, test_dataset = (
+        assign_train_val_test_mask_to_graphs_on_disk(dataset, split_idx)
+    )
+
+    return train_dataset, val_dataset, test_dataset
