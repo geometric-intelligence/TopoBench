@@ -60,7 +60,7 @@ rm -f uv.lock
 
 echo "📦 Syncing Environment (Python 3.11)..."
 # Force Python 3.11 creation
-uv sync --python 3.11
+uv sync --python 3.11 --all-extras
 
 # ------------------------------------------------------------------------------
 # Finalize
