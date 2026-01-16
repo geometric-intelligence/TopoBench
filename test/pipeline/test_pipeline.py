@@ -3,9 +3,8 @@
 import hydra
 from test._utils.simplified_pipeline import run
 
-
-DATASET = "graph/MUTAG"                                                 # ADD YOUR DATASET HERE
-MODELS   = ["graph/gcn", "cell/topotune", "simplicial/topotune"]        # ADD ONE OR SEVERAL MODELS OF YOUR CHOICE HERE
+DATASET = "graph/WDN"     # ADD YOUR DATASET HERE
+MODELS   = ["graph/gcn", ]        # ADD ONE OR SEVERAL MODELS OF YOUR CHOICE HERE
 
 
 class TestPipeline:
@@ -23,7 +22,7 @@ class TestPipeline:
                     config_name="run.yaml",
                     overrides=[
                         f"model={MODEL}",
-                        f"dataset={DATASET}", # IF YOU IMPLEMENT A LARGE DATASET WITH AN OPTION TO USE A SLICE OF IT, ADD BELOW THE CORRESPONDING OPTION
+                        f"dataset={DATASET}", 
                         "trainer.max_epochs=2",
                         "trainer.min_epochs=1",
                         "trainer.check_val_every_n_epoch=1",
@@ -33,3 +32,4 @@ class TestPipeline:
                     return_hydra_config=True
                 )
                 run(cfg)
+                print('Done!')
