@@ -1,0 +1,48 @@
+# Dataset loader config
+loader:
+  _target_: topobench.data.loaders.graph.FakeDatasetLoader
+  parameters:
+    # Framework-specific data organization ---
+    data_domain: graph
+    data_type: FakeDataset
+    data_name: FakeDataset
+    data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+
+    # FakeOnDiskDataset specific generation parameters
+    num_graphs: 500              # Total number of graphs to generate
+    avg_num_nodes: 100           # Average nodes per graph
+    avg_degree: 8.0              # Average connections per node
+    edge_dim: 0                  # Dimension of edge features (0 for none)
+    is_undirected: True          # Whether to make graphs undirected
+
+    # Parameters linked from the main 'parameters' section below
+    num_channels: ${dataset.parameters.num_features} # Use num_features for node feature dim
+    num_classes: ${dataset.parameters.num_classes}   # Use num_classes for generation
+    task: ${dataset.parameters.task_level}           # Use task_level ('graph' or 'node')
+
+# Dataset parameters
+parameters:
+  num_features: 64      # Node feature dimension for the generated data
+  num_classes: 5        # Number of classes for the generated labels
+  task: classification
+  loss_type: cross_entropy
+  monitor_metric: accuracy
+  task_level: graph
+
+# Splits
+split_params:
+  learning_setting: inductive
+  data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}
+  data_seed: 0
+  split_type: random
+  k: 10
+  train_prop: 0.8
+  valid_prop: 0.1
+  test_prop: 0.1
+
+
+# Dataloader parameters
+dataloader_params:
+  batch_size: 32 # Adjusted for potentially larger graph data
+  num_workers: 0
+  pin_memory: False

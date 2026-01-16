@@ -1,10 +1,13 @@
 """Dataloader utilities."""
 
 from collections import defaultdict
+from collections.abc import Sequence
 from typing import Any
 
+import numpy as np
 import torch
 import torch_geometric
+from torch.utils.data import Dataset
 from torch_sparse import SparseTensor
 
 
@@ -168,3 +171,29 @@ def collate_fn(batch):
         batch["cell_statistics"] = torch.Tensor(cell_statistics).long()
 
     return batch
+
+# Helpers for BlockCSRBatchCollator
+class _HandleAdapter:
+    """
+    Minimal dataset-like object used by the collator.
+    Exposes the few attributes the collator needs:
+      - processed_dir (str)
+      - num_parts (int)
+      - sparse_format (str)
+    """
+    def __init__(self, handle: dict[str, object]) -> None:
+        self.processed_dir = handle["processed_dir"]
+        self.num_parts = int(handle["num_parts"])
+        self.sparse_format = str(handle["sparse_format"])
+
+
+class _PartIdListDataset(Dataset):
+    """Dataset that yields part IDs from a provided list."""
+    def __init__(self, part_ids: Sequence[int]) -> None:
+        self._parts = np.asarray(part_ids, dtype=np.int64)
+
+    def __len__(self) -> int:
+        return self._parts.shape[0]
+
+    def __getitem__(self, idx: int) -> int:
+        return int(self._parts[idx])

@@ -6,14 +6,17 @@ including initialization, data transformations, split loading, and edge cases.
 
 import json
 import os
+import os.path as osp
 import tempfile
 import pytest
 from unittest.mock import MagicMock, patch, mock_open
+import numpy as np
 import torch
 import torch_geometric.data
 from omegaconf import DictConfig
 
 from topobench.data.preprocessor.preprocessor import PreProcessor
+import topobench.data.preprocessor.preprocessor as preproc_mod
 
 
 class MockTorchDataset(torch.utils.data.Dataset):
@@ -673,3 +676,153 @@ class TestPreProcessorEdgeCases:
                 preprocessor.transforms_applied = True
                 
                 assert preprocessor.processed_dir == tmpdir + "/processed"
+                
+def test_pack_global_partition(tmp_path, monkeypatch):
+    """
+    Test pack_global_partition builds a valid handle and memmaps.
+
+    Parameters
+    ----------
+    tmp_path : pathlib.Path
+        Temporary directory for data_dir.
+    monkeypatch : pytest.MonkeyPatch
+        Fixture to patch ClusterOnDisk.
+    """
+    # Fake ClusterOnDisk with minimal behavior
+    class FakePartition:
+        def __init__(self):
+            # Two parts, four nodes: [0,2), [2,4)
+            self.partptr = torch.tensor([0, 2, 4], dtype=torch.long)
+            self.indptr = torch.tensor([0, 1, 2, 3, 4], dtype=torch.long)
+            self.index = torch.tensor([0, 1, 2, 3], dtype=torch.long)
+            self.node_perm = torch.arange(4, dtype=torch.long)
+            self.edge_perm = torch.arange(4, dtype=torch.long)
+
+    class FakeClusterOnDisk:
+        def __init__(
+            self,
+            root,
+            *,
+            graph_getter,
+            num_parts,
+            recursive,
+            keep_inter_cluster_edges,
+            sparse_format,
+            backend,
+            transform,
+            pre_filter,
+        ):
+            self.root = root
+            self.processed_dir = osp.join(root, "processed")
+            os.makedirs(self.processed_dir, exist_ok=True)
+
+            self.num_parts = int(num_parts)
+            self.recursive = bool(recursive)
+            self.keep_inter_cluster_edges = bool(keep_inter_cluster_edges)
+            self.sparse_format = str(sparse_format)
+
+            mm_dir = osp.join(self.processed_dir, "perm_memmap")
+            os.makedirs(mm_dir, exist_ok=True)
+
+            partptr = np.array([0, 2, 4], dtype=np.int64)
+            indptr = np.array([0, 1, 2, 3, 4], dtype=np.int64)
+            indices = np.array([0, 1, 2, 3], dtype=np.int64)
+            np.save(osp.join(mm_dir, "partptr.npy"), partptr)
+            np.save(osp.join(mm_dir, "indptr.npy"), indptr)
+            np.save(osp.join(mm_dir, "indices.npy"), indices)
+
+            self._partition = FakePartition()
+            self.schema = {"edge_index": dict(dtype=torch.long, size=(2, -1))}
+
+        @property
+        def partition(self):
+            """Return fake partition."""
+            return self._partition
+
+        def __len__(self):
+            """Return number of cluster parts."""
+            return self.num_parts
+
+    # Patch ClusterOnDisk used inside preprocessor module
+    monkeypatch.setattr(preproc_mod, "ClusterOnDisk", FakeClusterOnDisk)
+
+    # Build a tiny full graph with masks
+    edge_index = torch.tensor(
+        [[0, 1, 2, 3],
+         [1, 2, 3, 0]],
+        dtype=torch.long,
+    )
+    x = torch.randn(4, 3)
+    y = torch.tensor([0, 1, 0, 1], dtype=torch.long)
+    train_mask = torch.tensor([True, True, False, False])
+    val_mask = torch.tensor([False, False, True, False])
+    test_mask = torch.tensor([False, False, False, True])
+
+    full = torch_geometric.data.Data(
+        edge_index=edge_index,
+        x=x,
+        y=y,
+        train_mask=train_mask,
+        val_mask=val_mask,
+        test_mask=test_mask,
+    )
+
+    class DatasetWrapper:
+        def __init__(self, data):
+            self.data = data
+
+    dataset = DatasetWrapper(full)
+
+    # Create a minimal PreProcessor-like instance without running __init__
+    pre = object.__new__(PreProcessor)
+    pre.dataset = dataset
+    pre.data_dir = str(tmp_path)
+    pre.load_dataset_splits = MagicMock(return_value=(None, None, None))
+
+    split_params = DictConfig({"learning_setting": "transductive"})
+    cluster_params = {
+        "num_parts": 2,
+        "recursive": False,
+        "keep_inter_cluster_edges": False,
+        "sparse_format": "csr",
+    }
+    stream_params = {"precompute_split_parts": True}
+
+    handle = pre.pack_global_partition(
+        split_params=split_params,
+        cluster_params=cluster_params,
+        stream_params=stream_params,
+        dtype_policy="preserve",
+    )
+
+    # Basic handle structure checks
+    assert isinstance(handle, dict)
+    assert handle["root"] == pre.data_dir
+    assert handle["num_parts"] == 2
+    assert handle["sparse_format"] == "csr"
+    assert handle["has_x"] is True
+    assert handle["has_y"] is True
+
+    memmap_dir = handle["memmap_dir"]
+    assert osp.isdir(memmap_dir)
+
+    # Mask memmaps must exist and have correct length
+    for key in ("train_mask_perm", "val_mask_perm", "test_mask_perm"):
+        path = handle["paths"][key]
+        assert osp.exists(path)
+        arr = np.load(path)
+        assert arr.shape == (4,)
+
+    # Cached handle should be reused on second call
+    call_count_before = pre.load_dataset_splits.call_count
+    handle2 = pre.pack_global_partition(
+        split_params=split_params,
+        cluster_params=cluster_params,
+        stream_params=stream_params,
+        dtype_policy="preserve",
+    )
+    call_count_after = pre.load_dataset_splits.call_count
+
+    assert handle2["config_hash"] == handle["config_hash"]
+    # No extra split loading on cached path
+    assert call_count_after == call_count_before
