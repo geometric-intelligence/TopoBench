@@ -1,0 +1,4 @@
+# 3D2M dataset needs identity transform to avoid adding random float feature to feature matrix
+defaults:
+  - data_manipulations: identity
+  - liftings@_here_: ${get_required_lifting:cell,${model}}

@@ -1,20 +1,27 @@
 """Data IO utilities."""
 
 import json
+import os
 import os.path as osp
 import pickle
+import shutil
 from urllib.parse import parse_qs, urlparse
 
+import gdown
 import numpy as np
 import pandas as pd
 import requests
 import torch
 import torch_geometric
-from toponetx.classes import SimplicialComplex
+from toponetx.classes import CellComplex, SimplicialComplex
 from torch_geometric.data import Data
 from torch_sparse import coalesce
 
-from topobench.data.utils import get_complex_connectivity
+from topobench.data.utils import (
+    get_complex_connectivity,
+    normal,
+    reindex,
+)
 
 
 def get_file_id_from_url(url):
@@ -70,18 +77,23 @@ def download_file_from_drive(
     ------
     None
     """
-    file_id = get_file_id_from_url(file_link)
-
-    download_link = f"https://drive.google.com/uc?id={file_id}"
-    response = requests.get(download_link)
-
-    output_path = f"{path_to_save}/{dataset_name}.{file_format}"
-    if response.status_code == 200:
-        with open(output_path, "wb") as f:
-            f.write(response.content)
-        print("Download complete.")
+    if "drive_link" in file_link:
+        gdown.download(file_link, f"{dataset_name}.{file_format}", fuzzy=True)
+        shutil.copy(osp.join(os.curdir, f"{dataset_name}.{file_format}"), path_to_save)
+        os.remove(osp.join(os.curdir, f"{dataset_name}.{file_format}"))
     else:
-        print("Failed to download the file.")
+        file_id = get_file_id_from_url(file_link)
+
+        download_link = f"https://drive.google.com/uc?id={file_id}"
+        response = requests.get(download_link)
+
+        output_path = f"{path_to_save}/{dataset_name}.{file_format}"
+        if response.status_code == 200:
+            with open(output_path, "wb") as f:
+                f.write(response.content)
+            print("Download complete.")
+        else:
+            print("Failed to download the file.")
 
 
 def download_file_from_link(
@@ -227,6 +239,143 @@ def read_ndim_manifolds(
             raise ValueError("Define if load_as_graph or not")
 
         data_list.append(data)
+    return data_list
+
+
+def single_mesh(directory):
+    """Load 3D2M single dataset.
+
+    Parameters
+    ----------
+    directory : str
+        Path to the dataset.
+
+    Returns
+    -------
+    torch_geometric.data.Data
+        Data object of the one mesh for the 3D2M dataset.
+    """
+    files = os.listdir(directory)
+    obj = [f for f in files if f[-3:] == "obj"]
+    npy = [f for f in files if f[-3:] == "npy"]
+
+    cell_0 = []
+    faces_ind = []
+    # Load file with vertices and faces
+    with open(osp.join(directory,obj[0]), encoding="utf-8") as infile:
+        lines = infile.read().splitlines()
+        for line_str in lines:
+            line = line_str.split(" ")
+            if line[0] == "v":
+                cell_0.append(torch.tensor([float(c) for c in line[1:]]))
+            if line[0] == "f":
+                try:
+                    faces_ind.append(
+                        [reindex(line[1].split("/")[0]),
+                         reindex(line[2].split("/")[0]),
+                         reindex(line[3].split("/")[0]),
+                         reindex(line[4].split("/")[0])]
+                    )
+                except Exception:
+                    faces_ind.append(
+                        [reindex(line[1].split("/")[0]),
+                         reindex(line[2].split("/")[0]),
+                         reindex(line[3].split("/")[0])]
+                    )
+                    
+    # build the features x_0
+    try:
+        cell_0_tensor = torch.stack(cell_0).to(torch.float32)
+    except Exception:
+        return None
+    cell_0_tensor /= torch.max(cell_0_tensor)
+
+    cell_1_dict = {}
+    for fi in faces_ind:
+        for i in range(len(fi)):
+            if i < len(fi)-1:
+                key1 = f"{fi[i]}-{fi[i+1]}"
+                key2 = f"{fi[i+1]}-{fi[i]}"
+            else:
+                key1 = f"{fi[i]}-{fi[0]}"
+                key2 = f"{fi[0]}-{fi[i]}"
+            if (key1 in cell_1_dict) or (key2 in cell_1_dict):
+                try:
+                    cell_1_dict[key1] += 1
+                except Exception:
+                    cell_1_dict[key2] += 1
+            else:
+                cell_1_dict[key1] = 1
+
+    cell_1 = []
+    for edge in cell_1_dict:
+        edge_list = [int(e) for e in edge.split("-")]
+        cell_1.append(abs(cell_0[edge_list[1]] - cell_0[edge_list[0]]))
+
+    # build the features x_1
+    try:
+        cell_1_tensor = torch.stack(cell_1).to(torch.float32)
+    except Exception:
+        return None
+    cell_1_tensor /= torch.max(cell_1_tensor)
+
+    cell_2 = [normal(cell_0[face[0]],cell_0[face[1]],cell_0[face[2]]) for face in faces_ind]
+
+    # build the features x_2
+    try:
+        cell_2_tensor = torch.stack(cell_2).to(torch.float32)
+    except Exception:
+        return None
+
+    cx = CellComplex()
+
+    # Insert all cells
+    for face in faces_ind:
+        cx.add_cell(face,2)
+    for edge in cell_1_dict:
+        cx.add_cell([int(v) for v in edge.split("-")], 1)
+    for n in range(len(cell_0)):
+        cx.add_node(n)
+
+    # Construct the connectivity matrices
+    inc_dict = get_complex_connectivity(cx, 2, signed=False)
+
+    edge_index = torch.Tensor(sorted(list(cx.edges))).T.long()
+
+    y = torch.tensor([int("Female" in obj[0])])
+
+    y1 = torch.tensor(np.load(osp.join(directory,npy[0]))).to(torch.float32)
+
+    data = Data(x_0=cell_0_tensor, x_1=cell_1_tensor, x_2=cell_2_tensor,
+                x=cell_0_tensor, edge_index=edge_index, y=y, y1=y1, **inc_dict)
+
+    return data
+
+
+def read_3d2m_meshes(folder, num_data):
+    """Load 3D2M dataset.
+
+    Parameters
+    ----------
+    folder : str
+        Path to the dataset.
+    num_data: int
+        Number of data objects to process and add to the final list
+
+    Returns
+    -------
+    List
+        List wih data objects of the complex of the 3D2M dataset.
+    """
+    directories = os.listdir(folder)
+    directories_list = directories[:num_data] if num_data else directories
+
+    data_list = []
+    for directory in directories_list:
+        data = single_mesh(osp.join(folder,directory))
+        if isinstance(data, Data):
+            data_list.append(data)
+
     return data_list
 
 

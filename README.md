@@ -374,6 +374,13 @@ Specially useful in pre-processing steps, these are the general data manipulatio
 | --- | --- | --- | --- |
 | Mantra |  Classification, Multi-label Classification  |  Predict topological attributes of manifold triangulations |  [Source](https://github.com/aidos-lab/MANTRA) (This project includes third-party datasets. See third_party_licenses.txt for licensing information.) |
 
+
+### Cellular Complexes
+| Dataset | Task | Description | Reference |
+| --- | --- | --- | --- |
+| 3D2M | Classification | complex-level dataset. | [Source](https://arxiv.org/pdf/2410.07415) |
+
+
 ### Hypergraph
 | Dataset | Task | Description | Reference |
 | --- | --- | --- | --- |
