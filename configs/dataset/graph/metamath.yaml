@@ -1,0 +1,30 @@
+loader:
+  _target_: topobench.data.loaders.graph.MetamathDatasetLoader
+  parameters:
+    data_domain: graph
+    data_name: metamath
+    data_dir: ${paths.data_dir}/graph/metamath
+
+    mask_target_node: false      # already zeroed it in preprocessing
+    mask_mode: "zero"
+
+
+parameters:
+  num_features: 768
+  num_classes: 3557              
+  task: classification
+  task_level: node
+  loss_type: cross_entropy
+  monitor_metric: accuracy  # large number of unevenly distributed classes; 
+                            # f1 more appropriate but unavailable
+
+split_params:
+  learning_setting: inductive
+  data_split_dir: ${paths.data_splits_dir}/metamath
+  split_type: "fixed"            # use your precomputed splits
+  standardize: false
+
+dataloader_params:
+  batch_size: 512
+  num_workers: 0
+  pin_memory: false
