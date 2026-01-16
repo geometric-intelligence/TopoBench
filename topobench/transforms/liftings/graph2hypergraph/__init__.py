@@ -1,6 +1,7 @@
 """Graph2HypergraphLifting module with automated exports."""
 
 import inspect
+import sys
 from importlib import util
 from pathlib import Path
 from typing import Any
@@ -58,12 +59,15 @@ class ModuleExportsManager:
             if file_path.stem == "__init__":
                 continue
 
-            # Import the module
-            module_name = f"{Path(package_path).stem}.{file_path.stem}"
+            # Import the module with full path for pickling compatibility
+            module_name = f"{__name__}.{file_path.stem}"
             spec = util.spec_from_file_location(module_name, file_path)
             if spec and spec.loader:
                 module = util.module_from_spec(spec)
                 spec.loader.exec_module(module)
+
+                # Register in sys.modules for pickling (required for parallel processing)
+                sys.modules[module_name] = module
 
                 # Find all lifting classes in the module
                 new_liftings = {
@@ -73,8 +77,10 @@ class ModuleExportsManager:
                         inspect.isclass(obj)
                         and obj.__module__ == module.__name__
                         and not name.startswith("_")
-                        and issubclass(obj, Graph2HypergraphLifting)
-                        and obj != Graph2HypergraphLifting
+                        and any(
+                            b.__name__ == "Graph2HypergraphLifting"
+                            for b in getattr(obj, "__mro__", [])[1:]
+                        )  # if any parent class is Graph2HypergraphLifting
                     )
                 }
                 liftings.update(new_liftings)

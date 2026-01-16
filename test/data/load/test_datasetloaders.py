@@ -18,7 +18,7 @@ class TestLoaders:
         base_dir = Path(__file__).resolve().parents[3]
         self.config_files = self._gather_config_files(base_dir)
         self.relative_config_dir = "../../../configs"
-        self.test_splits = ['train', 'val', 'test']
+        self.test_splits = ["train", "val", "test"]
 
     # Existing helper methods remain the same
     def _gather_config_files(self, base_dir: Path) -> List[str]:

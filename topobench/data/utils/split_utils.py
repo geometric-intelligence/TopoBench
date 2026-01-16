@@ -95,7 +95,9 @@ def k_fold_split(labels, parameters, root=None):
     return split_idx
 
 
-def random_splitting(labels, parameters, root=None, global_data_seed=42):
+def random_splitting(
+    labels, parameters, root=None, global_data_seed=42, dataset_size=None
+):
     r"""Randomly splits label into train/valid/test splits.
 
     Adapted from https://github.com/CUAI/Non-Homophily-Benchmarks.
@@ -110,6 +112,9 @@ def random_splitting(labels, parameters, root=None, global_data_seed=42):
         Root directory for data splits. Overwrite the default directory.
     global_data_seed : int
         Seed for the random number generator.
+    dataset_size : int, optional
+        Size of dataset. If provided, includes in split directory path to avoid
+        reusing splits from different sized datasets.
 
     Returns
     -------
@@ -127,9 +132,14 @@ def random_splitting(labels, parameters, root=None, global_data_seed=42):
     train_prop = parameters["train_prop"]
     valid_prop = (1 - train_prop) / 2
 
+    # Include dataset size in split directory to avoid reusing splits from different sized datasets
+    if dataset_size is None:
+        dataset_size = len(labels)
+
     # Create split directory if it does not exist
     split_dir = os.path.join(
-        data_dir, f"train_prop={train_prop}_global_seed={global_data_seed}"
+        data_dir,
+        f"train_prop={train_prop}_global_seed={global_data_seed}_size={dataset_size}",
     )
     generate_splits = False
     if not os.path.isdir(split_dir):
@@ -180,7 +190,7 @@ def random_splitting(labels, parameters, root=None, global_data_seed=42):
     return split_idx
 
 
-def assign_train_val_test_mask_to_graphs(dataset, split_idx):
+def assign_train_val_test_mask_to_graphs(dataset, split_idx, use_lazy=False):
     """Split the graph dataset into train, validation, and test datasets.
 
     Parameters
@@ -189,13 +199,29 @@ def assign_train_val_test_mask_to_graphs(dataset, split_idx):
         Considered dataset.
     split_idx : dict
         Dictionary containing the train, validation, and test indices.
+    use_lazy : bool, optional
+        Use lazy subsets for O(1) memory (default: False for backward compatibility).
+        When True, returns LazyDataloadDataset objects compatible with TBDataloader.
 
     Returns
     -------
     tuple:
         Tuple containing the train, validation, and test datasets.
+        When use_lazy=True, returns LazyDataloadDataset objects.
+        When use_lazy=False, returns DataloadDataset objects (in-memory).
     """
+    if use_lazy:
+        # Use lazy splits for O(1) memory usage with TBDataloader compatibility
+        # Import here to avoid circular dependency
+        from topobench.data.datasets import LazyDataloadDataset
 
+        return (
+            LazyDataloadDataset(dataset, split_idx["train"]),
+            LazyDataloadDataset(dataset, split_idx["valid"]),
+            LazyDataloadDataset(dataset, split_idx["test"]),
+        )
+
+    # Traditional approach: load all samples and assign masks
     data_train_lst, data_val_lst, data_test_lst = [], [], []
 
     # Assign masks directly by iterating over pre-split indices
@@ -227,67 +253,7 @@ def assign_train_val_test_mask_to_graphs(dataset, split_idx):
     )
 
 
-def load_transductive_splits(dataset, parameters):
-    r"""Load the graph dataset with the specified split.
-
-    Parameters
-    ----------
-    dataset : torch_geometric.data.Dataset
-        Graph dataset.
-    parameters : DictConfig
-        Configuration parameters.
-
-    Returns
-    -------
-    list:
-        List containing the train, validation, and test splits.
-    """
-    # Extract labels from dataset object
-    assert len(dataset) == 1, (
-        "Dataset should have only one graph in a transductive setting."
-    )
-
-    data = dataset.data_list[0]
-    labels = data.y.numpy()
-
-    # Ensure labels are one dimensional array
-    assert len(labels.shape) == 1, "Labels should be one dimensional array"
-
-    root = (
-        dataset.dataset.get_data_dir()
-        if hasattr(dataset.dataset, "get_data_dir")
-        else None
-    )
-
-    if parameters.split_type == "random":
-        splits = random_splitting(labels, parameters, root=root)
-
-    elif parameters.split_type == "k-fold":
-        splits = k_fold_split(labels, parameters, root=root)
-
-    else:
-        raise NotImplementedError(
-            f"split_type {parameters.split_type} not valid. Choose either 'random' or 'k-fold'"
-        )
-
-    # Assign train val test masks to the graph
-    data.train_mask = torch.from_numpy(splits["train"])
-    data.val_mask = torch.from_numpy(splits["valid"])
-    data.test_mask = torch.from_numpy(splits["test"])
-
-    if parameters.get("standardize", False):
-        # Standardize the node features respecting train mask
-        data.x = (data.x - data.x[data.train_mask].mean(0)) / data.x[
-            data.train_mask
-        ].std(0)
-        data.y = (data.y - data.y[data.train_mask].mean(0)) / data.y[
-            data.train_mask
-        ].std(0)
-
-    return DataloadDataset([data]), None, None
-
-
-def load_inductive_splits(dataset, parameters):
+def load_inductive_splits(dataset, parameters, use_lazy=False):
     r"""Load multiple-graph datasets with the specified split.
 
     Parameters
@@ -296,6 +262,9 @@ def load_inductive_splits(dataset, parameters):
         Graph dataset.
     parameters : DictConfig
         Configuration parameters.
+    use_lazy : bool, optional
+        Use lazy subsets for O(1) memory usage (default: False for backward compatibility).
+        Recommended for large on-disk datasets.
 
     Returns
     -------
@@ -323,7 +292,10 @@ def load_inductive_splits(dataset, parameters):
     )
 
     if parameters.split_type == "random":
-        split_idx = random_splitting(labels, parameters, root=root)
+        # Pass dataset size to ensure splits match current dataset
+        split_idx = random_splitting(
+            labels, parameters, root=root, dataset_size=len(dataset)
+        )
 
     elif parameters.split_type == "k-fold":
         assert type(labels) is not object, (
@@ -341,7 +313,9 @@ def load_inductive_splits(dataset, parameters):
         )
 
     train_dataset, val_dataset, test_dataset = (
-        assign_train_val_test_mask_to_graphs(dataset, split_idx)
+        assign_train_val_test_mask_to_graphs(
+            dataset, split_idx, use_lazy=use_lazy
+        )
     )
 
     return train_dataset, val_dataset, test_dataset

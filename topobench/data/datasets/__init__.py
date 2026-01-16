@@ -1,11 +1,29 @@
 """Dataset module with automated exports."""
 
 import inspect
+import sys
 from importlib import util
 from pathlib import Path
 from typing import ClassVar
 
 from torch_geometric.data import InMemoryDataset
+
+# Import lazy splits for O(1) memory usage
+from ._lazy import LazyDataloadDataset, LazySubset
+
+# Import adapters for converting existing PyG datasets
+from .adapters import (
+    PyGDatasetAdapter,
+    adapt_dataset,
+    adapt_tu_dataset,
+)
+
+# Import our high-performance base classes
+from .base_inductive import (
+    BaseOnDiskInductiveDataset,
+    FileBasedInductiveDataset,
+    GeneratedInductiveDataset,
+)
 
 
 class DatasetManager:
@@ -67,11 +85,21 @@ class DatasetManager:
                 continue
 
             # Import the module
-            module_name = f"{Path(package_path).stem}.{file_path.stem}"
-            spec = util.spec_from_file_location(module_name, file_path)
-            if spec and spec.loader:
-                module = util.module_from_spec(spec)
-                spec.loader.exec_module(module)
+            module_name = f"{__name__}.{file_path.stem}"
+
+            # Check if module already imported to avoid duplicate instances
+            if module_name in sys.modules:
+                module = sys.modules[module_name]
+            else:
+                spec = util.spec_from_file_location(module_name, file_path)
+                if spec and spec.loader:
+                    module = util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+
+                    # Register in sys.modules for correct pickling
+                    sys.modules[module_name] = module
+                else:
+                    continue
 
                 # Find all dataset classes in the module
                 new_datasets = {
@@ -120,6 +148,17 @@ HETEROPHILIC_DATASETS = manager.HETEROPHILIC_DATASETS
 
 # Automatically generate __all__
 __all__ = [
+    # High-performance base classes for custom datasets
+    "BaseOnDiskInductiveDataset",
+    "FileBasedInductiveDataset",
+    "GeneratedInductiveDataset",
+    # Lazy splits for O(1) memory usage
+    "LazySubset",
+    "LazyDataloadDataset",
+    # Adapters for existing PyG datasets
+    "PyGDatasetAdapter",
+    "adapt_dataset",
+    "adapt_tu_dataset",
     # Dataset collections
     "PYG_DATASETS",
     "PLANETOID_DATASETS",

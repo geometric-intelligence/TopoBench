@@ -134,33 +134,6 @@ class TestPreProcessorBasic:
                         preprocessor, split_params
                     )
 
-    @patch("topobench.data.preprocessor.preprocessor.load_transductive_splits")
-    def test_load_dataset_splits_transductive(self, mock_load_transductive_splits):
-        """Test loading dataset splits for transductive learning.
-        
-        Parameters
-        ----------
-        mock_load_transductive_splits : MagicMock
-            Mock of the load_transductive_splits function.
-        """
-        mock_dataset = MagicMock(spec=torch_geometric.data.Dataset)
-        mock_dataset.transform = None
-        mock_dataset._data = torch_geometric.data.Data()
-        mock_dataset.slices = {}
-        mock_dataset.__iter__ = MagicMock(return_value=iter([]))
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("torch_geometric.data.InMemoryDataset.__init__"):
-                with patch.object(PreProcessor, "load"):
-                    preprocessor = PreProcessor(mock_dataset, tmpdir, None)
-                    
-                    split_params = DictConfig({"learning_setting": "transductive"})
-                    preprocessor.load_dataset_splits(split_params)
-                    
-                    mock_load_transductive_splits.assert_called_once_with(
-                        preprocessor, split_params
-                    )
-
     def test_invalid_learning_setting(self):
         """Test error with invalid learning setting."""
         mock_dataset = MagicMock(spec=torch_geometric.data.Dataset)

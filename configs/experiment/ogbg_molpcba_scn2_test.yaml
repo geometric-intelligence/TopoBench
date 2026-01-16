@@ -1,0 +1,79 @@
+# @package _global_
+
+# OGBG-molpcba Quick Test with SCN2
+# Uses mock data for rapid testing (no downloads required)
+
+defaults:
+  - override /dataset: graph/ogbg_molpcba
+  - override /model: simplicial/scn
+  - override /trainer: cpu
+
+experiment_name: ogbg_molpcba_scn2_test
+seed: 42
+
+task_name: multilabel_graph_classification_test
+
+# Dataset configuration (mock data)
+dataset:
+  loader:
+    parameters:
+      use_mock: true  # Use synthetic mock data
+      subset_size: 100  # 100 mock molecules
+      split: train
+  
+  dataloader_params:
+    batch_size: 16
+    num_workers: 0
+
+# Multi-label classification (128 binary tasks)
+evaluator:
+  task: multilabel classification
+  num_classes: 128
+  metrics:
+    - accuracy
+    - f1_macro
+
+# Loss function
+loss:
+  dataset_loss:
+    task: multilabel classification
+    loss_type: BCE
+
+# Use transforms directly (simpler for small mock dataset)
+transforms:
+  clique_lifting:
+    transform_type: lifting
+    transform_name: SimplicialCliqueLifting
+    complex_dim: 2
+
+# Model configuration (smaller for quick testing)
+model:
+  feature_encoder:
+    in_channels: [9, 9, 9]  # Node features for each dimension
+    out_channels: 32
+  backbone:
+    in_channels_0: 32  # Must match feature_encoder.out_channels
+    in_channels_1: 32
+    in_channels_2: 32
+  readout:
+    hidden_dim: 32
+    out_channels: 128
+
+# Optimizer
+optimizer:
+  optimizer_id: Adam
+  parameters:
+    lr: 0.001
+
+# Training (just 2 epochs for testing)
+trainer:
+  max_epochs: 2
+  accelerator: cpu
+  devices: 1
+
+# Minimal callbacks
+callbacks:
+  model_checkpoint:
+    monitor: val/f1_macro
+    mode: max
+  early_stopping: null  # Disable for quick test

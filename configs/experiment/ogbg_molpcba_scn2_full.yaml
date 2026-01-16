@@ -1,0 +1,114 @@
+# @package _global_
+
+# OGBG-molpcba Full Training with SCN2
+# Multi-label classification on 437K molecular graphs
+# Uses on-disk inductive preprocessing for memory efficiency
+
+defaults:
+  - override /dataset: graph/ogbg_molpcba
+  - override /model: simplicial/scn
+  - override /trainer: default
+
+experiment_name: ogbg_molpcba_scn2_full
+seed: 42
+
+task_name: multilabel_graph_classification
+
+# Dataset configuration
+dataset:
+  loader:
+    parameters:
+      use_mock: false  # Use real data
+      subset_size: null  # null = full dataset (437K), or set to N for first N samples
+      split: train
+  
+  dataloader_params:
+    batch_size: 32
+    num_workers: 0  # CRITICAL: 0 workers to avoid memory leaks in multi-worker DataLoader
+    persistent_workers: false  # Don't keep workers alive between epochs
+    pin_memory: false  # Disable to save memory
+
+# Multi-label classification (128 binary tasks)
+evaluator:
+  task: multilabel classification
+  num_classes: 128
+  metrics:
+    - accuracy
+    - f1_macro
+
+# Loss function
+loss:
+  dataset_loss:
+    task: multilabel classification
+    loss_type: BCE
+
+# Transforms (needed for model config resolvers)
+transforms:
+  graph2simplicial_lifting:
+    transform_type: lifting
+    transform_name: SimplicialCliqueLifting
+    complex_dim: 2  # Include triangles (3-atom rings)
+    preserve_edge_attr: false  # Disable to avoid edge_attr indexing issues
+    signed: false
+    feature_lifting: ProjectionSum
+
+# On-disk inductive preprocessing
+preprocessor:
+  mode: ondisk  # Force on-disk preprocessing for memory efficiency
+  data_dir: ${paths.data_dir}/ogbg_molpcba/preprocessed
+  storage_backend: mmap  # Compressed storage (recommended)
+  num_workers: 1  # Auto-detect for preprocessing
+  force_reload: false
+  cache_size: 0  # CRITICAL: Disable in-memory cache to prevent OOM with large datasets
+  transforms_config: ${transforms}  # Reference transforms defined above
+
+# Model configuration
+model:
+  feature_encoder:
+    in_channels: [9, 9, 9]  # Node features for each dimension [0-cells, 1-cells, 2-cells]
+    out_channels: 64  # Feature encoder output dimension
+  backbone:
+    in_channels_0: 64  # Must match feature_encoder.out_channels
+    in_channels_1: 64
+    in_channels_2: 64
+  readout:
+    hidden_dim: 64  # Must match feature_encoder.out_channels
+    out_channels: 128  # Number of output classes
+
+# Optimizer
+optimizer:
+  optimizer_id: Adam
+  parameters:
+    lr: 0.001
+
+# Training
+trainer:
+  max_epochs: 50
+  accelerator: auto
+  devices: 1
+  check_val_every_n_epoch: 1
+  # Memory-efficient settings for large datasets
+  gradient_clip_val: 1.0  # Prevent gradient explosion
+  log_every_n_steps: 100  # Reduce logging overhead
+  enable_progress_bar: true
+  enable_model_summary: false  # Reduce memory from summary
+  limit_val_batches: 50  # Limit validation to 50 batches (saves time and memory)
+
+# Callbacks
+# NOTE: For subset_size < 50, validation set may be too small/empty
+# Use train/loss for monitoring. For full training (subset_size > 100),
+# consider changing to: monitor: val/f1_macro, mode: max
+callbacks:
+  model_checkpoint:
+    monitor: train/loss
+    mode: min
+    save_top_k: 3
+  early_stopping:
+    monitor: train/loss
+    mode: min
+    patience: 10
+    min_delta: 0.001
+  memory_cleanup:
+    _target_: topobench.callbacks.MemoryCleanupCallback
+    gc_every_n_steps: 50  # Run GC every 50 batches
+    verbose: true  # Log memory usage
