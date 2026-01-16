@@ -54,8 +54,15 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             self.transform = (
                 dataset.transform if hasattr(dataset, "transform") else None
             )
-            self.data, self.slices = dataset._data, dataset.slices
-            self.data_list = [data for data in dataset]
+            # Handle datasets that don't have _data/slices (e.g., LMDB-based datasets like OC20)
+            if hasattr(dataset, "_data") and hasattr(dataset, "slices"):
+                self.data, self.slices = dataset._data, dataset.slices
+                self.data_list = [data for data in dataset]
+            else:
+                # For non-InMemoryDataset, store the dataset directly
+                self._data = None
+                self.slices = None
+                self.data_list = [data for data in dataset]
 
         # Some datasets have fixed splits, and those are stored as split_idx during loading
         # We need to store this information to be able to reproduce the splits afterwards
@@ -75,6 +82,42 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             return self.root
         else:
             return self.root + "/processed"
+
+    def len(self) -> int:
+        """Return the number of samples in the dataset.
+
+        Returns
+        -------
+        int
+            Number of samples.
+        """
+        # Only use data_list for length when transforms are NOT applied
+        # and dataset doesn't have standard InMemoryDataset structure
+        if not self.transforms_applied and self.slices is None:
+            if hasattr(self, "data_list") and self.data_list is not None:
+                return len(self.data_list)
+            # Fallback to dataset length during initialization
+            return len(self.dataset)
+        return super().len()
+
+    def get(self, idx: int):
+        """Get data object at index.
+
+        Parameters
+        ----------
+        idx : int
+            Index of the data object.
+
+        Returns
+        -------
+        Data
+            Data object at the given index.
+        """
+        # Only use data_list access when transforms are NOT applied
+        # and dataset doesn't have standard InMemoryDataset structure
+        if not self.transforms_applied and self.slices is None:
+            return self.data_list[idx]
+        return super().get(idx)
 
     @property
     def processed_file_names(self) -> str:

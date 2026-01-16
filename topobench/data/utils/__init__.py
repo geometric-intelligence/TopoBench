@@ -62,4 +62,21 @@ io_helper_functions = [
     # add function name here
 ]
 
-__all__ = utils_functions + split_helper_functions + io_helper_functions
+# OC20 download utilities
+from .oc20_download import (  # noqa: E402
+    download_is2re_dataset,  # noqa: F401
+    # import function here, add noqa: F401 for PR
+    download_s2ef_dataset,  # noqa: F401
+)
+
+oc20_helper_functions = [
+    "download_s2ef_dataset",
+    "download_is2re_dataset",
+]
+
+__all__ = (
+    utils_functions
+    + split_helper_functions
+    + io_helper_functions
+    + oc20_helper_functions
+)
