@@ -47,6 +47,7 @@ split_helper_functions = [
 from .io_utils import (  # noqa: E402
     download_file_from_drive,  # noqa: F401
     download_file_from_link,  # noqa: F401
+    extract_zip,  # noqa: F401
     load_hypergraph_content_dataset,  # noqa: F401
     load_hypergraph_pickle_dataset,  # noqa: F401
     read_ndim_manifolds,  # noqa: F401
@@ -59,6 +60,7 @@ io_helper_functions = [
     "load_hypergraph_content_dataset",
     "read_us_county_demos",
     "download_file_from_drive",
+    "extract_zip",
     # add function name here
 ]
 

@@ -1,0 +1,32 @@
+# Dataset loader config
+loader:
+  _target_: topobench.data.loaders.hypergraph.aicircuit_dataset_loader.AICircuitDatasetLoader
+  parameters: 
+    data_domain: hypergraph
+    data_type: analog_circuit
+    data_name: AICircuit
+    data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+
+# Dataset parameters
+parameters:
+  num_features: 1
+  num_classes: 3 
+  task: regression
+  loss_type: mse
+  monitor_metric: mae
+  task_level: graph
+
+# Splits
+split_params:
+  learning_setting: inductive
+  data_seed: 0
+  split_type: random
+  train_prop: 0.8
+  standardize: True
+  data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}
+
+# Dataloader parameters
+dataloader_params:
+  batch_size: 32
+  num_workers: 0
+  pin_memory: False

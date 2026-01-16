@@ -1,0 +1,23 @@
+
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=analog_genie
+
+defaults:
+  - override /dataset: graph/analog_genie
+  - override /model: hypergraph/unignn2
+  - override /callbacks: default
+  - override /trainer: default
+
+tags: ["unignn2", "analog_genie"]
+
+seed: 42
+
+trainer:
+  min_epochs: 50
+  max_epochs: 100
+  gradient_clip_val: 0.1
+
+model:
+  compile: false
