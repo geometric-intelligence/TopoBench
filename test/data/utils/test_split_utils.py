@@ -6,6 +6,7 @@ import shutil
 import pytest
 import numpy as np
 import torch
+from torch_geometric.data import Data
 from unittest.mock import MagicMock, patch
 from omegaconf import DictConfig
 
@@ -15,6 +16,11 @@ from topobench.data.utils.split_utils import (
     load_inductive_splits,
     load_transductive_splits,
     assign_train_val_test_mask_to_graphs,
+    load_edge_transductive_splits,
+    load_edge_inductive_splits,
+)
+from topobench.transforms.data_manipulations.negative_links_sampling import (
+    NegativeSamplingTransform,
 )
 
 
@@ -473,3 +479,111 @@ class TestAssignMasks:
         assert len(train_ds) == 5
         assert len(val_ds) == 3
         assert len(test_ds) == 2
+
+class TestEdgeSplits:
+    """Tests for edge-level split utilities."""
+
+    def test_load_edge_transductive_splits_basic(self):
+        """Basic sanity check for transductive edge-level splits."""
+        # Simple toy graph with 3 nodes and 3 edges
+        edge_index = torch.tensor([[0, 1, 2], [1, 2, 0]])
+        data = Data(edge_index=edge_index, num_nodes=3)
+
+        # Mock preprocessor with a single-graph dataset
+        preprocessor = MagicMock()
+        preprocessor.dataset = [data]
+
+        split_params = DictConfig({
+            "val_prop": 0.2,
+            "test_prop": 0.2,
+            "is_undirected": True,
+            "neg_pos_ratio": 1.0,
+            "neg_sampling_method": "sparse",
+        })
+
+        dataset_train, dataset_val, dataset_test = load_edge_transductive_splits(
+            preprocessor, split_params
+        )
+
+        # One graph per split (wrapped in DataloadDataset)
+        assert len(dataset_train) == 1
+        assert len(dataset_val) == 1
+        assert len(dataset_test) == 1
+
+        # Train split: only positive labels in the stored Data object
+        train_data = dataset_train.data_lst[0]
+        assert hasattr(train_data, "edge_label_index")
+        assert hasattr(train_data, "edge_label")
+        assert train_data.edge_label.numel() > 0
+        assert train_data.edge_label.unique().tolist() == [1]
+
+        # Dynamic negative sampling transform should be attached
+        assert isinstance(dataset_train._dynamic_transform, NegativeSamplingTransform)
+
+        # Val/Test splits: labels (if any) should be 0/1
+        val_data = dataset_val.data_lst[0]
+        test_data = dataset_test.data_lst[0]
+
+        assert hasattr(val_data, "edge_label_index")
+        assert hasattr(val_data, "edge_label")
+        vals = val_data.edge_label.unique().tolist()
+        assert all(v in (0, 1) for v in vals)
+
+        assert hasattr(test_data, "edge_label_index")
+        assert hasattr(test_data, "edge_label")
+        vals_test = test_data.edge_label.unique().tolist()
+        assert all(v in (0, 1) for v in vals_test)
+        
+    def test_load_edge_inductive_splits_basic(self):
+        """Basic sanity check for inductive edge-level splits."""
+        # Create a small multi-graph dataset (e.g. 9 graphs)
+        n_graphs = 9
+        data_list = []
+        for i in range(n_graphs):
+            edge_index = torch.tensor([[0, 1], [1, 0]])  # simple 2-node edge
+            y = torch.tensor([i % 2])  # dummy graph label
+            data_list.append(Data(edge_index=edge_index, num_nodes=2, y=y))
+
+        # Mock preprocessor with multi-graph dataset
+        preprocessor = MagicMock()
+        preprocessor.dataset = data_list
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            split_params = DictConfig({
+                "split_type": "random",
+                "data_seed": 0,
+                "train_prop": 0.67,
+                "data_split_dir": os.path.join(tmpdir, "data_splits"),
+                "neg_pos_ratio": 1.0,
+                "neg_sampling_method": "sparse",
+                "neg_sampling_ratio": 1.0,
+            })
+
+            dataset_train, dataset_val, dataset_test = load_edge_inductive_splits(
+                preprocessor, split_params
+            )
+
+        # Splits should together cover all graphs
+        total = len(dataset_train) + len(dataset_val) + len(dataset_test)
+        assert total == n_graphs
+
+        # At least train and test should be non-empty
+        assert len(dataset_train) > 0
+        assert len(dataset_test) > 0
+
+        # Train graphs: only positives stored, negatives added dynamically
+        for d in dataset_train.data_lst:
+            assert hasattr(d, "edge_label_index")
+            assert hasattr(d, "edge_label")
+            assert d.edge_label.numel() > 0
+            assert d.edge_label.unique().tolist() == [1]
+
+        assert isinstance(dataset_train._dynamic_transform, NegativeSamplingTransform)
+
+        # Val/Test graphs: (if non-empty) should have 0/1 labels after static negatives
+        for ds in (dataset_val, dataset_test):
+            for d in ds.data_lst:
+                assert hasattr(d, "edge_label_index")
+                assert hasattr(d, "edge_label")
+                vals = d.edge_label.unique().tolist()
+                assert all(v in (0, 1) for v in vals)
