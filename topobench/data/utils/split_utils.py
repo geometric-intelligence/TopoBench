@@ -1,8 +1,10 @@
 """Split utilities."""
 
 import os
+from typing import Any
 
 import numpy as np
+import pandas as pd
 import torch
 from sklearn.model_selection import StratifiedKFold
 
@@ -155,9 +157,15 @@ def random_splitting(labels, parameters, root=None, global_data_seed=42):
             val_indices = perm[train_num : train_num + valid_num]
             test_indices = perm[train_num + valid_num :]
             split_idx = {
-                "train": train_indices,
-                "valid": val_indices,
-                "test": test_indices,
+                "train": train_indices.numpy()
+                if hasattr(train_indices, "numpy")
+                else np.array(train_indices),
+                "valid": val_indices.numpy()
+                if hasattr(val_indices, "numpy")
+                else np.array(val_indices),
+                "test": test_indices.numpy()
+                if hasattr(test_indices, "numpy")
+                else np.array(test_indices),
             }
 
             # Save generated split
@@ -169,13 +177,16 @@ def random_splitting(labels, parameters, root=None, global_data_seed=42):
     split_idx = np.load(split_path)
 
     # Check that all nodes/graph have been assigned to some split
-    assert np.unique(
-        np.array(
-            split_idx["train"].tolist()
-            + split_idx["valid"].tolist()
-            + split_idx["test"].tolist()
-        )
-    ).shape[0] == len(labels), "Not all nodes within splits"
+    train_arr = split_idx["train"]
+    val_arr = split_idx["valid"]
+    test_arr = split_idx["test"]
+
+    all_indices = np.concatenate([train_arr, val_arr, test_arr])
+    unique_indices = np.unique(all_indices)
+
+    assert unique_indices.shape[0] == len(labels), (
+        f"Not all nodes within splits: {unique_indices.shape[0]} != {len(labels)}"
+    )
 
     return split_idx
 
@@ -248,32 +259,80 @@ def load_transductive_splits(dataset, parameters):
     )
 
     data = dataset.data_list[0]
+
+    # Check if this is multi-rank cell prediction
+    target_ranks = getattr(dataset, "target_ranks", None)
+    if target_ranks is not None and len(target_ranks) > 1:
+        return load_multirank_transductive_splits(dataset, parameters)
+
+    # Single rank or node/graph prediction
     labels = data.y.numpy()
 
-    # Ensure labels are one dimensional array
-    assert len(labels.shape) == 1, "Labels should be one dimensional array"
+    # Check for rank-specific mask (e.g., mask_1 for edges)
+    # If present, split only on filtered/valid entities for honest ratios
+    rank_mask = None
+    valid_indices = None
+    target_ranks = getattr(
+        dataset, "target_ranks", [1]
+    )  # Default to rank 1 for edges
 
-    root = (
-        dataset.dataset.get_data_dir()
-        if hasattr(dataset.dataset, "get_data_dir")
-        else None
-    )
+    if target_ranks:
+        rank = target_ranks[0]  # Single rank case
+        mask_attr = f"mask_{rank}"
+        if hasattr(data, mask_attr):
+            rank_mask = getattr(data, mask_attr)  # Boolean mask
+            valid_indices = torch.where(rank_mask)[
+                0
+            ]  # Original indices of valid entities
+            labels = labels[rank_mask.numpy()]  # Filter to valid entities only
+
+    # Handle multi-dimensional labels (e.g., multi-label classification)
+    if len(labels.shape) > 1:
+        # Use first column for stratification (common practice)
+        stratify_labels = (
+            labels[:, 0] if labels.shape[1] > 0 else labels.flatten()
+        )
+    else:
+        stratify_labels = labels
+
+    root = dataset.get_data_dir() if hasattr(dataset, "get_data_dir") else None
 
     if parameters.split_type == "random":
-        splits = random_splitting(labels, parameters, root=root)
+        splits = random_splitting(stratify_labels, parameters, root=root)
 
     elif parameters.split_type == "k-fold":
-        splits = k_fold_split(labels, parameters, root=root)
+        splits = k_fold_split(stratify_labels, parameters, root=root)
+
+    elif parameters.split_type == "fixed" and hasattr(dataset, "split_idx"):
+        splits = dataset.split_idx
+        if splits is None:
+            raise ValueError(
+                "Dataset has split_type='fixed' but split_idx property returned None. "
+                "Either the dataset doesn't support fixed splits or they failed to load."
+            )
 
     else:
         raise NotImplementedError(
-            f"split_type {parameters.split_type} not valid. Choose either 'random' or 'k-fold'"
+            f"split_type {parameters.split_type} not valid. Choose 'random', 'k-fold', or 'fixed'.\n"
+            f"If 'fixed' is chosen, the dataset must have a split_idx property."
         )
 
     # Assign train val test masks to the graph
-    data.train_mask = torch.from_numpy(splits["train"])
-    data.val_mask = torch.from_numpy(splits["valid"])
-    data.test_mask = torch.from_numpy(splits["test"])
+    # If we filtered by rank_mask, map indices back to original positions
+    if valid_indices is not None:
+        # Splits are indices into filtered data, map back to original
+        train_mask = valid_indices[torch.from_numpy(splits["train"])]
+        val_mask = valid_indices[torch.from_numpy(splits["valid"])]
+        test_mask = valid_indices[torch.from_numpy(splits["test"])]
+    else:
+        # No filtering: use indices directly
+        train_mask = torch.from_numpy(splits["train"])
+        val_mask = torch.from_numpy(splits["valid"])
+        test_mask = torch.from_numpy(splits["test"])
+
+    data.train_mask = train_mask
+    data.val_mask = val_mask
+    data.test_mask = test_mask
 
     if parameters.get("standardize", False):
         # Standardize the node features respecting train mask
@@ -284,6 +343,163 @@ def load_transductive_splits(dataset, parameters):
             data.train_mask
         ].std(0)
 
+    return DataloadDataset([data]), None, None
+
+
+def get_multilabel_stratification_targets(
+    labels: np.ndarray | pd.DataFrame,
+) -> np.ndarray:
+    """Generate a single stratification target vector for multi-label data.
+
+    For multi-label classification, uses the index of the most frequent label
+    per sample (argmax). This is simpler and more robust than Label Powerset,
+    avoiding issues with rare label combinations.
+
+    Parameters
+    ----------
+    labels : np.ndarray or pd.DataFrame
+        The multi-label target array (2D) or vector (1D).
+        Can be a NumPy array or Pandas DataFrame.
+
+    Returns
+    -------
+    np.ndarray
+        A 1D array suitable for the 'stratify' parameter in sklearn.
+        For 1D input: returns as-is.
+        For 2D input: returns argmax (most frequent label index).
+    """
+    # Standardize input to NumPy array
+    if isinstance(labels, pd.DataFrame):
+        labels = labels.values
+
+    # Handle 1D arrays (standard classification)
+    if labels.ndim == 1:
+        return labels
+
+    # Handle 2D arrays (multi-label classification)
+    if labels.ndim == 2 and labels.shape[1] > 1:
+        # Use argmax: index of most frequent label (or first '1' for binary)
+        # This ensures stratification works even with rare label combinations
+        return labels.argmax(axis=1)
+
+    # Fallback for 2D arrays with single column
+    return labels.flatten()
+
+
+def load_multirank_transductive_splits(
+    dataset, parameters
+) -> tuple[list[Any], None, None]:
+    r"""Load dataset with multi-rank cell-level splits.
+
+    For datasets with cell-level predictions across multiple ranks (e.g., edges,
+    triangles, tetrahedra simultaneously), this function creates independent
+    train/val/test splits for each rank on valid entities (filtered by masks)
+    using multi-label stratification.
+
+    Parameters
+    ----------
+    dataset : torch_geometric.data.Dataset
+        Dataset with multi-rank cell labels.
+    parameters : DictConfig
+        Configuration parameters containing split_type and train_prop.
+
+    Returns
+    -------
+    list:
+        List containing the train dataset (validation and test are None for transductive).
+
+    Notes
+    -----
+    Expects dataset to have:
+    - target_ranks: list of ranks to split
+    - data.cell_labels_{rank}: labels for each rank
+
+    Creates per-rank masks:
+    - data.train_mask_{rank}: training indices for rank
+    - data.val_mask_{rank}: validation indices for rank
+    - data.test_mask_{rank}: test indices for rank
+    """
+    assert len(dataset) == 1, (
+        "Dataset should have only one graph/complex in a transductive setting."
+    )
+
+    data = dataset.data_list[0]
+    target_ranks = dataset.target_ranks
+
+    root = dataset.get_data_dir() if hasattr(dataset, "get_data_dir") else None
+
+    # Split each rank independently
+    for rank in target_ranks:
+        label_attr = f"cell_labels_{rank}"
+
+        if not hasattr(data, label_attr):
+            raise ValueError(
+                f"Data object missing {label_attr} for rank {rank}. "
+                f"Available attributes: {list(data.keys())}"
+            )
+
+        labels = getattr(data, label_attr).numpy()
+
+        # Check for rank-specific mask
+        # If present, split only on filtered entities for honest ratios
+        rank_mask = None
+        valid_indices = None
+        mask_attr = f"mask_{rank}"
+
+        if hasattr(data, mask_attr):
+            rank_mask = getattr(data, mask_attr)  # Boolean mask
+            valid_indices = torch.where(rank_mask)[
+                0
+            ]  # Original indices of valid entities
+            labels = labels[rank_mask.numpy()]  # Filter to valid entities only
+
+        stratify_labels = get_multilabel_stratification_targets(labels)
+
+        # Create rank-specific root directory for splits
+        # This ensures each rank gets independent splits
+        rank_root = os.path.join(root, f"rank_{rank}") if root else None
+
+        # Perform splitting
+        if parameters.split_type == "random":
+            splits = random_splitting(
+                stratify_labels, parameters, root=rank_root
+            )
+        elif parameters.split_type == "k-fold":
+            splits = k_fold_split(stratify_labels, parameters, root=root)
+        elif parameters.split_type == "fixed" and hasattr(
+            dataset, "split_idx"
+        ):
+            splits = dataset.split_idx
+            if splits is None:
+                raise ValueError(
+                    "Dataset has split_type='fixed' but split_idx property returned None. "
+                    "Either the dataset doesn't support fixed splits or they failed to load."
+                )
+        else:
+            raise NotImplementedError(
+                f"split_type {parameters.split_type} not valid. "
+                f"Choose 'random', 'k-fold', or 'fixed'.\n"
+                f"If 'fixed' is chosen, the dataset must have a split_idx property."
+            )
+
+        # Store per-rank masks
+        # If we filtered by rank_mask, map indices back to original positions
+        if valid_indices is not None:
+            # Splits are indices into filtered data, map back to original
+            train_mask = valid_indices[torch.from_numpy(splits["train"])]
+            val_mask = valid_indices[torch.from_numpy(splits["valid"])]
+            test_mask = valid_indices[torch.from_numpy(splits["test"])]
+        else:
+            # No filtering: use indices directly
+            train_mask = torch.from_numpy(splits["train"])
+            val_mask = torch.from_numpy(splits["valid"])
+            test_mask = torch.from_numpy(splits["test"])
+
+        setattr(data, f"train_mask_{rank}", train_mask)
+        setattr(data, f"val_mask_{rank}", val_mask)
+        setattr(data, f"test_mask_{rank}", test_mask)
+
+    # Assumes DataloadDataset is available in scope
     return DataloadDataset([data]), None, None
 
 
