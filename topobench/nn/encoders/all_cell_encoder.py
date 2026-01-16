@@ -83,8 +83,20 @@ class AllCellFeatureEncoder(AbstractFeatureEncoder):
             data.x_0 = data.x
 
         for i in self.dimensions:
+            # Get batch assignment
             if hasattr(data, f"x_{i}") and hasattr(self, f"encoder_{i}"):
-                batch = getattr(data, f"batch_{i}")
+                # Inductive case: batch_{i} maps each cell to its graph
+                if hasattr(data, f"batch_{i}"):
+                    batch = getattr(data, f"batch_{i}")
+                else:
+                    # Transductive case: all cells in same graph (batch index = 0)
+                    batch = torch.zeros(
+                        data[f"x_{i}"].shape[0],
+                        dtype=torch.long,
+                        device=data[f"x_{i}"].device,
+                    )
+
+                # Apply encoder
                 data[f"x_{i}"] = getattr(self, f"encoder_{i}")(
                     data[f"x_{i}"], batch
                 )

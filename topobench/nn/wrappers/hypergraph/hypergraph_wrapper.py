@@ -23,6 +23,13 @@ class HypergraphWrapper(AbstractWrapper):
         dict
             Dictionary containing the updated model output.
         """
+        if not hasattr(batch, "incidence_hyperedges"):
+            raise AttributeError(
+                f"Batch object is missing 'incidence_hyperedges' attribute. "
+                f"Available attributes: {list(batch.keys())}. "
+                f"Make sure the hypergraph lifting transformation has been applied to your dataset."
+            )
+
         x_0, x_1 = self.backbone(batch.x_0, batch.incidence_hyperedges)
         model_out = {"labels": batch.y, "batch_0": batch.batch_0}
         model_out["x_0"] = x_0

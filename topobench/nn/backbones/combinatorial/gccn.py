@@ -76,21 +76,31 @@ class TopoTune(torch.nn.Module):
         ):
             src_rank, dst_rank = route
             if src_rank != dst_rank and (src_rank, dst_rank) not in nbhd_cache:
-                n_dst_nodes = getattr(params, f"x_{dst_rank}").shape[0]
+                # Check if the required attributes exist before accessing them
+                src_attr = f"x_{src_rank}"
+                dst_attr = f"x_{dst_rank}"
+                if not hasattr(params, src_attr) or not hasattr(params, dst_attr):
+                    continue  # Skip this route if the required features don't exist
+                
+                n_dst_nodes = getattr(params, dst_attr).shape[0]
                 if src_rank > dst_rank:
+                    if not hasattr(params, neighborhood):
+                        continue  # Skip if boundary matrix doesn't exist
                     boundary = getattr(params, neighborhood).coalesce()
                     nbhd_cache[(src_rank, dst_rank)] = (
                         interrank_boundary_index(
-                            getattr(params, f"x_{src_rank}"),
+                            getattr(params, src_attr),
                             boundary.indices(),
                             n_dst_nodes,
                         )
                     )
                 elif src_rank < dst_rank:
+                    if not hasattr(params, neighborhood):
+                        continue  # Skip if coboundary matrix doesn't exist
                     coboundary = getattr(params, neighborhood).coalesce()
                     nbhd_cache[(src_rank, dst_rank)] = (
                         interrank_boundary_index(
-                            getattr(params, f"x_{src_rank}"),
+                            getattr(params, src_attr),
                             coboundary.indices(),
                             n_dst_nodes,
                         )

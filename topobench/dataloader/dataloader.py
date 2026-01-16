@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from lightning import LightningDataModule
+from lightning.pytorch import LightningDataModule
 from torch.utils.data import DataLoader
 
 from topobench.dataloader.dataload_dataset import DataloadDataset

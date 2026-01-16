@@ -94,9 +94,8 @@ def test_sccnn_basic_initialization():
     
     # Verify layer structure
     assert len(model.layers) == 2  # Default n_layers is 2
-    assert hasattr(model, 'in_linear_0')
-    assert hasattr(model, 'in_linear_1')
-    assert hasattr(model, 'in_linear_2')
+    assert hasattr(model, 'in_linears')
+    assert len(model.in_linears) == 3  # Should have 3 input linear layers for ranks 0, 1, 2
 
 def test_update_functions():
     """Test different update functions in the SCCNN."""

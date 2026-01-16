@@ -1,0 +1,98 @@
+################################################################################
+# HIGH-PPI + CORUM: Protein Interaction Prediction via Simplicial Complexes
+################################################################################
+#
+# Data Structure:
+#  - Proteins (rank 0): ~1,553 proteins
+#  - Edges (rank 1): ~6,660 HIGH-PPI edges with:
+#    * Features: 8-dim (7 interaction types + 1 STRING confidence score)
+#      - Interaction types: reaction, binding, ptmod, activation, inhibition, catalysis, expression
+#      - Confidence score [0, 1] measuring interaction probability (mapped to [-1, 1])
+#  - Higher-order cells: CORUM protein complexes (2+ proteins)
+#    * Features: 1-dim (binary existence: 1=real, -1=fake)
+#
+# Note: Features at any rank can also serve as prediction targets (labels).
+#       Models should mask features of the rank being predicted to avoid data leakage.
+#
+# Prediction Tasks:
+#  - Edge (rank 1): Regression (confidence scores) or multi-label (interaction types)
+#  - Cell (ranks 2+): Binary classification (complex existence)
+#
+################################################################################
+
+# Data loading configuration
+loader:
+  _target_: topobench.data.loaders.PPIHighPPIDatasetLoader
+  parameters:
+    data_domain: simplicial
+    model_domain: simplicial        
+    data_name: ppi_highppi
+    data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}
+    
+    # CORUM Complex Configuration
+    min_complex_size: 2             # Minimum proteins per CORUM complex (2+ allowed)
+                                    # Edge features for edges in CORUM:
+                                    #   - In HIGH-PPI: Interaction types + confidence boosted to 1.0
+                                    #   - Not in HIGH-PPI: [0,0,0,0,0,0,0, 1.0] (unknown types, high confidence)
+    max_complex_size: 6             # Maximum proteins per CORUM complex
+    
+    # Negative Sampling (for classification tasks)
+    neg_ratio: 1.0                  # Ratio of negative to positive samples (1.0 = balanced)
+    
+    # Multi-Rank Prediction
+    target_ranks: [2, 3, 4, 5]      # Which ranks to predict (train/test on)
+                                    # Max target rank must be <= max_complex_size - 1
+    
+    # Edge Task Type (only applied when rank 1 in target_ranks)
+    edge_task: score                # "score": Regression - predict confidence of interaction [0-1]
+                                    # "interaction_type": Multi-label - predict 7 interaction types
+
+# Model training configuration
+parameters:
+  _num_proteins: 1553  # HIGH-PPI has 1,553 proteins
+  
+  num_features: ${infer_ppi_num_features:${dataset.parameters._num_proteins},${dataset.loader.parameters.edge_task},${dataset.loader.parameters.max_complex_size}}
+  
+  num_classes: 2                    # Depends on task:
+                                    # - Higher-order (ranks 2+): 2 (exists/doesn't exist)
+                                    # - Edge regression (rank 1, score): 1 (continuous output)
+                                    # - Edge multi-label (rank 1, interaction_type): 7 (7 types)
+  task: classification              # Depends on target_ranks and edge_task:
+                                    # - Higher-order (ranks 2+): classification
+                                    # - Edge regression (rank 1, score): regression
+                                    # - Edge multi-label (rank 1, interaction_type): classification
+  task_level: cell                  # Predict on cells (edges/triangles/etc), not nodes or graphs
+  
+  # Multi-Rank Prediction 
+  target_ranks: ${dataset.loader.parameters.target_ranks}
+  
+  loss_type: cross_entropy          # Depends on task:
+                                    # - Higher-order binary: cross_entropy
+                                    # - Edge regression: mse or mae
+                                    # - Edge multi-label: bce_with_logits
+  monitor_metric: auroc             # Depends on task:
+                                    # - Higher-order binary: auroc, f1, accuracy
+                                    # - Edge regression: mae, rmse
+                                    # - Edge multi-label: f1, auroc
+
+# Splits Configuration
+split_params:
+  learning_setting: transductive    # Single complex, split labeled cells
+  data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}
+  data_seed: 42                     # Random seed for reproducible splits
+  
+  # Split Type Options:
+  # - "random": Random splitting with train_prop ratio
+  # - "k-fold": K-fold cross-validation
+  # - "fixed": Use HIGH-PPI's official train/val split (if available in raw data)
+  split_type: random
+  
+  train_prop: 0.8                   # For random/k-fold: 80% train, 10% val, 10% test
+                                    # Ignored when split_type: fixed
+
+# Dataloader
+dataloader_params:
+  batch_size: 1
+  num_workers: 0
+  pin_memory: False
+  persistent_workers: False

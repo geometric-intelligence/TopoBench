@@ -242,11 +242,25 @@ class TBModel(LightningModule):
         else:
             raise ValueError("Invalid state_str")
 
-        if self.task_level == "node":
-            # Keep only train data points
-            for key, val in model_out.items():
-                if key in ["logits", "labels"]:
-                    model_out[key] = val[mask]
+        if self.task_level in ["node", "cell"]:
+            # Keep only train data points (for node-level or cell-level tasks)
+            # Note: Rank-specific masks are applied in readout
+            # The readout stores which indices it kept in valid_indices
+            if "valid_indices" in model_out:
+                # Find intersection: which readout outputs are in this split?
+                # Note: The split respects the masks applied in the readout
+                valid_indices = model_out["valid_indices"]
+                keep_mask = torch.isin(valid_indices, mask)
+
+                # Filter logits and labels
+                for key, val in model_out.items():
+                    if key in ["logits", "labels"]:
+                        model_out[key] = val[keep_mask]
+            else:
+                # No valid_indices: standard filtering (for non-masked tasks)
+                for key, val in model_out.items():
+                    if key in ["logits", "labels"]:
+                        model_out[key] = val[mask]
 
         return model_out
 

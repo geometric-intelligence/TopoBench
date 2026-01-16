@@ -1,6 +1,7 @@
 """Unit tests for the tutorials."""
 
 import glob
+import os
 import subprocess
 import tempfile
 
@@ -28,7 +29,16 @@ def _exec_tutorial(path):
         file_name,
         path,
     ]
-    subprocess.check_call(args)
+    
+    # Set PYTHONPATH to include the project root so notebooks can import topobench
+    env = os.environ.copy()
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if 'PYTHONPATH' in env:
+        env['PYTHONPATH'] = f"{project_root}:{env['PYTHONPATH']}"
+    else:
+        env['PYTHONPATH'] = project_root
+    
+    subprocess.check_call(args, env=env)
 
 
 paths = sorted(glob.glob("tutorials/*.ipynb"))
