@@ -120,7 +120,7 @@ datasets=(
 )
 
 # --- Hyperparameters ---
-batch_sizes=(1)
+batch_sizes=(-1)
 lrs=(0.00003 0.0001 0.0003 0.001 0.003)
 hidden_channels=(8 16 32 64) 
 num_layers=(1 2 3 4 8) 
