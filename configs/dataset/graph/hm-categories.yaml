@@ -9,7 +9,7 @@ loader:
 
 # Dataset parameters
 parameters:
-  num_features: 35
+  num_features: 120 # 35
   num_classes: 21
   task: classification
   loss_type: cross_entropy
@@ -27,6 +27,6 @@ split_params:
 
 # Dataloader parameters
 dataloader_params:
-  batch_size: 1 # Fixed
+  batch_size: 10 # Fixed
   num_workers: 0
   pin_memory: False

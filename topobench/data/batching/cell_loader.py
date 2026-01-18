@@ -228,7 +228,7 @@ class CellLoader(
             if key == "x_0":
                 data["batch"] = data[f"batch_{cell_idx}"].clone()
 
-        data["n_seed_cells"] = out.num_sampled_nodes[0]
+        data["n_seed_cells"] = out.metadata[0].shape[0] # out.num_sampled_nodes[0]  TODO:ask Marco whenever this is correct
 
         return data if self.transform is None else self.transform(data)
 
