@@ -15,7 +15,7 @@
 
 # 1.1 Define Project Identifiers
 script_name="$(basename "${BASH_SOURCE[0]}" .sh)"
-project_name="graph_baselines_normalized_${script_name}"
+project_name="graph_baselines_jan18_${script_name}"
 log_group="sweep_graphland"
 LOG_DIR="./logs/${log_group}"
 
@@ -58,7 +58,7 @@ fi
 # ==============================================================================
 
 # 2.1 Configuration
-physical_gpus=(0 1 2 3 4 5 6 7)  # IDs of the GPUs to use
+physical_gpus=(0 1 2 3)  # IDs of the GPUs to use
 JOBS_PER_GPU=1           # Number of parallel runs allowed per GPU
 
 # 2.2 Create Virtual Slots (The 'Scheduling Queue')
