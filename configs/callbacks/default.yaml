@@ -17,7 +17,7 @@ defaults:
 
 early_stopping:
   monitor: ${get_monitor_metric:${dataset.parameters.task},${dataset.parameters.monitor_metric}}
-  patience: 25
+  patience: 5
   mode: "${get_monitor_mode:${dataset.parameters.task}}"
 
 model_summary:

@@ -15,7 +15,7 @@
 
 # 1.1 Define Project Identifiers
 script_name="$(basename "${BASH_SOURCE[0]}" .sh)"
-project_name="graph_baselines_jan18_${script_name}"
+project_name="graphland_graph_baselines_binary_classification_${script_name}"
 log_group="sweep_graphland"
 LOG_DIR="./logs/${log_group}"
 
@@ -90,8 +90,8 @@ models=(
 
 datasets=(
     # # Node classification datasets
-    "graph/hm-categories"
-    "graph/pokec-regions"
+    # "graph/hm-categories"
+    # "graph/pokec-regions"
     "graph/tolokers-2"
     "graph/city-reviews"
     "graph/artnet-exp"
@@ -121,8 +121,8 @@ datasets=(
 
 # --- Hyperparameters ---
 batch_sizes=(-1)
-lrs=(0.00003 0.0001 0.0003 0.001 0.003)
-hidden_channels=(8 16 32 64) 
+lrs=(0.0001 0.0005 0.001)
+hidden_channels=(8 16 32 64 128) 
 num_layers=(1 2 3 4 8) 
 DROPOUTS=(0.0 0.1 0.2)
 # The Pivotal Parameter
