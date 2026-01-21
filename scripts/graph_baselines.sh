@@ -122,8 +122,8 @@ datasets=(
 # --- Hyperparameters ---
 batch_sizes=(-1)
 lrs=(0.0001 0.0005 0.001)
-hidden_channels=(8 16 32 64 128) 
-num_layers=(1 2 3 4 8) 
+hidden_channels=(16 32 64 128) 
+num_layers=(1 2 4 8) 
 DROPOUTS=(0.0 0.1 0.2)
 # The Pivotal Parameter
 DATA_SEEDS=(0 3 5 7 9)
