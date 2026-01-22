@@ -194,3 +194,8 @@ wandb/
 
 # test temporary
 .test_tmp/
+
+# data files
+*.csv
+*.pt
+maga_*/
