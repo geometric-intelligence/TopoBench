@@ -1,5 +1,6 @@
 """Dataset class for US County Demographics dataset."""
 
+import hashlib
 import os.path as osp
 from typing import ClassVar
 
@@ -59,7 +60,17 @@ class MAGAArlequinDataset(InMemoryDataset):
         self.max_rank = parameters.get("max_rank", 4)
         self.cluster_seed = parameters.get("cluster_seed", 42)
         self.neighborhoods = parameters.get("neighborhoods", None)
-        self.hypergraph_id = f"{self.cluster_level_posts}_{self.cluster_level_users}_{self.max_rank}_{self.cluster_seed}_{self.neighborhoods}"
+        # higher order initialization method: "bio" (default) or "avg_post"
+        self.ho_init_method = parameters.get("ho_init_method", "bio")
+        # filter out users with more than this many posts (None = no filter)
+        self.max_posts_per_user = parameters.get("max_posts_per_user", None)
+        # Create a hash of neighborhoods list to avoid overly long filenames
+        if self.neighborhoods is not None:
+            neighborhoods_str = ",".join(sorted(self.neighborhoods))
+            neighborhoods_hash = hashlib.md5(neighborhoods_str.encode()).hexdigest()[:12]
+        else:
+            neighborhoods_hash = "none"
+        self.hypergraph_id = f"{self.cluster_level_posts}_{self.cluster_level_users}_{self.max_rank}_{self.cluster_seed}_{neighborhoods_hash}_{self.ho_init_method}_{self.max_posts_per_user}"
         super().__init__(
             root,
         )
@@ -214,11 +225,21 @@ class MAGAArlequinDataset(InMemoryDataset):
             # Create hyperedge: [root_id, descendant1_id, descendant2_id, ...]
             all_ids = group["id"].tolist()
             
+            # Skip if root_id is not in our posts (filtered out user)
+            if root_id not in self.id_posts:
+                continue
+            
             # Only include if there are replies (hyperedge size > 1) and multiple authors
             if len(all_ids) > 1:
                 # Ensure root is first in the list
                 if root_id in all_ids:
                     all_ids.remove(root_id)
+                
+                # Filter out any posts that were removed (from filtered users)
+                all_ids = [i for i in all_ids if i in self.id_posts]
+                if len(all_ids) == 0:
+                    continue
+                    
                 hyperedge = [self.id_posts[root_id]] + [self.id_posts[i] for i in all_ids]
                 
                 # Check if there are multiple authors in this interaction
@@ -329,6 +350,18 @@ class MAGAArlequinDataset(InMemoryDataset):
         # open dataset
         df = pd.read_parquet(self.RAW_FILE_NAMES["embedded_data"])
         
+        # Filter users with too many posts (if max_posts_per_user is set)
+        if self.max_posts_per_user is not None:
+            posts_per_user = df.groupby("user_id").size()
+            users_to_keep = posts_per_user[posts_per_user <= self.max_posts_per_user].index
+            filtered_users = posts_per_user[posts_per_user > self.max_posts_per_user]
+            if len(filtered_users) > 0:
+                print(f"Filtering {len(filtered_users)} users with >{self.max_posts_per_user} posts:")
+                for user_id, count in filtered_users.items():
+                    print(f"  User {user_id}: {count} posts")
+            df = df[df["user_id"].isin(users_to_keep)]
+            df = df.reset_index(drop=True)
+        
         # store user and post ids
         self.user_ids = list(set(df["user_id"]))
         self.posts_ids = df["id"].to_list()
@@ -379,30 +412,63 @@ class MAGAArlequinDataset(InMemoryDataset):
         # Rank 0 nodes (posts) -> embeddings (dim 1024)
         features_and_labels["x_0"] = torch.tensor(embeddings, dtype=torch.float32)
         
-        # Rank 1 (users) -> embeddings of the bio (dim 1024)
-        features_and_labels["x_1"] = torch.tensor(self.user_feature_vectors, dtype=torch.float32)
-        
-        # Rank 2 (interactions) -> average of bio embeddings of participating users (dim 1024)
-        interaction_feature_vectors = []
-        for interaction in self.interactions:
-            # Get unique user IDs from posts in this interaction hyperedge
-            user_ids_in_interaction = list(set([post.user_id for post in interaction.elements]))
-            # Average the bio embeddings of these users
-            user_embeddings = [self.user_bio_dict[user_id] for user_id in user_ids_in_interaction]
-            avg_embedding = np.mean(user_embeddings, axis=0)
-            interaction_feature_vectors.append(avg_embedding)
-        features_and_labels["x_2"] = torch.tensor(np.array(interaction_feature_vectors), dtype=torch.float32)
-        
-        # Rank 3 (communities) -> average of bio embeddings of users (dim 1024)
-        community_feature_vectors = []
-        for community_posts in self.community_hyperedges:
-            # Get unique user IDs from posts in this community hyperedge
-            user_ids_in_community = list(set([post.user_id for post in community_posts]))
-            # Average the bio embeddings of these users
-            user_embeddings = [self.user_bio_dict[user_id] for user_id in user_ids_in_community]
-            avg_embedding = np.mean(user_embeddings, axis=0)
-            community_feature_vectors.append(avg_embedding)
-        features_and_labels["x_3"] = torch.tensor(np.array(community_feature_vectors), dtype=torch.float32)
+        if self.ho_init_method == "avg_post":
+            # Initialize higher order structures using average post embeddings
+            
+            # Rank 1 (users) -> average of post embeddings by that user (dim 1024)
+            user_feature_vectors = []
+            for user in self.user_ids:
+                user_posts_indices = [self.posts_ids.index(p.id) for p in self.users_to_posts[user]]
+                avg_embedding = np.mean(embeddings[user_posts_indices], axis=0)
+                user_feature_vectors.append(avg_embedding)
+            features_and_labels["x_1"] = torch.tensor(np.array(user_feature_vectors), dtype=torch.float32)
+            
+            # Rank 2 (interactions) -> average of post embeddings in interaction (dim 1024)
+            interaction_feature_vectors = []
+            for interaction in self.interactions:
+                # Get post IDs in this interaction hyperedge
+                post_ids_in_interaction = [post.id for post in interaction.elements]
+                post_indices = [self.posts_ids.index(pid) for pid in post_ids_in_interaction]
+                avg_embedding = np.mean(embeddings[post_indices], axis=0)
+                interaction_feature_vectors.append(avg_embedding)
+            features_and_labels["x_2"] = torch.tensor(np.array(interaction_feature_vectors), dtype=torch.float32)
+            
+            # Rank 3 (communities) -> average of post embeddings in community (dim 1024)
+            community_feature_vectors = []
+            for community_posts in self.community_hyperedges:
+                # Get post IDs in this community hyperedge
+                post_ids_in_community = [post.id for post in community_posts]
+                post_indices = [self.posts_ids.index(pid) for pid in post_ids_in_community]
+                avg_embedding = np.mean(embeddings[post_indices], axis=0)
+                community_feature_vectors.append(avg_embedding)
+            features_and_labels["x_3"] = torch.tensor(np.array(community_feature_vectors), dtype=torch.float32)
+        else:
+            # Default: Initialize higher order structures using bio embeddings
+            
+            # Rank 1 (users) -> embeddings of the bio (dim 1024)
+            features_and_labels["x_1"] = torch.tensor(self.user_feature_vectors, dtype=torch.float32)
+            
+            # Rank 2 (interactions) -> average of bio embeddings of participating users (dim 1024)
+            interaction_feature_vectors = []
+            for interaction in self.interactions:
+                # Get unique user IDs from posts in this interaction hyperedge
+                user_ids_in_interaction = list(set([post.user_id for post in interaction.elements]))
+                # Average the bio embeddings of these users
+                user_embeddings = [self.user_bio_dict[user_id] for user_id in user_ids_in_interaction]
+                avg_embedding = np.mean(user_embeddings, axis=0)
+                interaction_feature_vectors.append(avg_embedding)
+            features_and_labels["x_2"] = torch.tensor(np.array(interaction_feature_vectors), dtype=torch.float32)
+            
+            # Rank 3 (communities) -> average of bio embeddings of users (dim 1024)
+            community_feature_vectors = []
+            for community_posts in self.community_hyperedges:
+                # Get unique user IDs from posts in this community hyperedge
+                user_ids_in_community = list(set([post.user_id for post in community_posts]))
+                # Average the bio embeddings of these users
+                user_embeddings = [self.user_bio_dict[user_id] for user_id in user_ids_in_community]
+                avg_embedding = np.mean(user_embeddings, axis=0)
+                community_feature_vectors.append(avg_embedding)
+            features_and_labels["x_3"] = torch.tensor(np.array(community_feature_vectors), dtype=torch.float32)
         
         # Rank 4 (semantic clusters) - convert to one-hot encoding
         num_classes = connectivity["shape"][4]

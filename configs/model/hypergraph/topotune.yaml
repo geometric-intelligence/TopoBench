@@ -2,7 +2,7 @@ _target_: topobench.model.TBModel
 
 model_name: topotune
 model_domain: hypergraph
-tune_gnn: GIN
+tune_gnn: GCN
 
 feature_encoder:
   _target_: topobench.nn.encoders.${model.feature_encoder.encoder_name}
@@ -29,9 +29,10 @@ backbone:
     norm: BatchNorm
   neighborhoods:
     - 4-down_incidence-4
-  layers: 3
+  layers: 1
   use_edge_attr: false
   activation: relu
+  rank_to_propagate: ${oc.select:model.readout.rank_to_propagate,null}
 
 backbone_wrapper:
   _target_: topobench.nn.wrappers.combinatorial.TuneWrapper

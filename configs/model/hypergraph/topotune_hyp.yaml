@@ -29,6 +29,7 @@ backbone:
   layers: 1
   use_edge_attr: false
   activation: relu
+  rank_to_propagate: ${oc.select:model.readout.rank_to_propagate,null}
 
 backbone_wrapper:
   _target_: topobench.nn.wrappers.combinatorial.TuneWrapper
