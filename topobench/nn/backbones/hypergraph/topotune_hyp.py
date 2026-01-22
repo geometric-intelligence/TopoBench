@@ -37,6 +37,7 @@ class TopoTuneHyp(torch.nn.Module):
         layers,
         use_edge_attr,
         activation,
+        rank_to_propagate,
         **kwargs,
     ):
         super().__init__()
@@ -44,7 +45,8 @@ class TopoTuneHyp(torch.nn.Module):
         self.neighborhoods = neighborhoods
         self.layers = layers
         self.use_edge_attr = use_edge_attr
-        self.max_rank = max([max(route) for route in self.routes]) if len(self.routes) > 0 else 4
+        routes_max_rank = max([max(route) for route in self.routes])
+        self.max_rank = routes_max_rank if rank_to_propagate is None else max(routes_max_rank, rank_to_propagate)
         self.graph_routes = torch.nn.ModuleList()
         self.HGNN = [i for i in HGNN.named_modules()]
         self.activation = activation

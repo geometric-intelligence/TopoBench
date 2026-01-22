@@ -35,17 +35,18 @@ class TopoTune(torch.nn.Module):
         layers,
         use_edge_attr,
         activation,
+        rank_to_propagate,
     ):
         super().__init__()
         self.routes = get_routes_from_neighborhoods(neighborhoods)
         self.neighborhoods = neighborhoods
         self.layers = layers
         self.use_edge_attr = use_edge_attr
-        self.max_rank = max([max(route) for route in self.routes])
+        routes_max_rank = max([max(route) for route in self.routes])
+        self.max_rank = routes_max_rank if rank_to_propagate is None else max(routes_max_rank, rank_to_propagate)
         self.graph_routes = torch.nn.ModuleList()
         self.GNN = [i for i in GNN.named_modules()]
         self.activation = activation
-
         # Instantiate GNN layers
         num_routes = len(self.routes)
         for _ in range(self.layers):

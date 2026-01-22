@@ -32,11 +32,17 @@ def get_routes_from_neighborhoods(neighborhoods):
         split = neighborhood.split("-")
         src_rank = int(split[-1])
         r = int(split[0]) if len(split) == 3 else 1
-        route = (
-            [src_rank, src_rank - r]
-            if "down" in neighborhood
-            else [src_rank, src_rank + r]
-        )
+        
+        # Adjacency neighborhoods are always intrarank (same src and dst rank)
+        # since adjacency defines connections within the same rank
+        if "adjacency" in neighborhood:
+            route = [src_rank, src_rank]
+        else:
+            route = (
+                [src_rank, src_rank - r]
+                if "down" in neighborhood
+                else [src_rank, src_rank + r]
+            )
         routes.append(route)
     return routes
 
