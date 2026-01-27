@@ -366,6 +366,7 @@ Specially useful in pre-processing steps, these are the general data manipulatio
 | Empire | Classification | Heterophilic dataset. | [Source](https://arxiv.org/pdf/2302.11640) |
 | Tolokers | Classification | Heterophilic dataset. | [Source](https://arxiv.org/pdf/2302.11640) |
 | US-county-demos | Regression | In turn each node attribute is used as the target label. | [Source](https://arxiv.org/pdf/2002.08274) |
+| Wiki-CS | Classification | Wiki-CS dataset (node classification) | [Source](https://arxiv.org/pdf/2007.02901) |
 | ZINC | Regression | Graph-level regression. | [Source](https://pubs.acs.org/doi/10.1021/ci3001277) |
 
 
