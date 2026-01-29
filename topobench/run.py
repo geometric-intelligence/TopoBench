@@ -301,7 +301,9 @@ def rerun_best_model_checkpoint(
 
     log.info("Re-testing best model checkpoint on validation set!")
     val_loader = datamodule.val_dataloader()
-    results = checkpoint_trainer.test(
+    # TODO: Fix the issue with the on_validation_epoch_start hook as it is strictly attached to the training procedure.
+    checkpoint_model.on_validation_epoch_start = lambda: None
+    results = checkpoint_trainer.validate(
         model=checkpoint_model, dataloaders=val_loader
     )
     if results:
