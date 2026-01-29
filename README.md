@@ -52,44 +52,61 @@ The main pipeline trains and evaluates a wide range of state-of-the-art TNNs and
 
 ## :jigsaw: Get Started
 
-### Create Environment
+### 🚀 Quick Install (Recommended)
 
-First, ensure `conda` is installed:  
+TopoBench now uses [**uv**](https://docs.astral.sh/uv/), an extremely fast Python package manager and resolver. This allows for nearly instantaneous environment setup and reproducible builds.
+
+1.  **Install uv**:
+    ```bash
+    curl -LsSf [https://astral.sh/uv/install.sh](https://astral.sh/uv/install.sh) | sh
+    ```
+
+2.  **Clone and Navigate**:
+    ```bash
+    git clone git@github.com:geometric-intelligence/topobench.git
+    cd TopoBench
+    ```
+
+3.  **Initialize Environment**:
+    Use our centralized setup script to handle Python 3.11 virtualization and specialized hardware (CUDA) mapping.
+    ```bash
+    # Usage: source uv_env_setup.sh [cpu|cu118|cu121]
+    source uv_env_setup.sh cpu
+    ```
+    *This script performs the following:*
+    * Creates a `.venv` using Python 3.11.
+    * Dynamically configures `pyproject.toml` to point to the correct **PyTorch** and **PyG** (PyTorch Geometric) wheels for your platform.
+    * Generates a precise `uv.lock` file and syncs all dependencies.
+
+---
+
+### 🛠️ Manual Environment Setup
+
+If you prefer to manage the environment manually or are integrating into an existing workflow:
+
 ```bash
-conda --version
+# Create a virtual environment with strict versioning
+uv venv --python 3.11
+source .venv/bin/activate
+
+# Sync dependencies including all extras (dev, test, and doc)
+uv sync --all-extras
 ```
-If not, we recommend intalling Miniconda [following the official command line instructions](https://www.anaconda.com/docs/getting-started/miniconda/install).
 
-Then, clone and navigate to the `TopoBench` repository  
+🚄 Run Training Pipeline
+Once the environment is active, you can launch the TopoBench pipeline:
 ```bash
-git clone git@github.com:geometric-intelligence/topobench.git
-cd TopoBench
-```
-
-Next, set up and activate a conda environment `tb` with Python 3.11.3:
-```bash
-conda create -n tb python=3.11.3
-conda activate tb
-```
-
-If working with GPUs, check the CUDA version of your machine:
-```bash
-which nvcc && nvcc --version
-```
-and ensure that it matches the CUDA version specified in the `env_setup.sh` file (`CUDA=cpu` by default for a broader compatibility). If it does not match, update `env_setup.sh` accordingly by changing both the `CUDA` and `TORCH` environment variables to compatible values as specified on [this website](https://github.com/pyg-team/pyg-lib).
-
-Next, set up the environment with the following command.
-```bash
-source env_setup.sh
-```
-This command installs the `TopoBench` library and its dependencies. 
-
-### Run Training Pipeline
-
-Once the setup is completed, train and evaluate a neural network by running the following command:
-
-```bash
+# Using the activated virtual environment
 python -m topobench 
+
+# Or execute directly via uv without manual activation
+uv run python -m topobench
+```
+
+✅ Verify Installation
+You can verify that the correct versions of Torch and CUDA are detected by running:
+```bash
+python -c "import torch; print(f'Torch: {torch.__version__} | CUDA: {torch.version.cuda}')"
 ```
 
 ---
