@@ -64,10 +64,10 @@ graph_kernels=("heat" "matern" "identity")
 combinations=("sum")
 
 # Hyperparameters for kernels
-temperatures=(1.0)
-nus=(1.5)
-kappas=(0.5)
-fractions=(0.01)
+temperatures=(0.1 1.0)
+nus=(0.5 1.5)
+kappas=(0.1 0.5)
+fractions=(0.01 0.05)
 # ========================================================================
 # Main Loop with Execution Tracking
 # ========================================================================
