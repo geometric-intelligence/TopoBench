@@ -20,34 +20,61 @@ source "$SCRIPT_DIR/base/logging.sh"
 # Sweep grids
 # -------------------------
 models=(
-    "dt_c"
-    "rf_c"
-    "hgb_c"
-    "lgbm_c"
-    "logistic_regression"
-    "mlp_c"
+#    "dt_c"
+#    "hgb_c"
+#    "lgbm_c"
+#    "logistic_regression"
+#    "mlp_c"
+#    "rf_c"
+)
+
+models_reg=(
+#    "dt_r"
+    "hgb_r"
+    "lgbm_r"
+    "linear_regression"
+    "mlp_r"
+    "rf_r"
 )
 
 datasets=(
-    "graph/cocitation_cora"
-    "graph/cocitation_citeseer"
-    "graph/cocitation_pubmed"
-    "graph/amazon_ratings"
-    "graph/minesweeper"
-    "graph/questions"
-    "graph/roman_empire"
-    "graph/hm-categories"
-    "graph/pokec-regions"
-    "graph/web-topics"
-    "graph/tolokers"
-    "graph/tolokers-2"
-    "graph/city-reviews"
-    "graph/artnet-exp"
-    "graph/web-fraud"
-    "graph/wiki_cs"
+#    "graph/cocitation_cora"
+#    "graph/cocitation_citeseer"
+#    "graph/cocitation_pubmed"
+#    "graph/amazon_ratings"
+#    "graph/minesweeper"
+#    "graph/questions"
+#    "graph/roman_empire"
+#    "graph/hm-categories"
+#    "graph/pokec-regions"
+#    "graph/web-topics"
+#    "graph/tolokers"
+#    "graph/tolokers-2"
+#    "graph/city-reviews"
+#    "graph/artnet-exp"
+#    "graph/web-fraud"
+#    "graph/wiki_cs"
+)
+
+datasets_regression=(
+#  "graph/US-BachelorRate"
+#  "graph/US-BirthRate"
+#  "graph/US-DeathRate"
+#  "graph/US-Election"
+#  "graph/US-MedianIncome"
+#  "graph/US-MigraRate"
+#  "graph/US-UnemploymentRate"
+  "graph/city-roads-M"
+  "graph/artnet-views"
+  "graph/avazu-ctr"
+  "graph/city-roads-L"
+  "graph/hm-prices"
+  "graph/web-traffic"
+  "graph/twitch-views"
 )
 
 DATA_SEEDS=(0 3 5 7 9)
+TEST_POINTS=(1)
 
 # ✅ Loop: use NFA or not
 USE_NFA=(true false)
@@ -67,7 +94,7 @@ SAMPLERS=(
 ROOT_LOG_DIR="$LOG_DIR"
 run_counter=1
 job_counter=0
-MAX_PARALLEL=28
+MAX_PARALLEL=4
 
 num_datasets=${#datasets[@]}
 
@@ -115,6 +142,67 @@ for model in "${models[@]}"; do
           echo "Command: ${cmd[*]}"
           echo "============================================================"
 
+          run_and_log "${cmd[*]}" "$log_group" "$run_name" "$ROOT_LOG_DIR" &
+
+          ((run_counter++))
+          ((job_counter++))
+          if [[ "$job_counter" -ge "$MAX_PARALLEL" ]]; then
+            wait -n
+            ((job_counter--))
+          fi
+
+        done
+      done
+    done
+  done
+done
+
+# ============================================================
+# LOOP 2: REGRESSION
+# ============================================================
+echo "----------------------------------------------------------------"
+echo "STARTING REGRESSION LOOP"
+echo "----------------------------------------------------------------"
+
+
+num_datasets_reg=${#datasets_regression[@]}
+
+for model in "${models_reg[@]}"; do
+  for dataset in "${datasets_regression[@]}"; do
+    for data_seed in "${DATA_SEEDS[@]}"; do
+      for use_nfa in "${USE_NFA[@]}"; do
+        for sampler in "${SAMPLERS[@]}"; do
+          
+          project_name="graph_tabpfn_new"
+          log_group="tabular_nfa_reg"
+          sampler_tag="sampler${sampler}"
+
+          # NFA Logic
+          transforms_args=()
+          nfa_tag="noNFA"
+          if [[ "$use_nfa" == "true" ]]; then
+            transforms_args=("transforms=nfa")
+            nfa_tag="NFA"
+          fi
+
+          run_name="REG_${dataset##*/}_seed${data_seed}_${model}_${nfa_tag}"
+
+          cmd=(
+            "python" "-m" "topobench"
+            "model=non_relational/sklearn_regressor"
+            "model/non_relational/sklearn@model.backbone=${model}"
+            "model/non_relational/sklearn/samplers@model.backbone_wrapper.sampler=${sampler}"
+            "dataset=${dataset}"
+            "dataset.split_params.split_type=random"
+            "train=False"
+            "trainer=cpu"
+            "evaluator=regression_extended"
+            "dataset.split_params.data_seed=${data_seed}"
+            "logger.wandb.project=${project_name}"
+            "${transforms_args[@]}"
+          )
+
+          echo "=== [REG] Run #$run_counter: $run_name ==="
           run_and_log "${cmd[*]}" "$log_group" "$run_name" "$ROOT_LOG_DIR" &
 
           ((run_counter++))
