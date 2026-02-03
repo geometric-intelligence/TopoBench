@@ -58,7 +58,7 @@ TopoBench now uses [**uv**](https://docs.astral.sh/uv/), an extremely fast Pytho
 
 1.  **Install uv**:
     ```bash
-    curl -LsSf [https://astral.sh/uv/install.sh](https://astral.sh/uv/install.sh) | sh
+    curl -LsSf https://astral.sh/uv/install.sh | sh
     ```
 
 2.  **Clone and Navigate**:
