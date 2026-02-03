@@ -29,17 +29,17 @@ datasets=(
     "graph/cocitation_citeseer"
     "graph/cocitation_pubmed"
     "graph/amazon_ratings"
-    "graph/minesweeper"
-    "graph/questions"
-    "graph/tolokers"
-    "graph/tolokers-2"
+    "graph/wiki_cs"
+#    "graph/minesweeper"
+#    "graph/questions"
+#    "graph/tolokers"
+#    "graph/tolokers-2"
 #  "graph/web-topics"
-  "graph/hm-categories"
+#  "graph/hm-categories"
 #  "graph/pokec-regions"
 #    "graph/city-reviews"
-    "graph/artnet-exp"
+#    "graph/artnet-exp"
 #    "graph/web-fraud"
-    "graph/wiki_cs"
 )
 
 # these datasets have more thant 10 classes, which is over the limit for TabPFN
@@ -50,7 +50,7 @@ OVR_DATASETS=(
 #  "graph/pokec-regions"
 )
 
-DATA_SEEDS=(0 3 5 7 9)
+DATA_SEEDS=(0 3 5)
 
 # ✅ Loop: use NFA or not
 USE_NFA=(true false)
@@ -67,7 +67,7 @@ SAMPLERS=(
 
 #HOPS=(1 2 3 4 5)
 TEST_POINTS=(2 4 8 16 32)
-#Ks=(5 10 20 50 100 200)
+Ks=(5 20 50 200)
 
 # -------------------------
 # Execution tracking
@@ -86,7 +86,7 @@ for model in "${models[@]}"; do
     for data_seed in "${DATA_SEEDS[@]}"; do
       for use_nfa in "${USE_NFA[@]}"; do
         for sampler in "${SAMPLERS[@]}"; do
-          for random_points in "${TEST_POINTS[@]}"; do
+          for random_points in "${Ks[@]}"; do
             for test_points in "${TEST_POINTS[@]}"; do
 
               project_name="graph_tabpfn"
