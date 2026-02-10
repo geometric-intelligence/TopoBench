@@ -56,10 +56,7 @@ The main pipeline trains and evaluates a wide range of state-of-the-art TNNs and
 
 TopoBench now uses [**uv**](https://docs.astral.sh/uv/), an extremely fast Python package manager and resolver. This allows for nearly instantaneous environment setup and reproducible builds.
 
-1.  **Install uv**:
-    ```bash
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    ```
+1.  [**Install uv**](https://docs.astral.sh/uv/getting-started/installation/#standalone-installer)
 
 2.  **Clone and Navigate**:
     ```bash
