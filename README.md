@@ -404,14 +404,15 @@ Specially useful in pre-processing steps, these are the general data manipulatio
 To learn more about `TopoBench`, we invite you to read the paper:
 
 ```
-@article{telyatnikov2024topobench,
-      title={TopoBench: A Framework for Benchmarking Topological Deep Learning}, 
-      author={Lev Telyatnikov and Guillermo Bernardez and Marco Montagna and Pavlo Vasylenko and Ghada Zamzmi and Mustafa Hajij and Michael T Schaub and Nina Miolane and Simone Scardapane and Theodore Papamarkou},
-      year={2024},
-      eprint={2406.06642},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2406.06642}, 
+@article{
+telyatnikov2025topobench,
+title={TopoBench: A Framework for Benchmarking Topological Deep Learning},
+author={Lev Telyatnikov and Guillermo Bernardez and Marco Montagna and Mustafa Hajij and Martin Carrasco and Pavlo Vasylenko and Mathilde Papillon and Ghada Zamzmi and Michael T Schaub and Jonas Verhellen and Pavel Snopov and Bertran Miquel-Oliver and Manel Gil-Sorribes and Alexis Molina and VICTOR GUALLAR and Theodore Long and Julian Suk and Patryk Rygiel and Alexander V Nikitin and Giordan Escalona and Michael Banf and Dominik Filipiak and Liliya Imasheva and Max Schattauer and Alvaro L. Martinez and Halley Fritze and Marissa Masden and Valentina S{\'a}nchez and Manuel Lecha and Andrea Cavallo and Claudio Battiloro and Matthew Piekenbrock and Mauricio Tec and George Dasoulas and Nina Miolane and Simone Scardapane and Theodore Papamarkou},
+journal={Journal of Data-centric Machine Learning Research},
+issn={XXXX-XXXX},
+year={2025},
+url={https://openreview.net/forum?id=07sTzyEVtY},
+note={}
 }
 ```
 If you find `TopoBench` useful, we would appreciate if you cite us!
