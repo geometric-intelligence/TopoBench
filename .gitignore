@@ -194,3 +194,4 @@ wandb/
 
 # test temporary
 .test_tmp/
+uv.lock
