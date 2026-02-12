@@ -21,14 +21,6 @@ class ElectrostaticPE(BaseTransform):
 
     Parameters
     ----------
-    max_pe_dim : int
-        Maximum number of eigenvectors to use (dimensionality of the encoding).
-    include_eigenvalues : bool, optional
-        If True, concatenates eigenvalues alongside eigenvectors.
-        Shape then becomes ``[num_nodes, 2 * max_pe_dim]``. Default is False.
-    include_first : bool, optional
-        If False, removes eigenvectors corresponding to (near-)zero eigenvalues
-        (constant eigenvector in connected graphs). Default is False.
     concat_to_x : bool, optional
         If True, concatenates the encodings with existing node features in
         ``data.x``. If ``data.x`` is None, creates it. Default is True.
@@ -40,16 +32,10 @@ class ElectrostaticPE(BaseTransform):
 
     def __init__(
         self,
-        max_pe_dim: int,
-        include_eigenvalues: bool = False,
-        include_first: bool = False,
         concat_to_x: bool = True,
         eps: float = 1e-6,
         **kwargs,
     ):
-        self.max_pe_dim = max_pe_dim
-        self.include_eigenvalues = include_eigenvalues
-        self.include_first = include_first
         self.concat_to_x = concat_to_x
         self.eps = eps
 
@@ -151,8 +137,8 @@ class ElectrostaticPE(BaseTransform):
             dim=1,
         )
 
-        # TODO: some corner case when N=2 on MUTAG
-        if torch.all(electrostatic_encoding == 0) and N > 2:
+        # TODO: some corner case when num_nodes=2 on MUTAG
+        if torch.all(electrostatic_encoding == 0) and num_nodes > 2:
             if list(remove_self_loops(edge_index)[0].cpu().shape) == [2, 0]:
                 # Case when there is no connectivity
                 pass
@@ -161,4 +147,4 @@ class ElectrostaticPE(BaseTransform):
 
         if torch.any(torch.isnan(electrostatic_encoding)):
             raise ValueError("ElectrostaticPE contains NaNs")
-        return electrostatic_encoding
+        return electrostatic_encoding.float()

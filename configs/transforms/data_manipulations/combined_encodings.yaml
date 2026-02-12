@@ -11,9 +11,8 @@ parameters:
     max_pe_dim: 10
     concat_to_x: true
   ElectrostaticPE:
-    max_pe_dim: 10
     concat_to_x: true
   HKdiagSE:
-    max_pe_dim: 10
     kernel_param_HKdiagSE: [1, 21]
+    space_dim: 0
     concat_to_x: true

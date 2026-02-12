@@ -292,6 +292,21 @@ def check_pses_in_transforms(transforms):
                         .get(pse)
                         .get("max_pe_dim")
                     )
+                elif pse == "ElectrostaticPE":
+                    added_features += 7
+                elif pse == "HKdiagSE":
+                    kernel_param = (
+                        transforms[key]
+                        .get("parameters")
+                        .get(pse)
+                        .get("kernel_param_HKdiagSE")
+                    )
+                    added_features += (
+                        (kernel_param[1] - kernel_param[0])
+                        if type(kernel_param)
+                        is omegaconf.listconfig.ListConfig
+                        else kernel_param
+                    )
         elif "LapPE" in key:
             if transforms[key].get("include_eigenvalues"):
                 added_features += transforms[key].get("max_pe_dim") * 2
@@ -299,6 +314,15 @@ def check_pses_in_transforms(transforms):
                 added_features += transforms[key].get("max_pe_dim")
         elif "RWSE" in key:
             added_features += transforms[key].get("max_pe_dim")
+        elif "ElectrostaticPE" in key:
+            added_features += 7
+        elif "HKdiagSE" in key:
+            kernel_param = transforms[key].get("kernel_param_HKdiagSE")
+            added_features += (
+                (kernel_param[1] - kernel_param[0])
+                if type(kernel_param) is omegaconf.listconfig.ListConfig
+                else kernel_param
+            )
 
     return added_features
 

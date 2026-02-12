@@ -20,8 +20,6 @@ class HKdiagSE(BaseTransform):
 
     Parameters
     ----------
-    max_pe_dim : int
-        Maximum number of eigenvectors to use (dimensionality of the encoding).
     kernel_param_HKdiagSE : tuple of int
         Tuple specifying the start and end diffusion times for the heat kernel.
     space_dim : int, optional
@@ -33,30 +31,24 @@ class HKdiagSE(BaseTransform):
     concat_to_x : bool, optional
         If True, concatenates the encodings with existing node features in
         ``data.x``. If ``data.x`` is None, creates it. Default is True.
-    eps : float, optional
-        Small value to avoid division by zero. Default is 1e-6.
     **kwargs : dict
         Additional arguments (not used).
     """
 
     def __init__(
         self,
-        max_pe_dim: int,
         kernel_param_HKdiagSE: tuple,
         space_dim: int = 0,
         include_eigenvalues: bool = False,
         include_first: bool = False,
         concat_to_x: bool = True,
-        eps: float = 1e-6,
         **kwargs,
     ):
-        self.max_pe_dim = max_pe_dim
         self.kernel_param_HKdiagSE = kernel_param_HKdiagSE
         self.space_dim = space_dim
         self.include_eigenvalues = include_eigenvalues
         self.include_first = include_first
         self.concat_to_x = concat_to_x
-        self.eps = eps
 
     def forward(self, data: Data) -> Data:
         """Compute the Laplacian positional encodings for the input graph.
@@ -161,4 +153,4 @@ class HKdiagSE(BaseTransform):
 
         if torch.any(torch.isnan(hk_diag)):
             raise ValueError("HKdiagSE contains NaNs")
-        return hk_diag
+        return hk_diag.float()
