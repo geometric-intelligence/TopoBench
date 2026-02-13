@@ -38,6 +38,7 @@ class ElectrostaticPE(BaseTransform):
     ):
         self.concat_to_x = concat_to_x
         self.eps = eps
+        self.pe_dim = 7
 
     def forward(self, data: Data) -> Data:
         """Compute the Laplacian positional encodings for the input graph.
@@ -84,7 +85,7 @@ class ElectrostaticPE(BaseTransform):
         device = edge_index.device
 
         if edge_index.size(1) == 0 or num_nodes <= 1:
-            return torch.zeros(num_nodes, self.max_pe_dim, device=device)
+            return torch.zeros(num_nodes, self.pe_dim, device=device)
 
         # Normalized Laplacian
         edge_index_lap, edge_weight = get_laplacian(

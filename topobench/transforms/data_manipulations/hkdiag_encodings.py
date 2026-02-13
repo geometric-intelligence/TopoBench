@@ -10,6 +10,7 @@ from torch_geometric.utils import (
     remove_self_loops,
     to_scipy_sparse_matrix,
 )
+import omegaconf
 
 
 class HKdiagSE(BaseTransform):
@@ -49,6 +50,11 @@ class HKdiagSE(BaseTransform):
         self.include_eigenvalues = include_eigenvalues
         self.include_first = include_first
         self.concat_to_x = concat_to_x
+        self.pe_dim = (
+            kernel_param_HKdiagSE[1] - kernel_param_HKdiagSE[0]
+            if type(kernel_param_HKdiagSE) is omegaconf.listconfig.ListConfig
+            else kernel_param_HKdiagSE
+        )
 
     def forward(self, data: Data) -> Data:
         """Compute the Laplacian positional encodings for the input graph.
@@ -95,7 +101,7 @@ class HKdiagSE(BaseTransform):
         device = edge_index.device
 
         if edge_index.size(1) == 0 or num_nodes <= 1:
-            return torch.zeros(num_nodes, self.max_pe_dim, device=device)
+            return torch.zeros(num_nodes, self.pe_dim, device=device)
 
         # Normalized Laplacian
         edge_index_lap, edge_weight = get_laplacian(
