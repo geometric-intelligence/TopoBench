@@ -6,6 +6,10 @@ import torch_geometric.data
 from torch_geometric.data import Data
 
 from topobench.data.utils import get_routes_from_neighborhoods
+from topobench.transforms.data_manipulations.positional_and_structural_encodings import (
+    CombinedPSEs,
+    SelectDestinationPSEs,
+)
 from topobench.transforms.data_manipulations.positional_structural_encodings import (
     DerivePS,
 )
@@ -36,13 +40,19 @@ class HOPSE_PE_Information(torch_geometric.transforms.BaseTransform):
         self.max_rank = kwargs["max_rank"]
         self.copy_initial = kwargs["copy_initial"]
         self.neighborhoods = kwargs["neighborhoods"]
+        self.encodings = kwargs["encodings"]
+        self.dim_pses = kwargs["dim_pses"]
+        self.in_channels = kwargs["in_channels"]
 
         self.device = (
             "cpu" if kwargs["device"] == "cpu" else f"cuda:{kwargs['cuda'][0]}"
         )
 
-        self.ps = DerivePS(**kwargs)
-        self.num_pe_considered = len(kwargs["pe_types"])
+        self.ps = CombinedPSEs(**kwargs)
+        self.select_dst_ps = SelectDestinationPSEs(self.encodings)
+
+        # self.ps = DerivePS(**kwargs)
+        self.num_pe_considered = len(kwargs["encodings"])
         # self.model = create_model(
         #     dim_in=cfg.dim_in, dim_out=self.parameters["dim_out"]
         # )
@@ -54,6 +64,32 @@ class HOPSE_PE_Information(torch_geometric.transforms.BaseTransform):
         self.hidden_dim = self.parameters["dim_target_node"]
 
         # + self.parameters["dim_target_graph"]
+
+    def _make_zero_pse_data(self, n_cells, dims):
+        """Create a Data object with zero tensors for each encoding.
+
+        Parameters
+        ----------
+        n_cells : int
+            Number of cells (rows) for each encoding tensor.
+        dims : list[int]
+            Dimension for each encoding. Must have same length as self.encodings.
+
+        Returns
+        -------
+        torch_geometric.data.Data
+            Data object with each encoding key mapped to a zero tensor
+            of shape [n_cells, dims[i]].
+        """
+        zero_data = {
+            enc: torch.zeros(
+                (n_cells, dim),
+                dtype=torch.float,
+                device=self.device,
+            )
+            for enc, dim in zip(self.encodings, dims, strict=True)
+        }
+        return Data(**zero_data)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(type={self.type!r}, parameters={self.parameters!r})"
@@ -122,17 +158,19 @@ class HOPSE_PE_Information(torch_geometric.transforms.BaseTransform):
         # Features on the source rank are more than the destination rank
         if feat_on_dst.shape[1] > src_batch.shape[1]:
             pad = (0, feat_on_dst.shape[1] - src_batch.shape[1])
-            feat_on_src = torch.nn.functional.pad(feat_on_src, pad, "constant", 0)
+            feat_on_src = torch.nn.functional.pad(
+                feat_on_src, pad, "constant", 0
+            )
             src_batch = torch.nn.functional.pad(src_batch, pad, "constant", 0)
         # Features on the source rank are more than the destination rank
         elif feat_on_dst.shape[1] < src_batch.shape[1]:
             pad = (0, feat_on_src.shape[1] - dst_batch.shape[1])
-            feat_on_dst = torch.nn.functional.pad(feat_on_dst, pad, "constant", 0)
+            feat_on_dst = torch.nn.functional.pad(
+                feat_on_dst, pad, "constant", 0
+            )
             dst_batch = torch.nn.functional.pad(dst_batch, pad, "constant", 0)
 
-        x_in = torch.vstack(
-            [feat_on_dst, feat_on_src]
-        )
+        x_in = torch.vstack([feat_on_dst, feat_on_src])
         batch_expanded = torch.cat([dst_batch, src_batch], dim=0)
 
         batch_route = Data(
@@ -164,17 +202,18 @@ class HOPSE_PE_Information(torch_geometric.transforms.BaseTransform):
         """
         x_out_per_rank = {}
         for route_index, (_, dst_rank) in enumerate(self.routes):
+            new_data = x_out_per_route[route_index]
             if dst_rank not in x_out_per_rank:
-                # # This happens when there are not destination cells for a route
-                # # In this case, we do not need to aggregate
-                # if route_index not in x_out_per_route:
-                #     continue
-                x_out_per_rank[dst_rank] = x_out_per_route[route_index]
+                x_out_per_rank[dst_rank] = new_data
             else:
-                x_out_per_rank[dst_rank] = torch.cat(
-                    [x_out_per_rank[dst_rank], x_out_per_route[route_index]],
-                    dim=2,
-                )
+                # Concatenate each encoding's features along dim=1 (feature dim)
+                existing = x_out_per_rank[dst_rank]
+                merged = {}
+                for enc in self.encodings:
+                    merged[enc] = torch.cat(
+                        [existing[enc], new_data[enc]], dim=1
+                    )
+                x_out_per_rank[dst_rank] = Data(**merged)
         return x_out_per_rank
 
     def interrank_boundary_index(x_src, boundary_index, n_dst_nodes):
@@ -365,7 +404,8 @@ class HOPSE_PE_Information(torch_geometric.transforms.BaseTransform):
         expanded_out = self.ps(input_graph)
         # TODO: Is this correct? I mean logically correct given the our PEs
         # Only grab the cells we are interested in
-        x_out = expanded_out[:, :n_dst_cells, :]
+        x_out = self.select_dst_ps(expanded_out, n_dst_cells)
+        # x_out = expanded_out[:, :n_dst_cells, :]
 
         return x_out
 
@@ -399,18 +439,14 @@ class HOPSE_PE_Information(torch_geometric.transforms.BaseTransform):
             if src_rank == dst_rank:
                 # If there are no nodes in this rank, we skip
                 if getattr(data, f"x_{src_rank}").shape[0] == 0:
-                    x_out_per_route[route_index] = torch.zeros(
-                        (self.num_pe_considered, 0, self.hidden_dim),
-                        dtype=torch.float,
-                        device=self.device,
+                    x_out_per_route[route_index] = self._make_zero_pse_data(
+                        0, self.dim_pses
                     )
                     continue
                 # We cannot use PE embeddings on single-node graphs
                 if getattr(data, f"x_{src_rank}").shape[0] == 1:
-                    x_out_per_route[route_index] = torch.zeros(
-                        (self.num_pe_considered, 1, self.hidden_dim),
-                        dtype=torch.float,
-                        device=self.device,
+                    x_out_per_route[route_index] = self._make_zero_pse_data(
+                        1, self.dim_pses
                     )
                     continue
                 x_out = self.forward_intrarank(src_rank, route_index, data)
@@ -419,10 +455,8 @@ class HOPSE_PE_Information(torch_geometric.transforms.BaseTransform):
             elif src_rank != dst_rank:
                 # If there is no neighborhood, we skip
                 if nbhd_cache[(src_rank, dst_rank)] is None:
-                    x_out_per_route[route_index] = torch.zeros(
-                        (self.num_pe_considered, 0, self.hidden_dim),
-                        dtype=torch.float,
-                        device=self.device,
+                    x_out_per_route[route_index] = self._make_zero_pse_data(
+                        0, self.dim_pses
                     )
                     continue
                 x_out = self.forward_interank(
@@ -437,27 +471,25 @@ class HOPSE_PE_Information(torch_geometric.transforms.BaseTransform):
         # If no information was passed to a rank, then we initialize an empty vector
         # with the output dimension of the pre-trained model
         # and set the features as 0
+        hop_num = int(self.copy_initial)
         for rank in range(self.max_rank + 1):
             if rank not in x_out_per_rank:
-                x_out_per_rank[rank] = torch.zeros(
-                    (
-                        self.num_pe_considered,
-                        data[f"x_{rank}"].shape[0],
-                        self.hidden_dim,
-                    ),  # num of pes, data[f"x_{rank}"].shape[0], self.hidden_dim
-                    dtype=torch.float,
-                    device=self.device,
+                n_cells = data[f"x_{rank}"].shape[0]
+                rank_dims = [
+                    self.in_channels[rank][idx + hop_num]
+                    for idx in range(len(self.encodings))
+                ]
+                x_out_per_rank[rank] = self._make_zero_pse_data(
+                    n_cells, rank_dims
                 )
 
-        hop_num = int(self.copy_initial)
         for key, value in x_out_per_rank.items():
-            for num_pe in range(
-                self.num_pe_considered
-            ):  # for bla bla bla:  iter num of pes + initial features
+            for idx, pe in enumerate(self.encodings):
+                data_key = f"x{key}_{idx + hop_num}"
                 setattr(
                     data,
-                    f"x{key}_{num_pe + hop_num}",
-                    value[num_pe].float().to(self.device),
+                    data_key,
+                    value[pe].float().to(self.device),
                 )
 
         return data

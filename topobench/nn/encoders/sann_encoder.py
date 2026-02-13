@@ -2,8 +2,8 @@
 
 import torch
 import torch_geometric
-from torch_geometric.nn.models import MLP
 from ogb.graphproppred.mol_encoder import AtomEncoder, BondEncoder
+from torch_geometric.nn.models import MLP
 
 from topobench.nn.encoders.base import AbstractFeatureEncoder
 

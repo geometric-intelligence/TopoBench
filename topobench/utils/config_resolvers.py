@@ -3,6 +3,7 @@
 import os
 from collections import defaultdict
 
+from matplotlib import transforms
 import numpy as np
 import omegaconf
 import torch
@@ -234,6 +235,43 @@ def get_monitor_mode(task):
 
     else:
         raise ValueError(f"Invalid task {task}")
+
+
+def get_pse_dimensions(encodings, parameters):
+    r"""Get dimensions of positional or structural encodings.
+
+    Parameters
+    ----------
+    encodings : list
+        List of positional or structural encodings.
+    parameters : dict
+        Dictionary of parameters for the positional or structural encodings, which should
+        contain the key "parameters" with the parameters for each encoding.
+
+    Returns
+    -------
+    list
+        List with dimensions of the positional or structural encodings.
+    """
+    dimensions = []
+    for pse in encodings:
+        if pse == "LapPE":
+            if parameters[pse].get("include_eigenvalues"):
+                dimensions.append(parameters[pse].get("max_pe_dim") * 2)
+            else:
+                dimensions.append(parameters[pse].get("max_pe_dim"))
+        elif pse == "RWSE":
+            dimensions.append(parameters[pse].get("max_pe_dim"))
+        elif pse == "ElectrostaticPE":
+            dimensions.append(7)
+        elif pse == "HKdiagSE":
+            kernel_param = parameters[pse].get("kernel_param_HKdiagSE")
+            dimensions.append(
+                (kernel_param[1] - kernel_param[0])
+                if type(kernel_param) is omegaconf.listconfig.ListConfig
+                else kernel_param
+            )
+    return dimensions
 
 
 def check_pses_in_transforms(transforms):
@@ -685,6 +723,7 @@ def infer_in_khop_feature_dim(dataset_in_channels, max_hop):
 
 def infer_in_hasse_graph_agg_dim(
     neighborhoods,
+    dim_pses,
     complex_dim,
     max_hop,
     dim_in,
@@ -701,6 +740,8 @@ def infer_in_hasse_graph_agg_dim(
     ----------
     neighborhoods : List[str]
         List of strings representing the neighborhood.
+    dim_pses : List[int]
+        List of dimensions of the positional or structural encodings.
     complex_dim : int
         Maximum dimension of the complex.
     max_hop : int
@@ -723,9 +764,11 @@ def infer_in_hasse_graph_agg_dim(
     """
     # TODO, to my understanding this should never change
 
+    # Count how many times each dimension is a target in the neighborhood routes,
+    # to know how many times it will be aggregated over in the Hasse graph and thus
+    # how many dimensions it needs to output to be able to be aggregated over.
     neighbor_targets = defaultdict(int)
     routes = get_routes_from_neighborhoods(neighborhoods)
-
     for _s, t in routes:
         neighbor_targets[t] += 1
 
@@ -751,7 +794,7 @@ def infer_in_hasse_graph_agg_dim(
     # For each complex
     for i in range(complex_dim + 1):
         for j in range(1, hop_num):
-            results[i][j] = max(1, neighbor_targets[i]) * dim_hidden
+            results[i][j] = max(1, neighbor_targets[i]) * dim_pses[j - 1]
 
     return results.astype(np.int32).tolist()
 

@@ -36,6 +36,7 @@ from topobench.utils.config_resolvers import (
     get_monitor_mode,
     get_non_relational_out_channels,
     get_required_lifting,
+    get_pse_dimensions,
     infer_in_channels,
     infer_in_hasse_graph_agg_dim,
     infer_in_khop_feature_dim,
@@ -122,6 +123,12 @@ OmegaConf.register_new_resolver(
 )
 
 OmegaConf.register_new_resolver(
+    "get_pse_dimensions",
+    get_pse_dimensions,
+    replace=True,
+)
+
+OmegaConf.register_new_resolver(
     "get_hop_num_gpse",
     lambda x: int(x)
     + 1,  # 2-hop if copy_initial = True else 1-hop (only GPSE info)
@@ -130,7 +137,6 @@ OmegaConf.register_new_resolver(
 OmegaConf.register_new_resolver(
     "get_hop_num_pses", lambda x, y: len(x) + int(y), replace=True
 )
-
 OmegaConf.register_new_resolver(
     "set_preserve_edge_attr",
     set_preserve_edge_attr,

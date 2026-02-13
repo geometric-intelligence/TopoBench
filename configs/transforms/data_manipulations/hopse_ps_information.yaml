@@ -1,60 +1,38 @@
+defaults:
+  - combined_encodings
+
 transform_name: "HOPSE_PE_Information"
 transform_type: "data manipulation"
 max_rank: 2
-copy_initial: True
-neighborhoods:  
-  - 'up_adjacency-0'
-  # - 'up_adjacency-1'
-  # - 'down_adjacency-1'
-  # - 'down_adjacency-2'
-  # - 'up_incidence-0'
-  # - 'up_incidence-1'
-  - 'down_incidence-1'
-  - 'down_incidence-2'
+copy_initial: ${model.preprocessing_params.copy_initial}
+neighborhoods: ${model.preprocessing_params.neighborhoods}
 
 
-dim_target_node: ${.target_pe_dim} #51
+dim_target_node: 20 #${.target_pe_dim} #51
+dim_pses: ${get_pse_dimensions:${.encodings}, ${.parameters}}
 dim_target_graph: 0
-max_hop: ${get_hop_num_pses:${.pe_types}, ${.copy_initial}}
-in_channels: ${infer_in_hasse_graph_agg_dim:${.neighborhoods}, ${.max_rank}, ${.max_hop}, ${oc.select:dataset.parameters.num_features}, ${.dim_target_graph}, ${.dim_target_node}, ${.copy_initial}, ${oc.select:dataset.parameters.preserve_edge_attr_if_lifted}}
+max_hop: ${get_hop_num_pses:${.encodings}, ${.copy_initial}}
+in_channels: ${infer_in_hasse_graph_agg_dim:${.neighborhoods}, ${.dim_pses}, ${.max_rank}, ${.max_hop}, ${oc.select:dataset.parameters.num_features}, ${.dim_target_graph}, ${.dim_target_node}, ${.copy_initial}, ${oc.select:dataset.parameters.preserve_edge_attr_if_lifted}}
 device: ${trainer.accelerator}
 cuda: ${trainer.devices}
 
-# Information regarding the positional and structural encodings
-
-pe_types: 
-  - 'RWSE' 
-  - 'ElstaticPE'
-  - 'HKdiagSE'
-  - 'LapPE'
-  #- 'CycleGE'
-
-# Different PS have different sizes, need to unify them. 
-target_pe_dim: 64
-
-# LapPE config
-laplacian_norm_type: 'sym'
-posenc_LapPE_eigen_max_freqs: 50
-posenc_LapPE_eigen_eigvec_norm: 'L2'
-posenc_LapPE_eigen_skip_zero_freq: True
-posenc_LapPE_eigen_eigvec_abs: True
-
-# RWSE config
-kernel_param_RWSE: 
-  - 2
-  - 60
-
-
-# HKdiagSE config
-kernel_param_HKdiagSE: 
-  - 1
-  - 60
-
-# Cycle SE config 
-kernel_param_CycleGE:
-  - 2
-  - 4 # min/max cycles counts to consider
-
 # Other configs
 is_undirected: True
+
+encodings: ${model.preprocessing_params.encodings}
+parameters:
+  LapPE:
+    max_pe_dim: 10
+    include_eigenvalues: false
+    include_first: false
+    concat_to_x: false
+  RWSE: 
+    max_pe_dim: 10
+    concat_to_x: false
+  ElectrostaticPE:
+    concat_to_x: false
+  HKdiagSE:
+    kernel_param_HKdiagSE: [1, 21]
+    space_dim: 0
+    concat_to_x: false
 
