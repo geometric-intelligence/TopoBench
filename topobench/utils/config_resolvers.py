@@ -170,7 +170,7 @@ def get_required_lifting(data_domain, model):
     str
         Required transform.
     """
-    data_domain = data_domain
+    data_domain = data_domain.split("/")[0]
     model_domain = model.split("/")[0]
     if data_domain == model_domain:
         return "no_lifting"
