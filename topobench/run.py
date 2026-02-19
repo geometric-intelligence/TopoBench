@@ -217,7 +217,11 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
     dataset, dataset_dir = dataset_loader.load()
     # Preprocess dataset and load the splits
     log.info("Instantiating preprocessor...")
-    transform_config = cfg.get("transforms", None)
+    transform_config = (
+        hydra.utils.instantiate(cfg.transforms)
+        if cfg.get("transforms", None) is not None
+        else None
+    )
     preprocessor = PreProcessor(dataset, dataset_dir, transform_config)
     dataset_train, dataset_val, dataset_test = (
         preprocessor.load_dataset_splits(cfg.dataset.split_params)

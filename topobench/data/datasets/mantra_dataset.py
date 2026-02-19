@@ -1,10 +1,12 @@
 """Dataset class MANTRA dataset."""
 
+import hashlib
+import json
 import os
 import os.path as osp
 from typing import ClassVar
 
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from torch_geometric.data import Data, InMemoryDataset, extract_gz
 from torch_geometric.io import fs
 
@@ -105,6 +107,26 @@ class MantraDataset(InMemoryDataset):
         )
 
     @property
+    def _neighborhoods_signed_hash(self) -> str:
+        """Return a short hash encoding neighborhoods and signed.
+
+        Returns
+        -------
+        str
+            16-character hex digest of the (neighborhoods, signed) pair.
+        """
+        neighborhoods = (
+            OmegaConf.to_container(self.neighborhoods, resolve=True)
+            if self.neighborhoods is not None
+            else None
+        )
+        payload = json.dumps(
+            {"neighborhoods": neighborhoods, "signed": self.signed},
+            sort_keys=True,
+        ).encode()
+        return hashlib.md5(payload).hexdigest()[:16]
+
+    @property
     def processed_dir(self) -> str:
         """Return the path to the processed directory of the dataset.
 
@@ -113,12 +135,13 @@ class MantraDataset(InMemoryDataset):
         str
             Path to the processed directory.
         """
+        slice = f"_{self.slice}" if self.slice else ""
         self.processed_root = osp.join(
             self.root,
             self.name,
-            self.task_variable,
+            self._neighborhoods_signed_hash + slice,
         )
-        return osp.join(self.processed_root, "processed")
+        return self.processed_root
 
     @property
     def raw_file_names(self) -> list[str]:
@@ -206,3 +229,20 @@ class MantraDataset(InMemoryDataset):
             (self._data.to_dict(), self.slices, {}, self._data.__class__),
             self.processed_paths[0],
         )
+
+        # Save a human-readable summary of the configuration used to
+        # produce this processed folder, so the hash can be traced back.
+        config_path = osp.join(self.processed_root, "config.json")
+        with open(config_path, "w") as f:
+            json.dump(
+                {
+                    "neighborhoods": OmegaConf.to_container(
+                        self.neighborhoods, resolve=True
+                    )
+                    if self.neighborhoods is not None
+                    else None,
+                    "signed": self.signed,
+                },
+                f,
+                indent=2,
+            )

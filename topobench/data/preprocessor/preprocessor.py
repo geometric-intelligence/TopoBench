@@ -7,7 +7,7 @@ import time
 import torch
 import torch_geometric
 from torch_geometric.io import fs
-
+from omegaconf import OmegaConf
 from topobench.data.utils import (
     ensure_serializable,
     load_inductive_splits,
