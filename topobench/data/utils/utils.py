@@ -562,16 +562,14 @@ def ensure_serializable(obj):
         for key, value in obj.items():
             obj[key] = ensure_serializable(value)
         return obj
-    elif isinstance(obj, list | tuple):
+    elif isinstance(obj, list | tuple | omegaconf.listconfig.ListConfig):
         return [ensure_serializable(item) for item in obj]
     elif isinstance(obj, set):
         return {ensure_serializable(item) for item in obj}
     elif isinstance(obj, str | int | float | bool | type(None)):
         return obj
     elif isinstance(obj, omegaconf.dictconfig.DictConfig):
-        from omegaconf import OmegaConf
-
-        obj = OmegaConf.to_container(obj, resolve=False)
+        obj = omegaconf.OmegaConf.to_container(obj, resolve=False)
         return obj
     else:
         return None

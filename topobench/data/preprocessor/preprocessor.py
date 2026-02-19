@@ -79,10 +79,7 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         str
             Path to the processed directory.
         """
-        if not self.transforms_applied:
-            return self.root
-        else:
-            return self.root + "/processed"
+        return self.root
 
     @property
     def processed_file_names(self) -> str:
