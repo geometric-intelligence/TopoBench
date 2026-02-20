@@ -271,6 +271,13 @@ def get_pse_dimensions(encodings, parameters):
                 if type(kernel_param) is omegaconf.listconfig.ListConfig
                 else kernel_param
             )
+        elif pse == "HKFE":
+            kernel_param = parameters[pse].get("kernel_param_HKFE")
+            dimensions.append(
+                (kernel_param[1] - kernel_param[0])
+                if type(kernel_param) is omegaconf.listconfig.ListConfig
+                else kernel_param
+            )
     return dimensions
 
 
