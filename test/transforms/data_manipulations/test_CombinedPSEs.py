@@ -28,8 +28,8 @@ class TestCombinedPSEs:
         assert transform.parameters == {}
 
         # Test with all supported encodings
-        transform = CombinedPSEs(encodings=["LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE", "HKFE"])
-        assert transform.encodings == ["LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE", "HKFE"]
+        transform = CombinedPSEs(encodings=["LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE"])
+        assert transform.encodings == ["LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE"]
         assert transform.parameters == {}
 
         # Test with parameters
@@ -590,49 +590,6 @@ class TestCombinedPSEs:
         assert transformed.HKdiagSE.shape == (3, 4)
         assert torch.equal(transformed.x, self.x)
 
-    def test_single_hkfe_encoding(self):
-        """Test transform with only HKFE encoding."""
-        params = {
-            "HKFE": {"kernel_param_HKFE": (1, 5), "concat_to_x": True}
-        }
-        transform = CombinedPSEs(encodings=["HKFE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
-
-        transformed = transform(data)
-
-        # HKFE with pe_dim=4 and 1 feature produces 4*1=4 dimensions
-        assert transformed.x is not None
-        assert transformed.x.shape[0] == 3
-        assert transformed.x.shape[1] == 1 + 4 * 1  # original + HKFE (pe_dim * num_features)
-        assert transformed.x.dtype == torch.float32
-
-    def test_hkfe_separate_storage(self):
-        """Test HKFE with separate storage."""
-        params = {
-            "HKFE": {"kernel_param_HKFE": (1, 5), "concat_to_x": False}
-        }
-        transform = CombinedPSEs(encodings=["HKFE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
-
-        transformed = transform(data)
-
-        assert hasattr(transformed, "HKFE")
-        assert transformed.HKFE.shape == (3, 4 * 1)  # pe_dim * num_features
-        assert torch.equal(transformed.x, self.x)
-
-    def test_hkfe_with_multiple_features(self):
-        """Test HKFE with multiple input features."""
-        params = {
-            "HKFE": {"kernel_param_HKFE": (1, 5), "concat_to_x": False}
-        }
-        transform = CombinedPSEs(encodings=["HKFE"], parameters=params)
-        x_multi = torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]])
-        data = Data(x=x_multi, edge_index=self.edge_index, num_nodes=self.num_nodes)
-
-        transformed = transform(data)
-
-        # pe_dim=4, num_features=3 -> output dim = 4*3 = 12
-        assert transformed.HKFE.shape == (3, 4 * 3)
 
     def test_all_four_encodings_combined(self):
         """Test transform with all four encoding types combined."""

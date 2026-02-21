@@ -1,0 +1,10 @@
+transform_name: "CombinedFEs"
+transform_type: "data manipulation"
+encodings: ["KHopFE","HKFE"]
+parameters:
+  HKFE:
+    kernel_param_HKFE: [1, 21]
+    concat_to_x: true
+  KHopFE:
+    max_hop: 3
+    concat_to_x: true

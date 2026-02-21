@@ -266,18 +266,101 @@ def get_pse_dimensions(encodings, parameters):
             dimensions.append(7)
         elif pse == "HKdiagSE":
             kernel_param = parameters[pse].get("kernel_param_HKdiagSE")
-            dimensions.append(
-                (kernel_param[1] - kernel_param[0])
-                if type(kernel_param) is omegaconf.listconfig.ListConfig
-                else kernel_param
-            )
-        elif pse == "HKFE":
-            kernel_param = parameters[pse].get("kernel_param_HKFE")
-            dimensions.append(
-                (kernel_param[1] - kernel_param[0])
-                if type(kernel_param) is omegaconf.listconfig.ListConfig
-                else kernel_param
-            )
+            # Handle both OmegaConf ListConfig and regular lists/tuples
+            if (
+                isinstance(kernel_param, (list, tuple))
+                or type(kernel_param) is omegaconf.listconfig.ListConfig
+            ):
+                dimensions.append(kernel_param[1] - kernel_param[0])
+            else:
+                dimensions.append(kernel_param)
+    return dimensions
+
+
+def get_fes_dimensions(encodings, parameters):
+    r"""Get dimensions of feature encodings.
+
+    Parameters
+    ----------
+    encodings : list
+        List of feature encodings.
+    parameters : dict
+        Dictionary of parameters for the feature encodings, which should
+
+    Returns
+    -------
+    list
+        List with dimensions of the feature encodings.
+    """
+    dimensions = []
+    for fe in encodings:
+        if fe == "HKFE":
+            kernel_param = parameters[fe].get("kernel_param_HKFE")
+            # Handle both OmegaConf ListConfig and regular lists/tuples
+            if (
+                isinstance(kernel_param, (list, tuple))
+                or type(kernel_param) is omegaconf.listconfig.ListConfig
+            ):
+                dimensions.append(kernel_param[1] - kernel_param[0])
+            else:
+                dimensions.append(kernel_param)
+        elif fe == "KHopFE":
+            # max_hop - 1 because the 0th hop is the features themselves
+            dimensions.append(parameters[fe].get("max_hop") - 1)
+    return dimensions
+
+
+def get_all_encoding_dimensions(encodings, parameters):
+    r"""Get dimensions of all encodings (PSEs and FEs) in order.
+
+    Parameters
+    ----------
+    encodings : list
+        List of all encodings (both PSEs and FEs).
+    parameters : dict
+        Dictionary of parameters for all encodings.
+
+    Returns
+    -------
+    list
+        List with dimensions of all encodings in the same order as input.
+    """
+    dimensions = []
+    for enc in encodings:
+        # PSE encodings
+        if enc == "LapPE":
+            if parameters[enc].get("include_eigenvalues"):
+                dimensions.append(parameters[enc].get("max_pe_dim") * 2)
+            else:
+                dimensions.append(parameters[enc].get("max_pe_dim"))
+        elif enc == "RWSE":
+            dimensions.append(parameters[enc].get("max_pe_dim"))
+        elif enc == "ElectrostaticPE":
+            dimensions.append(7)
+        elif enc == "HKdiagSE":
+            kernel_param = parameters[enc].get("kernel_param_HKdiagSE")
+            # Handle both OmegaConf ListConfig and regular lists/tuples
+            if (
+                isinstance(kernel_param, (list, tuple))
+                or type(kernel_param) is omegaconf.listconfig.ListConfig
+            ):
+                dimensions.append(kernel_param[1] - kernel_param[0])
+            else:
+                dimensions.append(kernel_param)
+        # FE encodings
+        elif enc == "HKFE":
+            kernel_param = parameters[enc].get("kernel_param_HKFE")
+            # Handle both OmegaConf ListConfig and regular lists/tuples
+            if (
+                isinstance(kernel_param, (list, tuple))
+                or type(kernel_param) is omegaconf.listconfig.ListConfig
+            ):
+                dimensions.append(kernel_param[1] - kernel_param[0])
+            else:
+                dimensions.append(kernel_param)
+        elif enc == "KHopFE":
+            # max_hop - 1 because the 0th hop is the features themselves
+            dimensions.append(parameters[enc].get("max_hop") - 1)
     return dimensions
 
 
@@ -291,8 +374,8 @@ def check_pses_in_transforms(transforms):
 
     Returns
     -------
-    bool
-        True if there are positional or structural encodings, False otherwise.
+    int
+       Count of the number of features added by the encodings.
     """
     added_features = 0
     # Single transform
@@ -372,6 +455,72 @@ def check_pses_in_transforms(transforms):
     return added_features
 
 
+def check_fes_in_transforms(transforms):
+    r"""Check if there are feature encodings in the transforms.
+
+    Parameters
+    ----------
+    transforms : DictConfig
+        Configuration parameters for the transforms.
+
+    Returns
+    -------
+    int
+        Count of the number of features added by the encodings.
+    """
+    added_features = 0
+    # Single transform
+    transform = transforms.get("transform_name", None)
+    if transform is not None:
+        if transform == "HKFE":
+            kernel_param = transforms.get("kernel_param_HKFE")
+            added_features += (
+                (kernel_param[1] - kernel_param[0])
+                if type(kernel_param) is omegaconf.listconfig.ListConfig
+                else kernel_param
+            )
+        elif transform == "KHopFE":
+            # max_hop - 1 because the 0th hop is the features themselves
+            added_features += transforms.get("max_hop") - 1
+    # Potentially multiple transforms
+    for key in transforms:
+        if "CombinedFEs" in key:
+            for fe in transforms[key].get("encodings", []):
+                if fe == "HKFE":
+                    kernel_param = (
+                        transforms[key]
+                        .get("parameters")
+                        .get(fe)
+                        .get("kernel_param_HKFE")
+                    )
+                    added_features += (
+                        (kernel_param[1] - kernel_param[0])
+                        if type(kernel_param)
+                        is omegaconf.listconfig.ListConfig
+                        else kernel_param
+                    )
+                elif fe == "KHopFE":
+                    # max_hop - 1 because the 0th hop is the features themselves
+                    added_features += (
+                        transforms[key]
+                        .get("parameters")
+                        .get(fe)
+                        .get("max_hop")
+                        - 1
+                    )
+        elif "HKFE" in key:
+            kernel_param = transforms[key].get("kernel_param_HKFE")
+            added_features += (
+                (kernel_param[1] - kernel_param[0])
+                if type(kernel_param) is omegaconf.listconfig.ListConfig
+                else kernel_param
+            )
+        elif "KHopFE" in key:
+            # max_hop - 1 because the 0th hop is the features themselves
+            added_features += transforms[key].get("max_hop") - 1
+    return added_features
+
+
 def infer_in_channels(dataset, transforms):
     r"""Infer the number of input channels for a given dataset.
 
@@ -389,7 +538,11 @@ def infer_in_channels(dataset, transforms):
     """
     num_features = dataset.parameters.num_features
     if isinstance(num_features, int) and transforms is not None:
-        num_features = num_features + check_pses_in_transforms(transforms)
+        num_features = (
+            num_features
+            + check_pses_in_transforms(transforms)
+            + check_fes_in_transforms(transforms)
+        )
 
     # Make it possible to pass lifting configuration as file path
     if transforms is not None and transforms.keys() == {"liftings"}:

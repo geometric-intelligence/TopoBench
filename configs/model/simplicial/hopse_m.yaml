@@ -13,7 +13,7 @@ preprocessing_params:
     # - 'up_incidence-1'
     - 'down_incidence-1'
     - 'down_incidence-2'
-  encodings: ["LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE"]
+  encodings: ["KHopFE", "HKFE", "LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE"]
   copy_initial: True
 
 feature_encoder:
