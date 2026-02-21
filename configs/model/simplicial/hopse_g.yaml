@@ -3,6 +3,13 @@ _target_: topobench.model.TBModel
 model_name: hopse_g
 model_domain: simplicial
 
+preprocessing_params:
+  neighborhoods: 
+    - 'up_adjacency-0'
+    - 'down_incidence-1'
+    - 'down_incidence-2'
+  copy_initial: True
+
 feature_encoder:
   _target_: topobench.nn.encoders.${model.feature_encoder.encoder_name}
   encoder_name: SANNFeatureEncoder
