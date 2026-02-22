@@ -43,21 +43,14 @@ class SheafConnLapPE(BaseTransform):
     cannot represent.
 
     .. note::
-        **Feature dimension requirement (Fix 1):** ``data.x`` must be present
+        **Feature dimension requirement :** ``data.x`` must be present
         and ``data.x.shape[1] >= stalk_dim``. The method assumes that node
         features lie near a ``stalk_dim``-dimensional manifold; if feature_dim
         < stalk_dim this assumption is violated and the PCA basis would contain
         zero columns, making the Procrustes rotation degenerate and breaking
         the PSD property of L_F. A ``ValueError`` is raised in this case.
 
-        **Undirected graphs (Fix 2):** Cellular sheaves are defined on
-        undirected simple graphs. If ``edge_index`` is not already
-        bidirectional, it is symmetrised automatically before building the
-        adjacency list (idempotent for standard PyG format). Self-loops are
-        silently removed: they have no well-defined restriction map in the
-        sheaf structure and would corrupt the diagonal of L_F.
-
-        **Isolated nodes (Fix 4):** For isolated nodes (degree 0), the
+        **Isolated nodes :** For isolated nodes (degree 0), the
         diagonal block of L_F is the zero matrix, making D^{-1/2} undefined.
         The normalisation substitutes 1.0 for these zero diagonal entries,
         which is equivalent to adding a unit self-loop for numerical purposes.
@@ -65,11 +58,6 @@ class SheafConnLapPE(BaseTransform):
         (the corresponding rows of L_F remain all-zero), but their PE values
         will reflect their position in the global spectrum rather than local
         connectivity.
-
-        **Memory (Fix 6):** The dense eigendecomposition (``np.linalg.eigh``)
-        requires O((n·d)²) memory. A warning is emitted for graphs where
-        n·d > 10,000 (roughly 3,300 nodes at stalk_dim=3). At n·d=15,000
-        the matrix is ~1.7 GB float64.
 
     Parameters
     ----------
@@ -102,9 +90,6 @@ class SheafConnLapPE(BaseTransform):
         include_first: bool = False,
         concat_to_x: bool = True,
         eps: float = 1e-6,
-        # Fix 5: removed `tolerance` parameter — it was dead code with no
-        # effect on the dense np.linalg.eigh solver path.  If a sparse solver
-        # is introduced in future, the parameter can be re-added then.
         **kwargs,
     ):
         if max_pe_dim % stalk_dim != 0:
@@ -119,10 +104,6 @@ class SheafConnLapPE(BaseTransform):
         self.include_first = include_first
         self.concat_to_x = concat_to_x
         self.eps = eps
-
-    # ──────────────────────────────────────────────────────────────────────
-    # Public interface
-    # ──────────────────────────────────────────────────────────────────────
 
     def forward(self, data: Data) -> Data:
         """Compute and attach the ConnLap PE to a graph data object.
@@ -154,14 +135,6 @@ class SheafConnLapPE(BaseTransform):
         # operates on the original input features, not any augmented version.
         x_np = data.x.detach().cpu().numpy().astype(np.float64)
 
-        # Fix 1: guard against stalk_dim > feature_dim.
-        # The manifold assumption (features lie near a d-dimensional subspace)
-        # only makes sense when d ≤ p.  If p < d, the Gram–Schmidt padding in
-        # _local_pca_basis can only produce p - n_comp ≤ p < d vectors, leaving
-        # the last d - p columns of every basis all-zeros.  Zero columns in B_v
-        # make M = B_v^T B_u rank-deficient, so the SVD in Procrustes returns a
-        # degenerate O_{vu} that is no longer a proper orthogonal matrix and
-        # breaks the PSD property of L_F.
         feature_dim = x_np.shape[1]
         if feature_dim < self.stalk_dim:
             raise ValueError(
@@ -181,10 +154,6 @@ class SheafConnLapPE(BaseTransform):
             data.SheafPE = pe
 
         return data
-
-    # ──────────────────────────────────────────────────────────────────────
-    # Core pipeline
-    # ──────────────────────────────────────────────────────────────────────
 
     def _compute_sheaf_pe(
         self,
@@ -215,10 +184,7 @@ class SheafConnLapPE(BaseTransform):
         if edge_index.size(1) == 0 or num_nodes <= 1:
             return torch.zeros(num_nodes, self.max_pe_dim, device=device)
 
-        # Fix 6: warn when the dense nd×nd matrix will be very large.
-        # np.linalg.eigh allocates O((n·d)²) memory; at nd=15,000 this is
-        # ~1.7 GB float64.  We warn at nd > 10,000 (~3,300 nodes at d=3)
-        # to surface this before the allocation happens.
+        # Warn when the dense nd×nd matrix will be very large.
         nd = num_nodes * d
         if nd > 10_000:
             warnings.warn(
@@ -231,16 +197,6 @@ class SheafConnLapPE(BaseTransform):
                 stacklevel=3,
             )
 
-        # Fix 2: symmetrise edge_index to guarantee an undirected adjacency
-        # list.  Cellular sheaves are defined on undirected simple graphs; an
-        # asymmetric edge_index (only one direction stored per edge) would
-        # produce an asymmetric L_F, causing np.linalg.eigh to silently return
-        # wrong eigenvectors (it only reads the lower triangle of its input).
-        # torch.unique(dim=1) deduplicates, so this is idempotent for graphs
-        # already stored in standard PyG format (both directions present).
-        # Self-loops are also removed: they have no well-defined restriction
-        # map in the sheaf structure and overwrite the diagonal degree block
-        # with -I_d, causing negative diagonal entries and NaN normalisation.
         ei_sym = torch.cat([edge_index, edge_index.flip(0)], dim=1).unique(
             dim=1
         )
@@ -255,7 +211,7 @@ class SheafConnLapPE(BaseTransform):
             u, v = int(ei[0, col]), int(ei[1, col])
             adjacency[u].append(v)
 
-        # ── Step 1: local PCA basis per node ──────────────────────────────
+        # Local PCA basis per node
         # B_v ∈ R^{p×d}: orthonormal basis for the tangent space at node v,
         # estimated from the 1-hop feature neighbourhood.
         bases = [
@@ -287,20 +243,12 @@ class SheafConnLapPE(BaseTransform):
         k_use = min(self.k, evecs.shape[1])
         evecs = evecs[:, :k_use]  # (nd, k_use)
 
-        # Fix 3: sign canonicalisation for eigenvectors.
-        # np.linalg.eigh is deterministic for fixed input, but the sign of each
-        # eigenvector is arbitrary (both v and -v are valid).  This matters when
-        # comparing PEs across augmented or perturbed graph versions.  We follow
-        # the convention from LapPE: for each eigenvector (viewed as a full
-        # nd-vector), find the entry with the largest absolute value and flip
-        # the sign of the entire vector if that entry is negative.  This gives
-        # a deterministic, canonical orientation for every eigenvector.
         max_abs_idx = np.argmax(np.abs(evecs), axis=0)  # (k_use,)
         signs = np.sign(evecs[max_abs_idx, np.arange(k_use)])  # (k_use,)
         signs[signs == 0] = 1.0  # guard against the (pathological) zero case
         evecs = evecs * signs[np.newaxis, :]  # broadcast
 
-        # ── Step 5: reshape eigenvectors → PE matrix ──────────────────────
+        # Reshape eigenvectors → PE matrix
         # Each eigenvector is (nd,) = (n*d,); reshape to (n, d).
         # Pack k_use such matrices side-by-side → (n, k_use * d).
         pe_np = np.zeros((num_nodes, k_use * d), dtype=np.float64)
@@ -314,10 +262,6 @@ class SheafConnLapPE(BaseTransform):
             pe_np = np.concatenate([pe_np, pad], axis=1)
 
         return torch.from_numpy(pe_np).to(dtype=torch.float32, device=device)
-
-    # ──────────────────────────────────────────────────────────────────────
-    # Internal helpers
-    # ──────────────────────────────────────────────────────────────────────
 
     def _local_pca_basis(
         self,
@@ -338,14 +282,14 @@ class SheafConnLapPE(BaseTransform):
 
         Note: the guard in ``forward`` ensures p >= d before this method is
         called, so the Gram–Schmidt padding loop can always find d - n_comp
-        additional orthogonal vectors in R^p (Fix 1).
+        additional orthogonal vectors in R^p.
 
         Parameters
         ----------
         node_idx : int
             Index of the target node.
         x : np.ndarray
-            Node feature matrix of shape (n, p); guaranteed p >= stalk_dim by Fix 1.
+            Node feature matrix of shape (n, p); guaranteed p >= stalk_dim.
         neighbors : list[int]
             Indices of 1-hop neighbours of node_idx.
 
@@ -362,8 +306,6 @@ class SheafConnLapPE(BaseTransform):
 
         if len(local_idx) < 2:
             # Isolated node: fall back to the first d standard basis vectors.
-            # p >= d is guaranteed by Fix 1, so np.eye(p, d) has full column
-            # rank and no zero columns.
             return np.eye(p, d)
 
         try:
@@ -377,8 +319,7 @@ class SheafConnLapPE(BaseTransform):
             return Vt[:d].T  # (p, d) — top-d principal directions as columns
 
         # Fewer PCA components than d: pad with orthogonal extras via
-        # Gram–Schmidt.  Because p >= d (Fix 1) there are always p - n_comp >= 0
-        # standard basis vectors available to extend the basis to d columns.
+        # Gram–Schmidt.
         basis = np.zeros((p, d))
         basis[:, :n_comp] = Vt.T
         for target_col in range(n_comp, d):
@@ -436,22 +377,12 @@ class SheafConnLapPE(BaseTransform):
             Δ_F = D^{-1/2} L_F D^{-1/2}
         where D is the scalar diagonal of L_F (each entry = deg(v)).
 
-        Fix 4 note — isolated nodes:
-            For isolated nodes, deg(v) = 0 so the diagonal block is the zero
-            matrix, making D^{-1/2} undefined.  We substitute 1.0 for these
-            zero diagonal entries (``diag_safe`` below), which is equivalent to
-            giving isolated nodes a unit self-loop for normalisation purposes.
-            Their rows/columns in L_F remain all-zero (they have no edges), so
-            their eigenvector components are unaffected by this substitution —
-            it only prevents a division-by-zero during normalisation.
-
         Parameters
         ----------
         num_nodes : int
             Number of nodes in the graph.
         adjacency : list[list[int]]
-            Adjacency list where adjacency[v] is the list of neighbours of v,
-            guaranteed undirected by Fix 2.
+            Adjacency list where adjacency[v] is the list of neighbours of v.
         bases : list[np.ndarray]
             PCA bases where bases[v] is B_v of shape (p, stalk_dim).
 
@@ -484,8 +415,6 @@ class SheafConnLapPE(BaseTransform):
 
         # Symmetric normalisation: Δ_F = D^{-1/2} L_F D^{-1/2}
         diag = np.array(L_F.diagonal(), dtype=np.float64)
-        # Fix 4: substitute 1.0 for isolated-node zero diagonal entries so
-        # that D^{-1/2} is defined.  See docstring above for the rationale.
         diag_safe = np.where(np.abs(diag) > 1e-10, diag, 1.0)
         inv_sqrt = 1.0 / np.sqrt(diag_safe)
         D_inv_sqrt = sp_diags(inv_sqrt)
