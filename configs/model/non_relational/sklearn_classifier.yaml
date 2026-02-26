@@ -22,6 +22,7 @@ backbone_wrapper:
   sampler_features: all # {"all", "node", "structural"} Features to use from the sampler
   use_embeddings: True
   num_test_nodes: 1
+  device: ${trainer.devices[0]}
 
 readout:
   _target_: topobench.nn.readouts.${model.readout.readout_name}
