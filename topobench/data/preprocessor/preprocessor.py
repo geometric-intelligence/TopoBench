@@ -9,6 +9,8 @@ from torch_geometric.io import fs
 
 from topobench.data.utils import (
     ensure_serializable,
+    load_edge_inductive_splits,
+    load_edge_transductive_splits,
     load_inductive_splits,
     load_transductive_splits,
     make_hash,
@@ -224,7 +226,7 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             self.data = data_cls.from_dict(data)
 
     def load_dataset_splits(
-        self, split_params
+        self, split_params,
     ) -> tuple[
         DataloadDataset, DataloadDataset | None, DataloadDataset | None
     ]:
@@ -242,6 +244,19 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         """
         if not split_params.get("learning_setting", False):
             raise ValueError("No learning setting specified in split_params")
+        
+        task_level = getattr(split_params, "task_level", None)
+            
+        if task_level == "edge":
+            if split_params.learning_setting == "transductive":
+                return load_edge_transductive_splits(self, split_params)
+            elif split_params.learning_setting == "inductive":
+                return load_edge_inductive_splits(self, split_params)
+            else:
+                raise ValueError(
+                    f"Invalid '{split_params.learning_setting}' for edge-level task. "
+                    "Use 'inductive' or 'transductive'."
+                )
 
         if split_params.learning_setting == "inductive":
             return load_inductive_splits(self, split_params)
