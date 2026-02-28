@@ -33,14 +33,16 @@ utils_functions = [
 from .split_utils import (  # noqa: E402
     load_coauthorship_hypergraph_splits,  # noqa: F401
     load_inductive_splits,  # noqa: F401
-    load_transductive_splits,  # noqa: F401
+    load_inductive_splits_on_disk,  # noqa: F401
     # import function here, add noqa: F401 for PR
+    load_transductive_splits,  # noqa: F401
 )
 
 split_helper_functions = [
     "load_coauthorship_hypergraph_splits",
     "load_inductive_splits",
     "load_transductive_splits",
+    "load_inductive_splits_on_disk",
     # add function name here
 ]
 
