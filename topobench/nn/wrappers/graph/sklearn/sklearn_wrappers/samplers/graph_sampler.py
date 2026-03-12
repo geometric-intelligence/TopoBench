@@ -22,23 +22,28 @@ class GraphHopSampler(BaseSampler):
                 "drop_parity must be one of {None, 'even', 'odd'}"
             )
 
-    def fit(self, X: np.ndarray, y: np.ndarray, **kwargs: Any) -> None:
-        edge_index = kwargs.pop("edge_index", None)
-        train_mask = kwargs.pop("train_mask", None)
-
+    def fit(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        *,
+        edge_index: Optional[np.ndarray] = None,
+        train_mask: Optional[np.ndarray] = None,
+        **kwargs: Any,
+    ) -> None:
         if edge_index is None:
             raise ValueError(
                 "GraphHopSampler requires an edge_index to be provided in fit()."
             )
 
         self.graph = nx.Graph()
-        heads, tails = edge_index
-        self.graph.add_edges_from(zip(heads, tails))
+        heads, tails = edge_index[0], edge_index[1]
+        self.graph.add_edges_from(zip(heads.tolist(), tails.tolist()))
 
         if train_mask is None:
-            raise RuntimeError("train_mask must be provided.")
-
-        self.train_mask = set(train_mask)
+            raise ValueError("GraphHopSampler requires train_mask to be provided in fit().")
+        train_arr = np.asarray(train_mask)
+        self.train_mask = set(np.where(train_arr)[0]) if train_arr.dtype == bool else set(train_arr.flat)
 
     def _sample(
         self, x: np.ndarray, ids: list, **kwargs: Any

@@ -15,13 +15,19 @@ class KNNSampler(BaseSampler):
         self.k = k
         self._nn: Optional[NearestNeighbors] = None
 
-    def fit(self, X: np.ndarray, y: np.ndarray, **kwargs: Any) -> None:
-        self.train_mask = kwargs.pop("train_mask", None)
-        # self.train_mask = np.sort(self.train_mask)
-        if self.train_mask is None:
-            raise RuntimeError(
-                "'train_mask' must be provided in fit() as a keyword arguments."
-            )
+    def fit(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        *,
+        edge_index: Optional[np.ndarray] = None,
+        train_mask: Optional[np.ndarray] = None,
+        **kwargs: Any,
+    ) -> None:
+        if train_mask is None:
+            raise ValueError("KNNSampler requires train_mask to be provided in fit().")
+        train_arr = np.asarray(train_mask)
+        self.train_mask = np.where(train_arr)[0] if train_arr.dtype == bool else train_arr.reshape(-1)
         self._nn = NearestNeighbors(n_neighbors=self.k)
         self._nn.fit(X[self.train_mask])
 

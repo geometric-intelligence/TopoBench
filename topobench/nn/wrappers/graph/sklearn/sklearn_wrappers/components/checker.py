@@ -1,12 +1,25 @@
 from __future__ import annotations
-from typing import Union, Iterable
+
+import logging
+from typing import Union, Iterable, Sequence
+
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 # Names used when a check fails
 FAIL_NO_NEIGHBORS = "no_neighbors"
 FAIL_ALL_CONST = "all_features_constant"
 FAIL_ONE_NEIGHBOR = "one_neighbor"
 FAIL_SAME_Y = "all_the_neighborns_have_same_y"
+
+
+def _to_indices(mask_or_indices: Union[np.ndarray, Iterable[int]]) -> np.ndarray:
+    """Convert boolean mask to indices, or return indices as array."""
+    arr = np.asarray(mask_or_indices)
+    if arr.dtype == bool:
+        return np.where(arr)[0]
+    return arr.reshape(-1)
 
 
 class CheckerError(Exception):
@@ -59,35 +72,41 @@ class Checker:
     def __call__(
         self,
         *,
-        test_ids: Iterable[int],
-        neighbors_id: Iterable[int],
-        val_mask: Iterable[int],
-        test_mask: Iterable[int],
+        test_ids: Sequence[int],
+        neighbors_id: Sequence[int],
+        val_mask: Union[np.ndarray, Iterable[int]],
+        test_mask: Union[np.ndarray, Iterable[int]],
         node_features: np.ndarray,
         labels: np.ndarray,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
-        Execute the checks and return either the non-constant-columns mask or the failed check name.
-        """
+        Execute the checks and return (X_nb, x_test) or raise a typed error.
 
-        # Overlap checks
-        assert set(neighbors_id).isdisjoint(set(val_mask)), (
+        val_mask and test_mask can be boolean arrays (True = included) or index arrays.
+        """
+        val_ids = _to_indices(val_mask)
+        test_ids_arr = _to_indices(test_mask)
+        neighbors_arr = np.asarray(neighbors_id, dtype=np.intp)
+        test_ids_arr_for_index = np.asarray(test_ids, dtype=np.intp)
+
+        # Overlap checks: neighbors must not include any val or test node index
+        assert set(neighbors_arr.flat).isdisjoint(set(val_ids.flat)), (
             "neighbors_id contains indices in val_mask"
         )
-        assert set(neighbors_id).isdisjoint(set(test_mask)), (
+        assert set(neighbors_arr.flat).isdisjoint(set(test_ids_arr.flat)), (
             "neighbors_id contains indices in test_mask"
         )
 
-        y_neighborns = labels[neighbors_id]
+        y_neighborns = labels[neighbors_arr]
 
         # No neighbors
-        if len(neighbors_id) == 0:
+        if len(neighbors_arr) == 0:
             raise NoNeighborsError(FAIL_NO_NEIGHBORS)
 
         # Build neighbor feature matrix
-        X_nb = node_features[neighbors_id]  # shape: (k, d)
-        x_np = node_features[test_ids]  # shape: (num_test_points, d)
-        X = node_features[list(neighbors_id) + list(test_ids)]
+        X_nb = node_features[neighbors_arr]  # shape: (k, d)
+        x_np = node_features[test_ids_arr_for_index]  # shape: (num_test_points, d)
+        X = node_features[np.concatenate([neighbors_arr, test_ids_arr_for_index])]
 
         # Create mask of "valid" columns
         mask = np.all(np.isfinite(X), axis=0)
@@ -98,8 +117,9 @@ class Checker:
 
         nan_columns = np.invert(mask)
         if nan_columns.any():
-            print(
-                f"WARNING: {nan_columns.sum()} COLUMNS CONTAINED NaNs VALUES."
+            logger.warning(
+                "%s columns contained NaN values; those columns were dropped.",
+                int(nan_columns.sum()),
             )
 
         # One neighbor

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
+from typing import Any, Optional, Sequence
+
 import numpy as np
-from typing import Sequence, Optional, Any
-import networkx as nx
 
 
 class BaseSampler(ABC):
@@ -11,7 +11,13 @@ class BaseSampler(ABC):
 
     @abstractmethod
     def fit(
-        self, X: np.ndarray, y: np.ndarray, graph: Optional[nx.Graph] = None
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        *,
+        edge_index: Optional[np.ndarray] = None,
+        train_mask: Optional[np.ndarray] = None,
+        **kwargs: Any,
     ) -> None:
         """
         Fit the sampler on training data.
@@ -22,8 +28,12 @@ class BaseSampler(ABC):
             Training feature matrix.
         y : array-like of shape (n_samples,)
             Training labels.
-        graph : networkx.Graph, optional
-            Optional graph structure for graph-based samplers.
+        edge_index : np.ndarray, optional
+            Edge indices of shape (2, num_edges) for graph-based samplers.
+        train_mask : np.ndarray, optional
+            Boolean mask or indices of training nodes. Required by most samplers.
+        **kwargs : Any
+            Additional sampler-specific arguments.
         """
         pass
 

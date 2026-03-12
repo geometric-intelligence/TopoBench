@@ -1,0 +1,10 @@
+# TabICL classifier backbone (https://github.com/soda-inria/tabicl)
+# pip install tabicl
+_target_: tabicl.TabICLClassifier
+random_state: ${seed}
+# Optional overrides (uncomment as needed):
+# checkpoint: tabicl-classifier-v2-20260212.ckpt  # default TabICLv2
+# device: cuda
+# n_estimators: 8
+# softmax_temperature: 0.9
+# kv_cache: false  # true = faster repeated predict on same train data

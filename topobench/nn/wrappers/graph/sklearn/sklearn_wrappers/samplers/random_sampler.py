@@ -30,14 +30,21 @@ class RandomSampler(BaseSampler):
         self.train_mask: Optional[np.ndarray] = None
         self._rng: Optional[np.random.Generator] = None
 
-    def fit(self, X: np.ndarray, y: np.ndarray, **kwargs: Any) -> None:
-        train_mask = kwargs.pop("train_mask", None)
+    def fit(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        *,
+        edge_index: Optional[np.ndarray] = None,
+        train_mask: Optional[np.ndarray] = None,
+        **kwargs: Any,
+    ) -> None:
         if train_mask is None:
-            raise RuntimeError(
-                "'train_mask' must be provided in fit() as a keyword argument."
-            )
+            raise ValueError("RandomSampler requires train_mask to be provided in fit().")
 
         train_mask = np.asarray(train_mask)
+        if train_mask.dtype == bool:
+            train_mask = np.where(train_mask)[0]
         if train_mask.ndim != 1:
             raise ValueError(f"train_mask must be 1D, got shape {train_mask.shape}")
 

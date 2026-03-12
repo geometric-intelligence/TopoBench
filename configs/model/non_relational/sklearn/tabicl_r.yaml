@@ -1,0 +1,5 @@
+# TabICL regressor backbone (https://github.com/soda-inria/tabicl)
+# pip install tabicl
+_target_: tabicl.TabICLRegressor
+random_state: ${seed}
+# Optional: checkpoint, device, n_estimators, kv_cache
