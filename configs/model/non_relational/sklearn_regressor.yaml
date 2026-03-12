@@ -21,6 +21,7 @@ backbone_wrapper:
   use_embeddings: True
   sampler_features: all # {"all", "node", "structural"} Features to use from the sampler
   num_test_nodes: 1
+  device: ${trainer.devices[0]}
 
 
 readout:

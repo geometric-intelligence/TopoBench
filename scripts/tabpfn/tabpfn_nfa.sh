@@ -92,7 +92,7 @@ for model in "${models[@]}"; do
           done
 
           # ---- build per-run settings ----
-          project_name="graph_tabpfn"
+          project_name="graph_tabpfn_loris"
           log_group="tabular_nfa"
 
           # NFA on/off: aggiunge transforms=nfa solo se richiesto

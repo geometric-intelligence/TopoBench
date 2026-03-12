@@ -75,7 +75,7 @@ Ks=(5 20 50 200)
 ROOT_LOG_DIR="$LOG_DIR"
 run_counter=1
 job_counter=0
-MAX_PARALLEL=1
+MAX_PARALLEL=2
 
 num_datasets=${#datasets[@]}
 
@@ -89,7 +89,7 @@ for model in "${models[@]}"; do
           for random_points in "${Ks[@]}"; do
             for test_points in "${TEST_POINTS[@]}"; do
 
-              project_name="graph_tabpfn"
+              project_name="graph_tabpfn_loris"
               log_group="tabular_nfa"
               sampler_tag="sampler${sampler}"
 
@@ -123,6 +123,7 @@ for model in "${models[@]}"; do
                 "dataset.split_params.split_type=stratified"
                 "train=False"
                 "trainer=gpu"
+                "trainer.devices=[2]"
                 "evaluator=classification_extended"
                 "dataset.split_params.data_seed=${data_seed}"
                 "logger.wandb.project=${project_name}"

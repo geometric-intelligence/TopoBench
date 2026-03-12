@@ -1,3 +1,5 @@
+is everything correct? 
+
 #!/bin/bash
 # ==============================================================================
 # SCRIPT: graph_baselines_master.sh
@@ -15,8 +17,8 @@
 
 # 1.1 Define Project Identifiers
 script_name="$(basename "${BASH_SOURCE[0]}" .sh)"
-project_name="graphland_graph_baselines_binary_classification_${script_name}"
-log_group="sweep_graphland"
+project_name="6Feb26" #"rerun_base_datasets_${script_name}"
+log_group="rerun_base_datasets"
 LOG_DIR="./logs/${log_group}"
 
 echo "=========================================================="
@@ -59,7 +61,7 @@ fi
 
 # 2.1 Configuration
 physical_gpus=(0 1 2 3)  # IDs of the GPUs to use
-JOBS_PER_GPU=1           # Number of parallel runs allowed per GPU
+JOBS_PER_GPU=3           # Number of parallel runs allowed per GPU
 
 # 2.2 Create Virtual Slots (The 'Scheduling Queue')
 # If physical_gpus=(0 1) and JOBS_PER_GPU=2, this creates slots: (0 0 1 1).
@@ -87,14 +89,16 @@ models=(
     "graph/gin"
     "graph/gat"
 )
+# Already done:
+# "graph/tolokers-2"
+# "graph/city-reviews"
+# "graph/artnet-exp"
 
 datasets=(
     # # Node classification datasets
     # "graph/hm-categories"
     # "graph/pokec-regions"
-    "graph/tolokers-2"
-    "graph/city-reviews"
-    "graph/artnet-exp"
+    
     #"graph/web-topics"
     #"graph/web-fraud"
 
@@ -110,13 +114,28 @@ datasets=(
     #graph/hm-prices
     #graph/web-traffic
 
-    # # Reruns
+    # Reruns
+    # DONE
     # "graph/cocitation_cora"
     # "graph/cocitation_citeseer"
     # "graph/cocitation_pubmed"
     # "graph/amazon_ratings"
-    # "graph/questions"
     # "graph/roman_empire"
+    # "graph/questions"
+    # "graph/minesweeper"
+    # # Inductive datasets
+    # "graph/MUTAG"
+    # "graph/NCI1"
+    # TOBE DONE
+    # "graph/NCI109"
+    # "graph/REDDIT-BINARY"
+    # "graph/ZINC"
+    
+    # Graphland (idk if they actually correctly work yet, need to debug)
+    "graph/tolokers-2"
+    "graph/city-reviews"
+    "graph/artnet-exp"
+    "graph/PROTEINS"
 )
 
 # --- Hyperparameters ---
@@ -136,7 +155,7 @@ FIXED_ARGS=(
     "trainer.min_epochs=50"
     "trainer.check_val_every_n_epoch=5"
     "callbacks.early_stopping.patience=10"
-    "logger.wandb.project=${project_name}"
+    # "logger.wandb.project=${project_name}" # This is for static project name.
 )
 
 
@@ -290,11 +309,29 @@ while IFS=";" read -r col1 col2; do
     current_gpu=${gpus[$assigned_slot]}
     read -ra DYNAMIC_ARGS_ARRAY <<< "$dynamic_args_str" # Convert args string to array
     
+    # --- Extract dataset name for dynamic W&B project ---
+    # We look for the argument that starts with 'dataset='
+    dataset_val=""
+    for arg in "${DYNAMIC_ARGS_ARRAY[@]}"; do
+        if [[ $arg == dataset=* ]]; then
+            # Extract 'cora' from 'dataset=graph/cora'
+            dataset_full_path="${arg#*=}"
+            dataset_val=$(basename "$dataset_full_path")
+            break
+        fi
+    done
+
+    # Create the dynamic project name: e.g., rerun_base_datasets_script_cora
+    dynamic_project_name="${project_name}_${dataset_val}"
+    # ---------------------------------------------------------------
+
+
     cmd=(
         "python" "-m" "topobench"
         "${DYNAMIC_ARGS_ARRAY[@]}"
         "${FIXED_ARGS[@]}"
         "trainer.devices=[${current_gpu}]"
+        "logger.wandb.project=${dynamic_project_name}" # This overrides the one in FIXED_ARGS
     )
 
     # 6.6 Execute

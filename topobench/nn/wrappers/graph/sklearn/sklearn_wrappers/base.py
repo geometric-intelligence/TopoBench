@@ -59,7 +59,6 @@ def _build_sampler_features(
                 f"sampler_features='{SAMPLER_FEATURES_NODE}' requires batch['x_0']"
             )
         return batch["x_0"].cpu().numpy().copy()
-
     # structural: all x_* except x_0, in sorted order
     structural_keys = sorted(
         k for k in batch.keys() if k.startswith("x_") and k != "x_0"
@@ -263,7 +262,6 @@ class BaseWrapper(torch.nn.Module, ABC):
         else:
             outputs_tensor = self._predict_with_sampler(
                 batch, node_features, labels, train_mask, val_mask, test_mask
-            )
 
         return self._format_output(batch, outputs_tensor, test_mask, len(labels))
 
