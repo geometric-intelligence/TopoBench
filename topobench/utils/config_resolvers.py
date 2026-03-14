@@ -362,7 +362,7 @@ def infer_in_channels(dataset, transforms):
             # Case when the dataset has no edge attributes
             if feature_lifting == "Concatenation":
                 return_value = [num_features]
-                for i in range(2, transforms[lifting].complex_dim + 1):
+                for i in range(2, transforms[lifting].complex_dim + 2):
                     return_value += [int(return_value[-1]) * i]
 
                 return return_value
@@ -379,7 +379,7 @@ def infer_in_channels(dataset, transforms):
             if not transforms[lifting].preserve_edge_attr:
                 if feature_lifting == "Concatenation":
                     return_value = [num_features[0]]
-                    for i in range(2, transforms[lifting].complex_dim + 1):
+                    for i in range(2, transforms[lifting].complex_dim + 2):
                         return_value += [int(return_value[-1]) * i]
 
                     return return_value
