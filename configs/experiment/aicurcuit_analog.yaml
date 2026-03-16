@@ -1,0 +1,23 @@
+
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=aicurcuit_analog
+
+defaults:
+  - override /dataset: graph/aicurcuit_analog
+  - override /model: hypergraph/unignn
+  - override /callbacks: default
+  - override /trainer: default
+
+tags: ["gat", "aicurcuit_analog"]
+
+seed: 42
+
+trainer:
+  min_epochs: 50
+  max_epochs: 100
+  gradient_clip_val: 0.1
+
+model:
+  compile: false
