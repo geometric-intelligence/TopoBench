@@ -1,0 +1,33 @@
+loader:
+  _target_: topobench.data.loaders.graph.ogbn_dataset_loader.OGBNDatasetLoader
+  parameters:
+    data_domain: graph
+    data_type: OGBNDataset
+    data_name: ogbn-products
+    data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+
+# Dataset parameters
+parameters:
+  num_features: 100
+  num_classes: 47
+  task: classification
+  loss_type: cross_entropy
+  monitor_metric: accuracy
+  task_level: node
+
+# Split parameters
+split_params:
+  learning_setting: transductive
+  data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}
+  split_type: random #'k-fold' # either "k-fold" or "random" strategies
+  data_seed: 0
+  k: 10 # for "k-fold" Cross-Validation
+  train_prop: 0.5 # for "random" strategy splitting
+
+# Dataloader parameters
+dataloader_params:
+  batch_size: 1
+  num_workers: 1
+  pin_memory: False
+
+

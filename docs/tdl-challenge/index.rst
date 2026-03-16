@@ -278,7 +278,7 @@ Requirements for Mission A (Categories A1 and A2)
    b. Define a class ``{Name}DatasetLoader`` implementing ``load_dataset()`` that loads
       the entire dataset (optionally with pre-defined splits).
 
-   c. This class must inherit from ``data.loaders.base.AbstractLoader``.
+   c. This class must inherit from ``topobench.data.loaders.base.AbstractLoader``.
 
 2. *(Only if necessary)* ``{name}_dataset.py`` **or** ``{name}_datasets.py``
 
