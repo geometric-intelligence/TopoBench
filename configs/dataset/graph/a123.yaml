@@ -23,7 +23,6 @@ loader:
     is_undirected: True
     num_channels: ${dataset.parameters.num_features} # Use num_features for node feature dim
     num_classes: ${dataset.parameters.num_classes} # Use num_classes for output dim
-    task: ${dataset.parameters.task} # Use task type from dataset config
 
 # Dataset-specific parameters
 parameters:
