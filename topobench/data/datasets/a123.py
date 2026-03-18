@@ -190,7 +190,9 @@ class A123CortexMDataset(InMemoryDataset):
         os.unlink(path)
 
         # Move files from extracted "Auditory cortex data/" directory to raw_dir
-        downloaded_dir = osp.join(folder, self.name)
+        downloaded_dir = osp.join(folder, dataset_key)
+        if not osp.exists(downloaded_dir):
+            downloaded_dir = osp.join(folder, dataset_key.replace(" ", "_"))
         if osp.exists(downloaded_dir):
             for file in os.listdir(downloaded_dir):
                 src = osp.join(downloaded_dir, file)
@@ -320,13 +322,9 @@ class A123CortexMDataset(InMemoryDataset):
                 edge_index = torch.tensor(edge_index_np, dtype=torch.long)
                 # make undirected
                 edge_index = to_undirected(edge_index)
-                # edge_attr: corresponding corr weights (for both directions, if made undirected)
-                weights = corr[rows, cols]
-                weights = (
-                    np.repeat(weights, 2)
-                    if edge_index.size(1) == weights.size * 2
-                    else weights
-                )
+                # Align edge weights with the final (possibly sorted) edge order.
+                edge_index_np = edge_index.cpu().numpy()
+                weights = corr[edge_index_np[0], edge_index_np[1]]
                 edge_attr = torch.tensor(
                     weights.reshape(-1, 1), dtype=torch.float
                 )

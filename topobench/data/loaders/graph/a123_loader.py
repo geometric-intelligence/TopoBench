@@ -91,9 +91,8 @@ class A123DatasetLoader(AbstractLoader):
         # determine dataset name from parameters, fallback to expected id
         name = self.parameters.data_name
 
-        # root path for dataset: use the parent of root_data_dir since the dataset
-        # constructs its own subdirectory based on name
-        root = str(self.root_data_dir.parent)
+        # root path for dataset: align with AbstractLoader.get_data_dir().
+        root = str(self.root_data_dir)
 
         # Construct dataset; A123CortexMDataset expects (root, name, parameters)
         self.dataset = A123CortexMDataset(
