@@ -214,7 +214,7 @@ def check_pses_in_transforms(transforms):
                 added_features += transforms.get("max_pe_dim") * 2
             else:
                 added_features += transforms.get("max_pe_dim")
-        elif transform == "RWSE":
+        elif transform == "RWSE" or transform == "SheafConnLapPE":
             added_features += transforms.get("max_pe_dim")
     # Potentially multiple transforms
     for key in transforms:
@@ -253,7 +253,7 @@ def check_pses_in_transforms(transforms):
                 added_features += transforms[key].get("max_pe_dim") * 2
             else:
                 added_features += transforms[key].get("max_pe_dim")
-        elif "RWSE" in key:
+        elif "RWSE" in key or "SheafConnLapPE" in key:
             added_features += transforms[key].get("max_pe_dim")
 
     return added_features
@@ -386,7 +386,9 @@ def infer_in_channels(dataset, transforms):
 
                 else:
                     # ProjectionSum feature lifting by default
-                    return [num_features[0]] * (transforms[lifting].complex_dim + 1)
+                    return [num_features[0]] * (
+                        transforms[lifting].complex_dim + 1
+                    )
             # If preserve_edge_attr == True
             else:
                 return list(num_features) + [num_features[1]] * (
@@ -419,7 +421,12 @@ def infer_in_channels(dataset, transforms):
             return [num_features]
 
         else:
-            return [num_features[0]]
+            pe_features = (
+                check_pses_in_transforms(transforms)
+                if transforms is not None
+                else 0
+            )
+            return [num_features[0] + pe_features]
 
     # This else is never executed
     else:
