@@ -1,6 +1,0 @@
-defaults:
-  - data_manipulations@redefine_simplicial_neighborhoods: redefine_simplicial_neighborhoods
-  - data_manipulations@hopse_encoding: add_gpse_information
-
-redefine_simplicial_neighborhoods:
-  signed: True
