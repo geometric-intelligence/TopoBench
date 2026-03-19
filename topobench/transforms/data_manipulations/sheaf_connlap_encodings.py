@@ -77,7 +77,7 @@ class SheafConnLapPE(BaseTransform):
         ``eps`` (the trivial zero-eigenvectors / global sections of the sheaf).
     concat_to_x : bool, optional
         If True (default), concatenates the PE with ``data.x``.
-        If False, stores it as ``data.SheafPE`` instead.
+        If False, stores it as ``data.SheafConnLapPE`` instead.
     eps : float, optional
         Threshold below which eigenvalues are considered trivial. Default 1e-6.
     **kwargs
@@ -119,7 +119,7 @@ class SheafConnLapPE(BaseTransform):
         -------
         Data
             Graph with PE concatenated to ``data.x`` (``concat_to_x=True``)
-            or stored in ``data.SheafPE`` (``concat_to_x=False``).
+            or stored in ``data.SheafConnLapPE`` (``concat_to_x=False``).
 
         Raises
         ------
@@ -152,7 +152,7 @@ class SheafConnLapPE(BaseTransform):
         if self.concat_to_x:
             data.x = torch.cat([data.x, pe], dim=-1)
         else:
-            data.SheafPE = pe
+            data.SheafConnLapPE = pe
 
         return data
 

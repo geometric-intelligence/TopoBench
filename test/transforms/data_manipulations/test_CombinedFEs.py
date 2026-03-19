@@ -120,7 +120,7 @@ class TestCombinedFEs:
         assert torch.equal(transformed.x, self.x)
 
     def test_encoding_order(self):
-        """Test that encodings are applied in the specified order."""
+        """Test that encodings are concatenated in the specified order."""
         params = {
             "HKFE": {"kernel_param_HKFE": (1, 3), "concat_to_x": True},
             "KHopFE": {"max_hop": 3, "concat_to_x": True}
@@ -136,11 +136,25 @@ class TestCombinedFEs:
         data2 = Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
         transformed2 = transform2(data2)
 
-        # With fixed-dimension output, shapes are the same but values differ
-        # Order matters because encodings aggregate over current features which change
+        # Shapes should be the same
         assert transformed1.x.shape == transformed2.x.shape
-        # Values should still differ due to order of diffusion/propagation
+
+        # Original features should be the same (first column)
+        assert torch.allclose(transformed1.x[:, :1], transformed2.x[:, :1])
+
+        # The encoding values differ in position due to concatenation order:
+        # Order 1: [x, HKFE (2 cols), KHopFE (2 cols)]
+        # Order 2: [x, KHopFE (2 cols), HKFE (2 cols)]
+        # So the full tensors should not be equal
         assert not torch.allclose(transformed1.x, transformed2.x)
+
+        # But the HKFE columns in order1 should match HKFE columns in order2
+        # (both computed on original features)
+        hkfe_dim = 2  # kernel_param (1, 3) -> 2 dimensions
+        khop_dim = 2  # max_hop 3 -> 2 dimensions
+        hkfe_order1 = transformed1.x[:, 1:1+hkfe_dim]
+        hkfe_order2 = transformed2.x[:, 1+khop_dim:1+khop_dim+hkfe_dim]
+        assert torch.allclose(hkfe_order1, hkfe_order2)
 
     def test_empty_encodings_list(self):
         """Test transform with empty encodings list."""
@@ -498,21 +512,50 @@ class TestCombinedFEs:
 
         assert transformed.x.shape == (3, 1 + (max_hop - 1))  # fixed dimension output
 
-    def test_duplicate_encodings_in_list(self):
-        """Test behavior when the same encoding appears multiple times."""
+    def test_encodings_use_original_features(self):
+        """Test that all encodings are computed on original features, not modified ones."""
         params = {
-            "HKFE": {"kernel_param_HKFE": (1, 5), "concat_to_x": True}
+            "HKFE": {"kernel_param_HKFE": (1, 5), "concat_to_x": True},
+            "KHopFE": {"max_hop": 4, "concat_to_x": True}
         }
-        # Apply HKFE twice
-        transform = CombinedFEs(encodings=["HKFE", "HKFE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
 
-        transformed = transform(data)
+        # Compute HKFE alone
+        transform_hkfe = CombinedFEs(
+            encodings=["HKFE"],
+            parameters={"HKFE": {"kernel_param_HKFE": (1, 5), "concat_to_x": False}}
+        )
+        data_hkfe = transform_hkfe(Data(
+            x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes
+        ))
+        hkfe_alone = data_hkfe.HKFE.clone()
 
-        # Both applications should concatenate (fixed dimension output)
-        # First HKFE: 1 + 4 = 5 features
-        # Second HKFE: 5 + 4 = 9 features (fixed dimension, not multiplied)
-        assert transformed.x.shape == (3, 1 + 4 + 4)
+        # Compute KHopFE alone
+        transform_khop = CombinedFEs(
+            encodings=["KHopFE"],
+            parameters={"KHopFE": {"max_hop": 4, "concat_to_x": False}}
+        )
+        data_khop = transform_khop(Data(
+            x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes
+        ))
+        khop_alone = data_khop.KHopFE.clone()
+
+        # Compute both together
+        transform_both = CombinedFEs(encodings=["HKFE", "KHopFE"], parameters=params)
+        data_both = Data(
+            x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
+        transformed = transform_both(data_both)
+
+        # Extract the encoding portions from the combined result
+        # Shape: [original (1), HKFE (4), KHopFE (3)]
+        hkfe_combined = transformed.x[:, 1:5]
+        khop_combined = transformed.x[:, 5:8]
+
+        # Both should match their standalone versions
+        assert torch.allclose(hkfe_combined, hkfe_alone), \
+            "HKFE encoding differs when combined vs standalone"
+        assert torch.allclose(khop_combined, khop_alone), \
+            "KHopFE encoding differs when combined vs standalone"
 
     def test_complete_graph(self):
         """Test combined encodings on a complete graph."""
@@ -746,8 +789,8 @@ class TestCombinedFEs:
 
         transformed = transform(data)
 
-        assert hasattr(transformed, "SheafPE")
-        assert transformed.SheafPE.shape == (3, 6)
+        assert hasattr(transformed, "SheafConnLapPE")
+        assert transformed.SheafConnLapPE.shape == (3, 6)
         # Original features unchanged
         assert transformed.x.shape == (3, 5)
 
@@ -763,7 +806,7 @@ class TestCombinedFEs:
 
         transformed = transform(data)
 
-        # Original 5 + HKFE 4 + SheafPE 6 = 15
+        # Original 5 + HKFE 4 + SheafConnLapPE 6 = 15
         assert transformed.x.shape == (3, 5 + 4 + 6)
         assert not torch.isnan(transformed.x).any()
 
@@ -779,7 +822,7 @@ class TestCombinedFEs:
 
         transformed = transform(data)
 
-        # Original 5 + KHopFE 3 + SheafPE 6 = 14
+        # Original 5 + KHopFE 3 + SheafConnLapPE 6 = 14
         assert transformed.x.shape == (3, 5 + 3 + 6)
         assert not torch.isnan(transformed.x).any()
 
@@ -799,7 +842,7 @@ class TestCombinedFEs:
 
         transformed = transform(data)
 
-        # Original 5 + HKFE 4 + KHopFE 3 + SheafPE 6 = 18
+        # Original 5 + HKFE 4 + KHopFE 3 + SheafConnLapPE 6 = 18
         assert transformed.x.shape == (3, 5 + 4 + 3 + 6)
         assert not torch.isnan(transformed.x).any()
         assert not torch.isinf(transformed.x).any()
@@ -822,10 +865,10 @@ class TestCombinedFEs:
 
         assert hasattr(transformed, "HKFE")
         assert hasattr(transformed, "KHopFE")
-        assert hasattr(transformed, "SheafPE")
+        assert hasattr(transformed, "SheafConnLapPE")
         assert transformed.HKFE.shape == (3, 4)
         assert transformed.KHopFE.shape == (3, 3)
-        assert transformed.SheafPE.shape == (3, 6)
+        assert transformed.SheafConnLapPE.shape == (3, 6)
         # Original features unchanged
         assert transformed.x.shape == (3, 5)
 
@@ -889,8 +932,8 @@ class TestCombinedFEs:
 
         transformed = transform(data)
 
-        assert hasattr(transformed, "SheafPE")
-        assert transformed.SheafPE.shape == (3, max_pe_dim)
+        assert hasattr(transformed, "SheafConnLapPE")
+        assert transformed.SheafConnLapPE.shape == (3, max_pe_dim)
 
     def test_sheaf_on_larger_graph(self):
         """Test SheafConnLapPE on a larger graph."""
@@ -971,4 +1014,4 @@ class TestCombinedFEs:
 
         transformed = transform(data)
 
-        assert transformed.SheafPE.dtype == torch.float32
+        assert transformed.SheafConnLapPE.dtype == torch.float32

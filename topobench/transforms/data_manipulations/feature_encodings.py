@@ -37,6 +37,11 @@ class CombinedFEs(BaseTransform):
     def forward(self, data: Data) -> Data:
         r"""Apply the transform to the input data.
 
+        All encodings are computed on the original features first, then
+        those with concat_to_x=True are concatenated at the end. This
+        ensures each encoding sees the original features, not features
+        modified by previous encodings.
+
         Parameters
         ----------
         data : torch_geometric.data.Data
@@ -47,26 +52,56 @@ class CombinedFEs(BaseTransform):
         torch_geometric.data.Data
             The transformed data with added feature encodings.
         """
+        import torch
+
         from topobench.transforms.data_manipulations import (
             HKFE,
             KHopFE,
             SheafConnLapPE,
         )
 
+        encoding_classes = {
+            "HKFE": HKFE,
+            "KHopFE": KHopFE,
+            "SheafConnLapPE": SheafConnLapPE,
+        }
+
+        # Track encoding results: list of (enc_name, tensor, should_concat)
+        encoding_results = []
+
         for enc in self.encodings:
-            if enc == "HKFE":
-                hkfe = HKFE(**self.parameters.get("HKFE", {}))
-                data = hkfe(data)
-            elif enc == "KHopFE":
-                khopfe = KHopFE(**self.parameters.get("KHopFE", {}))
-                data = khopfe(data)
-            elif enc == "SheafConnLapPE":
-                shfes = SheafConnLapPE(
-                    **self.parameters.get("SheafConnLapPE", {})
-                )
-                data = shfes(data)
-            else:
+            if enc not in encoding_classes:
                 raise ValueError(f"Unsupported encoding type: {enc}")
+
+            # Get user params and check if they want concat_to_x
+            user_params = self.parameters.get(enc, {}).copy()
+            should_concat = user_params.pop("concat_to_x", True)
+
+            # Force separate storage during computation
+            user_params["concat_to_x"] = False
+
+            # Apply encoding
+            encoder = encoding_classes[enc](**user_params)
+            data = encoder(data)
+
+            # Get the encoding result and remove temporary attribute
+            encoding_tensor = getattr(data, enc)
+            delattr(data, enc)
+
+            encoding_results.append((enc, encoding_tensor, should_concat))
+
+        # Store results and build concatenation list
+        tensors_to_concat = [data.x] if data.x is not None else []
+
+        for enc_name, tensor, should_concat in encoding_results:
+            if should_concat:
+                tensors_to_concat.append(tensor)
+            else:
+                setattr(data, enc_name, tensor)
+
+        # Concatenate all encodings that had concat_to_x=True
+        if len(tensors_to_concat) > 1:
+            data.x = torch.cat(tensors_to_concat, dim=-1)
 
         return data
 
