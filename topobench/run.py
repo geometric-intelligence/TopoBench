@@ -228,10 +228,11 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
 
     train_metrics = trainer.callback_metrics
 
+    test_metrics: dict[str, Any] = {}
     if cfg.get("test"):
         log.info("Starting testing!")
 
-        rerun_best_model_checkpoint(
+        test_metrics = rerun_best_model_checkpoint(
             checkpoint_model=model,
             cfg=cfg,
             datamodule=datamodule,
@@ -241,7 +242,7 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
         )
 
     # Merge train and test metrics
-    metric_dict = {**train_metrics}
+    metric_dict = {**train_metrics, **test_metrics}
 
     return metric_dict, object_dict
 
@@ -253,7 +254,7 @@ def rerun_best_model_checkpoint(
     device: torch.device,
     callbacks: list[Callback],
     logger: list[Logger],
-) -> None:
+) -> dict[str, Any]:
     """Rerun the best model checkpoint on validation and test datasets to log final metrics.
 
     This function iterates through the callbacks to locate the `ModelCheckpoint`, loads the
@@ -276,19 +277,33 @@ def rerun_best_model_checkpoint(
     logger : list[Logger]
         A list of loggers (e.g., WandbLogger) to record the re-run metrics.
     """
-    for callback in callbacks:
-        if isinstance(callback, ModelCheckpoint):
+    rerun_metrics: dict[str, Any] = {}
+    checkpoint_callback = next(
+        (callback for callback in callbacks if isinstance(callback, ModelCheckpoint)),
+        None,
+    )
+
+    if checkpoint_callback is None:
+        log.warning(
+            "ModelCheckpoint callback not found! Using current weights for testing..."
+        )
+    elif checkpoint_callback.best_model_path == "":
+        log.warning("Best ckpt not found! Using current weights for testing...")
+    else:
+        model_path = Path(checkpoint_callback.best_model_path)
+        if model_path.is_file():
             log.info(
-                f"Loading best model from checkpoint at {callback.best_model_path}"
+                f"Loading best model from checkpoint at {checkpoint_callback.best_model_path}"
             )
-            model_path = Path(callback.best_model_path)
             ckpt = torch.load(
                 model_path, map_location="cpu", weights_only=False
             )
-
             checkpoint_model.load_state_dict(ckpt["state_dict"], strict=True)
             checkpoint_model.to(device)
-            break  # there is only one checkpoint callback
+        else:
+            log.warning(
+                "Best ckpt path does not point to a file! Using current weights for testing..."
+            )
 
     # New trainer to log final metrics on validation set
     # Because wandb displays validation metrics from the final, not the best epoch.
@@ -307,10 +322,12 @@ def rerun_best_model_checkpoint(
         model=checkpoint_model, dataloaders=val_loader
     )
     if results:
+        rerun_metrics.update(results[0])
         logged = {}
         for k, v in results[0].items():
             suffix = k.split("/", 1)[1] if "/" in k else k
             logged[f"val_best_rerun/{suffix}"] = v
+        rerun_metrics.update(logged)
         log.info(logged)
         for lgr in logger:
             if isinstance(lgr, WandbLogger):
@@ -322,14 +339,18 @@ def rerun_best_model_checkpoint(
         model=checkpoint_model, dataloaders=test_loader
     )
     if results:
+        rerun_metrics.update(results[0])
         logged = {}
         for k, v in results[0].items():
             suffix = k.split("/", 1)[1] if "/" in k else k
             logged[f"test_best_rerun/{suffix}"] = v
+        rerun_metrics.update(logged)
         log.info(logged)
         for lgr in logger:
             if isinstance(lgr, WandbLogger):
                 lgr.log_metrics(logged)
+
+    return rerun_metrics
 
 
 def count_number_of_parameters(
