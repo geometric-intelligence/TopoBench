@@ -590,7 +590,6 @@ class TestCombinedPSEs:
         assert transformed.HKdiagSE.shape == (3, 4)
         assert torch.equal(transformed.x, self.x)
 
-
     def test_all_four_encodings_combined(self):
         """Test transform with all four encoding types combined."""
         params = {
