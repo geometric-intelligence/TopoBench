@@ -1,2 +1,0 @@
-defaults:
-  - data_manipulations@hopse_encoding: precompute_khop_features
