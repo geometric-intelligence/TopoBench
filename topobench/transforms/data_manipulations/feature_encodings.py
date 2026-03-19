@@ -9,15 +9,16 @@ class CombinedFEs(BaseTransform):
     Combined FEs transform.
 
     Applies one or more pre-defined feature encoding transforms
-    (KHopFE, HKFE) to a graph, storing their outputs and optionally
-    concatenating them to `data.x`.
+    (KHopFE, HKFE, SheafConnLapPE) to a graph, storing their outputs
+    and optionally concatenating them to `data.x`.
 
     Parameters
     ----------
     encodings : list of str
         List of feature encodings to apply. Supported values are
-        "KHopFE" for K-hop Feature Encoding and "HKFE" for
-        Heat Kernel Feature Encoding.
+        "KHopFE" for K-hop Feature Encoding, "HKFE" for Heat Kernel
+        Feature Encoding, and "SheafConnLapPE" for Sheaf Connection
+        Laplacian Positional Encoding.
     parameters : dict, optional
         Additional parameters for the encoding transforms.
     **kwargs : dict, optional
@@ -49,6 +50,7 @@ class CombinedFEs(BaseTransform):
         from topobench.transforms.data_manipulations import (
             HKFE,
             KHopFE,
+            SheafConnLapPE,
         )
 
         for enc in self.encodings:
@@ -58,6 +60,11 @@ class CombinedFEs(BaseTransform):
             elif enc == "KHopFE":
                 khopfe = KHopFE(**self.parameters.get("KHopFE", {}))
                 data = khopfe(data)
+            elif enc == "SheafConnLapPE":
+                shfes = SheafConnLapPE(
+                    **self.parameters.get("SheafConnLapPE", {})
+                )
+                data = shfes(data)
             else:
                 raise ValueError(f"Unsupported encoding type: {enc}")
 
