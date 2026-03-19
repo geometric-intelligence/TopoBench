@@ -23,18 +23,30 @@ class HKFE(BaseTransform):
     concat_to_x : bool, optional
         If True, concatenates the encodings with existing node features in
         ``data.x``. If ``data.x`` is None, creates it. Default is True.
+    aggregation : str, optional
+        Aggregation function to reduce over the feature dimension.
+        Options: "mean", "sum", "max", "min". Default is "mean".
     **kwargs : dict
         Additional arguments (not used).
     """
+
+    _AGG_FN_MAP = {"mean": "mean", "sum": "sum", "max": "amax", "min": "amin"}
 
     def __init__(
         self,
         kernel_param_HKFE: tuple,
         concat_to_x: bool = True,
+        aggregation: str = "mean",
         **kwargs,
     ):
         self.kernel_param_HKFE = kernel_param_HKFE
         self.concat_to_x = concat_to_x
+        if aggregation not in self._AGG_FN_MAP:
+            raise ValueError(
+                f"Unknown aggregation '{aggregation}'. "
+                f"Choose from: {list(self._AGG_FN_MAP.keys())}"
+            )
+        self.aggregation = aggregation
         # Compute fe_dim from tuple/list or use directly if int
         if (
             isinstance(kernel_param_HKFE, (list, tuple))
@@ -123,7 +135,8 @@ class HKFE(BaseTransform):
             hk_fe.append(torch.from_numpy(x_t).float().to(device))
         hk_fe = torch.stack(hk_fe, dim=1)  # [N, fe_dim, F]
         # Aggregate over features to produce fixed-dimension output (like PSEs)
-        hk_fe = hk_fe.mean(dim=-1)  # [N, fe_dim]
+        agg_fn = getattr(hk_fe, self._AGG_FN_MAP[self.aggregation])
+        hk_fe = agg_fn(dim=-1)  # [N, fe_dim]
 
         if torch.any(torch.isnan(hk_fe)):
             raise ValueError("HKFE contains NaNs")

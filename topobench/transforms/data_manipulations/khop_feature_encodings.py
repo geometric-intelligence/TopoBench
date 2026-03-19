@@ -17,20 +17,32 @@ class KHopFE(BaseTransform):
     concat_to_x : bool, optional
         If True, concatenates the encodings with existing node features in
         ``data.x``. If ``data.x`` is None, creates it. Default is True.
+    aggregation : str, optional
+        Aggregation function to reduce over the feature dimension.
+        Options: "mean", "sum", "max", "min". Default is "mean".
     **kwargs : dict
         Additional arguments (not used).
     """
+
+    _AGG_FN_MAP = {"mean": "mean", "sum": "sum", "max": "amax", "min": "amin"}
 
     def __init__(
         self,
         max_hop: int,
         concat_to_x: bool = True,
+        aggregation: str = "mean",
         **kwargs,
     ):
         self.concat_to_x = concat_to_x
         self.max_hop = (
             max_hop - 1
         )  # The 0-th hop is always the features themselves
+        if aggregation not in self._AGG_FN_MAP:
+            raise ValueError(
+                f"Unknown aggregation '{aggregation}'. "
+                f"Choose from: {list(self._AGG_FN_MAP.keys())}"
+            )
+        self.aggregation = aggregation
 
     def forward(self, data: Data) -> Data:
         """Compute the K-hop feature encodings for the input graph.
@@ -101,5 +113,6 @@ class KHopFE(BaseTransform):
             khop_fe.append(x)
         khop_fe = torch.stack(khop_fe, dim=1)  # [N, max_hop, F]
         # Aggregate over features to produce fixed-dimension output (like PSEs)
-        khop_fe = khop_fe.mean(dim=-1)  # [N, max_hop]
+        agg_fn = getattr(khop_fe, self._AGG_FN_MAP[self.aggregation])
+        khop_fe = agg_fn(dim=-1)  # [N, max_hop]
         return khop_fe.float()
