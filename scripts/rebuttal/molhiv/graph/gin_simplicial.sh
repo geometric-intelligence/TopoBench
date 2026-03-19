@@ -63,8 +63,8 @@ for i in {0..7}; do
             logger.wandb.project=$project_name\
             optimizer.parameters.lr=0.001\
             optimizer.parameters.weight_decay=0.0\
-            transforms.sann_encoding.pe_types=[$pe_type]\
-            transforms.sann_encoding.neighborhoods=${neighborhoods[0]}\
+            transforms.hopse_encoding.pe_types=[$pe_type]\
+            transforms.hopse_encoding.neighborhoods=${neighborhoods[0]}\
             transforms.graph2simplicial_lifting.neighborhoods=${neighborhood[0]}\
             model.feature_encoder.use_atom_encoder=True\
             model.feature_encoder.use_bond_encoder=True\
@@ -100,8 +100,8 @@ for i in {0..7}; do
                 logger.wandb.project=$project_name\
                 optimizer.parameters.lr=$LEARNING_RATES_STR\
                 optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
-                transforms.sann_encoding.pe_types=[$pe_type]\
-                transforms.sann_encoding.neighborhoods=${neighborhoods[0]}\
+                transforms.hopse_encoding.pe_types=[$pe_type]\
+                transforms.hopse_encoding.neighborhoods=${neighborhoods[0]}\
                 transforms.graph2simplicial_lifting.neighborhoods=${neighborhoods[0]}\
                 model.feature_encoder.use_atom_encoder=True\
                 model.feature_encoder.use_bond_encoder=True\

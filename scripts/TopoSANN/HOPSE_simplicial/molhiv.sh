@@ -71,7 +71,7 @@ for i in {0..7}; do
     python topobench/run.py\
         dataset=graph/$dataset\
         model=simplicial/hopse_m\
-        model.readout.readout_name=SANNReadout\
+        model.readout.readout_name=HOPSEReadout\
         model.backbone.n_layers=1\
         model.feature_encoder.out_channels=128\
         model.feature_encoder.proj_dropout=0.5\
@@ -87,7 +87,7 @@ for i in {0..7}; do
         logger.wandb.project='prerun'\
         optimizer.parameters.lr=0.01\
         optimizer.parameters.weight_decay=0.25\
-        transforms.sann_encoding.neighborhoods=$neighborhood\
+        transforms.hopse_encoding.neighborhoods=$neighborhood\
         transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
         --multirun &
         sleep 5
@@ -105,7 +105,7 @@ for i in {0..7}; do
         python topobench/run.py\
             dataset=graph/$dataset\
             model=simplicial/hopse_m\
-            model.readout.readout_name=SANNReadout\
+            model.readout.readout_name=HOPSEReadout\
             model.backbone.n_layers=$N_LAYERS_STR\
             model.feature_encoder.out_channels=$OUT_CHANNELS_STR\
             model.feature_encoder.proj_dropout=$PROJECTION_DROPOUTS_STR\
@@ -121,7 +121,7 @@ for i in {0..7}; do
             logger.wandb.project=$project_name\
             optimizer.parameters.lr=$LEARNING_RATES_STR\
             optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
-            transforms.sann_encoding.neighborhoods=$neighborhood\
+            transforms.hopse_encoding.neighborhoods=$neighborhood\
             transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
             --multirun &
     done

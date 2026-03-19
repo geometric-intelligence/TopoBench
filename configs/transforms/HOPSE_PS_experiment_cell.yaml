@@ -1,8 +1,8 @@
 defaults:
   - liftings@_here_: graph2cell_default
-  - data_manipulations@sann_encoding: hopse_ps_information
+  - data_manipulations@hopse_encoding: hopse_ps_information
 #liftings@_here_: ${get_required_lifting:${dataset},${model}}
-sann_encoding:
+hopse_encoding:
   # Different PS have different sizes, need to unify them. 
   target_pe_dim: 20
 

@@ -13,7 +13,7 @@ class SANNOnlineFeatureEncoder(AbstractFeatureEncoder):
     r"""Encoder class to apply SimpleEncoder.
 
     The SimpleEncoder is applied to the features of each cell
-    according to a simp
+    according to a simple MLP.
 
     Parameters
     ----------

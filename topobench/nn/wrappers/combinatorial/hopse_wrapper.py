@@ -1,10 +1,10 @@
-"""Wrapper for the SANN model."""
+"""Wrapper for the HOPSE model."""
 
 from topobench.nn.wrappers.base import AbstractWrapper
 
 
-class SANNWrapper(AbstractWrapper):
-    r"""Wrapper for the SANN.
+class HOPSEWrapper(AbstractWrapper):
+    r"""Wrapper for the HOPSE.
 
     Parameters
     ----------
@@ -40,7 +40,7 @@ class SANNWrapper(AbstractWrapper):
         return model_out
 
     def forward(self, batch):
-        """Forward pass of the SANN.
+        """Forward pass of the HOPSE.
 
         Parameters
         ----------
@@ -73,6 +73,6 @@ class SANNWrapper(AbstractWrapper):
         for cell_idx in range(self.complex_dim + 1):
             for hop_idx in range(
                 self.max_hop
-            ):  # when I run sann_classic range(max_hop_dim) but when I run sann_zero range(max_hop_dim + 1)
+            ):  # when I run HOPSE_classic range(max_hop_dim) but when I run HOPSE_zero range(max_hop_dim + 1)
                 model_out[f"x{cell_idx}_{hop_idx}"] = x_out[cell_idx][hop_idx]
         return model_out

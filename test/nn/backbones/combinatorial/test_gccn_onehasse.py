@@ -436,23 +436,19 @@ def create_special_batch():
 
 def test_valueerror_in_all_nbhds_expand_missing_neighborhood_key():
     """
-    Trigger a ValueError by passing a neighborhood type that leads to an unsupported condition.
+    Trigger an error by passing a neighborhood type that get_routes_from_neighborhoods rejects.
     """
-    batch = create_special_batch()
     gnn = MockGNNWithLinear(8, 16, 8)
-    # Suppose 'down_laplacian-2' is not recognized by the code, or leads to a raise.
     neighborhoods = OmegaConf.create(["down_laplacian-2"])
 
-    model = TopoTune_OneHasse(
-        GNN=gnn,
-        neighborhoods=neighborhoods,
-        layers=1,
-        use_edge_attr=True,
-        activation="relu",
-    )
-
-    with pytest.raises(AttributeError, match="GlobalStorage' object has no attribute 'down_laplacian-2"):
-        model(batch)
+    with pytest.raises(Exception, match="Invalid neighborhood down_laplacian-2"):
+        TopoTune_OneHasse(
+            GNN=gnn,
+            neighborhoods=neighborhoods,
+            layers=1,
+            use_edge_attr=True,
+            activation="relu",
+        )
 
 
 def test_aggregate_inter_nbhd_index_error(mocker):

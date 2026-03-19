@@ -83,9 +83,9 @@ gpus=(0 1 2 3 4 5 6 7)
             optimizer.parameters.weight_decay=0.25\
             callbacks.early_stopping.patience=10\
             transforms=GPSE_mantra\
-            transforms.sann_encoding.pretrain_model=$PRETRAIN_MODELS_STR\
-            transforms.sann_encoding.copy_initial=True\
-            transforms.sann_encoding.neighborhoods=$neighborhood\
+            transforms.hopse_encoding.pretrain_model=$PRETRAIN_MODELS_STR\
+            transforms.hopse_encoding.copy_initial=True\
+            transforms.hopse_encoding.neighborhoods=$neighborhood\
             transforms.redefine_simplicial_neighborhoods.neighborhoods=$neighborhood\
             --multirun &
     done
@@ -117,9 +117,9 @@ gpus=(0 1 2 3 4 5 6 7)
                     optimizer.parameters.weight_decay=$wd\
                     callbacks.early_stopping.patience=10\
                     transforms=GPSE_mantra\
-                    transforms.sann_encoding.pretrain_model=$PRETRAIN_MODELS_STR\
-                    transforms.sann_encoding.copy_initial=True\
-                    transforms.sann_encoding.neighborhoods=$neighborhood\
+                    transforms.hopse_encoding.pretrain_model=$PRETRAIN_MODELS_STR\
+                    transforms.hopse_encoding.copy_initial=True\
+                    transforms.hopse_encoding.neighborhoods=$neighborhood\
                     transforms.redefine_simplicial_neighborhoods.neighborhoods=$neighborhood\
                     --multirun &
             done

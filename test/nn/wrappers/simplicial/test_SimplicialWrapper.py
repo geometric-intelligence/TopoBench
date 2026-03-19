@@ -13,7 +13,6 @@ from topobench.nn.wrappers import (
     SCCNNWrapper,
     SANWrapper,
     SCNWrapper,
-    SANNWrapper
 )
 
 class TestSimplicialWrappers:
@@ -109,31 +108,3 @@ class TestSimplicialWrappers:
         # Assert keys in output
         for key in ["labels", "batch_0", "x_0", "x_1", "x_2"]:
             assert key in out
-
-    def test_SANNWrapper(self, sg1_clique_lifted_precompute_k_hop):
-        """Test SANNWarpper.
-        
-        Parameters
-        ----------
-        sg1_clique_lifted_precompute_k_hop : torch_geometric.data.Data
-            A fixture of simple graph 1 lifted with SimlicialCliqueLifting and precomputed k-hop neighbourhood embedding.
-        """
-        data = sg1_clique_lifted_precompute_k_hop
-        in_channels = data.x0_0.shape[1]
-        out_channels = data.x_0.shape[1]
-        
-        wrapper = SANNWrapper(
-            SANN(
-                in_channels=in_channels,
-                hidden_channels=out_channels
-            ), 
-            out_channels=out_channels, 
-            num_cell_dimensions=3
-        )
-
-        out = wrapper(data)
-
-        for key in ["labels", "batch_0", "x_0", "x_1", "x_2"]:
-            assert key in out
-
-

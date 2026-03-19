@@ -61,10 +61,13 @@ class MantraSimplicialDatasetLoader(AbstractLoader):
         MantraDataset
             The initialized dataset instance.
         """
+        slice_val = kwargs.pop("slice", None)
+        if slice_val is None:
+            slice_val = self.parameters.get("slice", False)
         return MantraDataset(
             root=str(self.root_data_dir),
             name=self.parameters.data_name,
             parameters=self.parameters,
-            slice=self.parameters.get("slice", False),
+            slice=slice_val,
             **kwargs,
         )

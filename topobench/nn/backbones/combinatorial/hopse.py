@@ -1,11 +1,11 @@
-"""SANN network."""
+"""HOPSE model."""
 
 import torch
 import torch.nn.functional
 
 
-class SANN(torch.nn.Module):
-    r"""SANN network.
+class HOPSE(torch.nn.Module):
+    r"""HOPSE model.
 
     Parameters
     ----------
@@ -49,7 +49,7 @@ class SANN(torch.nn.Module):
 
         # Set of simplices layers
         self.layers_0 = torch.nn.ModuleList(
-            SANNLayer(
+            HOPSELayer(
                 [in_channels[i] for i in range(max_hop)],
                 [hidden_channels] * max_hop,
                 update_func=update_func,
@@ -63,7 +63,7 @@ class SANN(torch.nn.Module):
         for i in range(1, n_layers):
             self.layers.append(
                 torch.nn.ModuleList(
-                    SANNLayer(
+                    HOPSELayer(
                         [hidden_channels] * max_hop,
                         [hidden_channels] * max_hop,
                         update_func=update_func,
@@ -102,8 +102,8 @@ class SANN(torch.nn.Module):
         return x
 
 
-class SANNLayer(torch.nn.Module):
-    r"""One layer in the SANN architecture.
+class HOPSELayer(torch.nn.Module):
+    r"""One layer in the HOPSE model.
 
     Parameters
     ----------

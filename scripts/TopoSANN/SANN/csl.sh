@@ -62,8 +62,8 @@ do
             optimizer.parameters.lr=0.001\
             optimizer.parameters.weight_decay=0.01\
             callbacks.early_stopping.patience=1\
-            transforms.sann_encoding.max_hop=$max_hop\
-            transforms.sann_encoding.complex_dim=3\
+            transforms.hopse_encoding.max_hop=$max_hop\
+            transforms.hopse_encoding.complex_dim=3\
             --multirun &
             
     done
@@ -95,8 +95,8 @@ do
                     optimizer.parameters.lr=$LEARNING_RATES_STR\
                     optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
                     callbacks.early_stopping.patience=10\
-                    transforms.sann_encoding.max_hop=$max_hop\
-                    transforms.sann_encoding.complex_dim=3\
+                    transforms.hopse_encoding.max_hop=$max_hop\
+                    transforms.hopse_encoding.complex_dim=3\
                     --multirun &
                 sleep 3
             done

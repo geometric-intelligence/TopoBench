@@ -84,7 +84,7 @@ for i in {0..7}; do
         optimizer.parameters.weight_decay=0.25\
         callbacks.early_stopping.patience=10\
         transforms=HOPSE_M_simplicial\
-        transforms.sann_encoding.neighborhoods=$neighborhood\
+        transforms.hopse_encoding.neighborhoods=$neighborhood\
         transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
         --multirun &
         sleep 10
@@ -117,7 +117,7 @@ for i in {0..7}; do
                 optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
                 callbacks.early_stopping.patience=10\
                 transforms=HOPSE_M_simplicial\
-                transforms.sann_encoding.neighborhoods=$neighborhood\
+                transforms.hopse_encoding.neighborhoods=$neighborhood\
                 transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
                 --multirun &
         done

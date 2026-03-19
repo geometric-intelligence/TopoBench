@@ -61,8 +61,13 @@ def generate(
         aggregated = collect_subsets[dataset]
         direction = optimization_metrics[dataset]["direction"]
         optim_metric = optimization_metrics[dataset]["optim_metric"]
-        neighborhoods = aggregated["transforms.sann_encoding.neighborhoods"].unique()
-        f = open(f"scripts/results_processing/best_runs/best_neighborhoods_{dataset}.sh", "w")
+        neighborhoods = aggregated[
+            "transforms.hopse_encoding.neighborhoods"
+        ].unique()
+        f = open(
+            f"scripts/results_processing/best_runs/best_neighborhoods_{dataset}.sh",
+            "w",
+        )
         write_to_file(f)
 
         for model in models:
@@ -78,10 +83,17 @@ def generate(
                     model_agg = aggregated[
                         (aggregated["model.model_name"] == model)
                         & (aggregated["model.model_domain"] == domain)
-                        & (aggregated["transforms.sann_encoding.neighborhoods"] == nbhd)
+                        & (
+                            aggregated[
+                                "transforms.hopse_encoding.neighborhoods"
+                            ]
+                            == nbhd
+                        )
                     ]
                     if model_agg.empty:
-                        print(f"Skipping {model} with domain {domain} and neighborhood {nbhd} for dataset {dataset} as no data is available.")
+                        print(
+                            f"Skipping {model} with domain {domain} and neighborhood {nbhd} for dataset {dataset} as no data is available."
+                        )
                         continue
 
                     model_agg = model_agg.sort_values(
@@ -238,7 +250,7 @@ def generate(
 
                     if "GPSE" in model:
                         additional_parameters[
-                            "transforms.sann_encoding.copy_initial"
+                            "transforms.hopse_encoding.copy_initial"
                         ] = True
                         if (
                             model_domain_value == "cell"
@@ -247,7 +259,7 @@ def generate(
                             additional_parameters[
                                 "transforms.graph2cell_lifting.neighborhoods"
                             ] = best_params_dict[
-                                "transforms.sann_encoding.neighborhoods"
+                                "transforms.hopse_encoding.neighborhoods"
                             ]
                         elif (
                             model_domain_value == "simplicial"
@@ -256,7 +268,7 @@ def generate(
                             additional_parameters[
                                 "transforms.graph2simplicial_lifting.neighborhoods"
                             ] = best_params_dict[
-                                "transforms.sann_encoding.neighborhoods"
+                                "transforms.hopse_encoding.neighborhoods"
                             ]
                         if (
                             model_domain_value == "simplicial"
@@ -266,7 +278,7 @@ def generate(
                             additional_parameters[
                                 "transforms.redefine_simplicial_neighborhoods.neighborhoods"
                             ] = best_params_dict[
-                                "transforms.sann_encoding.neighborhoods"
+                                "transforms.hopse_encoding.neighborhoods"
                             ]
                             additional_parameters[
                                 "transforms.redefine_simplicial_neighborhoods.signed"
@@ -280,7 +292,7 @@ def generate(
                             additional_parameters[
                                 "transforms.graph2cell_lifting.neighborhoods"
                             ] = best_params_dict[
-                                "transforms.sann_encoding.neighborhoods"
+                                "transforms.hopse_encoding.neighborhoods"
                             ]
                         elif (
                             model_domain_value == "simplicial"
@@ -289,7 +301,7 @@ def generate(
                             additional_parameters[
                                 "transforms.graph2simplicial_lifting.neighborhoods"
                             ] = best_params_dict[
-                                "transforms.sann_encoding.neighborhoods"
+                                "transforms.hopse_encoding.neighborhoods"
                             ]
 
                         if (
@@ -300,7 +312,7 @@ def generate(
                             additional_parameters[
                                 "transforms.redefine_simplicial_neighborhoods.neighborhoods"
                             ] = best_params_dict[
-                                "transforms.sann_encoding.neighborhoods"
+                                "transforms.hopse_encoding.neighborhoods"
                             ]
                             additional_parameters[
                                 "transforms.redefine_simplicial_neighborhoods.signed"
@@ -312,9 +324,7 @@ def generate(
                         ] = True
                         additional_parameters[
                             "transforms.redefine_simplicial_neighborhoods.neighborhoods"
-                        ] = best_params_dict[
-                            "model.backbone.neighborhoods"
-                        ]
+                        ] = best_params_dict["model.backbone.neighborhoods"]
 
                     additional_param_strs = [
                         f"{key}={val}"
@@ -335,7 +345,11 @@ def generate(
                         if not cpu
                         else "trainer.accelerator=cpu trainer.devices=1"
                     )
-                    min_epoch_str = "trainer.min_epochs=250" if  "MANTRA" in dataset else "trainer.min_epochs=50"
+                    min_epoch_str = (
+                        "trainer.min_epochs=250"
+                        if "MANTRA" in dataset
+                        else "trainer.min_epochs=50"
+                    )
                     trainer_epochs_str = f"trainer.max_epochs=500 {min_epoch_str} trainer.check_val_every_n_epoch=5"
                     trainer_patience_str = (
                         "callbacks.early_stopping.patience=10"

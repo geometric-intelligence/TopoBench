@@ -76,10 +76,10 @@ for i in {0..7}; do
             model.backbone.n_layers=1\
             model.feature_encoder.out_channels=128\
             model.feature_encoder.proj_dropout=0.0\
-            transforms/data_manipulations@transforms.sann_encoding=add_gpse_information\
-            transforms.sann_encoding.pretrain_model=$pretrain_model\
-            transforms.sann_encoding.copy_initial=True \
-            transforms.sann_encoding.neighborhoods=$neighborhood\
+            transforms/data_manipulations@transforms.hopse_encoding=add_gpse_information\
+            transforms.hopse_encoding.pretrain_model=$pretrain_model\
+            transforms.hopse_encoding.copy_initial=True \
+            transforms.hopse_encoding.neighborhoods=$neighborhood\
             transforms=GPSE_BREC\
             transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
             trainer.devices=\[$CUDA\]\
