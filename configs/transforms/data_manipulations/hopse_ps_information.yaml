@@ -1,6 +1,3 @@
-defaults:
-  - combined_encodings
-
 transform_name: "HOPSE_PE_Information"
 transform_type: "data manipulation"
 max_rank: 2
@@ -9,10 +6,10 @@ neighborhoods: ${model.preprocessing_params.neighborhoods}
 
 
 dim_target_node: 20 #${.target_pe_dim} #51
-dim_pses: ${get_pse_dimensions:${.encodings}, ${.parameters}}
+dim_all_encodings: ${get_all_encoding_dimensions:${.encodings}, ${.parameters}}
 dim_target_graph: 0
 max_hop: ${get_hop_num_pses:${.encodings}, ${.copy_initial}}
-in_channels: ${infer_in_hasse_graph_agg_dim:${.neighborhoods}, ${.dim_pses}, ${.max_rank}, ${.max_hop}, ${oc.select:dataset.parameters.num_features}, ${.dim_target_graph}, ${.dim_target_node}, ${.copy_initial}, ${oc.select:dataset.parameters.preserve_edge_attr_if_lifted}}
+in_channels: ${infer_in_hasse_graph_agg_dim:${.neighborhoods}, ${.dim_all_encodings}, ${.max_rank}, ${.max_hop}, ${oc.select:dataset.parameters.num_features}, ${.dim_target_graph}, ${.dim_target_node}, ${.copy_initial}, ${oc.select:dataset.parameters.preserve_edge_attr_if_lifted}}
 device: ${trainer.accelerator}
 cuda: ${trainer.devices}
 
@@ -21,6 +18,12 @@ is_undirected: True
 
 encodings: ${model.preprocessing_params.encodings}
 parameters:
+  KHopFE:
+    max_hop: 3
+    concat_to_x: false
+  HKFE:
+    kernel_param_HKFE: [1, 21]
+    concat_to_x: false
   LapPE:
     max_pe_dim: 10
     include_eigenvalues: false

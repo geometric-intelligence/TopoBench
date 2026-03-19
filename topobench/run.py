@@ -28,16 +28,18 @@ from topobench.utils import (
     task_wrapper,
 )
 from topobench.utils.config_resolvers import (
+    get_all_encoding_dimensions,
     get_default_metrics,
     get_default_trainer,
     get_default_transform,
+    get_fes_dimensions,
     get_flattened_channels,
     get_list_element,
     get_monitor_metric,
     get_monitor_mode,
     get_non_relational_out_channels,
-    get_required_lifting,
     get_pse_dimensions,
+    get_required_lifting,
     infer_in_channels,
     infer_in_hasse_graph_agg_dim,
     infer_in_khop_feature_dim,
@@ -126,6 +128,18 @@ OmegaConf.register_new_resolver(
 OmegaConf.register_new_resolver(
     "get_pse_dimensions",
     get_pse_dimensions,
+    replace=True,
+)
+
+OmegaConf.register_new_resolver(
+    "get_fes_dimensions",
+    get_fes_dimensions,
+    replace=True,
+)
+
+OmegaConf.register_new_resolver(
+    "get_all_encoding_dimensions",
+    get_all_encoding_dimensions,
     replace=True,
 )
 
