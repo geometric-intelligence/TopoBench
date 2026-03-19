@@ -6,11 +6,8 @@ model_domain: simplicial
 preprocessing_params:
   neighborhoods: 
     - 'up_adjacency-0'
-    - 'up_adjacency-1'
-    - '2-up_adjacency-0'
-    - 'down_adjacency-2'
-    - 'down_adjacency-1'
-    - '2-down_adjacency-2'
+    - 'down_incidence-1'
+    - 'down_incidence-2'
   copy_initial: True
 
 feature_encoder:
