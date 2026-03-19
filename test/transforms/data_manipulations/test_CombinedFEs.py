@@ -705,3 +705,270 @@ class TestCombinedFEs:
         assert transformed.HKFE.shape == (3, 4)
         # Fixed dimension output - max_hop-1=3 regardless of input features
         assert transformed.KHopFE.shape == (3, 3)
+
+    # ========== SheafConnLapPE Tests ==========
+
+    def test_initialization_with_sheaf(self):
+        """Test initialization with SheafConnLapPE encoding."""
+        transform = CombinedFEs(encodings=["SheafConnLapPE"])
+        assert transform.encodings == ["SheafConnLapPE"]
+        assert transform.parameters == {}
+
+        # Test with all three encodings
+        transform = CombinedFEs(encodings=["HKFE", "KHopFE", "SheafConnLapPE"])
+        assert transform.encodings == ["HKFE", "KHopFE", "SheafConnLapPE"]
+
+    def test_single_sheaf_encoding(self):
+        """Test transform with only SheafConnLapPE encoding."""
+        # SheafConnLapPE requires feature_dim >= stalk_dim (default 3)
+        x = torch.randn(self.num_nodes, 5)
+        params = {
+            "SheafConnLapPE": {"max_pe_dim": 6, "stalk_dim": 3, "concat_to_x": True}
+        }
+        transform = CombinedFEs(encodings=["SheafConnLapPE"], parameters=params)
+        data = Data(x=x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+
+        transformed = transform(data)
+
+        assert transformed.x is not None
+        assert transformed.x.shape[0] == 3
+        # Original 5 features + max_pe_dim=6
+        assert transformed.x.shape[1] == 5 + 6
+
+    def test_sheaf_separate_storage(self):
+        """Test SheafConnLapPE with separate storage."""
+        x = torch.randn(self.num_nodes, 5)
+        params = {
+            "SheafConnLapPE": {"max_pe_dim": 6, "stalk_dim": 3, "concat_to_x": False}
+        }
+        transform = CombinedFEs(encodings=["SheafConnLapPE"], parameters=params)
+        data = Data(x=x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+
+        transformed = transform(data)
+
+        assert hasattr(transformed, "SheafPE")
+        assert transformed.SheafPE.shape == (3, 6)
+        # Original features unchanged
+        assert transformed.x.shape == (3, 5)
+
+    def test_sheaf_combined_with_hkfe(self):
+        """Test SheafConnLapPE combined with HKFE."""
+        x = torch.randn(self.num_nodes, 5)
+        params = {
+            "HKFE": {"kernel_param_HKFE": (1, 5), "concat_to_x": True},
+            "SheafConnLapPE": {"max_pe_dim": 6, "stalk_dim": 3, "concat_to_x": True}
+        }
+        transform = CombinedFEs(encodings=["HKFE", "SheafConnLapPE"], parameters=params)
+        data = Data(x=x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+
+        transformed = transform(data)
+
+        # Original 5 + HKFE 4 + SheafPE 6 = 15
+        assert transformed.x.shape == (3, 5 + 4 + 6)
+        assert not torch.isnan(transformed.x).any()
+
+    def test_sheaf_combined_with_khopfe(self):
+        """Test SheafConnLapPE combined with KHopFE."""
+        x = torch.randn(self.num_nodes, 5)
+        params = {
+            "KHopFE": {"max_hop": 4, "concat_to_x": True},
+            "SheafConnLapPE": {"max_pe_dim": 6, "stalk_dim": 3, "concat_to_x": True}
+        }
+        transform = CombinedFEs(encodings=["KHopFE", "SheafConnLapPE"], parameters=params)
+        data = Data(x=x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+
+        transformed = transform(data)
+
+        # Original 5 + KHopFE 3 + SheafPE 6 = 14
+        assert transformed.x.shape == (3, 5 + 3 + 6)
+        assert not torch.isnan(transformed.x).any()
+
+    def test_all_three_encodings(self):
+        """Test all three encodings combined."""
+        x = torch.randn(self.num_nodes, 5)
+        params = {
+            "HKFE": {"kernel_param_HKFE": (1, 5), "concat_to_x": True},
+            "KHopFE": {"max_hop": 4, "concat_to_x": True},
+            "SheafConnLapPE": {"max_pe_dim": 6, "stalk_dim": 3, "concat_to_x": True}
+        }
+        transform = CombinedFEs(
+            encodings=["HKFE", "KHopFE", "SheafConnLapPE"],
+            parameters=params
+        )
+        data = Data(x=x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+
+        transformed = transform(data)
+
+        # Original 5 + HKFE 4 + KHopFE 3 + SheafPE 6 = 18
+        assert transformed.x.shape == (3, 5 + 4 + 3 + 6)
+        assert not torch.isnan(transformed.x).any()
+        assert not torch.isinf(transformed.x).any()
+
+    def test_all_three_separate_storage(self):
+        """Test all three encodings with separate storage."""
+        x = torch.randn(self.num_nodes, 5)
+        params = {
+            "HKFE": {"kernel_param_HKFE": (1, 5), "concat_to_x": False},
+            "KHopFE": {"max_hop": 4, "concat_to_x": False},
+            "SheafConnLapPE": {"max_pe_dim": 6, "stalk_dim": 3, "concat_to_x": False}
+        }
+        transform = CombinedFEs(
+            encodings=["HKFE", "KHopFE", "SheafConnLapPE"],
+            parameters=params
+        )
+        data = Data(x=x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+
+        transformed = transform(data)
+
+        assert hasattr(transformed, "HKFE")
+        assert hasattr(transformed, "KHopFE")
+        assert hasattr(transformed, "SheafPE")
+        assert transformed.HKFE.shape == (3, 4)
+        assert transformed.KHopFE.shape == (3, 3)
+        assert transformed.SheafPE.shape == (3, 6)
+        # Original features unchanged
+        assert transformed.x.shape == (3, 5)
+
+    def test_sheaf_numerical_stability(self):
+        """Test SheafConnLapPE doesn't produce NaN or Inf."""
+        x = torch.randn(self.num_nodes, 5)
+        params = {
+            "SheafConnLapPE": {"max_pe_dim": 6, "stalk_dim": 3, "concat_to_x": True}
+        }
+        transform = CombinedFEs(encodings=["SheafConnLapPE"], parameters=params)
+        data = Data(x=x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+
+        transformed = transform(data)
+
+        assert not torch.isnan(transformed.x).any()
+        assert not torch.isinf(transformed.x).any()
+
+    def test_sheaf_requires_sufficient_features(self):
+        """Test SheafConnLapPE raises error when feature_dim < stalk_dim."""
+        # Only 2 features but stalk_dim=3 (default)
+        x = torch.randn(self.num_nodes, 2)
+        params = {
+            "SheafConnLapPE": {"max_pe_dim": 6, "stalk_dim": 3, "concat_to_x": True}
+        }
+        transform = CombinedFEs(encodings=["SheafConnLapPE"], parameters=params)
+        data = Data(x=x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+
+        with pytest.raises(ValueError, match="feature_dim.*must be >= stalk_dim"):
+            transform(data)
+
+    def test_sheaf_max_pe_dim_divisibility(self):
+        """Test SheafConnLapPE requires max_pe_dim divisible by stalk_dim."""
+        x = torch.randn(self.num_nodes, 5)
+        params = {
+            "SheafConnLapPE": {"max_pe_dim": 7, "stalk_dim": 3, "concat_to_x": True}
+        }
+        transform = CombinedFEs(encodings=["SheafConnLapPE"], parameters=params)
+        data = Data(x=x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+
+        with pytest.raises(ValueError, match="must be divisible by"):
+            transform(data)
+
+    @pytest.mark.parametrize("max_pe_dim,stalk_dim", [
+        (6, 2),
+        (6, 3),
+        (9, 3),
+        (12, 4),
+    ])
+    def test_parametrized_sheaf_dimensions(self, max_pe_dim, stalk_dim):
+        """Parametrized test for different SheafConnLapPE dimensions."""
+        x = torch.randn(self.num_nodes, 5)
+        params = {
+            "SheafConnLapPE": {
+                "max_pe_dim": max_pe_dim,
+                "stalk_dim": stalk_dim,
+                "concat_to_x": False
+            }
+        }
+        transform = CombinedFEs(encodings=["SheafConnLapPE"], parameters=params)
+        data = Data(x=x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+
+        transformed = transform(data)
+
+        assert hasattr(transformed, "SheafPE")
+        assert transformed.SheafPE.shape == (3, max_pe_dim)
+
+    def test_sheaf_on_larger_graph(self):
+        """Test SheafConnLapPE on a larger graph."""
+        num_nodes = 20
+        num_edges = 60
+        edge_index = torch.randint(0, num_nodes, (2, num_edges))
+        x = torch.randn(num_nodes, 8)
+
+        params = {
+            "SheafConnLapPE": {"max_pe_dim": 9, "stalk_dim": 3, "concat_to_x": True}
+        }
+        transform = CombinedFEs(encodings=["SheafConnLapPE"], parameters=params)
+        data = Data(x=x, edge_index=edge_index, num_nodes=num_nodes)
+
+        transformed = transform(data)
+
+        assert transformed.x.shape == (num_nodes, 8 + 9)
+        assert not torch.isnan(transformed.x).any()
+
+    def test_sheaf_complete_graph(self):
+        """Test SheafConnLapPE on a complete graph."""
+        edges = []
+        for i in range(4):
+            for j in range(4):
+                if i != j:
+                    edges.append([i, j])
+        edge_index = torch.tensor(edges).t()
+        x = torch.randn(4, 5)
+
+        params = {
+            "SheafConnLapPE": {"max_pe_dim": 6, "stalk_dim": 3, "concat_to_x": True}
+        }
+        transform = CombinedFEs(encodings=["SheafConnLapPE"], parameters=params)
+        data = Data(x=x, edge_index=edge_index, num_nodes=4)
+
+        transformed = transform(data)
+
+        assert transformed.x.shape == (4, 5 + 6)
+        assert not torch.isnan(transformed.x).any()
+
+    def test_sheaf_empty_graph(self):
+        """Test SheafConnLapPE on an empty graph (no edges)."""
+        x = torch.randn(self.num_nodes, 5)
+        edge_index = torch.empty((2, 0), dtype=torch.long)
+        params = {
+            "SheafConnLapPE": {"max_pe_dim": 6, "stalk_dim": 3, "concat_to_x": True}
+        }
+        transform = CombinedFEs(encodings=["SheafConnLapPE"], parameters=params)
+        data = Data(x=x, edge_index=edge_index, num_nodes=self.num_nodes)
+
+        transformed = transform(data)
+
+        # Should return zero PE for degenerate graph
+        assert transformed.x.shape == (3, 5 + 6)
+
+    def test_sheaf_single_node(self):
+        """Test SheafConnLapPE on a single node graph."""
+        x = torch.randn(1, 5)
+        edge_index = torch.empty((2, 0), dtype=torch.long)
+        params = {
+            "SheafConnLapPE": {"max_pe_dim": 6, "stalk_dim": 3, "concat_to_x": True}
+        }
+        transform = CombinedFEs(encodings=["SheafConnLapPE"], parameters=params)
+        data = Data(x=x, edge_index=edge_index, num_nodes=1)
+
+        transformed = transform(data)
+
+        assert transformed.x.shape == (1, 5 + 6)
+
+    def test_sheaf_output_dtype_is_float32(self):
+        """Test that SheafConnLapPE produces float32 output."""
+        x = torch.randn(self.num_nodes, 5)
+        params = {
+            "SheafConnLapPE": {"max_pe_dim": 6, "stalk_dim": 3, "concat_to_x": False}
+        }
+        transform = CombinedFEs(encodings=["SheafConnLapPE"], parameters=params)
+        data = Data(x=x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+
+        transformed = transform(data)
+
+        assert transformed.SheafPE.dtype == torch.float32
