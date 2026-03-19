@@ -10,13 +10,6 @@ from topobench.transforms.data_manipulations.positional_and_structural_encodings
     CombinedPSEs,
     SelectDestinationPSEs,
 )
-from topobench.transforms.data_manipulations.feature_encodings import (
-    CombinedFEs,
-    SelectDestinationFEs,
-)
-from topobench.transforms.data_manipulations.positional_structural_encodings import (
-    DerivePS,
-)
 
 # Define which encodings are PSEs vs FEs
 PSE_ENCODINGS = {"LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE"}
@@ -194,11 +187,6 @@ class HOPSE_PE_Information(torch_geometric.transforms.BaseTransform):
         src_batch = params[f"x_{src_rank}"]
         dst_batch = params[f"x_{dst_rank}"]
         edge_index, edge_attr = nbhd_cache
-        # setattr(
-        #     params,
-        #     f"x_{src_rank}",
-        #     getattr(params, f"x_{src_rank}"),
-        # )
         feat_on_dst = torch.zeros_like(
             getattr(params, f"x_{dst_rank}"), device=self.device
         )
@@ -348,15 +336,6 @@ class HOPSE_PE_Information(torch_geometric.transforms.BaseTransform):
                     )
                 elif src_rank < dst_rank:
                     coboundary = getattr(params, neighborhood).coalesce()
-                    # print(f'neighborhood: {neighborhood}')
-                    # print(f'src_rank: {src_rank}')
-                    # print(f'dst_rank: {dst_rank}')
-                    # x_src = getattr(params, f"x_{src_rank}")
-                    # x_dst = getattr(params, f"x_{dst_rank}")
-                    # print(f'x_src: {x_src.shape}')
-                    # print(f'x_dst: {x_dst.shape}')
-                    # print(f'neighborhood: {coboundary.shape}')
-                    # print(coboundary.to_dense().max())
                     nbhd_cache[(src_rank, dst_rank)] = (
                         interrank_boundary_index(
                             getattr(params, f"x_{src_rank}"),
