@@ -13,6 +13,7 @@ columns_to_normalize = [
     "callbacks",
 ]
 
+
 def normalize_columns(df, columns_to_normalize):
     # Gather the new DataFrames to be concatenated
     flattened_dfs = []
@@ -41,6 +42,7 @@ def normalize_df(df, columns_to_normalize):
 
     return df
 
+
 def fetch(project):
     user = "telyatnikov_sap"
     project = project
@@ -55,11 +57,7 @@ def fetch(project):
         # .config contains the hyperparameters.
         #  We remove special values that start with _.
         config_list.append(
-            {
-                k: v
-                for k, v in run.config.items()
-                if not k.startswith("_")
-            }
+            {k: v for k, v in run.config.items() if not k.startswith("_")}
         )
 
         # .name is the human-readable name of the run.
@@ -86,7 +84,6 @@ def fetch(project):
 def generate_table(df):
     df_best = df.copy()
     print(df_best)
-
 
     def build_table(subset_df, caption_text):
         if subset_df.empty:
@@ -164,7 +161,9 @@ def generate_table(df):
 
         for dom in all_domains:
             dom_df = domain_groups[dom]
-            dom_models = [m for m in MODEL_ORDER[dom] if m in dom_df["model"].unique()]
+            dom_models = [
+                m for m in MODEL_ORDER[dom] if m in dom_df["model"].unique()
+            ]
             latex_lines.append(r"\midrule")
             latex_lines.append(
                 rf"\multirow{{{len(dom_models)}}}{{*}}{{\rotatebox[origin=c]{{90}}{{\textbf{{{dom.capitalize()}}}}}}}"
@@ -173,7 +172,10 @@ def generate_table(df):
             for model in dom_models:
                 row_elems = [model]
                 for dset in all_datasets:
-                    sel = dom_df[(dom_df["model"] == model) & (dom_df["dataset"] == dset)]
+                    sel = dom_df[
+                        (dom_df["model"] == model)
+                        & (dom_df["dataset"] == dset)
+                    ]
                     if sel.empty:
                         cell_val = "-"
                     else:
@@ -195,42 +197,60 @@ def generate_table(df):
     latex_all = build_table(df_best, "Total")
     return latex_all
 
+
 def parse_hops():
-    df = fetch(
-        "HOPSE_reproducibility_neighbourhoods")
+    df = fetch("HOPSE_reproducibility_neighbourhoods")
     df = normalize_df(df, columns_to_normalize)
-    df_2 = fetch(
-        "HOPSE_reproducibility_neighborhoods"
-    )
+    df_2 = fetch("HOPSE_reproducibility_neighborhoods")
     df_2 = normalize_df(df_2, columns_to_normalize)
     df = pd.concat([df, df_2], ignore_index=True)
-    #df = split_evaluation_metrics(df)
+    # df = split_evaluation_metrics(df)
     df = df[~(df["dataset.split_params.data_seed"].isna())]
-    df["transforms.sann_encoding.neighborhoods"] = df["transforms.sann_encoding.neighborhoods"].astype(str)
+    df["transforms.hopse_encoding.neighborhoods"] = df[
+        "transforms.hopse_encoding.neighborhoods"
+    ].astype(str)
 
-    df.rename({
-        "dataset.loader.parameters.data_name": "dataset",
-        "model.model_name": "model",
-        "model.model_domain": "domain",
-    }, inplace=True, axis=1)
+    df.rename(
+        {
+            "dataset.loader.parameters.data_name": "dataset",
+            "model.model_name": "model",
+            "model.model_domain": "domain",
+        },
+        inplace=True,
+        axis=1,
+    )
 
     df["model"] = df["model"].str.replace("hopse_m", "HOPSE-M")
     df["model"] = df["model"].str.replace("hopse_g", "HOPSE-G")
-    df["dataset"] = df["dataset"].str.replace("MANTRA_name", "NAME", regex=False)
-    df["dataset"] = df["dataset"].str.replace("MANTRA_orientation", "ORIENT", regex=False)
-    df["dataset"] = df["dataset"].str.replace("MANTRA_betti_numbers_0", "MANTRA-BN-0", regex=False)
-    df["dataset"] = df["dataset"].str.replace("MANTRA_betti_numbers_1", "MANTRA-BN-1", regex=False)
-    df["dataset"] = df["dataset"].str.replace("MANTRA_betti_numbers_2", "MANTRA-BN-2", regex=False)
-    df["dataset"] = df["dataset"].str.replace("MANTRA_betti_numbers", r"$(\beta_0, \beta_1, \beta_2)$", regex=False)
+    df["dataset"] = df["dataset"].str.replace(
+        "MANTRA_name", "NAME", regex=False
+    )
+    df["dataset"] = df["dataset"].str.replace(
+        "MANTRA_orientation", "ORIENT", regex=False
+    )
+    df["dataset"] = df["dataset"].str.replace(
+        "MANTRA_betti_numbers_0", "MANTRA-BN-0", regex=False
+    )
+    df["dataset"] = df["dataset"].str.replace(
+        "MANTRA_betti_numbers_1", "MANTRA-BN-1", regex=False
+    )
+    df["dataset"] = df["dataset"].str.replace(
+        "MANTRA_betti_numbers_2", "MANTRA-BN-2", regex=False
+    )
+    df["dataset"] = df["dataset"].str.replace(
+        "MANTRA_betti_numbers", r"$(\beta_0, \beta_1, \beta_2)$", regex=False
+    )
     df["model"] = df["model"].str.replace("_", "-", regex=False)
 
     grouped = df.groupby(["domain", "dataset", "model"], group_keys=True)
-    df_best = grouped.agg({
-        "preprocessor_time": ["max"]
-    }).reset_index(drop=False)
+    df_best = grouped.agg({"preprocessor_time": ["max"]}).reset_index(
+        drop=False
+    )
     df_best["max"] = df_best[("preprocessor_time", "max")]
     df_best.drop([("preprocessor_time", "max")], axis=1, inplace=True)
-    df_best.columns = [col if isinstance(col, str) else col[0] for col in df_best.columns]
+    df_best.columns = [
+        col if isinstance(col, str) else col[0] for col in df_best.columns
+    ]
 
     return df_best
 
@@ -239,6 +259,6 @@ if __name__ == "__main__":
     df = parse_hops()
     table = generate_table(df)
     print(table)
-    #c_p, c_e, c_t = processing_times(df)
+    # c_p, c_e, c_t = processing_times(df)
     # collected_results_time = generate_times_dictionary(df)
     # table = build_table(collected_results_time)

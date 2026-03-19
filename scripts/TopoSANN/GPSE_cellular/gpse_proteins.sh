@@ -84,10 +84,10 @@ for i in {0..7}; do
             optimizer.parameters.lr=$LEARNING_RATES_STR\
             optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
             callbacks.early_stopping.patience=10\
-            transforms/data_manipulations@transforms.sann_encoding=add_gpse_information\
-            transforms.sann_encoding.pretrain_model=$pretrain_model\
-            transforms.sann_encoding.copy_initial=True \
-            transforms.sann_encoding.neighborhoods=$neighborhood\
+            transforms/data_manipulations@transforms.hopse_encoding=add_gpse_information\
+            transforms.hopse_encoding.pretrain_model=$pretrain_model\
+            transforms.hopse_encoding.copy_initial=True \
+            transforms.hopse_encoding.neighborhoods=$neighborhood\
             transforms.graph2cell_lifting.neighborhoods=$neighborhood\
             --multirun &
         

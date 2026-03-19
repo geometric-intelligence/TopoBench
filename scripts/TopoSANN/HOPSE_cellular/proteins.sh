@@ -84,7 +84,7 @@ for i in {0..7}; do
         callbacks.early_stopping.patience=10\
         transforms=HOPSE_PS_experiment_cell\
         transforms.graph2cell_lifting.max_cell_length=10\
-        transforms.sann_encoding.neighborhoods=$neighborhood\
+        transforms.hopse_encoding.neighborhoods=$neighborhood\
         transforms.graph2cell_lifting.neighborhoods=$neighborhood\
         --multirun &
         sleep 10
@@ -118,7 +118,7 @@ for i in {0..7}; do
                 callbacks.early_stopping.patience=10\
                 transforms=HOPSE_PS_experiment_cell\
                 transforms.graph2cell_lifting.max_cell_length=10\
-                transforms.sann_encoding.neighborhoods=$neighborhood\
+                transforms.hopse_encoding.neighborhoods=$neighborhood\
                 transforms.graph2cell_lifting.neighborhoods=$neighborhood\
                 --multirun &
         done

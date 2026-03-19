@@ -5,10 +5,10 @@ model_domain: graph
 
 feature_encoder:
   _target_: topobench.nn.encoders.${model.feature_encoder.encoder_name}
-  encoder_name: SANNFeatureEncoder
+  encoder_name: HOPSEFeatureEncoder
   dataset_in_channels: ${infer_in_channels:${dataset},${oc.select:transforms,null}}
-  in_channels: ${transforms.sann_encoding.in_channels} 
-  max_hop: ${transforms.sann_encoding.max_hop}
+  in_channels: ${transforms.hopse_encoding.in_channels} 
+  max_hop: ${transforms.hopse_encoding.max_hop}
   out_channels: 64
   proj_dropout: 0.0
   selected_dimensions:

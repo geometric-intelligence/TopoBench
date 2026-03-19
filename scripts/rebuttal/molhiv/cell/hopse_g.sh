@@ -70,7 +70,7 @@ gpus=(0 1 2 3 4 5 6 7)
 #         python topobench/run.py\
 #             dataset=graph/$dataset\
 #             model=cell/hopse_g\
-#             model.readout.readout_name=SANNReadout\
+#             model.readout.readout_name=HOPSEReadout\
 #             model.backbone.n_layers=1\
 #             model.feature_encoder.out_channels=128\
 #             model.feature_encoder.proj_dropout=0.5\
@@ -86,8 +86,8 @@ gpus=(0 1 2 3 4 5 6 7)
 #             logger.wandb.project='prerun'\
 #             optimizer.parameters.lr=0.01\
 #             optimizer.parameters.weight_decay=0.25\
-#             transforms.sann_encoding.neighborhoods=$neighborhood\
-#             transforms.sann_encoding.pretrain_model=$pretrain_model\
+#             transforms.hopse_encoding.neighborhoods=$neighborhood\
+#             transforms.hopse_encoding.pretrain_model=$pretrain_model\
 #             transforms.graph2cell_lifting.neighborhoods=$neighborhood\
 #             transforms.graph2cell_lifting.max_cell_length=10\
 #             --multirun
@@ -109,7 +109,7 @@ gpus=(0 1 2 3 4 5 6 7)
 #             python topobench/run.py\
 #                 dataset=graph/$dataset\
 #                 model=cell/hopse_g\
-#                 model.readout.readout_name=SANNReadout\
+#                 model.readout.readout_name=HOPSEReadout\
 #                 model.backbone.n_layers=$N_LAYERS_STR\
 #                 model.feature_encoder.out_channels=$OUT_CHANNELS_STR\
 #                 model.feature_encoder.proj_dropout=$PROJECTION_DROPOUTS_STR\
@@ -125,8 +125,8 @@ gpus=(0 1 2 3 4 5 6 7)
 #                 logger.wandb.project=$project_name\
 #                 optimizer.parameters.lr=$LEARNING_RATES_STR\
 #                 optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
-#                 transforms.sann_encoding.neighborhoods=$neighborhood\
-#                 transforms.sann_encoding.pretrain_model=$pretrain_model\
+#                 transforms.hopse_encoding.neighborhoods=$neighborhood\
+#                 transforms.hopse_encoding.pretrain_model=$pretrain_model\
 #                 transforms.graph2cell_lifting.neighborhoods=$neighborhood\
 #                 transforms.graph2cell_lifting.max_cell_length=10\
 #                 --multirun
@@ -165,7 +165,7 @@ for pretrain_model in "${PRETRAIN_MODELS[@]}"; do
     python topobench/run.py \
         dataset=graph/$dataset \
         model=cell/hopse_g \
-        model.readout.readout_name=SANNReadout \
+        model.readout.readout_name=HOPSEReadout \
         model.backbone.n_layers=$n_layers \
         model.feature_encoder.out_channels=$out_channels \
         model.feature_encoder.proj_dropout=$drop_out \
@@ -181,8 +181,8 @@ for pretrain_model in "${PRETRAIN_MODELS[@]}"; do
         logger.wandb.project=$project_name \
         optimizer.parameters.lr=$lr \
         optimizer.parameters.weight_decay=$wd \
-        transforms.sann_encoding.neighborhoods=$neighborhood \
-        transforms.sann_encoding.pretrain_model=$pretrain_model \
+        transforms.hopse_encoding.neighborhoods=$neighborhood \
+        transforms.hopse_encoding.pretrain_model=$pretrain_model \
         transforms.graph2cell_lifting.neighborhoods=$neighborhood \
         transforms.graph2cell_lifting.max_cell_length=10 \
         --multirun &

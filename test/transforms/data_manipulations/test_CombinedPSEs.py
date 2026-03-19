@@ -28,8 +28,8 @@ class TestCombinedPSEs:
         assert transform.parameters == {}
 
         # Test with all supported encodings
-        transform = CombinedPSEs(encodings=["LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE"])
-        assert transform.encodings == ["LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE"]
+        transform = CombinedPSEs(encodings=["LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE", "HKFE"])
+        assert transform.encodings == ["LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE", "HKFE"]
         assert transform.parameters == {}
 
         # Test with parameters

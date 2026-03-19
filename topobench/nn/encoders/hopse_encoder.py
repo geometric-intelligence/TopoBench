@@ -8,7 +8,7 @@ from torch_geometric.nn.models import MLP
 from topobench.nn.encoders.base import AbstractFeatureEncoder
 
 
-class SANNFeatureEncoder(AbstractFeatureEncoder):
+class HOPSEFeatureEncoder(AbstractFeatureEncoder):
     r"""Encoder class to apply SimpleEncoder.
 
     The SimpleEncoder is applied to the features of each cell

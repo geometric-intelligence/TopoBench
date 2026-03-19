@@ -4,12 +4,14 @@ import pandas as pd
 
 
 def map_name(row):
-    if isinstance(row["transforms.sann_encoding.pe_types"], list):
+    if isinstance(row["transforms.hopse_encoding.pe_types"], list):
         return "HOPSE_MANUAL_PE"
     elif row["model.model_name"] == "sann":
         if type(
-            row["transforms.sann_encoding.pretrain_model"]
-        ) == float and pd.isna(row["transforms.sann_encoding.pretrain_model"]):
+            row["transforms.hopse_encoding.pretrain_model"]
+        ) == float and pd.isna(
+            row["transforms.hopse_encoding.pretrain_model"]
+        ):
             return "SANN"
         else:
             return "HOPSE_GPSE"
@@ -42,13 +44,13 @@ def split_evaluation_metrics(df):
 
 
 def preprocess_df(df, split_mantra=True):
-    columns_to_eval = ["transforms.sann_encoding.pe_types"]
+    columns_to_eval = ["transforms.hopse_encoding.pe_types"]
     for col in columns_to_eval:
         df[col] = df[col].apply(lambda x: str(x).replace("nan", "None"))
         df[col] = df[col].apply(literal_eval)
     df["model.model_name"] = df.apply(map_name, axis=1)
-    df["transforms.sann_encoding.neighborhoods"] = df[
-        "transforms.sann_encoding.neighborhoods"
+    df["transforms.hopse_encoding.neighborhoods"] = df[
+        "transforms.hopse_encoding.neighborhoods"
     ].astype(str)
     if split_mantra:
         df = split_evaluation_metrics(df)

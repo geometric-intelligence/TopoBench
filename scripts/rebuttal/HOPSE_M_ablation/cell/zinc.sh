@@ -79,9 +79,9 @@ do
             optimizer.parameters.lr=0.01\
             optimizer.parameters.weight_decay=0.25\
             callbacks.early_stopping.patience=10\
-            transforms.sann_encoding.pe_types=$pe_type\
+            transforms.hopse_encoding.pe_types=$pe_type\
             transforms.graph2cell_lifting.max_cell_length=10\
-            transforms.sann_encoding.neighborhoods=$neighborhood\
+            transforms.hopse_encoding.neighborhoods=$neighborhood\
             transforms.graph2cell_lifting.neighborhoods=$neighborhood\
             transforms=HOPSE_PS_experiment_ZINC_cell\
             --multirun &
@@ -112,12 +112,12 @@ do
                     trainer.check_val_every_n_epoch=5\
                     logger.wandb.project=$project_name\
                     optimizer.parameters.lr=$LEARNING_RATES_STR\
-                    transforms.sann_encoding.pe_types=$pe_type\
+                    transforms.hopse_encoding.pe_types=$pe_type\
                     optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
                     callbacks.early_stopping.patience=10\
                     transforms=HOPSE_PS_experiment_cell\
                     transforms.graph2cell_lifting.max_cell_length=10\
-                    transforms.sann_encoding.neighborhoods=$neighborhood\
+                    transforms.hopse_encoding.neighborhoods=$neighborhood\
                     transforms.graph2cell_lifting.neighborhoods=$neighborhood\
                     transforms=HOPSE_PS_experiment_ZINC_cell\
                     --multirun &

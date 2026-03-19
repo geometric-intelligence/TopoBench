@@ -83,7 +83,7 @@ gpus=(0 1 2 3 4 5 6 7)
 #         optimizer.parameters.weight_decay=0.25\
 #         callbacks.early_stopping.patience=10\
 #         transforms=HOPSE_PS_experiment_MANTRA\
-#         transforms.sann_encoding.neighborhoods=$neighborhood\
+#         transforms.hopse_encoding.neighborhoods=$neighborhood\
 #         transforms.redefine_simplicial_neighborhoods.neighborhoods=$neighborhood\
 #         evaluator=betti_numbers\
 #         --multirun &
@@ -117,7 +117,7 @@ for i in {0..7}; do
                 optimizer.parameters.weight_decay=$wd\
                 callbacks.early_stopping.patience=10\
                 transforms=HOPSE_PS_experiment_MANTRA\
-                transforms.sann_encoding.neighborhoods=$neighborhood\
+                transforms.hopse_encoding.neighborhoods=$neighborhood\
                 transforms.redefine_simplicial_neighborhoods.neighborhoods=$neighborhood\
                 evaluator=betti_numbers\
                 --multirun &

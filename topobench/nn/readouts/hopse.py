@@ -1,4 +1,4 @@
-"""Readout function for the SANN model."""
+"""Readout function for the HOPSE model."""
 
 import topomodelx
 import torch
@@ -8,8 +8,8 @@ from torch_scatter import scatter
 from topobench.nn.readouts.base import AbstractZeroCellReadOut
 
 
-class SANNReadout(AbstractZeroCellReadOut):
-    r"""Readout function for the SANN model.
+class HOPSEReadout(AbstractZeroCellReadOut):
+    r"""Readout function for the HOPSE model.
 
     Parameters
     ----------

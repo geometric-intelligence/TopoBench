@@ -62,8 +62,8 @@ do
         optimizer.parameters.weight_decay=0.01\
         callbacks.early_stopping.patience=1\
         transforms=IMDB_sann_experiment_simplicial\
-        transforms.sann_encoding.max_hop=$max_hop\
-        transforms.sann_encoding.complex_dim=3\
+        transforms.hopse_encoding.max_hop=$max_hop\
+        transforms.hopse_encoding.complex_dim=3\
         --multirun &
         
 done
@@ -96,8 +96,8 @@ for i in {0..4}; do
                 optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
                 callbacks.early_stopping.patience=10\
                 transforms=IMDB_sann_experiment_simplicial\
-                transforms.sann_encoding.max_hop=$max_hop\
-                transforms.sann_encoding.complex_dim=3\
+                transforms.hopse_encoding.max_hop=$max_hop\
+                transforms.hopse_encoding.complex_dim=3\
                 --multirun &
             sleep 3
         done
@@ -134,8 +134,8 @@ for i in {0..4}; do
                 optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
                 callbacks.early_stopping.patience=10\
                 transforms=IMDB_sann_experiment_simplicial\
-                transforms.sann_encoding.max_hop=$max_hop\
-                transforms.sann_encoding.complex_dim=3\
+                transforms.hopse_encoding.max_hop=$max_hop\
+                transforms.hopse_encoding.complex_dim=3\
                 --multirun &
             sleep 3
         done

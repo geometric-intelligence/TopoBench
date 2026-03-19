@@ -28,12 +28,12 @@ def parse_pse_results(datasets, collect_subsets):
             continue
         for m_name in aggregated["model.model_name"].unique():
             for pe_type in aggregated[
-                "transforms.sann_encoding.pe_types"
+                "transforms.hopse_encoding.pe_types"
             ].unique():
                 agg_sub = aggregated[
                     (aggregated["model.model_name"] == m_name)
                     & (
-                        aggregated["transforms.sann_encoding.pe_types"]
+                        aggregated["transforms.hopse_encoding.pe_types"]
                         == pe_type
                     )
                 ].copy()

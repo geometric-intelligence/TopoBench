@@ -8,6 +8,7 @@ import torch
 import torch_geometric
 from torch_geometric.io import fs
 from omegaconf import OmegaConf
+from tqdm import tqdm
 from topobench.data.utils import (
     ensure_serializable,
     load_inductive_splits,
@@ -79,10 +80,7 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         str
             Path to the processed directory.
         """
-        if not self.transforms_applied:
-            return self.root
-        else:
-            return self.root + "/processed"
+        return self.root
 
     @property
     def processed_file_names(self) -> str:
@@ -196,11 +194,15 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         elif isinstance(self.dataset, torch_geometric.data.Data):
             data_list = [self.dataset]
 
-        self.data_list = (
-            [self.pre_transform(d) for d in data_list]
-            if self.pre_transform is not None
-            else data_list
-        )
+        if self.pre_transform is not None:
+            print(f"\nApplying transforms to {len(data_list)} graphs...")
+            self.data_list = [
+                self.pre_transform(d) 
+                for d in tqdm(data_list, desc="Processing graphs", unit="graph")
+            ]
+        else:
+            self.data_list = data_list
+            
         self._data, self.slices = self.collate(self.data_list)
         self._data_list = None  # Reset cache.
 

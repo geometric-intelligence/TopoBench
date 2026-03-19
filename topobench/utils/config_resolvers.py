@@ -386,7 +386,7 @@ def check_pses_in_transforms(transforms):
                 added_features += transforms.get("max_pe_dim") * 2
             else:
                 added_features += transforms.get("max_pe_dim")
-        elif transform == "RWSE":
+        elif transform == "RWSE" or transform == "SheafConnLapPE":
             added_features += transforms.get("max_pe_dim")
     # Potentially multiple transforms
     for key in transforms:
@@ -440,7 +440,7 @@ def check_pses_in_transforms(transforms):
                 added_features += transforms[key].get("max_pe_dim") * 2
             else:
                 added_features += transforms[key].get("max_pe_dim")
-        elif "RWSE" in key:
+        elif "RWSE" in key or "SheafConnLapPE" in key:
             added_features += transforms[key].get("max_pe_dim")
         elif "ElectrostaticPE" in key:
             added_features += 7
@@ -628,14 +628,14 @@ def infer_in_channels(dataset, transforms):
             # Case when the dataset has no edge attributes
             if feature_lifting == "Concatenation":
                 return_value = [num_features]
-                for i in range(2, transforms[lifting].complex_dim + 1):
+                for i in range(2, transforms[lifting].complex_dim + 2):
                     return_value += [int(return_value[-1]) * i]
 
                 return return_value
 
             else:
                 # ProjectionSum feature lifting by default
-                return [num_features] * transforms[lifting].complex_dim
+                return [num_features] * (transforms[lifting].complex_dim + 1)
         # Case when the dataset has edge attributes (cells attributes)
         else:
             assert type(num_features) is omegaconf.listconfig.ListConfig, (
@@ -645,18 +645,20 @@ def infer_in_channels(dataset, transforms):
             if not transforms[lifting].preserve_edge_attr:
                 if feature_lifting == "Concatenation":
                     return_value = [num_features[0]]
-                    for i in range(2, transforms[lifting].complex_dim + 1):
+                    for i in range(2, transforms[lifting].complex_dim + 2):
                         return_value += [int(return_value[-1]) * i]
 
                     return return_value
 
                 else:
                     # ProjectionSum feature lifting by default
-                    return [num_features[0]] * transforms[lifting].complex_dim
+                    return [num_features[0]] * (
+                        transforms[lifting].complex_dim + 1
+                    )
             # If preserve_edge_attr == True
             else:
                 return list(num_features) + [num_features[1]] * (
-                    transforms[lifting].complex_dim - len(num_features)
+                    transforms[lifting].complex_dim + 1 - len(num_features)
                 )
 
     # Case when there is no lifting
@@ -685,7 +687,12 @@ def infer_in_channels(dataset, transforms):
             return [num_features]
 
         else:
-            return [num_features[0]]
+            pe_features = (
+                check_pses_in_transforms(transforms)
+                if transforms is not None
+                else 0
+            )
+            return [num_features[0] + pe_features]
 
     # This else is never executed
     else:

@@ -16,8 +16,8 @@ python topobenchmark/run.py \
     callbacks.early_stopping.patience=10 \
     transforms=ZINC_sann_experiment \
     transforms.graph2cell_lifting.max_cell_length=10 \
-    transforms/data_manipulations@transforms.sann_encoding=add_gpse_information \
-    transforms.sann_encoding.pretrain_model=ZINC \
-    transforms.sann_encoding.copy_initial=True \
+    transforms/data_manipulations@transforms.hopse_encoding=add_gpse_information \
+    transforms.hopse_encoding.pretrain_model=ZINC \
+    transforms.hopse_encoding.copy_initial=True \
     transforms.graph2cell_lifting.neighborhoods=$neighborhood \
-    transforms.sann_encoding.neighborhoods=$neighborhood
+    transforms.hopse_encoding.neighborhoods=$neighborhood

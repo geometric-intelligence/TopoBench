@@ -62,8 +62,8 @@ do
         optimizer.parameters.weight_decay=0.01\
         callbacks.early_stopping.patience=1\
         transforms=ZINC_sann_experiment_simplicial\
-        transforms.sann_encoding.max_hop=$max_hop\
-        transforms.sann_encoding.complex_dim=3\
+        transforms.hopse_encoding.max_hop=$max_hop\
+        transforms.hopse_encoding.complex_dim=3\
         --multirun &
         
 done
@@ -96,8 +96,8 @@ for i in {0..4}; do
                 optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
                 callbacks.early_stopping.patience=10\
                 transforms=ZINC_sann_experiment_simplicial\
-                transforms.sann_encoding.max_hop=$max_hop\
-                transforms.sann_encoding.complex_dim=3\
+                transforms.hopse_encoding.max_hop=$max_hop\
+                transforms.hopse_encoding.complex_dim=3\
                 --multirun &
             sleep 3
         done
@@ -118,8 +118,8 @@ done
 #     dataset.split_params.data_seed=$seed\
 #     dataset.dataloader_params.batch_size=128,256\
 #     model.feature_encoder.out_channels=64,128\
-#     transforms.sann_encoding.max_hop=1,2,3\
-#     transforms.sann_encoding.complex_dim=3\
+#     transforms.hopse_encoding.max_hop=1,2,3\
+#     transforms.hopse_encoding.complex_dim=3\
 #     optimizer.parameters.weight_decay=0,0.0001\
 #     optimizer.parameters.lr=0.01,0.001\
 #     trainer.max_epochs=500\
