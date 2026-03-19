@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
-          cache-dependency-glob: "uv.lock"
+          cache-dependency-glob: "**/pyproject.toml"
 
       # 2. Run your centralized installation script
       - name: Install dependencies (via script)

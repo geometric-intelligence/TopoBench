@@ -22,5 +22,3 @@ jobs:
           src: "./topobench"
           # This ensures the ruff version matches what you have in pyproject.toml
           version-file: "pyproject.toml"
-          # Optional: fails the build if the code changes (e.g. formatting)
-          changed-files: "true"
