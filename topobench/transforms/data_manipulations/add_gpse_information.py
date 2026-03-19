@@ -326,7 +326,7 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         )
         
         with torch.inference_mode():
-            expanded_out, _ = self.model.forward(input_graph)
+            expanded_out, _ = self.model(input_graph)
 
         # Only grab the cells we are interested in
         x_out = expanded_out[:n_dst_cells]
