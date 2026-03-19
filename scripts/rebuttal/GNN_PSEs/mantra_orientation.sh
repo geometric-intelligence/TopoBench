@@ -69,9 +69,9 @@ for i in {0..5}; do
         optimizer.parameters.lr=0.01\
         optimizer.parameters.weight_decay=0.25\
         callbacks.early_stopping.patience=10\
-        transforms.sann_encoding.neighborhoods=$neighborhood\
+        transforms.hopse_encoding.neighborhoods=$neighborhood\
         transforms.redefine_simplicial_neighborhoods.neighborhoods=$neighborhood\
-        transforms.sann_encoding.pe_types=[$pe_type]\
+        transforms.hopse_encoding.pe_types=[$pe_type]\
         --multirun &
         sleep 300
 done
@@ -102,9 +102,9 @@ for i in {0..5}; do
                 optimizer.parameters.lr=$lr\
                 optimizer.parameters.weight_decay=$wd\
                 callbacks.early_stopping.patience=10\
-                transforms.sann_encoding.neighborhoods=$neighborhood\
+                transforms.hopse_encoding.neighborhoods=$neighborhood\
                 transforms.redefine_simplicial_neighborhoods.neighborhoods=$neighborhood\
-                transforms.sann_encoding.pe_types=[$pe_type]\
+                transforms.hopse_encoding.pe_types=[$pe_type]\
                 --multirun &
         done
     done

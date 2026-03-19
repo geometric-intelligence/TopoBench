@@ -154,9 +154,9 @@ optimization_metrics = {
 }
 sweeped_columns = {
     "hopse": [
-        "transforms.sann_encoding.max_hop",
-        "transforms.sann_encoding.max_rank",
-        "transforms.sann_encoding.neighborhoods",
+        "transforms.hopse_encoding.max_hop",
+        "transforms.hopse_encoding.max_rank",
+        "transforms.hopse_encoding.neighborhoods",
         "model.feature_encoder.proj_dropout",
         # "model.backbone.num_layers",
         "model.backbone.n_layers",
@@ -168,15 +168,15 @@ sweeped_columns = {
         "optimizer.parameters.lr",
         "dataset.dataloader_params.batch_size",
         # Additional
-        # "transforms.sann_encoding.copy_initial",
-        "transforms.sann_encoding.pe_types",
+        # "transforms.hopse_encoding.copy_initial",
+        "transforms.hopse_encoding.pe_types",
         "transforms.graph2cell_lifting.max_cell_length",
-        "transforms.sann_encoding.is_undirected",
+        "transforms.hopse_encoding.is_undirected",
     ],
     "gnn": [
-        "transforms.sann_encoding.max_hop",
-        "transforms.sann_encoding.max_rank",
-        "transforms.sann_encoding.neighborhoods",
+        "transforms.hopse_encoding.max_hop",
+        "transforms.hopse_encoding.max_rank",
+        "transforms.hopse_encoding.neighborhoods",
         "model.feature_encoder.proj_dropout",
         "model.backbone.num_layers",
         # "model.backbone.n_layers",
@@ -188,10 +188,10 @@ sweeped_columns = {
         "optimizer.parameters.lr",
         "dataset.dataloader_params.batch_size",
         # Additional
-        # "transforms.sann_encoding.copy_initial",
-        "transforms.sann_encoding.pe_types",
+        # "transforms.hopse_encoding.copy_initial",
+        "transforms.hopse_encoding.pe_types",
         "transforms.graph2cell_lifting.max_cell_length",
-        "transforms.sann_encoding.is_undirected",
+        "transforms.hopse_encoding.is_undirected",
     ],
 }
 

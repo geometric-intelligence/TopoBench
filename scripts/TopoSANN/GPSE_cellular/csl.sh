@@ -78,10 +78,10 @@ datasets=(CSL) #
 #                 model.backbone.n_layers=1\
 #                 model.feature_encoder.out_channels=64\
 #                 model.feature_encoder.proj_dropout=0\
-#                 transforms/data_manipulations@transforms.sann_encoding=add_gpse_information\
-#                 transforms.sann_encoding.pretrain_model=ZINC\
-#                 transforms.sann_encoding.copy_initial=True \
-#                 transforms.sann_encoding.neighborhoods=$neighborhood\
+#                 transforms/data_manipulations@transforms.hopse_encoding=add_gpse_information\
+#                 transforms.hopse_encoding.pretrain_model=ZINC\
+#                 transforms.hopse_encoding.copy_initial=True \
+#                 transforms.hopse_encoding.neighborhoods=$neighborhood\
 #                 transforms=GPSE_BREC\
 #                 trainer.devices=\[$CUDA\]\
 #                 transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
@@ -91,7 +91,7 @@ datasets=(CSL) #
 #                 trainer.max_epochs=5\
 #                 trainer.min_epochs=1\
 #                 logger.wandb.project=BREC_prerun\
-#                 model.readout.readout_name=SANNReadout\
+#                 model.readout.readout_name=HOPSEReadout\
 #                 --multirun &
 #         done
 #         wait
@@ -115,10 +115,10 @@ do
             model.feature_encoder.out_channels=$OUT_CHANNELS\
             dataset.split_params.data_seed=$DATA_SEEDS_STR\
             model.feature_encoder.proj_dropout=$PROJECTION_DROPOUTS_STR\
-            transforms/data_manipulations@transforms.sann_encoding=add_gpse_information\
-            transforms.sann_encoding.pretrain_model=$PRETRAIN_MODELS_STR\
-            transforms.sann_encoding.copy_initial=True \
-            transforms.sann_encoding.neighborhoods=$neighborhood\
+            transforms/data_manipulations@transforms.hopse_encoding=add_gpse_information\
+            transforms.hopse_encoding.pretrain_model=$PRETRAIN_MODELS_STR\
+            transforms.hopse_encoding.copy_initial=True \
+            transforms.hopse_encoding.neighborhoods=$neighborhood\
             transforms.graph2cell_lifting.neighborhoods=$neighborhood\
             optimizer.parameters.lr=$LEARNING_RATES_STR\
             optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
@@ -129,7 +129,7 @@ do
             logger.wandb.project='CSL_cell_hopse_g'\
             transforms.graph2cell_lifting.max_cell_length=10\
             callbacks.early_stopping.patience=10\
-            model.readout.readout_name=SANNReadout\
+            model.readout.readout_name=HOPSEReadout\
             trainer.devices=\[$CUDA\]\
             --multirun &
     done

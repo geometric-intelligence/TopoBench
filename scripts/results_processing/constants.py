@@ -129,11 +129,11 @@ optimization_metrics = {
     },
 }
 sweeped_columns = [
-    "transforms.sann_encoding.max_hop",
-    "transforms.sann_encoding.max_rank",
-    "transforms.sann_encoding.neighborhoods",
-    "transforms.sann_encoding.pretrain_model",
-    "transforms.sann_encoding.complex_dim",
+    "transforms.hopse_encoding.max_hop",
+    "transforms.hopse_encoding.max_rank",
+    "transforms.hopse_encoding.neighborhoods",
+    "transforms.hopse_encoding.pretrain_model",
+    "transforms.hopse_encoding.complex_dim",
     "model.feature_encoder.proj_dropout",
     "model.backbone.n_layers",
     "model.backbone.hidden_channels",
@@ -152,10 +152,10 @@ sweeped_columns = [
     "dataset.dataloader_params.batch_size",
     "dataset.loader.parameters.manifold_dim",
     # Additional
-    "transforms.sann_encoding.copy_initial",
+    "transforms.hopse_encoding.copy_initial",
     "transforms.graph2cell_lifting.max_cell_length",
-    "transforms.sann_encoding.use_initial_features",
-    "transforms.sann_encoding.is_undirected",
+    "transforms.hopse_encoding.use_initial_features",
+    "transforms.hopse_encoding.is_undirected",
     "transforms.redefine_simplicial_neighborhoods.signed",
     "transforms.redefine_simplicial_neighborhoods.complex_dim",
 ]

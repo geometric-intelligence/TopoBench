@@ -79,10 +79,10 @@ datasets=(BREC_basic BREC_regular BREC_extension BREC_cfi) #
 #                 model.backbone.n_layers=1\
 #                 model.feature_encoder.out_channels=64\
 #                 model.feature_encoder.proj_dropout=0\
-#                 transforms/data_manipulations@transforms.sann_encoding=add_gpse_information\
-#                 transforms.sann_encoding.pretrain_model=ZINC\
-#                 transforms.sann_encoding.copy_initial=True \
-#                 transforms.sann_encoding.neighborhoods=$neighborhood\
+#                 transforms/data_manipulations@transforms.hopse_encoding=add_gpse_information\
+#                 transforms.hopse_encoding.pretrain_model=ZINC\
+#                 transforms.hopse_encoding.copy_initial=True \
+#                 transforms.hopse_encoding.neighborhoods=$neighborhood\
 #                 transforms=GPSE_BREC\
 #                 trainer.devices=\[$CUDA\]\
 #                 transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
@@ -92,7 +92,7 @@ datasets=(BREC_basic BREC_regular BREC_extension BREC_cfi) #
 #                 trainer.max_epochs=5\
 #                 trainer.min_epochs=1\
 #                 logger.wandb.project=BREC_prerun\
-#                 model.readout.readout_name=SANNReadout\
+#                 model.readout.readout_name=HOPSEReadout\
 #                 --multirun &
 #         done
 #         wait
@@ -115,10 +115,10 @@ do
             model.backbone.n_layers=$N_LAYERS_STR\
             model.feature_encoder.out_channels=$OUT_CHANNELS\
             model.feature_encoder.proj_dropout=$PROJECTION_DROPOUTS_STR\
-            transforms/data_manipulations@transforms.sann_encoding=add_gpse_information\
-            transforms.sann_encoding.pretrain_model=ZINC\
-            transforms.sann_encoding.copy_initial=True \
-            transforms.sann_encoding.neighborhoods=$neighborhood\
+            transforms/data_manipulations@transforms.hopse_encoding=add_gpse_information\
+            transforms.hopse_encoding.pretrain_model=ZINC\
+            transforms.hopse_encoding.copy_initial=True \
+            transforms.hopse_encoding.neighborhoods=$neighborhood\
             transforms=GPSE_BREC\
             transforms.graph2simplicial_lifting.neighborhoods=$neighborhood\
             optimizer.parameters.lr=$LEARNING_RATES_STR\
@@ -127,7 +127,7 @@ do
             dataset.dataloader_params.batch_size=$BATCH_SIZES_STR\
             trainer.max_epochs=100\
             logger.wandb.project=BREC\
-            model.readout.readout_name=SANNReadout\
+            model.readout.readout_name=HOPSEReadout\
             --multirun &
     
     done

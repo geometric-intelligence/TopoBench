@@ -5,12 +5,13 @@ from preprocess import preprocess_df
 
 
 NAME_DICT_PE = {
-    'rwse,elstaticpe,hkdiagse,lappe': "All",
-    'rwse': "RWSE",
-    'hkdiagse': 'HKDiag',
-    'lappe': 'Lap',
-    'elstaticpe': 'EStat'
+    "rwse,elstaticpe,hkdiagse,lappe": "All",
+    "rwse": "RWSE",
+    "hkdiagse": "HKDiag",
+    "lappe": "Lap",
+    "elstaticpe": "EStat",
 }
+
 
 def parse_pse_results(datasets, collect_subsets):
     df_dict = {
@@ -25,10 +26,15 @@ def parse_pse_results(datasets, collect_subsets):
         if len(aggregated) == 0:
             continue
         for m_name in aggregated["model.model_name"].unique():
-            for pe_type in aggregated["transforms.sann_encoding.pe_types"].unique():
+            for pe_type in aggregated[
+                "transforms.hopse_encoding.pe_types"
+            ].unique():
                 agg_sub = aggregated[
                     (aggregated["model.model_name"] == m_name)
-                    & (aggregated["transforms.sann_encoding.pe_types"] == pe_type)
+                    & (
+                        aggregated["transforms.hopse_encoding.pe_types"]
+                        == pe_type
+                    )
                 ].copy()
                 if len(agg_sub) == 0:
                     print("Not found:", dataset, m_name, pe_type)
@@ -51,8 +57,6 @@ def parse_pse_results(datasets, collect_subsets):
     return df_res
 
 
-
-
 def parse_all_dfs(selected_datasets=[]):
     df = pd.read_csv("merged_rebutals/merged_total.csv")
     df = preprocess_df(df)
@@ -64,9 +68,15 @@ def parse_all_dfs(selected_datasets=[]):
     df_pse = parse_pse_results(selected_datasets, scores)
 
     # FIX MAntra naming
-    df_pse.loc[df_pse.dataset == "MANTRA_betti_numbers_0", "dataset"] = "MANTRA-BN-0"
-    df_pse.loc[df_pse.dataset == "MANTRA_betti_numbers_1", "dataset"] = "MANTRA-BN-1"
-    df_pse.loc[df_pse.dataset == "MANTRA_betti_numbers_2", "dataset"] = "MANTRA-BN-2"
+    df_pse.loc[df_pse.dataset == "MANTRA_betti_numbers_0", "dataset"] = (
+        "MANTRA-BN-0"
+    )
+    df_pse.loc[df_pse.dataset == "MANTRA_betti_numbers_1", "dataset"] = (
+        "MANTRA-BN-1"
+    )
+    df_pse.loc[df_pse.dataset == "MANTRA_betti_numbers_2", "dataset"] = (
+        "MANTRA-BN-2"
+    )
     df_pse.loc[df_pse.dataset == "MANTRA_name", "dataset"] = "MANTRA-N"
     df_pse.loc[df_pse.dataset == "MANTRA_orientation", "dataset"] = "MANTRA-O"
 

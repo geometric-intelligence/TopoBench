@@ -2,7 +2,7 @@
 defaults:
   - override /dataset: graph/PROTEINS
   - override /model: simplicial/sann
-  - override /transforms/data_manipulations@transforms.sann_encoding: different_gaus_features_sann
+  - override /transforms/data_manipulations@transforms.hopse_encoding: different_gaus_features_sann
 
 tags: ["simplicial", "PROTEINS"]
 

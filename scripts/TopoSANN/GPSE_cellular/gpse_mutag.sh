@@ -83,10 +83,10 @@ for i in {0..7}; do
             optimizer.parameters.weight_decay=0.25\
             callbacks.early_stopping.patience=10\
             transforms=MUTAG_sann_experiment\
-            transforms/data_manipulations@transforms.sann_encoding=add_gpse_information\
-            transforms.sann_encoding.pretrain_model=$pret_model\
-            transforms.sann_encoding.copy_initial=True \
-            transforms.sann_encoding.neighborhoods=$neighborhood\
+            transforms/data_manipulations@transforms.hopse_encoding=add_gpse_information\
+            transforms.hopse_encoding.pretrain_model=$pret_model\
+            transforms.hopse_encoding.copy_initial=True \
+            transforms.hopse_encoding.neighborhoods=$neighborhood\
             transforms.graph2cell_lifting.neighborhoods=$neighborhood\
             --multirun &
     done
@@ -118,10 +118,10 @@ for i in {0..7}; do
                 optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
                 callbacks.early_stopping.patience=10\
                 transforms=MUTAG_sann_experiment \
-                transforms/data_manipulations@transforms.sann_encoding=add_gpse_information\
-                transforms.sann_encoding.pretrain_model=$PRETRAIN_MODELS_STR\
-                transforms.sann_encoding.copy_initial=True \
-                transforms.sann_encoding.neighborhoods=$neighborhood\
+                transforms/data_manipulations@transforms.hopse_encoding=add_gpse_information\
+                transforms.hopse_encoding.pretrain_model=$PRETRAIN_MODELS_STR\
+                transforms.hopse_encoding.copy_initial=True \
+                transforms.hopse_encoding.neighborhoods=$neighborhood\
                 transforms.graph2cell_lifting.neighborhoods=$neighborhood\
                 --multirun &
         done

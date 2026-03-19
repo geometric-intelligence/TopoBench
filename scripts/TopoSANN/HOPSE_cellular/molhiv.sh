@@ -71,7 +71,7 @@ for i in {0..7}; do
         dataset=graph/$dataset\
         model=cell/hopse_m\
         model.backbone.n_layers=1\
-        model.readout.readout_name=SANNReadout\
+        model.readout.readout_name=HOPSEReadout\
         model.feature_encoder.out_channels=128\
         model.feature_encoder.proj_dropout=0.5\
         model.feature_encoder.use_atom_encoder=True\
@@ -86,7 +86,7 @@ for i in {0..7}; do
         logger.wandb.project='prerun'\
         optimizer.parameters.lr=0.01\
         optimizer.parameters.weight_decay=0.25\
-        transforms.sann_encoding.neighborhoods=$neighborhood\
+        transforms.hopse_encoding.neighborhoods=$neighborhood\
         transforms.graph2cell_lifting.neighborhoods=$neighborhood\
         transforms.graph2cell_lifting.max_cell_length=10\
         --multirun &
@@ -105,7 +105,7 @@ for i in {0..7}; do
         python topobench/run.py\
             dataset=graph/$dataset\
             model=cell/hopse_m\
-            model.readout.readout_name=SANNReadout\
+            model.readout.readout_name=HOPSEReadout\
             model.backbone.n_layers=$N_LAYERS_STR\
             model.feature_encoder.out_channels=$OUT_CHANNELS_STR\
             model.feature_encoder.proj_dropout=$PROJECTION_DROPOUTS_STR\
@@ -121,7 +121,7 @@ for i in {0..7}; do
             optimizer.parameters.lr=$LEARNING_RATES_STR\
             optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
             callbacks.early_stopping.patience=10\
-            transforms.sann_encoding.neighborhoods=$neighborhood\
+            transforms.hopse_encoding.neighborhoods=$neighborhood\
             transforms.graph2cell_lifting.max_cell_length=10\
             transforms.graph2cell_lifting.neighborhoods=$neighborhood\
             --multirun &

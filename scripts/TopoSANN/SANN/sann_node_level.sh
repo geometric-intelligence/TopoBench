@@ -57,8 +57,8 @@ for dataset in ${datasets[*]}; do
             optimizer.parameters.lr=0.001\
             optimizer.parameters.weight_decay=0.01\
             callbacks.early_stopping.patience=1\
-            transforms.sann_encoding.max_hop=$max_hop\
-            transforms.sann_encoding.complex_dim=3\
+            transforms.hopse_encoding.max_hop=$max_hop\
+            transforms.hopse_encoding.complex_dim=3\
             --multirun &
             
     done
@@ -90,8 +90,8 @@ for dataset in ${datasets[*]}; do
                     optimizer.parameters.lr=$lr\
                     optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
                     callbacks.early_stopping.patience=10\
-                    transforms.sann_encoding.max_hop=$max_hop\
-                    transforms.sann_encoding.complex_dim=3\
+                    transforms.hopse_encoding.max_hop=$max_hop\
+                    transforms.hopse_encoding.complex_dim=3\
                     --multirun &
                 sleep 3
             done
@@ -117,8 +117,8 @@ wait
 #     model.feature_encoder.out_channels=64,128\
 #     dataset.split_params.data_seed=$seed\
 #     dataset.dataloader_params.batch_size=128,256\
-#     transforms.sann_encoding.max_hop=1,2,3\
-#     transforms.sann_encoding.complex_dim=3\
+#     transforms.hopse_encoding.max_hop=1,2,3\
+#     transforms.hopse_encoding.complex_dim=3\
 #     optimizer.parameters.weight_decay=0,0.0001\
 #     optimizer.parameters.lr=0.01,0.001\
 #     trainer.max_epochs=500\
@@ -131,4 +131,4 @@ wait
 #     --multirun &
 # done
 
-# # transforms.sann_encoding.neighborhoods='[incidence_1,incidence_0]','[incidence_0]','[incidence_1,0_incidence_1,incidence_0]'\
+# # transforms.hopse_encoding.neighborhoods='[incidence_1,incidence_0]','[incidence_0]','[incidence_1,0_incidence_1,incidence_0]'\

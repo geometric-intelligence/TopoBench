@@ -18,5 +18,5 @@ dataset:
   split_params:
     split_type: k-fold
 transforms:
-  sann_encoding:
+  hopse_encoding:
     max_hop: 1

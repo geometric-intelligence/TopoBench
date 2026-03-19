@@ -87,9 +87,9 @@ gpus=(0 1 2 3 4 5 6 7)
 #             optimizer.parameters.weight_decay=0.25\
 #             callbacks.early_stopping.patience=10\
 #             transforms=GPSE_REDDIT_cell\
-#             transforms.sann_encoding.pretrain_model=$pret_model\
-#             transforms.sann_encoding.copy_initial=True \
-#             transforms.sann_encoding.neighborhoods=$neighborhood\
+#             transforms.hopse_encoding.pretrain_model=$pret_model\
+#             transforms.hopse_encoding.copy_initial=True \
+#             transforms.hopse_encoding.neighborhoods=$neighborhood\
 #             transforms.graph2cell_lifting.neighborhoods=$neighborhood\
 #             --multirun &
 #     done
@@ -121,9 +121,9 @@ for i in {0..7}; do
             optimizer.parameters.weight_decay=$WEIGHT_DECAYS_STR\
             callbacks.early_stopping.patience=10\
             transforms=GPSE_REDDIT_cell\
-            transforms.sann_encoding.pretrain_model=$pretrain_model\
-            transforms.sann_encoding.copy_initial=True \
-            transforms.sann_encoding.neighborhoods=$neighborhood\
+            transforms.hopse_encoding.pretrain_model=$pretrain_model\
+            transforms.hopse_encoding.copy_initial=True \
+            transforms.hopse_encoding.neighborhoods=$neighborhood\
             transforms.graph2cell_lifting.neighborhoods=$neighborhood\
             --multirun &
     done
