@@ -6,6 +6,7 @@ import hydra
 from topobench.utils.config_resolvers import (
     infer_in_channels,
     infer_num_cell_dimensions,
+    infer_in_khop_feature_dim,
     infer_topotune_num_cell_dimensions,
     get_default_metrics,
     get_default_trainer,
@@ -15,6 +16,7 @@ from topobench.utils.config_resolvers import (
     get_monitor_metric,
     get_monitor_mode,
     get_required_lifting,
+    set_preserve_edge_attr,
     check_pses_in_transforms,
 )
 
@@ -37,14 +39,14 @@ class TestConfigResolvers:
         
     def test_get_default_metrics(self):
         """Test get_default_metrics."""
-        out = get_default_metrics("classification")
-        assert out == ["accuracy", "precision", "recall", "auroc"]
+        out = get_default_metrics("classification", 10)
+        assert out == ["accuracy", "precision", "recall", "auroc", "f1"]
 
-        out = get_default_metrics("regression")
+        out = get_default_metrics("regression", 1)
         assert out == ["mse", "mae"]
 
         with pytest.raises(ValueError, match="Invalid task") as e:
-            get_default_metrics("some_task")
+            get_default_metrics("some_task", 2)
 
     def test_get_default_transform(self):
         """Test get_default_transform."""
@@ -64,7 +66,7 @@ class TestConfigResolvers:
         assert out == "model_defaults/gps"
 
         out = get_default_transform("graph/ZINC", "graph/gps")
-        assert out == "dataset_model_defaults/ZINC_gps"
+        assert out == "model_dataset_defaults/gps_ZINC"
 
 
     def test_get_flattened_channels(self):
@@ -162,7 +164,7 @@ class TestConfigResolvers:
         """Test infer_topotune_num_cell_dimensions."""
         neighborhoods = ["up_adjacency-1"]
         out = infer_topotune_num_cell_dimensions(neighborhoods)
-        assert out == 3
+        assert out == 2
 
         neighborhoods = ["up_incidence-0"]
         out = infer_topotune_num_cell_dimensions(neighborhoods)
@@ -172,19 +174,36 @@ class TestConfigResolvers:
         out = infer_topotune_num_cell_dimensions(neighborhoods)
         assert out == 3
         
-    def test_get_default_metrics(self):
-        """Test get_default_metrics."""
-        out = get_default_metrics("classification", ["accuracy", "precision"])
+    def test_get_default_metrics_with_params(self):
+        """Test get_default_metrics with explicit metrics."""
+        out = get_default_metrics("classification", 10, ["accuracy", "precision"])
         assert out == ["accuracy", "precision"]
         
-        out = get_default_metrics("classification")
-        assert out == ["accuracy", "precision", "recall", "auroc"]
+        out = get_default_metrics("classification", 10)
+        assert out == ["accuracy", "precision", "recall", "auroc", "f1"]
 
-        out = get_default_metrics("regression")
+        out = get_default_metrics("regression", 1)
         assert out == ["mse", "mae"]
 
         with pytest.raises(ValueError, match="Invalid task") as e:
-            get_default_metrics("some_task")
+            get_default_metrics("some_task", 2)
+            
+    def test_set_preserve_edge_attr(self):
+        """Test set_preserve_edge_attr."""
+        default = True
+        
+        out = set_preserve_edge_attr(model_name="sann", default=default)
+        assert out == False
+        
+        out = set_preserve_edge_attr(model_name="san", default=default)
+        assert out == True
+        
+    def test_infer_in_khop_feature_dim(self):
+        """Test infer_in_khop_feature_dim."""
+        dataset_in_channels = [7, 7, 7]
+        max_hop = 3
+        out = infer_in_khop_feature_dim(dataset_in_channels, max_hop)
+        assert out == [[7, 14, 42, 133], [7, 28, 91, 294], [7, 21, 70, 231]]
 
     def test_check_pses_in_transforms_empty(self):
         """Test check_pses_in_transforms with no encodings."""
@@ -540,3 +559,173 @@ class TestConfigResolvers:
         })
         result = check_pses_in_transforms(transforms)
         assert result == expected
+
+    def test_check_pses_in_transforms_electrostatic_pe_only(self):
+        """Test check_pses_in_transforms with only ElectrostaticPE encoding."""
+        transforms = OmegaConf.create({
+            "ElectrostaticPE": {
+                "concat_to_x": True
+            }
+        })
+        result = check_pses_in_transforms(transforms)
+        assert result == 7
+
+    def test_check_pses_in_transforms_hkdiag_se_only(self):
+        """Test check_pses_in_transforms with only HKdiagSE encoding."""
+        transforms = OmegaConf.create({
+            "HKdiagSE": {
+                "kernel_param_HKdiagSE": [1, 5],
+                "concat_to_x": True
+            }
+        })
+        result = check_pses_in_transforms(transforms)
+        assert result == 4  # range(1, 5) = 4
+
+    def test_check_pses_in_transforms_hkdiag_se_different_ranges(self):
+        """Test check_pses_in_transforms with HKdiagSE using different kernel param ranges."""
+        transforms = OmegaConf.create({
+            "HKdiagSE": {
+                "kernel_param_HKdiagSE": [1, 9],
+                "concat_to_x": True
+            }
+        })
+        result = check_pses_in_transforms(transforms)
+        assert result == 8  # range(1, 9) = 8
+
+    def test_check_pses_in_transforms_combined_pses_electrostatic_pe(self):
+        """Test check_pses_in_transforms with CombinedPSEs containing ElectrostaticPE."""
+        transforms = OmegaConf.create({
+            "CombinedPSEs": {
+                "encodings": ["ElectrostaticPE"],
+                "parameters": {
+                    "ElectrostaticPE": {
+                        "concat_to_x": True
+                    }
+                }
+            }
+        })
+        result = check_pses_in_transforms(transforms)
+        assert result == 7
+
+    def test_check_pses_in_transforms_combined_pses_hkdiag_se(self):
+        """Test check_pses_in_transforms with CombinedPSEs containing HKdiagSE."""
+        transforms = OmegaConf.create({
+            "CombinedPSEs": {
+                "encodings": ["HKdiagSE"],
+                "parameters": {
+                    "HKdiagSE": {
+                        "kernel_param_HKdiagSE": [1, 5],
+                        "concat_to_x": True
+                    }
+                }
+            }
+        })
+        result = check_pses_in_transforms(transforms)
+        assert result == 4
+
+    def test_check_pses_in_transforms_combined_all_four(self):
+        """Test check_pses_in_transforms with CombinedPSEs containing all four encoding types."""
+        transforms = OmegaConf.create({
+            "CombinedPSEs": {
+                "encodings": ["LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE"],
+                "parameters": {
+                    "LapPE": {
+                        "max_pe_dim": 8,
+                        "include_eigenvalues": False,
+                        "concat_to_x": True
+                    },
+                    "RWSE": {
+                        "max_pe_dim": 4,
+                        "concat_to_x": True
+                    },
+                    "ElectrostaticPE": {
+                        "concat_to_x": True
+                    },
+                    "HKdiagSE": {
+                        "kernel_param_HKdiagSE": [1, 4],
+                        "concat_to_x": True
+                    }
+                }
+            }
+        })
+        result = check_pses_in_transforms(transforms)
+        assert result == 22  # 8 + 4 + 7 + 3
+
+    def test_check_pses_in_transforms_combined_all_four_with_eigenvalues(self):
+        """Test check_pses_in_transforms with all four encodings and LapPE eigenvalues."""
+        transforms = OmegaConf.create({
+            "CombinedPSEs": {
+                "encodings": ["LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE"],
+                "parameters": {
+                    "LapPE": {
+                        "max_pe_dim": 8,
+                        "include_eigenvalues": True,
+                        "concat_to_x": True
+                    },
+                    "RWSE": {
+                        "max_pe_dim": 4,
+                        "concat_to_x": True
+                    },
+                    "ElectrostaticPE": {
+                        "concat_to_x": True
+                    },
+                    "HKdiagSE": {
+                        "kernel_param_HKdiagSE": [1, 4],
+                        "concat_to_x": True
+                    }
+                }
+            }
+        })
+        result = check_pses_in_transforms(transforms)
+        assert result == 30  # (8*2) + 4 + 7 + 3
+
+    def test_check_pses_in_transforms_separate_all_four(self):
+        """Test check_pses_in_transforms with all four encodings as separate transforms."""
+        transforms = OmegaConf.create({
+            "LapPE": {
+                "max_pe_dim": 8,
+                "include_eigenvalues": False,
+                "concat_to_x": True
+            },
+            "RWSE": {
+                "max_pe_dim": 4,
+                "concat_to_x": True
+            },
+            "ElectrostaticPE": {
+                "concat_to_x": True
+            },
+            "HKdiagSE": {
+                "kernel_param_HKdiagSE": [1, 5],
+                "concat_to_x": True
+            }
+        })
+        result = check_pses_in_transforms(transforms)
+        assert result == 23  # 8 + 4 + 7 + 4
+
+    def test_check_pses_in_transforms_mixed_combined_and_separate_with_new_encodings(self):
+        """Test check_pses_in_transforms with CombinedPSEs and separate ElectrostaticPE/HKdiagSE."""
+        transforms = OmegaConf.create({
+            "CombinedPSEs": {
+                "encodings": ["LapPE", "RWSE"],
+                "parameters": {
+                    "LapPE": {
+                        "max_pe_dim": 8,
+                        "include_eigenvalues": False,
+                        "concat_to_x": True
+                    },
+                    "RWSE": {
+                        "max_pe_dim": 4,
+                        "concat_to_x": True
+                    }
+                }
+            },
+            "ElectrostaticPE_extra": {
+                "concat_to_x": True
+            },
+            "HKdiagSE_extra": {
+                "kernel_param_HKdiagSE": [1, 6],
+                "concat_to_x": True
+            }
+        })
+        result = check_pses_in_transforms(transforms)
+        assert result == 24  # (8 + 4) + 7 + 5

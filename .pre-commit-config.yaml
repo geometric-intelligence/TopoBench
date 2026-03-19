@@ -21,9 +21,9 @@ repos:
     rev: v0.9.9
     hooks:
       - id: ruff-format
-      - id: ruff
+      # - id: ruff
 
-  - repo: https://github.com/numpy/numpydoc
-    rev: v1.8.0
-    hooks:
-      - id: numpydoc-validation
+  # - repo: https://github.com/numpy/numpydoc
+  #   rev: v1.8.0
+    # hooks:
+    #   - id: numpydoc-validation

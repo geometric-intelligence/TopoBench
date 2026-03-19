@@ -1,5 +1,6 @@
 """Main entry point for training and testing models."""
 
+import os
 import random
 from pathlib import Path
 from typing import Any
@@ -31,13 +32,20 @@ from topobench.utils.config_resolvers import (
     get_default_trainer,
     get_default_transform,
     get_flattened_channels,
+    get_list_element,
     get_monitor_metric,
     get_monitor_mode,
     get_non_relational_out_channels,
     get_required_lifting,
+    get_pse_dimensions,
     infer_in_channels,
+    infer_in_hasse_graph_agg_dim,
+    infer_in_khop_feature_dim,
+    infer_list_length,
+    infer_list_length_plus_one,
     infer_num_cell_dimensions,
     infer_topotune_num_cell_dimensions,
+    set_preserve_edge_attr,
 )
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
@@ -67,6 +75,9 @@ OmegaConf.register_new_resolver(
 )
 OmegaConf.register_new_resolver(
     "get_default_transform", get_default_transform, replace=True
+)
+OmegaConf.register_new_resolver(
+    "get_list_element", get_list_element, replace=True
 )
 OmegaConf.register_new_resolver(
     "get_flattened_channels",
@@ -100,6 +111,47 @@ OmegaConf.register_new_resolver(
 )
 OmegaConf.register_new_resolver(
     "parameter_multiplication", lambda x, y: int(int(x) * int(y)), replace=True
+)
+OmegaConf.register_new_resolver(
+    "infer_in_khop_feature_dim",
+    infer_in_khop_feature_dim,
+    replace=True,
+)
+OmegaConf.register_new_resolver(
+    "infer_in_hasse_graph_agg_dim",
+    infer_in_hasse_graph_agg_dim,
+    replace=True,
+)
+
+OmegaConf.register_new_resolver(
+    "get_pse_dimensions",
+    get_pse_dimensions,
+    replace=True,
+)
+
+OmegaConf.register_new_resolver(
+    "get_hop_num_gpse",
+    lambda x: int(x)
+    + 1,  # 2-hop if copy_initial = True else 1-hop (only GPSE info)
+    replace=True,
+)
+OmegaConf.register_new_resolver(
+    "get_hop_num_pses", lambda x, y: len(x) + int(y), replace=True
+)
+OmegaConf.register_new_resolver(
+    "set_preserve_edge_attr",
+    set_preserve_edge_attr,
+    replace=True,
+)
+OmegaConf.register_new_resolver(
+    "infer_list_length",
+    infer_list_length,
+    replace=True,
+)
+OmegaConf.register_new_resolver(
+    "infer_list_length_plus_one",
+    infer_list_length_plus_one,
+    replace=True,
 )
 
 
@@ -143,7 +195,6 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
         A tuple with metrics and dict with all instantiated objects.
     """
     # Set seed for random number generators in pytorch, numpy and python.random
-    # if cfg.get("seed"):
     L.seed_everything(cfg.seed, workers=True)
     # Seed for torch
     torch.manual_seed(cfg.seed)
@@ -167,7 +218,11 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
     dataset, dataset_dir = dataset_loader.load()
     # Preprocess dataset and load the splits
     log.info("Instantiating preprocessor...")
-    transform_config = cfg.get("transforms", None)
+    transform_config = (
+        hydra.utils.instantiate(cfg.transforms)
+        if cfg.get("transforms", None) is not None
+        else None
+    )
     preprocessor = PreProcessor(dataset, dataset_dir, transform_config)
     dataset_train, dataset_val, dataset_test = (
         preprocessor.load_dataset_splits(cfg.dataset.split_params)
@@ -199,12 +254,23 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
     log.info("Instantiating loggers...")
     logger: list[Logger] = instantiate_loggers(cfg.get("logger"))
 
+    # Log to wandb preprocessor time
+    if logger:
+        for log_temp in logger:
+            if isinstance(log_temp, L.pytorch.loggers.wandb.WandbLogger):
+                log_temp.log_metrics(
+                    {
+                        "preprocessor_time": preprocessor.preprocessing_time,
+                    }
+                )
+
     log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
     trainer: Trainer = hydra.utils.instantiate(
         cfg.trainer,
         callbacks=callbacks,
         logger=logger,
         num_sanity_val_steps=0,
+        log_every_n_steps=0,  # Avoid console logging
     )
 
     object_dict = {
@@ -227,7 +293,6 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
         )
 
     train_metrics = trainer.callback_metrics
-
     if cfg.get("test"):
         log.info("Starting testing!")
 

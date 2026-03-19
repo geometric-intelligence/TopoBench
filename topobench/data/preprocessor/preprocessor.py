@@ -2,11 +2,13 @@
 
 import json
 import os
+import time
 
 import torch
 import torch_geometric
 from torch_geometric.io import fs
-
+from omegaconf import OmegaConf
+from tqdm import tqdm
 from topobench.data.utils import (
     ensure_serializable,
     load_inductive_splits,
@@ -34,14 +36,19 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
 
     def __init__(self, dataset, data_dir, transforms_config=None, **kwargs):
         self.dataset = dataset
+        self.preprocessing_time = 0
         if transforms_config is not None:
             self.transforms_applied = True
             pre_transform = self.instantiate_pre_transform(
                 data_dir, transforms_config
             )
+            # Record the time taken for preprocessing
+            start_time = time.time()
             super().__init__(
                 self.processed_data_dir, None, pre_transform, **kwargs
             )
+            end_time = time.time()
+            self.preprocessing_time = end_time - start_time
             self.transform = (
                 dataset.transform if hasattr(dataset, "transform") else None
             )
@@ -61,6 +68,8 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         # We need to store this information to be able to reproduce the splits afterwards
         if hasattr(dataset, "split_idx"):
             self.split_idx = dataset.split_idx
+        if hasattr(dataset, "split_idx_list"):
+            self.split_idx_list = dataset.split_idx_list
 
     @property
     def processed_dir(self) -> str:
@@ -71,10 +80,7 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         str
             Path to the processed directory.
         """
-        if not self.transforms_applied:
-            return self.root
-        else:
-            return self.root + "/processed"
+        return self.root
 
     @property
     def processed_file_names(self) -> str:
@@ -188,12 +194,15 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         elif isinstance(self.dataset, torch_geometric.data.Data):
             data_list = [self.dataset]
 
-        self.data_list = (
-            [self.pre_transform(d) for d in data_list]
-            if self.pre_transform is not None
-            else data_list
-        )
-
+        if self.pre_transform is not None:
+            print(f"\nApplying transforms to {len(data_list)} graphs...")
+            self.data_list = [
+                self.pre_transform(d) 
+                for d in tqdm(data_list, desc="Processing graphs", unit="graph")
+            ]
+        else:
+            self.data_list = data_list
+            
         self._data, self.slices = self.collate(self.data_list)
         self._data_list = None  # Reset cache.
 
