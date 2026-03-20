@@ -5,6 +5,8 @@ import os
 import numpy as np
 import torch
 from sklearn.model_selection import StratifiedKFold
+from torch_geometric.transforms import RandomLinkSplit
+from torch_geometric.utils import negative_sampling
 
 from topobench.dataloader import DataloadDataset
 
@@ -384,3 +386,191 @@ def load_coauthorship_hypergraph_splits(data, parameters, train_prop=0.5):
         == data.num_nodes
     ), "Not all nodes within splits"
     return DataloadDataset([data]), None, None
+
+def load_edge_transductive_splits(preprocessor, split_params) -> tuple[
+    DataloadDataset, DataloadDataset | None, DataloadDataset | None
+]:
+    """
+    Load edge-level dataset splits for transductive link prediction.
+
+    Parameters
+    ----------
+    preprocessor : PreProcessor
+        Object containing the full graph dataset.
+    split_params : dict or omegaconf.DictConfig
+        Split configuration including ``val_prop`` (default 0.1), ``test_prop``
+        (default 0.1), and ``is_undirected`` (default True).
+
+    Returns
+    -------
+    tuple of DataloadDataset
+        A tuple containing the (train, val, test) datasets.
+    """
+    from topobench.transforms.data_manipulations.negative_links_sampling import (
+        NegativeSamplingTransform,
+    )
+    # Get the full (single) graph from the underlying PyG dataset.
+    full_data = preprocessor.dataset[0]
+
+    # Read split hyperparameters with sensible defaults.
+    val_ratio = float(split_params.get("val_prop", 0.10))
+    test_ratio = float(split_params.get("test_prop", 0.10))
+    is_undirected = bool(split_params.get("is_undirected", True))
+    neg_sampling_ratio = float(split_params.get("neg_sampling_ratio", 1.0))
+
+    # Instantiate the RandomLinkSplit transform.
+    splitter = RandomLinkSplit(
+        num_val=val_ratio,
+        num_test=test_ratio,
+        is_undirected=is_undirected,
+        add_negative_train_samples=False,
+        neg_sampling_ratio=neg_sampling_ratio,
+    )
+
+    # Apply the splitter to obtain train/val/test Data objects.
+    train_data, val_data, test_data = splitter(full_data)
+    
+    # Negative transform:
+    neg_transform = NegativeSamplingTransform(neg_pos_ratio=split_params.get("neg_pos_ratio", 1.0), method=split_params.get("neg_sampling_method", "sparse"))
+
+    # Wrap each split into a DataloadDataset (expected by TBDataloader).
+    dataset_train = DataloadDataset([train_data], _dynamic_transform=neg_transform)
+    dataset_val = DataloadDataset([val_data])
+    dataset_test = DataloadDataset([test_data])
+
+    return dataset_train, dataset_val, dataset_test
+    
+def load_edge_inductive_splits(preprocessor, split_params) -> tuple[
+    DataloadDataset, DataloadDataset | None, DataloadDataset | None
+]:
+    r"""Load inductive edge-level splits for link prediction.
+
+    Parameters
+    ----------
+    preprocessor : PreProcessor
+        Preprocessor containing the underlying PyG dataset.
+    split_params : dict or omegaconf.DictConfig
+        Split configuration, including split type and negative sampling
+        parameters.
+
+    Returns
+    -------
+    tuple of DataloadDataset
+        Train, validation and test datasets for edge-level link prediction.
+    """
+    from topobench.transforms.data_manipulations.negative_links_sampling import (
+        NegativeSamplingTransform,
+    )
+    
+    # Underlying PyG dataset with multiple graphs (MUTAG-style).
+    dataset = preprocessor.dataset
+    assert len(dataset) > 1, (
+        "Inductive edge-level split requires a multi-graph dataset."
+    )
+
+    # Build per-graph labels as in `load_inductive_splits`.
+    label_list = [data.y.squeeze(0).numpy() for data in dataset]
+    label_shapes = [label.shape for label in label_list]
+    labels = (
+        np.array(label_list, dtype=object)
+        if len(set(label_shapes)) > 1
+        else np.array(label_list)
+    )
+
+    # Root is only used to adjust path for saved splits; we can rely on
+    # split_params["data_split_dir"] directly, so set root=None.
+    root = None
+
+    if split_params.split_type == "random":
+        split_idx = random_splitting(labels, split_params, root=root)
+
+    elif split_params.split_type == "k-fold":
+        assert type(labels) is not object, (
+            "K-Fold splitting not supported for ragged labels."
+        )
+        split_idx = k_fold_split(labels, split_params, root=root)
+
+    elif split_params.split_type == "fixed" and hasattr(dataset, "split_idx"):
+        split_idx = dataset.split_idx
+
+    else:
+        raise NotImplementedError(
+            f"split_type {split_params.split_type} not valid. Choose either "
+            "'random', 'k-fold' or 'fixed'. If 'fixed' is chosen, the dataset "
+            "should have the attribute split_idx"
+        )
+
+    neg_pos_ratio = float(split_params.get("neg_pos_ratio", 1.0))
+    neg_method = split_params.get("neg_sampling_method", "sparse")
+    data_seed = int(split_params.get("data_seed", 0))
+    neg_sampling_ratio = float(split_params.get("neg_sampling_ratio", 1.0))
+
+    # Helpers to attach edge labels
+    def build_pos_edge_labels(data):
+        """Attach positive edge labels: all edges are positives."""
+        data = data.clone()
+        pos_edge_index = data.edge_index
+        num_pos = pos_edge_index.size(1)
+
+        data.edge_label_index = pos_edge_index
+        data.edge_label = pos_edge_index.new_ones(num_pos)
+        return data
+
+    def add_static_negatives(data):
+        """Perform one-off negative sampling (used for val/test)."""
+        data = build_pos_edge_labels(data)
+        device = data.edge_index.device
+
+        pos_edge_index = data.edge_label_index.to(device)
+        num_pos = pos_edge_index.size(1)
+        if num_pos == 0:
+            raise ValueError("Graph has no positive edges for link prediction.")
+
+        num_neg = max(1, int(neg_sampling_ratio * num_pos))
+
+        neg_edge_index = negative_sampling(
+            edge_index=data.edge_index,
+            num_nodes=data.num_nodes,
+            num_neg_samples=num_neg,
+            method=neg_method,
+        ).to(device)
+
+        pos_label = torch.ones(num_pos, device=device)
+        neg_label = torch.zeros(num_neg, device=device)
+
+        edge_label_index = torch.cat([pos_edge_index, neg_edge_index], dim=1)
+        edge_label = torch.cat([pos_label, neg_label], dim=0).long()
+
+        data.edge_label_index = edge_label_index
+        data.edge_label = edge_label
+        return data
+
+    # Build Data lists for each split
+    train_indices = split_idx["train"]
+    val_indices = split_idx["valid"]
+    test_indices = split_idx["test"]
+
+    train_data_list = [
+        build_pos_edge_labels(dataset[int(i)]) for i in train_indices
+    ]
+    val_data_list = [
+        add_static_negatives(dataset[int(i)]) for i in val_indices
+    ]
+    test_data_list = [
+        add_static_negatives(dataset[int(i)]) for i in test_indices
+    ]
+
+    # Train: dynamic negatives each epoch.
+    neg_transform = NegativeSamplingTransform(
+        neg_pos_ratio=neg_pos_ratio,
+        method=neg_method,
+        seed=data_seed,
+    )
+
+    dataset_train = DataloadDataset(
+        train_data_list, _dynamic_transform=neg_transform
+    )
+    dataset_val = DataloadDataset(val_data_list)
+    dataset_test = DataloadDataset(test_data_list)
+
+    return dataset_train, dataset_val, dataset_test
