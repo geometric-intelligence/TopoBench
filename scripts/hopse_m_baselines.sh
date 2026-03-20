@@ -1,22 +1,23 @@
 #!/bin/bash
 # ==============================================================================
-# SCRIPT: graph_baselines_master.sh
+# SCRIPT: hopse_m_baselines.sh
 # DESCRIPTION:
-#   Runs a scalable hyperparameter sweep for Graph Neural Networks.
+#   Runs a scalable hyperparameter sweep for HOPSE_M models across both
+#   simplicial and cellular domains.
 #   - ARCHITECTURE: Uses a "Cartesian Product" generation strategy.
 #   - CONCURRENCY: Uses "Virtual Slots" to run N jobs per GPU.
 #   - ORDERING: Prioritizes running all seeds for a config before moving on.
+#   - FILTERING: Skips invalid model+dataset combos (cell + simplicial data).
 # ==============================================================================
 
 # ==============================================================================
 # SECTION 1: LOGGING & ENVIRONMENT SETUP
-# Prepares the logging directory and loads the helper utility script.
 # ==============================================================================
 
 # 1.1 Define Project Identifiers
 script_name="$(basename "${BASH_SOURCE[0]}" .sh)"
 project_name="${script_name}"
-log_group="rerun_base_datasets"
+log_group="hopse_m_sweep"
 LOG_DIR="./logs/${log_group}"
 
 echo "=========================================================="
@@ -28,7 +29,6 @@ if [ -d "$LOG_DIR" ]; then rm -r "$LOG_DIR"; fi
 mkdir -p "$LOG_DIR"
 
 # 1.3 Robust Dependency Loading
-# This function walks up the directory tree to find 'base/logging.sh'
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 export HYDRA_FULL_ERROR=1
 
@@ -53,107 +53,104 @@ fi
 
 
 # ==============================================================================
-# SECTION 2: HARDWARE & CONCURRENCY
-# Defines available GPUs and creates "Virtual Slots".
+# SECTION 2: HARDWARE & CONCURRENCY (Auto-Detected)
 # ==============================================================================
 
-# 2.1 Configuration
-physical_gpus=(0 1 2 3)  # IDs of the GPUs to use
-JOBS_PER_GPU=3           # Number of parallel runs allowed per GPU
+# 2.1 Auto-detect GPUs and determine jobs-per-GPU from VRAM.
+# Output format: "JOBS_PER_GPU gpu_id_0 gpu_id_1 ..."
+# Thresholds: >= 80 GB -> 4 jobs, <= 30 GB -> 2 jobs, between -> 3 jobs.
+_gpu_info=$(python3 -c "
+import subprocess
+try:
+    out = subprocess.check_output(
+        ['nvidia-smi', '--query-gpu=index,memory.total', '--format=csv,noheader,nounits'],
+        text=True
+    )
+    indices, mem_mb = [], []
+    for line in out.strip().splitlines():
+        idx, mem = line.split(',')
+        indices.append(idx.strip())
+        mem_mb.append(int(mem.strip()))
+    min_mem_gb = min(mem_mb) / 1024
+    if min_mem_gb >= 80:
+        jobs = 4
+    elif min_mem_gb <= 30:
+        jobs = 2
+    else:
+        jobs = 3
+    print(jobs, ' '.join(indices))
+except Exception:
+    print('2 0')
+")
+read -r JOBS_PER_GPU _gpu_ids <<< "$_gpu_info"
+read -ra physical_gpus <<< "$_gpu_ids"
 
-# 2.2 Create Virtual Slots (The 'Scheduling Queue')
-# If physical_gpus=(0 1) and JOBS_PER_GPU=2, this creates slots: (0 0 1 1).
-# This allows us to treat every "capacity unit" identically in the loop.
+echo "✔ Detected ${#physical_gpus[@]} GPU(s): ${physical_gpus[*]}"
+echo "✔ Jobs per GPU: $JOBS_PER_GPU"
+
+# 2.2 Create Virtual Slots
 gpus=()
 for gpu in "${physical_gpus[@]}"; do
     for ((i=1; i<=JOBS_PER_GPU; i++)); do gpus+=("$gpu"); done
 done
+echo "✔ Total virtual slots: ${#gpus[@]}"
 
 # 2.3 Initialize Slot Tracking
-# We use an array 'slot_pids' to track the Process ID (PID) running in each slot.
-# 0 = Empty/Available.
 declare -a slot_pids
 for i in "${!gpus[@]}"; do slot_pids[$i]=0; done
 
 
 # ==============================================================================
-# SECTION 3: EXPERIMENT PARAMETERS (USER INPUT)
-# Define your search space here using standard Bash arrays.
+# SECTION 3: EXPERIMENT PARAMETERS
 # ==============================================================================
 
-# --- Major Variations ---
+# --- Models (both domains) ---
+# Use "alias::hydra_value" to disambiguate run names (both share basename "hopse_m").
 models=(
-    "graph/gcn"
-    "graph/gin"
-    "graph/gat"
+    "sim_hopse_m::simplicial/hopse_m"
+    "cell_hopse_m::cell/hopse_m"
 )
-# Already done:
-# "graph/tolokers-2"
-# "graph/city-reviews"
-# "graph/artnet-exp"
 
+# --- Datasets ---
 datasets=(
-    # # Node classification datasets
-    # "graph/hm-categories"
-    # "graph/pokec-regions"
-    
-    #"graph/web-topics"
-    #"graph/web-fraud"
-
-    # # Node regression datasets
-    # graph/avazu-ctr # Need to figure out what is  --fraction_features_transform none quantile-transform-normal
-    
-    # Uncomment 4 datasets below when graphland classification works fine
-    #graph/city-roads-L
-    #graph/city-roads-M
-    #graph/twitch-views
-    #graph/artnet-views
-    
-    #graph/hm-prices
-    #graph/web-traffic
-
-    # Reruns
-    # DONE
-    # "graph/cocitation_cora"
-    # "graph/cocitation_citeseer"
-    # "graph/cocitation_pubmed"
-    # "graph/amazon_ratings"
-    # "graph/roman_empire"
-    # "graph/questions"
-    # "graph/minesweeper"
-    # # Inductive datasets
-    # "graph/MUTAG"
-    # "graph/NCI1"
-    # TOBE DONE
-    # "graph/NCI109"
-    # "graph/REDDIT-BINARY"
-    # "graph/ZINC"
-    
-    # Graphland (idk if they actually correctly work yet, need to debug)
-    "graph/tolokers-2"
-    "graph/city-reviews"
-    "graph/artnet-exp"
     "graph/PROTEINS"
+    "graph/MUTAG"
+    "graph/NCI1"
+    "graph/NCI109"
+    "graph/ZINC"
+    "simplicial/mantra_name"
+    "simplicial/mantra_orientation"
+    "simplicial/mantra_betti_numbers"
 )
 
-# --- Hyperparameters ---
-batch_sizes=(-1)
-lrs=(0.0001 0.0005 0.001)
-hidden_channels=(16 32 64 128) 
-num_layers=(1 2 4 8) 
-DROPOUTS=(0.0 0.1 0.2)
-# The Pivotal Parameter
+# --- Neighborhoods (8 configs from the original HOPSE study) ---
+# Use "alias::hydra_value" format for readable run names.
+neighborhoods=(
+    "adj1::[up_adjacency-0]"
+    "adj2::[up_adjacency-0,up_adjacency-1]"
+    "adj3::[up_adjacency-0,up_adjacency-1,down_adjacency-2]"
+    "uinc::[up_adjacency-0,up_incidence-0,up_incidence-1]"
+    "dinc::[up_adjacency-0,down_incidence-1,down_incidence-2]"
+    "biinc::[up_adjacency-0,up_incidence-0,up_incidence-1,down_incidence-1,down_incidence-2]"
+    "full::[up_adjacency-0,up_adjacency-1,down_adjacency-1,down_adjacency-2,up_incidence-0,up_incidence-1,down_incidence-1,down_incidence-2]"
+    "hop2::[up_adjacency-0,up_adjacency-1,2-up_adjacency-0,down_adjacency-1,down_adjacency-2,2-down_adjacency-2]"
+)
+
+# --- Hyperparameters (superset across all dataset groups) ---
+num_layers=(1 2 4)
+hidden_channels=(128 256)
+proj_dropouts=(0.25 0.5)
+lrs=(0.01 0.001)
+weight_decays=(0 0.0001)
+batch_sizes=(128 256)
 DATA_SEEDS=(0 3 5 7 9)
 
-# --- Fixed Parameters (Constant for all runs) ---
+# --- Fixed Parameters ---
 FIXED_ARGS=(
-    #"model.feature_encoder.proj_dropout=0.25"
-    #"model.backbone.dropout=0.25"
-    "trainer.max_epochs=1000"
+    "trainer.max_epochs=500"
     "trainer.min_epochs=50"
     "trainer.check_val_every_n_epoch=5"
     "callbacks.early_stopping.patience=10"
-    # "logger.wandb.project=${project_name}" # This is for static project name.
 )
 
 
@@ -161,37 +158,34 @@ FIXED_ARGS=(
 # SECTION 4: SWEEP CONFIGURATION MAPPING (CRITICAL ORDERING)
 # Format: "ShortTag | HydraKey | ${Array[*]}"
 #
-# IMPORTANT: The order here defines the execution loop order.
-# 1. Top items change SLOWEST (Outer Loop).
-# 2. Bottom items change FASTEST (Inner Loop).
-#
-# To validate results quickly, we put DATA_SEEDS at the very bottom.
-# This ensures we run Seed 0, 1, 2... for a specific config BACK-TO-BACK.
+# Values support an optional "alias::hydra_value" syntax for readable names.
+# The generator also filters out invalid model+dataset combos.
 # ==============================================================================
 
 SWEEP_CONFIG=(
     # --- LEVEL 1: SLOWEST CHANGING (Outer Loops) ---
     "|model|${models[*]}"
     "|dataset|${datasets[*]}"
-    
+    "N|model.preprocessing_params.neighborhoods|${neighborhoods[*]}"
+
     # --- LEVEL 2: HYPERPARAMETERS ---
-    "L|model.backbone.num_layers|${num_layers[*]}"
-    "lr|optimizer.parameters.lr|${lrs[*]}"
+    "L|model.backbone.n_layers|${num_layers[*]}"
     "h|model.feature_encoder.out_channels|${hidden_channels[*]}"
+    "pdro|model.feature_encoder.proj_dropout|${proj_dropouts[*]}"
+    "lr|optimizer.parameters.lr|${lrs[*]}"
+    "wd|optimizer.parameters.weight_decay|${weight_decays[*]}"
     "bs|dataset.dataloader_params.batch_size|${batch_sizes[*]}"
-    "bdro|model.backbone.dropout|${DROPOUTS[*]}"
-    "pdro|model.feature_encoder.proj_dropout|${DROPOUTS[*]}"
-    
+
     # --- LEVEL 3: FASTEST CHANGING (Inner Loop) ---
-    # We keep seeds last so they run consecutively for every config.
     "seed|dataset.split_params.data_seed|${DATA_SEEDS[*]}"
 )
 
 
 # ==============================================================================
-# SECTION 5: PYTHON GENERATOR (INTERNAL UTILITY)
-# Runs a temporary Python script to calculate the Cartesian Product.
-# It outputs a clean list of runs formatted as: RunName;Args
+# SECTION 5: PYTHON GENERATOR
+# Extended from graph_baselines.sh with:
+#   - "alias::value" naming support for list-valued parameters.
+#   - Invalid combo filtering (cell model + simplicial dataset).
 # ==============================================================================
 generate_combinations() {
 python3 -c "
@@ -203,32 +197,55 @@ for item in sys.argv[1:]:
     parts = item.split('|')
     tag = parts[0].strip()
     key = parts[1].strip()
-    vals = parts[2].split() # Split space-separated string into list
+    vals = parts[2].split()
     specs.append({'tag': tag, 'key': key, 'vals': vals})
 
 # 2. Generate Cartesian Product
 options = [[(s['tag'], s['key'], val) for val in s['vals']] for s in specs]
 combinations = list(itertools.product(*options))
 
-# 3. Print Total Count Header (Using semicolon separator)
-print(f'TOTAL;{len(combinations)}')
+# 3. Filter invalid combos (resolve aliases first)
+def hydra_val(v):
+    return v.split('::', 1)[1] if '::' in v else v
 
-# 4. Print Each Combination
+valid = []
+skipped = 0
 for combo in combinations:
-    # Build Name
+    vals_dict = {key: hydra_val(val) for (_, key, val) in combo}
+    model_val = vals_dict.get('model', '')
+    dataset_val = vals_dict.get('dataset', '')
+    # Skip cell model + simplicial dataset (no simplicial2cell lifting)
+    if model_val.startswith('cell/') and dataset_val.startswith('simplicial/'):
+        skipped += 1
+        continue
+    valid.append(combo)
+
+# 4. Print header
+print(f'TOTAL;{len(valid)}')
+if skipped:
+    print(f'SKIPPED;{skipped}', file=sys.stderr)
+
+# 5. Print each valid combination
+for combo in valid:
     name_parts = []
+    cmd_args = []
     for (tag, key, val) in combo:
-        clean_val = os.path.basename(val) # 'graph/gcn' -> 'gcn'
+        # Support alias::hydra_value syntax
+        if '::' in val:
+            alias, hydra_val = val.split('::', 1)
+            clean_val = alias
+            actual_val = hydra_val
+        else:
+            clean_val = os.path.basename(val)
+            actual_val = val
+
         if tag:
             name_parts.append(f'{tag}{clean_val}')
         else:
             name_parts.append(clean_val)
-    run_name = '_'.join(name_parts)
+        cmd_args.append(f'{key}={actual_val}')
 
-    # Build Args
-    cmd_args = [f'{key}={val}' for (tag, key, val) in combo]
-    
-    # Output: RUN_NAME ; ARG1 ARG2 ARG3
+    run_name = '_'.join(name_parts)
     print(f'{run_name};' + ' '.join(cmd_args))
 " "${SWEEP_CONFIG[@]}"
 }
@@ -236,9 +253,6 @@ for combo in combinations:
 
 # ==============================================================================
 # SECTION 6: MAIN EXECUTION LOOP
-# 1. Reads the Python output line-by-line.
-# 2. Finds a free GPU slot.
-# 3. Launches the job.
 # ==============================================================================
 
 echo "----------------------------------------------------------"
@@ -249,19 +263,16 @@ total_runs=0
 run_counter=0
 one_percent_step=1
 
-# Use process substitution < <(...) to feed the loop
-# We use ';' as the IFS delimiter because our python script outputs "Name;Args"
 while IFS=";" read -r col1 col2; do
-    
-    # 6.1 Handle Header (Total Count)
+
+    # 6.1 Handle Header
     if [[ "$col1" == "TOTAL" ]]; then
         total_runs=$col2
-        # Calculate progress step size
         if [ "$total_runs" -gt 0 ]; then
             one_percent_step=$(( total_runs / 100 ))
         fi
         if [ "$one_percent_step" -eq 0 ]; then one_percent_step=1; fi
-        
+
         echo "► Total runs planned: $total_runs"
         echo "► Reporting progress every $one_percent_step runs (1%)"
         echo "----------------------------------------------------------"
@@ -271,7 +282,7 @@ while IFS=";" read -r col1 col2; do
     # 6.2 Parse Run Data
     run_name="$col1"
     dynamic_args_str="$col2"
-    
+
     # 6.3 Update Progress
     ((run_counter++))
     if (( run_counter % one_percent_step == 0 )); then
@@ -283,21 +294,16 @@ while IFS=";" read -r col1 col2; do
         echo "📊 Progress: ${percent}% completed ($run_counter / $total_runs runs launched)"
     fi
 
-    # 6.4 Find a Free GPU Slot (Active Polling)
-    # This loop blocks until a slot opens up on ANY GPU.
+    # 6.4 Find a Free GPU Slot
     assigned_slot=-1
     while [ "$assigned_slot" -eq -1 ]; do
         for i in "${!gpus[@]}"; do
             pid="${slot_pids[$i]}"
-            
-            # Slot is free if: PID is 0 (start) OR process is dead (kill -0 fails)
             if [ "$pid" -eq 0 ] || ! kill -0 "$pid" 2>/dev/null; then
                 assigned_slot=$i
                 break
             fi
         done
-
-        # If all slots are full, wait for the first job to finish to check again
         if [ "$assigned_slot" -eq -1 ]; then
             wait -n
         fi
@@ -305,35 +311,28 @@ while IFS=";" read -r col1 col2; do
 
     # 6.5 Prepare Command
     current_gpu=${gpus[$assigned_slot]}
-    read -ra DYNAMIC_ARGS_ARRAY <<< "$dynamic_args_str" # Convert args string to array
-    
+    read -ra DYNAMIC_ARGS_ARRAY <<< "$dynamic_args_str"
+
     # --- Extract dataset name for dynamic W&B project ---
-    # We look for the argument that starts with 'dataset='
     dataset_val=""
     for arg in "${DYNAMIC_ARGS_ARRAY[@]}"; do
         if [[ $arg == dataset=* ]]; then
-            # Extract 'cora' from 'dataset=graph/cora'
             dataset_full_path="${arg#*=}"
             dataset_val=$(basename "$dataset_full_path")
             break
         fi
     done
-
-    # Create the dynamic project name: e.g., rerun_base_datasets_script_cora
     dynamic_project_name="${project_name}_${dataset_val}"
-    # ---------------------------------------------------------------
-
 
     cmd=(
         "python" "-m" "topobench"
         "${DYNAMIC_ARGS_ARRAY[@]}"
         "${FIXED_ARGS[@]}"
         "trainer.devices=[${current_gpu}]"
-        "logger.wandb.project=${dynamic_project_name}" # This overrides the one in FIXED_ARGS
+        "logger.wandb.project=${dynamic_project_name}"
     )
 
     # 6.6 Execute
-    # We launch in background (&) so the loop can continue immediately
     run_and_log "${cmd[*]}" "$log_group" "$run_name" "$LOG_DIR" &
     slot_pids[$assigned_slot]=$!
 
