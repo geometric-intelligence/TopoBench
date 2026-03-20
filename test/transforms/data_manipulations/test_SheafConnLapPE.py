@@ -76,7 +76,7 @@ class TestSheafConnLapPE:
         assert torch.allclose(out.x[:, :5], x)
 
     def test_forward_no_concat(self):
-        """PE is stored in data.SheafPE when concat_to_x=False."""
+        """PE is stored in data.SheafConnLapPE when concat_to_x=False."""
         t = SheafConnLapPE(max_pe_dim=9, stalk_dim=3, concat_to_x=False)
         edge_index = torch.tensor([[0, 1, 1, 2, 2, 0], [1, 0, 2, 1, 0, 2]])
         x = torch.randn(3, 5)
@@ -84,8 +84,8 @@ class TestSheafConnLapPE:
 
         out = t(data)
 
-        assert hasattr(out, "SheafPE")
-        assert out.SheafPE.shape == (3, 9)
+        assert hasattr(out, "SheafConnLapPE")
+        assert out.SheafConnLapPE.shape == (3, 9)
         # Original x unchanged
         assert torch.equal(out.x, x)
 
@@ -97,7 +97,7 @@ class TestSheafConnLapPE:
         data = Data(x=x, edge_index=edge_index, num_nodes=3)
 
         out = t(data)
-        assert out.SheafPE.shape == (3, 9)
+        assert out.SheafConnLapPE.shape == (3, 9)
 
     def test_pe_not_all_zeros_on_connected_graph(self):
         """For a connected graph with varied features, PE should be non-trivial."""
@@ -107,7 +107,7 @@ class TestSheafConnLapPE:
         data = Data(x=x, edge_index=edge_index, num_nodes=3)
 
         out = t(data)
-        assert not torch.allclose(out.SheafPE, torch.zeros_like(out.SheafPE))
+        assert not torch.allclose(out.SheafConnLapPE, torch.zeros_like(out.SheafConnLapPE))
 
     # ── Edge cases ────────────────────────────────────────────────────────────
 
@@ -120,8 +120,8 @@ class TestSheafConnLapPE:
 
         out = t(data)
 
-        assert out.SheafPE.shape == (4, 9)
-        assert torch.allclose(out.SheafPE, torch.zeros(4, 9))
+        assert out.SheafConnLapPE.shape == (4, 9)
+        assert torch.allclose(out.SheafConnLapPE, torch.zeros(4, 9))
 
     def test_single_node_graph(self):
         """Single-node graph returns zero PE."""
@@ -132,8 +132,8 @@ class TestSheafConnLapPE:
 
         out = t(data)
 
-        assert out.SheafPE.shape == (1, 9)
-        assert torch.allclose(out.SheafPE, torch.zeros(1, 9))
+        assert out.SheafConnLapPE.shape == (1, 9)
+        assert torch.allclose(out.SheafConnLapPE, torch.zeros(1, 9))
 
     def test_isolated_nodes(self):
         """Graph with isolated nodes runs without errors; shape is correct."""
@@ -145,9 +145,9 @@ class TestSheafConnLapPE:
 
         out = t(data)
 
-        assert out.SheafPE.shape == (3, 9)
-        assert not torch.isnan(out.SheafPE).any()
-        assert not torch.isinf(out.SheafPE).any()
+        assert out.SheafConnLapPE.shape == (3, 9)
+        assert not torch.isnan(out.SheafConnLapPE).any()
+        assert not torch.isinf(out.SheafConnLapPE).any()
 
     def test_directed_graph_symmetrised(self):
         """A one-directional edge_index is symmetrised; no NaN/Inf."""
@@ -159,9 +159,9 @@ class TestSheafConnLapPE:
 
         out = t(data)
 
-        assert out.SheafPE.shape == (3, 9)
-        assert not torch.isnan(out.SheafPE).any()
-        assert not torch.isinf(out.SheafPE).any()
+        assert out.SheafConnLapPE.shape == (3, 9)
+        assert not torch.isnan(out.SheafConnLapPE).any()
+        assert not torch.isinf(out.SheafConnLapPE).any()
 
     def test_disconnected_graph(self):
         """Disconnected graph: two components, no errors."""
@@ -172,8 +172,8 @@ class TestSheafConnLapPE:
 
         out = t(data)
 
-        assert out.SheafPE.shape == (4, 9)
-        assert not torch.isnan(out.SheafPE).any()
+        assert out.SheafConnLapPE.shape == (4, 9)
+        assert not torch.isnan(out.SheafConnLapPE).any()
 
     def test_max_pe_dim_larger_than_eigenvectors(self):
         """When fewer eigenvectors are available than k, output is zero-padded."""
@@ -185,9 +185,9 @@ class TestSheafConnLapPE:
 
         out = t(data)
 
-        assert out.SheafPE.shape == (2, 9)
+        assert out.SheafConnLapPE.shape == (2, 9)
         # Some columns must be zero padding
-        non_zero_cols = (out.SheafPE.abs().sum(dim=0) > 1e-6).sum()
+        non_zero_cols = (out.SheafConnLapPE.abs().sum(dim=0) > 1e-6).sum()
         assert non_zero_cols < 9
 
     # ── Sign canonicalisation ─────────────────────────────────────────
@@ -200,7 +200,7 @@ class TestSheafConnLapPE:
         data = Data(x=x, edge_index=edge_index, num_nodes=4)
 
         out = t(data)
-        pe = out.SheafPE   # (n, max_pe_dim)
+        pe = out.SheafConnLapPE   # (n, max_pe_dim)
 
         # Each block of stalk_dim columns corresponds to one eigenvector reshaped.
         # The max-abs entry within each block-column should be positive.
@@ -226,8 +226,8 @@ class TestSheafConnLapPE:
 
         out = t(data)
 
-        assert not torch.isnan(out.SheafPE).any()
-        assert not torch.isinf(out.SheafPE).any()
+        assert not torch.isnan(out.SheafConnLapPE).any()
+        assert not torch.isinf(out.SheafConnLapPE).any()
 
     def test_duplicate_features_no_nan(self):
         """All-identical node features (zero variance) do not produce NaN/Inf."""
@@ -238,8 +238,8 @@ class TestSheafConnLapPE:
 
         out = t(data)
 
-        assert not torch.isnan(out.SheafPE).any()
-        assert not torch.isinf(out.SheafPE).any()
+        assert not torch.isnan(out.SheafConnLapPE).any()
+        assert not torch.isinf(out.SheafConnLapPE).any()
 
     # ── Memory warning ────────────────────────────────────────────────
 
@@ -275,7 +275,7 @@ class TestSheafConnLapPE:
 
         out = t(data)
 
-        assert out.SheafPE.device == edge_index.device
+        assert out.SheafConnLapPE.device == edge_index.device
 
     def test_device_consistency_cuda(self):
         """PE tensor is on the same CUDA device as the input."""
@@ -289,7 +289,7 @@ class TestSheafConnLapPE:
 
         out = t(data)
 
-        assert out.SheafPE.is_cuda
+        assert out.SheafConnLapPE.is_cuda
 
     # ── Backward compatibility ────────────────────────────────────────────────
 
@@ -334,9 +334,9 @@ class TestSheafConnLapPE:
 
         out = t(data)
 
-        assert out.SheafPE.shape == (3, max_pe_dim)
-        assert not torch.isnan(out.SheafPE).any()
-        assert not torch.isinf(out.SheafPE).any()
+        assert out.SheafConnLapPE.shape == (3, max_pe_dim)
+        assert not torch.isnan(out.SheafConnLapPE).any()
+        assert not torch.isinf(out.SheafConnLapPE).any()
 
     @pytest.mark.parametrize("include_first", [True, False])
     def test_parametrised_include_first(self, include_first):
@@ -359,8 +359,8 @@ class TestSheafConnLapPE:
 
         out = t(data)
 
-        assert out.SheafPE.shape == (3, 9)
-        assert not torch.isnan(out.SheafPE).any()
+        assert out.SheafConnLapPE.shape == (3, 9)
+        assert not torch.isnan(out.SheafConnLapPE).any()
 
     # ── Larger graph ──────────────────────────────────────────────────────────
 
@@ -376,7 +376,7 @@ class TestSheafConnLapPE:
 
         out = t(data)
 
-        assert out.SheafPE.shape == (num_nodes, 9)
-        assert not torch.isnan(out.SheafPE).any()
-        assert not torch.isinf(out.SheafPE).any()
+        assert out.SheafConnLapPE.shape == (num_nodes, 9)
+        assert not torch.isnan(out.SheafConnLapPE).any()
+        assert not torch.isinf(out.SheafConnLapPE).any()
 
