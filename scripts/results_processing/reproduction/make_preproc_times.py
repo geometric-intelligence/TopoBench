@@ -107,8 +107,6 @@ def generate_table(df):
         for dom in domain_groups:
             domain_groups[dom] = pd.DataFrame(domain_groups[dom])
 
-        directions = {dset: "min" for dset in all_datasets}
-
         val = "max"
         best_vals_by_domain = {
             dom: {
@@ -121,7 +119,6 @@ def generate_table(df):
 
         def style_cell(mn, st, dset, dom):
             best_val = best_vals_by_domain[dom].get(dset, None)
-            direction = directions[dset]
 
             content = f"\\scriptsize {mn:.0f} "
 
@@ -150,8 +147,7 @@ def generate_table(df):
         latex_lines.append(r"\toprule")
 
         header_cells = [r"& \textbf{Model}"]
-        for dset in all_datasets:
-            header_cells.append(r"\scriptsize " + dset)
+        header_cells.extend([r"\scriptsize " + dset for dset in all_datasets])
         latex_lines.append(" & ".join(header_cells) + r" \\")
 
         all_domains = sorted(domain_groups.keys())

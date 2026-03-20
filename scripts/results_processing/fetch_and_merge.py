@@ -1,13 +1,11 @@
 import ast
 import glob
-from datetime import date
 
 import pandas as pd
 import wandb
 
 
 def fetch(user, main_csv_path, PROJ_PREFIX, PROJ_TYPES, PROJ_DS):
-    today = date.today()
     api = wandb.Api(overrides={"base_url": "https://api.wandb.ai"}, timeout=40)
 
     # # Find all csv files in the current directory
@@ -24,12 +22,11 @@ def fetch(user, main_csv_path, PROJ_PREFIX, PROJ_TYPES, PROJ_DS):
                 )
             else:
                 project_name = f"{project_type}_{project_dataset}"
-            project_name_plus_user = f"{user}_{project_name}"
             if project_name not in csv_names:
                 print(project_name)
                 runs = api.runs(f"{user}/{project_name}")
                 # Project not found
-                if runs == None:
+                if runs is None:
                     print("No project found")
                     continue
                 try:

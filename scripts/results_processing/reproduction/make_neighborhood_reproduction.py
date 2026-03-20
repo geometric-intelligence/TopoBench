@@ -192,7 +192,9 @@ def main():
     return df_nbhd
 
 
-def parse_all_dfs(selected_datasets=[]):
+def parse_all_dfs(selected_datasets=None):
+    if selected_datasets is None:
+        selected_datasets = []
     df_nbhd = main()
 
     # df_hopse = df_hopse[~df_hopse.isna()]

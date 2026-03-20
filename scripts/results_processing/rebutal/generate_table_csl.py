@@ -57,7 +57,9 @@ def parse_pse_results(datasets, collect_subsets):
     return df_res
 
 
-def parse_all_dfs(selected_datasets=[]):
+def parse_all_dfs(selected_datasets=None):
+    if selected_datasets is None:
+        selected_datasets = []
     df = pd.read_csv("merged_csl/merged_normalized.csv")
     df = preprocess_df(df, gnn=True, split_mantra=False)
     # Keep only relevant columns

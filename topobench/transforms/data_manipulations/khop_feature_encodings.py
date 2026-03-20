@@ -108,7 +108,7 @@ class KHopFE(BaseTransform):
         deg_inv_sqrt = torch.diagflat(torch.pow(deg + 1e-8, -0.5))
         A_norm = deg_inv_sqrt @ A @ deg_inv_sqrt
 
-        for hop in range(self.max_hop):
+        for _hop in range(self.max_hop):
             x = A_norm @ x
             khop_fe.append(x)
         khop_fe = torch.stack(khop_fe, dim=1)  # [N, max_hop, F]

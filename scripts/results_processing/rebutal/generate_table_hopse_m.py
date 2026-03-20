@@ -68,7 +68,9 @@ def parse_pse_results(datasets, collect_subsets):
     return df_res
 
 
-def parse_all_dfs(selected_datasets=[]):
+def parse_all_dfs(selected_datasets=None):
+    if selected_datasets is None:
+        selected_datasets = []
     df = pd.read_csv("hopse_m_merged_rebutals/merged_normalized.csv")
     df = preprocess_df(df, gnn=False, split_mantra=False)
     print(df)

@@ -73,7 +73,9 @@ def parse_gnn_results(df, selected_datasets):
     return df_res
 
 
-def parse_all_dfs(selected_datasets=[]):
+def parse_all_dfs(selected_datasets=None):
+    if selected_datasets is None:
+        selected_datasets = []
     dfs = []
     for ds in ["MUTAG", "PROTEINS", "NCI1", "NCI109", "ZINC"]:
         df = main(user="levsap", project=f"rebuttal_cell_{ds}")
@@ -166,8 +168,8 @@ def generate_table(df, optimization_metrics):
         "MANTRA-BN-1",
         "MANTRA-BN-2",
     ]
-    df_mantra = df_best[df_best["dataset"].isin(mantra_dsets)]
-    df_other = df_best[~df_best["dataset"].isin(mantra_dsets)]
+    _df_mantra = df_best[df_best["dataset"].isin(mantra_dsets)]
+    _df_other = df_best[~df_best["dataset"].isin(mantra_dsets)]
 
     def build_table(subset_df, caption_text):
         """
