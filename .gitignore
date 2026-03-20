@@ -179,7 +179,6 @@ cython_debug/
 # Data
 /datasets/
 /data/
-!topobench/data/
 /outputs/
 /notebooks/*.csv
 notebooks/tmp
