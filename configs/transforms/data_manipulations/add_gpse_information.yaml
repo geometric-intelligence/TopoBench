@@ -3,6 +3,7 @@ transform_type: "data manipulation"
 max_rank: 2
 copy_initial: ${model.preprocessing_params.copy_initial}
 neighborhoods: ${model.preprocessing_params.neighborhoods}
+path_to_pretrained_model: ${paths.root_dir}/GPSE_pretrained
 
 # Pretrained GPSE model to use (from list of availble models in pyg 2.7). Choose from 'molpcba', 'zinc', 'pcqm4mv2', 'geom', 'chembl'
 pretrain_model: molpcba

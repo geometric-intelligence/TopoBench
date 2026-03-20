@@ -33,13 +33,21 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         self.device = (
             "cpu" if kwargs["device"] == "cpu" else f"cuda:{kwargs['cuda'][0]}"
         )
-        
+        self.path_to_pretrained_model = kwargs.get(
+            "path_to_pretrained_model",
+            "/home/gbg141/TopoBench/GPSE_pretrained",
+        )
+
         # Load pretrained GPSE model (outputs 512-dim internal representation)
-        pretrain_model = kwargs.get("pretrain_model", "molpcba") # Default to molpcba model cause it used the biggest dataset (or chembl)
-        self.model = GPSE.from_pretrained(pretrain_model)
+        pretrain_model = kwargs.get(
+            "pretrain_model", "molpcba"
+        )  # Default to molpcba model cause it used the biggest dataset (or chembl)
+        self.model = GPSE.from_pretrained(
+            pretrain_model, root=self.path_to_pretrained_model
+        )
         self.model = self.model.to(self.device)
         self.model.eval()
-        
+
         # All pretrained models output 512-dim internal representation (they were trained like that. Can't change this unless we train our own!)
         self.hidden_dim = 512
         self.dim_in = 20
@@ -107,17 +115,19 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         # Features on the source rank are more than the destination rank
         if feat_on_dst.shape[1] > src_batch.shape[1]:
             pad = (0, feat_on_dst.shape[1] - src_batch.shape[1])
-            feat_on_src = torch.nn.functional.pad(feat_on_src, pad, "constant", 0)
+            feat_on_src = torch.nn.functional.pad(
+                feat_on_src, pad, "constant", 0
+            )
             src_batch = torch.nn.functional.pad(src_batch, pad, "constant", 0)
         # Features on the source rank are more than the destination rank
         elif feat_on_dst.shape[1] < src_batch.shape[1]:
             pad = (0, feat_on_src.shape[1] - dst_batch.shape[1])
-            feat_on_dst = torch.nn.functional.pad(feat_on_dst, pad, "constant", 0)
+            feat_on_dst = torch.nn.functional.pad(
+                feat_on_dst, pad, "constant", 0
+            )
             dst_batch = torch.nn.functional.pad(dst_batch, pad, "constant", 0)
 
-        x_in = torch.vstack(
-            [feat_on_dst, feat_on_src]
-        )
+        x_in = torch.vstack([feat_on_dst, feat_on_src])
         batch_expanded = torch.cat([dst_batch, src_batch], dim=0)
 
         batch_route = Data(
@@ -276,16 +286,18 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         batch_route = self.intrarank_expand(data, src_rank, nbhd)
 
         num_nodes = batch_route.x.shape[0]
-        
+
         input_graph = torch_geometric.data.Data(
             x=torch.randn(num_nodes, self.dim_in, device=self.device),
             edge_index=batch_route.edge_index.to(self.device),
-            batch=torch.zeros(num_nodes, dtype=torch.int64, device=self.device),
+            batch=torch.zeros(
+                num_nodes, dtype=torch.int64, device=self.device
+            ),
         )
-        
+
         with torch.inference_mode():
             x_out, _ = self.model(input_graph)
-            
+
         return x_out
 
     def forward_interank(
@@ -316,15 +328,17 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         batch_route = self.interrank_expand(data, src_rank, dst_rank, nbhd)
         # The number of destination cells
         n_dst_cells = data[f"x_{dst_rank}"].shape[0]
-        
+
         num_nodes = batch_route.x.shape[0]
 
         input_graph = torch_geometric.data.Data(
             x=torch.randn(num_nodes, self.dim_in, device=self.device),
             edge_index=batch_route.edge_index.to(self.device),
-            batch=torch.zeros(num_nodes, dtype=torch.int64, device=self.device),
+            batch=torch.zeros(
+                num_nodes, dtype=torch.int64, device=self.device
+            ),
         )
-        
+
         with torch.inference_mode():
             expanded_out, _ = self.model(input_graph)
 
@@ -356,7 +370,7 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         nbhd_cache = self.get_nbhd_cache(data)
 
         x_out_per_route = {}
-        
+
         for route_index, route in enumerate(self.routes):
             src_rank, dst_rank = route
 
