@@ -831,17 +831,16 @@ def parse_tb_results():
     }
 
     # Convert the additional data to the proper format for the dataframe
-    formatted_data = []
-    for item in additional_data:
-        formatted_data.append(
-            {
-                "model": method_mappings[item["method"]],
-                "domain": domain_mappings[item["method"]],
-                "dataset": item["dataset"],
-                "mean": item["mean"],
-                "std": item["std"],
-            }
-        )
+    formatted_data = [
+        {
+            "model": method_mappings[item["method"]],
+            "domain": domain_mappings[item["method"]],
+            "dataset": item["dataset"],
+            "mean": item["mean"],
+            "std": item["std"],
+        }
+        for item in additional_data
+    ]
 
     # This data can now be added to your existing dataframe or used to create a new one
     tbx_df = pd.DataFrame(formatted_data)

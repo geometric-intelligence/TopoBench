@@ -64,11 +64,11 @@ def generate(df, collect_subsets, sweeped_columns, all_seeds=None, cpu=False):
         neighborhoods = aggregated[
             "transforms.hopse_encoding.neighborhoods"
         ].unique()
-        f = open(
+        with open(
             f"scripts/results_processing/best_runs/best_neighborhoods_{dataset}.sh",
             "w",
-        )
-        write_to_file(f)
+        ) as f:
+            write_to_file(f)
 
         for model in models:
             if "HOPSE" not in model:

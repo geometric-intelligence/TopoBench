@@ -116,8 +116,7 @@ def generate_table(df, time_column):
         latex_lines.append(r"\toprule")
 
         header_cells = [r"& \textbf{Model}"]
-        for dset in all_datasets:
-            header_cells.append(r"\scriptsize " + dset)
+        header_cells.extend([r"\scriptsize " + dset for dset in all_datasets])
         latex_lines.append(" & ".join(header_cells) + r" \\")
 
         all_domains = sorted(domain_groups.keys())
