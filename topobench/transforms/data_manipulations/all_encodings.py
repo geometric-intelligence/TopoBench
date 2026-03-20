@@ -3,9 +3,14 @@
 from torch_geometric.data import Data
 from torch_geometric.transforms import BaseTransform
 
-# Define which encodings are PSEs vs FEs
-PSE_ENCODINGS = {"LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE"}
-FE_ENCODINGS = {"HKFE", "KHopFE", "SheafConnLapPE"}
+# Import encoding sets from their respective modules (single source of truth)
+from topobench.transforms.data_manipulations.combined_feature_encodings import (
+    FE_ENCODINGS,
+)
+from topobench.transforms.data_manipulations.combined_positional_and_structural_encodings import (
+    PSE_ENCODINGS,
+)
+
 ALL_ENCODINGS = PSE_ENCODINGS | FE_ENCODINGS
 
 

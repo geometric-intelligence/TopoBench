@@ -1,33 +1,11 @@
+defaults:
+  - combined_feature_encodings
+  - combined_positional_and_structural_encodings
+  - _self_
+
 transform_name: "CombinedEncodings"
 transform_type: "data manipulation"
 encodings: ["HKFE", "KHopFE", "SheafConnLapPE", "LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE"]
-parameters:
-  # Feature Encodings (applied first)
-  HKFE:
-    kernel_param_HKFE: [1, 21]
-    concat_to_x: true
-    aggregation: "mean"
-  KHopFE:
-    max_hop: 3
-    concat_to_x: true
-    aggregation: "mean"
-  SheafConnLapPE:
-    max_pe_dim: 9
-    stalk_dim: 3
-    include_first: false
-    concat_to_x: true
-  # Positional/Structural Encodings (applied second)
-  LapPE:
-    max_pe_dim: 10
-    include_eigenvalues: false
-    include_first: false
-    concat_to_x: true
-  RWSE:
-    max_pe_dim: 10
-    concat_to_x: true
-  ElectrostaticPE:
-    concat_to_x: true
-  HKdiagSE:
-    kernel_param_HKdiagSE: [1, 21]
-    space_dim: 0
-    concat_to_x: true
+# parameters are inherited and merged from:
+# - combined_feature_encodings (HKFE, KHopFE, SheafConnLapPE)
+# - combined_positional_and_structural_encodings (LapPE, RWSE, ElectrostaticPE, HKdiagSE)

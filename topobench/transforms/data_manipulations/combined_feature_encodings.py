@@ -3,6 +3,9 @@
 from torch_geometric.data import Data
 from torch_geometric.transforms import BaseTransform
 
+# Supported Feature Encodings
+FE_ENCODINGS = {"HKFE", "KHopFE", "SheafConnLapPE"}
+
 
 class CombinedFEs(BaseTransform):
     r"""
@@ -65,6 +68,16 @@ class CombinedFEs(BaseTransform):
             "KHopFE": KHopFE,
             "SheafConnLapPE": SheafConnLapPE,
         }
+
+        # Validate encoding_classes matches FE_ENCODINGS
+        if set(encoding_classes.keys()) != FE_ENCODINGS:
+            missing_in_classes = FE_ENCODINGS - set(encoding_classes.keys())
+            missing_in_set = set(encoding_classes.keys()) - FE_ENCODINGS
+            raise RuntimeError(
+                f"encoding_classes and FE_ENCODINGS are out of sync. "
+                f"Missing in encoding_classes: {missing_in_classes}. "
+                f"Missing in FE_ENCODINGS: {missing_in_set}."
+            )
 
         # Track encoding results: list of (enc_name, tensor, should_concat)
         encoding_results = []
