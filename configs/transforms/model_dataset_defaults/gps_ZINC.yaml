@@ -2,5 +2,5 @@
 defaults:
   - data_manipulations: node_degrees
   - data_manipulations@one_hot_node_degree_features: one_hot_node_degree_features
-  - data_manipulations@CombinedPSEs: combined_encodings
+  - data_manipulations@CombinedPSEs: combined_positional_and_structural_encodings
   - liftings@_here_: ${get_required_lifting:${dataset},${model}}

@@ -31,6 +31,7 @@ def split_evaluation_metrics(df):
     ]
     return pd.concat([df, scores_df])
 
+
 def parse_hopse_results(df, selected_datasets):
     df_dict = {
         "model": [],
@@ -46,7 +47,6 @@ def parse_hopse_results(df, selected_datasets):
     models = df["model.model_name"].unique()
     datasets = df["dataset.loader.parameters.data_name"].unique()
     domains = df["model.model_domain"].unique()
-
 
     for dataset in datasets:
         for model in models:
@@ -64,10 +64,7 @@ def parse_hopse_results(df, selected_datasets):
                 if eval_metric in ["test/accuracy", "test/f1"]:
                     subset[eval_metric] *= 100
 
-                subset[eval_metric] = subset[
-                    eval_metric
-                ].round(4)
-
+                subset[eval_metric] = subset[eval_metric].round(4)
 
                 df_dict["domain"].append(domain)
                 df_dict["model"].append(model)
@@ -648,10 +645,7 @@ def parse_tb_results():
     additional_data = []
 
     for dataset, entries in raw_table_data.items():
-        optim_dir = optimization_metrics[dataset]["direction"]
-
         # Group data by method prefix (before the underscore)
-        method_results = {}
         standard_methods = []
         for method, (mean, std) in entries.items():
             if method in ["CWN", "CCCN", "SCCNN", "SCN", "GCN", "GIN", "GAT"]:
@@ -691,17 +685,16 @@ def parse_tb_results():
     }
 
     # Convert the additional data to the proper format for the dataframe
-    formatted_data = []
-    for item in additional_data:
-        formatted_data.append(
-            {
-                "model": method_mappings[item["method"]],
-                "domain": domain_mappings[item["method"]],
-                "dataset": item["dataset"],
-                "mean": item["mean"],
-                "std": item["std"],
-            }
-        )
+    formatted_data = [
+        {
+            "model": method_mappings[item["method"]],
+            "domain": domain_mappings[item["method"]],
+            "dataset": item["dataset"],
+            "mean": item["mean"],
+            "std": item["std"],
+        }
+        for item in additional_data
+    ]
 
     # This data can now be added to your existing dataframe or used to create a new one
     tbx_df = pd.DataFrame(formatted_data)
@@ -709,10 +702,11 @@ def parse_tb_results():
     return tbx_df
 
 
-def parse_all_dfs(selected_datasets=[]):
+def parse_all_dfs(selected_datasets=None):
+    if selected_datasets is None:
+        selected_datasets = []
     df = main()
     df_hopse = parse_hopse_results(df, selected_datasets)
-    mask = (df_hopse["model"] == "sann") & (df_hopse["dataset"] == "ZINC")
 
     df_hopse = df_hopse[~df_hopse.isna()]
     df_topotune = parse_topotune_results()
@@ -745,9 +739,9 @@ def parse_all_dfs(selected_datasets=[]):
     filtered_df.loc[filtered_df["dataset"] == "MANTRA_name", "dataset"] = (
         "MANTRA-N"
     )
-    filtered_df.loc[filtered_df["dataset"] == "MANTRA_orientation", "dataset"] = (
-        "MANTRA-O"
-    )
+    filtered_df.loc[
+        filtered_df["dataset"] == "MANTRA_orientation", "dataset"
+    ] = "MANTRA-O"
     return filtered_df
 
 
@@ -811,8 +805,8 @@ def generate_table(df, optimization_metrics):
         "MANTRA-BN-1",
         "MANTRA-BN-2",
     ]
-    df_mantra = df_best[df_best["dataset"].isin(mantra_dsets)]
-    df_other = df_best[~df_best["dataset"].isin(mantra_dsets)]
+    _df_mantra = df_best[df_best["dataset"].isin(mantra_dsets)]
+    _df_other = df_best[~df_best["dataset"].isin(mantra_dsets)]
 
     def build_table(subset_df, caption_text):
         """
@@ -929,7 +923,9 @@ def generate_table(df, optimization_metrics):
         # For each domain, we do the "sandwiching" with midrules
         for dom in all_domains:
             dom_df = domain_groups[dom]
-            dom_models = [m for m in MODEL_ORDER[dom] if m in dom_df["model"].unique()]
+            dom_models = [
+                m for m in MODEL_ORDER[dom] if m in dom_df["model"].unique()
+            ]
             # domain subtitle row
             latex_lines.append(r"\midrule")
             latex_lines.append(
@@ -968,13 +964,11 @@ def generate_table(df, optimization_metrics):
     # )
     # latex_others = build_table(df_other, "Benchmarking datasets. Results are shown as mean and standard deviation. The best result is bold and shaded in grey, while those within one standard deviation are in blue-shaded boxes.")
 
-
-
     # Return them combined with some spacing
     # return latex_mantra + "\n\n" + latex_others
     latex_all = build_table(
         df_best,
-        "Benchmarking datasets. Results are shown as mean and standard deviation. The best result is bold and shaded in grey, while those within one standard deviation are in blue-shaded boxes."
+        "Benchmarking datasets. Results are shown as mean and standard deviation. The best result is bold and shaded in grey, while those within one standard deviation are in blue-shaded boxes.",
     )
     return latex_all
 
@@ -995,7 +989,7 @@ if __name__ == "__main__":
 
     # Parse the dataframes
     df = parse_all_dfs(selected_datasets)
-    #df.drop(['variant'], inplace=True, axis=1)
+    # df.drop(['variant'], inplace=True, axis=1)
     # mask = (df['model'] == 'HOPSE-M') & (df['dataset'] == 'ZINC')
 
     # Generate the LaTeX table

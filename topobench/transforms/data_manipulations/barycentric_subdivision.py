@@ -146,12 +146,11 @@ class BarycentricSubdivisionTransform(
                         new_simplices[dim].add(simplex_sub + (simplex,))
 
         # Now convert the simplices to indexes
-        all_simplices = []
-        for dim in range(K.dim + 1):
-            for simplex in new_simplices[dim]:
-                all_simplices.append(
-                    [simplex_to_index[or_simplex] for or_simplex in simplex]
-                )
+        all_simplices = [
+            [simplex_to_index[or_simplex] for or_simplex in simplex]
+            for dim in range(K.dim + 1)
+            for simplex in new_simplices[dim]
+        ]
 
         # Add the simplices to the new SimplicialComplex
         Sd_K.add_simplices_from(all_simplices)

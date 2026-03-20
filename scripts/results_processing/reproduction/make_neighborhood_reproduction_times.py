@@ -2,11 +2,10 @@ from ast import literal_eval
 
 import numpy as np
 import pandas as pd
+import wandb
 from constants import (
     optimization_metrics,
 )
-
-import wandb
 
 columns_to_normalize = [
     "model",
@@ -197,7 +196,9 @@ def main():
     return df_nbhd
 
 
-def parse_all_dfs(selected_datasets=[]):
+def parse_all_dfs(selected_datasets=None):
+    if selected_datasets is None:
+        selected_datasets = []
     df_nbhd = main()
 
     # df_hopse = df_hopse[~df_hopse.isna()]
@@ -291,7 +292,7 @@ def generate_table(df_nbhd, optimization_metrics):
         df_domain = df_nbhd[df_nbhd["domain"] == domain].reset_index(drop=True)
 
         def compute_best(g):
-            ds = g.name[1]  # g.name == (model, dataset)
+            _ds = g.name[1]  # g.name == (model, dataset)  # noqa: F841
             idx = g["mean"].idxmin()
             best_val = g["mean"].min()
             return pd.Series(

@@ -4,9 +4,9 @@ from generate_scores import gen_scores
 from preprocess import preprocess_df
 
 
-def generate(
-    df, collect_subsets, sweeped_columns, all_seeds=[0, 3, 5, 7, 9], cpu=False
-):
+def generate(df, collect_subsets, sweeped_columns, all_seeds=None, cpu=False):
+    if all_seeds is None:
+        all_seeds = [0, 3, 5, 7, 9]
     datasets = list(df["dataset.loader.parameters.data_name"].unique())
     # Get unique models
     models = list(df["model.model_name"].unique())
@@ -132,7 +132,7 @@ def generate(
                         elif isinstance(value, float):
                             if (
                                 col.startswith("optimizer.parameters")
-                                and ("lr" in col or "weight_decay")
+                                and ("lr" in col or "weight_decay" in col)
                                 or col.startswith("model.feature_encoder")
                                 and ("proj_dropout" in col)
                             ):
