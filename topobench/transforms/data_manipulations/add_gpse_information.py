@@ -33,10 +33,7 @@ class AddGPSEInformation(torch_geometric.transforms.BaseTransform):
         self.device = (
             "cpu" if kwargs["device"] == "cpu" else f"cuda:{kwargs['cuda'][0]}"
         )
-        self.path_to_pretrained_model = kwargs.get(
-            "path_to_pretrained_model",
-            "/home/gbg141/TopoBench/GPSE_pretrained",
-        )
+        self.path_to_pretrained_model = kwargs["path_to_pretrained_model"]
 
         # Load pretrained GPSE model (outputs 512-dim internal representation)
         pretrain_model = kwargs.get(
