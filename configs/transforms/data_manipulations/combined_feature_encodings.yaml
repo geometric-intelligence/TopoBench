@@ -1,6 +1,6 @@
 transform_name: "CombinedFEs"
 transform_type: "data manipulation"
-encodings: ["KHopFE","HKFE"]
+encodings: ["KHopFE","HKFE", "SheafConnLapPE"]
 parameters:
   HKFE:
     kernel_param_HKFE: [1, 21]
