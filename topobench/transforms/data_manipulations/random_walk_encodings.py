@@ -94,4 +94,4 @@ class RWSE(BaseTransform):
             P_power = P_power @ P
             rwse[:, k - 1] = P_power.diag()  # return probs
 
-        return rwse
+        return rwse.float()
