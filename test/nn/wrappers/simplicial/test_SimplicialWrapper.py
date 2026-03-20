@@ -44,8 +44,8 @@ class TestSimplicialWrappers:
         for key in ["labels", "batch_0", "x_0", "x_1", "x_2"]:
             assert key in out
 
-    def test_SANWarpper(self, sg1_clique_lifted):
-        """Test SANWarpper.
+    def test_SANWrapper(self, sg1_clique_lifted):
+        """Test SANWrapper.
         
         Parameters
         ----------
