@@ -24,9 +24,7 @@ def gen_scores(df, gnn=False):
                 (df["dataset.loader.parameters.data_name"] == dataset)
             ]
 
-            optim_metric = optimization_metrics[dataset]["optim_metric"]
             eval_metric = optimization_metrics[dataset]["eval_metric"]
-            direction = optimization_metrics[dataset]["direction"]
 
             # Keep metrics that matters for dataset
             performance_columns = optimization_metrics[dataset][

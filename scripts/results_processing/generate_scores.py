@@ -23,9 +23,7 @@ def gen_scores(df):
                 (df["dataset.loader.parameters.data_name"] == dataset)
             ]
 
-            optim_metric = optimization_metrics[dataset]["optim_metric"]
             eval_metric = optimization_metrics[dataset]["eval_metric"]
-            direction = optimization_metrics[dataset]["direction"]
 
             # Keep metrics that matters for dataset
             performance_columns = optimization_metrics[dataset][
@@ -57,7 +55,9 @@ def gen_scores(df):
                 / len(aggregated)
                 * 100
             )
-            aggregated = aggregated[aggregated[(eval_metric, "count")] >= n_count]
+            aggregated = aggregated[
+                aggregated[(eval_metric, "count")] >= n_count
+            ]
             # print(len(aggregated[aggregated['seed'] > 4]))
             # aggregated = aggregated.sort_values(
             #     by=(optim_metric, "mean"), ascending=(direction == "min")

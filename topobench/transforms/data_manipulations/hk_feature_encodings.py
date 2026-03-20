@@ -1,15 +1,15 @@
-"""Laplacian Positional Encoding (LapPE) Transform."""
+"""Heat Kernel feature Encoding (HKFE) Transform."""
 
 import numpy as np
+import omegaconf
 import torch
+from scipy.sparse.linalg import expm_multiply
 from torch_geometric.data import Data
 from torch_geometric.transforms import BaseTransform
 from torch_geometric.utils import (
     get_laplacian,
     to_scipy_sparse_matrix,
 )
-from scipy.sparse.linalg import expm_multiply
-import omegaconf
 
 
 class HKFE(BaseTransform):
@@ -23,29 +23,41 @@ class HKFE(BaseTransform):
     concat_to_x : bool, optional
         If True, concatenates the encodings with existing node features in
         ``data.x``. If ``data.x`` is None, creates it. Default is True.
+    aggregation : str, optional
+        Aggregation function to reduce over the feature dimension.
+        Options: "mean", "sum", "max", "min". Default is "mean".
     **kwargs : dict
         Additional arguments (not used).
     """
+
+    _AGG_FN_MAP = {"mean": "mean", "sum": "sum", "max": "amax", "min": "amin"}
 
     def __init__(
         self,
         kernel_param_HKFE: tuple,
         concat_to_x: bool = True,
+        aggregation: str = "mean",
         **kwargs,
     ):
         self.kernel_param_HKFE = kernel_param_HKFE
         self.concat_to_x = concat_to_x
-        # Compute pe_dim from tuple/list or use directly if int
+        if aggregation not in self._AGG_FN_MAP:
+            raise ValueError(
+                f"Unknown aggregation '{aggregation}'. "
+                f"Choose from: {list(self._AGG_FN_MAP.keys())}"
+            )
+        self.aggregation = aggregation
+        # Compute fe_dim from tuple/list or use directly if int
         if (
             isinstance(kernel_param_HKFE, (list, tuple))
             or type(kernel_param_HKFE) is omegaconf.listconfig.ListConfig
         ):
-            self.pe_dim = kernel_param_HKFE[1] - kernel_param_HKFE[0]
+            self.fe_dim = kernel_param_HKFE[1] - kernel_param_HKFE[0]
         else:
-            self.pe_dim = kernel_param_HKFE
+            self.fe_dim = kernel_param_HKFE
 
     def forward(self, data: Data) -> Data:
-        """Compute the Laplacian positional encodings for the input graph.
+        """Compute the Heat Kernel feature encodings for the input graph.
 
         Parameters
         ----------
@@ -62,15 +74,15 @@ class HKFE(BaseTransform):
                 "HKFE requires node features (data.x cannot be None)"
             )
 
-        pe = self._compute_hkfe(data.x, data.edge_index, data.num_nodes)
+        fe = self._compute_hkfe(data.x, data.edge_index, data.num_nodes)
 
         if self.concat_to_x:
             if data.x is None:
-                data.x = pe
+                data.x = fe
             else:
-                data.x = torch.cat([data.x, pe], dim=-1)
+                data.x = torch.cat([data.x, fe], dim=-1)
         else:
-            data.HKFE = pe
+            data.HKFE = fe
 
         return data
 
@@ -78,6 +90,9 @@ class HKFE(BaseTransform):
         self, x: torch.Tensor, edge_index: torch.Tensor, num_nodes: int
     ) -> torch.Tensor:
         """Internal method to compute heat kernel feature encodings.
+
+        Computes heat kernel diffusion at multiple time scales and aggregates
+        over input features to produce a fixed-dimension output (matching PSE pattern).
 
         Parameters
         ----------
@@ -91,14 +106,12 @@ class HKFE(BaseTransform):
         Returns
         -------
         torch.Tensor
-            Electrostatic positional encodings.
+            Heat Kernel feature encodings of shape [N, fe_dim].
         """
         device = edge_index.device
         hk_fe = []
         if edge_index.size(1) == 0 or num_nodes <= 1:
-            return torch.zeros(
-                num_nodes, self.pe_dim * x.size(-1), device=device
-            )
+            return torch.zeros(num_nodes, self.fe_dim, device=device)
 
         # Normalized Laplacian
         edge_index_lap, edge_weight = get_laplacian(
@@ -112,7 +125,7 @@ class HKFE(BaseTransform):
             self.kernel_param_HKFE[0],
             self.kernel_param_HKFE[1],
         )
-        kernel_times = np.geomspace(start, end, self.pe_dim)
+        kernel_times = np.geomspace(start, end, self.fe_dim)
         if len(kernel_times) == 0:
             raise ValueError("Diffusion times are required for heat kernel")
 
@@ -120,8 +133,10 @@ class HKFE(BaseTransform):
         for t in kernel_times:
             x_t = expm_multiply((-float(t)) * L, x)
             hk_fe.append(torch.from_numpy(x_t).float().to(device))
-        hk_fe = torch.stack(hk_fe, dim=1)  # [N, pe_dim, F]
-        hk_fe = hk_fe.reshape(hk_fe.size(0), -1)  # [N, pe_dim * F]
+        hk_fe = torch.stack(hk_fe, dim=1)  # [N, fe_dim, F]
+        # Aggregate over features to produce fixed-dimension output (like PSEs)
+        agg_fn = getattr(hk_fe, self._AGG_FN_MAP[self.aggregation])
+        hk_fe = agg_fn(dim=-1)  # [N, fe_dim]
 
         if torch.any(torch.isnan(hk_fe)):
             raise ValueError("HKFE contains NaNs")

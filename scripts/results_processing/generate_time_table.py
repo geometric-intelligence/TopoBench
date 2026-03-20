@@ -52,7 +52,7 @@ def generate_times_dictionary(df):
             for col in sweeped_columns:
                 try:
                     unique_colums_values[col] = subset[col].unique()
-                except:
+                except Exception:
                     print(
                         f"Attention the columns: {col}, has issues with unique values"
                     )
@@ -103,14 +103,16 @@ def generate_times_dictionary(df):
 
 def build_table(
     collected_results_time,
-    selected_datasets=["MUTAG", "NCI1", "NCI109", "PROTEINS", "ZINC"],
+    selected_datasets=None,
 ):
+    if selected_datasets is None:
+        selected_datasets = ["MUTAG", "NCI1", "NCI109", "PROTEINS", "ZINC"]
     nested_dict = dict(collected_results_time)
     result_dict = pd.DataFrame.from_dict(
         {
             (i, j): nested_dict[i][j]
             for i in nested_dict
-            for j in nested_dict[i].keys()
+            for j in nested_dict[i]
         },
         orient="index",
     )

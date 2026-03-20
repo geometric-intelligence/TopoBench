@@ -7,11 +7,9 @@ def map_name(row):
     if isinstance(row["transforms.hopse_encoding.pe_types"], list):
         return "HOPSE_MANUAL_PE"
     elif row["model.model_name"] == "sann":
-        if type(
-            row["transforms.hopse_encoding.pretrain_model"]
-        ) == float and pd.isna(
-            row["transforms.hopse_encoding.pretrain_model"]
-        ):
+        if isinstance(
+            row["transforms.hopse_encoding.pretrain_model"], float
+        ) and pd.isna(row["transforms.hopse_encoding.pretrain_model"]):
             return "SANN"
         else:
             return "HOPSE_GPSE"

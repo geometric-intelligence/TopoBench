@@ -791,10 +791,7 @@ def parse_tb_results():
     additional_data = []
 
     for dataset, entries in raw_table_data.items():
-        optim_dir = optimization_metrics[dataset]["direction"]
-
         # Group data by method prefix (before the underscore)
-        method_results = {}
         standard_methods = []
         for method, (mean, std) in entries.items():
             if method in ["CWN", "CCCN", "SCCNN", "SCN", "GCN", "GIN", "GAT"]:
@@ -834,17 +831,16 @@ def parse_tb_results():
     }
 
     # Convert the additional data to the proper format for the dataframe
-    formatted_data = []
-    for item in additional_data:
-        formatted_data.append(
-            {
-                "model": method_mappings[item["method"]],
-                "domain": domain_mappings[item["method"]],
-                "dataset": item["dataset"],
-                "mean": item["mean"],
-                "std": item["std"],
-            }
-        )
+    formatted_data = [
+        {
+            "model": method_mappings[item["method"]],
+            "domain": domain_mappings[item["method"]],
+            "dataset": item["dataset"],
+            "mean": item["mean"],
+            "std": item["std"],
+        }
+        for item in additional_data
+    ]
 
     # This data can now be added to your existing dataframe or used to create a new one
     tbx_df = pd.DataFrame(formatted_data)
@@ -852,7 +848,9 @@ def parse_tb_results():
     return tbx_df
 
 
-def parse_all_dfs(selected_datasets=[]):
+def parse_all_dfs(selected_datasets=None):
+    if selected_datasets is None:
+        selected_datasets = []
     df = pd.read_csv("merged_csv/merged_normalized.csv")
     df = preprocess_df(df)
     # Keep only relevant columns

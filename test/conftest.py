@@ -1,5 +1,19 @@
 """Configuration file for pytest."""
+import os
+from pathlib import Path
+from omegaconf import OmegaConf
 import networkx as nx
+
+# 1. Register the 'env' resolver for OmegaConf
+if not OmegaConf.has_resolver("env"):
+    OmegaConf.register_new_resolver("env", lambda key, default=None: os.getenv(key, default))
+
+# 2. Set a fallback PROJECT_ROOT so tests don't crash if it's not set in the shell
+if "PROJECT_ROOT" not in os.environ:
+    # Set PROJECT_ROOT to the directory containing the 'test' folder
+    # Assuming: project_root/test/conftest.py
+    os.environ["PROJECT_ROOT"] = str(Path(__file__).parent.parent.resolve())
+    
 import pytest
 import torch
 import torch_geometric

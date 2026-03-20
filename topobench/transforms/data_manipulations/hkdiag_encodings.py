@@ -1,6 +1,7 @@
 """Laplacian Positional Encoding (LapPE) Transform."""
 
 import numpy as np
+import omegaconf
 import torch
 import torch.nn.functional as F
 from torch_geometric.data import Data
@@ -10,7 +11,6 @@ from torch_geometric.utils import (
     remove_self_loops,
     to_scipy_sparse_matrix,
 )
-import omegaconf
 
 
 class HKdiagSE(BaseTransform):

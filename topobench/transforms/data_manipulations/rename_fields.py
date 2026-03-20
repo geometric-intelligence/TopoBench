@@ -55,6 +55,7 @@ class RenameFields(torch_geometric.transforms.BaseTransform):
                     warnings.warn(
                         f"Attribute '{new_name}' already exists and will be overwritten.",
                         UserWarning,
+                        stacklevel=2,
                     )
                     delattr(
                         data, new_name

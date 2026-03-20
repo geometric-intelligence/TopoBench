@@ -3,6 +3,9 @@
 from torch_geometric.data import Data
 from torch_geometric.transforms import BaseTransform
 
+# Supported Positional and Structural Encodings
+PSE_ENCODINGS = {"LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE"}
+
 
 class CombinedPSEs(BaseTransform):
     r"""
@@ -53,23 +56,29 @@ class CombinedPSEs(BaseTransform):
             LapPE,
         )
 
+        encoding_classes = {
+            "LapPE": LapPE,
+            "RWSE": RWSE,
+            "ElectrostaticPE": ElectrostaticPE,
+            "HKdiagSE": HKdiagSE,
+        }
+
+        # Validate encoding_classes matches PSE_ENCODINGS
+        if set(encoding_classes.keys()) != PSE_ENCODINGS:
+            missing_in_classes = PSE_ENCODINGS - set(encoding_classes.keys())
+            missing_in_set = set(encoding_classes.keys()) - PSE_ENCODINGS
+            raise RuntimeError(
+                f"encoding_classes and PSE_ENCODINGS are out of sync. "
+                f"Missing in encoding_classes: {missing_in_classes}. "
+                f"Missing in PSE_ENCODINGS: {missing_in_set}."
+            )
+
         for enc in self.encodings:
-            if enc == "LapPE":
-                lappe = LapPE(**self.parameters.get("LapPE", {}))
-                data = lappe(data)
-            elif enc == "RWSE":
-                rwse = RWSE(**self.parameters.get("RWSE", {}))
-                data = rwse(data)
-            elif enc == "ElectrostaticPE":
-                electrostatic_pe = ElectrostaticPE(
-                    **self.parameters.get("ElectrostaticPE", {})
-                )
-                data = electrostatic_pe(data)
-            elif enc == "HKdiagSE":
-                hkdiag_se = HKdiagSE(**self.parameters.get("HKdiagSE", {}))
-                data = hkdiag_se(data)
-            else:
+            if enc not in encoding_classes:
                 raise ValueError(f"Unsupported encoding type: {enc}")
+
+            encoder = encoding_classes[enc](**self.parameters.get(enc, {}))
+            data = encoder(data)
 
         return data
 

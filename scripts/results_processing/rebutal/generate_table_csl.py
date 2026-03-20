@@ -1,8 +1,7 @@
 import pandas as pd
-from constants import keep_columns, optimization_metrics, DATASET_ORDER
+from constants import DATASET_ORDER, keep_columns, optimization_metrics
 from generate_scores import gen_scores
 from preprocess import preprocess_df
-
 
 NAME_DICT_PE = {
     "rwse,elstaticpe,hkdiagse,lappe": "All",
@@ -58,7 +57,9 @@ def parse_pse_results(datasets, collect_subsets):
     return df_res
 
 
-def parse_all_dfs(selected_datasets=[]):
+def parse_all_dfs(selected_datasets=None):
+    if selected_datasets is None:
+        selected_datasets = []
     df = pd.read_csv("merged_csl/merged_normalized.csv")
     df = preprocess_df(df, gnn=True, split_mantra=False)
     # Keep only relevant columns
