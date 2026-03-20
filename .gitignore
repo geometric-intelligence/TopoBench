@@ -186,6 +186,10 @@ notebooks/tmp
 /tutorials/lightning_logs/
 /tutorials/datasets/
 
+# Sweep outputs
+/tools/sweep_tools/outputs
+/tools/memory_usage_tracking/outputs
+
 # wandb
 wandb/
 

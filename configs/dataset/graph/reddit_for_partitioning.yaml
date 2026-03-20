@@ -1,0 +1,55 @@
+# Dataset loader config
+loader:
+  _target_: topobench.data.loaders.RedditDatasetLoader
+  parameters: 
+    data_domain: graph
+    data_type: Reddit_on_disk
+    data_name: Reddit
+    data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+    
+    # NEW: choose memory mode
+    memory_type: on_disk_cluster          # "in_memory", "on_disk", or "on_disk_cluster"
+
+    # NEW: global partition settings (Option B)
+    cluster:
+      num_parts: 2048                     # number of clusters for single global partition
+      recursive: false                    # forwarded to PyG ClusterData
+      keep_inter_cluster_edges: false     # standard Cluster-GCN style
+      sparse_format: csr                  # required by our block-stream loader
+
+    # NEW: streaming / loader settings for block-wise training
+    stream:
+      q: 8                                # clusters per batch (Cluster-GCN "bsize")
+      num_workers: 0                      # increase if needed
+      pin_memory: false                   # true if you want faster H2D
+      with_edge_attr: false               # WebKB has no edge_attr
+      precompute_split_parts: true        # write parts_with_{train,val,test}.npy
+
+    # NEW: how to store features on disk
+    dtype_policy: float32                 # current ClusterOnDisk uses float32
+
+# Dataset parameters
+parameters:
+  num_features: 602
+  num_classes: 41
+  num_nodes: 232965
+  task: classification
+  loss_type: cross_entropy
+  monitor_metric: accuracy
+  task_level: node
+
+#splits
+split_params:
+  learning_setting: transductive
+  data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}
+  data_seed: 0
+  split_type: random #'k-fold' # either "k-fold" or "random" strategies
+  k: 10 # for "k-fold" Cross-Validation
+  train_prop: 0.5 # for "random" strategy splitting
+  standardize: False
+
+# Dataloader parameters
+dataloader_params:
+  batch_size: 1 # Fixed
+  num_workers: 0
+  pin_memory: False
