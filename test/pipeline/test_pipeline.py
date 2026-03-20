@@ -34,6 +34,8 @@ class TestPipeline:
                     "trainer.check_val_every_n_epoch=1",
                     "paths=test",
                     "callbacks=model_checkpoint",
+                    "trainer.accelerator=cpu",
+                    "trainer.devices=1",
                 ],
                 return_hydra_config=True,
             )
