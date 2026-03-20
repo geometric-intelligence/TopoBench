@@ -1,8 +1,7 @@
 import pandas as pd
-from constants import keep_columns, optimization_metrics, DATASET_ORDER
+from constants import DATASET_ORDER, keep_columns, optimization_metrics
 from generate_scores import gen_scores
 from preprocess import preprocess_df
-
 
 NAME_DICT_PE = {
     "rwse,elstaticpe,hkdiagse,lappe": "All",

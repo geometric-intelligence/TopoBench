@@ -1,6 +1,5 @@
 """Main entry point for training and testing models."""
 
-import os
 import random
 from pathlib import Path
 from typing import Any

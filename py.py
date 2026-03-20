@@ -4,13 +4,13 @@
 ## Both are stored at per-minute accuracy
 
 
-class RetrieverQ(object):
+class RetrieverQ:
     def __init__(self, store):
         self.store = store
 
     def retrieve_recent(self, customer_id, curr_time):
         result = []
-        for index in range(0, 5):
+        for index in range(5):
             val = self.store.retrieve(customer_id, curr_time - 5 + index)
             if val is not None:
                 result.append(val)
@@ -21,7 +21,9 @@ class RetrieverQ(object):
 
 ## Assume the clk_Store and trx_store are already created
 
-import calendar, time
+import calendar
+import time
+
 from retrievers import RetrieverQ
 
 clk_retriever = RetrieverQ(clk_store)

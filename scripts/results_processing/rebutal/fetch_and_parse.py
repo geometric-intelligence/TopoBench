@@ -1,7 +1,6 @@
 from ast import literal_eval
 
 import pandas as pd
-
 import wandb
 
 columns_to_normalize = [
@@ -11,6 +10,8 @@ columns_to_normalize = [
     "optimizer",
     "callbacks",
 ]
+
+
 def normalize_columns(df, columns_to_normalize):
     # Gather the new DataFrames to be concatenated
     flattened_dfs = []
@@ -39,7 +40,8 @@ def normalize_df(df, columns_to_normalize):
 
     return df
 
-def fetch(user="telyatnikov_sap", project = "HOPSE_reproducibility"):
+
+def fetch(user="telyatnikov_sap", project="HOPSE_reproducibility"):
     api = wandb.Api(overrides={"base_url": "https://api.wandb.ai"}, timeout=40)
     runs = api.runs(f"{user}/{project}")
     summary_list, config_list, name_list = [], [], []
@@ -51,11 +53,7 @@ def fetch(user="telyatnikov_sap", project = "HOPSE_reproducibility"):
         # .config contains the hyperparameters.
         #  We remove special values that start with _.
         config_list.append(
-            {
-                k: v
-                for k, v in run.config.items()
-                if not k.startswith("_")
-            }
+            {k: v for k, v in run.config.items() if not k.startswith("_")}
         )
 
         # .name is the human-readable name of the run.
@@ -78,13 +76,15 @@ def fetch(user="telyatnikov_sap", project = "HOPSE_reproducibility"):
     df_merged = pd.DataFrame.from_records(merged_dicts)
     return df_merged
 
+
 def main(**kwargs):
-    if 'user' in kwargs and 'project' in kwargs:
-        df = fetch(kwargs['user'], kwargs['project'])
+    if "user" in kwargs and "project" in kwargs:
+        df = fetch(kwargs["user"], kwargs["project"])
     else:
         df = fetch()
     df = normalize_df(df, columns_to_normalize)
     return df
+
 
 if __name__ == "__main__":
     main()

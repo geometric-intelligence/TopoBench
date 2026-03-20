@@ -3,7 +3,6 @@
 import os
 from collections import defaultdict
 
-from matplotlib import transforms
 import numpy as np
 import omegaconf
 import torch

@@ -2,11 +2,10 @@ from ast import literal_eval
 
 import numpy as np
 import pandas as pd
+import wandb
 from constants import (
     optimization_metrics,
 )
-
-import wandb
 
 columns_to_normalize = [
     "model",

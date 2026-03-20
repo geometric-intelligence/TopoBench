@@ -1,9 +1,8 @@
 from ast import literal_eval
 
 import pandas as pd
-from constants import DATASET_ORDER, MODEL_ORDER
-
 import wandb
+from constants import DATASET_ORDER, MODEL_ORDER
 
 columns_to_normalize = [
     "model",

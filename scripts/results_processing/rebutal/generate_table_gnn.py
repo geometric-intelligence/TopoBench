@@ -1,8 +1,7 @@
 import pandas as pd
-from constants import keep_columns, optimization_metrics, DATASET_ORDER
+from constants import DATASET_ORDER, keep_columns, optimization_metrics
 from generate_scores import gen_scores
 from preprocess import preprocess_df
-
 
 NAME_DICT_PE = {
     "rwse,elstaticpe,hkdiagse,lappe": "All",
@@ -264,7 +263,7 @@ def generate_table(df, optimization_metrics):
 
         # sort domains to have consistent ordering
         order_list = ["GCN", "GAT", "GIN"]
-        all_domains = [d for d in order_list if d in domain_groups.keys()]
+        all_domains = [d for d in order_list if d in domain_groups]
 
         # For each domain, we do the "sandwiching" with midrules
         for dom in all_domains:

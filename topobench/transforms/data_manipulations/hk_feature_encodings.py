@@ -1,15 +1,15 @@
 """Heat Kernel feature Encoding (HKFE) Transform."""
 
 import numpy as np
+import omegaconf
 import torch
+from scipy.sparse.linalg import expm_multiply
 from torch_geometric.data import Data
 from torch_geometric.transforms import BaseTransform
 from torch_geometric.utils import (
     get_laplacian,
     to_scipy_sparse_matrix,
 )
-from scipy.sparse.linalg import expm_multiply
-import omegaconf
 
 
 class HKFE(BaseTransform):
