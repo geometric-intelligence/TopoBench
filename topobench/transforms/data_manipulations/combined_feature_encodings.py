@@ -60,8 +60,8 @@ class CombinedFEs(BaseTransform):
 
         from topobench.transforms.data_manipulations import (
             HKFE,
-            KHopFE,
             PPRFE,
+            KHopFE,
             SheafConnLapPE,
         )
 
