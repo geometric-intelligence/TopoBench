@@ -1015,3 +1015,119 @@ class TestCombinedFEs:
         transformed = transform(data)
 
         assert transformed.SheafConnLapPE.dtype == torch.float32
+
+    # ========== PPRFE Tests ==========
+
+    def test_initialization_with_pprfe(self):
+        """Test initialization with PPRFE encoding."""
+        transform = CombinedFEs(encodings=["PPRFE"])
+        assert transform.encodings == ["PPRFE"]
+
+        # Test with all encodings including PPRFE
+        transform = CombinedFEs(encodings=["HKFE", "KHopFE", "SheafConnLapPE", "PPRFE"])
+        assert transform.encodings == ["HKFE", "KHopFE", "SheafConnLapPE", "PPRFE"]
+
+    def test_single_pprfe_encoding(self):
+        """Test transform with only PPRFE encoding."""
+        params = {
+            "PPRFE": {"alpha_param_PPRFE": (0.1, 5), "concat_to_x": True}
+        }
+        transform = CombinedFEs(encodings=["PPRFE"], parameters=params)
+        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+
+        transformed = transform(data)
+
+        # Original 1 + PPRFE 5 = 6
+        assert transformed.x.shape == (3, 6)
+
+    def test_pprfe_separate_storage(self):
+        """Test PPRFE with separate storage."""
+        params = {
+            "PPRFE": {"alpha_param_PPRFE": (0.1, 5), "concat_to_x": False}
+        }
+        transform = CombinedFEs(encodings=["PPRFE"], parameters=params)
+        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+
+        transformed = transform(data)
+
+        assert transformed.x.shape == (3, 1)  # Original unchanged
+        assert hasattr(transformed, "PPRFE")
+        assert transformed.PPRFE.shape == (3, 5)
+
+    def test_pprfe_combined_with_hkfe(self):
+        """Test PPRFE combined with HKFE."""
+        params = {
+            "HKFE": {"kernel_param_HKFE": (1, 5), "concat_to_x": True},
+            "PPRFE": {"alpha_param_PPRFE": (0.1, 5), "concat_to_x": True}
+        }
+        transform = CombinedFEs(encodings=["HKFE", "PPRFE"], parameters=params)
+        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+
+        transformed = transform(data)
+
+        # Original 1 + HKFE 4 + PPRFE 5 = 10
+        assert transformed.x.shape == (3, 10)
+
+    def test_pprfe_combined_with_khopfe(self):
+        """Test PPRFE combined with KHopFE."""
+        params = {
+            "KHopFE": {"max_hop": 4, "concat_to_x": True},
+            "PPRFE": {"alpha_param_PPRFE": (0.1, 5), "concat_to_x": True}
+        }
+        transform = CombinedFEs(encodings=["KHopFE", "PPRFE"], parameters=params)
+        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+
+        transformed = transform(data)
+
+        # Original 1 + KHopFE 3 + PPRFE 5 = 9
+        assert transformed.x.shape == (3, 9)
+
+    def test_all_four_encodings(self):
+        """Test all four encodings together."""
+        x = torch.randn(3, 5)  # Need more features for SheafConnLapPE
+        params = {
+            "HKFE": {"kernel_param_HKFE": (1, 5), "concat_to_x": True},
+            "KHopFE": {"max_hop": 4, "concat_to_x": True},
+            "SheafConnLapPE": {"max_pe_dim": 6, "stalk_dim": 3, "concat_to_x": True},
+            "PPRFE": {"alpha_param_PPRFE": (0.1, 5), "concat_to_x": True}
+        }
+        transform = CombinedFEs(
+            encodings=["HKFE", "KHopFE", "SheafConnLapPE", "PPRFE"],
+            parameters=params
+        )
+        data = Data(x=x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+
+        transformed = transform(data)
+
+        # Original 5 + HKFE 4 + KHopFE 3 + SheafConnLapPE 6 + PPRFE 5 = 23
+        assert transformed.x.shape == (3, 23)
+
+    def test_all_four_separate_storage(self):
+        """Test all four encodings with separate storage."""
+        x = torch.randn(3, 5)
+        params = {
+            "HKFE": {"kernel_param_HKFE": (1, 5), "concat_to_x": False},
+            "KHopFE": {"max_hop": 4, "concat_to_x": False},
+            "SheafConnLapPE": {"max_pe_dim": 6, "stalk_dim": 3, "concat_to_x": False},
+            "PPRFE": {"alpha_param_PPRFE": (0.1, 5), "concat_to_x": False}
+        }
+        transform = CombinedFEs(
+            encodings=["HKFE", "KHopFE", "SheafConnLapPE", "PPRFE"],
+            parameters=params
+        )
+        data = Data(x=x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+
+        transformed = transform(data)
+
+        # Original unchanged
+        assert transformed.x.shape == (3, 5)
+        # All stored separately
+        assert hasattr(transformed, "HKFE")
+        assert hasattr(transformed, "KHopFE")
+        assert hasattr(transformed, "SheafConnLapPE")
+        assert hasattr(transformed, "PPRFE")
+        assert transformed.HKFE.shape == (3, 4)
+        assert transformed.KHopFE.shape == (3, 3)
+        assert transformed.SheafConnLapPE.shape == (3, 6)
+        assert transformed.PPRFE.shape == (3, 5)
+

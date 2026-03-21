@@ -4,7 +4,7 @@ from torch_geometric.data import Data
 from torch_geometric.transforms import BaseTransform
 
 # Supported Feature Encodings
-FE_ENCODINGS = {"HKFE", "KHopFE", "SheafConnLapPE"}
+FE_ENCODINGS = {"HKFE", "KHopFE", "SheafConnLapPE", "PPRFE"}
 
 
 class CombinedFEs(BaseTransform):
@@ -12,7 +12,7 @@ class CombinedFEs(BaseTransform):
     Combined FEs transform.
 
     Applies one or more pre-defined feature encoding transforms
-    (KHopFE, HKFE, SheafConnLapPE) to a graph, storing their outputs
+    (KHopFE, HKFE, SheafConnLapPE, PPRFE) to a graph, storing their outputs
     and optionally concatenating them to `data.x`.
 
     Parameters
@@ -20,8 +20,9 @@ class CombinedFEs(BaseTransform):
     encodings : list of str
         List of feature encodings to apply. Supported values are
         "KHopFE" for K-hop Feature Encoding, "HKFE" for Heat Kernel
-        Feature Encoding, and "SheafConnLapPE" for Sheaf Connection
-        Laplacian Positional Encoding.
+        Feature Encoding, "SheafConnLapPE" for Sheaf Connection
+        Laplacian Positional Encoding, and "PPRFE" for Personalized
+        Page Rank Feature Encoding.
     parameters : dict, optional
         Additional parameters for the encoding transforms.
     **kwargs : dict, optional
@@ -60,6 +61,7 @@ class CombinedFEs(BaseTransform):
         from topobench.transforms.data_manipulations import (
             HKFE,
             KHopFE,
+            PPRFE,
             SheafConnLapPE,
         )
 
@@ -67,6 +69,7 @@ class CombinedFEs(BaseTransform):
             "HKFE": HKFE,
             "KHopFE": KHopFE,
             "SheafConnLapPE": SheafConnLapPE,
+            "PPRFE": PPRFE,
         }
 
         # Validate encoding_classes matches FE_ENCODINGS
