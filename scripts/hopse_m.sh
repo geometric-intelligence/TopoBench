@@ -118,6 +118,9 @@ datasets=(
     "graph/NCI1"
     "graph/NCI109"
     "graph/ZINC"
+    "graph/cocitation_cora"
+    "graph/cocitation_citeseer"
+    "graph/cocitation_pubmed"
     "simplicial/mantra_name"
     "simplicial/mantra_orientation"
     "simplicial/mantra_betti_numbers"
@@ -127,13 +130,16 @@ datasets=(
 # Use "alias::hydra_value" format for readable run names.
 neighborhoods=(
     "adj1::[up_adjacency-0]"
-    "adj2::[up_adjacency-0,up_adjacency-1]"
-    "adj3::[up_adjacency-0,up_adjacency-1,down_adjacency-2]"
-    "uinc::[up_adjacency-0,up_incidence-0,up_incidence-1]"
-    "dinc::[up_adjacency-0,down_incidence-1,down_incidence-2]"
-    "biinc::[up_adjacency-0,up_incidence-0,up_incidence-1,down_incidence-1,down_incidence-2]"
-    "full::[up_adjacency-0,up_adjacency-1,down_adjacency-1,down_adjacency-2,up_incidence-0,up_incidence-1,down_incidence-1,down_incidence-2]"
-    "hop2::[up_adjacency-0,up_adjacency-1,2-up_adjacency-0,down_adjacency-1,down_adjacency-2,2-down_adjacency-2]"
+    "adj2::[up_adjacency-0,2-up_adjacency-0]"
+    "adj3::[up_adjacency-0,up_adjacency-1,2-up_adjacency-0,down_adjacency-1,down_adjacency-2,2-down_adjacency-2]"
+    "inc1::[up_incidence-0,2-up_incidence-0]"
+    "inc2::[up_incidence-0,up_incidence-1,2-up_incidence-0,down_incidence-1,down_incidence-2,2-down_incidence-2]"
+)
+
+# --- Encodings (two families to compare) ---
+encodings=(
+    "pse::[LapPE,RWSE,ElectrostaticPE,HKdiagSE]"
+    "fe::[HKFE,KHopFE]"
 )
 
 # --- Hyperparameters (superset across all dataset groups) ---
@@ -167,6 +173,7 @@ SWEEP_CONFIG=(
     "|model|${models[*]}"
     "|dataset|${datasets[*]}"
     "N|model.preprocessing_params.neighborhoods|${neighborhoods[*]}"
+    "enc|model.preprocessing_params.encodings|${encodings[*]}"
 
     # --- LEVEL 2: HYPERPARAMETERS ---
     "L|model.backbone.n_layers|${num_layers[*]}"
