@@ -55,6 +55,16 @@ class HOPSE_PE_Information(torch_geometric.transforms.BaseTransform):
         self.num_pe_considered = len(kwargs["encodings"])
         self.hidden_dim = self.parameters["dim_target_node"]
 
+    def _data_to_device(self, data):
+        """Move all tensors in a Data object to self.device."""
+        moved = {}
+        for key, val in data.items():
+            if isinstance(val, torch.Tensor):
+                moved[key] = val.to(self.device)
+            else:
+                moved[key] = val
+        return Data(**moved)
+
     def _make_zero_encoding_data(self, n_cells, encodings, dims):
         """Create a Data object with zero tensors for each encoding.
 
@@ -331,7 +341,7 @@ class HOPSE_PE_Information(torch_geometric.transforms.BaseTransform):
         ).to(self.device)
 
         # Compute all encodings (FEs use features, PSEs use graph structure)
-        return self.encoding_transform(input_graph)
+        return self._data_to_device(self.encoding_transform(input_graph))
 
     def forward_interank(
         self, src_rank, dst_rank, nbhd_cache, data: torch_geometric.data.Data
@@ -391,7 +401,9 @@ class HOPSE_PE_Information(torch_geometric.transforms.BaseTransform):
         ).to(self.device)
 
         # Compute all encodings on expanded graph
-        expanded_out = self.encoding_transform(input_graph)
+        expanded_out = self._data_to_device(
+            self.encoding_transform(input_graph)
+        )
 
         # Select only destination cells
         return self.select_dst_encodings(expanded_out, n_dst_cells)

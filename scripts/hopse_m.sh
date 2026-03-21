@@ -113,12 +113,12 @@ models=(
 
 # --- Datasets ---
 datasets=(
-    "graph/PROTEINS"
     "graph/MUTAG"
+    "graph/cocitation_cora"
+    "graph/PROTEINS"
     "graph/NCI1"
     "graph/NCI109"
     "graph/ZINC"
-    "graph/cocitation_cora"
     "graph/cocitation_citeseer"
     "graph/cocitation_pubmed"
     "simplicial/mantra_name"
@@ -139,7 +139,7 @@ neighborhoods=(
 # --- Encodings (two families to compare) ---
 encodings=(
     "pse::[LapPE,RWSE,ElectrostaticPE,HKdiagSE]"
-    "fe::[HKFE,KHopFE]"
+    "fe::[HKFE,KHopFE,PPRFE]"
 )
 
 # --- Hyperparameters (superset across all dataset groups) ---
