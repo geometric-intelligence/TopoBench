@@ -27,7 +27,7 @@ class TestCombinedEncodings:
     def test_encoding_sets_defined(self):
         """Test that encoding sets are properly defined."""
         assert PSE_ENCODINGS == {"LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE"}
-        assert FE_ENCODINGS == {"HKFE", "KHopFE", "SheafConnLapPE"}
+        assert FE_ENCODINGS == {"HKFE", "KHopFE", "SheafConnLapPE", "PPRFE"}
         assert ALL_ENCODINGS == PSE_ENCODINGS | FE_ENCODINGS
 
     def test_encoding_sets_no_overlap(self):
