@@ -9,7 +9,7 @@ class ZenodoZip:
     Only uses the Python standard library (urllib, zipfile).
     """
 
-    def __init__(self, url: str, timeout: int = 60):
+    def __init__(self, url: str, timeout: int = 300):
         self.url = url
         self.timeout = timeout
 

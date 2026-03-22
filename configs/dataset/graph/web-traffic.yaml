@@ -15,7 +15,7 @@ loader:
 
 # Dataset parameters
 parameters:
-  num_features: 267
+  num_features: 1180
   num_classes: 1
   task: regression
   loss_type: mae

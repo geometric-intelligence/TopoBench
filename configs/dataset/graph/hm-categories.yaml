@@ -15,7 +15,7 @@ loader:
 
 # Dataset parameters
 parameters:
-  num_features: 35
+  num_features: 120
   num_classes: 21
   task: classification
   loss_type: cross_entropy
