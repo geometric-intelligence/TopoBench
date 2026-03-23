@@ -54,8 +54,8 @@ class A123CortexMDataset(InMemoryDataset):
         Dictionary containing the URLs for downloading the dataset.
     FILE_FORMAT : dict
         Dictionary containing the file formats for the dataset.
-    RAW_FILE_NAMES : dict
-        Dictionary containing the raw file names for the dataset.
+    RAW_FILE_NAMES : list[str]
+        List containing some of the raw file names for the dataset, to check after extraction.
     """
 
     URLS: ClassVar = {
@@ -66,7 +66,11 @@ class A123CortexMDataset(InMemoryDataset):
         "Auditory cortex data": "zip",
     }
 
-    RAW_FILE_NAMES: ClassVar = {}
+    RAW_FILE_NAMES: ClassVar = [
+        "031020_367n_100um20st_FRA",
+        "ant.m",
+        "README.txt",
+    ]
 
     def __init__(
         self,
@@ -78,24 +82,12 @@ class A123CortexMDataset(InMemoryDataset):
         self.parameters = parameters
 
         # defensive parameter access with sensible defaults
-        try:
-            self.corr_threshold = float(parameters.get("corr_threshold", 0.2))
-        except Exception:
-            self.corr_threshold = float(
-                getattr(parameters, "corr_threshold", 0.2)
-            )
+        self.corr_threshold = float(parameters.get("corr_threshold", 0.2))
 
-        try:
-            self.n_bins = int(parameters.get("n_bins", 9))
-        except Exception:
-            self.n_bins = int(getattr(parameters, "n_bins", 9))
+        self.n_bins = int(parameters.get("n_bins", 9))
 
-        try:
-            self.min_neurons = int(parameters.get("min_neurons", 8))
-        except Exception:
-            self.min_neurons = int(getattr(parameters, "min_neurons", 8))
+        self.min_neurons = int(parameters.get("min_neurons", 8))
 
-        self.session_map = {}
         super().__init__(
             root,
         )
@@ -150,7 +142,7 @@ class A123CortexMDataset(InMemoryDataset):
         list[str]
             List of raw file names.
         """
-        return ["Auditory cortex data/"]
+        return self.RAW_FILE_NAMES
 
     @property
     def processed_file_names(self) -> str:
@@ -167,41 +159,35 @@ class A123CortexMDataset(InMemoryDataset):
         """Download the dataset from a URL and extract to the raw directory."""
         # Download data from the source
         dataset_key = "Auditory cortex data"
-        self.url = self.URLS[dataset_key]
-        self.file_format = self.FILE_FORMAT[dataset_key]
+        url = self.URLS[dataset_key]
+        file_format = self.FILE_FORMAT[dataset_key]
 
         # Use self.name as the downloadable dataset name
         download_file_from_link(
-            file_link=self.url,
+            file_link=url,
             path_to_save=self.raw_dir,
             dataset_name=self.name,
-            file_format=self.file_format,
+            file_format=file_format,
             verify=False,
             timeout=60,  # 60 seconds per chunk read timeout
             retries=3,  # Retry up to 3 times
         )
 
         # Extract zip file
-        folder = self.raw_dir
-        filename = f"{self.name}.{self.file_format}"
-        path = osp.join(folder, filename)
-        extract_zip(path, folder)
+        filename = f"{self.name}.{file_format}"
+        path = osp.join(self.raw_dir, filename)
+        extract_zip(path, self.raw_dir)
         # Delete zip file
         os.unlink(path)
 
-        # Move files from extracted "Auditory cortex data/" directory to raw_dir
-        downloaded_dir = osp.join(folder, self.name)
-        if osp.exists(downloaded_dir):
-            for file in os.listdir(downloaded_dir):
-                src = osp.join(downloaded_dir, file)
-                dst = osp.join(folder, file)
-                if osp.isdir(src):
-                    shutil.copytree(src, dst, dirs_exist_ok=True)
-                else:
-                    shutil.move(src, dst)
-            # Delete the extracted top-level directory
-            shutil.rmtree(downloaded_dir)
-        self.data_dir = folder
+        extracted_path = osp.join(self.raw_dir, "Auditory cortex data")
+        if osp.exists(extracted_path):
+            for file in os.listdir(extracted_path):
+                shutil.move(
+                    osp.join(extracted_path, file),
+                    osp.join(self.raw_dir, file),
+                )
+            shutil.rmtree(extracted_path)
 
     @staticmethod
     def extract_samples(data_dir: str, n_bins: int, min_neurons: int = 8):
@@ -234,8 +220,6 @@ class A123CortexMDataset(InMemoryDataset):
                 scorrs = np.array(mt["selectZCorrInfo"]["SigCorrs"])
                 ncorrs = np.array(mt["selectZCorrInfo"]["NoiseCorrsTrial"])
                 bfvals = np.array(mt["BFInfo"][layer]["BFval"]).ravel()
-                if scorrs.size == 0 or bfvals.size == 0:
-                    continue
 
                 bin_ids = bfvals.astype(int)
 
@@ -285,51 +269,39 @@ class A123CortexMDataset(InMemoryDataset):
             edges from thresholded correlation, and label y as integer bf_bin.
         """
         corr = np.asarray(sample.get("corr"))
-        if corr.ndim != 2 or corr.size == 0:
-            # empty placeholder graph
-            x = torch.zeros((0, 3), dtype=torch.float)
-            edge_index = torch.empty((2, 0), dtype=torch.long)
-            edge_attr = torch.empty((0, 1), dtype=torch.float)
-        else:
-            n = corr.shape[0]
-            # sanitize
-            corr = np.nan_to_num(corr)
+        n = corr.shape[0]
+        # sanitize
+        corr = np.nan_to_num(corr)
 
-            mean_corr = corr.mean(axis=1)
-            std_corr = corr.std(axis=1)
-            noise_diag = np.zeros(n)
-            if "noise_corr" in sample and sample["noise_corr"] is not None:
-                nc = np.asarray(sample["noise_corr"])
-                if nc.shape == corr.shape:
-                    noise_diag = np.diag(nc)
+        mean_corr = corr.mean(axis=1)
+        std_corr = corr.std(axis=1)
+        noise_diag = np.zeros(n)
+        if "noise_corr" in sample and sample["noise_corr"] is not None:
+            nc = np.asarray(sample["noise_corr"])
+            if nc.shape == corr.shape:
+                noise_diag = np.diag(nc)
 
-            x_np = np.vstack([mean_corr, std_corr, noise_diag]).T
-            x = torch.tensor(x_np, dtype=torch.float)
+        x_np = np.vstack([mean_corr, std_corr, noise_diag]).T
+        x = torch.tensor(x_np, dtype=torch.float)
 
-            # build edges from thresholded correlation (upper triangle)
-            adj = (corr >= threshold).astype(int)
-            iu = np.triu_indices(n, k=1)
-            sel = np.where(adj[iu] == 1)[0]
-            if sel.size == 0:
-                edge_index = torch.empty((2, 0), dtype=torch.long)
-                edge_attr = torch.empty((0, 1), dtype=torch.float)
-            else:
-                rows = iu[0][sel]
-                cols = iu[1][sel]
-                edge_index_np = np.vstack([rows, cols])
-                edge_index = torch.tensor(edge_index_np, dtype=torch.long)
-                # make undirected
-                edge_index = to_undirected(edge_index)
-                # edge_attr: corresponding corr weights (for both directions, if made undirected)
-                weights = corr[rows, cols]
-                weights = (
-                    np.repeat(weights, 2)
-                    if edge_index.size(1) == weights.size * 2
-                    else weights
-                )
-                edge_attr = torch.tensor(
-                    weights.reshape(-1, 1), dtype=torch.float
-                )
+        # build edges from thresholded correlation (upper triangle)
+        adj = (corr >= threshold).astype(int)
+        iu = np.triu_indices(n, k=1)
+        sel = np.where(adj[iu] == 1)[0]
+        rows = iu[0][sel]
+        cols = iu[1][sel]
+        edge_index_np = np.vstack([rows, cols])
+        edge_index = torch.tensor(edge_index_np, dtype=torch.long)
+        # make undirected
+        edge_index = to_undirected(edge_index)
+        # edge_attr: corresponding corr weights (for both directions, if made undirected)
+        weights = corr[rows, cols]
+        weights = (
+            np.repeat(weights, 2)
+            if edge_index.size(1) == weights.size * 2
+            else weights
+        )
+        edge_attr = torch.tensor(weights.reshape(-1, 1), dtype=torch.float)
 
         y = torch.tensor([int(sample.get("bf_bin", -1))], dtype=torch.long)
         data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y)
@@ -367,11 +339,7 @@ class A123CortexMDataset(InMemoryDataset):
                     f"[A123] Converting sample {idx}/{len(samples)} to PyG Data..."
                 )
             d = self._sample_to_pyg_data(s, threshold=self.corr_threshold)
-            # Filter out empty graphs (graphs with no edges)
-            if d.edge_index is not None and d.edge_index.numel() > 0:
-                data_list.append(d)
-            else:
-                skipped_count += 1
+            data_list.append(d)
 
         # collate and save processed dataset
         print(

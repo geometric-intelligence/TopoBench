@@ -18,7 +18,7 @@ loader:
     data_domain: graph
     data_type: A123CortexM
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type} # Use data_dir from dataset config
-    data_name: a123_cortex_m # Use data_name from dataset config
+    data_name: a123 # Use data_name from dataset config
     num_graphs: 10
     is_undirected: True
     num_channels: ${dataset.parameters.num_features} # Use num_features for node feature dim
