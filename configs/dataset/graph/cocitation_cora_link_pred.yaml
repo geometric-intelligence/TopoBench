@@ -1,0 +1,40 @@
+# Dataset loader config
+loader:
+  _target_: topobench.data.loaders.PlanetoidDatasetLoader
+  parameters: 
+    data_domain: graph
+    data_type: cocitation
+    data_name: Cora
+    data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+
+# Dataset parameters
+parameters:
+  num_features: 1433
+  num_classes: 2                # no of classes: edge exists / does not exist
+  num_nodes: 2708
+  task: classification
+  loss_type: cross_entropy # cross_entropy
+  monitor_metric: auroc # accuracy
+  task_level: edge
+
+#splits
+split_params:
+  learning_setting: transductive
+  data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}
+  data_seed: 0
+  split_type: random #'k-fold' # either "k-fold" or "random" strategies
+  k: 10 # for "k-fold" Cross-Validation
+  train_prop: 0.8 # for "random" strategy splitting
+  val_prop: 0.1
+  test_prop: 0.1
+  is_undirected: True
+  neg_sampling_ratio: 1.0   # in val/test datasets
+  neg_pos_ratio: 1.0    # in train dataset
+  neg_sampling_method: sparse
+  task_level: edge
+
+# Dataloader parameters
+dataloader_params:
+  batch_size: 1 # Fixed
+  num_workers: 1
+  pin_memory: False
