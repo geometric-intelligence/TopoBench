@@ -284,7 +284,7 @@ def get_fes_dimensions(encodings, parameters):
     encodings : list
         List of feature encodings.
     parameters : dict
-        Dictionary of parameters for the feature encodings, which should
+        Dictionary of parameters for the feature encodings.
 
     Returns
     -------
@@ -309,7 +309,7 @@ def get_fes_dimensions(encodings, parameters):
         elif fe == "PPRFE":
             fe_params = parameters.get(fe, {})
             alpha_param = fe_params.get("alpha_param_PPRFE", [0.1, 10])
-            
+
             if (
                 isinstance(alpha_param, (list, tuple))
                 or type(alpha_param) is omegaconf.listconfig.ListConfig
@@ -376,7 +376,7 @@ def get_all_encoding_dimensions(encodings, parameters):
             enc_params = parameters.get(enc, {})
             # Safely get alpha_param, defaulting to [0.1, 10]
             alpha_param = enc_params.get("alpha_param_PPRFE", [0.1, 10])
-            
+
             if (
                 isinstance(alpha_param, (list, tuple))
                 or type(alpha_param) is omegaconf.listconfig.ListConfig
@@ -508,7 +508,8 @@ def check_fes_in_transforms(transforms):
         elif transform == "PPRFE":
             alpha_param = transforms.get("alpha_param_PPRFE")
             added_features += (
-                alpha_param[1] if type(alpha_param) is omegaconf.listconfig.ListConfig 
+                alpha_param[1]
+                if type(alpha_param) is omegaconf.listconfig.ListConfig
                 else alpha_param
             )
     # Potentially multiple transforms
@@ -539,11 +540,14 @@ def check_fes_in_transforms(transforms):
                     )
                 elif fe == "PPRFE":
                     # Safely chain the gets so it never throws an error
-                    fe_params = transforms[key].get("parameters", {}).get(fe, {})
+                    fe_params = (
+                        transforms[key].get("parameters", {}).get(fe, {})
+                    )
                     alpha_param = fe_params.get("alpha_param_PPRFE", [0.1, 10])
-                    
+
                     added_features += (
-                        alpha_param[1] if type(alpha_param) is omegaconf.listconfig.ListConfig 
+                        alpha_param[1]
+                        if type(alpha_param) is omegaconf.listconfig.ListConfig
                         else alpha_param
                     )
         elif "HKFE" in key:
@@ -559,7 +563,8 @@ def check_fes_in_transforms(transforms):
         elif "PPRFE" in key:
             alpha_param = transforms[key].get("alpha_param_PPRFE")
             added_features += (
-                alpha_param[1] if type(alpha_param) is omegaconf.listconfig.ListConfig 
+                alpha_param[1]
+                if type(alpha_param) is omegaconf.listconfig.ListConfig
                 else alpha_param
             )
     return added_features

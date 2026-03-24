@@ -7,8 +7,8 @@ import time
 import torch
 import torch_geometric
 from torch_geometric.io import fs
-from omegaconf import OmegaConf
 from tqdm import tqdm
+
 from topobench.data.utils import (
     ensure_serializable,
     load_inductive_splits,
@@ -197,12 +197,14 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         if self.pre_transform is not None:
             print(f"\nApplying transforms to {len(data_list)} graphs...")
             self.data_list = [
-                self.pre_transform(d) 
-                for d in tqdm(data_list, desc="Processing graphs", unit="graph")
+                self.pre_transform(d)
+                for d in tqdm(
+                    data_list, desc="Processing graphs", unit="graph"
+                )
             ]
         else:
             self.data_list = data_list
-            
+
         self._data, self.slices = self.collate(self.data_list)
         self._data_list = None  # Reset cache.
 
