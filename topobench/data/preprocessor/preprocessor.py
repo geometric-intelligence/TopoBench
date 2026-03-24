@@ -198,9 +198,7 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             print(f"\nApplying transforms to {len(data_list)} graphs...")
             self.data_list = [
                 self.pre_transform(d)
-                for d in tqdm(
-                    data_list, desc="Processing graphs", unit="graph"
-                )
+                for d in tqdm(data_list, desc="Processing graphs", unit="graph")
             ]
         else:
             self.data_list = data_list
