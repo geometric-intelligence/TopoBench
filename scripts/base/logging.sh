@@ -37,63 +37,84 @@ run_and_log() {
     local cmd="$1"
     local log_group="$2"
     local run_name="$3"
-    
-    # Use the 4th argument if it was provided,
-    # otherwise, fall back to the global $LOGGING_ROOT_DIR variable.
     local root_dir="${4:-$LOGGING_ROOT_DIR}"
-
-    # --- 1. Path Definitions ---
-    # This is now the *only* directory we need to create and log to.
+    
     local specific_log_dir="$root_dir/$log_group"
     mkdir -p "$specific_log_dir"
     
-    # Summary logs are now *inside* the specific log directory
     local success_log="$specific_log_dir/SUCCESSFUL_RUNS.log"
     local failed_log="$specific_log_dir/FAILED_RUNS.log"
     
-    # Specific log file paths for individual failed runs
     local stdout_log="$specific_log_dir/${run_name}_stdout.log"
     local stderr_log="$specific_log_dir/${run_name}_stderr.log"
     
-    # Temporary log files (will be renamed on failure, deleted on success)
-    local tmp_stdout="${stdout_log}.tmp"
-    local tmp_stderr="${stderr_log}.tmp"
+    # Unique temp files using the background subshell PID
+    local tmp_stdout="${stdout_log}.${BASHPID}.tmp"
+    local tmp_stderr="${stderr_log}.${BASHPID}.tmp"
 
-    # --- 2. Execution ---
+    # --- RETRY CONFIGURATION ---
+    local max_attempts=2
+    local wait_time=15 # Seconds to wait before retrying
+    local exit_code=0
 
-    echo "--- [START] Running: $run_name (Log Group: $log_group) ---"
+    echo "--- [START] Running: $run_name (PID: $BASHPID) ---"
 
-    eval "$cmd" > >(tee "$tmp_stdout") 2> >(tee "$tmp_stderr" >&2)
+    for attempt in $(seq 1 $max_attempts); do
+        
+        # If this is a retry, print a warning and sleep
+        if [ "$attempt" -gt 1 ]; then
+            echo "⚠️ [RETRY] $run_name failed on attempt $((attempt-1)). Waiting ${wait_time}s before attempt $attempt..."
+            sleep $wait_time
+        fi
 
-    if [ ${PIPESTATUS[0]} -eq 0 ]; then
-        # --- 3. Success Handling ---
+        # Execute synchronously. 
+        # Note: > overwrites the temp file on a retry, so you only keep the logs of the current attempt.
+        eval "$cmd" > "$tmp_stdout" 2> "$tmp_stderr"
+        exit_code=$?
+
+        # If it succeeds, break out of the retry loop early
+        if [ $exit_code -eq 0 ]; then
+            break
+        fi
+    done
+
+    # --- FINAL LOGGING ---
+    if [ $exit_code -eq 0 ]; then
         echo "✅ [SUCCESS] Finished: $run_name"
         
-        # Log success to the group's summary file
-        echo "$(date): [SUCCESS] ${run_name}" >> "$success_log"
+        # Safe concurrent writing for the success log
+        (
+            flock -x 200
+            echo "$(date): [SUCCESS] ${run_name}" >> "$success_log"
+        ) 200> "${specific_log_dir}/.success.lock"
         
-        # On success, remove the temporary files
+        # Clean up temp files
         rm -f "$tmp_stdout" "$tmp_stderr"
         return 0
     else
-        # --- 4. Failure Handling ---
-        echo "❌ [FAILURE] Finished: $run_name"
+        echo "❌ [FAILURE] Finished: $run_name (Failed after $max_attempts attempts. Exit Code: $exit_code)"
         
-        # On failure, rename the temp files to permanent logs
+        # Move the temp files from the final failed attempt to permanent logs
         mv "$tmp_stdout" "$stdout_log"
         mv "$tmp_stderr" "$stderr_log"
 
-        echo "----------------- ERROR OUTPUT (Last 15 lines) -----------------"
+        # Safe concurrent writing for the failure log
+        (
+            flock -x 200
+            echo "=================================" >> "$failed_log"
+            echo "FAILURE on $(date): [${run_name}]" >> "$failed_log"
+            echo "Exit Code: $exit_code" >> "$failed_log"
+            echo "Attempts: $max_attempts" >> "$failed_log"
+            echo "Command: $cmd" >> "$failed_log"
+            echo "See full logs: $stdout_log | $stderr_log" >> "$failed_log"
+            echo "=================================" >> "$failed_log"
+        ) 200> "${specific_log_dir}/.failed.lock"
+
+        # Print the error to the console so you can still monitor failures live
+        echo "----------------- ERROR OUTPUT ($run_name) -----------------"
         tail -n 15 "$stderr_log"
         echo "----------------------------------------------------------------"
-        echo "Logs saved to: $specific_log_dir"
-
-        # Log failure details to the group's summary file
-        echo "=================================" >> "$failed_log"
-        echo "FAILURE on $(date): [${run_name}]" >> "$failed_log"
-        echo "Command: $cmd" >> "$failed_log"
-        echo "See full logs: $stdout_log | $stderr_log" >> "$failed_log"
-        echo "=================================" >> "$failed_log"
+        
         return 1
     fi
 }

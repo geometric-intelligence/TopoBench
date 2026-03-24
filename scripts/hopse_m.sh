@@ -189,14 +189,18 @@ SWEEP_CONFIG=(
 
 
 # ==============================================================================
-# SECTION 5: PYTHON GENERATOR
-# Extended from graph_baselines.sh with:
-#   - "alias::value" naming support for list-valued parameters.
-#   - Invalid combo filtering (cell model + simplicial dataset).
+# SECTION 5: PYTHON GENERATOR (Smart Transductive Filtering)
 # ==============================================================================
+
+# Define where your dataset YAMLs live so the generator can inspect them.
+# UPDATE THIS PATH IF YOUR CONFIGS ARE STORED ELSEWHERE.
+export CONFIG_DIR="./configs/dataset"
+
 generate_combinations() {
 python3 -c "
 import sys, itertools, os
+
+config_dir = os.environ.get('CONFIG_DIR', './configs/dataset')
 
 # 1. Parse Input Specs
 specs = []
@@ -211,20 +215,65 @@ for item in sys.argv[1:]:
 options = [[(s['tag'], s['key'], val) for val in s['vals']] for s in specs]
 combinations = list(itertools.product(*options))
 
-# 3. Filter invalid combos (resolve aliases first)
+# Helper to strip alias
 def hydra_val(v):
     return v.split('::', 1)[1] if '::' in v else v
 
+# Find the first batch size in the sweep so we don't duplicate transductive runs
+bs_key = 'dataset.dataloader_params.batch_size'
+bs_spec = next((s for s in specs if s['key'] == bs_key), None)
+first_bs = hydra_val(bs_spec['vals'][0]) if bs_spec else None
+
+# 3. Filter and Mutate Combos
 valid = []
 skipped = 0
+transductive_cache = {}
+
 for combo in combinations:
     vals_dict = {key: hydra_val(val) for (_, key, val) in combo}
     model_val = vals_dict.get('model', '')
     dataset_val = vals_dict.get('dataset', '')
-    # Skip cell model + simplicial dataset (no simplicial2cell lifting)
+    current_bs = vals_dict.get(bs_key, '')
+
+    # --- Rule A: Skip cell model + simplicial dataset ---
     if model_val.startswith('cell/') and dataset_val.startswith('simplicial/'):
         skipped += 1
         continue
+
+    # --- Rule B: Transductive Batch Size Handler ---
+    is_transductive = False
+    if dataset_val in transductive_cache:
+        is_transductive = transductive_cache[dataset_val]
+    else:
+        # Construct path to yaml (e.g., ./configs/dataset/graph/cocitation_cora.yaml)
+        yaml_path = os.path.join(config_dir, f'{dataset_val}.yaml')
+        if os.path.exists(yaml_path):
+            with open(yaml_path, 'r') as f:
+                # Fast text check avoids needing pip install pyyaml
+                if 'learning_setting: transductive' in f.read():
+                    is_transductive = True
+        else:
+            print(f'⚠️ WARNING: Could not find config at {yaml_path}', file=sys.stderr)
+        
+        transductive_cache[dataset_val] = is_transductive
+
+    if is_transductive:
+        # If this isn't the first batch size in the sweep list, skip it 
+        # to avoid running the exact same bs=1 experiment multiple times.
+        if current_bs != first_bs:
+            skipped += 1
+            continue
+        
+        # Mutate the current combination to force batch_size to 1
+        new_combo = []
+        for (tag, key, val) in combo:
+            if key == bs_key:
+                # Force the value to 1. If an alias was used, keep it clean.
+                new_combo.append((tag, key, '1'))
+            else:
+                new_combo.append((tag, key, val))
+        combo = tuple(new_combo)
+
     valid.append(combo)
 
 # 4. Print header
@@ -237,11 +286,10 @@ for combo in valid:
     name_parts = []
     cmd_args = []
     for (tag, key, val) in combo:
-        # Support alias::hydra_value syntax
         if '::' in val:
-            alias, hydra_val = val.split('::', 1)
+            alias, hydra_val_str = val.split('::', 1)
             clean_val = alias
-            actual_val = hydra_val
+            actual_val = hydra_val_str
         else:
             clean_val = os.path.basename(val)
             actual_val = val
@@ -256,7 +304,6 @@ for combo in valid:
     print(f'{run_name};' + ' '.join(cmd_args))
 " "${SWEEP_CONFIG[@]}"
 }
-
 
 # ==============================================================================
 # SECTION 6: MAIN EXECUTION LOOP
