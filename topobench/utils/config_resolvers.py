@@ -306,6 +306,17 @@ def get_fes_dimensions(encodings, parameters):
         elif fe == "KHopFE":
             # max_hop - 1 because the 0th hop is the features themselves
             dimensions.append(parameters[fe].get("max_hop") - 1)
+        elif fe == "PPRFE":
+            fe_params = parameters.get(fe, {})
+            alpha_param = fe_params.get("alpha_param_PPRFE", [0.1, 10])
+            
+            if (
+                isinstance(alpha_param, (list, tuple))
+                or type(alpha_param) is omegaconf.listconfig.ListConfig
+            ):
+                dimensions.append(alpha_param[1])
+            else:
+                dimensions.append(alpha_param)
     return dimensions
 
 
@@ -360,6 +371,19 @@ def get_all_encoding_dimensions(encodings, parameters):
         elif enc == "KHopFE":
             # max_hop - 1 because the 0th hop is the features themselves
             dimensions.append(parameters[enc].get("max_hop") - 1)
+        elif enc == "PPRFE":
+            # Safely get parameters, defaulting to empty dict if missing
+            enc_params = parameters.get(enc, {})
+            # Safely get alpha_param, defaulting to [0.1, 10]
+            alpha_param = enc_params.get("alpha_param_PPRFE", [0.1, 10])
+            
+            if (
+                isinstance(alpha_param, (list, tuple))
+                or type(alpha_param) is omegaconf.listconfig.ListConfig
+            ):
+                dimensions.append(alpha_param[1])
+            else:
+                dimensions.append(alpha_param)
     return dimensions
 
 
@@ -481,6 +505,12 @@ def check_fes_in_transforms(transforms):
         elif transform == "KHopFE":
             # max_hop - 1 because the 0th hop is the features themselves
             added_features += transforms.get("max_hop") - 1
+        elif transform == "PPRFE":
+            alpha_param = transforms.get("alpha_param_PPRFE")
+            added_features += (
+                alpha_param[1] if type(alpha_param) is omegaconf.listconfig.ListConfig 
+                else alpha_param
+            )
     # Potentially multiple transforms
     for key in transforms:
         if "CombinedFEs" in key:
@@ -507,6 +537,15 @@ def check_fes_in_transforms(transforms):
                         .get("max_hop")
                         - 1
                     )
+                elif fe == "PPRFE":
+                    # Safely chain the gets so it never throws an error
+                    fe_params = transforms[key].get("parameters", {}).get(fe, {})
+                    alpha_param = fe_params.get("alpha_param_PPRFE", [0.1, 10])
+                    
+                    added_features += (
+                        alpha_param[1] if type(alpha_param) is omegaconf.listconfig.ListConfig 
+                        else alpha_param
+                    )
         elif "HKFE" in key:
             kernel_param = transforms[key].get("kernel_param_HKFE")
             added_features += (
@@ -517,6 +556,12 @@ def check_fes_in_transforms(transforms):
         elif "KHopFE" in key:
             # max_hop - 1 because the 0th hop is the features themselves
             added_features += transforms[key].get("max_hop") - 1
+        elif "PPRFE" in key:
+            alpha_param = transforms[key].get("alpha_param_PPRFE")
+            added_features += (
+                alpha_param[1] if type(alpha_param) is omegaconf.listconfig.ListConfig 
+                else alpha_param
+            )
     return added_features
 
 
