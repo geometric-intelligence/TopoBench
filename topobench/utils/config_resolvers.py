@@ -511,11 +511,13 @@ def check_fes_in_transforms(transforms):
             added_features += transforms.get("max_hop") - 1
         elif transform == "PPRFE":
             alpha_param = transforms.get("alpha_param_PPRFE")
-            added_features += (
-                alpha_param[1]
-                if type(alpha_param) is omegaconf.listconfig.ListConfig
-                else alpha_param
-            )
+            if (
+                isinstance(alpha_param, (list, tuple))
+                or type(alpha_param) is omegaconf.listconfig.ListConfig
+            ):
+                added_features += alpha_param[1]
+            else:
+                added_features += alpha_param
         elif transform == "SheafConnLapPE":
             added_features += transforms.get("max_pe_dim")
     # Potentially multiple transforms
@@ -551,11 +553,13 @@ def check_fes_in_transforms(transforms):
                     )
                     alpha_param = fe_params.get("alpha_param_PPRFE", [0.1, 10])
 
-                    added_features += (
-                        alpha_param[1]
-                        if type(alpha_param) is omegaconf.listconfig.ListConfig
-                        else alpha_param
-                    )
+                    if (
+                        isinstance(alpha_param, (list, tuple))
+                        or type(alpha_param) is omegaconf.listconfig.ListConfig
+                    ):
+                        added_features += alpha_param[1]
+                    else:
+                        added_features += alpha_param
                 elif fe == "SheafConnLapPE":
                     added_features += (
                         transforms[key]
@@ -573,13 +577,15 @@ def check_fes_in_transforms(transforms):
         elif "KHopFE" in key:
             # max_hop - 1 because the 0th hop is the features themselves
             added_features += transforms[key].get("max_hop") - 1
-        elif "PPRFE" in key:
+        elif "PPRFE" in key and omegaconf.OmegaConf.is_dict(transforms[key]):
             alpha_param = transforms[key].get("alpha_param_PPRFE")
-            added_features += (
-                alpha_param[1]
-                if type(alpha_param) is omegaconf.listconfig.ListConfig
-                else alpha_param
-            )
+            if (
+                isinstance(alpha_param, (list, tuple))
+                or type(alpha_param) is omegaconf.listconfig.ListConfig
+            ):
+                added_features += alpha_param[1]
+            else:
+                added_features += alpha_param
         elif "SheafConnLapPE" in key:
             added_features += transforms[key].get("max_pe_dim")
     return added_features
