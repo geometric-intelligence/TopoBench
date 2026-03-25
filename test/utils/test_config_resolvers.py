@@ -152,6 +152,10 @@ class TestConfigResolvers:
         in_channels = infer_in_channels(cfg.dataset, cfg.transforms)
         assert in_channels == [1433,1433,1433,1433]
 
+        cfg = hydra.compose(config_name="run.yaml", overrides=["model=graph/gcn", "dataset=graph/MUTAG", "transforms=combined_fe"], return_hydra_config=True)
+        in_channels = infer_in_channels(cfg.dataset, cfg.transforms)
+        assert in_channels == [48]
+
     def test_infer_num_cell_dimensions(self):
         """Test infer_num_cell_dimensions."""
         out = infer_num_cell_dimensions(None, [7, 7, 7])
