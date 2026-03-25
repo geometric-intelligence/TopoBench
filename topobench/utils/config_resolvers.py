@@ -317,6 +317,8 @@ def get_fes_dimensions(encodings, parameters):
                 dimensions.append(alpha_param[1])
             else:
                 dimensions.append(alpha_param)
+        elif fe == "SheafConnLapPE":
+            dimensions.append(parameters[fe].get("max_pe_dim"))
     return dimensions
 
 
@@ -384,6 +386,8 @@ def get_all_encoding_dimensions(encodings, parameters):
                 dimensions.append(alpha_param[1])
             else:
                 dimensions.append(alpha_param)
+        elif enc == "SheafConnLapPE":
+            dimensions.append(parameters[enc].get("max_pe_dim"))
     return dimensions
 
 
@@ -512,6 +516,8 @@ def check_fes_in_transforms(transforms):
                 if type(alpha_param) is omegaconf.listconfig.ListConfig
                 else alpha_param
             )
+        elif transform == "SheafConnLapPE":
+            added_features += transforms.get("max_pe_dim")
     # Potentially multiple transforms
     for key in transforms:
         if "CombinedFEs" in key:
@@ -550,6 +556,13 @@ def check_fes_in_transforms(transforms):
                         if type(alpha_param) is omegaconf.listconfig.ListConfig
                         else alpha_param
                     )
+                elif fe == "SheafConnLapPE":
+                    added_features += (
+                        transforms[key]
+                        .get("parameters")
+                        .get(fe)
+                        .get("max_pe_dim")
+                    )
         elif "HKFE" in key:
             kernel_param = transforms[key].get("kernel_param_HKFE")
             added_features += (
@@ -567,6 +580,8 @@ def check_fes_in_transforms(transforms):
                 if type(alpha_param) is omegaconf.listconfig.ListConfig
                 else alpha_param
             )
+        elif "SheafConnLapPE" in key:
+            added_features += transforms[key].get("max_pe_dim")
     return added_features
 
 
@@ -741,7 +756,12 @@ def infer_in_channels(dataset, transforms):
                 if transforms is not None
                 else 0
             )
-            return [num_features[0] + pe_features]
+            fe_features = (
+                check_fes_in_transforms(transforms)
+                if transforms is not None
+                else 0
+            )
+            return [num_features[0] + pe_features + fe_features]
 
     # This else is never executed
     else:
