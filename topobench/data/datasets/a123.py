@@ -94,16 +94,9 @@ class A123CortexMDataset(InMemoryDataset):
 
         out = fs.torch_load(self.processed_paths[0])
         assert len(out) == 3 or len(out) == 4
-        if len(out) == 3:  # Backward compatibility.
-            data, self.slices, self.sizes = out
-            data_cls = Data
-        else:
-            data, self.slices, self.sizes, data_cls = out
+        data, self.slices, self.sizes, data_cls = out
 
-        if not isinstance(data, dict):  # Backward compatibility.
-            self.data = data
-        else:
-            self.data = data_cls.from_dict(data)
+        self.data = data_cls.from_dict(data)
 
         # For this dataset we don't assume the internal _data is a torch_geometric Data
         # (this dataset exposes helper methods to construct subgraphs on demand).
@@ -276,10 +269,6 @@ class A123CortexMDataset(InMemoryDataset):
         mean_corr = corr.mean(axis=1)
         std_corr = corr.std(axis=1)
         noise_diag = np.zeros(n)
-        if "noise_corr" in sample and sample["noise_corr"] is not None:
-            nc = np.asarray(sample["noise_corr"])
-            if nc.shape == corr.shape:
-                noise_diag = np.diag(nc)
 
         x_np = np.vstack([mean_corr, std_corr, noise_diag]).T
         x = torch.tensor(x_np, dtype=torch.float)

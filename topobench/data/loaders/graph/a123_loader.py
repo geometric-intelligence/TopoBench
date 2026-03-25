@@ -50,28 +50,7 @@ class A123DatasetLoader(AbstractLoader):
         # hyperparameters can come from the DictConfig or be passed as overrides
         params = parameters if parameters is not None else {}
 
-        def _get(k, default):
-            """Get parameter value from DictConfig or overrides.
-
-            Parameters
-            ----------
-            k : str
-                Parameter key.
-            default : Any
-                Default value if key not found.
-
-            Returns
-            -------
-            Any
-                Parameter value from DictConfig or overrides, or default.
-            """
-            try:
-                return params.get(k, overrides.get(k, default))
-            except Exception:
-                # DictConfig may use attribute access
-                return getattr(params, k, overrides.get(k, default))
-
-        self.batch_size = int(_get("batch_size", 32))
+        self.batch_size = int(params.get("batch_size", overrides.get("batch_size", 32)))
         # dataset will be created when load_dataset() is called
         self.dataset = None
 
