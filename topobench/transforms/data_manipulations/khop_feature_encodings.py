@@ -1,9 +1,11 @@
 """K-hop feature Encoding (KFE) for Hasse graphs Transform."""
+
 import time
+
 import torch
 from torch_geometric.data import Data
 from torch_geometric.transforms import BaseTransform
-from torch_geometric.utils import to_dense_adj, degree
+from torch_geometric.utils import degree, to_dense_adj
 
 
 class KHopFE(BaseTransform):
@@ -12,18 +14,22 @@ class KHopFE(BaseTransform):
 
     Parameters
     ----------
-    max_hop: int
+    max_hop : int
         The maximum hop neighbourhood.
     concat_to_x : bool, optional
         If True, concatenates the encodings with existing node features in
-        ``data.x``. If ``data.x`` is None, creates it. Default is True.
+        ``data.x``. If ``data.x`` is None, creates it.
+        Default is True.
     aggregation : str, optional
         Aggregation function to reduce over the feature dimension.
-        Options: "mean", "sum", "max", "min". Default is "mean".
+        Options: "mean", "sum", "max", "min".
+        Default is "mean".
     method : str, optional
-        Computation method: "dense" or "sparse". Default is "sparse".
+        Computation method: "dense" or "sparse".
+        Default is "sparse".
     debug : bool, optional
-        If True, runs both methods and prints error/timing metrics. Default is False.
+        If True, runs both methods and prints error/timing metrics.
+        Default is False.
     **kwargs : dict
         Additional arguments (not used).
     """
@@ -40,23 +46,39 @@ class KHopFE(BaseTransform):
         **kwargs,
     ):
         self.concat_to_x = concat_to_x
-        self.max_hop = max_hop - 1  # The 0-th hop is always the features themselves
+        self.max_hop = (
+            max_hop - 1
+        )  # The 0-th hop is always the features themselves
         self.method = method
         self.debug = debug
-        
+
         if aggregation not in self._AGG_FN_MAP:
             raise ValueError(
                 f"Unknown aggregation '{aggregation}'. "
                 f"Choose from: {list(self._AGG_FN_MAP.keys())}"
             )
         self.aggregation = aggregation
-        
+
         if method not in ["dense", "sparse"]:
             raise ValueError("Method must be 'dense' or 'sparse'.")
 
     def forward(self, data: Data) -> Data:
+        """Compute the K-hop feature encodings for the input graph.
+
+        Parameters
+        ----------
+        data : torch_geometric.data.Data
+            Input graph data object.
+
+        Returns
+        -------
+        torch_geometric.data.Data
+            Graph data object with K-hop feature encodings added.
+        """
         if data.x is None:
-            raise ValueError("KHopFE requires node features (data.x cannot be None)")
+            raise ValueError(
+                "KHopFE requires node features (data.x cannot be None)"
+            )
 
         fe = self._compute_khopfe(data.x, data.edge_index, data.num_nodes)
 
@@ -73,6 +95,25 @@ class KHopFE(BaseTransform):
     def _compute_khopfe(
         self, x: torch.Tensor, edge_index: torch.Tensor, num_nodes: int
     ) -> torch.Tensor:
+        """Internal method to compute K-hop feature encodings.
+
+        Propagates features through K hops and aggregates over input features
+        to produce a fixed-dimension output.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Node features of the graph.
+        edge_index : torch.Tensor
+            Edge indices of the graph.
+        num_nodes : int
+            Number of nodes in the graph.
+
+        Returns
+        -------
+        torch.Tensor
+            K-hop feature encodings of shape ``[num_nodes, max_hop]``.
+        """
         device = edge_index.device
         x = x.to(device)
 
@@ -81,7 +122,7 @@ class KHopFE(BaseTransform):
 
         if self.debug:
             print("\n--- KHopFE Debug Report ---")
-            
+
             # Exact (Dense)
             t0 = time.time()
             fe_dense = self._compute_dense(x, edge_index, num_nodes, device)
@@ -96,7 +137,7 @@ class KHopFE(BaseTransform):
 
             # Compare
             diff = torch.abs(fe_dense - fe_sparse)
-            speedup = (t_dense / t_sparse) if t_sparse > 0 else float('inf')
+            speedup = (t_dense / t_sparse) if t_sparse > 0 else float("inf")
             print(f"Speedup Factor:      {speedup:.2f}x")
             print(f"Mean Abs Error:      {diff.mean().item():.6e}")
             print(f"Max Abs Error:       {diff.max().item():.6e}")
@@ -118,11 +159,34 @@ class KHopFE(BaseTransform):
 
         return khop_fe.float()
 
-    def _compute_dense(self, x, edge_index, num_nodes, device):
-        """Original implementation using dense adjacency matrices."""
+    def _compute_dense(
+        self,
+        x: torch.Tensor,
+        edge_index: torch.Tensor,
+        num_nodes: int,
+        device: torch.device,
+    ) -> torch.Tensor:
+        """Compute KHopFE using original dense adjacency matrices.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Node features of the graph.
+        edge_index : torch.Tensor
+            Edge indices of the graph.
+        num_nodes : int
+            Number of nodes in the graph.
+        device : torch.device
+            The device to perform computations on.
+
+        Returns
+        -------
+        torch.Tensor
+            Dense computation of K-hop feature encodings.
+        """
         khop_fe = []
         A = to_dense_adj(edge_index, max_num_nodes=num_nodes).squeeze(0)
-        
+
         # Symmetric norm adjacency matrix
         deg = A.sum(dim=1)
         deg_inv_sqrt = torch.diagflat(torch.pow(deg + 1e-8, -0.5))
@@ -132,11 +196,34 @@ class KHopFE(BaseTransform):
         for _ in range(self.max_hop):
             curr_x = A_norm @ curr_x
             khop_fe.append(curr_x)
-            
+
         return torch.stack(khop_fe, dim=1)
 
-    def _compute_sparse(self, x, edge_index, num_nodes, device):
-        """Optimized implementation using pure PyTorch sparse tensors."""
+    def _compute_sparse(
+        self,
+        x: torch.Tensor,
+        edge_index: torch.Tensor,
+        num_nodes: int,
+        device: torch.device,
+    ) -> torch.Tensor:
+        """Compute KHopFE using optimized pure PyTorch sparse tensors.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Node features of the graph.
+        edge_index : torch.Tensor
+            Edge indices of the graph.
+        num_nodes : int
+            Number of nodes in the graph.
+        device : torch.device
+            The device to perform computations on.
+
+        Returns
+        -------
+        torch.Tensor
+            Sparse computation of K-hop feature encodings.
+        """
         khop_fe = []
         row, col = edge_index
 
