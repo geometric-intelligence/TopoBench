@@ -57,6 +57,42 @@ class TestETNNPipeline:
             cfg.model.backbone.neighborhoods
         )
 
+    def test_etnn_lappe_config_composes_with_lappe_before_lifting(self):
+        """LapPE ETNN config should compute coordinates before lifting."""
+        with hydra.initialize(version_base="1.3", config_path="../../configs"):
+            cfg = hydra.compose(
+                config_name="run.yaml",
+                overrides=[
+                    "model=combinatorial/etnn_lappe",
+                    "dataset=graph/MUTAG",
+                ],
+                return_hydra_config=False,
+            )
+
+        assert cfg.model.model_name == "etnn_lappe"
+        assert (
+            cfg.model.backbone._target_
+            == "topobench.nn.backbones.combinatorial.etnn_lappe.ETNNLapPE"
+        )
+        assert cfg.model.backbone.coordinate_attr == "LapPE"
+
+        # The model-specific transform default should run LapPE first, storing
+        # rank-0 structural coordinates separately from node features.
+        assert "lappe_coordinates" in cfg.transforms
+        lappe = cfg.transforms.lappe_coordinates
+        assert lappe.transform_name == "LapPE"
+        assert lappe.concat_to_x is False
+        assert lappe.max_pe_dim == 3
+
+        # The required graph-to-combinatorial lifting should still be present
+        # and should use the neighborhoods consumed by the ETNN backbone.
+        assert "graph2combinatorial_lifting" in cfg.transforms
+        lifting = cfg.transforms.graph2combinatorial_lifting
+        assert lifting.transform_name == "GraphTriangleInducedCC"
+        assert list(lifting.neighborhoods) == list(
+            cfg.model.backbone.neighborhoods
+        )
+
     @pytest.mark.skip(
         reason=(
             "One-epoch ETNN pipeline run may download/process MUTAG. "
