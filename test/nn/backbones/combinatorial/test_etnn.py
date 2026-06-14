@@ -1,4 +1,11 @@
-"""Unit tests for the combinatorial ETNN backbone."""
+"""Unit tests for the coordinate-free combinatorial ETNN backbone.
+
+The PR #320 implementation adapts ETNN to TopoBench graph data without
+requiring physical Euclidean coordinates. These tests protect that baseline
+contract: relation-wise message passing over lifted combinatorial cells,
+TopoBench sparse-neighborhood direction conventions, wrapper compatibility,
+and robust handling of empty higher-rank cells.
+"""
 
 import pytest
 import torch
@@ -12,7 +19,12 @@ from topobench.nn.wrappers.combinatorial import TuneWrapper
 
 
 def create_mock_complex_batch():
-    """Create a small lifted combinatorial complex batch."""
+    """Create a small lifted combinatorial complex batch.
+
+    The fixture mirrors the tensors produced after graph-to-combinatorial
+    lifting and feature encoding: one feature matrix per cell rank and one
+    sparse matrix per ETNN neighborhood relation.
+    """
     # The mock batch mirrors the tensors produced by a graph-to-combinatorial
     # lifting after feature encoding: one feature matrix per cell rank.
     x_0 = torch.randn(4, 16)
@@ -100,7 +112,7 @@ def create_mock_complex_batch():
 
 
 def create_etnn():
-    """Instantiate the coordinate-free ETNN backbone."""
+    """Instantiate the coordinate-free ETNN backbone used by PR #320."""
     # Keep this neighborhood list aligned with
     # configs/model/combinatorial/etnn.yaml so unit coverage matches the public
     # model config.
@@ -122,7 +134,7 @@ def create_etnn():
 
 
 def test_etnn_preserves_rankwise_shapes():
-    """ETNN returns one tensor per configured cell rank."""
+    """ETNN should return one tensor per configured cell rank."""
     batch = create_mock_complex_batch()
     model = create_etnn()
 
@@ -152,7 +164,7 @@ def test_etnn_runs_without_positions():
 
 
 def test_etnn_outputs_fit_tune_wrapper_contract():
-    """ETNN can use the existing combinatorial ``TuneWrapper``."""
+    """ETNN should satisfy the existing combinatorial ``TuneWrapper`` API."""
     batch = create_mock_complex_batch()
     wrapper = TuneWrapper(
         backbone=create_etnn(),
