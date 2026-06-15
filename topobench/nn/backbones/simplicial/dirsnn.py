@@ -29,7 +29,7 @@ class DirSNNLayer(nn.Module):
         self.out_features = out_features
         self.dropout = nn.Dropout(dropout)
 
-        # Learnable weight matrices for lower and upper directed neighborhoods
+        # Learnable weight matrices for lower and upper directed  neighborhoods
         self.W_lower = nn.Linear(in_features, out_features, bias=False)
         self.W_upper = nn.Linear(in_features, out_features, bias=False)
         self.W_self = nn.Linear(in_features, out_features, bias=True)

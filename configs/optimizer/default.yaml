@@ -1,7 +1,7 @@
 _target_: topobench.optimizer.TBOptimizer
 # Full compatibility with all available torch optimizers and schedulers
 
-optimizer_id: Adam # torch id of the optimizer
+optimizer_id: Adam # torch id  of the optimizer
 # optimizer params
 parameters:
   lr: 0.001
