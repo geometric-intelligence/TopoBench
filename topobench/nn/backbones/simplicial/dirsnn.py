@@ -145,4 +145,3 @@ class DirSNN(nn.Module):
             x = layer(x, L_down, L_up)
 
         return x
-        
