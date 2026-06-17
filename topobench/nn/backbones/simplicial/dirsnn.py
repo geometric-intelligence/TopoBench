@@ -145,9 +145,7 @@ class DirSNN(nn.Module):
 
             # Reconstruct the sparse tensor with the pruned connections
             B_pruned = torch.sparse_coo_tensor(
-                B.indices()[:, mask],
-                B.values()[mask],
-                B.size()
+                B.indices()[:, mask], B.values()[mask], B.size()
             )
             return B_pruned.coalesce()
 
@@ -164,7 +162,6 @@ class DirSNN(nn.Module):
         # --- Target 7: Sparse Autograd Engine Stabilization ---
         # Quarantine the structural math so PyTorch does not materialize dense gradients
         with torch.no_grad():
-
             # --- Target 1: Boundary Guard ---
             if self.training:
                 boundary_product = torch.sparse.mm(B1, B2).coalesce()
