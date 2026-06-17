@@ -3,11 +3,21 @@ defaults:
   - /model/backbone_wrapper: simplicial_wrapper
   - /model/readout: node_readout
   - _self_
-# dirsnn yaml
+
+# DirSNN Architecture Configuration
 backbone:
   _target_: topobench.nn.backbones.simplicial.dirsnn.DirSNN
   in_channels: ${dataset.parameters.num_features}
+
+  # Defensive parameterization for Dense Complex Survival
+  # Capped at 64 to prevent OOM errors when processing dense upper-cliques (L_up)
   hidden_channels: 64
+
   out_channels: ${dataset.parameters.num_classes}
+
+  # Fixed to 2 layers. Directed L_up and L_down pathways smooth at different rates.
+  # Exceeding 2 layers introduces severe asymmetric over-smoothing.
   num_layers: 2
+
+  # High dropout prevents the model from co-adapting to noisy upper-clique gradients
   dropout: 0.5
