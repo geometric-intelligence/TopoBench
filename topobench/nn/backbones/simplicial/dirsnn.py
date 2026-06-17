@@ -209,7 +209,8 @@ class DirSNN(nn.Module):
                 ):
                     warnings.warn(
                         "Topological condition violated: B1 @ B2 != 0. "
-                        "This is expected during shape-testing with mock data, but check real datasets."
+                        "This is expected during shape-testing with mock data, but check real datasets.",
+                        stacklevel=2,
                     )
 
             # --- Target 6: Simplicial Sparsification Guard ---
