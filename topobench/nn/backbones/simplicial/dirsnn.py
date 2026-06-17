@@ -54,8 +54,23 @@ class DirSNNLayer(nn.Module):
         self.activation = nn.ReLU()
 
     def forward(self, x, boundary_lower, boundary_upper):
-        """Forward pass for the directed layer."""
+        """
+        Forward pass for the DirSNN layer.
 
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input feature tensor.
+        boundary_lower : torch.Tensor
+            Lower boundary matrix.
+        boundary_upper : torch.Tensor
+            Upper boundary matrix.
+
+        Returns
+        -------
+        torch.Tensor
+            Output feature tensor.
+        """
         # Compute message from lower adjacent simplices with epsilon bypass
         msg_lower = torch.sparse.mm(boundary_lower, x) + (self.eps_down * x)
         out_lower = self.drop_down(self.W_lower(msg_lower))
@@ -126,9 +141,19 @@ class DirSNN(nn.Module):
 
     def _sparsify_boundary(self, B, max_density):
         """
-        Target 6: Active Simplicial Sparsification.
-        Dynamically drops 2-simplices (triangles) if the local clique density
-        exceeds the memory-safe threshold during training.
+        Sparsify boundary matrix to prevent OOM errors.
+
+        Parameters
+        ----------
+        B : torch.Tensor
+            Boundary matrix to sparsify.
+        max_density : int, optional
+            Maximum allowed clique density.
+
+        Returns
+        -------
+        torch.Tensor
+            Sparsified boundary matrix.
         """
         if B._nnz() == 0:
             return B
@@ -152,8 +177,19 @@ class DirSNN(nn.Module):
         return B
 
     def forward(self, batch):
-        """Forward pass through the backbone."""
+        """
+        Forward pass of the DirSNN model.
 
+        Parameters
+        ----------
+        batch : Batch
+            A batch object containing simplicial complex data.
+
+        Returns
+        -------
+        torch.Tensor
+            Model predictions for the batch.
+        """
         # Extract edge features (1-simplices) as the primary representation
         x = batch.edge_x
         B1 = batch.B1
