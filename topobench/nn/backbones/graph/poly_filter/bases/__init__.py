@@ -23,13 +23,17 @@ Registry:
 - :class:`~.optbasis.OptBasisGNN` (Lanczos-style recurrence with
   signal-derived coefficients; the basis whose existence stress-tests
   the uniform protocol against the signal-dependence dimension)
+- :class:`~.bernstein.Bernstein` (closed-form Bezier basis; the one
+  non-orthogonal, ``O(K^2 m F)`` member -- see ``bernstein.py`` docstring)
 
-Bernstein is deliberately omitted: Liao Appendix B presents it in
-closed form per ``k`` (the only variable basis with ``O(K^2 m F)``
-complexity instead of ``O(K m F)``), so it does not fit the three-term
-recurrence protocol without stretching the abstraction. Deferred.
+The first seven are three-term recurrences (``O(K m F)``); Bernstein is
+the lone closed-form, ``O(K^2 m F)`` member. It fits the same protocol by
+ignoring the recurrence arguments (the way signal-independent bases ignore
+``signal``), so the registry covers *every* variable basis in Liao
+Appendix B.
 """
 
+from topobench.nn.backbones.graph.poly_filter.bases.bernstein import Bernstein
 from topobench.nn.backbones.graph.poly_filter.bases.chebnetii import ChebNetII
 from topobench.nn.backbones.graph.poly_filter.bases.chebyshev import Chebyshev
 from topobench.nn.backbones.graph.poly_filter.bases.favard import FavardGNN
@@ -39,6 +43,7 @@ from topobench.nn.backbones.graph.poly_filter.bases.monomial import Monomial
 from topobench.nn.backbones.graph.poly_filter.bases.optbasis import OptBasisGNN
 
 __all__ = [
+    "Bernstein",
     "ChebNetII",
     "Chebyshev",
     "FavardGNN",

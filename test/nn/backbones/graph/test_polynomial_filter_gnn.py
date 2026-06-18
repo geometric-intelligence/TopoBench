@@ -20,6 +20,7 @@ from topobench.nn.backbones.graph.poly_filter.basis import (
     Basis,
     LaplacianApply,
 )
+from topobench.nn.backbones.graph.poly_filter.bases.bernstein import Bernstein
 from topobench.nn.backbones.graph.poly_filter.bases.chebnetii import ChebNetII
 from topobench.nn.backbones.graph.poly_filter.bases.chebyshev import Chebyshev
 from topobench.nn.backbones.graph.poly_filter.bases.favard import FavardGNN
@@ -1063,6 +1064,88 @@ class TestOptBasisGNN:
         _backbone_smoke(basis=OptBasisGNN())
 
 
+class TestBernsteinBasis:
+    """Tests for the Bernstein basis (closed-form, O(K^2), partition of unity).
+
+    Bernstein is the one non-orthogonal, non-recurrence basis. The strongest
+    check is the partition-of-unity property: with all coefficients equal to
+    1 the filter is the identity, regardless of the operator.
+    """
+
+    def test_effective_thetas_fold_binomial_over_2K(self):
+        """effective_thetas multiplies θ by C(K,k)/2^K."""
+        b = Bernstein(K=2)
+        eff = b.effective_thetas(torch.ones(3))
+        # C(2,0..2)/2^2 = [1, 2, 1] / 4
+        assert torch.allclose(eff, torch.tensor([0.25, 0.5, 0.25]))
+
+    def test_init_is_two_minus_L_to_the_K(self):
+        """For L̃ = c·I, u_0 = (2 - c)^K x."""
+        K, c = 4, 0.3
+        b = Bernstein(K=K)
+        x = torch.randn(5, 2)
+        L_apply = lambda v: c * v  # noqa: E731
+        u0 = b.init(x, L_apply)
+        assert torch.allclose(u0, (2.0 - c) ** K * x, atol=1e-6)
+
+    def test_forward_closed_form_on_scalar_laplacian(self):
+        """For L̃ = c·I, u_k = (2 - c)^(K-k) c^k x."""
+        K, c = 5, 0.4
+        b = Bernstein(K=K)
+        x = torch.randn(4, 3)
+        L_apply = lambda v: c * v  # noqa: E731
+        for k in range(1, K + 1):
+            u_k = b(torch.zeros_like(x), None, L_apply, signal=x, k=k)
+            expected = (2.0 - c) ** (K - k) * c**k * x
+            assert torch.allclose(u_k, expected, atol=1e-5), f"k={k}"
+
+    def test_partition_of_unity_is_identity_on_real_graph(self):
+        """θ = 1 makes the Bernstein filter the identity on a real Laplacian.
+
+        Σ_k (C(K,k)/2^K)(2I-L̃)^(K-k) L̃^k = (1/2^K)(2I)^K = I, for any L̃.
+        """
+        K, N, F = 4, 8, 3
+        edge_index = _ring_edge_index(N)
+        x = torch.randn(N, F)
+        model = PolynomialFilterGNN(
+            in_channels=F, hidden_channels=F, out_channels=F, K=K,
+            basis=Bernstein(K),
+        )
+        L_apply = model._build_laplacian_apply(edge_index, None, N)
+
+        b = Bernstein(K)
+        eff = b.effective_thetas(torch.ones(K + 1))
+        u_prev_prev = None
+        u_prev = b.init(x, L_apply)
+        y = eff[0] * u_prev
+        for k in range(1, K + 1):
+            u_k = b(u_prev, u_prev_prev, L_apply, signal=x, k=k)
+            y = y + eff[k] * u_k
+            u_prev_prev, u_prev = u_prev, u_k
+        assert torch.allclose(y, x, atol=1e-5)
+
+    def test_ignores_recurrence_arguments(self):
+        """u_prev / u_prev_prev do not affect the output (no recurrence)."""
+        b = Bernstein(K=3)
+        x = torch.randn(4, 2)
+        L = lambda v: 0.3 * v  # noqa: E731
+        out_a = b(torch.zeros(4, 2), None, L, signal=x, k=2)
+        out_b = b(torch.randn(4, 2), torch.randn(4, 2), L, signal=x, k=2)
+        assert torch.equal(out_a, out_b)
+
+    def test_K_mismatch_raises(self):
+        b = Bernstein(K=4)
+        with pytest.raises(ValueError, match="K=4"):
+            b.effective_thetas(torch.zeros(3))
+
+    def test_has_no_learnable_parameters(self):
+        """θ is owned by the backbone; the binomial factors are a buffer."""
+        assert sum(p.numel() for p in Bernstein(K=8).parameters()) == 0
+
+    def test_backbone_runs_with_bernstein(self):
+        _backbone_smoke(basis=Bernstein(K=5))
+
+
 class TestPolynomialFilterGNNHydraConfig:
     """Hydra composition smoke test for ``configs/model/graph/polynomial_filter_gnn.yaml``.
 
@@ -1211,6 +1294,20 @@ class TestPolynomialFilterGNNHydraConfig:
         assert type(backbone).__name__ == "PolynomialFilterGNN"
         assert type(backbone.basis).__name__ == "ChebNetII"
         assert backbone.basis.K == backbone.K  # interpolation worked
+
+    def test_basis_override_swaps_to_bernstein_with_K(self):
+        """Bernstein swap with K matched to the backbone via Hydra."""
+        import hydra
+
+        cfg = self._compose(
+            "model.backbone.basis._target_="
+            "topobench.nn.backbones.graph.poly_filter.bases.Bernstein",
+            "+model.backbone.basis.K=${model.backbone.K}",
+        )
+        backbone = hydra.utils.instantiate(cfg.model.backbone)
+        assert type(backbone).__name__ == "PolynomialFilterGNN"
+        assert type(backbone.basis).__name__ == "Bernstein"
+        assert backbone.basis.K == backbone.K
 
     def test_basis_override_swaps_to_favard_with_K(self):
         """FavardGNN swap with K matched to backbone via Hydra interpolation."""
