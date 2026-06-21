@@ -1,8 +1,8 @@
 # PolynomialFilterGNN with the Chebyshev basis.
 # Chebyshev (first kind) basis (ChebNet / ChebBase family).
 #
-# Standalone evaluation config: select via the challenge notebook with
-#   MODEL_CONFIG = "graph/polynomial_filter_gnn_chebyshev"
+# Standalone config: select with the Hydra override
+#   model=graph/polynomial_filter_gnn_chebyshev
 # This file mirrors polynomial_filter_gnn.yaml; only the `basis` block and
 # `model_name` differ.
 
@@ -26,6 +26,7 @@ backbone:
   K: 8                       # polynomial degree
   dropout: 0.1
   laplacian_norm: sym        # 'sym' (Liao App. B default) | 'rw' | 'none'
+  self_loops: true           # GCN renormalization A+I (Liao gen_norm), sym only
   pre_mlp_layers: 1
   post_mlp_layers: 1
   basis:

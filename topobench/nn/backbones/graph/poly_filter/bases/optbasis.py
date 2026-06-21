@@ -31,18 +31,16 @@ with
 
 and ``γ_{-1} = 0``.
 
-**Why this is the load-bearing test of the basis protocol.**
+**Signal dependence.**
 Every other basis in the registry is signal-independent: Monomial,
 Chebyshev, Jacobi, Legendre, ChebNetII, and FavardGNN all produce
 ``u_k`` from a recurrence whose coefficients are fixed (or learned,
 but independent of ``x``). OptBasis is the only basis whose
-recurrence coefficients are functions of the input signal. This is
-the literal test of whether the basis protocol survives: the design
-passes ``signal`` to every basis on every step (uniform interface),
-with stateless bases ignoring it. OptBasis is the single basis in
-this registry that *uses* the signal-dependence, through the
-``u_prev`` argument, which evolves from ``u_0 = x / ‖x‖`` and
-feeds the inner-product computations.
+recurrence coefficients are functions of the input signal. The
+uniform basis interface passes ``signal`` to every basis on every
+step; signal-independent bases ignore it, while OptBasis uses it
+through the ``u_prev`` argument, which evolves from
+``u_0 = x / ‖x‖`` and feeds the inner-product computations.
 
 **State across steps.** The recurrence needs ``γ_{k-1}`` (computed
 at step ``k - 1``) to construct ``u_k``. The protocol passes

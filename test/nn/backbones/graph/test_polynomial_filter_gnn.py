@@ -213,11 +213,12 @@ class TestPolynomialFilterGNN:
         assert torch.isfinite(y).all()
 
     def test_laplacian_closure_matches_dense_sym(self):
-        """``L_apply`` is numerically the symmetric normalized Laplacian.
+        """``L_apply`` is the plain symmetric normalized Laplacian (no self-loops).
 
-        Tiny 3-node path graph 0:1:2 with unit edge weights:
-        ``D = diag(1, 2, 1)``, ``A`` is the path adjacency, and
-        ``L̃_sym = I − D^{-1/2} A D^{-1/2}``. Hand-compute and compare.
+        With ``self_loops=False`` on a tiny 3-node path graph 0:1:2 with
+        unit edge weights: ``D = diag(1, 2, 1)``, ``A`` is the path
+        adjacency, and ``L̃_sym = I − D^{-1/2} A D^{-1/2}``. Hand-compute
+        and compare.
         """
         edge_index = torch.tensor(
             [[0, 1, 1, 2], [1, 0, 2, 1]], dtype=torch.long
@@ -229,18 +230,54 @@ class TestPolynomialFilterGNN:
             K=0,
             basis=Monomial(),
             laplacian_norm="sym",
+            self_loops=False,
         )
         L_apply = model._build_laplacian_apply(
             edge_index, edge_weight=None, num_nodes=3
         )
         # L̃_sym for path 0:1:2:
         # diag = [1, 1, 1]; off-diagonals: -1/√(1·2) = -1/√2 on (0,1),(1,0),(1,2),(2,1).
-        inv_root2 = 1.0 / 2.0 ** 0.5
+        inv_root2 = 1.0 / 2.0**0.5
         L_dense = torch.tensor(
             [
                 [1.0, -inv_root2, 0.0],
                 [-inv_root2, 1.0, -inv_root2],
                 [0.0, -inv_root2, 1.0],
+            ]
+        )
+        h = torch.tensor([[1.0], [2.0], [3.0]])
+        expected = L_dense @ h
+        assert torch.allclose(L_apply(h), expected, atol=1e-6)
+
+    def test_laplacian_closure_self_loops_renormalized(self):
+        """Default ``self_loops=True`` gives Liao's renormalized ``L̃``.
+
+        Same path graph 0:1:2 with the GCN renormalization ``A -> A + I``:
+        ``D̂ = diag(2, 3, 2)`` and ``L̃ = I − D̂^{-1/2}(A + I)D̂^{-1/2}``.
+        Diagonal becomes ``1 − 1/d̂_i`` and the off-diagonals are
+        ``-1/√(d̂_i d̂_j) = -1/√6``.
+        """
+        edge_index = torch.tensor(
+            [[0, 1, 1, 2], [1, 0, 2, 1]], dtype=torch.long
+        )
+        model = PolynomialFilterGNN(
+            in_channels=1,
+            hidden_channels=1,
+            out_channels=1,
+            K=0,
+            basis=Monomial(),
+            laplacian_norm="sym",
+            self_loops=True,
+        )
+        L_apply = model._build_laplacian_apply(
+            edge_index, edge_weight=None, num_nodes=3
+        )
+        inv_root6 = 1.0 / 6.0**0.5
+        L_dense = torch.tensor(
+            [
+                [0.5, -inv_root6, 0.0],
+                [-inv_root6, 2.0 / 3.0, -inv_root6],
+                [0.0, -inv_root6, 0.5],
             ]
         )
         h = torch.tensor([[1.0], [2.0], [3.0]])
@@ -281,7 +318,9 @@ class TestMonomialBasis:
 
         def L_apply(h: Tensor) -> Tensor:
             calls.append(h)
-            return 2.0 * h  # arbitrary linear op; the basis is operator-agnostic
+            return (
+                2.0 * h
+            )  # arbitrary linear op; the basis is operator-agnostic
 
         u_prev = torch.randn(5, 3)
         u_k = b(u_prev, None, L_apply, signal=u_prev, k=1)
@@ -307,56 +346,61 @@ class TestChebyshevBasis:
     """Tests specific to the Chebyshev (first kind) basis recurrence.
 
     The key correctness property is that with ``L̃ = α·I`` (a multiple of
-    the identity), the basis vectors collapse to ``u_k = T_k(α) · x``
-    where ``T_k`` is the classical Chebyshev polynomial of the first
-    kind. This pins down both the boundary case ``u_1 = α x``
-    (NOT ``2α x``) and the general recurrence ``u_k = 2α u_{k-1} - u_{k-2}``
-    in one algebraic check.
+    the identity), the recurrence runs on the rescaled argument
+    ``z = L̃ - I = (α - 1)``, so the basis vectors collapse to
+    ``u_k = T_k(α - 1) · x`` where ``T_k`` is the classical Chebyshev
+    polynomial of the first kind. This pins down both the boundary case
+    ``u_1 = (α - 1) x`` (NOT ``2(α-1) x``) and the general recurrence
+    ``u_k = 2(α-1) u_{k-1} - u_{k-2}`` in one algebraic check.
     """
 
     def test_chebyshev_k1_uses_first_kind_boundary(self):
-        """``u_1 = L̃ u_0``: NOT ``2 L̃ u_0 - 0`` (which would be 2nd kind)."""
+        """``u_1 = (L̃ - I) u_0``: NOT ``2 (L̃ - I) u_0`` (2nd kind)."""
         b = Chebyshev()
 
         def L_apply(h: Tensor) -> Tensor:
-            return 3.0 * h  # arbitrary scaling for an unambiguous check
+            return 3.0 * h  # so (L̃ - I) acts as multiply-by-2
 
         u_prev = torch.randn(4, 2)
         u_1 = b(u_prev, None, L_apply, signal=u_prev, k=1)
-        # First-kind: u_1 = L̃ u_0 = 3 * u_prev. Wrong (2nd-kind) would be 6 * u_prev.
-        assert torch.allclose(u_1, 3.0 * u_prev)
+        # First-kind: u_1 = (L̃ - I) u_0 = (3-1) u_prev = 2 * u_prev.
+        # Wrong (2nd-kind) would be 4 * u_prev.
+        assert torch.allclose(u_1, 2.0 * u_prev)
 
     def test_chebyshev_k2_uses_three_term_recurrence(self):
-        """``u_2 = 2 L̃ u_1 - u_0`` once ``u_prev_prev`` is non-None."""
+        """``u_2 = 2 (L̃ - I) u_1 - u_0`` once ``u_prev_prev`` is non-None."""
         b = Chebyshev()
 
         def L_apply(h: Tensor) -> Tensor:
-            return 3.0 * h
+            return 3.0 * h  # so (L̃ - I) acts as multiply-by-2
 
         u_0 = torch.randn(4, 2)
-        u_1 = 3.0 * u_0  # what k=1 produces with the L_apply above
+        u_1 = b(u_0, None, L_apply, signal=u_0, k=1)  # = (3-1) u_0 = 2 u_0
         u_2 = b(u_1, u_0, L_apply, signal=u_0, k=2)
-        # u_2 = 2 * 3 * u_1 - u_0 = 6 * (3 u_0) - u_0 = 17 * u_0
-        assert torch.allclose(u_2, 17.0 * u_0)
+        # u_2 = 2 (L̃ - I) u_1 - u_0 = 2 * 2 * u_1 - u_0
+        #     = 4 * (2 u_0) - u_0 = 7 * u_0
+        assert torch.allclose(u_2, 7.0 * u_0)
 
     def test_chebyshev_matches_classical_polynomial_at_scalar(self):
-        """For ``L̃ = α·I``, the basis collapses to classical ``T_k(α)·x``.
+        """For ``L̃ = α·I``, the basis collapses to classical ``T_k(α-1)·x``.
 
-        This is the strongest algebraic check available: it pins down
-        both the k=1 boundary AND the three-term recurrence in one go,
-        for an arbitrary k up to K.
+        The recurrence runs on ``z = L̃ - I``, so with ``L̃ = α·I`` the
+        argument is ``α - 1``. This is the strongest algebraic check
+        available: it pins down both the k=1 boundary AND the three-term
+        recurrence in one go, for an arbitrary k up to K.
         """
         alpha = 0.37
+        z = alpha - 1.0  # rescaled argument L̃ - I
         K = 6
         x = torch.randn(5, 3)
 
         def L_apply(h: Tensor) -> Tensor:
             return alpha * h
 
-        # Compute classical Chebyshev (first kind) values at alpha.
-        T_vals = [1.0, alpha]
+        # Classical Chebyshev (first kind) values at the rescaled z = α - 1.
+        T_vals = [1.0, z]
         for _ in range(2, K + 1):
-            T_vals.append(2.0 * alpha * T_vals[-1] - T_vals[-2])
+            T_vals.append(2.0 * z * T_vals[-1] - T_vals[-2])
 
         b = Chebyshev()
         u_prev_prev: Tensor | None = None
@@ -508,9 +552,13 @@ class TestJacobiBasis:
             denom_left = 2.0 * k * (k + alpha + beta)
             denom_right = k * (k + alpha + beta) * (s - 2.0)
             d = s * (s - 1.0) / denom_left
-            d_p = (s - 1.0) * (alpha * alpha - beta * beta) / (2.0 * denom_right)
+            d_p = (
+                (s - 1.0) * (alpha * alpha - beta * beta) / (2.0 * denom_right)
+            )
             d_pp = (k + alpha - 1.0) * (k + beta - 1.0) * s / denom_right
-            T_vals.append(d * z * T_vals[-1] + d_p * T_vals[-1] - d_pp * T_vals[-2])
+            T_vals.append(
+                d * z * T_vals[-1] + d_p * T_vals[-1] - d_pp * T_vals[-2]
+            )
 
         b = Jacobi(alpha=alpha, beta=beta)
         u_prev_prev: Tensor | None = None
@@ -574,8 +622,8 @@ class TestLegendreBasis:
     """Tests for :class:`Legendre`.
 
     Legendre is shipped as the ``α = β = 0`` reparameterization of
-    :class:`Jacobi`: see ``legendre.py`` for why this differs from
-    Liao's standalone Legendre formula. The tests below pin that
+    :class:`Jacobi`, evaluated at ``z = I - L̃ = Â`` (matching Liao's
+    ``LegendreConv``): see ``legendre.py``. The tests below pin that
     decision: Legendre must produce the same outputs as ``Jacobi(0, 0)``,
     and must stay bounded for ``\\tilde L`` eigenvalues in ``[0, 2]``
     (the symmetric normalized Laplacian spectrum), which is the
@@ -599,7 +647,7 @@ class TestLegendreBasis:
         This is the literal verification of the design choice: Legendre
         is not "approximately Jacobi(0,0)", it IS Jacobi(0,0). If anyone
         ever changes Legendre.__init__ to do something else (e.g.,
-        switch back to Liao's standalone z=L̃ formula), this test fails.
+        switch to a naive z=L̃ formula), this test fails.
         """
         legendre = Legendre()
         jacobi00 = Jacobi(alpha=0.0, beta=0.0)
@@ -629,9 +677,9 @@ class TestLegendreBasis:
         Laplacian range), z spans ``[-1, 1]`` and the bound applies.
 
         This is the literal numerical-stability property that motivated
-        shipping the Jacobi reparameterization rather than Liao's
-        standalone Legendre formula. Tested at the boundaries (the most
-        adversarial case) where Liao's standalone version would blow up.
+        shipping the Jacobi reparameterization (``z = I - L̃ = Â``, as in
+        Liao's ``LegendreConv``). Tested at the boundaries (the most
+        adversarial case) where a naive ``z = L̃`` formula would blow up.
         """
         b = Legendre()
         x = torch.tensor([[1.0], [1.0], [1.0]])
@@ -648,7 +696,7 @@ class TestLegendreBasis:
                 assert u_k.abs().max().item() <= 1.0 + 1e-5, (
                     f"Legendre |u_{k}| exceeded 1 at γ={gamma}: "
                     f"{u_k.abs().max().item():.6f}: this would happen "
-                    "if we'd shipped Liao's standalone z=L̃ formula instead."
+                    "with a naive z=L̃ formula instead."
                 )
                 u_prev_prev, u_prev = u_prev, u_k
 
@@ -689,8 +737,9 @@ class TestChebNetIIBasis:
     def test_chebnetii_M_matches_hand_computation_for_small_K(self):
         """For K=2: x_0=cos(π/6)=√3/2, x_1=cos(π/2)=0, x_2=cos(5π/6)=-√3/2.
 
-        Expected M[k, κ] = (2/3) · T_k(x_κ):
-        - Row k=0:  (2/3, 2/3, 2/3)
+        Expected M[k, κ] = c_k · T_k(x_κ) with the DC half-weight
+        c_0 = 1/3 and c_k = 2/3 for k >= 1:
+        - Row k=0:  (1/3, 1/3, 1/3)   (halved DC term)
         - Row k=1:  (2/3)(√3/2, 0, -√3/2) = (√3/3, 0, -√3/3)
         - Row k=2:  (2/3)(2x^2-1) at each node: 2(3/4)-1 = 1/2 at ±√3/2, -1 at 0
                     → (2/3)(1/2, -1, 1/2) = (1/3, -2/3, 1/3)
@@ -700,17 +749,17 @@ class TestChebNetIIBasis:
         b = ChebNetII(K=2)
         expected = torch.tensor(
             [
-                [2 / 3, 2 / 3, 2 / 3],
+                [1 / 3, 1 / 3, 1 / 3],
                 [math.sqrt(3) / 3, 0.0, -math.sqrt(3) / 3],
                 [1 / 3, -2 / 3, 1 / 3],
             ]
         )
         assert torch.allclose(b.M, expected, atol=1e-6)
 
-    def test_chebnetii_effective_thetas_applies_M(self):
-        """``effective_thetas`` returns ``M @ θ_interp``, ignoring backbone θ."""
+    def test_chebnetii_effective_thetas_applies_M_with_relu(self):
+        """``effective_thetas`` returns ``M @ ReLU(θ_interp)``, ignoring backbone θ."""
         b = ChebNetII(K=3)
-        # Force known θ_interp values for a clean check.
+        # Force known θ_interp values, including a negative the ReLU clamps.
         with torch.no_grad():
             b.theta_interp.copy_(torch.tensor([1.0, 0.5, -0.25, 0.1]))
         # Backbone θ should be IGNORED.
@@ -719,8 +768,11 @@ class TestChebNetIIBasis:
         out_a = b.effective_thetas(backbone_theta_a)
         out_b = b.effective_thetas(backbone_theta_b)
         assert torch.allclose(out_a, out_b)
-        expected = b.M @ b.theta_interp
+        # ReLU clamps the -0.25 node value to 0 before the interpolation.
+        expected = b.M @ torch.relu(b.theta_interp)
         assert torch.allclose(out_a, expected)
+        # The ReLU is observable: the result differs from the un-clamped M @ θ.
+        assert not torch.allclose(out_a, b.M @ b.theta_interp)
 
     def test_chebnetii_K_mismatch_raises(self):
         """Defensive guard against misconfigured basis/backbone K."""
@@ -731,17 +783,18 @@ class TestChebNetIIBasis:
     def test_chebnetii_recurrence_is_still_chebyshev(self):
         """Inheritance: the basis vectors u_k follow first-kind Chebyshev."""
         b = ChebNetII(K=3)
-        # Use the same scalar-collapse check as Chebyshev: with L̃ = α·I,
-        # u_k = T_k(α) · x for classical T_k.
+        # Same scalar-collapse check as Chebyshev: with L̃ = α·I the
+        # recurrence runs on z = L̃ - I = α - 1, so u_k = T_k(α-1) · x.
         alpha = 0.42
+        z = alpha - 1.0
         x = torch.randn(4, 2)
 
         def L_apply(h):
             return alpha * h
 
-        T_vals = [1.0, alpha]
+        T_vals = [1.0, z]
         for _ in range(2, 4):
-            T_vals.append(2.0 * alpha * T_vals[-1] - T_vals[-2])
+            T_vals.append(2.0 * z * T_vals[-1] - T_vals[-2])
 
         u_prev_prev: Tensor | None = None
         u_prev = b.init(x, L_apply)
@@ -897,13 +950,12 @@ class TestFavardGNNBasis:
 
 
 class TestOptBasisGNN:
-    """Tests for OptBasisGNN: the load-bearing test of the basis protocol.
+    """Tests for OptBasisGNN: the only signal-dependent basis.
 
     The defining property is that the basis is **signal-dependent**:
     the recurrence coefficients ``α``, ``γ`` are computed from inner
-    products on the running signal ``u_prev``. Whether this case rides
-    the same protocol surface as every signal-independent basis is the
-    primary correctness criterion for the abstraction. We test:
+    products on the running signal ``u_prev``, so it exercises the
+    ``signal`` argument that every other basis ignores. We test:
 
     1. ``init`` normalizes the input to unit per-channel norm: the
        signal-dependent entry point.
@@ -1030,7 +1082,7 @@ class TestOptBasisGNN:
         # For each channel c, G[:, :, c] should be approximately I_{K+1}.
         for c in range(F):
             cols = torch.stack([u[:, c] for u in us])  # [K+1, N]
-            G = cols @ cols.T                          # [K+1, K+1]
+            G = cols @ cols.T  # [K+1, K+1]
             assert torch.allclose(G, torch.eye(K + 1), atol=1e-4), (
                 f"OptBasis columns not orthonormal for channel {c}; "
                 f"max |G - I| = {(G - torch.eye(K + 1)).abs().max():.2e}"
@@ -1108,7 +1160,10 @@ class TestBernsteinBasis:
         edge_index = _ring_edge_index(N)
         x = torch.randn(N, F)
         model = PolynomialFilterGNN(
-            in_channels=F, hidden_channels=F, out_channels=F, K=K,
+            in_channels=F,
+            hidden_channels=F,
+            out_channels=F,
+            K=K,
             basis=Bernstein(K),
         )
         L_apply = model._build_laplacian_apply(edge_index, None, N)

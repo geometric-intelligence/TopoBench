@@ -13,16 +13,15 @@ Registry:
 - :class:`~.chebyshev.Chebyshev`
 - :class:`~.jacobi.Jacobi`
 - :class:`~.legendre.Legendre` (``α = β = 0`` reparameterization of
-  Jacobi; see ``legendre.py`` docstring for why we ship this form
-  rather than Liao's standalone Legendre recurrence)
+  Jacobi, evaluated at ``Â ∈ [-1, 1]``; see ``legendre.py`` docstring)
 - :class:`~.chebnetii.ChebNetII` (Chebyshev recurrence with
   He-Wei-Wen 2022 interpolation reparameterization of the
   coefficients; the only basis here that uses the
   ``effective_thetas`` protocol hook)
 - :class:`~.favard.FavardGNN` (three-term recurrence with learnable α, β)
 - :class:`~.optbasis.OptBasisGNN` (Lanczos-style recurrence with
-  signal-derived coefficients; the basis whose existence stress-tests
-  the uniform protocol against the signal-dependence dimension)
+  signal-derived coefficients; the only signal-dependent basis in the
+  registry)
 - :class:`~.bernstein.Bernstein` (closed-form Bezier basis; the one
   non-orthogonal, ``O(K^2 m F)`` member -- see ``bernstein.py`` docstring)
 

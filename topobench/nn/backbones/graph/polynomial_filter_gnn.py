@@ -10,11 +10,6 @@ Implements the propagation
 where ``{T_k}`` is a polynomial sequence produced by a swappable
 :class:`~topobench.nn.backbones.graph.poly_filter.basis.Basis`.
 
-This is the single-polynomial-filter pattern. Filter banks (multiple
-parallel polynomial filters fused with learnable mixing) are a
-structurally different forward pass and live in a separate backbone
-(``FilterBankGNN``, planned for a follow-up PR).
-
 Notes
 -----
 The backbone owns: the propagation loop, the coefficients ``θ_k``, the
@@ -45,6 +40,7 @@ from __future__ import annotations
 
 import torch
 from torch import Tensor, nn
+from torch_geometric.nn.conv.gcn_conv import gcn_norm
 from torch_geometric.utils import get_laplacian, scatter
 
 from topobench.nn.backbones.graph.poly_filter.basis import (
@@ -75,8 +71,18 @@ class PolynomialFilterGNN(nn.Module):
     laplacian_norm : {'sym', 'rw', 'none'}, optional
         Normalization used to build ``L̃`` via
         :func:`torch_geometric.utils.get_laplacian`. ``'sym'`` is the
-        symmetric normalization ``I - D^{-1/2} A D^{-1/2}`` used by Liao
-        Appendix B; defaults to ``'sym'``.
+        symmetric normalization; combined with ``self_loops=True``
+        (the default) it yields ``L̃ = I - D̂^{-1/2}(A + I)D̂^{-1/2}``,
+        matching the renormalization convention of Liao's benchmark.
+        Defaults to ``'sym'``.
+    self_loops : bool, optional
+        Whether to add unit self-loops before normalizing (the GCN
+        renormalization trick ``A -> A + I``), so the propagated operator
+        is the self-loop-augmented adjacency
+        ``Â = D̂^{-1/2}(A + I)D̂^{-1/2}`` and ``L̃ = I - Â``. This matches
+        Liao's ``gen_norm`` transform. Applies to ``laplacian_norm='sym'``
+        (the default); it has no effect for ``'rw'`` / ``'none'``. Defaults
+        to ``True``.
     pre_mlp_layers : int, optional
         Number of layers in the pre-polynomial MLP. ``1`` is a single
         ``nn.Linear``; defaults to ``1``.
@@ -93,6 +99,7 @@ class PolynomialFilterGNN(nn.Module):
         basis: Basis,
         dropout: float = 0.0,
         laplacian_norm: str = "sym",
+        self_loops: bool = True,
         pre_mlp_layers: int = 1,
         post_mlp_layers: int = 1,
     ):
@@ -108,6 +115,7 @@ class PolynomialFilterGNN(nn.Module):
         self.K = K
         self.basis = basis
         self.laplacian_norm = laplacian_norm
+        self.self_loops = self_loops
 
         # Polynomial coefficients θ_k: one scalar per order, shared across
         # channels. This matches Liao Appendix B's "shared θ" parameterization
@@ -201,9 +209,17 @@ class PolynomialFilterGNN(nn.Module):
     ) -> LaplacianApply:
         r"""Build a closure that applies ``L̃`` to a node-feature tensor.
 
-        Uses :func:`torch_geometric.utils.get_laplacian` for the
-        normalization, matching the operator definition Liao Appendix B
-        writes for every variable-basis entry.
+        For ``laplacian_norm='sym'`` the normalized adjacency
+        ``Â = D̂^{-1/2}(A + γ I)D̂^{-1/2}`` is built with
+        :func:`~torch_geometric.nn.conv.gcn_conv.gcn_norm`
+        (``γ = 1`` when ``self_loops`` is set, Liao's renormalization;
+        ``γ = 0`` otherwise) and ``L̃ = I - Â`` is applied as ``h - Â h``.
+        ``gcn_norm`` is used here because
+        :func:`torch_geometric.utils.get_laplacian` strips self-loops, so
+        it cannot express the renormalized operator. For ``'rw'`` / ``'none'``
+        the plain Laplacian from ``get_laplacian`` is used (``self_loops``
+        does not apply: the renormalization trick is a symmetric-normalization
+        concept).
 
         Parameters
         ----------
@@ -220,6 +236,44 @@ class PolynomialFilterGNN(nn.Module):
         LaplacianApply
             Closure ``h -> L̃ @ h`` mapping ``[N, F]`` to ``[N, F]``.
         """
+        if self.laplacian_norm == "sym":
+            # Build Â = D̂^{-1/2}(A + γI)D̂^{-1/2}; γ=1 (self-loops, the GCN
+            # renormalization / Liao's gen_norm) or γ=0. Then L̃ = I - Â.
+            ei, ew = gcn_norm(
+                edge_index,
+                edge_weight,
+                num_nodes=num_nodes,
+                add_self_loops=self.self_loops,
+                improved=False,
+            )
+            src, dst = ei[0], ei[1]
+
+            def apply(h: Tensor) -> Tensor:
+                r"""Apply ``L̃ = I - Â`` to ``h`` via a scatter-add.
+
+                Parameters
+                ----------
+                h : Tensor, shape ``[N, F]``
+                    Node features to multiply by ``L̃``.
+
+                Returns
+                -------
+                Tensor, shape ``[N, F]``
+                    ``L̃ @ h = h - Â h``.
+                """
+                a_h = scatter(
+                    ew.view(-1, 1) * h.index_select(0, src),
+                    dst,
+                    dim=0,
+                    dim_size=num_nodes,
+                    reduce="sum",
+                )
+                return h - a_h
+
+            return apply
+
+        # 'rw' / 'none': plain Laplacian from get_laplacian (self_loops
+        # does not apply; the renormalization trick is sym-specific).
         norm = None if self.laplacian_norm == "none" else self.laplacian_norm
         ei, ew = get_laplacian(
             edge_index,
@@ -242,9 +296,8 @@ class PolynomialFilterGNN(nn.Module):
             Tensor, shape ``[N, F]``
                 ``L̃ @ h``.
             """
-            # (L̃ h)_i = Σ_j L̃_ij · h_j, dispatched as a scatter-add over
-            # the Laplacian's edge list. The edge weights ew now encode L̃
-            # itself (including the diagonal), so this is one matvec.
+            # ew encodes L̃ itself (including the diagonal), so this is one
+            # matvec: (L̃ h)_i = Σ_j L̃_ij · h_j via scatter-add.
             msg = ew.view(-1, 1) * h.index_select(0, src)
             return scatter(msg, dst, dim=0, dim_size=num_nodes, reduce="sum")
 

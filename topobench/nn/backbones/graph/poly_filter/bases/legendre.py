@@ -17,38 +17,28 @@ subsection) reduces to
 i.e. the standard three-term recurrence for the Legendre polynomial
 ``P_k`` applied to the argument ``z = I - L̃``.
 
-**Why this reparameterization rather than Liao's standalone formula.**
-Liao Appendix B lists Legendre as a *separate* entry, using ``z = L̃``
-as the polynomial argument:
-
-.. math::
-
-    T^{(1)}_{\text{Liao-Legendre}}(\tilde L) = \tilde L, \quad
-    T^{(k)}_{\text{Liao-Legendre}}(\tilde L) = \frac{2k-1}{k}\, \tilde L \,
-        T^{(k-1)}(\tilde L) - \frac{k-1}{k}\, T^{(k-2)}(\tilde L).
-
-That recurrence is the classical Legendre polynomial ``P_k`` applied to
-``L̃`` directly. **The orthogonality interval of ``P_k`` is ``[-1, 1]``,
-but the symmetric normalized graph Laplacian ``L̃`` has eigenvalues in
-``[0, 2]``.** Evaluating ``P_k(z)`` at ``z`` in ``[0, 2]`` means
-evaluating it *outside* its orthogonality interval, where Legendre
+**Argument domain: matching Liao, avoiding the unstable naive form.**
+The Legendre polynomials ``P_k`` are bounded (``|P_k(z)| <= 1``) only on
+their orthogonality interval ``z in [-1, 1]``. A naive reading of the
+classical recurrence with ``z = L̃`` would evaluate ``P_k`` on the
+Laplacian spectrum ``[0, 2]`` -- outside ``[-1, 1]``, where Legendre
 polynomials grow rapidly in ``k`` (``|P_k(2)|`` grows roughly like
-``Theta(3^k / sqrt(k))``). The basis is mathematically defined but
-numerically unstable as a graph filter: the high-order channels
-amplify by exponentially growing factors and dominate the accumulator.
+``Theta(3^k / sqrt(k))``), so the high-order channels would amplify by
+exponentially growing factors and dominate the accumulator.
 
-The ``α = β = 0`` Jacobi reparameterization shifts the argument to
-``z = I - L̃``, which has eigenvalues in ``[-1, 1]``: back inside
-Legendre's orthogonality interval. There the classical bound
-``|P_k(z)| <= 1`` holds for all ``k``, so the basis is uniformly
-bounded relative to the input ``x``. This is the same domain-shift trick
-ChebNet uses for the Chebyshev basis: rescale the operator so the
-polynomial argument lies in ``[-1, 1]``.
+Neither we nor Liao use that naive form. The ``α = β = 0`` Jacobi
+instance evaluates the recurrence at ``z = I - L̃ = Â`` (the normalized
+adjacency), whose eigenvalues lie in ``[-1, 1]`` -- inside the
+orthogonality interval, where the classical bound ``|P_k(z)| <= 1``
+holds for all ``k``. This **agrees with** Liao's ``LegendreConv``, which
+propagates ``Â`` directly (the ``'A'`` scheme): same polynomial, same
+well-conditioned argument. It is the same domain alignment ChebNet uses
+for the Chebyshev basis.
 
-We ship the well-conditioned form. The deviation is deliberate; if a
-reviewer specifically requests Liao's literal Legendre formula it would
-land as a separate ``LegendreLiao`` class: the unstable form is not a
-useful default for graph spectral filters.
+Architecturally this makes ``legendre.py`` a thin subclass of
+:class:`Jacobi`: the recurrence and the ``z = Â`` argument come for free
+from ``Jacobi(α=0, β=0)``, whose recurrence already enters ``L̃`` only
+through ``I - L̃ = Â``.
 
 References
 ----------
@@ -71,10 +61,10 @@ class Legendre(Jacobi):
     """Legendre basis (``α = β = 0`` reparameterization of :class:`Jacobi`).
 
     Stateless, signal-independent, takes no constructor arguments. See
-    the module docstring for the rationale behind shipping this form
-    rather than Liao's standalone Legendre recurrence (numerical
-    stability: eigenvalue interval alignment with the orthogonality
-    interval of ``P_k``).
+    the module docstring for why the recurrence is evaluated at
+    ``z = I - L̃ = Â`` (eigenvalue interval aligned with the
+    orthogonality interval of ``P_k``), which agrees with Liao's
+    ``LegendreConv``.
     """
 
     def __init__(self):

@@ -1,38 +1,50 @@
 r"""Chebyshev polynomial basis (first kind).
 
-Three-term recurrence
+The Chebyshev polynomials ``T_k`` are bounded (``|T_k(z)| <= 1``) only on
+their orthogonality interval ``z in [-1, 1]``, while the symmetric
+normalized Laplacian ``L̃`` has eigenvalues in ``[0, 2]``. We therefore
+evaluate the recurrence at the **rescaled** argument ``z = L̃ - I``
+(eigenvalues in ``[-1, 1]``), i.e. ``-Â`` for the normalized adjacency
+``Â = I - L̃``. This is the standard ChebNet domain shift
+``2L̃/λ_max - I`` with ``λ_max = 2``, and matches Liao's benchmark, whose
+``ChebConv`` propagates ``-Â`` (the ``'L-I'`` scheme). Without it the
+high-order terms blow up at the high-frequency end of the spectrum
+(``T_8(2) ≈ 1.9e4``).
+
+Three-term recurrence in ``z = L̃ - I``:
 
 .. math::
 
-    T^{(0)}(\tilde L) = I, \qquad T^{(1)}(\tilde L) = \tilde L,
-    \qquad T^{(k)}(\tilde L) = 2 \tilde L \, T^{(k-1)}(\tilde L)
-                                  - T^{(k-2)}(\tilde L) \quad (k \ge 2).
+    T^{(0)} = I, \qquad T^{(1)} = \tilde L - I,
+    \qquad T^{(k)} = 2 (\tilde L - I) \, T^{(k-1)} - T^{(k-2)}
+    \quad (k \ge 2).
 
-Equivalently, with ``u_k := T^{(k)}(L̃) x``,
+Equivalently, with ``u_k := T^{(k)} x``,
 
 .. math::
 
-    u_0 = x, \quad u_1 = \tilde L \, u_0, \quad
-    u_k = 2 \tilde L \, u_{k-1} - u_{k-2} \quad (k \ge 2).
+    u_0 = x, \quad u_1 = (\tilde L - I) \, u_0, \quad
+    u_k = 2 (\tilde L - I) \, u_{k-1} - u_{k-2} \quad (k \ge 2).
 
-The ``k = 1`` boundary, where ``u_1 = L̃ u_0`` rather than the generic
-``2 L̃ u_{k-1} - u_{k-2}``, is handled **inside this basis** via the
-``u_prev_prev is None`` check. The backbone never has to know that
-Chebyshev's first step differs from its general recurrence; the
+The ``k = 1`` boundary, where ``u_1 = (L̃ - I) u_0`` rather than the
+generic ``2 (L̃ - I) u_{k-1} - u_{k-2}``, is handled **inside this basis**
+via the ``u_prev_prev is None`` check. The backbone never has to know
+that Chebyshev's first step differs from its general recurrence; the
 boundary-vs-bulk dispatch stays a basis-local concern.
 
 References
 ----------
 Liao et al. (2024) *A Comprehensive Benchmark on Spectral GNNs*
 (SIGMOD '26, arXiv:2406.09675), Appendix B, "Chebyshev" subsection
-(Variable Basis block):
+(Variable Basis block). Liao's ``ChebConv`` runs the recurrence on the
+``'L-I'`` propagation matrix ``= -Â = L̃ - I``, the rescaled argument
+used here:
 
 .. math::
 
-    g(\tilde L; \theta) = \sum_{k=0}^{K} \theta_k T^{(k)}(\tilde L),
-    \quad T^{(k)}(\tilde L) = 2 \tilde L T^{(k-1)}(\tilde L)
-                                  - T^{(k-2)}(\tilde L),
-    \quad T^{(1)}(\tilde L) = \tilde L,\ T^{(0)}(\tilde L) = I.
+    g(\tilde L; \theta) = \sum_{k=0}^{K} \theta_k T^{(k)},
+    \quad T^{(k)} = 2 (\tilde L - I) T^{(k-1)} - T^{(k-2)},
+    \quad T^{(1)} = \tilde L - I,\ T^{(0)} = I.
 
 Time complexity ``O(K m F)``.
 
@@ -81,8 +93,10 @@ class Chebyshev(Basis):
     ) -> Tensor:
         """Apply the Chebyshev (first kind) three-term recurrence.
 
-        The ``k = 1`` boundary returns ``L̃ u_0`` (rather than the
-        generic ``2 L̃ u_{k-1} - u_{k-2}``) and is encoded by the
+        Runs on the rescaled argument ``(L̃ - I)`` (eigenvalues in
+        ``[-1, 1]``), computed as ``L_apply(u) - u``. The ``k = 1``
+        boundary returns ``(L̃ - I) u_0`` (rather than the generic
+        ``2 (L̃ - I) u_{k-1} - u_{k-2}``) and is encoded by the
         ``u_prev_prev is None`` check.
 
         Parameters
@@ -102,12 +116,13 @@ class Chebyshev(Basis):
         Returns
         -------
         Tensor, shape ``[N, F]``
-            ``u_k``: either ``L̃ u_0`` at the boundary or
-            ``2 L̃ u_{k-1} - u_{k-2}`` for ``k >= 2``.
+            ``u_k``: either ``(L̃ - I) u_0`` at the boundary or
+            ``2 (L̃ - I) u_{k-1} - u_{k-2}`` for ``k >= 2``.
         """
-        Lu = L_apply(u_prev)
+        # Rescaled argument z = L̃ - I = -Â, eigenvalues in [-1, 1].
+        z_u = L_apply(u_prev) - u_prev
         if u_prev_prev is None:
-            # k == 1 boundary: u_1 = L̃ u_0
-            return Lu
-        # k >= 2: u_k = 2 L̃ u_{k-1} - u_{k-2}
-        return 2.0 * Lu - u_prev_prev
+            # k == 1 boundary: u_1 = (L̃ - I) u_0
+            return z_u
+        # k >= 2: u_k = 2 (L̃ - I) u_{k-1} - u_{k-2}
+        return 2.0 * z_u - u_prev_prev

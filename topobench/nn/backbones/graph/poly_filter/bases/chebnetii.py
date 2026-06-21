@@ -8,24 +8,32 @@ Chebyshev reconstruction:
 
 .. math::
 
-    g(\tilde L; \theta) \;=\; \frac{2}{K+1}
-       \sum_{k=0}^{K} \sum_{\kappa=0}^{K}
-       \theta_\kappa \, T^{(k)}(x_\kappa) \, T^{(k)}(\tilde L) ,
+    g \;=\; \frac{2}{K+1}
+       \sum_{k=0}^{K} {}^{\prime} \sum_{\kappa=0}^{K}
+       \mathrm{ReLU}(\theta_\kappa) \, T^{(k)}(x_\kappa) \, T^{(k)} ,
     \qquad
-    x_\kappa = \cos\!\left(\frac{\kappa + \tfrac{1}{2}}{K+1}\,\pi\right) .
+    x_\kappa = \cos\!\left(\frac{\kappa + \tfrac{1}{2}}{K+1}\,\pi\right) ,
+
+where the primed outer sum halves the ``k = 0`` (DC) term and the
+recurrence ``T^{(k)}`` runs on the rescaled argument ``L̃ - I`` (see
+:class:`Chebyshev`).
 
 Rewriting:
 
 .. math::
 
-    g(\tilde L; \theta) = \sum_{k=0}^{K} \theta_k^{\text{eff}} \, T^{(k)}(\tilde L) ,
+    g = \sum_{k=0}^{K} \theta_k^{\text{eff}} \, T^{(k)} ,
     \qquad
     \theta_k^{\text{eff}}
-       = \tfrac{2}{K+1} \sum_{\kappa=0}^{K} \theta_\kappa \, T^{(k)}(x_\kappa)
-       = (M \cdot \theta_{\text{interp}})[k] ,
+       = c_k \sum_{\kappa=0}^{K} \mathrm{ReLU}(\theta_\kappa) \, T^{(k)}(x_\kappa)
+       = (M \cdot \mathrm{ReLU}(\theta_{\text{interp}}))[k] ,
 
-where ``M[k, κ] = (2/(K+1)) T^{(k)}(x_κ)`` is fixed (depends only on
-``K``) and ``θ_interp = (θ_0, ..., θ_K)`` is what we actually learn.
+where ``c_k = (2/(K+1))`` for ``k >= 1`` and ``c_0 = (1/(K+1))`` (the
+DC half-weight), so ``M[k, κ] = c_k T^{(k)}(x_κ)`` is fixed (depends only
+on ``K``) and ``θ_interp = (θ_0, ..., θ_K)`` is what we actually learn.
+The ``ReLU`` constrains the learned filter values at the Chebyshev nodes
+to be non-negative; both the half-weight and the ``ReLU`` match Liao's
+``ChebIIConv``.
 
 This is the only basis in the registry that uses the
 :meth:`~topobench.nn.backbones.graph.poly_filter.basis.Basis.effective_thetas`
@@ -40,7 +48,8 @@ References
 ----------
 Liao et al. (2024) *A Comprehensive Benchmark on Spectral GNNs*
 (SIGMOD '26, arXiv:2406.09675), Appendix B, "Chebyshev Interpolation
-(ChebInterp)" entry.
+(ChebInterp)" entry. The DC half-weight and the ``ReLU`` on the
+interpolation values follow Liao's ``ChebIIConv`` implementation.
 
 He, Wei & Wen (2022) *Convolutional Neural Networks on Graphs with
 Chebyshev Approximation, Revisited* (NeurIPS): primary reference for
@@ -92,10 +101,12 @@ class ChebNetII(Chebyshev):
         kappa = torch.arange(K + 1, dtype=torch.float32)
         x_nodes = torch.cos((kappa + 0.5) / (K + 1) * math.pi)
 
-        # Interpolation matrix M[k, κ] = (2/(K+1)) · T^(k)(x_κ).
+        # Interpolation matrix M[k, κ] = c_k · T^(k)(x_κ), with the DC
+        # half-weight c_0 = (1/(K+1)) and c_k = (2/(K+1)) for k >= 1.
         # T^(k)(x_κ) computed via the classical first-kind Chebyshev
-        # recurrence in scalar form: same equations as Chebyshev.forward,
-        # just evaluated at the K+1 nodes instead of the operator.
+        # recurrence in scalar form (the nodes x_κ already lie in [-1, 1],
+        # the same rescaled domain as the operator recurrence in
+        # Chebyshev.forward).
         T = torch.empty(K + 1, K + 1)
         T[0, :] = 1.0
         if K >= 1:
@@ -103,6 +114,10 @@ class ChebNetII(Chebyshev):
             for k in range(2, K + 1):
                 T[k, :] = 2.0 * x_nodes * T[k - 1, :] - T[k - 2, :]
         M = (2.0 / (K + 1)) * T
+        # DC half-weight: halve the k=0 row (Liao's `thetas[0] /= 2`), the
+        # standard half-weight on the constant term of a discrete Chebyshev
+        # interpolation.
+        M[0] = M[0] * 0.5
         # M is a fixed function of K: never trained, never moved
         # between dtypes by anything but the module itself. Register
         # as a buffer so .to(device) / state_dict round-trips work.
@@ -115,12 +130,14 @@ class ChebNetII(Chebyshev):
         nn.init.normal_(self.theta_interp, mean=1.0 / (K + 1), std=0.01)
 
     def effective_thetas(self, backbone_theta: Tensor) -> Tensor:
-        r"""Return ``M @ θ_interp``; ``backbone_theta`` is intentionally ignored.
+        r"""Return ``M @ ReLU(θ_interp)``; ``backbone_theta`` is ignored.
 
         The basis takes ownership of the accumulator coefficients here.
         The backbone's ``θ`` still exists (it sets the size signal) but
         has no gradient attached for ChebNetII (see module docstring for
-        the rationale).
+        the rationale). The ``ReLU`` constrains the learned filter values
+        at the Chebyshev nodes to be non-negative (matching Liao's
+        ``ChebIIConv``).
 
         Parameters
         ----------
@@ -132,7 +149,7 @@ class ChebNetII(Chebyshev):
         Returns
         -------
         Tensor, shape ``[K + 1]``
-            ``M @ θ_interp``: the Chebyshev-interpolation
+            ``M @ ReLU(θ_interp)``: the Chebyshev-interpolation
             reconstruction of the effective coefficients ``θ_k^{eff}``.
 
         Raises
@@ -150,4 +167,4 @@ class ChebNetII(Chebyshev):
                 f"model.backbone.basis.K = ${{model.backbone.K}} in the "
                 f"Hydra config so they stay in sync."
             )
-        return self.M @ self.theta_interp
+        return self.M @ torch.relu(self.theta_interp)

@@ -12,11 +12,9 @@ so that ``u_k = L̃^k x`` and the backbone's accumulation is
 
     y = \sum_{k=0}^{K} \theta_k \, \tilde L^k \, x .
 
-This is the simplest basis in the registry: primarily a baseline and a
-**stress test for the basis protocol itself**. If
-:class:`PolynomialFilterGNN` works with :class:`Monomial`, it works with
-every other basis whose recurrence is a strict refinement of this one
-(Chebyshev, Jacobi, Legendre, Favard).
+This is the simplest basis in the registry: the baseline reference,
+with the minimal recurrence that every other basis (Chebyshev, Jacobi,
+Legendre, Favard) refines.
 
 References
 ----------

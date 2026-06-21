@@ -26,6 +26,7 @@ backbone:
   K: 8                       # polynomial degree
   dropout: 0.1
   laplacian_norm: sym        # 'sym' (Liao App. B default) | 'rw' | 'none'
+  self_loops: true           # GCN renormalization A+I (Liao gen_norm), sym only
   pre_mlp_layers: 1
   post_mlp_layers: 1
   # Default basis: Chebyshev (first kind). Override via the CLI to sweep bases.

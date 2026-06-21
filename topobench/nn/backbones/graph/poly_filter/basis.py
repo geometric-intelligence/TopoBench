@@ -10,18 +10,13 @@ FavardGNN's ``α``, ``β``; ChebNetII's interpolation nodes).
 The single ``forward`` signature is **uniform** across signal-dependent
 bases (OptBasis) and signal-independent bases (Chebyshev, Monomial,
 Legendre, Jacobi, ChebNetII, Favard); stateless bases simply ignore
-``signal``. This is the load-bearing design decision: no bifurcated
-interface, no `if basis.is_signal_dependent` branches anywhere in the
-backbone.
+``signal``.
 
 References
 ----------
 The protocol is shaped to fit every variable-basis entry in
 Liao et al. (2024) *A Comprehensive Benchmark on Spectral GNNs*
-(SIGMOD '26, arXiv:2406.09675), Appendix B. The complexity column of
-that appendix's Variable Basis table is ``O(K m F)`` for every basis
-covered here: all of them are three-term recurrences in
-``T_{k-1}, T_{k-2}`` (with optional dependence on the current signal).
+(SIGMOD '26, arXiv:2406.09675), Appendix B.
 """
 
 from __future__ import annotations
@@ -38,9 +33,7 @@ Built **once per forward pass** by the backbone from
 then frozen and handed to the basis. Bases never see ``edge_index`` /
 ``edge_weight`` directly: that decouples them from how the operator is
 stored and pins down the normalization convention at the backbone
-level (every registered basis sees the *same* operator). It also makes
-unit-testing trivial: pass a dense lambda ``lambda h: L_dense @ h`` for
-tiny test graphs.
+level (every registered basis sees the *same* operator).
 """
 
 
@@ -137,7 +130,7 @@ class Basis(nn.Module):
         u_prev_prev : Tensor or None, shape ``[N, F]``
             ``u_{k-2}``. ``None`` at the boundary ``k == 1`` so subclasses
             can encode any single-step-special-case (e.g. Chebyshev's
-            ``T_1 = L̃ T_0``) inside the basis rather than the backbone.
+            ``T_1 = (L̃ - I) T_0``) inside the basis rather than the backbone.
         L_apply : LaplacianApply
             Closure ``h -> L̃ @ h``. The same closure is reused for every
             ``k`` in a given forward pass.
