@@ -142,7 +142,7 @@ secure a **visa** and **work authorization**.
 Deadline
 --------
 
-The final submission deadline is **August 12th, 2026 (AoE)**. Participants may
+The final submission deadline is **August 1st, 2026 (AoE)**. Participants may
 continue modifying their PRs until this time.
 
 
