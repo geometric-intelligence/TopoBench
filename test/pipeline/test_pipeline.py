@@ -7,7 +7,7 @@ from test._utils.simplified_pipeline import run
 
 
 DATASET = "graph/MUTAG"  # ADD YOUR DATASET HERE
-MODELS = [  # the filter-bank variants contributed by this PR
+MODELS = [  # the FilterBankGNN variants
     "graph/filter_bank_acmgnn",
     "graph/filter_bank_fagcn",
     "graph/filter_bank_fbgnn",
