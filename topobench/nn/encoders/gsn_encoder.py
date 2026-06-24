@@ -208,6 +208,10 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
         If `True` (default), this computation is deferred until the
         first call to `forward`.
 
+    dtype : torch.dtype, optional
+        Dtype the GSN encodings should be converted to. If not provided, the
+        dtype is derived from the node feature matrix `x`.
+
     Attributes
     ----------
     _substructures : list of nx.Graph
@@ -245,6 +249,7 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
         substructures: list[nx.Graph],
         pyg_kword: str = "gsn_encodings",
         lazy: bool = True,
+        dtype: torch.dtype | None = None,
     ):
         """
         Initialize the encoder and optionally precompute orbit partitions.
@@ -262,6 +267,7 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
         self._edge_pyg_kword = f"edge_{pyg_kword}"
 
         self._lazy = lazy  # whether or not orbit paritions should be computet on instance creation or first call to forward
+        self._dtype = dtype
 
         self._precomputed = False
         self._substructure_orbits: (
@@ -559,5 +565,21 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
         # here we batch-apply the normalization by number of matchings:
         data_pyg[self._node_pyg_kword] /= self._normalization_vector_n
         data_pyg[self._edge_pyg_kword] /= self._normalization_vector_e
+
+        # we need to ensure dtype consistency
+        if self._dtype is None:
+            data_pyg[self._node_pyg_kword] = data_pyg[self._node_pyg_kword].to(
+                dtype=data_pyg.x.dtype
+            )
+            data_pyg[self._edge_pyg_kword] = data_pyg[self._edge_pyg_kword].to(
+                dtype=data_pyg.x.dtype
+            )
+        else:
+            data_pyg[self._node_pyg_kword] = data_pyg[self._node_pyg_kword].to(
+                dtype=self._dtype
+            )
+            data_pyg[self._edge_pyg_kword] = data_pyg[self._edge_pyg_kword].to(
+                dtype=self._dtype
+            )
 
         return data_pyg
