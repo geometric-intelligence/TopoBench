@@ -22,7 +22,6 @@ from torch_geometric.utils import scatter
 
 
 class _MLP(nn.Module):
-
     """Multi-layer perceptron with BatchNorm.
 
     Matches the MLP design from the original LINKX implementation:
@@ -42,7 +41,14 @@ class _MLP(nn.Module):
         Dropout probability between layers.
     """
 
-    def __init__(self, in_channels, hidden_channels, out_channels, num_layers, dropout=0.0):
+    def __init__(
+        self,
+        in_channels,
+        hidden_channels,
+        out_channels,
+        num_layers,
+        dropout=0.0,
+    ):
         super().__init__()
         self.lins = nn.ModuleList()
         self.bns = nn.ModuleList()
@@ -145,17 +151,29 @@ class LINKX(nn.Module):
 
         # MLP_A: processes aggregated neighbor features
         self.mlp_a = _MLP(
-            in_channels, hidden_channels, hidden_channels, num_edge_layers, dropout=0.0
+            in_channels,
+            hidden_channels,
+            hidden_channels,
+            num_edge_layers,
+            dropout=0.0,
         )
         # MLP_X: processes raw node features
         self.mlp_x = _MLP(
-            in_channels, hidden_channels, hidden_channels, num_node_layers, dropout=0.0
+            in_channels,
+            hidden_channels,
+            hidden_channels,
+            num_node_layers,
+            dropout=0.0,
         )
         # W: combines the two branches
         self.combine = nn.Linear(2 * hidden_channels, hidden_channels)
         # MLP_final: produces output embeddings
         self.mlp_final = _MLP(
-            hidden_channels, hidden_channels, hidden_channels, num_layers, dropout=dropout
+            hidden_channels,
+            hidden_channels,
+            hidden_channels,
+            num_layers,
+            dropout=dropout,
         )
 
     def forward(self, x, edge_index, batch=None, edge_weight=None, **kwargs):
