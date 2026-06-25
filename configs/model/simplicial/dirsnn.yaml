@@ -1,23 +1,40 @@
-defaults:
-  - /model/feature_encoder: all_cell_feature_encoder
-  - /model/backbone_wrapper: simplicial_wrapper
-  - /model/readout: node_readout
-  - _self_
+_target_: topobench.model.TBModel
 
-# DirSNN Architecture Configuration
+model_name: dirsnn
+model_domain: simplicial
+
+feature_encoder:
+  _target_: topobench.nn.encoders.${model.feature_encoder.encoder_name}
+  encoder_name: AllCellFeatureEncoder
+  in_channels: ${infer_in_channels:${dataset},${oc.select:transforms,null}}
+  out_channels: 64
+  proj_dropout: 0.0
+  selected_dimensions:
+    - 0
+    - 1
+
 backbone:
   _target_: topobench.nn.backbones.simplicial.dirsnn.DirSNN
-  in_channels: ${dataset.parameters.num_features}
-
-  # Defensive parameterization for Dense Complex Survival
-  # Capped at 64 to prevent OOM errors when processing dense upper-cliques (L_up)
-  hidden_channels: 64
-
-  out_channels: ${dataset.parameters.num_classes}
-
-  # Fixed to 2 layers. Directed L_up and L_down pathways smooth at different rates.
-  # Exceeding 2 layers introduces severe asymmetric over-smoothing.
+  in_channels: ${model.feature_encoder.out_channels}
+  hidden_channels: ${model.feature_encoder.out_channels}
+  out_channels: ${model.feature_encoder.out_channels}
   num_layers: 2
-
-  # High dropout prevents the model from co-adapting to noisy upper-clique gradients
   dropout: 0.5
+
+backbone_wrapper:
+  _target_: topobench.nn.wrappers.DirSNNWrapper
+  _partial_: true
+  wrapper_name: DirSNNWrapper
+  out_channels: ${model.feature_encoder.out_channels}
+  num_cell_dimensions: ${infer_num_cell_dimensions:${oc.select:model.feature_encoder.selected_dimensions,null},${model.feature_encoder.in_channels}}
+
+readout:
+  _target_: topobench.nn.readouts.${model.readout.readout_name}
+  readout_name: PropagateSignalDown
+  num_cell_dimensions: ${infer_num_cell_dimensions:${oc.select:model.feature_encoder.selected_dimensions,null},${model.feature_encoder.in_channels}}
+  hidden_dim: ${model.feature_encoder.out_channels}
+  out_channels: ${dataset.parameters.num_classes}
+  task_level: ${define_task_level:${dataset.parameters.task_level},${dataset.split_params.learning_setting}}
+  pooling_type: sum
+
+compile: false
