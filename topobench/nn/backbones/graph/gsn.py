@@ -262,11 +262,7 @@ class GSNGINconcatELayer(GSNGINconcatBaseLayer):
         )
         edge_weights[gsn_embeddings.size(0) :] = 1.0
 
-        print(edge_weights.requires_grad)
-
         edge_weights = edge_weights * (1 + self.eps)
-
-        print(edge_weights.requires_grad)
 
         gsn_embeddings = torch.cat(
             [
