@@ -21,7 +21,7 @@ from .laplacian_builders import (
     NormConnectionLaplacianBuilder,
 )
 from .sheaf_base import SheafDiffusion
-from .sheaf_models import LocalConcatSheafLearner
+from .sheaf_models import IdentitySheafLearner, LocalConcatSheafLearner
 
 
 class InductiveDiscreteDiagSheafDiffusion(SheafDiffusion):
@@ -155,6 +155,44 @@ class InductiveDiscreteDiagSheafDiffusion(SheafDiffusion):
         x = x.reshape(actual_num_nodes, -1)
         x = self.lin2(x)
         return x
+
+
+class InductiveDiscreteIdentitySheafDiffusion(
+    InductiveDiscreteDiagSheafDiffusion
+):
+    """
+    Identity Sheaf Network (ISN) diffusion model.
+
+    This is the diagonal sheaf diffusion model with the learnable sheaf
+    replaced by a fixed Identity Sheaf: all restriction maps are the
+    identity, so the sheaf Laplacian reduces to the standard graph
+    Laplacian. It serves as the baseline that ablates sheaf learning [1].
+
+    The forward pass is inherited unchanged from
+    :class:`InductiveDiscreteDiagSheafDiffusion`; only the sheaf learners
+    are swapped for parameter-free :class:`IdentitySheafLearner` instances.
+
+    Parameters
+    ----------
+    config : dict
+        Configuration dictionary, identical to
+        :class:`InductiveDiscreteDiagSheafDiffusion`.
+
+    References
+    ----------
+    [1] Hernandez Caralt et al. "On the Necessity of Learnable Sheaf
+        Laplacians." GRaM Workshop, ICLR 2026. https://arxiv.org/abs/2603.05395
+    """
+
+    def __init__(self, config):
+        super().__init__(config)
+        # Replace the learnable sheaf learners with fixed identity maps.
+        self.sheaf_learners = nn.ModuleList(
+            [
+                IdentitySheafLearner(self.hidden_dim, out_shape=(self.d,))
+                for _ in range(len(self.sheaf_learners))
+            ]
+        )
 
 
 class InductiveDiscreteBundleSheafDiffusion(SheafDiffusion):
