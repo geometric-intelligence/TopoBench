@@ -1,74 +1,96 @@
+"""Unit tests for DirSNN backbone."""
+
 import torch
+import pytest
 from topobench.nn.backbones.simplicial.dirsnn import DirSNNLayer, DirSNN
 
+
 class DummyBatch:
-    """Mock TopoBench batch structure for testing."""
-    def __init__(self, edge_x, B1, B2):
-        self.edge_x = edge_x
-        self.B1 = B1
-        self.B2 = B2
+    """Mock TopoBench batch using correct framework field names."""
+    def __init__(self, x_1, incidence_1, incidence_2):
+        self.x_1 = x_1
+        self.incidence_1 = incidence_1
+        self.incidence_2 = incidence_2
 
-def test_dirsnn_layer():
-    """Test the core message passing layer."""
-    in_features = 16
-    out_features = 32
-    num_edges = 5
 
-    layer = DirSNNLayer(in_features, out_features)
+def make_valid_sparse(rows, cols, n_rows, n_cols, values=None):
+    """Helper to create a valid sparse COO tensor."""
+    idx = torch.tensor([rows, cols], dtype=torch.long)
+    val = torch.ones(len(rows)) if values is None else torch.tensor(values, dtype=torch.float32)
+    return torch.sparse_coo_tensor(idx, val, (n_rows, n_cols)).coalesce()
 
-    # Dummy features and directed boundary matrices (sparse)
-    x = torch.randn(num_edges, in_features)
 
-    # Create random sparse matrices to simulate L_down and L_up
-    indices = torch.randint(0, num_edges, (2, 10))
-    values = torch.randn(10)
-    boundary_lower = torch.sparse_coo_tensor(indices, values, (num_edges, num_edges))
+class TestDirSNNLayer:
+    """Tests for DirSNNLayer."""
 
-    indices_up = torch.randint(0, num_edges, (2, 10))
-    values_up = torch.randn(10)
-    boundary_upper = torch.sparse_coo_tensor(indices_up, values_up, (num_edges, num_edges))
+    def test_output_shape(self):
+        """Test output shape is correct."""
+        layer = DirSNNLayer(16, 32)
+        x = torch.randn(5, 16)
+        L_down = make_valid_sparse([0,1,2], [1,2,3], 5, 5)
+        L_up = make_valid_sparse([0,1], [1,2], 5, 5)
+        out = layer(x, L_down, L_up)
+        assert out.shape == (5, 32)
 
-    out = layer(x, boundary_lower, boundary_upper)
+    def test_no_nans(self):
+        """Test output contains no NaNs."""
+        layer = DirSNNLayer(8, 16)
+        x = torch.randn(4, 8)
+        L_down = make_valid_sparse([0,1], [1,2], 4, 4)
+        L_up = make_valid_sparse([0,1], [1,0], 4, 4)
+        out = layer(x, L_down, L_up)
+        assert not torch.isnan(out).any()
 
-    # Assert output dimensions and type
-    assert out.shape == (num_edges, out_features)
-    assert not torch.isnan(out).any(), "Output contains NaNs"
+    def test_source_sink_no_crash(self):
+        """Test that isolated edges (all-zero rows in L_down/L_up) do not crash."""
+        layer = DirSNNLayer(8, 16)
+        x = torch.randn(4, 8)
+        # Empty adjacency — all edges are isolated (worst-case source/sink)
+        L_down = torch.sparse_coo_tensor(
+            torch.zeros(2, 0, dtype=torch.long),
+            torch.zeros(0),
+            (4, 4)
+        ).coalesce()
+        L_up = torch.sparse_coo_tensor(
+            torch.zeros(2, 0, dtype=torch.long),
+            torch.zeros(0),
+            (4, 4)
+        ).coalesce()
+        out = layer(x, L_down, L_up)
+        assert out.shape == (4, 16)
+        assert not torch.isnan(out).any()
 
-def test_dirsnn_backbone():
-    """Test the full DirSNN wrapper integration."""
-    in_channels = 16
-    hidden_channels = 32
-    out_channels = 8
-    num_nodes = 6
-    num_edges = 10
-    num_faces = 4
 
-    backbone = DirSNN(in_channels, hidden_channels, out_channels, num_layers=2)
+class TestDirSNN:
+    """Tests for the full DirSNN backbone."""
 
-    edge_x = torch.randn(num_edges, in_channels)
+    def test_output_shape(self):
+        """Test full backbone output shape."""
+        backbone = DirSNN(16, 32, 8, num_layers=2)
+        B1 = make_valid_sparse([0,1,1,2], [0,0,1,1], 4, 4,
+                                values=[-1.,1.,-1.,1.])
+        B2 = make_valid_sparse([0,1,2], [0,0,0], 4, 1)
+        batch = DummyBatch(torch.randn(4, 16), B1, B2)
+        out = backbone(batch)
+        assert out.shape == (4, 8)
 
-    # Simulate B1 (nodes to edges) -> Shape: (num_nodes, num_edges)
-    B1_indices = torch.randint(0, num_nodes, (2, num_edges))
-    B1_indices[1, :] = torch.arange(num_edges)  # Ensure valid column indices
-    B1_values = torch.ones(num_edges)
-    B1 = torch.sparse_coo_tensor(B1_indices, B1_values, (num_nodes, num_edges))
+    def test_sparsification_branch(self):
+        """Test _sparsify_boundary fires when max_upper_degree=0."""
+        backbone = DirSNN(8, 16, 4, num_layers=2, max_upper_degree=0)
+        backbone.train()
+        B1 = make_valid_sparse([0,1,1,2], [0,0,1,1], 4, 4,
+                                values=[-1.,1.,-1.,1.])
+        B2 = make_valid_sparse([0,1,2], [0,0,0], 4, 1)
+        batch = DummyBatch(torch.randn(4, 8), B1, B2)
+        out = backbone(batch)
+        assert out.shape == (4, 4)
 
-    # Simulate B2 (edges to faces) -> Shape: (num_edges, num_faces)
-    B2_indices = torch.randint(0, num_edges, (2, num_faces))
-    B2_indices[1, :] = torch.arange(num_faces)  # Ensure valid column indices
-    B2_values = torch.ones(num_faces)
-    B2 = torch.sparse_coo_tensor(B2_indices, B2_values, (num_edges, num_faces))
-
-    batch = DummyBatch(edge_x, B1, B2)
-
-    out = backbone(batch)
-
-    # Final output should map the out_channels back to the edges (1-simplices)
-    assert out.shape == (num_edges, out_channels)
-
-if __name__ == "__main__":
-    print("Testing DirSNN Layer...")
-    test_dirsnn_layer()
-    print("Testing DirSNN Backbone...")
-    test_dirsnn_backbone()
-    print("🟢 ALL DIRSNN TESTS PASSED SUCCESSFULLY!")
+    def test_single_layer(self):
+        """Test num_layers=1 does not crash."""
+        backbone = DirSNN(8, 16, 4, num_layers=1)
+        B1 = make_valid_sparse([0,1,1,2], [0,0,1,1], 4, 4,
+                                values=[-1.,1.,-1.,1.])
+        B2 = make_valid_sparse([0,1,2], [0,0,0], 4, 1)
+        batch = DummyBatch(torch.randn(4, 8), B1, B2)
+        out = backbone(batch)
+        assert out.shape == (4, 4)

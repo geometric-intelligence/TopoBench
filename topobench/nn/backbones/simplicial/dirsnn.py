@@ -308,14 +308,14 @@ class DirSNNLayer(nn.Module):
         # For sink edges (no outgoing lower adjacencies), all four msg_* terms
         # are zero. The eps_down * x term guarantees a non-zero gradient for
         # W_00 through W_10 on those edges by providing a non-zero pre-image.
-        msg_lower = (msg_00 + msg_11 + msg_01 + msg_10) + (self.eps_down * x)
+        msg_lower = (msg_00 + msg_11 + msg_01 + msg_10) + (self.eps_down * (x @ self.W_00))
 
         # [Upper Message]
         # Aggregates curl/rotational information from co-boundary triangles.
         # The eps_up bypass serves source edges (no triangles above them).
         msg_upper = self.drop_upper(
             torch.sparse.mm(l_up, x) @ self.W_up
-        ) + (self.eps_up * x)
+        ) + (self.eps_up * (x @ self.W_up))
 
         # [Self-Loop Message]
         # Retains the current edge's own representation across the layer.
