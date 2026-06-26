@@ -1,14 +1,28 @@
 """
-GSN-GIN message-passing layers with concatenated structural encodings.
+Graph Substructure Network (GSN) message-passing layers and models.
 
-Implements node- and edge-mode variants of Graph Substructure Network (GSN)
-combined with GIN-style sum aggregation, following Bouritsas et al. (2022).
-Structural encodings are concatenated to node features prior to aggregation
-rather than being processed in a separate encoder stream.
+Implements the GSN family of structurally-aware message-passing layers from
+Bouritsas et al. (2022), in which precomputed substructure (orbit) counts are
+injected into the aggregation as node- or edge-level structural encodings.
+
+Two flavours are provided:
+
+- GIN-concat layers (`GSNGINconcatVLayer`, `GSNGINconcatELayer`) and the
+  `GSNGINconcatModel` that stacks them. These use GIN-style sum aggregation
+  with a learnable ``(1 + eps)`` self term, and inject the structural
+  encodings by concatenation: node encodings are concatenated to node
+  features (node mode), or edge encodings are passed as edge attributes
+  (edge mode).
+- A general MPNN baseline layer (`GSNMPNNBaselineVLayer`) implementing the
+  full GSN-v scheme with separate inner (message) and outer (update) MLPs,
+  without the GIN simplification.
+
+The module-level helpers `mlp_dimension_builder` and `mlp_builder` assemble
+the per-layer MLPs shared by these layers.
 """
 
 from abc import ABC, abstractmethod
-from typing import LiteralString
+from typing import Literal
 
 import torch
 from torch_geometric.data import Data
@@ -39,7 +53,7 @@ class GSNGINconcatBaseLayer(ABC, MessagePassing):
         edge-mode subclasses). Default is 0.
     mlp_architecture : list of int or None, optional
         Hidden layer widths for the update MLP. If None, a single linear
-        layer followed by ReLU is used.
+        layer is used.
 
     Attributes
     ----------
@@ -64,46 +78,20 @@ class GSNGINconcatBaseLayer(ABC, MessagePassing):
         self.in_gsn_channels: int = in_gsn_channels
         self.out_channels: int = out_channels
         self.train_eps: bool = train_eps
-        self.mlp_architecture: list[int] = mlp_architecture
         self.extra_mlp_in_channel: int = extra_mlp_in_channel
 
-        if self.mlp_architecture is None:
-            self.UP = torch.nn.Sequential(
-                torch.nn.Linear(
-                    self.in_channels
-                    + self.in_gsn_channels
-                    + self.extra_mlp_in_channel,
-                    self.out_channels,
-                ),
-                torch.nn.ReLU(),
-            )
-        else:
-            if len(self.mlp_architecture) < 1:
-                raise ValueError()
+        tmp_architecture = [] if mlp_architecture is None else mlp_architecture
+        self.mlp_architecture = (
+            [
+                self.in_channels
+                + self.in_gsn_channels
+                + self.extra_mlp_in_channel
+            ]
+            + tmp_architecture
+            + [self.out_channels]
+        )
 
-            self.UP = torch.nn.Sequential()
-
-            for lidx, lsize in enumerate(mlp_architecture):
-                ic: int = -1
-                oc: int = -1
-
-                if lidx == 0:
-                    ic = (
-                        self.in_channels
-                        + self.in_gsn_channels
-                        + self.extra_mlp_in_channel
-                    )
-                    oc = lsize
-                else:
-                    if lidx == len(self.mlp_architecture) - 1:
-                        ic = self.mlp_architecture[lidx - 1]
-                        oc = self.out_channels
-                    else:
-                        ic = self.mlp_architecture[lidx - 1]
-                        oc = lsize
-
-                self.UP.append(torch.nn.Linear(ic, oc))
-                self.UP.append(torch.nn.ReLU())
+        self.UP = mlp_builder(mlp_dimension_builder(self.mlp_architecture))
 
         if self.train_eps:
             self.eps = torch.nn.Parameter(torch.tensor(0.0))
@@ -249,7 +237,14 @@ class GSNGINconcatELayer(GSNGINconcatBaseLayer):
         """
         device = x.device
 
-        edge_index, _ = remove_self_loops(edge_index=edge_index)
+        # remove potentially existing self-loops and remove them from GSN embeddings as well if present
+        # technically, this should never happen with using the provided GSNEncoder
+        edge_index, gsn_embeddings = remove_self_loops(
+            edge_index=edge_index, edge_attr=gsn_embeddings
+        )
+
+        assert gsn_embeddings.size(0) == edge_index.size(1)
+
         num_nodes = x.size(0)
 
         self_loop_dummy_block = torch.zeros(
@@ -257,12 +252,12 @@ class GSNGINconcatELayer(GSNGINconcatBaseLayer):
         )
         self_loop_dummy_block[:, 0] = 1.0
 
-        edge_weights = torch.zeros(
-            (num_nodes + gsn_embeddings.size(0), 1), device=device
+        # here we build the edge weights: 1+eps for self-loops, 1 for non-self-loops
+        self_weights = torch.ones((num_nodes, 1), device=device) * (
+            1 + self.eps
         )
-        edge_weights[gsn_embeddings.size(0) :] = 1.0
-
-        edge_weights = edge_weights * (1 + self.eps)
+        normal_weights = torch.ones((edge_index.size(1), 1), device=device)
+        edge_weights = torch.cat([normal_weights, self_weights], dim=0)
 
         gsn_embeddings = torch.cat(
             [
@@ -353,7 +348,7 @@ class GSNGINconcatModel(torch.nn.Module):
 
     def __init__(
         self,
-        mode: LiteralString,
+        mode: Literal["node", "edge"],
         num_layers: int,
         in_feature_channels: int,
         in_gsn_channels: int,
@@ -444,3 +439,232 @@ class GSNGINconcatModel(torch.nn.Module):
             x = layer(edge_index, x, gsn_embeddings)
 
         return x
+
+
+def mlp_dimension_builder(layer_dims: list[int]) -> list[tuple[int, int]]:
+    """
+    Turn a flat MLP architecture into per-layer (in, out) channel pairs.
+
+    Converts a list of layer dimensions (input dimension, hidden widths,
+    output dimension) into the list of ``(in_channels, out_channels)``
+    tuples describing each consecutive linear layer.
+
+    Parameters
+    ----------
+    layer_dims : list of int
+        Layer dimensions, ordered from input to output. Must contain at
+        least two entries (the input and output dimension).
+
+    Returns
+    -------
+    list of (int, int)
+        One ``(in_channels, out_channels)`` tuple per linear layer, i.e.
+        ``len(layer_dims) - 1`` tuples.
+    """
+    return [
+        (layer_dims[j], layer_dims[j + 1]) for j in range(len(layer_dims) - 1)
+    ]
+
+
+def mlp_builder(
+    layer_dims: list[tuple[int, int]], activation_fn=torch.nn.ReLU
+) -> torch.nn.Module:
+    """
+    Build a sequential MLP from per-layer (in, out) channel pairs.
+
+    Stacks one ``torch.nn.Linear`` per entry in ``layer_dims``, inserting
+    an activation function between consecutive linear layers. No activation
+    is appended after the final linear layer, so the MLP output is
+    unbounded.
+
+    Parameters
+    ----------
+    layer_dims : list of (int, int)
+        One ``(in_channels, out_channels)`` tuple per linear layer, as
+        produced by `mlp_dimension_builder`.
+    activation_fn : type of torch.nn.Module, optional
+        Activation module class instantiated between consecutive linear
+        layers. Default is ``torch.nn.ReLU``.
+
+    Returns
+    -------
+    torch.nn.Sequential
+        The assembled MLP, with activations between (but not after) the
+        linear layers.
+    """
+    model = torch.nn.Sequential()
+    for lidx, (ic, oc) in enumerate(layer_dims):
+        model.append(torch.nn.Linear(ic, oc))
+
+        # check if we are in the last layer already, then dont append activation fn
+        if lidx < len(layer_dims) - 1:
+            model.append(activation_fn())
+
+    return model
+
+
+class GSNMPNNBaselineVLayer(MessagePassing):
+    """
+    General MPNN baseline GSN layer with node-level structural encodings.
+
+    Implements the full Graph Substructure Network vertex variant (GSN-v)
+    message-passing scheme of Bouritsas et al. (2022), without the GIN
+    simplification used by `GSNGINconcatVLayer`. Messages are produced by an
+    inner MLP from the source and target node features, their GSN node
+    encodings, and (optionally) edge attributes; aggregated messages are then
+    combined with the target node features by an outer MLP:
+
+    ``m_uv = INNER([h_v, h_u, x_v, x_u, e_uv])``
+    ``h_v' = OUTER([h_v, sum_u m_uv])``
+
+    where ``x_*`` are the GSN structural encodings and ``e_uv`` the edge
+    attributes.
+
+    Parameters
+    ----------
+    in_channels : int
+        Dimensionality of input node features ``h``.
+    out_channels : int
+        Dimensionality of output node representations.
+    gsn_channels : int
+        Dimensionality of the per-node GSN structural encodings.
+    edge_dim : int, optional
+        Dimensionality of edge attributes. If 0 (default), edge attributes
+        are not used and must not be passed to ``forward``.
+    message_dim : int or None, optional
+        Dimensionality of the messages produced by the inner MLP. If None
+        (default), ``in_channels`` is used.
+    inner_mlp_architecture : list of int or None, optional
+        Hidden layer widths of the inner (message) MLP. If None (default),
+        the inner MLP is a single linear layer.
+    outer_mlp_architecture : list of int or None, optional
+        Hidden layer widths of the outer (update) MLP. If None (default),
+        the outer MLP is a single linear layer.
+
+    Attributes
+    ----------
+    inner_mlp : torch.nn.Sequential
+        MLP mapping ``[h_v, h_u, x_v, x_u, e_uv]`` to a message of size
+        ``message_dim``.
+    outer_mlp : torch.nn.Sequential
+        MLP mapping ``[h_v, aggregated_message]`` to the ``out_channels``
+        output.
+    """
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        gsn_channels: int,
+        edge_dim: int = 0,
+        message_dim: int | None = None,
+        inner_mlp_architecture: list[int] | None = None,
+        outer_mlp_architecture: list[int] | None = None,
+    ):
+        super().__init__(aggr="sum")
+
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.gsn_channels = gsn_channels
+        self.edge_dim = edge_dim
+        self.message_dim = in_channels if message_dim is None else message_dim
+
+        # here we create the inner MLP for creating the messages that then summed
+
+        # inner MLP: [h^t_v; h^t_u; x_v; x_u, e_uv;] -> message_dim
+        # inner MLP: 2xin_channels+edge_channels+2xGSN_channels -> message_dim
+        ima = [] if inner_mlp_architecture is None else inner_mlp_architecture
+        ima = (
+            [2 * self.in_channels + 2 * self.gsn_channels + edge_dim]
+            + ima
+            + [self.message_dim]
+        )
+        ima = mlp_dimension_builder(ima)
+
+        self.inner_mlp = mlp_builder(ima)
+
+        # outer MLP: [h^t_v; m^(t+1)_v] -> out
+        # outer MLP: [in_features; VARIABLE_WIDTH] -> out_channels
+        oma = [] if outer_mlp_architecture is None else outer_mlp_architecture
+        oma = [self.in_channels + self.message_dim] + oma + [self.out_channels]
+        oma = mlp_dimension_builder(oma)
+
+        self.outer_mlp = mlp_builder(oma)
+
+    def forward(
+        self,
+        edge_index: torch.Tensor,
+        x: torch.Tensor,
+        gsn_embeddings: torch.Tensor,
+        edge_attr: torch.Tensor = None,
+    ) -> torch.Tensor:
+        """
+        Compute updated node representations via inner/outer MLP message passing.
+
+        Parameters
+        ----------
+        edge_index : torch.Tensor of shape (2, E)
+            Graph connectivity in COO format. Self-loops, if desired, must
+            already be present in ``edge_index``.
+        x : torch.Tensor of shape (N, in_channels)
+            Input node features.
+        gsn_embeddings : torch.Tensor of shape (N, gsn_channels)
+            Per-node GSN structural encodings.
+        edge_attr : torch.Tensor of shape (E, edge_dim) or None, optional
+            Edge attributes. Must be provided if and only if ``edge_dim > 0``.
+
+        Returns
+        -------
+        torch.Tensor of shape (N, out_channels)
+            Updated node representations.
+
+        Raises
+        ------
+        ValueError
+            If the presence of ``edge_attr`` does not match ``edge_dim > 0``.
+        """
+        if (edge_attr is not None) != (self.edge_dim > 0):
+            raise ValueError("edge_attr presence must match edge_dim > 0")
+
+        out = self.propagate(
+            edge_index=edge_index, x=x, gsn=gsn_embeddings, edge_attr=edge_attr
+        )
+        out = torch.cat([x, out], dim=-1)
+
+        return self.outer_mlp(out)
+
+    def message(self, x_i, x_j, gsn_i, gsn_j, edge_attr=None):
+        """
+        Construct messages from source-target node and edge information.
+
+        Concatenates the target node features ``x_i``, source node features
+        ``x_j``, their respective GSN encodings ``gsn_i`` / ``gsn_j``, and
+        (optionally) the edge attributes, then maps the result through the
+        inner MLP.
+
+        Parameters
+        ----------
+        x_i : torch.Tensor of shape (E, in_channels)
+            Target node features for each edge.
+        x_j : torch.Tensor of shape (E, in_channels)
+            Source node features for each edge.
+        gsn_i : torch.Tensor of shape (E, gsn_channels)
+            GSN structural encodings of the target nodes.
+        gsn_j : torch.Tensor of shape (E, gsn_channels)
+            GSN structural encodings of the source nodes.
+        edge_attr : torch.Tensor of shape (E, edge_dim) or None, optional
+            Edge attributes. Concatenated to the message input when provided.
+
+        Returns
+        -------
+        torch.Tensor of shape (E, message_dim)
+            Per-edge messages produced by the inner MLP.
+        """
+        if edge_attr is None:
+            mlp_input = torch.cat([x_i, x_j, gsn_i, gsn_j], dim=-1)
+
+            return self.inner_mlp(mlp_input)
+
+        return self.inner_mlp(
+            torch.cat([x_i, x_j, gsn_i, gsn_j, edge_attr], dim=-1)
+        )
