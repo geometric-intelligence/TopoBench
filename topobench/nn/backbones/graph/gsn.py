@@ -46,6 +46,10 @@ class GSNGINconcatBaseLayer(ABC, MessagePassing):
         Dimensionality of GSN structural encodings.
     out_channels : int
         Dimensionality of output node representations.
+    edge_dim : int, optional
+        Dimensionality of the original edge features carried in the message
+        (used by edge-mode subclasses). Added to the MLP input width. Default
+        is 0.
     train_eps : bool, optional
         If True, the epsilon scaling parameter is learnable. Default is False.
     extra_mlp_in_channel : int, optional
@@ -54,6 +58,8 @@ class GSNGINconcatBaseLayer(ABC, MessagePassing):
     mlp_architecture : list of int or None, optional
         Hidden layer widths for the update MLP. If None, a single linear
         layer is used.
+    initial_eps : float, optional
+        Initial value of the epsilon scaling parameter. Default is 0.0.
 
     Attributes
     ----------
@@ -68,9 +74,11 @@ class GSNGINconcatBaseLayer(ABC, MessagePassing):
         in_channels: int,
         in_gsn_channels: int,
         out_channels: int,
+        edge_dim: int = 0,
         train_eps: bool = False,
         extra_mlp_in_channel: int = 0,
         mlp_architecture: list[int] | None = None,
+        initial_eps: float = 0.0,
     ):
         super().__init__(aggr="sum")
 
@@ -79,6 +87,8 @@ class GSNGINconcatBaseLayer(ABC, MessagePassing):
         self.out_channels: int = out_channels
         self.train_eps: bool = train_eps
         self.extra_mlp_in_channel: int = extra_mlp_in_channel
+        self._initial_eps = initial_eps
+        self.edge_dim = edge_dim
 
         tmp_architecture = [] if mlp_architecture is None else mlp_architecture
         self.mlp_architecture = (
@@ -86,6 +96,7 @@ class GSNGINconcatBaseLayer(ABC, MessagePassing):
                 self.in_channels
                 + self.in_gsn_channels
                 + self.extra_mlp_in_channel
+                + self.edge_dim
             ]
             + tmp_architecture
             + [self.out_channels]
@@ -94,9 +105,9 @@ class GSNGINconcatBaseLayer(ABC, MessagePassing):
         self.UP = mlp_builder(mlp_dimension_builder(self.mlp_architecture))
 
         if self.train_eps:
-            self.eps = torch.nn.Parameter(torch.tensor(0.0))
+            self.eps = torch.nn.Parameter(torch.tensor(self._initial_eps))
         else:
-            self.register_buffer("eps", torch.tensor(0.0))
+            self.register_buffer("eps", torch.tensor(self._initial_eps))
 
     @abstractmethod
     def forward(
@@ -131,13 +142,75 @@ class GSNGINconcatVLayer(GSNGINconcatBaseLayer):
     Concatenates GSN node encodings with node features prior to GIN-style sum
     aggregation. Self-loops are excluded from the neighbourhood sum and handled
     via the ``(1 + eps) * x'`` self term.
+
+    Parameters
+    ----------
+    in_channels : int
+        Dimensionality of input node features.
+    in_gsn_channels : int
+        Dimensionality of GSN structural encodings.
+    out_channels : int
+        Dimensionality of output node representations.
+    edge_dim : int, optional
+        Must be 0; node-mode GSN does not consume edge features. A value
+        greater than 0 raises ``ValueError``. Default is 0.
+    train_eps : bool, optional
+        If True, the epsilon scaling parameter is learnable. Default is False.
+    extra_mlp_in_channel : int, optional
+        Additional input channels prepended to the MLP input. Default is 0.
+    mlp_architecture : list of int or None, optional
+        Hidden layer widths for the update MLP. If None, a single linear
+        layer is used. Default is None.
+    initial_eps : float, optional
+        Initial value of the epsilon scaling parameter. Default is 0.0.
     """
+
+    def __init__(
+        self,
+        in_channels,
+        in_gsn_channels,
+        out_channels,
+        edge_dim=0,
+        train_eps=False,
+        extra_mlp_in_channel=0,
+        mlp_architecture=None,
+        initial_eps=0.0,
+    ):
+        """
+        Initialize the node-mode GSN-GIN layer.
+
+        Accepts the same arguments as `GSNGINconcatBaseLayer`. Node-mode GSN
+        does not consume edge features, so ``edge_dim`` must be 0; it is
+        forwarded as 0 to the base class regardless.
+
+        Raises
+        ------
+        ValueError
+            If ``edge_dim > 0``, since this layer does not support edge
+            features.
+        """
+        if edge_dim > 0:
+            raise ValueError(
+                "Layer `GSNGINconcatVLayer` is incompatible with `edge_dim`>0"
+            )
+
+        super().__init__(
+            in_channels=in_channels,
+            in_gsn_channels=in_gsn_channels,
+            out_channels=out_channels,
+            edge_dim=0,  # explicitly set this to 0
+            train_eps=train_eps,
+            extra_mlp_in_channel=extra_mlp_in_channel,
+            mlp_architecture=mlp_architecture,
+            initial_eps=initial_eps,
+        )
 
     def forward(
         self,
         edge_index: torch.Tensor,
         x: torch.Tensor,
         gsn_embeddings: torch.Tensor,
+        edge_attr: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Compute updated node representations using node-level GSN encodings.
@@ -150,6 +223,9 @@ class GSNGINconcatVLayer(GSNGINconcatBaseLayer):
             Input node features.
         gsn_embeddings : torch.Tensor of shape (N, in_gsn_channels)
             Node-level GSN structural encodings.
+        edge_attr : torch.Tensor or None, optional
+            Accepted for interface compatibility with the edge-mode layer, but
+            ignored: node-mode GSN does not use edge features. Default is None.
 
         Returns
         -------
@@ -162,7 +238,7 @@ class GSNGINconcatVLayer(GSNGINconcatBaseLayer):
 
         out = self.propagate(edge_index=edge_index, x=xprime)
 
-        out += (1 + self.eps) * xprime
+        out = out + (1 + self.eps) * xprime
 
         return self.UP(out)
 
@@ -188,11 +264,16 @@ class GSNGINconcatELayer(GSNGINconcatBaseLayer):
         If True, epsilon is learnable. Default is False.
     mlp_architecture : list of int or None, optional
         Hidden layer widths for the update MLP. Default is None.
+    edge_dim : int, optional
+        Dimensionality of the original edge features. If greater than 0, an
+        ``edge_attr`` tensor of this width must be supplied to ``forward`` and
+        is concatenated into each message. Default is 0 (no edge features).
 
     Notes
     -----
     The MLP input dimension is automatically extended by 1 to accommodate
-    the self-loop indicator prepended to each edge attribute vector.
+    the self-loop indicator prepended to each edge attribute vector, plus
+    ``edge_dim`` additional channels when original edge features are used.
     """
 
     def __init__(
@@ -202,14 +283,16 @@ class GSNGINconcatELayer(GSNGINconcatBaseLayer):
         out_channels,
         train_eps=False,
         mlp_architecture=None,
+        edge_dim: int = 0,
     ):
         super().__init__(
-            in_channels,
-            in_gsn_channels,
-            out_channels,
-            train_eps,
+            in_channels=in_channels,
+            in_gsn_channels=in_gsn_channels,
+            out_channels=out_channels,
+            train_eps=train_eps,
             extra_mlp_in_channel=1,
             mlp_architecture=mlp_architecture,
+            edge_dim=edge_dim,
         )
 
     def forward(
@@ -217,6 +300,7 @@ class GSNGINconcatELayer(GSNGINconcatBaseLayer):
         edge_index: torch.Tensor,
         x: torch.Tensor,
         gsn_embeddings: torch.Tensor,
+        edge_attr: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Compute updated node representations using edge-level GSN encodings.
@@ -229,21 +313,43 @@ class GSNGINconcatELayer(GSNGINconcatBaseLayer):
             Input node features.
         gsn_embeddings : torch.Tensor of shape (E, in_gsn_channels)
             Edge-level GSN structural encodings (excluding self-loops).
+        edge_attr : torch.Tensor of shape (E, edge_dim) or None, optional
+            Original edge features (excluding self-loops). Must be provided
+            with width ``edge_dim`` if and only if ``edge_dim > 0``. Default
+            is None.
 
         Returns
         -------
         torch.Tensor of shape (N, out_channels)
             Updated node representations.
+
+        Raises
+        ------
+        ValueError
+            If ``gsn_embeddings`` does not align with ``edge_index``, or if the
+            presence/width of ``edge_attr`` is inconsistent with ``edge_dim``.
         """
         device = x.device
 
-        # remove potentially existing self-loops and remove them from GSN embeddings as well if present
-        # technically, this should never happen with using the provided GSNEncoder
-        edge_index, gsn_embeddings = remove_self_loops(
-            edge_index=edge_index, edge_attr=gsn_embeddings
+        # remove potentially existing self-loops and remove them from edge_attr
+        # we dont have to remove them from GSN encodings, as the encoder
+        # itself removes self-loops prior to computing GSN encodings
+        edge_index, edge_attr = remove_self_loops(
+            edge_index=edge_index, edge_attr=edge_attr
         )
 
-        assert gsn_embeddings.size(0) == edge_index.size(1)
+        if not (gsn_embeddings.size(0) == edge_index.size(1)):
+            raise ValueError(
+                f"Size of GSN Embeddings ({gsn_embeddings.size(0)}) doesn't match edge_index ({edge_index.size(1)})"
+            )
+
+        if edge_attr is not None and edge_attr.size(1) != self.edge_dim:
+            raise ValueError(
+                f"edge_attr width {edge_attr.size(1)} != edge_dim {self.edge_dim}"
+            )
+
+        if edge_attr is None and self.edge_dim != 0:
+            raise ValueError("edge_dim > 0 but no edge_attr was provided")
 
         num_nodes = x.size(0)
 
@@ -266,7 +372,20 @@ class GSNGINconcatELayer(GSNGINconcatBaseLayer):
             ],
             dim=-1,
         )
-        edge_attr = torch.cat([gsn_embeddings, self_loop_dummy_block], dim=0)
+
+        full_edge_attr = torch.cat(
+            [gsn_embeddings, self_loop_dummy_block], dim=0
+        )
+
+        if edge_attr is not None:
+            # we need to add a zero block to the original edge features
+            edge_attr = torch.cat(
+                [
+                    edge_attr,
+                    torch.zeros(num_nodes, edge_attr.size(1), device=device),
+                ]
+            )
+            full_edge_attr = torch.cat([full_edge_attr, edge_attr], dim=-1)
 
         edge_index, _ = add_self_loops(
             edge_index=edge_index, num_nodes=num_nodes
@@ -275,7 +394,7 @@ class GSNGINconcatELayer(GSNGINconcatBaseLayer):
         out = self.propagate(
             edge_index=edge_index,
             x=x,
-            edge_attr=edge_attr,
+            edge_attr=full_edge_attr,
             edge_weights=edge_weights,
         )
 
@@ -292,14 +411,16 @@ class GSNGINconcatELayer(GSNGINconcatBaseLayer):
         ----------
         x_j : torch.Tensor of shape (E', in_channels)
             Source node features for each edge in the expanded edge set.
-        edge_attr : torch.Tensor of shape (E', in_gsn_channels + 1)
-            Edge attributes with a leading binary self-loop indicator column.
+        edge_attr : torch.Tensor of shape (E', in_gsn_channels + 1 + edge_dim)
+            Edge attributes with a leading binary self-loop indicator column,
+            the GSN structural encodings, and (when ``edge_dim > 0``) the
+            original edge features.
         edge_weights : torch.Tensor of shape (E', 1)
             Per-edge scaling weights.
 
         Returns
         -------
-        torch.Tensor of shape (E', in_channels + in_gsn_channels + 1)
+        torch.Tensor of shape (E', in_channels + in_gsn_channels + 1 + edge_dim)
             Scaled concatenated messages.
         """
         return torch.cat([x_j, edge_attr], dim=-1) * edge_weights
@@ -334,6 +455,10 @@ class GSNGINconcatModel(torch.nn.Module):
     gsn_keyword : str or None, optional
         Attribute name on the Data object holding GSN encodings. Defaults to
         ``'node_gsn_encodings'`` or ``'edge_gsn_encodings'`` based on ``mode``.
+    edge_dim : int, optional
+        Dimensionality of the original edge features (``data.edge_attr``) fed
+        to every layer. Only supported in edge mode; must be 0 in node mode.
+        Default is 0.
 
     Attributes
     ----------
@@ -343,7 +468,8 @@ class GSNGINconcatModel(torch.nn.Module):
     Raises
     ------
     ValueError
-        If ``num_layers < 1`` or ``mode`` is not ``'node'`` or ``'edge'``.
+        If ``num_layers < 1``, ``mode`` is not ``'node'`` or ``'edge'``, or
+        ``mode`` is ``'node'`` while ``edge_dim > 0``.
     """
 
     def __init__(
@@ -357,6 +483,7 @@ class GSNGINconcatModel(torch.nn.Module):
         mlp_architecture: list[int] | None = None,
         train_eps: bool = False,
         gsn_keyword: str | None = None,
+        edge_dim: int = 0,
     ):
         super().__init__()
 
@@ -368,6 +495,11 @@ class GSNGINconcatModel(torch.nn.Module):
         if mode not in ["node", "edge"]:
             raise ValueError(
                 f"argument `mode` should be either 'node' or 'edge', got '{mode}'."
+            )
+
+        if (mode == "node") and (edge_dim > 0):
+            raise ValueError(
+                f"mode `node` is incompatible with `edge_dim` > 0 (got {edge_dim})"
             )
 
         self._node_mode = mode == "node"
@@ -384,6 +516,7 @@ class GSNGINconcatModel(torch.nn.Module):
         self.out_channels: int = out_channels
         self.train_eps: bool = train_eps
         self.mlp_architecture = mlp_architecture
+        self.edge_dim = edge_dim
 
         _layers = []
 
@@ -409,6 +542,7 @@ class GSNGINconcatModel(torch.nn.Module):
                     out_channels=oc,
                     train_eps=self.train_eps,
                     mlp_architecture=mlp_architecture,
+                    edge_dim=edge_dim,
                 )
             )
 
@@ -423,6 +557,9 @@ class GSNGINconcatModel(torch.nn.Module):
         data : torch_geometric.data.Data
             Input graph containing node features ``data.x``, edge connectivity
             ``data.edge_index``, and GSN encodings at ``data[gsn_keyword]``.
+            When present, ``data.edge_attr`` is forwarded to every layer as the
+            original edge features (relevant only in edge mode with
+            ``edge_dim > 0``).
 
         Returns
         -------
@@ -435,8 +572,17 @@ class GSNGINconcatModel(torch.nn.Module):
             data[self.gsn_kword],
         )
 
+        edge_attr: torch.Tensor | None = None
+        if hasattr(data, "edge_attr"):
+            edge_attr = data.edge_attr
+
         for layer in self._layers:
-            x = layer(edge_index, x, gsn_embeddings)
+            x = layer(
+                edge_index=edge_index,
+                x=x,
+                gsn_embeddings=gsn_embeddings,
+                edge_attr=edge_attr,
+            )
 
         return x
 
