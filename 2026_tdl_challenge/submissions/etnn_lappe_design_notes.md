@@ -1,4 +1,4 @@
-# Track 2 Submission: ETNN-LapPE Structural Coordinates
+# Track 2 Submission: ETNN-LapPE Design Notes
 
 Participant: Gaurav Khanal
 Track: Track 2 - Topological Neural Networks

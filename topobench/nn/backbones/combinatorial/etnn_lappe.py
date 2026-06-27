@@ -1,28 +1,41 @@
 """LapPE structural-coordinate ETNN backbone for combinatorial complexes.
 
-This module provides a coordinate-enabled ETNN variant while keeping the
-coordinate-free ETNN implementation in ``etnn.py`` unchanged. It is intended
-for graph datasets, such as GraphUniverse, that do not provide physical
-Euclidean coordinates but can support deterministic structural
-pseudo-coordinates.
+This module implements a coordinate-enabled TopoBench adaptation of
+E(n)-Equivariant Topological Neural Networks (ETNNs) from Battiloro et al.,
+``E(n) Equivariant Topological Neural Networks``, arXiv:2405.15429, and the
+official implementation at
+``https://github.com/NSAPH-Projects/topological-equivariant-networks``.
 
-The construction is deliberately conservative:
+The coordinate-free ETNN backbone in ``etnn.py`` implements the combinatorial
+feature-update part of ETNN without geometric inputs. This module keeps that
+feature-update structure but adds a conservative structural coordinate frame
+for graph datasets, such as GraphUniverse, that do not provide physical
+Euclidean coordinates.
+
+The adaptation has three steps:
 
 1. TopoBench computes normalized graph Laplacian eigenvectors as rank-0
-   structural coordinates with the existing ``LapPE`` transform.
-2. Higher-rank cell coordinates are obtained by incidence averaging:
+   structural pseudo-coordinates with the existing ``LapPE`` transform.
+2. Rank-0 coordinates are lifted to higher-rank cells by recursive incidence
+   averaging:
 
-       p_0 = LapPE
-       p_r = mean_{d incident to c} p_{r-1,d}
+       p_0(v) = LapPE(v)
+       p_r(c) = mean_{d incident to c} p_{r-1}(d)
 
-3. ETNN relation messages receive the original sparse-neighborhood scalar and
-   one E(n)-invariant structural distance:
+3. ETNN relation messages receive the sparse TopoBench neighborhood value and
+   one E(n)-invariant structural-distance feature:
 
        z_{d,c,N} = concat(h_d, h_c, a_{d,c,N}, ||p_d - p_c||^2)
+       m_{c,N}   = sum_{d in N(c)} psi_N(z_{d,c,N})
+       h'_c      = h_c + beta_rank(c)(h_c, concat_N m_{c,N})
 
-The coordinate update from the full ETNN formulation is still omitted. These
-coordinates should be read as structural embeddings of the graph, not as
-physical Euclidean coordinates.
+This follows the CCMPN/ETNN neighborhood aggregation and rank-wise feature
+update while specializing the geometric input to distances in a graph-derived
+structural embedding. The coordinate update from the full ETNN formulation is
+not applied: coordinates are fixed auxiliary inputs, not learned dynamical
+states. Consequently, the model is invariant to rigid transformations of the
+chosen structural coordinate frame, but it should not be read as a physical
+coordinate ETNN for datasets that do not contain physical Euclidean positions.
 """
 
 from __future__ import annotations
@@ -46,9 +59,9 @@ class ETNNLapPE(nn.Module):
     The class mirrors the coordinate-free ``ETNN`` backbone but requires a
     rank-0 coordinate attribute, usually ``LapPE``, produced before
     graph-to-combinatorial lifting. For each relation edge from sender cell
-    ``d`` to receiver cell ``c``, the relation-specific message function sees
-    both the sparse TopoBench relation value ``a_{d,c,N}`` and the invariant
-    scalar ``||p_d - p_c||^2``.
+    ``d`` to receiver cell ``c``, the relation-specific message function
+    receives both the sparse TopoBench relation value ``a_{d,c,N}`` and the
+    invariant structural-distance scalar ``||p_d - p_c||^2``.
 
     This variant keeps ETNN's topological feature update structure:
 
@@ -57,7 +70,7 @@ class ETNNLapPE(nn.Module):
 
     The LapPE term is used only as an invariant message feature. Coordinates
     are not updated, so this module should be understood as a structural
-    coordinate adaptation rather than a full coordinate-dynamical ETNN.
+    pseudo-coordinate adaptation rather than a full coordinate-dynamical ETNN.
 
     The backbone expects the lifting/feature-encoding pipeline to provide
     feature tensors for every rank from 0 to ``max_rank``. Empty ranks should

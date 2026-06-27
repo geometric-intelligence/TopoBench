@@ -1,4 +1,11 @@
-"""Unit tests for the LapPE structural-coordinate ETNN backbone."""
+"""Unit tests for the LapPE structural-coordinate ETNN backbone.
+
+The tests focus on the extra contract introduced by ``ETNNLapPE`` relative to
+the coordinate-free ETNN baseline: rank-0 LapPE coordinates must exist, they
+must align with rank-0 cells, they must lift cleanly through TopoBench
+incidence matrices, and the resulting message distance must be invariant to
+rigid transformations of the structural coordinate frame.
+"""
 
 import pytest
 import torch
@@ -14,7 +21,13 @@ from topobench.nn.backbones.combinatorial.etnn_lappe import (
 
 
 def create_lappe_complex_batch():
-    """Create a mock lifted complex with canonical incidence matrices."""
+    """Create a mock lifted complex with coordinate-lifting incidences.
+
+    The baseline ETNN tests already construct directional neighborhoods for
+    message passing. ETNN-LapPE additionally needs the canonical
+    ``incidence_r`` matrices because it recursively lifts rank-0 coordinates
+    to rank-1 and rank-2 cells.
+    """
     batch = create_mock_complex_batch()
 
     # The coordinate-enabled backbone needs the base incidence matrices because
@@ -26,7 +39,7 @@ def create_lappe_complex_batch():
 
 
 def create_lappe_etnn():
-    """Instantiate the LapPE-distance ETNN variant."""
+    """Instantiate ETNN-LapPE with the same relations as the baseline ETNN."""
     return ETNNLapPE(
         in_channels=16,
         hidden_channels=8,
@@ -46,7 +59,13 @@ def create_lappe_etnn():
 
 
 def test_lappe_coordinate_etnn_runs_without_physical_positions():
-    """LapPE mode uses structural coordinates and still does not need pos."""
+    """ETNN-LapPE should run from structural coordinates without ``pos``.
+
+    GraphUniverse does not provide physical Euclidean positions. This test
+    verifies that the coordinate-enabled variant consumes ``LapPE`` instead of
+    requiring a PyG-style ``pos`` tensor, while still returning one embedding
+    tensor per visible cell rank.
+    """
     batch = create_lappe_complex_batch()
     batch.LapPE = torch.randn(batch.x_0.shape[0], 3)
     assert "pos" not in batch
@@ -60,7 +79,12 @@ def test_lappe_coordinate_etnn_runs_without_physical_positions():
 
 
 def test_lappe_coordinate_etnn_requires_lappe_attribute():
-    """Coordinate mode should fail clearly when LapPE is unavailable."""
+    """Coordinate mode should fail clearly when LapPE is unavailable.
+
+    The model intentionally requires an explicit structural coordinate source.
+    A missing coordinate attribute should not silently fall back to zeros,
+    random coordinates, or coordinate-free behavior.
+    """
     batch = create_lappe_complex_batch()
 
     with pytest.raises(AttributeError, match="LapPE"):
@@ -68,7 +92,11 @@ def test_lappe_coordinate_etnn_requires_lappe_attribute():
 
 
 def test_lappe_coordinate_etnn_validates_rank_0_coordinate_count():
-    """LapPE rows must align with rank-0 cells."""
+    """LapPE rows must align one-to-one with rank-0 cells.
+
+    A row-count mismatch would attach coordinates to the wrong vertices and
+    corrupt every higher-rank coordinate produced by incidence averaging.
+    """
     batch = create_lappe_complex_batch()
     batch.LapPE = torch.randn(batch.x_0.shape[0] + 1, 3)
 
@@ -77,7 +105,13 @@ def test_lappe_coordinate_etnn_validates_rank_0_coordinate_count():
 
 
 def test_lappe_cell_coordinates_are_barycentric_by_rank():
-    """Higher-rank structural coordinates are incidence-weighted averages."""
+    """Higher-rank structural coordinates are incidence-weighted averages.
+
+    The implementation uses recursive incidence averaging rather than direct
+    vertex-to-cell membership. This test checks the intended rank-by-rank
+    policy on a small complex where the expected edge and face coordinates can
+    be computed by hand.
+    """
     batch = create_lappe_complex_batch()
     batch.LapPE = torch.tensor(
         [
@@ -116,7 +150,12 @@ def test_lappe_cell_coordinates_are_barycentric_by_rank():
 
 
 def test_lappe_cell_coordinates_handle_empty_rank():
-    """Empty ranks should receive empty coordinate tensors."""
+    """Empty ranks should receive empty coordinate tensors.
+
+    Some lifted mini-batches can contain no cells at a visible higher rank.
+    The coordinate construction should preserve that empty rank with shape
+    ``[0, coordinate_dim]`` instead of creating placeholder coordinates.
+    """
     batch = create_lappe_complex_batch()
     batch.LapPE = torch.randn(batch.x_0.shape[0], 3)
     batch.x_2 = torch.empty(0, 16)
@@ -139,7 +178,12 @@ def test_lappe_cell_coordinates_handle_empty_rank():
 
 
 def test_lappe_cell_coordinates_validate_incidence_source_axis():
-    """Incidence source rows must align with lower-rank coordinates."""
+    """Incidence source rows must align with lower-rank coordinates.
+
+    TopoBench incidence matrices should have rows for rank ``r-1`` cells and
+    columns for rank ``r`` cells. A source-axis mismatch means the coordinate
+    lift is ill-defined, so the helper should raise before indexing.
+    """
     batch = create_lappe_complex_batch()
     batch.LapPE = torch.randn(batch.x_0.shape[0], 3)
     batch.incidence_1 = torch.sparse_coo_tensor(
@@ -159,7 +203,13 @@ def test_lappe_cell_coordinates_validate_incidence_source_axis():
 
 
 def test_squared_lappe_distance_is_rigid_motion_invariant():
-    """Distance features should ignore coordinate frame orientation."""
+    """Distance features should ignore rigid coordinate-frame choices.
+
+    LapPE coordinates are structural pseudo-coordinates, so their absolute
+    orientation is arbitrary. The squared-distance message feature should be
+    unchanged by translations, rotations, and reflections of that structural
+    coordinate frame.
+    """
     src = torch.tensor([[0.0, 0.0], [2.0, 0.0]])
     dst = torch.tensor([[1.0, 1.0], [3.0, 0.0]])
     edge_index = torch.tensor([[0, 1], [0, 1]])
