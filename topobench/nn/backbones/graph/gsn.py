@@ -27,6 +27,7 @@ from typing import Literal
 import torch
 from torch_geometric.data import Data
 from torch_geometric.nn import MessagePassing, global_add_pool
+from torch_geometric.typing import OptTensor, Tensor
 from torch_geometric.utils import add_self_loops, remove_self_loops
 
 
@@ -330,6 +331,10 @@ class GSNGINconcatELayer(GSNGINconcatBaseLayer):
             presence/width of ``edge_attr`` is inconsistent with ``edge_dim``.
         """
         device = x.device
+
+        # using this layer with edge_attr and edge_dim=0 is fine and simply ignores the edge_attr
+        if (self.edge_dim == 0) and (edge_attr is not None):
+            edge_attr = None
 
         # remove potentially existing self-loops and remove them from edge_attr
         # we dont have to remove them from GSN encodings, as the encoder
@@ -898,7 +903,7 @@ class GSNGINVirtualNodeLayerV(MessagePassing):
 
         return self.UP(out)
 
-    def message(self, x_j, edge_attr: torch.Tensor | None = None):
+    def message(self, x_j: Tensor, edge_attr: OptTensor = None):
         """
         Construct messages from source nodes and edge embeddings.
 
