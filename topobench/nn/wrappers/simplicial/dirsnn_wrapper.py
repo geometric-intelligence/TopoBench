@@ -18,12 +18,8 @@ class DirSNNWrapper(AbstractWrapper):
     PropagateSignalDown readout strategy recommended for models that do not
     internally update 0-cell representations (TopoBench ablation, Table 2).
 
-    Parameters
-    ----------
-    backbone : torch.nn.Module
-        The DirSNN backbone model instance.
-    **kwargs : dict
-        Must contain out_channels (int) and num_cell_dimensions (int).
+    Initialization parameters (backbone, out_channels, num_cell_dimensions)
+    are handled by the parent AbstractWrapper.__init__.
     """
 
     def forward(self, batch):
@@ -40,11 +36,7 @@ class DirSNNWrapper(AbstractWrapper):
             Dictionary with keys: labels, batch_0, x_0, x_1.
         """
         x_1 = self.backbone(batch)
-
-        # Down-propagate edge embeddings to nodes via signed incidence.
-        # incidence_1 shape [|V|, |E|]: mirrors SANWrapper exactly.
         x_0 = torch.sparse.mm(batch.incidence_1, x_1)
-
         model_out = {"labels": batch.y, "batch_0": batch.batch_0}
         model_out["x_0"] = x_0
         model_out["x_1"] = x_1
