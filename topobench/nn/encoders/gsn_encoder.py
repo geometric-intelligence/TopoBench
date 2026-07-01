@@ -176,6 +176,32 @@ def nx_to_pyg(G: nx.Graph) -> Data:
     return data
 
 
+def normalized_edge(node1: int, node2: int) -> tuple[int, int]:
+    """
+    Return an undirected edge as a canonically ordered node pair.
+
+    Orders the two endpoints so the smaller node id comes first, giving
+    a single, orientation-independent key for an undirected edge. This
+    lets ``(u, v)`` and ``(v, u)`` map to the same dictionary key, which
+    is relied upon when keying and looking up edge orbits (whose stored
+    orientation in ``substructure.edges`` is not guaranteed to be
+    ascending).
+
+    Parameters
+    ----------
+    node1 : int
+        One endpoint of the edge.
+    node2 : int
+        The other endpoint of the edge.
+
+    Returns
+    -------
+    tuple of (int, int)
+        The endpoints as ``(min(node1, node2), max(node1, node2))``.
+    """
+    return min(node1, node2), max(node1, node2)
+
+
 class GSNFeatureEncoder(AbstractFeatureEncoder):
     """
     Graph Substructure Network (GSN) feature encoder.
@@ -332,7 +358,8 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
             node_id: node_id for node_id in substructure.nodes
         }
         edge_orbits: dict[tuple[int, int], int] = {
-            (u, v): idx for idx, (u, v) in enumerate(substructure.edges)
+            normalized_edge(u, v): idx
+            for idx, (u, v) in enumerate(substructure.edges)
         }
 
         for isom in automorphism_group:
@@ -347,6 +374,8 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
             # TODO: there must be a better way to do this, now we are iterating over all nodes and all edges
             # On the other hand the substructures are usually of limited size so this shouldnt make too much of a difference
             for ov, ou in substructure.edges:
+                ov, ou = normalized_edge(ov, ou)  # normalize edge
+
                 mv, mu = min(isom[ov], isom[ou]), max(isom[ov], isom[ou])
 
                 edge_role = min(edge_orbits[(ov, ou)], edge_orbits[(mv, mu)])
