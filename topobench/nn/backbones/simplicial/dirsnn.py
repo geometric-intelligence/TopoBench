@@ -22,6 +22,7 @@ import torch.nn as nn
 # Utility: Self-Loop Removal
 # ---------------------------------------------------------------------------
 
+
 def _remove_self_loops(A: torch.Tensor) -> torch.Tensor:
     """Remove diagonal entries from a sparse COO adjacency matrix.
 
@@ -43,8 +44,8 @@ def _remove_self_loops(A: torch.Tensor) -> torch.Tensor:
     torch.Tensor
         Sparse COO tensor with all diagonal entries removed, coalesced.
     """
-    idx = A._indices()       # shape: [2, nnz]
-    val = A._values()        # shape: [nnz]
+    idx = A._indices()  # shape: [2, nnz]
+    val = A._values()  # shape: [nnz]
     # Keep only off-diagonal entries: row index != col index
     off_diag_mask = idx[0] != idx[1]
     return torch.sparse_coo_tensor(
@@ -59,6 +60,7 @@ def _remove_self_loops(A: torch.Tensor) -> torch.Tensor:
 # ---------------------------------------------------------------------------
 # Core Layer
 # ---------------------------------------------------------------------------
+
 
 class DirSNNLayer(nn.Module):
     """Single message-passing layer for Directed Simplicial Neural Networks.
@@ -97,7 +99,9 @@ class DirSNNLayer(nn.Module):
         and self pathways use half this rate. Default: 0.0.
     """
 
-    def __init__(self, in_channels: int, out_channels: int, dropout: float = 0.0):
+    def __init__(
+        self, in_channels: int, out_channels: int, dropout: float = 0.0
+    ):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -139,7 +143,7 @@ class DirSNNLayer(nn.Module):
         # At 1.0 the bypass contributes equally to the neighborhood signal at
         # initialization, giving boundary edges a fair gradient from step 1.
         self.eps_down = nn.Parameter(torch.tensor(1.0))
-        self.eps_up   = nn.Parameter(torch.tensor(1.0))
+        self.eps_up = nn.Parameter(torch.tensor(1.0))
 
         # --- Harmonic Equalization Scalars ---
         # Initialized to 1/3 so that the initial summed output has the same
@@ -148,7 +152,7 @@ class DirSNNLayer(nn.Module):
         # saturating ReLU immediately and compressing the gradient on the first
         # backward pass.
         self.alpha = nn.Parameter(torch.tensor(1.0 / 3.0))
-        self.beta  = nn.Parameter(torch.tensor(1.0 / 3.0))
+        self.beta = nn.Parameter(torch.tensor(1.0 / 3.0))
         self.gamma = nn.Parameter(torch.tensor(1.0 / 3.0))
 
         # --- Asymmetric Dropout ---
@@ -158,7 +162,7 @@ class DirSNNLayer(nn.Module):
         # structural signals and use half the dropout rate.
         self.drop_lower = nn.Dropout(dropout * 0.5)
         self.drop_upper = nn.Dropout(dropout)
-        self.drop_self  = nn.Dropout(dropout * 0.5)
+        self.drop_self = nn.Dropout(dropout * 0.5)
 
         self.activation = nn.ReLU()
         self._reset_parameters()
@@ -217,7 +221,6 @@ class DirSNNLayer(nn.Module):
         # No gradients are tracked inside this block.                          #
         # ------------------------------------------------------------------ #
         with torch.no_grad():
-
             # [Step 1] Split B_1 into source and target boolean masks.
             #
             # B_1 convention (Lecha et al.):
@@ -226,24 +229,28 @@ class DirSNNLayer(nn.Module):
             #
             # We extract the COO indices and values once to avoid recomputing
             # the sparse representation four times.
-            b1_idx = b1._indices()   # shape [2, nnz_b1]
-            b1_val = b1._values()    # shape [nnz_b1]
+            b1_idx = b1._indices()  # shape [2, nnz_b1]
+            b1_val = b1._values()  # shape [nnz_b1]
 
-            target_mask = b1_val == 1.0    # Boolean mask over nnz entries
-            source_mask = b1_val == -1.0   # Boolean mask over nnz entries
+            target_mask = b1_val == 1.0  # Boolean mask over nnz entries
+            source_mask = b1_val == -1.0  # Boolean mask over nnz entries
 
             # Construct binary (all-ones-valued) sparse masks.
             # Converting -1 entries to +1 so that the cross-products produce
             # non-negative adjacency counts (number of shared vertices).
             b_target = torch.sparse_coo_tensor(
                 b1_idx[:, target_mask],
-                torch.ones(target_mask.sum(), device=b1.device, dtype=b1.dtype),
+                torch.ones(
+                    target_mask.sum(), device=b1.device, dtype=b1.dtype
+                ),
                 b1.size(),
             ).coalesce()
 
             b_source = torch.sparse_coo_tensor(
                 b1_idx[:, source_mask],
-                torch.ones(source_mask.sum(), device=b1.device, dtype=b1.dtype),
+                torch.ones(
+                    source_mask.sum(), device=b1.device, dtype=b1.dtype
+                ),
                 b1.size(),
             ).coalesce()
 
@@ -307,14 +314,16 @@ class DirSNNLayer(nn.Module):
         # For sink edges (no outgoing lower adjacencies), all four msg_* terms
         # are zero. The eps_down * x term guarantees a non-zero gradient for
         # W_00 through W_10 on those edges by providing a non-zero pre-image.
-        msg_lower = (msg_00 + msg_11 + msg_01 + msg_10) + (self.eps_down * (x @ self.W_00))
+        msg_lower = (msg_00 + msg_11 + msg_01 + msg_10) + (
+            self.eps_down * (x @ self.W_00)
+        )
 
         # [Upper Message]
         # Aggregates curl/rotational information from co-boundary triangles.
         # The eps_up bypass serves source edges (no triangles above them).
-        msg_upper = self.drop_upper(
-            torch.sparse.mm(l_up, x) @ self.W_up
-        ) + (self.eps_up * (x @ self.W_up))
+        msg_upper = self.drop_upper(torch.sparse.mm(l_up, x) @ self.W_up) + (
+            self.eps_up * (x @ self.W_up)
+        )
 
         # [Self-Loop Message]
         # Retains the current edge's own representation across the layer.
@@ -329,7 +338,7 @@ class DirSNNLayer(nn.Module):
         # model. This prevents ReLU saturation at initialization.
         out = self.activation(
             (self.alpha * msg_lower)
-            + (self.beta  * msg_upper)
+            + (self.beta * msg_upper)
             + (self.gamma * msg_self)
         )
         return out
@@ -338,6 +347,7 @@ class DirSNNLayer(nn.Module):
 # ---------------------------------------------------------------------------
 # Full Backbone
 # ---------------------------------------------------------------------------
+
 
 class DirSNN(nn.Module):
     """Directed Simplicial Neural Network backbone for the TopoBench framework.
@@ -397,12 +407,16 @@ class DirSNN(nn.Module):
         if num_layers == 1:
             self.layers.append(DirSNNLayer(in_channels, out_channels, dropout))
         else:
-            self.layers.append(DirSNNLayer(in_channels, hidden_channels, dropout))
+            self.layers.append(
+                DirSNNLayer(in_channels, hidden_channels, dropout)
+            )
             for _ in range(num_layers - 2):
                 self.layers.append(
                     DirSNNLayer(hidden_channels, hidden_channels, dropout)
                 )
-            self.layers.append(DirSNNLayer(hidden_channels, out_channels, dropout))
+            self.layers.append(
+                DirSNNLayer(hidden_channels, out_channels, dropout)
+            )
 
     def _validate_boundary(self, b1: torch.Tensor, b2: torch.Tensor) -> None:
         """Assert the fundamental homology axiom: B1 @ B2 = 0.
@@ -506,7 +520,7 @@ class DirSNN(nn.Module):
         torch.Tensor
             Edge-level output features, shape [|E|, out_channels].
         """
-        x  = batch.x_1
+        x = batch.x_1
         b1 = batch.incidence_1
         b2 = batch.incidence_2
 
