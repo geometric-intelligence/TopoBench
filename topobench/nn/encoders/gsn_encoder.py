@@ -302,8 +302,8 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
         ) = None
         self._node_channels: int = -1
         self._edge_channels: int = -1
-        self._normalization_vector_n: np.array | None = None
-        self._normalization_vector_e: np.array | None = None
+        self._normalization_vector_n: torch.Tensor | None = None
+        self._normalization_vector_e: torch.Tensor | None = None
 
         if not self._lazy:
             self._precompute()
@@ -461,8 +461,12 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
         self._edge_channels = edge_channels
 
         # we should also create the normalization vectors here
-        self._normalization_vector_n = np.concatenate(nodenormvecs)
-        self._normalization_vector_e = np.concatenate(edgenormvecs)
+        self._normalization_vector_n = torch.tensor(
+            np.concatenate(nodenormvecs)
+        )
+        self._normalization_vector_e = torch.tensor(
+            np.concatenate(edgenormvecs)
+        )
 
         self._precomputed = True
 
@@ -591,9 +595,25 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
         # final step: turn back into pyg.data.Data object:
         data_pyg = nx_to_pyg(data_nx)
 
+        # an edgeless (or nodeless) graph produces no corresponding attribute
+        # in `from_networkx`, so materialize empty encodings to keep the
+        # normalization below well-defined.
+        if self._node_pyg_kword not in data_pyg:
+            data_pyg[self._node_pyg_kword] = torch.zeros(
+                (0, self._node_channels), dtype=data_pyg.x.dtype
+            )
+        if self._edge_pyg_kword not in data_pyg:
+            data_pyg[self._edge_pyg_kword] = torch.zeros(
+                (0, self._edge_channels), dtype=data_pyg.x.dtype
+            )
+
         # here we batch-apply the normalization by number of matchings:
-        data_pyg[self._node_pyg_kword] /= self._normalization_vector_n
-        data_pyg[self._edge_pyg_kword] /= self._normalization_vector_e
+        data_pyg[self._node_pyg_kword] = (
+            data_pyg[self._node_pyg_kword] / self._normalization_vector_n
+        )
+        data_pyg[self._edge_pyg_kword] = (
+            data_pyg[self._edge_pyg_kword] / self._normalization_vector_e
+        )
 
         # we need to ensure dtype consistency
         if self._dtype is None:
