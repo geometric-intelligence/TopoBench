@@ -8,10 +8,11 @@ class GSNWrapper(AbstractWrapper):
 
     The GSN backbones take tensors (``edge_index``, ``x``, ``gsn_embeddings``,
     ...) directly, mirroring their per-layer signature. This wrapper is the
-    adapter that pulls those fields off the TopoBench batch: rank-0 node
-    features from ``x_0``, the structural encodings attached by
+    adapter that pulls those fields off the TopoBench batch: node features from
+    ``x_0`` if the cell machinery populated it, else the raw ``x`` that plain
+    graph datasets carry; the structural encodings attached by
     ``GSNFeatureEncoder`` from ``backbone.gsn_kword`` (e.g.
-    ``node_gsn_encodings``), and the node-to-graph assignment from ``batch_0``.
+    ``node_gsn_encodings``); and the node-to-graph assignment from ``batch_0``.
     """
 
     def forward(self, batch):
@@ -21,8 +22,8 @@ class GSNWrapper(AbstractWrapper):
         ----------
         batch : torch_geometric.data.Data
             Batch object containing the batched data. It must carry the
-            structural encodings under ``backbone.gsn_kword`` as well as
-            ``x_0`` / ``batch_0``.
+            structural encodings under ``backbone.gsn_kword``, node features
+            under ``x_0`` or ``x``, and ``batch_0``.
 
         Returns
         -------
@@ -32,9 +33,13 @@ class GSNWrapper(AbstractWrapper):
         gsn_embeddings = batch[self.backbone.gsn_kword]
         edge_attr = getattr(batch, "edge_attr", None)
 
+        # rank-0 features are stored under `x_0` once the cell machinery
+        # populates them; plain graph datasets only carry `x`.
+        x = batch.x_0 if getattr(batch, "x_0", None) is not None else batch.x
+
         x_0 = self.backbone(
             batch.edge_index,
-            batch.x_0,
+            x,
             gsn_embeddings,
             edge_attr=edge_attr,
             batch=batch.batch_0,
