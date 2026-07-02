@@ -50,6 +50,20 @@ def edge_data(edge_dim=0):
     return data
 
 
+def call_node_model(model, data):
+    """Invoke a node-mode GSN model the way the wrapper does.
+
+    The GSN models take tensors (edge_index, x, gsn_embeddings, ...) directly,
+    so this pulls those fields off a Data/Batch object.
+    """
+    return model(
+        data.edge_index,
+        data.x,
+        data.node_gsn_encodings,
+        batch=getattr(data, "batch", None),
+    )
+
+
 class TestMLPBuilders:
     """Tests for the MLP-construction helpers."""
 
@@ -170,24 +184,28 @@ class TestConcatModel:
         model = GSNGINconcatModel(
             "node", num_layers, IN, GSN, OUT, width=8
         )
-        assert model(node_data()).shape == (NUM_NODES, OUT)
+        assert call_node_model(model, node_data()).shape == (NUM_NODES, OUT)
 
     def test_edge_mode_forward(self):
         """Edge-mode model with edge features maps to (N, out_channels)."""
         model = GSNGINconcatModel("edge", 2, IN, GSN, OUT, width=8, edge_dim=2)
-        assert model(edge_data(edge_dim=2)).shape == (NUM_NODES, OUT)
+        data = edge_data(edge_dim=2)
+        out = model(
+            data.edge_index,
+            data.x,
+            data.edge_gsn_encodings,
+            edge_attr=data.edge_attr,
+        )
+        assert out.shape == (NUM_NODES, OUT)
 
-    def test_custom_gsn_keyword(self):
-        """A custom gsn_keyword is read from the Data object."""
+    def test_custom_gsn_keyword_is_stored(self):
+        """A custom gsn_keyword is stored as the wrapper lookup attribute."""
         model = GSNGINconcatModel(
             "node", 2, IN, GSN, OUT, width=8, gsn_keyword="my_key"
         )
-        data = Data(
-            x=torch.randn(NUM_NODES, IN),
-            edge_index=EDGE_INDEX,
-            my_key=torch.randn(NUM_NODES, GSN),
-        )
-        assert model(data).shape == (NUM_NODES, OUT)
+        assert model.gsn_kword == "my_key"
+        # forward itself takes tensors and is agnostic to the attribute name
+        assert call_node_model(model, node_data()).shape == (NUM_NODES, OUT)
 
     def test_invalid_num_layers(self):
         """num_layers < 1 is rejected."""
@@ -261,7 +279,7 @@ class TestVirtualNode:
         module = GSNGINVirtualNodeModule(
             "node", num_layers, IN, OUT, GSN, common_embedding_dim=8
         )
-        assert module(node_data()).shape == (NUM_NODES, OUT)
+        assert call_node_model(module, node_data()).shape == (NUM_NODES, OUT)
 
     def test_module_edge_dim_path(self):
         """The edge-feature path projects and runs."""
@@ -269,17 +287,24 @@ class TestVirtualNode:
             "node", 2, IN, OUT, GSN, common_embedding_dim=8, edge_dim=2
         )
         data = node_data()
-        data.edge_attr = torch.randn(EDGE_INDEX.size(1), 2)
-        assert module(data).shape == (NUM_NODES, OUT)
+        edge_attr = torch.randn(EDGE_INDEX.size(1), 2)
+        out = module(
+            data.edge_index,
+            data.x,
+            data.node_gsn_encodings,
+            edge_attr=edge_attr,
+        )
+        assert out.shape == (NUM_NODES, OUT)
 
     def test_module_no_batch_fallback(self):
-        """A single graph without data.batch is treated as one graph."""
+        """A None batch vector is treated as a single graph."""
         module = GSNGINVirtualNodeModule(
             "node", 2, IN, OUT, GSN, common_embedding_dim=8
         )
         data = node_data()
-        assert getattr(data, "batch", None) is None
-        assert module(data).shape == (NUM_NODES, OUT)
+        # batch defaults to None -> single-graph fallback
+        out = module(data.edge_index, data.x, data.node_gsn_encodings)
+        assert out.shape == (NUM_NODES, OUT)
 
     def test_edge_mode_not_implemented(self):
         """Edge mode is not implemented and raises."""
@@ -292,9 +317,14 @@ class TestVirtualNode:
             "node", 2, IN, OUT, GSN, common_embedding_dim=8
         )
         data = node_data()
-        data.edge_attr = torch.randn(EDGE_INDEX.size(1), 2)
+        edge_attr = torch.randn(EDGE_INDEX.size(1), 2)
         with pytest.raises(RuntimeError):
-            module(data)
+            module(
+                data.edge_index,
+                data.x,
+                data.node_gsn_encodings,
+                edge_attr=edge_attr,
+            )
 
     def test_per_graph_independence(self):
         """The virtual node stays per-graph: batching must not mix graphs."""
@@ -313,8 +343,8 @@ class TestVirtualNode:
             "node", 3, IN, OUT, GSN, common_embedding_dim=8
         )
         module.eval()
-        batched = module(Batch.from_data_list([g1, g2]))
-        solo = module(Batch.from_data_list([g1]))
+        batched = call_node_model(module, Batch.from_data_list([g1, g2]))
+        solo = call_node_model(module, Batch.from_data_list([g1]))
         assert torch.allclose(batched[:3], solo, atol=1e-5)
 
 
@@ -458,7 +488,7 @@ class TestBatchNormAndDropout:
             "node", 3, IN, GSN, OUT, width=8, batch_norm=True, dropout=0.2
         )
         model.train()
-        out = model(two_graph_batch())
+        out = call_node_model(model, two_graph_batch())
         assert out.shape == (2 * NUM_NODES, OUT)
 
     def test_vn_module_forward_train_mode_with_batch(self):
@@ -474,7 +504,7 @@ class TestBatchNormAndDropout:
             dropout=0.2,
         )
         module.train()
-        out = module(two_graph_batch())
+        out = call_node_model(module, two_graph_batch())
         assert out.shape == (2 * NUM_NODES, OUT)
 
     def test_dropout_active_in_train_inactive_in_eval(self):
@@ -487,8 +517,12 @@ class TestBatchNormAndDropout:
 
         # eval: deterministic across repeated calls
         model.eval()
-        assert torch.allclose(model(batch), model(batch))
+        assert torch.allclose(
+            call_node_model(model, batch), call_node_model(model, batch)
+        )
 
         # train: two forward passes differ because dropout masks differ
         model.train()
-        assert not torch.allclose(model(batch), model(batch))
+        assert not torch.allclose(
+            call_node_model(model, batch), call_node_model(model, batch)
+        )
