@@ -234,9 +234,11 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
         If `True` (default), this computation is deferred until the
         first call to `forward`.
 
-    dtype : torch.dtype, optional
-        Dtype the GSN encodings should be converted to. If not provided, the
-        dtype is derived from the node feature matrix `x`.
+    **kwargs : dict, optional
+        Additional keyword arguments. Ignored by the encoder; accepted so
+        that config-level anchors (e.g. ``encoder_name`` / ``out_channels``
+        referenced elsewhere in the model config) can be co-located on the
+        encoder block, mirroring `AllCellFeatureEncoder`.
 
     Attributes
     ----------
@@ -275,7 +277,7 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
         substructures: list[nx.Graph],
         pyg_kword: str = "gsn_encodings",
         lazy: bool = True,
-        dtype: torch.dtype | None = None,
+        **kwargs,
     ):
         """
         Initialize the encoder and optionally precompute orbit partitions.
@@ -283,7 +285,8 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
         See the class docstring for a description of the parameters.
         If `lazy` is `False`, this eagerly calls `_precompute` so that
         `_substructure_orbits` and the normalization vectors are ready
-        before `forward` is first called.
+        before `forward` is first called. Extra keyword arguments are
+        accepted and ignored (see ``**kwargs`` in the class docstring).
         """
         super().__init__()
 
@@ -293,7 +296,6 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
         self._edge_pyg_kword = f"edge_{pyg_kword}"
 
         self._lazy = lazy  # whether or not orbit paritions should be computet on instance creation or first call to forward
-        self._dtype = dtype
 
         self._precomputed = False
         self._substructure_orbits: (
@@ -595,16 +597,29 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
         # final step: turn back into pyg.data.Data object:
         data_pyg = nx_to_pyg(data_nx)
 
+        # reference dtype for the encodings: match the node features. TopoBench
+        # stores features under `x_0` (leaving `x` unset), so fall back
+        # `x` -> `x_0` -> default float dtype rather than assuming `data.x`
+        # exists.
+        feature_dtype = None
+        for kw in ("x", "x_0"):
+            feat = data_pyg.get(kw, None)
+            if feat is not None:
+                feature_dtype = feat.dtype
+                break
+        if feature_dtype is None:
+            feature_dtype = torch.get_default_dtype()
+
         # an edgeless (or nodeless) graph produces no corresponding attribute
         # in `from_networkx`, so materialize empty encodings to keep the
         # normalization below well-defined.
         if self._node_pyg_kword not in data_pyg:
             data_pyg[self._node_pyg_kword] = torch.zeros(
-                (0, self._node_channels), dtype=data_pyg.x.dtype
+                (0, self._node_channels), dtype=feature_dtype
             )
         if self._edge_pyg_kword not in data_pyg:
             data_pyg[self._edge_pyg_kword] = torch.zeros(
-                (0, self._edge_channels), dtype=data_pyg.x.dtype
+                (0, self._edge_channels), dtype=feature_dtype
             )
 
         # here we batch-apply the normalization by number of matchings:
@@ -615,20 +630,12 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
             data_pyg[self._edge_pyg_kword] / self._normalization_vector_e
         )
 
-        # we need to ensure dtype consistency
-        if self._dtype is None:
-            data_pyg[self._node_pyg_kword] = data_pyg[self._node_pyg_kword].to(
-                dtype=data_pyg.x.dtype
-            )
-            data_pyg[self._edge_pyg_kword] = data_pyg[self._edge_pyg_kword].to(
-                dtype=data_pyg.x.dtype
-            )
-        else:
-            data_pyg[self._node_pyg_kword] = data_pyg[self._node_pyg_kword].to(
-                dtype=self._dtype
-            )
-            data_pyg[self._edge_pyg_kword] = data_pyg[self._edge_pyg_kword].to(
-                dtype=self._dtype
-            )
+        # ensure the encodings share the node-feature dtype
+        data_pyg[self._node_pyg_kword] = data_pyg[self._node_pyg_kword].to(
+            dtype=feature_dtype
+        )
+        data_pyg[self._edge_pyg_kword] = data_pyg[self._edge_pyg_kword].to(
+            dtype=feature_dtype
+        )
 
         return data_pyg
