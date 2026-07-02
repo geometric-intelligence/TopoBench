@@ -215,18 +215,32 @@ class TestGSNFeatureEncoder:
         assert torch.count_nonzero(out.node_gsn_encodings) == 0
 
     def test_forward_dtype(self):
-        """Encodings default to the node-feature dtype, honor explicit dtype."""
+        """Encodings adopt the node-feature dtype."""
         enc = GSNFeatureEncoder([nx.complete_graph(3)], lazy=False)
         out = enc(triangle_data(dtype=torch.float64))
-        # default: encodings adopt the (round-tripped) node-feature dtype
+        # encodings adopt the (round-tripped) node-feature dtype
         assert out.node_gsn_encodings.dtype == out.x.dtype
         assert out.edge_gsn_encodings.dtype == out.x.dtype
 
-        enc_f16 = GSNFeatureEncoder(
-            [nx.complete_graph(3)], lazy=False, dtype=torch.float16
+    def test_forward_dtype_falls_back_to_x_0(self):
+        """With no `x` (features under `x_0`, as in TopoBench), dtype from x_0.
+
+        The encoder must not crash on a missing ``x`` and must derive the
+        encoding dtype from ``x_0`` instead.
+        """
+        edge_index = torch.tensor(
+            [[0, 1, 1, 2, 0, 2], [1, 0, 2, 1, 2, 0]], dtype=torch.long
         )
-        out16 = enc_f16(triangle_data(dtype=torch.float32))
-        assert out16.node_gsn_encodings.dtype == torch.float16
+        # TopoBench-style graph: node features live under x_0, `x` is unset
+        data = Data(edge_index=edge_index, num_nodes=3)
+        data.x_0 = torch.ones(3, 2)
+        assert getattr(data, "x", None) is None
+
+        enc = GSNFeatureEncoder([nx.complete_graph(3)], lazy=False)
+        out = enc(data)  # would AttributeError if it assumed `data.x` existed
+        # encodings adopt the (round-tripped) x_0 dtype
+        assert out.node_gsn_encodings.dtype == out.x_0.dtype
+        assert out.edge_gsn_encodings.dtype == out.x_0.dtype
 
     def test_lazy_matches_eager(self):
         """Lazy and eager precomputation give identical encodings."""
