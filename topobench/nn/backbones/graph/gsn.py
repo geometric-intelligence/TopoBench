@@ -57,8 +57,9 @@ class GSNGINconcatBaseLayer(ABC, MessagePassing):
         Additional input channels prepended to the MLP input (used by
         edge-mode subclasses). Default is 0.
     mlp_architecture : list of int or None, optional
-        Hidden layer widths for the update MLP. If None, a single linear
-        layer is used.
+        Hidden layer widths for the update MLP. If None, a single hidden
+        layer (width equal to the MLP input width) is used, giving a
+        2-layer MLP.
     initial_eps : float, optional
         Initial value of the epsilon scaling parameter. Default is 0.0.
 
@@ -91,16 +92,21 @@ class GSNGINconcatBaseLayer(ABC, MessagePassing):
         self._initial_eps = initial_eps
         self.edge_dim = edge_dim
 
-        tmp_architecture = [] if mlp_architecture is None else mlp_architecture
+        mlp_input_channels = (
+            self.in_channels
+            + self.in_gsn_channels
+            + self.extra_mlp_in_channel
+            + self.edge_dim
+        )
+        # default to a single hidden layer (i.e. a 2-layer MLP) when the
+        # architecture is unspecified, so the GIN update stays non-linear
+        tmp_architecture = (
+            [mlp_input_channels]
+            if mlp_architecture is None
+            else mlp_architecture
+        )
         self.mlp_architecture = (
-            [
-                self.in_channels
-                + self.in_gsn_channels
-                + self.extra_mlp_in_channel
-                + self.edge_dim
-            ]
-            + tmp_architecture
-            + [self.out_channels]
+            [mlp_input_channels] + tmp_architecture + [self.out_channels]
         )
 
         self.UP = mlp_builder(mlp_dimension_builder(self.mlp_architecture))
@@ -160,8 +166,9 @@ class GSNGINconcatVLayer(GSNGINconcatBaseLayer):
     extra_mlp_in_channel : int, optional
         Additional input channels prepended to the MLP input. Default is 0.
     mlp_architecture : list of int or None, optional
-        Hidden layer widths for the update MLP. If None, a single linear
-        layer is used. Default is None.
+        Hidden layer widths for the update MLP. If None, a single hidden
+        layer (width equal to the MLP input width) is used, giving a
+        2-layer MLP. Default is None.
     initial_eps : float, optional
         Initial value of the epsilon scaling parameter. Default is 0.0.
     """
@@ -264,7 +271,9 @@ class GSNGINconcatELayer(GSNGINconcatBaseLayer):
     train_eps : bool, optional
         If True, epsilon is learnable. Default is False.
     mlp_architecture : list of int or None, optional
-        Hidden layer widths for the update MLP. Default is None.
+        Hidden layer widths for the update MLP. If None, a single hidden
+        layer (width equal to the MLP input width) is used, giving a
+        2-layer MLP. Default is None.
     edge_dim : int, optional
         Dimensionality of the original edge features. If greater than 0, an
         ``edge_attr`` tensor of this width must be supplied to ``forward`` and
@@ -454,7 +463,9 @@ class GSNGINconcatModel(torch.nn.Module):
     width : int
         Hidden layer width for intermediate layers.
     mlp_architecture : list of int or None, optional
-        Hidden layer widths for each layer's update MLP. Default is None.
+        Hidden layer widths for each layer's update MLP. If None, each layer
+        uses a single hidden layer (width equal to its MLP input width),
+        giving a 2-layer MLP. Default is None.
     train_eps : bool, optional
         If True, epsilon is learnable in every layer. Default is False.
     gsn_keyword : str or None, optional
@@ -687,10 +698,12 @@ class GSNMPNNBaselineVLayer(MessagePassing):
         (default), ``in_channels`` is used.
     inner_mlp_architecture : list of int or None, optional
         Hidden layer widths of the inner (message) MLP. If None (default),
-        the inner MLP is a single linear layer.
+        a single hidden layer (width equal to the inner MLP input width) is
+        used, giving a 2-layer MLP.
     outer_mlp_architecture : list of int or None, optional
         Hidden layer widths of the outer (update) MLP. If None (default),
-        the outer MLP is a single linear layer.
+        a single hidden layer (width equal to the outer MLP input width) is
+        used, giving a 2-layer MLP.
 
     Attributes
     ----------
@@ -724,20 +737,27 @@ class GSNMPNNBaselineVLayer(MessagePassing):
 
         # inner MLP: [h^t_v; h^t_u; x_v; x_u, e_uv;] -> message_dim
         # inner MLP: 2xin_channels+edge_channels+2xGSN_channels -> message_dim
-        ima = [] if inner_mlp_architecture is None else inner_mlp_architecture
+        inner_input = 2 * self.in_channels + 2 * self.gsn_channels + edge_dim
+        # default to a single hidden layer (i.e. a 2-layer MLP) when unspecified
         ima = (
-            [2 * self.in_channels + 2 * self.gsn_channels + edge_dim]
-            + ima
-            + [self.message_dim]
+            [inner_input]
+            if inner_mlp_architecture is None
+            else inner_mlp_architecture
         )
+        ima = [inner_input] + ima + [self.message_dim]
         ima = mlp_dimension_builder(ima)
 
         self.inner_mlp = mlp_builder(ima)
 
         # outer MLP: [h^t_v; m^(t+1)_v] -> out
         # outer MLP: [in_features; VARIABLE_WIDTH] -> out_channels
-        oma = [] if outer_mlp_architecture is None else outer_mlp_architecture
-        oma = [self.in_channels + self.message_dim] + oma + [self.out_channels]
+        outer_input = self.in_channels + self.message_dim
+        oma = (
+            [outer_input]
+            if outer_mlp_architecture is None
+            else outer_mlp_architecture
+        )
+        oma = [outer_input] + oma + [self.out_channels]
         oma = mlp_dimension_builder(oma)
 
         self.outer_mlp = mlp_builder(oma)
@@ -847,8 +867,9 @@ class GSNGINVirtualNodeLayerV(MessagePassing):
 
     Attributes
     ----------
-    UP : torch.nn.Linear
-        Update projection applied after the self-plus-neighbour aggregation.
+    UP : torch.nn.Sequential
+        Update MLP (2-layer by default) applied after the self-plus-neighbour
+        aggregation.
     activation_fn : torch.nn.Module
         Instantiated activation used in :meth:`message`.
     """
@@ -867,7 +888,13 @@ class GSNGINVirtualNodeLayerV(MessagePassing):
         self.edge_dim = edge_dim
         self.activation_fn = activation_fn()
 
-        self.UP = torch.nn.Linear(self.d_embed, self.out_channels)
+        # 2-layer MLP update (hidden width = embedding dim) to keep the
+        # update non-linear, consistent with the other GSN layers
+        self.UP = mlp_builder(
+            mlp_dimension_builder(
+                [self.d_embed, self.d_embed, self.out_channels]
+            )
+        )
 
     def forward(
         self,
@@ -970,7 +997,8 @@ class GSNGINVirtualNodeModule(torch.nn.Module):
         ``"gsn_encodings"``.
     G_updater_architecture : list of int or None, optional
         Hidden layer widths for each per-layer virtual-node update MLP. If
-        None, a single linear layer is used. Default is None.
+        None, a single hidden layer of width ``d_embed`` is used, giving a
+        2-layer MLP. Default is None.
 
     Attributes
     ----------
@@ -1033,7 +1061,12 @@ class GSNGINVirtualNodeModule(torch.nn.Module):
             raise NotImplementedError("Edge mode not yet implemented!")
         self._layer_cls = GSNGINVirtualNodeLayerV
 
-        arch = [] if G_updater_architecture is None else G_updater_architecture
+        # default to a single hidden layer (i.e. a 2-layer MLP) when unspecified
+        arch = (
+            [self.d_embed]
+            if G_updater_architecture is None
+            else G_updater_architecture
+        )
         arch = [self.d_embed] + arch + [self.d_embed]
         self.G_updater_MLPs = torch.nn.ModuleList(
             [
