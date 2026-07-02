@@ -316,3 +316,179 @@ class TestVirtualNode:
         batched = module(Batch.from_data_list([g1, g2]))
         solo = module(Batch.from_data_list([g1]))
         assert torch.allclose(batched[:3], solo, atol=1e-5)
+
+
+# --- helpers for the batch-norm / dropout tests --------------------------
+
+
+def _count(module, cls):
+    """Count direct children of ``module`` that are instances of ``cls``."""
+    return sum(1 for m in module if isinstance(m, cls))
+
+
+def two_graph_batch():
+    """A batch of two 3-node graphs (>1 sample so BatchNorm works in train)."""
+    g1 = Data(
+        x=torch.randn(NUM_NODES, IN),
+        edge_index=EDGE_INDEX,
+        node_gsn_encodings=torch.randn(NUM_NODES, GSN),
+    )
+    g2 = Data(
+        x=torch.randn(NUM_NODES, IN),
+        edge_index=EDGE_INDEX,
+        node_gsn_encodings=torch.randn(NUM_NODES, GSN),
+    )
+    return Batch.from_data_list([g1, g2])
+
+
+class TestBatchNormAndDropout:
+    """Tests for the optional BatchNorm / Dropout support."""
+
+    def test_mlp_builder_inserts_bn_and_dropout_on_hidden_only(self):
+        """BN + Dropout land on hidden layers; the output Linear stays raw."""
+        # arch with two hidden layers -> three Linears
+        mlp = mlp_builder(
+            mlp_dimension_builder([4, 8, 8, 6]),
+            batch_norm=True,
+            dropout=0.3,
+        )
+        assert _count(mlp, torch.nn.Linear) == 3
+        # one BN + one Dropout per non-final linear (i.e. per hidden layer)
+        assert _count(mlp, torch.nn.BatchNorm1d) == 2
+        assert _count(mlp, torch.nn.Dropout) == 2
+        # nothing is appended after the final linear
+        assert isinstance(mlp[-1], torch.nn.Linear)
+        # BN precedes its activation; dropout follows it
+        kinds = [type(m).__name__ for m in mlp]
+        assert kinds[:4] == ["Linear", "BatchNorm1d", "ReLU", "Dropout"]
+
+    def test_mlp_builder_defaults_add_nothing(self):
+        """Without the flags the MLP is unchanged (no BN, no Dropout)."""
+        mlp = mlp_builder(mlp_dimension_builder([4, 8, 6]))
+        assert _count(mlp, torch.nn.BatchNorm1d) == 0
+        assert _count(mlp, torch.nn.Dropout) == 0
+
+    def test_zero_dropout_adds_no_dropout_layer(self):
+        """dropout=0.0 must not insert Dropout modules (even with BN on)."""
+        mlp = mlp_builder(
+            mlp_dimension_builder([4, 8, 6]), batch_norm=True, dropout=0.0
+        )
+        assert _count(mlp, torch.nn.Dropout) == 0
+        assert _count(mlp, torch.nn.BatchNorm1d) == 1
+
+    def test_v_layer_threads_flags_into_update_mlp(self):
+        """The concat V layer forwards BN/Dropout into its UP MLP."""
+        layer = GSNGINconcatVLayer(
+            IN, GSN, OUT, batch_norm=True, dropout=0.2
+        )
+        assert _count(layer.UP, torch.nn.BatchNorm1d) == 1
+        assert _count(layer.UP, torch.nn.Dropout) == 1
+
+    def test_e_layer_threads_flags_into_update_mlp(self):
+        """The concat E layer forwards BN/Dropout into its UP MLP."""
+        layer = GSNGINconcatELayer(
+            IN, GSN, OUT, batch_norm=True, dropout=0.2
+        )
+        assert _count(layer.UP, torch.nn.BatchNorm1d) == 1
+        assert _count(layer.UP, torch.nn.Dropout) == 1
+
+    def test_mpnn_baseline_threads_flags_into_both_mlps(self):
+        """The MPNN baseline layer applies BN/Dropout to inner and outer MLPs."""
+        layer = GSNMPNNBaselineVLayer(
+            IN, OUT, GSN, batch_norm=True, dropout=0.2
+        )
+        assert _count(layer.inner_mlp, torch.nn.BatchNorm1d) == 1
+        assert _count(layer.inner_mlp, torch.nn.Dropout) == 1
+        assert _count(layer.outer_mlp, torch.nn.BatchNorm1d) == 1
+        assert _count(layer.outer_mlp, torch.nn.Dropout) == 1
+
+    def test_vn_layer_threads_flags_into_update_mlp(self):
+        """The VN layer forwards BN/Dropout into its UP MLP."""
+        layer = GSNGINVirtualNodeLayerV(
+            OUT, common_embedding_dim=IN, batch_norm=True, dropout=0.2
+        )
+        assert _count(layer.UP, torch.nn.BatchNorm1d) == 1
+        assert _count(layer.UP, torch.nn.Dropout) == 1
+
+    def test_concat_model_between_layer_norms(self):
+        """Intermediate layers get BatchNorm; the final layer gets Identity."""
+        model = GSNGINconcatModel(
+            "node", 3, IN, GSN, OUT, width=8, batch_norm=True, dropout=0.2
+        )
+        norms = list(model._between_layer_norms)
+        assert len(norms) == 3
+        assert all(
+            isinstance(n, torch.nn.BatchNorm1d) for n in norms[:-1]
+        )
+        # last layer output is left raw for the downstream head
+        assert isinstance(norms[-1], torch.nn.Identity)
+
+    def test_concat_model_defaults_are_identity(self):
+        """With the flags off, every between-layer norm is an Identity."""
+        model = GSNGINconcatModel("node", 3, IN, GSN, OUT, width=8)
+        assert all(
+            isinstance(n, torch.nn.Identity)
+            for n in model._between_layer_norms
+        )
+
+    def test_vn_module_between_layer_norms_and_g_updaters(self):
+        """VN module: intermediate BN, Identity on the last, BN in G-updaters."""
+        module = GSNGINVirtualNodeModule(
+            "node",
+            3,
+            IN,
+            OUT,
+            GSN,
+            common_embedding_dim=8,
+            batch_norm=True,
+            dropout=0.2,
+        )
+        norms = list(module._between_layer_norms)
+        assert all(isinstance(n, torch.nn.BatchNorm1d) for n in norms[:-1])
+        assert isinstance(norms[-1], torch.nn.Identity)
+        # the virtual-node update MLPs also pick up the flags
+        assert all(
+            _count(mlp, torch.nn.BatchNorm1d) == 1
+            for mlp in module.G_updater_MLPs
+        )
+
+    def test_concat_model_forward_train_mode_with_batch(self):
+        """A BN/Dropout concat model runs in train mode on a real batch."""
+        model = GSNGINconcatModel(
+            "node", 3, IN, GSN, OUT, width=8, batch_norm=True, dropout=0.2
+        )
+        model.train()
+        out = model(two_graph_batch())
+        assert out.shape == (2 * NUM_NODES, OUT)
+
+    def test_vn_module_forward_train_mode_with_batch(self):
+        """A BN/Dropout VN module runs in train mode on a real batch."""
+        module = GSNGINVirtualNodeModule(
+            "node",
+            3,
+            IN,
+            OUT,
+            GSN,
+            common_embedding_dim=8,
+            batch_norm=True,
+            dropout=0.2,
+        )
+        module.train()
+        out = module(two_graph_batch())
+        assert out.shape == (2 * NUM_NODES, OUT)
+
+    def test_dropout_active_in_train_inactive_in_eval(self):
+        """Dropout perturbs outputs in train mode but is a no-op in eval."""
+        torch.manual_seed(0)
+        model = GSNGINconcatModel(
+            "node", 3, IN, GSN, OUT, width=8, dropout=0.5
+        )
+        batch = two_graph_batch()
+
+        # eval: deterministic across repeated calls
+        model.eval()
+        assert torch.allclose(model(batch), model(batch))
+
+        # train: two forward passes differ because dropout masks differ
+        model.train()
+        assert not torch.allclose(model(batch), model(batch))

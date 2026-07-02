@@ -62,6 +62,12 @@ class GSNGINconcatBaseLayer(ABC, MessagePassing):
         2-layer MLP.
     initial_eps : float, optional
         Initial value of the epsilon scaling parameter. Default is 0.0.
+    batch_norm : bool, optional
+        If True, apply batch normalization on the hidden layers of the
+        update MLP. Default is False.
+    dropout : float, optional
+        Dropout probability applied on the hidden layers of the update MLP.
+        Default is 0.0 (no dropout).
 
     Attributes
     ----------
@@ -81,6 +87,8 @@ class GSNGINconcatBaseLayer(ABC, MessagePassing):
         extra_mlp_in_channel: int = 0,
         mlp_architecture: list[int] | None = None,
         initial_eps: float = 0.0,
+        batch_norm: bool = False,
+        dropout: float = 0.0,
     ):
         super().__init__(aggr="sum")
 
@@ -91,6 +99,8 @@ class GSNGINconcatBaseLayer(ABC, MessagePassing):
         self.extra_mlp_in_channel: int = extra_mlp_in_channel
         self._initial_eps = initial_eps
         self.edge_dim = edge_dim
+        self.batch_norm = batch_norm
+        self.dropout = dropout
 
         mlp_input_channels = (
             self.in_channels
@@ -109,7 +119,11 @@ class GSNGINconcatBaseLayer(ABC, MessagePassing):
             [mlp_input_channels] + tmp_architecture + [self.out_channels]
         )
 
-        self.UP = mlp_builder(mlp_dimension_builder(self.mlp_architecture))
+        self.UP = mlp_builder(
+            mlp_dimension_builder(self.mlp_architecture),
+            batch_norm=self.batch_norm,
+            dropout=self.dropout,
+        )
 
         if self.train_eps:
             self.eps = torch.nn.Parameter(torch.tensor(self._initial_eps))
@@ -171,6 +185,12 @@ class GSNGINconcatVLayer(GSNGINconcatBaseLayer):
         2-layer MLP. Default is None.
     initial_eps : float, optional
         Initial value of the epsilon scaling parameter. Default is 0.0.
+    batch_norm : bool, optional
+        If True, apply batch normalization on the hidden layers of the
+        update MLP. Default is False.
+    dropout : float, optional
+        Dropout probability applied on the hidden layers of the update MLP.
+        Default is 0.0 (no dropout).
     """
 
     def __init__(
@@ -183,6 +203,8 @@ class GSNGINconcatVLayer(GSNGINconcatBaseLayer):
         extra_mlp_in_channel=0,
         mlp_architecture=None,
         initial_eps=0.0,
+        batch_norm=False,
+        dropout=0.0,
     ):
         """
         Initialize the node-mode GSN-GIN layer.
@@ -211,6 +233,8 @@ class GSNGINconcatVLayer(GSNGINconcatBaseLayer):
             extra_mlp_in_channel=extra_mlp_in_channel,
             mlp_architecture=mlp_architecture,
             initial_eps=initial_eps,
+            batch_norm=batch_norm,
+            dropout=dropout,
         )
 
     def forward(
@@ -278,6 +302,12 @@ class GSNGINconcatELayer(GSNGINconcatBaseLayer):
         Dimensionality of the original edge features. If greater than 0, an
         ``edge_attr`` tensor of this width must be supplied to ``forward`` and
         is concatenated into each message. Default is 0 (no edge features).
+    batch_norm : bool, optional
+        If True, apply batch normalization on the hidden layers of the
+        update MLP. Default is False.
+    dropout : float, optional
+        Dropout probability applied on the hidden layers of the update MLP.
+        Default is 0.0 (no dropout).
 
     Notes
     -----
@@ -294,6 +324,8 @@ class GSNGINconcatELayer(GSNGINconcatBaseLayer):
         train_eps=False,
         mlp_architecture=None,
         edge_dim: int = 0,
+        batch_norm: bool = False,
+        dropout: float = 0.0,
     ):
         super().__init__(
             in_channels=in_channels,
@@ -303,6 +335,8 @@ class GSNGINconcatELayer(GSNGINconcatBaseLayer):
             extra_mlp_in_channel=1,
             mlp_architecture=mlp_architecture,
             edge_dim=edge_dim,
+            batch_norm=batch_norm,
+            dropout=dropout,
         )
 
     def forward(
@@ -475,11 +509,23 @@ class GSNGINconcatModel(torch.nn.Module):
         Dimensionality of the original edge features (``data.edge_attr``) fed
         to every layer. Only supported in edge mode; must be 0 in node mode.
         Default is 0.
+    batch_norm : bool, optional
+        If True, apply batch normalization inside every layer's update MLP
+        and to the intermediate node representations between message-passing
+        layers. Default is False.
+    dropout : float, optional
+        Dropout probability applied inside every layer's update MLP and to the
+        intermediate node representations between message-passing layers.
+        Default is 0.0 (no dropout).
 
     Attributes
     ----------
     _layers : torch.nn.ModuleList
         Sequence of GSN-GIN message-passing layers.
+    _between_layer_norms : torch.nn.ModuleList
+        Per-layer batch-norm modules applied to the intermediate node
+        representations (identity modules for the final layer and whenever
+        ``batch_norm`` is False).
 
     Raises
     ------
@@ -500,6 +546,8 @@ class GSNGINconcatModel(torch.nn.Module):
         train_eps: bool = False,
         gsn_keyword: str | None = None,
         edge_dim: int = 0,
+        batch_norm: bool = False,
+        dropout: float = 0.0,
     ):
         super().__init__()
 
@@ -533,8 +581,11 @@ class GSNGINconcatModel(torch.nn.Module):
         self.train_eps: bool = train_eps
         self.mlp_architecture = mlp_architecture
         self.edge_dim = edge_dim
+        self.batch_norm = batch_norm
+        self.dropout = dropout
 
         _layers = []
+        _between_layer_norms = []
 
         for layer_index in range(self.num_layers):
             ic: int = -1
@@ -559,10 +610,24 @@ class GSNGINconcatModel(torch.nn.Module):
                     train_eps=self.train_eps,
                     mlp_architecture=mlp_architecture,
                     edge_dim=edge_dim,
+                    batch_norm=batch_norm,
+                    dropout=dropout,
                 )
             )
 
+            # batch-norm the intermediate representations between layers; the
+            # final layer output is left raw for the downstream readout / head
+            is_last = layer_index == self.num_layers - 1
+            _between_layer_norms.append(
+                torch.nn.BatchNorm1d(oc)
+                if (self.batch_norm and not is_last)
+                else torch.nn.Identity()
+            )
+
         self._layers = torch.nn.ModuleList(_layers)
+        self._between_layer_norms = torch.nn.ModuleList(_between_layer_norms)
+        # dropout on the intermediate node representations between layers
+        self._between_layer_dropout = torch.nn.Dropout(self.dropout)
 
     def forward(self, data: Data) -> torch.Tensor:
         """
@@ -592,13 +657,20 @@ class GSNGINconcatModel(torch.nn.Module):
         if hasattr(data, "edge_attr"):
             edge_attr = data.edge_attr
 
-        for layer in self._layers:
+        for lidx, layer in enumerate(self._layers):
             x = layer(
                 edge_index=edge_index,
                 x=x,
                 gsn_embeddings=gsn_embeddings,
                 edge_attr=edge_attr,
             )
+
+            # normalize / drop the intermediate representations; both are
+            # no-ops on the final layer (Identity norm, and dropout skipped)
+            # so the model output is left raw for the downstream head
+            if lidx < len(self._layers) - 1:
+                x = self._between_layer_norms[lidx](x)
+                x = self._between_layer_dropout(x)
 
         return x
 
@@ -629,15 +701,21 @@ def mlp_dimension_builder(layer_dims: list[int]) -> list[tuple[int, int]]:
 
 
 def mlp_builder(
-    layer_dims: list[tuple[int, int]], activation_fn=torch.nn.ReLU
+    layer_dims: list[tuple[int, int]],
+    activation_fn=torch.nn.ReLU,
+    batch_norm: bool = False,
+    dropout: float = 0.0,
 ) -> torch.nn.Module:
     """
     Build a sequential MLP from per-layer (in, out) channel pairs.
 
     Stacks one ``torch.nn.Linear`` per entry in ``layer_dims``, inserting
-    an activation function between consecutive linear layers. No activation
-    is appended after the final linear layer, so the MLP output is
-    unbounded.
+    (optionally) batch normalization, an activation function, and
+    (optionally) dropout between consecutive linear layers. Following the
+    usual GIN convention, batch normalization is placed after the linear
+    layer and before the activation, and dropout after the activation. None
+    of these are appended after the final linear layer, so the MLP output is
+    unbounded and carries the raw layer statistics.
 
     Parameters
     ----------
@@ -647,20 +725,31 @@ def mlp_builder(
     activation_fn : type of torch.nn.Module, optional
         Activation module class instantiated between consecutive linear
         layers. Default is ``torch.nn.ReLU``.
+    batch_norm : bool, optional
+        If True, insert a ``torch.nn.BatchNorm1d`` after every non-final
+        linear layer (before its activation). Default is False.
+    dropout : float, optional
+        Dropout probability applied after every non-final activation. If 0
+        (default), no dropout layers are added.
 
     Returns
     -------
     torch.nn.Sequential
-        The assembled MLP, with activations between (but not after) the
-        linear layers.
+        The assembled MLP, with batch norm / activations / dropout between
+        (but not after) the linear layers.
     """
     model = torch.nn.Sequential()
     for lidx, (ic, oc) in enumerate(layer_dims):
         model.append(torch.nn.Linear(ic, oc))
 
-        # check if we are in the last layer already, then dont append activation fn
+        # check if we are in the last layer already, then dont append the
+        # batch norm / activation / dropout block
         if lidx < len(layer_dims) - 1:
+            if batch_norm:
+                model.append(torch.nn.BatchNorm1d(oc))
             model.append(activation_fn())
+            if dropout > 0.0:
+                model.append(torch.nn.Dropout(dropout))
 
     return model
 
@@ -704,6 +793,12 @@ class GSNMPNNBaselineVLayer(MessagePassing):
         Hidden layer widths of the outer (update) MLP. If None (default),
         a single hidden layer (width equal to the outer MLP input width) is
         used, giving a 2-layer MLP.
+    batch_norm : bool, optional
+        If True, apply batch normalization on the hidden layers of both the
+        inner (message) and outer (update) MLPs. Default is False.
+    dropout : float, optional
+        Dropout probability applied on the hidden layers of both the inner
+        and outer MLPs. Default is 0.0 (no dropout).
 
     Attributes
     ----------
@@ -724,6 +819,8 @@ class GSNMPNNBaselineVLayer(MessagePassing):
         message_dim: int | None = None,
         inner_mlp_architecture: list[int] | None = None,
         outer_mlp_architecture: list[int] | None = None,
+        batch_norm: bool = False,
+        dropout: float = 0.0,
     ):
         super().__init__(aggr="sum")
 
@@ -732,6 +829,8 @@ class GSNMPNNBaselineVLayer(MessagePassing):
         self.gsn_channels = gsn_channels
         self.edge_dim = edge_dim
         self.message_dim = in_channels if message_dim is None else message_dim
+        self.batch_norm = batch_norm
+        self.dropout = dropout
 
         # here we create the inner MLP for creating the messages that then summed
 
@@ -747,7 +846,9 @@ class GSNMPNNBaselineVLayer(MessagePassing):
         ima = [inner_input] + ima + [self.message_dim]
         ima = mlp_dimension_builder(ima)
 
-        self.inner_mlp = mlp_builder(ima)
+        self.inner_mlp = mlp_builder(
+            ima, batch_norm=self.batch_norm, dropout=self.dropout
+        )
 
         # outer MLP: [h^t_v; m^(t+1)_v] -> out
         # outer MLP: [in_features; VARIABLE_WIDTH] -> out_channels
@@ -760,7 +861,9 @@ class GSNMPNNBaselineVLayer(MessagePassing):
         oma = [outer_input] + oma + [self.out_channels]
         oma = mlp_dimension_builder(oma)
 
-        self.outer_mlp = mlp_builder(oma)
+        self.outer_mlp = mlp_builder(
+            oma, batch_norm=self.batch_norm, dropout=self.dropout
+        )
 
     def forward(
         self,
@@ -864,6 +967,12 @@ class GSNGINVirtualNodeLayerV(MessagePassing):
     activation_fn : type of torch.nn.Module, optional
         Activation class applied inside the message function. Default is
         ``torch.nn.ReLU``.
+    batch_norm : bool, optional
+        If True, apply batch normalization on the hidden layer of the update
+        MLP. Default is False.
+    dropout : float, optional
+        Dropout probability applied on the hidden layer of the update MLP.
+        Default is 0.0 (no dropout).
 
     Attributes
     ----------
@@ -880,6 +989,8 @@ class GSNGINVirtualNodeLayerV(MessagePassing):
         common_embedding_dim: int,
         edge_dim: int = 0,
         activation_fn=torch.nn.ReLU,
+        batch_norm: bool = False,
+        dropout: float = 0.0,
     ):
         super().__init__(aggr="sum")
 
@@ -887,13 +998,17 @@ class GSNGINVirtualNodeLayerV(MessagePassing):
         self.d_embed = common_embedding_dim
         self.edge_dim = edge_dim
         self.activation_fn = activation_fn()
+        self.batch_norm = batch_norm
+        self.dropout = dropout
 
         # 2-layer MLP update (hidden width = embedding dim) to keep the
         # update non-linear, consistent with the other GSN layers
         self.UP = mlp_builder(
             mlp_dimension_builder(
                 [self.d_embed, self.d_embed, self.out_channels]
-            )
+            ),
+            batch_norm=self.batch_norm,
+            dropout=self.dropout,
         )
 
     def forward(
@@ -999,6 +1114,14 @@ class GSNGINVirtualNodeModule(torch.nn.Module):
         Hidden layer widths for each per-layer virtual-node update MLP. If
         None, a single hidden layer of width ``d_embed`` is used, giving a
         2-layer MLP. Default is None.
+    batch_norm : bool, optional
+        If True, apply batch normalization inside every layer's update MLP
+        and virtual-node update MLP, and to the intermediate node
+        representations between message-passing layers. Default is False.
+    dropout : float, optional
+        Dropout probability applied inside every layer's update MLP and
+        virtual-node update MLP, and to the intermediate node representations
+        between message-passing layers. Default is 0.0 (no dropout).
 
     Attributes
     ----------
@@ -1011,6 +1134,10 @@ class GSNGINVirtualNodeModule(torch.nn.Module):
         Per-layer structural-count projections ``W_V^t``.
     _layers : torch.nn.ModuleList
         Per-layer :class:`GSNGINVirtualNodeLayerV` modules.
+    _between_layer_norms : torch.nn.ModuleList
+        Per-layer batch-norm modules applied to the intermediate node
+        representations (identity modules for the final layer and whenever
+        ``batch_norm`` is False).
     G_updater_MLPs : torch.nn.ModuleList
         Per-layer virtual-node update MLPs (``num_layers - 1`` of them).
 
@@ -1031,6 +1158,8 @@ class GSNGINVirtualNodeModule(torch.nn.Module):
         edge_dim: int = 0,
         gsn_kword: str = "gsn_encodings",
         G_updater_architecture: list[int] | None = None,
+        batch_norm: bool = False,
+        dropout: float = 0.0,
     ):
         super().__init__()
 
@@ -1041,6 +1170,8 @@ class GSNGINVirtualNodeModule(torch.nn.Module):
         self.in_gsn_channels = gsn_channels
         self.edge_dim = edge_dim
         self.out_channels = out_channels
+        self.batch_norm = batch_norm
+        self.dropout = dropout
 
         self.d_embed: int = (
             self.in_channels
@@ -1070,13 +1201,18 @@ class GSNGINVirtualNodeModule(torch.nn.Module):
         arch = [self.d_embed] + arch + [self.d_embed]
         self.G_updater_MLPs = torch.nn.ModuleList(
             [
-                mlp_builder(mlp_dimension_builder(arch))
+                mlp_builder(
+                    mlp_dimension_builder(arch),
+                    batch_norm=self.batch_norm,
+                    dropout=self.dropout,
+                )
                 for _ in range(self.num_layers - 1)
             ]
         )
 
         _layers: list[GSNGINVirtualNodeLayerV] = []
         _gsn_encoders: list[torch.nn.Linear] = []
+        _between_layer_norms: list[torch.nn.Module] = []
 
         for layer_index in range(self.num_layers):
             oc: int = -1
@@ -1098,11 +1234,25 @@ class GSNGINVirtualNodeModule(torch.nn.Module):
                     out_channels=oc,
                     common_embedding_dim=self.d_embed,
                     edge_dim=edge_dim,
+                    batch_norm=self.batch_norm,
+                    dropout=self.dropout,
                 )
+            )
+
+            # batch-norm the intermediate representations between layers; the
+            # final layer output is left raw for the downstream readout / head
+            is_last = layer_index == self.num_layers - 1
+            _between_layer_norms.append(
+                torch.nn.BatchNorm1d(oc)
+                if (self.batch_norm and not is_last)
+                else torch.nn.Identity()
             )
 
         self._gsn_encoders = torch.nn.ModuleList(_gsn_encoders)
         self._layers = torch.nn.ModuleList(_layers)
+        self._between_layer_norms = torch.nn.ModuleList(_between_layer_norms)
+        # dropout on the intermediate node representations between layers
+        self._between_layer_dropout = torch.nn.Dropout(self.dropout)
 
     def forward(self, data: Data) -> torch.Tensor:
         """
@@ -1169,5 +1319,12 @@ class GSNGINVirtualNodeModule(torch.nn.Module):
                 )
 
             x = layer(edge_index=edge_index, x=x, edge_attr=edge_attr)
+
+            # normalize / drop the intermediate representations; both are
+            # no-ops on the final layer (Identity norm, and dropout skipped)
+            # so the model output is left raw for the downstream head
+            if lidx < len(self._layers) - 1:
+                x = self._between_layer_norms[lidx](x)
+                x = self._between_layer_dropout(x)
 
         return x
