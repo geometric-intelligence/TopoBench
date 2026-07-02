@@ -25,7 +25,6 @@ from abc import ABC, abstractmethod
 from typing import Literal
 
 import torch
-from torch_geometric.data import Data
 from torch_geometric.nn import MessagePassing, global_add_pool
 from torch_geometric.typing import OptTensor, Tensor
 from torch_geometric.utils import add_self_loops, remove_self_loops
@@ -479,8 +478,9 @@ class GSNGINconcatModel(torch.nn.Module):
     Multi-layer GSN-GIN model with concatenated structural encodings.
 
     Stacks ``GSNGINconcatVLayer`` or ``GSNGINconcatELayer`` layers depending on
-    ``mode``. Structural encodings are read once from the input Data object and
-    passed unchanged to every layer.
+    ``mode``. ``forward`` takes tensors (``edge_index``, ``x``,
+    ``gsn_embeddings``, ...) directly, matching the per-layer signature; the
+    structural encodings are passed unchanged to every layer.
 
     Parameters
     ----------
@@ -503,7 +503,9 @@ class GSNGINconcatModel(torch.nn.Module):
     train_eps : bool, optional
         If True, epsilon is learnable in every layer. Default is False.
     gsn_keyword : str or None, optional
-        Attribute name on the Data object holding GSN encodings. Defaults to
+        Name under which a caller/wrapper can locate the GSN encodings on a
+        batch object; stored as ``self.gsn_kword`` but not used inside
+        ``forward`` (which receives the encodings as a tensor). Defaults to
         ``'node_gsn_encodings'`` or ``'edge_gsn_encodings'`` based on ``mode``.
     edge_dim : int, optional
         Dimensionality of the original edge features (``data.edge_attr``) fed
@@ -629,34 +631,42 @@ class GSNGINconcatModel(torch.nn.Module):
         # dropout on the intermediate node representations between layers
         self._between_layer_dropout = torch.nn.Dropout(self.dropout)
 
-    def forward(self, data: Data) -> torch.Tensor:
+    def forward(
+        self,
+        edge_index: torch.Tensor,
+        x: torch.Tensor,
+        gsn_embeddings: torch.Tensor,
+        edge_attr: torch.Tensor | None = None,
+        batch: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         """
         Run a full forward pass through all message-passing layers.
 
+        The argument order mirrors the per-layer ``forward`` so the model is a
+        drop-in tensor-in/tensor-out stack; pulling the right fields off a
+        ``Data``/batch object is the caller's (e.g. the wrapper's) job.
+
         Parameters
         ----------
-        data : torch_geometric.data.Data
-            Input graph containing node features ``data.x``, edge connectivity
-            ``data.edge_index``, and GSN encodings at ``data[gsn_keyword]``.
-            When present, ``data.edge_attr`` is forwarded to every layer as the
-            original edge features (relevant only in edge mode with
-            ``edge_dim > 0``).
+        edge_index : torch.Tensor of shape (2, E)
+            Graph connectivity in COO format.
+        x : torch.Tensor of shape (N, in_feature_channels)
+            Input node features.
+        gsn_embeddings : torch.Tensor
+            GSN structural encodings; node-level ``(N, in_gsn_channels)`` in
+            node mode, edge-level ``(E, in_gsn_channels)`` in edge mode.
+        edge_attr : torch.Tensor of shape (E, edge_dim) or None, optional
+            Original edge features forwarded to every layer (relevant only in
+            edge mode with ``edge_dim > 0``). Default is None.
+        batch : torch.Tensor or None, optional
+            Node-to-graph assignment. Accepted for interface parity with the
+            other GSN models but unused here. Default is None.
 
         Returns
         -------
         torch.Tensor of shape (N, out_channels)
             Node representations after all message-passing layers.
         """
-        x, edge_index, gsn_embeddings = (
-            data.x,
-            data.edge_index,
-            data[self.gsn_kword],
-        )
-
-        edge_attr: torch.Tensor | None = None
-        if hasattr(data, "edge_attr"):
-            edge_attr = data.edge_attr
-
         for lidx, layer in enumerate(self._layers):
             x = layer(
                 edge_index=edge_index,
@@ -1107,9 +1117,10 @@ class GSNGINVirtualNodeModule(torch.nn.Module):
         ``data.edge_attr`` is projected into ``d_embed`` and fed to every
         layer. Default is 0.
     gsn_kword : str, optional
-        Base name of the GSN encoding attribute on the Data object; the
-        attribute read is ``f"{mode}_{gsn_kword}"``. Default is
-        ``"gsn_encodings"``.
+        Base name under which a caller/wrapper can locate the GSN encodings on
+        a batch object; stored as ``self.gsn_kword = f"{mode}_{gsn_kword}"`` but
+        not used inside ``forward`` (which receives the encodings as a tensor).
+        Default is ``"gsn_encodings"``.
     G_updater_architecture : list of int or None, optional
         Hidden layer widths for each per-layer virtual-node update MLP. If
         None, a single hidden layer of width ``d_embed`` is used, giving a
@@ -1254,17 +1265,35 @@ class GSNGINVirtualNodeModule(torch.nn.Module):
         # dropout on the intermediate node representations between layers
         self._between_layer_dropout = torch.nn.Dropout(self.dropout)
 
-    def forward(self, data: Data) -> torch.Tensor:
+    def forward(
+        self,
+        edge_index: torch.Tensor,
+        x: torch.Tensor,
+        gsn_embeddings: torch.Tensor,
+        edge_attr: torch.Tensor | None = None,
+        batch: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         """
         Run a full GIN+VN forward pass over all layers.
 
+        The argument order mirrors the per-layer ``forward``; pulling the right
+        fields off a ``Data``/batch object is the caller's (e.g. the wrapper's)
+        job.
+
         Parameters
         ----------
-        data : torch_geometric.data.Data
-            Input graph with node features ``data.x``, connectivity
-            ``data.edge_index``, GSN encodings at ``data[f"{mode}_{gsn_kword}"]``,
-            and optionally ``data.batch`` (node-to-graph assignment) and
-            ``data.edge_attr`` (required when ``edge_dim > 0``).
+        edge_index : torch.Tensor of shape (2, E)
+            Graph connectivity in COO format.
+        x : torch.Tensor of shape (N, in_channels)
+            Input node features.
+        gsn_embeddings : torch.Tensor of shape (N, gsn_channels)
+            Per-node GSN structural encodings.
+        edge_attr : torch.Tensor of shape (E, edge_dim) or None, optional
+            Original edge features; required when ``edge_dim > 0`` and must be
+            absent otherwise. Default is None.
+        batch : torch.Tensor of shape (N,) or None, optional
+            Node-to-graph assignment used to keep the virtual node per-graph.
+            If None, all nodes are treated as a single graph. Default is None.
 
         Returns
         -------
@@ -1274,23 +1303,15 @@ class GSNGINVirtualNodeModule(torch.nn.Module):
         Raises
         ------
         RuntimeError
-            If ``data.edge_attr`` is present while ``edge_dim == 0``.
+            If ``edge_attr`` is present while ``edge_dim == 0``.
         """
-        edge_index, x, gsn_encodings = (
-            data.edge_index,
-            data.x,
-            data[self.gsn_kword],
-        )
-
         device = x.device
 
         num_nodes = x.size(0)
 
-        batch = getattr(data, "batch", None)
         if batch is None:
             batch = torch.zeros(num_nodes, dtype=torch.long, device=device)
 
-        edge_attr: torch.Tensor | None = getattr(data, "edge_attr", None)
         if (edge_attr is not None) and (self.edge_dim == 0):
             raise RuntimeError("'edge_attr' passed with 'edge_dim=0',")
 
@@ -1310,7 +1331,7 @@ class GSNGINVirtualNodeModule(torch.nn.Module):
         for lidx, layer in enumerate(self._layers):
             big_G = small_G[batch]
 
-            x = x + self._gsn_encoders[lidx](gsn_encodings) + big_G
+            x = x + self._gsn_encoders[lidx](gsn_embeddings) + big_G
 
             if lidx < len(self._layers) - 1:
                 # now we need to update the virtual nodes:
