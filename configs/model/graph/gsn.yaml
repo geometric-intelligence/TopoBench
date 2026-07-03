@@ -34,7 +34,9 @@ backbone:
   _target_: topobench.nn.backbones.graph.gsn.GSNGINVirtualNodeModule
   mode: node
   num_layers: 4
-  in_channels: ${dataset.parameters.num_features}
+  # num_features is a list [node_features, edge_features]; the backbone
+  # projects the raw node features, so take the node-feature dim (index 0).
+  in_channels: ${dataset.parameters.num_features[0]}
   gsn_channels: 11 # number of node orbit channels for the substructures above
   out_channels: ${model.feature_encoder.out_channels}
   batch_norm: true
