@@ -1313,7 +1313,7 @@ class GSNGINVirtualNodeModule(torch.nn.Module):
             batch = torch.zeros(num_nodes, dtype=torch.long, device=device)
 
         if (edge_attr is not None) and (self.edge_dim == 0):
-            raise RuntimeError("'edge_attr' passed with 'edge_dim=0',")
+            edge_attr = None
 
         num_graphs: int = int(batch.max().item()) + 1
 
