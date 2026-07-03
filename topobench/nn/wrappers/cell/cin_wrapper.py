@@ -1,8 +1,8 @@
 """Wrapper for the CIN (Cell Isomorphism Network) backbone.
 
-This wrapper is a new sibling of
+This wrapper is a new variant of
 ``topobench.nn.wrappers.cell.cwn_wrapper.CWNWrapper`` (not a modification of
-it), needed because the CIN backbone has different argument semantics from
+it), because the CIN backbone has different argument semantics from
 the existing (TopoModelX-sourced) CWN backbone:
 
 Difference 1 — ``adjacency_0`` must be genuine node-level upper-adjacency
@@ -27,11 +27,6 @@ Difference 2 — transposition is handled inside the backbone
     ``CINWrapper`` passes ``batch.incidence_1`` unmodified; ``CIN`` applies
     ``B1`` or ``B1^T`` internally per message type via
     ``_incidence_aggregate(transpose=...)``.
-
-References
-----------
-Bodnar et al. (2021). Weisfeiler and Lehman Go Cellular: CW Networks.
-NeurIPS 2021. https://arxiv.org/abs/2106.12575
 """
 
 from topobench.nn.wrappers.base import AbstractWrapper
