@@ -20,6 +20,7 @@ backbone:
   out_channels: ${model.feature_encoder.out_channels}
   num_layers: 2
   dropout: 0.5
+  max_upper_degree: 64
 
 backbone_wrapper:
   _target_: topobench.nn.wrappers.DirSNNWrapper
