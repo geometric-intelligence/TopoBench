@@ -1,6 +1,6 @@
 """Wrapper for the CIN (Cell Isomorphism Network) backbone.
 
-This wrapper is a new variant of
+This wrapper is a new version of
 ``topobench.nn.wrappers.cell.cwn_wrapper.CWNWrapper`` (not a modification of
 it), because the CIN backbone has different argument semantics from
 the existing (TopoModelX-sourced) CWN backbone:
