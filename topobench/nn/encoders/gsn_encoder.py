@@ -597,6 +597,17 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
         # final step: turn back into pyg.data.Data object:
         data_pyg = nx_to_pyg(data_nx)
 
+        # the networkx round-trip rebuilds everything on CPU; remember the
+        # original batch device so the result can be moved back. Otherwise a
+        # CPU encoding fed into an on-device backbone raises e.g.
+        # "Placeholder storage has not been allocated on MPS device!".
+        ref_device = None
+        for kw in ("x", "x_0", "edge_index"):
+            t = data.get(kw, None)
+            if t is not None:
+                ref_device = t.device
+                break
+
         # reference dtype for the encodings: match the node features. TopoBench
         # stores features under `x_0` (leaving `x` unset), so fall back
         # `x` -> `x_0` -> default float dtype rather than assuming `data.x`
@@ -637,5 +648,10 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
         data_pyg[self._edge_pyg_kword] = data_pyg[self._edge_pyg_kword].to(
             dtype=feature_dtype
         )
+
+        # move the reconstructed graph back onto the original batch's device
+        # (the round-trip above produced CPU tensors)
+        if ref_device is not None:
+            data_pyg = data_pyg.to(ref_device)
 
         return data_pyg
