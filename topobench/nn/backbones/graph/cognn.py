@@ -48,6 +48,16 @@ def weighted_aggregate(x, edge_index, num_nodes, edge_weight=None, aggr="sum"):
     -------
     torch.Tensor
         Aggregated messages of shape [num_nodes, channels].
+
+    Notes
+    -----
+    For ``aggr="mean"`` the weighted messages are averaged over the *full*
+    in-degree of each node, i.e. edges gated to weight 0 still count in
+    the denominator. This deliberately reproduces the original Co-GNN
+    implementation (``models/layers.py``: messages are scaled by
+    ``edge_weight`` inside ``message()`` and then reduced with PyG's
+    standard ``aggr='mean'``), which is the exact MeanGNN (:math:`\mu`)
+    semantics used to produce the results reported in the paper.
     """
     messages = x[edge_index[0]]
     if edge_weight is not None:

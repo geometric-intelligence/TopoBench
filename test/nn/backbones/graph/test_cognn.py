@@ -210,6 +210,32 @@ def testWeightedConvs(random_graph_input):
     assert torch.allclose(out_blocked, out_manual, atol=1e-6)
 
 
+def testWeightedAggregate_mean_gating():
+    """Regression test for mean aggregation with 0/1 action gates.
+
+    Mirrors the original Co-GNN implementation (``models/layers.py``):
+    messages are scaled by the edge weight and then reduced with a
+    standard mean over the full in-degree, so gated (weight-0) edges
+    contribute zeros to the numerator but still count in the
+    denominator.
+    """
+    from topobench.nn.backbones.graph.cognn import weighted_aggregate
+
+    x = torch.tensor([[2.0, 4.0], [6.0, 8.0], [0.0, 0.0]])
+    # Two edges into node 2: one active (from node 0), one gated
+    # (from node 1).
+    edge_index = torch.tensor([[0, 1], [2, 2]])
+    edge_weight = torch.tensor([1.0, 0.0])
+    out = weighted_aggregate(
+        x, edge_index, num_nodes=3, edge_weight=edge_weight, aggr="mean"
+    )
+    # Reference semantics: (1*x_0 + 0*x_1) / in_degree(2) = x_0 / 2.
+    assert torch.allclose(out[2], x[0] / 2)
+    # Nodes without incoming edges aggregate to zero.
+    assert torch.equal(out[0], torch.zeros(2))
+    assert torch.equal(out[1], torch.zeros(2))
+
+
 def test_build_conv_layer_invalid():
     """Test that an unsupported convolution type raises a ValueError."""
     with pytest.raises(ValueError):
