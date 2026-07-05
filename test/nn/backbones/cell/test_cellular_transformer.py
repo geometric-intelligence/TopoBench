@@ -174,6 +174,67 @@ def testSparseCellAttention():
     assert torch.equal(att(x_t, x_s, empty), torch.zeros(3, 8))
 
 
+def testSparseCellAttention_convex_combination():
+    """Attention outputs are convex combinations of the value vectors.
+
+    With identical source features, every attended target must output
+    exactly the (shared) value vector — this pins the masked-softmax
+    normalization (weights summing to one per target).
+    """
+    torch.manual_seed(0)
+    att = SparseCellAttention(8, num_heads=2, att_dropout=0.0)
+    att.eval()
+    x_t = torch.randn(3, 8)
+    x_s = torch.randn(1, 8).repeat(4, 1)  # all sources identical
+    idx = torch.tensor([[0, 0, 0, 2], [0, 1, 3, 2]])
+    neigh = torch.sparse_coo_tensor(idx, torch.ones(4), (3, 4))
+    out = att(x_t, x_s, neigh)
+    expected = att.v(x_s[:1]).squeeze(0)
+    # Target 0 (three neighbors) and target 2 (one neighbor) both
+    # receive exactly the shared value vector.
+    assert torch.allclose(out[0], expected, atol=1e-5)
+    assert torch.allclose(out[2], expected, atol=1e-5)
+    assert torch.equal(out[1], torch.zeros(8))
+
+
+def testCellularTransformer_block_diagonal_batching():
+    """Batched block-diagonal complexes equal independent forwards.
+
+    Sparse neighborhood-masked attention must not leak information
+    across complexes batched block-diagonally (TopoBench batching).
+    """
+    torch.manual_seed(0)
+    inputs = _cell_inputs()
+    model = CellularTransformer(
+        16, 32, num_layers=2, num_heads=4, att_dropout=0.0
+    )
+    model.eval()
+    with torch.no_grad():
+        single = model(**inputs)
+
+        def block(mat):
+            dense = mat.to_dense()
+            zeros_tl = torch.zeros_like(dense)
+            top = torch.cat([dense, zeros_tl], dim=1)
+            bottom = torch.cat([zeros_tl, dense], dim=1)
+            return torch.cat([top, bottom], dim=0).to_sparse_coo()
+
+        doubled = model(
+            x_0=torch.cat([inputs["x_0"]] * 2),
+            x_1=torch.cat([inputs["x_1"]] * 2),
+            x_2=torch.cat([inputs["x_2"]] * 2),
+            adjacency_0=block(inputs["adjacency_0"]),
+            coadjacency_1=block(inputs["coadjacency_1"]),
+            coadjacency_2=block(inputs["coadjacency_2"]),
+            incidence_1=block(inputs["incidence_1"]),
+            incidence_2=block(inputs["incidence_2"]),
+        )
+    for one, two in zip(single, doubled, strict=True):
+        n = one.shape[0]
+        assert torch.allclose(one, two[:n], atol=1e-5)
+        assert torch.allclose(one, two[n:], atol=1e-5)
+
+
 def testCellularTransformerLayer():
     """Test that a single layer preserves shapes across ranks."""
     torch.manual_seed(0)

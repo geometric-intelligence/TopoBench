@@ -24,7 +24,6 @@ backbone:
   dropout: 0.0
   att_dropout: 0.1          # attention dropout used in the paper (Table 3)
   pe_type: zero             # no positional information (ablation baseline)
-  pe_steps: 8
 
 backbone_wrapper:
   _target_: topobench.nn.wrappers.CellularTransformerWrapper

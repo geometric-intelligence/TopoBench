@@ -326,7 +326,7 @@ class CellularTransformerLayer(nn.Module):
             Updated cell features per rank.
         """
         normed = [norm(x) for norm, x in zip(self.pre_norms, xs, strict=True)]
-        residual = [x.clone() for x in xs]
+        residual = list(xs)
         for ks, kt in CT_ROUTES:
             attention = self.attentions[f"{ks}_{kt}"]
             contribution = attention(
@@ -361,10 +361,16 @@ class CellularTransformer(nn.Module):
     challenge rules to respect computational requirements).
 
     Input features are combined with positional encodings via ConcatPE
-    (Eq. (4)): features and encodings are concatenated and passed
-    through a shared linear projection per rank. Supported encodings:
-    the local random walk encoding RWPe (Appendix C.1) and "zero" (no
-    positional information).
+    (Eq. (4)): per rank, features and encodings are concatenated and
+    processed jointly by a single linear projection ("shared weights"
+    in the sense of Eq. (4), as opposed to SumPE's separate feature and
+    encoding projections; one projection per rank since cochain spaces
+    are rank-specific). Supported encodings: the local random walk
+    encoding RWPe (Appendix C.1) and "zero" (no positional
+    information). RWPe is computed on the fly from the within-rank
+    neighborhood matrices under ``torch.no_grad()`` — a handful of
+    sparse matrix products per batch — which keeps the preprocessing
+    pipeline transform-free and the cached datasets lifting-only.
 
     Pooling/decoding is delegated to the TopoBench readout, matching
     the paper's global add pooling over rank-0 signals followed by an
