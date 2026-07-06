@@ -14,19 +14,12 @@ feature_encoder:
   # below. Absorbed by the encoder's **kwargs (GSNFeatureEncoder does not
   # project features, it only attaches structural orbit-count encodings).
   out_channels: 64
-  # substructures whose automorphism-orbit counts become the structural
-  # encodings. Cycles of length 3-6 and paths of length 3-5 give 11 node
-  # orbit channels (see `in_gsn_channels` on the backbone).
-  substructures:
-    - {_target_: networkx.cycle_graph, n: 3}
-    - {_target_: networkx.cycle_graph, n: 4}
-    - {_target_: networkx.cycle_graph, n: 5}
-    - {_target_: networkx.cycle_graph, n: 6}
-    - {_target_: networkx.path_graph, n: 3}
-    - {_target_: networkx.path_graph, n: 4}
-    - {_target_: networkx.path_graph, n: 5}
+  # the structural encodings themselves are computed once and cached by the
+  # `GSNEncodings` pre-transform (auto-attached via
+  # configs/transforms/model_defaults/gsn.yaml); this encoder is a pure
+  # passthrough that expects them to already be present on the batch. The
+  # substructure definitions therefore live only in the transform config.
   pyg_kword: gsn_encodings
-  lazy: false
 
 backbone:
   # NOTE: target the submodule (not the auto-discovered package alias), so
