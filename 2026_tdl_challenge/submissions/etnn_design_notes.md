@@ -9,10 +9,10 @@ Status: Full GraphUniverse evaluation completed
 ## Scope
 
 This submission adds a TopoBench-native combinatorial ETNN backbone for lifted
-GraphUniverse inputs. The implementation follows the topological feature-update
-part of E(n)-Equivariant Topological Neural Networks (ETNNs): rank-wise cell
-states are updated by aggregating relation-specific messages over combinatorial
-complex neighborhoods.
+GraphUniverse inputs. The implementation follows the rank-wise topological
+feature-message-passing structure of E(n)-Equivariant Topological Neural
+Networks (ETNNs), while omitting coordinate-dependent geometric terms because
+GraphUniverse does not provide physical Euclidean coordinates.
 
 The original ETNN formulation combines:
 
@@ -99,9 +99,14 @@ where:
 - `phi_N` is the relation-specific message MLP;
 - `psi_rank(c)` is the rank-specific update MLP.
 
-This corresponds to the feature-message and feature-update part of ETNN's
-message-passing equations. The geometric invariant and coordinate-update terms
-are omitted because GraphUniverse does not provide physical coordinates.
+This corresponds to the rank-wise topological feature-message-passing structure
+of ETNN. The coordinate-dependent geometric invariant and coordinate-update
+terms are omitted because GraphUniverse does not provide physical coordinates.
+
+In implementation, the concatenation in `psi_rank(c)` is performed rank-wise
+using the configured incoming relation list for each destination rank. Empty
+relations contribute zero tensors, so the update MLP input dimension remains
+fixed across cells and mini-batches.
 
 ### Sparse Direction Convention
 
@@ -146,6 +151,15 @@ All tensors created inside the backbone follow the active feature tensor's
 device and dtype. The implementation therefore supports CPU execution for local
 development and CUDA execution for larger GraphUniverse evaluations without a
 separate code path.
+
+### GraphUniverse Setting
+
+GraphUniverse provides graph families generated from controlled community,
+homophily, degree, degree-separation, graph-size, and feature-distribution
+parameters. These inputs are structural rather than physical-geometric. The
+coordinate-free ETNN baseline is therefore a conservative adaptation for this
+evaluation setting: it preserves the typed topological message-passing structure
+of ETNN without inventing physical coordinates that are absent from the data.
 
 ## Evaluation
 
