@@ -10,9 +10,11 @@ Status: Full GraphUniverse evaluation completed
 ## Scope
 
 This coordinate-enabled follow-up builds on the TopoBench-native ETNN baseline
-from PR #320. The baseline implements the combinatorial feature-update part of
-E(n)-Equivariant Topological Neural Networks (ETNNs) for GraphUniverse data,
-which does not provide physical Euclidean coordinates.
+from PR #320. The baseline implements the rank-wise topological
+feature-message-passing structure of E(n)-Equivariant Topological Neural
+Networks (ETNNs) for GraphUniverse data, while omitting coordinate-dependent
+geometric terms because GraphUniverse does not provide physical Euclidean
+coordinates.
 
 This submission adds fixed Laplacian positional encodings (LapPE) as structural
 pseudo-coordinates before graph-to-combinatorial lifting. The ETNN feature
@@ -32,6 +34,11 @@ This corresponds to the ETNN/CCMPN neighborhood aggregation in Eq. 1-3 and the
 feature update in Eq. 6 of the ETNN paper. The coordinate update from Eq. 7 is
 not applied. Coordinates are fixed structural embeddings of the graph, not
 physical positions.
+
+In implementation, incoming relation messages are concatenated rank-wise
+according to the configured neighborhood order. If a relation is empty in a
+mini-batch, it contributes a zero tensor so that the rank-specific update MLP
+input dimension remains fixed across cells and batches.
 
 This design is motivated by the GraphUniverse benchmark. GraphUniverse
 generates inductive graph families from a hierarchical degree-corrected
@@ -57,11 +64,22 @@ averaging:
 p_r(c) = mean_{d incident to c} p_{r-1}(d)
 ```
 
-The squared-distance feature `||p_d - p_c||^2` is invariant to translations,
-rotations, and reflections of the structural coordinate frame. This makes the
-message update insensitive to arbitrary rigid transformations of the structural
-embedding, but it does not imply physical E(n)-equivariance for datasets that
-do not have physical coordinates.
+The squared-distance feature `||p_d - p_c||^2` is invariant to rigid
+transformations of the chosen structural coordinate frame. This makes the
+message update insensitive to translations, rotations, and reflections applied
+consistently to all structural coordinates within the same graph. It does not
+imply that the original GraphUniverse graphs possess an underlying physical
+E(n) action.
+
+This distance-only use of LapPE also handles common spectral-coordinate
+ambiguities. Global sign flips of individual Laplacian eigenvectors correspond
+to reflections of the structural coordinate frame, and any orthogonal change of
+basis preserves pairwise squared distances when applied consistently within the
+graph:
+
+```text
+||Q p_d - Q p_c||^2 = ||p_d - p_c||^2, where Q^T Q = I.
+```
 
 ## Design Choices
 
@@ -73,6 +91,11 @@ do not have physical coordinates.
 - Relation message MLPs receive two scalar relation features: the sparse
   TopoBench neighborhood value and the squared structural distance.
 - Coordinates are fixed auxiliary inputs; only cell features are updated.
+- LapPE is used as a conservative default coordinate policy, not as a claim
+  that it is universally optimal. Other structural coordinates, such as
+  diffusion coordinates, shortest-path/MDS embeddings, SCORE-style spectral
+  coordinates, or learned coordinate refinements, may be preferable for other
+  datasets.
 - The implementation is intentionally conservative: no learned coordinate
   generator, no coordinate update, and no multi-view coordinate aggregation.
 
