@@ -69,6 +69,8 @@ class TopoUNet(torch.nn.Module):
     dropout : float, optional
         Dropout rate applied inside the within-rank refinements, following
         Appendix B.4 (default: 0.0).
+    **kwargs : dict
+        Additional keyword arguments accepted for API compatibility.
     """
 
     def __init__(
@@ -232,9 +234,7 @@ class TopoUNet(torch.nn.Module):
         # Encoder: E_{s_{i+1}} = Phi(sigma(B^T E_{s_i} W^up_i))
         # (Definition 3.3).
         encoder_states = {path[0]: x_all[path[0]]}
-        for i, (src, dst) in enumerate(
-            zip(path, path[1:], strict=False)
-        ):
+        for i, (src, dst) in enumerate(zip(path, path[1:], strict=False)):
             incidence = self._step_incidence(incidence_all, src, dst)
             up = self.act(
                 self._transport(
@@ -255,9 +255,7 @@ class TopoUNet(torch.nn.Module):
             src, dst = path[i], path[i + 1]
             incidence = self._step_incidence(incidence_all, src, dst)
             down = self.act(
-                self._transport(
-                    incidence, self.w_down[i](decoder_states[dst])
-                )
+                self._transport(incidence, self.w_down[i](decoder_states[dst]))
             )
             d_tilde = self.dropout(self.act(self.psi[i](down)))
             if self.use_skip:

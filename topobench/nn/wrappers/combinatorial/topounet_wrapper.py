@@ -31,8 +31,7 @@ class TopoUNetWrapper(AbstractWrapper):
         path = self.backbone.encoder_rank_path
         x_all = {path[0]: batch[f"x_{path[0]}"]}
         incidence_all = {
-            rank: batch[f"incidence_{rank}"]
-            for rank in range(1, path[-1] + 1)
+            rank: batch[f"incidence_{rank}"] for rank in range(1, path[-1] + 1)
         }
 
         decoder_states = self.backbone(x_all, incidence_all)
