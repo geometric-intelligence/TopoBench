@@ -9,6 +9,14 @@ Key engineering contributions over the base paper:
     - Sparse autograd quarantine to prevent dense gradient materialization.
     - Topological boundary bypass (eps-residuals) for source/sink gradient recovery.
     - Asymmetric dropout regularization per pathway.
+    - Depth-adaptive gating: learnable per-layer scalar gates let the model
+      discover its own effective depth per task, rather than requiring a
+      fixed num_layers hyperparameter shared across all tasks. Empirically
+      motivated by a discovered trade-off: shallow depth improves community
+      detection OOD generalization (avoids a homophily-driven shortcut) while
+      full depth is required for triangle counting (multi-hop structural
+      aggregation). Gating lets a single architecture serve both without
+      requiring task-specific config overrides.
 
 Integrated into the TopoBench framework for TDL Challenge 2026, Track 2.
 """
@@ -362,6 +370,18 @@ class DirSNN(nn.Module):
         complexes (see red team analysis, Section I.1).
       - One-time boundary orientation guard in __init__ to validate B1 @ B2 = 0
         without overhead in the forward pass hot path.
+      - Depth-adaptive gating: a learnable scalar gate per layer blends that
+        layer's output with its own input, initialized to 1.0 (fully "on",
+        mathematically identical to unconditional stacking at initialization).
+        Empirical investigation found community detection benefits from an
+        effectively shallower model (avoids a homophily-driven neighbor-label
+        shortcut that fails to generalize out-of-distribution), while
+        triangle counting requires full depth (multi-hop aggregation of
+        structural counts). Rather than hardcoding a different num_layers
+        per task via experiment_modes, each layer's gate can learn to shrink
+        toward 0 when that layer's transformation does not help the task at
+        hand, letting a single fixed-depth architecture discover its own
+        effective depth per task directly from the training signal.
 
     Parameters
     ----------
@@ -376,7 +396,10 @@ class DirSNN(nn.Module):
     num_layers : int, optional
         Number of stacked DirSNNLayer modules. Fixed at 2 in the default
         config: directed L_up and L_down smooth at different spectral rates,
-        and stacking beyond 2 introduces asymmetric over-smoothing.
+        and stacking beyond 2 introduces asymmetric over-smoothing. With
+        depth-adaptive gating, this now serves as a capacity ceiling rather
+        than a fixed depth: the model can learn to behave as shallower via
+        its gates without changing this value.
         Default: 2.
     dropout : float, optional
         Base dropout probability passed to each layer. Default: 0.5.
@@ -417,6 +440,19 @@ class DirSNN(nn.Module):
             self.layers.append(
                 DirSNNLayer(hidden_channels, out_channels, dropout)
             )
+
+        # --- Depth-Adaptive Gating ---
+        # One learnable scalar gate per layer, initialized to 1.0 (fully
+        # "on"). At initialization, the model is mathematically identical to
+        # unconditional layer stacking -- gating changes nothing until
+        # training pushes a gate away from 1.0. A gate that learns to shrink
+        # toward 0 means the model has found that layer's transformation is
+        # not helping for the task at hand, effectively self-selecting a
+        # shallower effective path without requiring a hardcoded num_layers
+        # value per task. See class docstring for the empirical motivation.
+        self.layer_gates = nn.ParameterList(
+            [nn.Parameter(torch.tensor(1.0)) for _ in range(num_layers)]
+        )
 
     def _validate_boundary(self, b1: torch.Tensor, b2: torch.Tensor) -> None:
         """Assert the fundamental homology axiom: B1 @ B2 = 0.
@@ -539,8 +575,30 @@ class DirSNN(nn.Module):
         with torch.no_grad():
             b2 = self._sparsify_boundary(b2)
 
-        # Sequential message passing through all layers.
-        for layer in self.layers:
-            x = layer(x, b1, b2)
+        # Sequential message passing through all layers, with depth-adaptive
+        # gating. Each layer's contribution is blended with its own input via
+        # a learnable scalar gate, initialized to 1.0 so the model starts
+        # identical to unconditional stacking. A gate that learns to shrink
+        # toward 0 means the model has found that layer's transformation is
+        # not helping for the task at hand -- effectively self-selecting a
+        # shallower path without a hardcoded num_layers.
+        #
+        # Gating is only applied when the layer's output shape matches its
+        # input shape, since the residual blend requires matching dimensions.
+        # The first layer (in_channels -> hidden_channels) and last layer
+        # (hidden_channels -> out_channels) typically change dimensionality
+        # and so skip gating, always applying fully; only interior layers
+        # (hidden_channels -> hidden_channels, when num_layers > 2) are
+        # eligible to gate. For num_layers <= 2, every layer changes
+        # dimensionality and gates have no effect until num_layers >= 3 --
+        # this is intentional: with only 1 or 2 layers there is no interior
+        # layer whose contribution is ambiguous, so gating is a no-op by
+        # construction rather than a hidden behavior change.
+        for layer, gate in zip(self.layers, self.layer_gates, strict=True):
+            layer_out = layer(x, b1, b2)
+            if layer_out.shape == x.shape:
+                x = gate * layer_out + (1 - gate) * x
+            else:
+                x = layer_out
 
         return x
