@@ -1,6 +1,6 @@
-"""
-Modal script to run the DirSNN TDL Challenge 2026 evaluation grid, with
-support for hyperparameter override sweeps.
+"""Modal script to run the DirSNN TDL Challenge 2026 evaluation grid.
+
+Supports hyperparameter override sweeps.
 
 Each call to run_evaluation() can take a list of Hydra-style override
 strings (e.g. ["model.backbone.dropout=0.65"]), passed straight through to
