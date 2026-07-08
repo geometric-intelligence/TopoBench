@@ -13,6 +13,7 @@ from torch_geometric.data import Data
 
 from topobench.nn.backbones.combinatorial.etnn import (
     ETNN,
+    _ETNNMessagePassing,
     _neighborhood_to_edge_index,
 )
 from topobench.nn.wrappers.combinatorial import TuneWrapper
@@ -305,6 +306,54 @@ def test_neighborhood_to_edge_index_rejects_ambiguous_sparse_axis():
             num_src_cells=2,
             num_dst_cells=2,
         )
+
+
+def test_etnn_message_passing_uses_nsaph_style_edge_gate():
+    """Relation messages should be multiplied by a learned sigmoid edge gate.
+
+    The official NSAPH implementation computes a message MLP, feeds those
+    messages through ``Linear -> Sigmoid`` edge weights, and aggregates
+    ``message * edge_weight``.  The shared TopoBench ETNN message primitive is
+    used by coordinate-free, structural, and physical policies, so this test
+    protects that faithfulness point directly.
+    """
+    torch.manual_seed(7)
+    layer = _ETNNMessagePassing(
+        hidden_channels=4,
+        edge_channels=1,
+        dropout=0.0,
+        activation="silu",
+        use_batch_norm=False,
+    )
+    assert isinstance(layer.edge_gate[0], torch.nn.Linear)
+    assert isinstance(layer.edge_gate[1], torch.nn.Sigmoid)
+
+    x_src = torch.randn(3, 4)
+    x_dst = torch.randn(2, 4)
+    edge_index = torch.tensor([[0, 1, 2], [0, 1, 1]])
+    edge_attr = torch.ones(3, 1)
+
+    # Force the sigmoid gate near one, then near zero, while keeping the message
+    # MLP unchanged. The aggregate should shrink with the gate.
+    layer.edge_gate[0].weight.data.zero_()
+    layer.edge_gate[0].bias.data.fill_(20.0)
+    high_gate = layer(
+        x_src=x_src,
+        x_dst=x_dst,
+        edge_index=edge_index,
+        edge_attr=edge_attr,
+    )
+
+    layer.edge_gate[0].bias.data.fill_(-20.0)
+    low_gate = layer(
+        x_src=x_src,
+        x_dst=x_dst,
+        edge_index=edge_index,
+        edge_attr=edge_attr,
+    )
+
+    assert high_gate.abs().sum() > 1e-6
+    assert torch.allclose(low_gate, torch.zeros_like(low_gate), atol=1e-6)
 
 
 def test_etnn_requires_neighborhoods():

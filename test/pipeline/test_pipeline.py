@@ -1,9 +1,10 @@
-"""Required challenge pipeline test for the coordinate-free ETNN baseline.
+"""Required challenge pipeline test for coordinate-policy ETNN.
 
 The challenge asks each submission to fill this file with a compatible dataset
 and model config. This test exercises the normal TopoBench training path for
-``model=combinatorial/etnn`` on MUTAG: Hydra composition, graph-to-combinatorial
-lifting, feature encoding, ETNN message passing, readout, loss, and trainer.
+the submitted GraphUniverse-compatible coordinate-policy ETNN-LapPE config on
+MUTAG: Hydra composition, LapPE preprocessing, graph-to-combinatorial lifting,
+feature encoding, ETNN message passing, readout, loss, and trainer.
 """
 
 import hydra
@@ -11,7 +12,7 @@ import hydra
 from test._utils.simplified_pipeline import run
 
 DATASET = "graph/MUTAG"
-MODELS = ["combinatorial/etnn"]
+MODELS = ["combinatorial/etnn_coordinate_policy_lappe"]
 
 
 class TestPipeline:
@@ -22,13 +23,20 @@ class TestPipeline:
         hydra.core.global_hydra.GlobalHydra.instance().clear()
 
     def test_pipeline(self):
-        """Verify that ETNN trains end-to-end on a compatible graph dataset."""
-        with hydra.initialize(config_path="../../configs", job_name="job"):
+        """Verify the submitted ETNN policy trains end-to-end."""
+        with hydra.initialize(
+            version_base="1.3",
+            config_path="../../configs",
+            job_name="job",
+        ):
             for MODEL in MODELS:
                 # MUTAG is intentionally small, so this is a practical CI smoke
-                # test while still covering the full graph -> combinatorial
+                # test while still covering the full LapPE preprocessing ->
                 # lifting -> ETNN -> readout execution path required by the
-                # challenge.
+                # challenge. Other coordinate policies are covered in
+                # test_etnn_pipeline.py; physical mode is validated separately
+                # on QM9 because MUTAG/GraphUniverse do not provide physical
+                # positions.
                 cfg = hydra.compose(
                     config_name="run.yaml",
                     overrides=[
