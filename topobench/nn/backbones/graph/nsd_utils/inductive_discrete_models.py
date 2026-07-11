@@ -45,6 +45,9 @@ class InductiveDiscreteDiagSheafDiffusion(SheafDiffusion):
         - input_dropout (float): Input layer dropout rate.
         - dropout (float): Hidden layer dropout rate.
         - sheaf_act (str): Activation for sheaf learning.
+        - add_hp, add_lp, normalised, deg_normalised, second_linear (bool,
+          optional): ablation knobs, all default False. See
+          :class:`~topobench.nn.backbones.graph.nsd_utils.sheaf_base.SheafDiffusion`.
     """
 
     def __init__(self, config):
@@ -63,8 +66,12 @@ class InductiveDiscreteDiagSheafDiffusion(SheafDiffusion):
                 )
             )
             nn.init.orthogonal_(self.lin_right_weights[-1].weight.data)
+        # Left weights act on the full stalk (final_d) so any fixed high-/
+        # low-pass dimensions are transformed alongside the learned ones.
         for _i in range(self.layers):
-            self.lin_left_weights.append(nn.Linear(self.d, self.d, bias=False))
+            self.lin_left_weights.append(
+                nn.Linear(self.final_d, self.final_d, bias=False)
+            )
             nn.init.eye_(self.lin_left_weights[-1].weight.data)
 
         self.sheaf_learners = nn.ModuleList()
@@ -81,9 +88,12 @@ class InductiveDiscreteDiagSheafDiffusion(SheafDiffusion):
 
         self.epsilons = nn.ParameterList()
         for _i in range(self.layers):
-            self.epsilons.append(nn.Parameter(torch.zeros((self.d, 1))))
+            self.epsilons.append(nn.Parameter(torch.zeros((self.final_d, 1))))
 
         self.lin1 = nn.Linear(self.input_dim, self.hidden_dim)
+        # Optional extra input projection (appendix "second linear transform").
+        if self.second_linear:
+            self.lin12 = nn.Linear(self.hidden_dim, self.hidden_dim)
         self.lin2 = nn.Linear(self.hidden_dim, self.output_dim)
 
     def forward(self, x, edge_index):
@@ -105,11 +115,16 @@ class InductiveDiscreteDiagSheafDiffusion(SheafDiffusion):
         # Get actual number of nodes dynamically
         actual_num_nodes = x.size(0)
 
-        # Create laplacian builder for this specific graph
+        # Create laplacian builder for this specific graph, forwarding the
+        # normalization and high-/low-pass options.
         laplacian_builder = DiagLaplacianBuilder(
             actual_num_nodes,
             edge_index,
             d=self.d,
+            normalised=self.normalised,
+            deg_normalised=self.deg_normalised,
+            add_hp=self.add_hp,
+            add_lp=self.add_lp,
         )
 
         x = F.dropout(x, p=self.input_dropout, training=self.training)
@@ -117,8 +132,12 @@ class InductiveDiscreteDiagSheafDiffusion(SheafDiffusion):
         x = F.elu(x)
         x = F.dropout(x, p=self.dropout, training=self.training)
 
-        # Use actual number of nodes
-        x = x.view(actual_num_nodes * self.d, -1)
+        # Optional extra input projection before diffusion begins.
+        if self.second_linear:
+            x = self.lin12(x)
+
+        # Reshape into stalk-major layout (final_d dims per node).
+        x = x.view(actual_num_nodes * self.final_d, -1)
 
         x0 = x
         for layer in range(self.layers):
@@ -136,9 +155,9 @@ class InductiveDiscreteDiagSheafDiffusion(SheafDiffusion):
 
             x = F.dropout(x, p=self.dropout, training=self.training)
 
-            x = x.t().reshape(-1, self.d)
+            x = x.t().reshape(-1, self.final_d)
             x = self.lin_left_weights[layer](x)
-            x = x.reshape(-1, actual_num_nodes * self.d).t()
+            x = x.reshape(-1, actual_num_nodes * self.final_d).t()
             x = self.lin_right_weights[layer](x)
 
             x = torch_sparse.spmm(L[0], L[1], x.size(0), x.size(0), x)

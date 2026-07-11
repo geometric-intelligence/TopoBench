@@ -18,6 +18,7 @@ from torch_scatter import scatter_add
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from .laplace import (
+    compute_fixed_diag_laplacian_indices,
     compute_learnable_diag_laplacian_indices,
     compute_learnable_laplacian_indices,
     compute_left_right_map_index,
@@ -42,9 +43,22 @@ class LaplacianBuilder(nn.Module):
     d : int
         Dimension of the stalk space.
     normalised : bool, optional
-        Whether to use normalized Laplacian. Default is False.
+        Use the augmented normalized sheaf Laplacian ((D+1)^-1/2 L (D+1)^-1/2). Default is False.
     deg_normalised : bool, optional
-        Whether to use degree normalization (not used). Default is False.
+        Use degree normalization instead. Mutually exclusive with
+        ``normalised``. Default is False.
+    add_hp : bool, optional
+        Append a fixed high-pass channel, growing each stalk by one dimension.
+        Default is False.
+    add_lp : bool, optional
+        Append a fixed low-pass channel, growing each stalk by one dimension.
+        Default is False.
+
+    Notes
+    -----
+    Normalization is always augmented with a self-loop, i.e. it uses
+    ``(deg + 1)`` on the diagonal, matching the reference implementation's
+    default.
     """
 
     def __init__(
@@ -54,14 +68,24 @@ class LaplacianBuilder(nn.Module):
         d,
         normalised=False,
         deg_normalised=False,
+        add_hp=False,
+        add_lp=False,
     ):
         super().__init__()
+        assert not (normalised and deg_normalised), (
+            "normalised and deg_normalised are mutually exclusive"
+        )
 
         self.d = d
+        # Fixed high-/low-pass channels each add one dimension to every stalk.
+        self.final_d = d + int(add_hp) + int(add_lp)
         self.size = size
         self.edges = edge_index.size(1) // 2
         self.edge_index = edge_index
         self.normalised = normalised
+        self.deg_normalised = deg_normalised
+        self.add_hp = add_hp
+        self.add_lp = add_lp
         self.device = edge_index.device
 
         # Preprocess the sparse indices required to compute the Sheaf Laplacian.
@@ -71,6 +95,13 @@ class LaplacianBuilder(nn.Module):
         self.left_right_idx, self.vertex_tril_idx = (
             compute_left_right_map_index(edge_index)
         )
+        # Positions for the fixed high-/low-pass dimensions (only if enabled).
+        if self.add_hp or self.add_lp:
+            self.fixed_diag_indices, self.fixed_tril_indices = (
+                compute_fixed_diag_laplacian_indices(
+                    size, self.vertex_tril_idx, self.d, self.final_d
+                )
+            )
         self.deg = degree(self.edge_index[0], num_nodes=self.size)
 
     def scalar_normalise(self, diag, tril, row, col):
@@ -102,6 +133,7 @@ class LaplacianBuilder(nn.Module):
             assert tril.size(-1) == tril.size(-2)
             assert diag.dim() == 2
         d = diag.size(-1)
+        # Augmented (self-loop) symmetric normalization: (deg + 1)^-1/2.
         diag_sqrt_inv = (diag + 1).pow(-0.5)
 
         diag_sqrt_inv = (
@@ -122,6 +154,103 @@ class LaplacianBuilder(nn.Module):
 
         return diag_maps, non_diag_maps
 
+    def get_fixed_maps(self, num_edges, dtype):
+        """
+        Build the fixed (non-learnable) high-/low-pass Laplacian values.
+
+        Both channels put the node degree on the diagonal. Off-diagonal:
+        the low-pass channel uses ``+1`` (the signless graph Laplacian, D + A),
+        the high-pass channel uses ``-1`` (the standard graph Laplacian, D - A).
+
+        Parameters
+        ----------
+        num_edges : int
+            Number of lower-triangular edges to fill.
+        dtype : torch.dtype
+            Dtype of the returned tensors.
+
+        Returns
+        -------
+        fixed_diag : torch.Tensor
+            Fixed diagonal values, one column per enabled channel.
+        fixed_non_diag : torch.Tensor
+            Fixed off-diagonal values, one column per enabled channel.
+        """
+        assert self.add_lp or self.add_hp
+
+        # Column order MUST match the ascending fixed-dimension indices from
+        # compute_fixed_diag_laplacian_indices: low-pass occupies the first
+        # fixed dim, high-pass the second. Do not reorder these branches.
+        fixed_diag, fixed_non_diag = [], []
+        if self.add_lp:
+            fixed_diag.append(self.deg.view(-1, 1))
+            fixed_non_diag.append(
+                torch.ones(
+                    size=(num_edges, 1), device=self.device, dtype=dtype
+                )
+            )
+        if self.add_hp:
+            fixed_diag.append(self.deg.view(-1, 1))
+            fixed_non_diag.append(
+                -torch.ones(
+                    size=(num_edges, 1), device=self.device, dtype=dtype
+                )
+            )
+
+        fixed_diag = torch.cat(fixed_diag, dim=1)
+        fixed_non_diag = torch.cat(fixed_non_diag, dim=1)
+        # Guard against index/value misalignment before the sparse merge.
+        assert self.fixed_tril_indices.size(1) == fixed_non_diag.numel()
+        assert self.fixed_diag_indices.size(1) == fixed_diag.numel()
+        return fixed_diag, fixed_non_diag
+
+    def append_fixed_maps(
+        self, num_edges, diag_indices, diag_maps, tril_indices, tril_maps
+    ):
+        """
+        Merge the fixed high-/low-pass entries into the learnable Laplacian.
+
+        No-op when neither ``add_hp`` nor ``add_lp`` is enabled.
+
+        Parameters
+        ----------
+        num_edges : int
+            Number of lower-triangular edges.
+        diag_indices, diag_maps : torch.Tensor
+            Learnable diagonal indices/values.
+        tril_indices, tril_maps : torch.Tensor
+            Learnable off-diagonal indices/values.
+
+        Returns
+        -------
+        tuple
+            ``((diag_indices, diag_maps), (tril_indices, tril_maps))`` with the
+            fixed entries merged in.
+        """
+        if not self.add_lp and not self.add_hp:
+            return (diag_indices, diag_maps), (tril_indices, tril_maps)
+
+        fixed_diag, fixed_non_diag = self.get_fixed_maps(
+            num_edges, tril_maps.dtype
+        )
+        tril_row, tril_col = self.vertex_tril_idx
+
+        # The fixed channels only support symmetric normalisation (not
+        # deg-normalisation), so normalise them only when ``normalised`` is set.
+        if self.normalised:
+            fixed_diag, fixed_non_diag = self.scalar_normalise(
+                fixed_diag, fixed_non_diag, tril_row, tril_col
+            )
+        fixed_diag, fixed_non_diag = fixed_diag.view(-1), fixed_non_diag.view(-1)
+
+        tril_indices, tril_maps = mergesp(
+            self.fixed_tril_indices, fixed_non_diag, tril_indices, tril_maps
+        )
+        diag_indices, diag_maps = mergesp(
+            self.fixed_diag_indices, fixed_diag, diag_indices, diag_maps
+        )
+        return (diag_indices, diag_maps), (tril_indices, tril_maps)
+
 
 class DiagLaplacianBuilder(LaplacianBuilder):
     """
@@ -138,6 +267,8 @@ class DiagLaplacianBuilder(LaplacianBuilder):
         Edge indices of shape [2, num_edges].
     d : int
         Dimension of the diagonal stalk space.
+    normalised, deg_normalised, add_hp, add_lp : optional
+        See :class:`LaplacianBuilder`.
     """
 
     def __init__(
@@ -145,14 +276,61 @@ class DiagLaplacianBuilder(LaplacianBuilder):
         size,
         edge_index,
         d,
+        normalised=False,
+        deg_normalised=False,
+        add_hp=False,
+        add_lp=False,
     ):
-        super().__init__(size, edge_index, d)
+        super().__init__(
+            size,
+            edge_index,
+            d,
+            normalised=normalised,
+            deg_normalised=deg_normalised,
+            add_hp=add_hp,
+            add_lp=add_lp,
+        )
 
+        # Learnable block indices span the full stalk (final_d) so the fixed
+        # high-/low-pass dimensions line up in the same sparse matrix.
         self.diag_indices, self.tril_indices = (
             compute_learnable_diag_laplacian_indices(
-                size, self.vertex_tril_idx, self.d, self.d
+                size, self.vertex_tril_idx, self.d, self.final_d
             )
         )
+
+    def normalise(self, diag, tril, row, col):
+        """
+        Return the normalised learnable diagonal Laplacian entries.
+
+        Applies augmented symmetric normalization ``(D+1)^-1/2 L (D+1)^-1/2``
+        when ``normalised`` (delegating to :meth:`scalar_normalise`), or
+        degree normalization when ``deg_normalised``; otherwise returns the
+        entries unchanged.
+
+        Parameters
+        ----------
+        diag : torch.Tensor
+            Diagonal block values of shape [size, d].
+        tril : torch.Tensor
+            Lower-triangular block values of shape [num_edges, d].
+        row, col : torch.Tensor
+            Endpoint node indices of the lower-triangular edges.
+
+        Returns
+        -------
+        diag, tril : torch.Tensor
+            The (possibly) normalized diagonal and off-diagonal values.
+        """
+        if self.normalised:
+            # Share the symmetric-normalization math with the fixed maps.
+            diag, tril = self.scalar_normalise(diag, tril, row, col)
+        elif self.deg_normalised:
+            deg_sqrt_inv = (self.deg + 1).pow(-0.5).unsqueeze(-1)
+            deg_sqrt_inv.masked_fill_(deg_sqrt_inv == float("inf"), 0)
+            tril = deg_sqrt_inv[row] * tril * deg_sqrt_inv[col]
+            diag = deg_sqrt_inv * diag * deg_sqrt_inv
+        return diag, tril
 
     def forward(self, maps):
         """
@@ -176,15 +354,26 @@ class DiagLaplacianBuilder(LaplacianBuilder):
         tril_row, tril_col = self.vertex_tril_idx
         row, _ = self.edge_index
 
-        # Compute the un-normalised Laplacian entries.
+        # Compute the (un-normalised) learnable Laplacian entries.
         left_maps = torch.index_select(maps, index=left_idx, dim=0)
         right_maps = torch.index_select(maps, index=right_idx, dim=0)
         tril_maps = -left_maps * right_maps
         saved_tril_maps = tril_maps.detach().clone()
         diag_maps = scatter_add(maps**2, row, dim=0, dim_size=self.size)
 
+        # Optionally normalise the learnable part.
+        diag_maps, tril_maps = self.normalise(
+            diag_maps, tril_maps, tril_row, tril_col
+        )
         tril_indices, diag_indices = self.tril_indices, self.diag_indices
         tril_maps, diag_maps = tril_maps.view(-1), diag_maps.view(-1)
+
+        # Append the fixed high-/low-pass entries (no-op unless enabled).
+        (diag_indices, diag_maps), (tril_indices, tril_maps) = (
+            self.append_fixed_maps(
+                len(left_maps), diag_indices, diag_maps, tril_indices, tril_maps
+            )
+        )
 
         # Add the upper triangular part
         triu_indices = torch.empty_like(tril_indices)

@@ -18,6 +18,12 @@ backbone:
   dropout: 0.4 # SWEEP: [0.0, 0.25, 0.5]
   d: 3 # stalk dim; identity sheaf -> graph Laplacian regardless of d
   input_dropout: 0.0 # no sweep.
+  # ISN-paper ablation knobs (Table 3). Defaults reproduce the plain baseline.
+  add_hp: false # fixed high-pass channel (+1 stalk dim)
+  add_lp: false # fixed low-pass channel (+1 stalk dim)
+  normalised: false # augmented normalized sheaf Laplacian ((D+1)^-1/2 L (D+1)^-1/2)
+  deg_normalised: false # degree normalization (mutually exclusive with normalised)
+  second_linear: false # extra input projection before diffusion
 
 backbone_wrapper:
   _target_: topobench.nn.wrappers.${model.backbone_wrapper.wrapper_name}

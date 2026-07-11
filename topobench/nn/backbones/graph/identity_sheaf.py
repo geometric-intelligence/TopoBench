@@ -43,6 +43,16 @@ class ISNEncoder(Module):
         Dropout rate for hidden layers. Default is 0.1.
     input_dropout : float, optional
         Dropout rate for input layer. Default is 0.1.
+    add_hp : bool, optional
+        Append a fixed high-pass channel (grows each stalk by one). Default is False.
+    add_lp : bool, optional
+        Append a fixed low-pass channel (grows each stalk by one). Default is False.
+    normalised : bool, optional
+        Use the augmented normalized sheaf Laplacian ((D+1)^-1/2 L (D+1)^-1/2). Default is False.
+    deg_normalised : bool, optional
+        Use degree normalization instead (mutually exclusive). Default is False.
+    second_linear : bool, optional
+        Apply an extra input projection before diffusion. Default is False.
     device : str, optional
         Device to run the model on ('cpu' or 'cuda'). Default is 'cpu'.
     **kwargs : dict
@@ -62,6 +72,11 @@ class ISNEncoder(Module):
         d=2,
         dropout=0.1,
         input_dropout=0.1,
+        add_hp=False,
+        add_lp=False,
+        normalised=False,
+        deg_normalised=False,
+        second_linear=False,
         device="cpu",
         **kwargs,
     ):
@@ -84,6 +99,13 @@ class ISNEncoder(Module):
             "device": device,
             "input_dropout": input_dropout,
             "dropout": dropout,
+            # ISN-paper ablation knobs: fixed high-/low-pass channels,
+            # Laplacian normalization, and the optional extra input projection.
+            "add_hp": add_hp,
+            "add_lp": add_lp,
+            "normalised": normalised,
+            "deg_normalised": deg_normalised,
+            "second_linear": second_linear,
             # Identity sheaf does not learn maps; these are unused but kept
             # for compatibility with the diagonal diffusion config.
             "sheaf_act": "id",

@@ -357,3 +357,229 @@ class TestRayleighQuotient:
         dense = rayleigh_quotient(x, lap).item()
         sparse = rayleigh_quotient(x, (indices, values)).item()
         assert abs(dense - sparse) < 1e-5
+
+
+class TestISNFlags:
+    """Test the ISN-paper ablation flags on ISNEncoder."""
+
+    def _graph(self):
+        """Build the 8-node test graph edge_index.
+
+        Returns
+        -------
+        torch.Tensor
+            Edge indices of shape [2, num_edges].
+        """
+        edges = [
+            [0, 1],
+            [0, 2],
+            [0, 4],
+            [2, 3],
+            [5, 2],
+            [5, 6],
+            [6, 3],
+            [2, 7],
+        ]
+        return torch.tensor(edges).t().long()
+
+    @pytest.mark.parametrize(
+        "flags",
+        [
+            {"normalised": True},
+            {"deg_normalised": True},
+            {"add_hp": True},
+            {"add_lp": True},
+            {"add_hp": True, "add_lp": True},
+            {"second_linear": True},
+            {"add_hp": True, "add_lp": True, "normalised": True,
+             "second_linear": True},
+        ],
+    )
+    def test_flag_forward(self, flags):
+        """Every flag (and their combination) runs and returns finite output.
+
+        Parameters
+        ----------
+        flags : dict
+            The flag combination to enable.
+        """
+        ei = self._graph()
+        x = torch.randn(8, 16)
+        model = ISNEncoder(input_dim=16, hidden_dim=32, num_layers=2, d=2, **flags)
+        out = model(x, ei)
+        assert out.shape == (8, 32)
+        assert torch.isfinite(out).all()
+
+    def test_add_hp_add_lp_grow_final_d(self):
+        """add_hp and add_lp each grow the stalk dimension by one."""
+        ei = self._graph()
+        x = torch.randn(8, 16)
+        model = ISNEncoder(
+            input_dim=16, hidden_dim=32, num_layers=2, d=2,
+            add_hp=True, add_lp=True,
+        )
+        model(x, ei)
+        assert model.sheaf_model.final_d == 4  # d=2 + hp + lp
+
+    def test_no_dead_parameters_with_all_flags(self):
+        """Every learnable parameter receives a gradient (no dead params)."""
+        ei = self._graph()
+        x = torch.randn(8, 16)
+        model = ISNEncoder(
+            input_dim=16, hidden_dim=32, num_layers=2, d=2,
+            add_hp=True, add_lp=True, normalised=True, second_linear=True,
+        )
+        model(x, ei).sum().backward()
+        dead = [
+            n
+            for n, p in model.named_parameters()
+            if p.requires_grad and (p.grad is None or p.grad.abs().sum() == 0)
+        ]
+        assert dead == []
+
+    def test_mutual_exclusive_normalisation_raises(self):
+        """normalised and deg_normalised together must raise."""
+        ei = self._graph()
+        x = torch.randn(8, 16)
+        model = ISNEncoder(
+            input_dim=16, hidden_dim=32, num_layers=2, d=2,
+            normalised=True, deg_normalised=True,
+        )
+        with pytest.raises(AssertionError):
+            model(x, ei)
+
+    def test_flags_off_deterministic_and_final_d(self):
+        """With flags off, final_d == d and eval-mode output is deterministic."""
+        ei = self._graph()
+        x = torch.randn(8, 16)
+        model = ISNEncoder(input_dim=16, hidden_dim=32, num_layers=2, d=2)
+        model.eval()  # disable dropout so the forward pass is deterministic
+        assert model.sheaf_model.final_d == 2
+        assert torch.equal(model(x, ei), model(x, ei))
+
+    def test_second_linear_creates_extra_projection(self):
+        """second_linear adds the lin12 layer (and extra params); off omits it."""
+        off = ISNEncoder(
+            input_dim=16, hidden_dim=32, num_layers=2, d=2, second_linear=False
+        )
+        on = ISNEncoder(
+            input_dim=16, hidden_dim=32, num_layers=2, d=2, second_linear=True
+        )
+        assert not hasattr(off.sheaf_model, "lin12")
+        assert hasattr(on.sheaf_model, "lin12")
+        # The extra projection must contribute real learnable parameters.
+        n_off = sum(p.numel() for p in off.parameters())
+        n_on = sum(p.numel() for p in on.parameters())
+        assert n_on > n_off
+
+
+class TestDiagLaplacianBuilderFlags:
+    """Oracle tests for the Laplacian builder's normalization + hp/lp flags."""
+
+    def _path_builder(self, **flags):
+        """Diagonal builder + identity maps on a 3-node path graph 0-1-2.
+
+        Returns
+        -------
+        tuple
+            (builder, maps, final_d) where maps are all-ones (identity sheaf).
+        """
+        from torch_geometric.utils import to_undirected
+
+        from topobench.nn.backbones.graph.nsd_utils.laplacian_builders import (
+            DiagLaplacianBuilder,
+        )
+
+        ei = to_undirected(torch.tensor([[0, 1], [1, 2]]).long())
+        builder = DiagLaplacianBuilder(3, ei, d=1, **flags)
+        maps = torch.ones(ei.size(1), 1)  # identity restriction maps
+        return builder, maps, builder.final_d
+
+    @staticmethod
+    def _densify(L, n_rows):
+        """Materialize a sparse (indices, values) Laplacian to a dense matrix.
+
+        Parameters
+        ----------
+        L : tuple
+            (indices, values) sparse representation.
+        n_rows : int
+            Size of the (square) dense matrix.
+
+        Returns
+        -------
+        torch.Tensor
+            Dense [n_rows, n_rows] matrix.
+        """
+        idx, val = L
+        dense = torch.zeros(n_rows, n_rows)
+        dense[idx[0], idx[1]] = val
+        return dense
+
+    def test_add_lp_is_signless_laplacian(self):
+        """The low-pass channel equals the signless graph Laplacian (D + A)."""
+        builder, maps, fd = self._path_builder(add_lp=True)
+        (L, _) = builder(maps)
+        dense = self._densify(L, 3 * fd)
+        deg = torch.tensor([1.0, 2.0, 1.0])
+        # Fixed low-pass dim is index 1 within each node's block (learned=0).
+        for u in range(3):
+            assert dense[u * fd + 1, u * fd + 1] == deg[u]  # diagonal = degree
+        # Off-diagonal between adjacent nodes on the low-pass dim is +1.
+        assert dense[0 * fd + 1, 1 * fd + 1] == 1.0
+        assert dense[1 * fd + 1, 2 * fd + 1] == 1.0
+
+    def test_add_hp_off_diagonal_is_negative(self):
+        """The high-pass channel uses -1 off-diagonal (graph Laplacian D - A)."""
+        builder, maps, fd = self._path_builder(add_hp=True)
+        (L, _) = builder(maps)
+        dense = self._densify(L, 3 * fd)
+        assert dense[0 * fd + 1, 1 * fd + 1] == -1.0
+        assert dense[1 * fd + 1, 2 * fd + 1] == -1.0
+
+    def test_learned_dim_is_graph_laplacian(self):
+        """With identity maps the learned dim is the graph Laplacian (D - A)."""
+        builder, maps, fd = self._path_builder(add_lp=True)
+        (L, _) = builder(maps)
+        dense = self._densify(L, 3 * fd)
+        deg = torch.tensor([1.0, 2.0, 1.0])
+        for u in range(3):
+            assert dense[u * fd, u * fd] == deg[u]
+        assert dense[0 * fd, 1 * fd] == -1.0  # off-diagonal = -1
+
+    def test_normalise_is_noop_when_off(self):
+        """normalise() returns its inputs unchanged when both flags are off."""
+        builder, _, _ = self._path_builder()
+        diag = torch.randn(3, 1)
+        tril = torch.randn(2, 1)
+        row, col = builder.vertex_tril_idx
+        d_out, t_out = builder.normalise(diag.clone(), tril.clone(), row, col)
+        assert torch.equal(d_out, diag)
+        assert torch.equal(t_out, tril)
+
+    def test_deg_normalised_oracle(self):
+        """deg_normalised gives exact degree-normalized entries on a path.
+
+        For deg=[1,2,1] with identity maps, the augmented degree normalization
+        gives diagonal deg/(deg+1)=[0.5, 2/3, 0.5] and off-diagonal
+        -1/sqrt((deg_u+1)(deg_v+1)).
+        """
+        import math
+
+        builder, maps, fd = self._path_builder(deg_normalised=True)
+        (L, _) = builder(maps)
+        dense = self._densify(L, 3 * fd)
+        deg = [1.0, 2.0, 1.0]
+        for u in range(3):
+            assert dense[u, u] == pytest.approx(deg[u] / (deg[u] + 1))
+        # Off-diagonal between nodes 0-1: -1 / sqrt((1+1)(2+1)).
+        expected = -1.0 / math.sqrt((deg[0] + 1) * (deg[1] + 1))
+        assert dense[0, 1].item() == pytest.approx(expected)
+
+    def test_normalised_bounds_values(self):
+        """Normalisation keeps Laplacian entries bounded (< raw magnitude)."""
+        b_raw, maps, _ = self._path_builder()
+        b_norm, _, _ = self._path_builder(normalised=True)
+        (_, v_raw), _ = b_raw(maps)
+        (_, v_norm), _ = b_norm(maps)
+        assert v_norm.abs().max() <= v_raw.abs().max()
