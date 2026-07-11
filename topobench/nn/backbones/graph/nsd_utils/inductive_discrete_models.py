@@ -659,9 +659,7 @@ class InductiveDiscreteDiagSheafPropagation(
             # Stabilised leapfrog wave update. step_size is the leapfrog step h;
             # the central second-difference of X''(t) = -Delta_F X scales the
             # force/acceleration term by h^2 (the CFL stability control).
-            x_new = (
-                2 * x_curr - x_prev - (self.step_size**2) * x_layer
-            )
+            x_new = 2 * x_curr - x_prev - (self.step_size**2) * x_layer
             x_prev = x_curr
             x_curr = x_new
 
