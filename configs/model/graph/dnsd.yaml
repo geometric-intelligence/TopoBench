@@ -1,0 +1,53 @@
+_target_: topobench.model.TBModel
+
+model_name: dnsd
+model_domain: graph
+
+feature_encoder:
+  _target_: topobench.nn.encoders.${model.feature_encoder.encoder_name}
+  encoder_name: AllCellFeatureEncoder
+  in_channels: ${infer_in_channels:${dataset},${oc.select:transforms,null}}
+  out_channels: 64
+  proj_dropout: 0.0
+
+backbone:
+  _target_: topobench.nn.backbones.DNSDEncoder
+  input_dim: ${model.feature_encoder.out_channels}
+  hidden_dim: ${model.feature_encoder.out_channels} # SWEEP!: [32,64]
+  num_layers: 4 # SWEEP: [4,8] — DNSD is built to stay effective when deep
+  d: 4 # stalk dim; must divide hidden_dim
+  map_type: diagonal # 'diagonal' | 'full' | 'orthogonal'
+  dropout: 0.0 # per-stalk dropout inside each layer
+  input_dropout: 0.0
+  # DNSD deep-diffusion knobs (Table 4). Defaults reproduce the full DNSD model.
+  directional: true # sheaf adjacency operator instead of the Laplacian
+  odd: true # odd (tanh) nonlinearity instead of ReLU
+  use_stalk_gate: false # per-stalk sigmoid gate on updates
+  layer_norm_mode: embedding # 'embedding' | 'stalk' | null
+  ortho_method: qr # only used when map_type == 'orthogonal' (paper default)
+
+backbone_wrapper:
+  _target_: topobench.nn.wrappers.${model.backbone_wrapper.wrapper_name}
+  _partial_: true
+  wrapper_name: GNNWrapper
+  out_channels: ${model.feature_encoder.out_channels}
+  residual_connections: false
+  num_cell_dimensions: ${infer_num_cell_dimensions:${oc.select:model.feature_encoder.selected_dimensions,null},${model.feature_encoder.in_channels}}
+
+readout:
+  _target_: topobench.nn.readouts.${model.readout.readout_name}
+  readout_name: MLPReadout
+  num_cell_dimensions: ${infer_num_cell_dimensions:${oc.select:model.feature_encoder.selected_dimensions,null},${model.feature_encoder.in_channels}} # The highest order of cell dimensions to consider
+  in_channels: ${model.feature_encoder.out_channels}
+  hidden_layers: [16]
+  out_channels: ${dataset.parameters.num_classes}
+  task_level: ${define_task_level:${dataset.parameters.task_level},${dataset.split_params.learning_setting}} # Handles the edge case of node-inductive task
+  pooling_type: sum
+  # Extra MLP params
+  dropout: 0.2
+  act: "relu"
+  norm: null
+  final_act: null
+
+# compile model for faster training with pytorch 2.0
+compile: false
