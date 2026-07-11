@@ -468,8 +468,12 @@ class DNSDConv(MessagePassing):
         x_stalk = x.view(n, s, h)
         agg_stalk = aggr_out.view(n, s, h)
 
-        transformed = torch.einsum("ij,njk,kl->nil", self.W1, agg_stalk, self.W2)
-        transformed = torch.tanh(transformed) if self.odd else F.relu(transformed)
+        transformed = torch.einsum(
+            "ij,njk,kl->nil", self.W1, agg_stalk, self.W2
+        )
+        transformed = (
+            torch.tanh(transformed) if self.odd else F.relu(transformed)
+        )
 
         if self.use_stalk_gate:
             gate_input = torch.cat([x_stalk, agg_stalk], dim=-1)
