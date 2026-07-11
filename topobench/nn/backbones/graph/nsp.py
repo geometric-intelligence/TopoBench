@@ -33,7 +33,9 @@ class NSPEncoder(Module):
     input_dim : int
         Dimension of input node features.
     hidden_dim : int
-        Dimension of hidden layers. Must be divisible by d.
+        Dimension of hidden layers. If not divisible by d, the effective inner
+        width is floored to ``(hidden_dim // d) * d`` while the output stays
+        ``hidden_dim``.
     num_layers : int, optional
         Number of propagation layers. Default is 2.
     d : int, optional

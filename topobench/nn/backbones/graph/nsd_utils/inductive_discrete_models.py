@@ -525,7 +525,7 @@ class InductiveDiscreteDiagSheafPropagation(
     dynamics of NSD). It discretises the sheaf wave equation
     ``X''(t) = -Delta_F X(t)`` with the leapfrog method:
 
-        X_{t+1} = 2 X_t - X_{t-1} - h^2 * sigma(Delta_F (I (x) W1) X_t W2)
+        X_{t+1} = 2 X_t - X_{t-1} - h^2 * sigma(Delta_F (I ⊗ W1) X_t W2)
 
     where ``h = step_size`` is the leapfrog step. The central second-difference
     discretisation of ``X''(t) = -Delta_F X`` scales the force term by ``h^2``;
@@ -569,7 +569,7 @@ class InductiveDiscreteDiagSheafPropagation(
         # Optional extra input projection (appendix "Use Second Linear Transform").
         self.second_linear = bool(config.get("second_linear", False))
         if self.second_linear:
-            self.lin12 = nn.Linear(self.hidden_dim, self.hidden_dim)
+            self.lin_second = nn.Linear(self.hidden_dim, self.hidden_dim)
 
         # Dynamic vs fixed sheaf geometry (appendix "New Delta each step").
         self.new_laplacian_each_step = bool(
@@ -611,7 +611,7 @@ class InductiveDiscreteDiagSheafPropagation(
 
         # Optional extra input projection before propagation begins.
         if self.second_linear:
-            x = self.lin12(x)
+            x = self.lin_second(x)
             x = F.elu(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
 
@@ -645,7 +645,7 @@ class InductiveDiscreteDiagSheafPropagation(
             else:
                 L = fixed_L
 
-            # Force term: sigma(Delta_F (I (x) W1) x_curr W2).
+            # Force term: sigma(Delta_F (I ⊗ W1) x_curr W2).
             x_layer = F.dropout(x_curr, p=self.dropout, training=self.training)
             x_layer = x_layer.t().reshape(-1, self.d)
             x_layer = self.lin_left_weights[layer](x_layer)
@@ -658,8 +658,7 @@ class InductiveDiscreteDiagSheafPropagation(
 
             # Stabilised leapfrog wave update. step_size is the leapfrog step h;
             # the central second-difference of X''(t) = -Delta_F X scales the
-            # force/acceleration term by h^2 (see paper derivation). The original
-            # PR omitted this entirely (implicit h=1 + an unused epsilons param).
+            # force/acceleration term by h^2 (the CFL stability control).
             x_new = (
                 2 * x_curr - x_prev - (self.step_size**2) * x_layer
             )
