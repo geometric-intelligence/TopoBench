@@ -241,7 +241,10 @@ class LaplacianBuilder(nn.Module):
             fixed_diag, fixed_non_diag = self.scalar_normalise(
                 fixed_diag, fixed_non_diag, tril_row, tril_col
             )
-        fixed_diag, fixed_non_diag = fixed_diag.view(-1), fixed_non_diag.view(-1)
+        fixed_diag, fixed_non_diag = (
+            fixed_diag.view(-1),
+            fixed_non_diag.view(-1),
+        )
 
         tril_indices, tril_maps = mergesp(
             self.fixed_tril_indices, fixed_non_diag, tril_indices, tril_maps
@@ -319,8 +322,10 @@ class DiagLaplacianBuilder(LaplacianBuilder):
 
         Returns
         -------
-        diag, tril : torch.Tensor
-            The (possibly) normalized diagonal and off-diagonal values.
+        diag : torch.Tensor
+            The (possibly) normalized diagonal block values.
+        tril : torch.Tensor
+            The (possibly) normalized lower-triangular block values.
         """
         if self.normalised:
             # Share the symmetric-normalization math with the fixed maps.
@@ -371,7 +376,11 @@ class DiagLaplacianBuilder(LaplacianBuilder):
         # Append the fixed high-/low-pass entries (no-op unless enabled).
         (diag_indices, diag_maps), (tril_indices, tril_maps) = (
             self.append_fixed_maps(
-                len(left_maps), diag_indices, diag_maps, tril_indices, tril_maps
+                len(left_maps),
+                diag_indices,
+                diag_maps,
+                tril_indices,
+                tril_maps,
             )
         )
 
