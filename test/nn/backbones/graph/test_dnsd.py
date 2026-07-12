@@ -11,7 +11,6 @@ from topobench.nn.backbones.graph.nsd_utils.dnsd_models import (
     FullRestrictionBuilder,
     Orthogonal,
     OrthogonalRestrictionBuilder,
-    _scale_linear_,
 )
 
 
@@ -306,10 +305,9 @@ class TestRestrictionBuilders:
 
     def test_init_scale_shrinks_weights(self):
         """init_scale rescales the builder's linear weights by exactly the
-        factor. Both builders are seeded identically, and ``_scale_linear_``
-        runs *after* ``nn.Linear`` init, so the scaled params must equal the
-        unscaled params times 0.5 to the bit. This fails if ``_scale_linear_``
-        is a no-op or is removed.
+        factor. Both builders are seeded identically, and the scaling runs
+        *after* ``nn.Linear`` init, so the scaled params must equal the unscaled
+        params times 0.5 to the bit. This fails if the scaling is a no-op.
         """
         torch.manual_seed(0)
         b_default = FullRestrictionBuilder(self.hidden_dim, self.d)
@@ -319,20 +317,6 @@ class TestRestrictionBuilders:
         )
         assert torch.allclose(b_scaled.lin.weight, b_default.lin.weight * 0.5)
         assert torch.allclose(b_scaled.lin.bias, b_default.lin.bias * 0.5)
-
-    def test_scale_linear_noop_when_one(self):
-        """_scale_linear_ leaves parameters unchanged when scale is 1.0."""
-        lin = torch.nn.Linear(4, 4)
-        w0 = lin.weight.clone()
-        _scale_linear_(lin, 1.0)
-        assert torch.equal(lin.weight, w0)
-
-    def test_scale_linear_bias_none(self):
-        """_scale_linear_ handles a bias-free linear layer."""
-        lin = torch.nn.Linear(4, 4, bias=False)
-        w0 = lin.weight.clone()
-        _scale_linear_(lin, 0.5)
-        assert torch.allclose(lin.weight, w0 * 0.5)
 
     def test_base_builder_raises(self):
         """The abstract base builder forward raises NotImplementedError."""

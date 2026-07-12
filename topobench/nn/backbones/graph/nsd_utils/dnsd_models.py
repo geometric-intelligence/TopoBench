@@ -157,7 +157,11 @@ class FullRestrictionBuilder(_RestrictionBuilder):
         super().__init__()
         self.d = num_stalks
         self.lin = nn.Linear(2 * hidden_dim, num_stalks * num_stalks)
-        _scale_linear_(self.lin, init_scale)
+        if init_scale != 1.0:
+            with torch.no_grad():
+                self.lin.weight.data *= init_scale
+                if self.lin.bias is not None:
+                    self.lin.bias.data *= init_scale
 
     def forward(self, x, edge_index):
         """
@@ -202,7 +206,11 @@ class DiagonalRestrictionBuilder(_RestrictionBuilder):
         super().__init__()
         self.d = num_stalks
         self.lin = nn.Linear(2 * hidden_dim, num_stalks)
-        _scale_linear_(self.lin, init_scale)
+        if init_scale != 1.0:
+            with torch.no_grad():
+                self.lin.weight.data *= init_scale
+                if self.lin.bias is not None:
+                    self.lin.bias.data *= init_scale
 
     def forward(self, x, edge_index):
         """
@@ -253,7 +261,11 @@ class OrthogonalRestrictionBuilder(_RestrictionBuilder):
         self.d = num_stalks
         self.lin = nn.Linear(2 * hidden_dim, num_stalks * num_stalks)
         self.ortho = Orthogonal(num_stalks, method=ortho_method)
-        _scale_linear_(self.lin, init_scale)
+        if init_scale != 1.0:
+            with torch.no_grad():
+                self.lin.weight.data *= init_scale
+                if self.lin.bias is not None:
+                    self.lin.bias.data *= init_scale
 
     def forward(self, x, edge_index):
         """
@@ -274,30 +286,6 @@ class OrthogonalRestrictionBuilder(_RestrictionBuilder):
         u, v = edge_index
         x_cat = torch.cat([x[u], x[v]], dim=-1)
         return self.ortho(self.lin(x_cat))
-
-
-def _scale_linear_(lin, init_scale):
-    """
-    Scale a linear layer's initial weights and bias in place.
-
-    Parameters
-    ----------
-    lin : torch.nn.Linear
-        Linear layer whose parameters are rescaled.
-    init_scale : float
-        Multiplier applied to the weights and bias. A no-op when equal to 1.0.
-
-    Returns
-    -------
-    None
-        None.
-    """
-    if init_scale == 1.0:
-        return
-    with torch.no_grad():
-        lin.weight.data *= init_scale
-        if lin.bias is not None:
-            lin.bias.data *= init_scale
 
 
 _BUILDER_MAP = {
