@@ -666,3 +666,259 @@ class InductiveDiscreteDiagSheafPropagation(
         x = x_curr.reshape(actual_num_nodes, -1)
         x = self.lin2(x)
         return x
+
+
+class InductiveDiscreteBundleSheafPropagation(
+    InductiveDiscreteBundleSheafDiffusion
+):
+    """
+    Neural Sheaf Propagation (NSP) with orthogonal (bundle, O(d)) maps.
+
+    Wave counterpart of :class:`InductiveDiscreteBundleSheafDiffusion`: each
+    restriction map is an orthogonal ``d x d`` matrix (Cayley / matrix-exp
+    parameterization). Uses the same stabilised leapfrog scheme as
+    :class:`InductiveDiscreteDiagSheafPropagation` (see that class for the
+    ``step_size`` / ``second_linear`` / ``new_laplacian_each_step`` knobs);
+    only the sheaf Laplacian builder differs. Requires ``d > 1``.
+
+    Parameters
+    ----------
+    config : dict
+        Same configuration as :class:`InductiveDiscreteBundleSheafDiffusion`, plus
+        optional ``step_size`` (float, default 0.5), ``second_linear``
+        (bool, default False) and ``new_laplacian_each_step`` (bool, default True).
+
+    References
+    ----------
+    [1] Suk et al. "Surfing on the Neural Sheaf." NeurIPS 2022 Workshop on
+        Symmetry and Geometry in Neural Representations. OpenReview:xOXFkyRzTlu.
+    """
+
+    def __init__(self, config):
+        super().__init__(config)
+        # Wave propagation is second-order: drop the first-order diffusion
+        # residual epsilons (unused here) to avoid dead parameters.
+        del self.epsilons
+        self.step_size = float(config.get("step_size", 0.5))
+
+        self.second_linear = bool(config.get("second_linear", False))
+        if self.second_linear:
+            self.lin_second = nn.Linear(self.hidden_dim, self.hidden_dim)
+
+        self.new_laplacian_each_step = bool(
+            config.get("new_laplacian_each_step", True)
+        )
+        if not self.new_laplacian_each_step:
+            self.sheaf_learners = self.sheaf_learners[:1]
+
+    def forward(self, x, edge_index):
+        """
+        Forward pass of bundle (orthogonal) sheaf wave propagation.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Node feature matrix of shape [num_nodes, input_dim].
+        edge_index : torch.Tensor
+            Edge indices of shape [2, num_edges].
+
+        Returns
+        -------
+        torch.Tensor
+            Output node features of shape [num_nodes, output_dim].
+        """
+        actual_num_nodes = x.size(0)
+
+        laplacian_builder = NormConnectionLaplacianBuilder(
+            actual_num_nodes,
+            edge_index,
+            d=self.d,
+            orth_map=self.orth_trans,
+        )
+
+        x = F.dropout(x, p=self.input_dropout, training=self.training)
+        x = self.lin1(x)
+        x = F.elu(x)
+        x = F.dropout(x, p=self.dropout, training=self.training)
+
+        # Optional extra input projection before propagation begins.
+        if self.second_linear:
+            x = self.lin_second(x)
+            x = F.elu(x)
+            x = F.dropout(x, p=self.dropout, training=self.training)
+
+        x = x.view(actual_num_nodes * self.d, -1)
+
+        # Fixed geometry: build Delta_F once from the encoded X_0 and reuse it.
+        fixed_L = None
+        if not self.new_laplacian_each_step:
+            maps = self.sheaf_learners[0](
+                x.reshape(actual_num_nodes, -1), edge_index
+            )
+            fixed_L, trans_maps = laplacian_builder(maps)
+            self.sheaf_learners[0].set_L(trans_maps)
+
+        # Leapfrog needs the previous and current states.
+        x_prev = x
+        x_curr = x
+        for layer in range(self.layers):
+            if self.new_laplacian_each_step:
+                x_maps = F.dropout(
+                    x_curr,
+                    p=self.dropout if layer > 0 else 0.0,
+                    training=self.training,
+                )
+                maps = self.sheaf_learners[layer](
+                    x_maps.reshape(actual_num_nodes, -1), edge_index
+                )
+                L, trans_maps = laplacian_builder(maps)
+                self.sheaf_learners[layer].set_L(trans_maps)
+            else:
+                L = fixed_L
+
+            # Force term: sigma(Delta_F (I ⊗ W1) x_curr W2).
+            x_layer = F.dropout(x_curr, p=self.dropout, training=self.training)
+            x_layer = x_layer.t().reshape(-1, self.d)
+            x_layer = self.lin_left_weights[layer](x_layer)
+            x_layer = x_layer.reshape(-1, actual_num_nodes * self.d).t()
+            x_layer = self.lin_right_weights[layer](x_layer)
+            x_layer = torch_sparse.spmm(
+                L[0], L[1], x_layer.size(0), x_layer.size(0), x_layer
+            )
+            x_layer = F.elu(x_layer)
+
+            # Stabilised leapfrog wave update (step_size h; force scaled by h^2).
+            x_new = 2 * x_curr - x_prev - (self.step_size**2) * x_layer
+            x_prev = x_curr
+            x_curr = x_new
+
+        x = x_curr.reshape(actual_num_nodes, -1)
+        x = self.lin2(x)
+        return x
+
+
+class InductiveDiscreteGeneralSheafPropagation(
+    InductiveDiscreteGeneralSheafDiffusion
+):
+    """
+    Neural Sheaf Propagation (NSP) with general (full ``d x d``) maps.
+
+    Wave counterpart of :class:`InductiveDiscreteGeneralSheafDiffusion`: each
+    restriction map is an unconstrained ``d x d`` matrix. Uses the same stabilised
+    leapfrog scheme as :class:`InductiveDiscreteDiagSheafPropagation` (see that
+    class for the ``step_size`` / ``second_linear`` / ``new_laplacian_each_step``
+    knobs); only the sheaf Laplacian builder differs. Requires ``d > 1``.
+
+    Parameters
+    ----------
+    config : dict
+        Same configuration as :class:`InductiveDiscreteGeneralSheafDiffusion`, plus
+        optional ``step_size`` (float, default 0.5), ``second_linear``
+        (bool, default False) and ``new_laplacian_each_step`` (bool, default True).
+
+    References
+    ----------
+    [1] Suk et al. "Surfing on the Neural Sheaf." NeurIPS 2022 Workshop on
+        Symmetry and Geometry in Neural Representations. OpenReview:xOXFkyRzTlu.
+    """
+
+    def __init__(self, config):
+        super().__init__(config)
+        # Wave propagation is second-order: drop the first-order diffusion
+        # residual epsilons (unused here) to avoid dead parameters.
+        del self.epsilons
+        self.step_size = float(config.get("step_size", 0.5))
+
+        self.second_linear = bool(config.get("second_linear", False))
+        if self.second_linear:
+            self.lin_second = nn.Linear(self.hidden_dim, self.hidden_dim)
+
+        self.new_laplacian_each_step = bool(
+            config.get("new_laplacian_each_step", True)
+        )
+        if not self.new_laplacian_each_step:
+            self.sheaf_learners = self.sheaf_learners[:1]
+
+    def forward(self, x, edge_index):
+        """
+        Forward pass of general (full) sheaf wave propagation.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Node feature matrix of shape [num_nodes, input_dim].
+        edge_index : torch.Tensor
+            Edge indices of shape [2, num_edges].
+
+        Returns
+        -------
+        torch.Tensor
+            Output node features of shape [num_nodes, output_dim].
+        """
+        actual_num_nodes = x.size(0)
+
+        laplacian_builder = GeneralLaplacianBuilder(
+            actual_num_nodes,
+            edge_index,
+            d=self.d,
+        )
+
+        x = F.dropout(x, p=self.input_dropout, training=self.training)
+        x = self.lin1(x)
+        x = F.elu(x)
+        x = F.dropout(x, p=self.dropout, training=self.training)
+
+        # Optional extra input projection before propagation begins.
+        if self.second_linear:
+            x = self.lin_second(x)
+            x = F.elu(x)
+            x = F.dropout(x, p=self.dropout, training=self.training)
+
+        x = x.view(actual_num_nodes * self.d, -1)
+
+        # Fixed geometry: build Delta_F once from the encoded X_0 and reuse it.
+        fixed_L = None
+        if not self.new_laplacian_each_step:
+            maps = self.sheaf_learners[0](
+                x.reshape(actual_num_nodes, -1), edge_index
+            )
+            fixed_L, trans_maps = laplacian_builder(maps)
+            self.sheaf_learners[0].set_L(trans_maps)
+
+        # Leapfrog needs the previous and current states.
+        x_prev = x
+        x_curr = x
+        for layer in range(self.layers):
+            if self.new_laplacian_each_step:
+                x_maps = F.dropout(
+                    x_curr,
+                    p=self.dropout if layer > 0 else 0.0,
+                    training=self.training,
+                )
+                maps = self.sheaf_learners[layer](
+                    x_maps.reshape(actual_num_nodes, -1), edge_index
+                )
+                L, trans_maps = laplacian_builder(maps)
+                self.sheaf_learners[layer].set_L(trans_maps)
+            else:
+                L = fixed_L
+
+            # Force term: sigma(Delta_F (I ⊗ W1) x_curr W2).
+            x_layer = F.dropout(x_curr, p=self.dropout, training=self.training)
+            x_layer = x_layer.t().reshape(-1, self.d)
+            x_layer = self.lin_left_weights[layer](x_layer)
+            x_layer = x_layer.reshape(-1, actual_num_nodes * self.d).t()
+            x_layer = self.lin_right_weights[layer](x_layer)
+            x_layer = torch_sparse.spmm(
+                L[0], L[1], x_layer.size(0), x_layer.size(0), x_layer
+            )
+            x_layer = F.elu(x_layer)
+
+            # Stabilised leapfrog wave update (step_size h; force scaled by h^2).
+            x_new = 2 * x_curr - x_prev - (self.step_size**2) * x_layer
+            x_prev = x_curr
+            x_curr = x_new
+
+        x = x_curr.reshape(actual_num_nodes, -1)
+        x = self.lin2(x)
+        return x

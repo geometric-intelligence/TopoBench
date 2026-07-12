@@ -275,3 +275,97 @@ class TestNSPFlags:
         model = NSPEncoder(input_dim=16, hidden_dim=32)
         names = [n for n, _ in model.named_parameters()]
         assert not any("epsilon" in n for n in names)
+
+
+class TestNSPMapTypes:
+    """Test the diagonal / bundle (O(d)) / general restriction-map variants."""
+
+    @pytest.mark.parametrize(
+        "sheaf_type,expected_cls",
+        [
+            ("diag", "InductiveDiscreteDiagSheafPropagation"),
+            ("bundle", "InductiveDiscreteBundleSheafPropagation"),
+            ("general", "InductiveDiscreteGeneralSheafPropagation"),
+        ],
+    )
+    def test_map_type_selects_class_and_runs(self, sheaf_type, expected_cls):
+        """Each sheaf_type builds the matching propagation class and runs.
+
+        Parameters
+        ----------
+        sheaf_type : str
+            The restriction-map family to select.
+        expected_cls : str
+            The expected propagation class name.
+        """
+        ei = _graph()
+        model = NSPEncoder(
+            input_dim=16,
+            hidden_dim=32,
+            num_layers=2,
+            d=2,
+            sheaf_type=sheaf_type,
+        )
+        assert type(model.sheaf_propagation_model).__name__ == expected_cls
+        out = model(torch.randn(8, 16), ei)
+        assert out.shape == (8, 32)
+        assert torch.isfinite(out).all()
+
+    @pytest.mark.parametrize("sheaf_type", ["bundle", "general"])
+    def test_bundle_general_require_d_gt_1(self, sheaf_type):
+        """Bundle and general maps require a stalk dimension d > 1.
+
+        Parameters
+        ----------
+        sheaf_type : str
+            The restriction-map family under test.
+        """
+        with pytest.raises(AssertionError):
+            NSPEncoder(input_dim=16, hidden_dim=32, d=1, sheaf_type=sheaf_type)
+
+    def test_unknown_sheaf_type_raises(self):
+        """An unknown sheaf_type raises ValueError."""
+        with pytest.raises(ValueError, match="sheaf_type"):
+            NSPEncoder(input_dim=16, hidden_dim=32, sheaf_type="banana")
+
+    @pytest.mark.parametrize("sheaf_type", ["bundle", "general"])
+    def test_variant_removes_epsilons(self, sheaf_type):
+        """Bundle/general variants also drop the diffusion epsilons parameter.
+
+        Parameters
+        ----------
+        sheaf_type : str
+            The restriction-map family under test.
+        """
+        model = NSPEncoder(
+            input_dim=16, hidden_dim=32, d=2, sheaf_type=sheaf_type
+        )
+        assert not hasattr(model.sheaf_propagation_model, "epsilons")
+
+    @pytest.mark.parametrize("sheaf_type", ["bundle", "general"])
+    def test_variant_second_linear_and_fixed_geometry(self, sheaf_type):
+        """Bundle/general run with second_linear + fixed-geometry enabled.
+
+        Exercises the optional ``lin_second`` projection and the
+        ``new_laplacian_each_step=False`` (single reused sheaf learner) path.
+
+        Parameters
+        ----------
+        sheaf_type : str
+            The restriction-map family under test.
+        """
+        ei = _graph()
+        model = NSPEncoder(
+            input_dim=16,
+            hidden_dim=32,
+            num_layers=3,
+            d=2,
+            sheaf_type=sheaf_type,
+            second_linear=True,
+            new_laplacian_each_step=False,
+        )
+        out = model(torch.randn(8, 16), ei)
+        assert out.shape == (8, 32)
+        assert torch.isfinite(out).all()
+        assert hasattr(model.sheaf_propagation_model, "lin_second")
+        assert len(model.sheaf_propagation_model.sheaf_learners) == 1
