@@ -74,21 +74,13 @@ embeddings.
 
 from __future__ import annotations
 
+import copy
 from collections import defaultdict
 
 import torch
 from torch import nn
 
 from topobench.data.utils import get_routes_from_neighborhoods
-from topobench.nn.backbones.combinatorial.etnn import (
-    _ETNNMessagePassing,
-    _make_mlp,
-    _neighborhood_to_edge_index,
-)
-from topobench.nn.backbones.combinatorial.etnn_lappe import (
-    _build_lappe_cell_coordinates,
-    _squared_coordinate_distances,
-)
 
 _SUPPORTED_COORDINATE_POLICIES = {
     "none",
@@ -100,6 +92,531 @@ _SUPPORTED_INVARIANT_NORMALIZATIONS = {
     "batch_norm",
     "mean_abs",
 }
+
+
+def _get_activation(name: str) -> nn.Module:
+    """Resolve an activation used by ETNN message and update MLPs.
+
+    Parameters
+    ----------
+    name : str
+        Activation name from the public model config.
+
+    Returns
+    -------
+    nn.Module
+        Instantiated activation module.
+
+    Raises
+    ------
+    NotImplementedError
+        If ``name`` is not supported by the ETNN config surface.
+    """
+    activations = {
+        "relu": nn.ReLU,
+        "elu": nn.ELU,
+        "gelu": nn.GELU,
+        "silu": nn.SiLU,
+        "tanh": nn.Tanh,
+        "id": nn.Identity,
+    }
+    if name not in activations:
+        raise NotImplementedError(f"Activation `{name}` is not supported.")
+    return activations[name]()
+
+
+def _make_mlp(
+    in_channels: int,
+    hidden_channels: int,
+    out_channels: int,
+    dropout: float,
+    activation: str,
+    use_batch_norm: bool,
+) -> nn.Sequential:
+    """Build the MLP used by ETNN message and feature-update functions.
+
+    Parameters
+    ----------
+    in_channels : int
+        Input feature dimension.
+    hidden_channels : int
+        Hidden feature dimension.
+    out_channels : int
+        Output feature dimension.
+    dropout : float
+        Dropout probability after the hidden activation.
+    activation : str
+        Activation name resolved by :func:`_get_activation`.
+    use_batch_norm : bool
+        Whether to normalize the hidden representation.
+
+    Returns
+    -------
+    nn.Sequential
+        Two-linear-layer ETNN MLP block.
+    """
+    activation_module = _get_activation(activation)
+    layers: list[nn.Module] = [nn.Linear(in_channels, hidden_channels)]
+    if use_batch_norm:
+        layers.append(nn.BatchNorm1d(hidden_channels))
+    layers.extend([copy.deepcopy(activation_module), nn.Dropout(dropout)])
+    layers.append(nn.Linear(hidden_channels, out_channels))
+    return nn.Sequential(*layers)
+
+
+class _ETNNMessagePassing(nn.Module):
+    """Apply one relation-specific gated ETNN message function.
+
+    For sender ``d``, receiver ``c``, and relation ``N``, this block computes
+
+        m_tilde(d,c,N) = phi_N([h_d, h_c, e_d,c,N])
+        gate(d,c,N) = sigmoid(W_N m_tilde(d,c,N) + b_N)
+        m(c,N) = sum_{d in N(c)} gate(d,c,N) * m_tilde(d,c,N)
+
+    The scalar gate follows the edge-inference mechanism in the official NSAPH
+    ETNN implementation.  The coordinate policy determines the width and
+    meaning of ``e_d,c,N``; message aggregation itself is shared by all modes.
+
+    Parameters
+    ----------
+    hidden_channels : int
+        Hidden feature dimension for sender, receiver, and message states.
+    edge_channels : int
+        Number of policy-dependent scalar relation attributes.
+    dropout : float
+        Dropout probability inside the message MLP.
+    activation : str
+        Message-MLP activation name.
+    use_batch_norm : bool
+        Whether to normalize the hidden message representation.
+    """
+
+    def __init__(
+        self,
+        hidden_channels: int,
+        edge_channels: int,
+        dropout: float,
+        activation: str,
+        use_batch_norm: bool,
+    ) -> None:
+        super().__init__()
+        self.message_mlp = _make_mlp(
+            in_channels=2 * hidden_channels + edge_channels,
+            hidden_channels=hidden_channels,
+            out_channels=hidden_channels,
+            dropout=dropout,
+            activation=activation,
+            use_batch_norm=use_batch_norm,
+        )
+        self.edge_gate = nn.Sequential(
+            nn.Linear(hidden_channels, 1),
+            nn.Sigmoid(),
+        )
+
+    def forward(
+        self,
+        x_src: torch.Tensor,
+        x_dst: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_attr: torch.Tensor,
+    ) -> torch.Tensor:
+        """Aggregate gated messages into receiver cells.
+
+        Parameters
+        ----------
+        x_src : torch.Tensor
+            Source-rank embeddings.
+        x_dst : torch.Tensor
+            Destination-rank embeddings.
+        edge_index : torch.Tensor
+            Relation edges in ``[sender, receiver]`` format.
+        edge_attr : torch.Tensor
+            Policy-dependent relation attributes aligned with ``edge_index``.
+
+        Returns
+        -------
+        torch.Tensor
+            Aggregated messages with one row per destination cell.
+        """
+        out = x_dst.new_zeros(x_dst.shape[0], x_dst.shape[1])
+        if (
+            edge_index.numel() == 0
+            or x_src.shape[0] == 0
+            or x_dst.shape[0] == 0
+        ):
+            return out
+
+        sender, receiver = edge_index
+        state = torch.cat(
+            [x_src[sender], x_dst[receiver], edge_attr.to(x_dst.dtype)], dim=-1
+        )
+        messages = self.message_mlp(state)
+        messages = messages * self.edge_gate(messages)
+        out.index_add_(0, receiver, messages)
+        return out
+
+
+def _sparse_axis_to_feature_index(
+    batch,
+    rank: int,
+    sparse_size: int,
+    num_cells: int | None,
+    device: torch.device,
+) -> torch.Tensor:
+    """Map a placeholder-padded sparse axis to compact feature rows.
+
+    TopoBench batching can reserve one sparse slot for a graph with no cells at
+    a requested rank, while the corresponding ``x_<rank>`` tensor contains no
+    row for that graph.  This helper reconstructs the sparse-slot to feature-row
+    map from ``batch_<rank>`` and marks placeholder slots with ``-1``.
+
+    Parameters
+    ----------
+    batch : torch_geometric.data.Data
+        Lifted batch containing rank-wise batch assignments.
+    rank : int
+        Cell rank represented by the sparse axis.
+    sparse_size : int
+        Sparse axis length before compaction.
+    num_cells : int | None
+        Number of real feature rows for this rank.
+    device : torch.device
+        Device for the returned index map.
+
+    Returns
+    -------
+    torch.Tensor
+        Long map from sparse slots to feature rows; placeholders map to ``-1``.
+
+    Raises
+    ------
+    ValueError
+        If feature rows and sparse slots differ but batch metadata cannot prove
+        a safe compaction.
+    """
+    if num_cells is None:
+        num_cells = sparse_size
+    if sparse_size == num_cells:
+        return torch.arange(sparse_size, device=device)
+
+    batch_key = f"batch_{rank}"
+    if not hasattr(batch, batch_key):
+        raise ValueError(
+            "Cannot compact ETNN sparse neighborhood axis for rank "
+            f"{rank}: sparse axis has length {sparse_size}, but the rank-"
+            f"{rank} feature tensor has {num_cells} rows and `{batch_key}` "
+            "is missing."
+        )
+
+    batch_vector = getattr(batch, batch_key).to(device)
+    num_graphs = getattr(batch, "num_graphs", None)
+    if num_graphs is None:
+        num_graphs = (
+            int(batch_vector.max().item()) + 1 if batch_vector.numel() else 1
+        )
+    counts = torch.bincount(batch_vector, minlength=num_graphs).tolist()
+    expected_sparse_size = sum(max(1, int(count)) for count in counts)
+    if expected_sparse_size != sparse_size:
+        raise ValueError(
+            "Cannot compact ETNN sparse neighborhood axis for rank "
+            f"{rank}: sparse axis has length {sparse_size}, but `{batch_key}` "
+            f"implies {expected_sparse_size} slots under TopoBench's empty-"
+            "rank placeholder convention."
+        )
+
+    mapping = torch.full((sparse_size,), -1, dtype=torch.long, device=device)
+    sparse_offset = 0
+    feature_offset = 0
+    for count in counts:
+        count = int(count)
+        if count > 0:
+            mapping[sparse_offset : sparse_offset + count] = torch.arange(
+                feature_offset,
+                feature_offset + count,
+                device=device,
+            )
+            feature_offset += count
+        sparse_offset += max(1, count)
+    return mapping
+
+
+def _neighborhood_to_edge_index(
+    batch,
+    neighborhood: str,
+    src_rank: int,
+    dst_rank: int,
+    device: torch.device,
+    dtype: torch.dtype,
+    num_src_cells: int | None = None,
+    num_dst_cells: int | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Convert a sparse TopoBench relation into ETNN message edges.
+
+    TopoBench relation matrices store receivers on rows and senders on columns,
+    whereas message passing consumes ``[sender, receiver]`` edge indices.  The
+    conversion also removes stored zeros and compacts empty-rank placeholder
+    axes before any feature tensor is indexed.
+
+    Parameters
+    ----------
+    batch : torch_geometric.data.Data
+        Lifted batch containing the requested sparse relation.
+    neighborhood : str
+        Sparse relation attribute name.
+    src_rank : int
+        Sender-cell rank.
+    dst_rank : int
+        Receiver-cell rank.
+    device : torch.device
+        Device for returned tensors.
+    dtype : torch.dtype
+        Floating dtype for sparse relation values.
+    num_src_cells : int | None, optional
+        Number of real sender feature rows.
+    num_dst_cells : int | None, optional
+        Number of real receiver feature rows.
+
+    Returns
+    -------
+    tuple[torch.Tensor, torch.Tensor]
+        ``[sender, receiver]`` indices and scalar sparse relation values.
+
+    Raises
+    ------
+    AttributeError
+        If the configured relation is absent from the lifted batch.
+    """
+    if not hasattr(batch, neighborhood):
+        raise AttributeError(f"Missing ETNN neighborhood `{neighborhood}`.")
+
+    sparse_neighborhood = getattr(batch, neighborhood).coalesce()
+    indices = sparse_neighborhood.indices().long()
+    values = sparse_neighborhood.values()
+
+    # Stored zeros are absent relations, including empty-rank placeholders.
+    nonzero_mask = values != 0
+    indices = indices[:, nonzero_mask]
+    values = values[nonzero_mask]
+    if values.numel() == 0:
+        return (
+            torch.empty((2, 0), dtype=torch.long, device=device),
+            torch.empty((0, 1), dtype=dtype, device=device),
+        )
+
+    dst_map = _sparse_axis_to_feature_index(
+        batch=batch,
+        rank=dst_rank,
+        sparse_size=sparse_neighborhood.shape[0],
+        num_cells=num_dst_cells,
+        device=indices.device,
+    )
+    src_map = _sparse_axis_to_feature_index(
+        batch=batch,
+        rank=src_rank,
+        sparse_size=sparse_neighborhood.shape[1],
+        num_cells=num_src_cells,
+        device=indices.device,
+    )
+
+    receiver = dst_map[indices[0]]
+    sender = src_map[indices[1]]
+    valid_edge_mask = (receiver >= 0) & (sender >= 0)
+    receiver = receiver[valid_edge_mask]
+    sender = sender[valid_edge_mask]
+    values = values[valid_edge_mask]
+
+    edge_index = torch.stack([sender, receiver], dim=0).to(device)
+    edge_attr = values.view(-1, 1).to(device=device, dtype=dtype)
+    return edge_index, edge_attr
+
+
+def _average_coordinates_through_incidence(
+    lower_coordinates: torch.Tensor,
+    incidence: torch.Tensor,
+    num_cells: int,
+) -> torch.Tensor:
+    """Average lower-rank coordinates into incident higher-rank cells.
+
+    Parameters
+    ----------
+    lower_coordinates : torch.Tensor
+        Rank-``r-1`` coordinates with shape ``[num_lower_cells, coord_dim]``.
+    incidence : torch.Tensor
+        Sparse ``incidence_r`` with lower cells on rows and rank-``r`` cells
+        on columns.
+    num_cells : int
+        Number of real rank-``r`` cells.
+
+    Returns
+    -------
+    torch.Tensor
+        Rank-``r`` coordinates with shape ``[num_cells, coord_dim]``.
+
+    Raises
+    ------
+    ValueError
+        If either incidence axis is incompatible with the rank-wise tensors.
+    """
+    if num_cells == 0:
+        return lower_coordinates.new_empty((0, lower_coordinates.shape[1]))
+
+    incidence = incidence.coalesce()
+    if incidence.shape[0] != lower_coordinates.shape[0]:
+        raise ValueError(
+            "Cannot lift structural ETNN coordinates: incidence has "
+            f"{incidence.shape[0]} source rows, but the lower rank has "
+            f"{lower_coordinates.shape[0]} coordinate rows."
+        )
+    if incidence.shape[1] != num_cells:
+        raise ValueError(
+            "Cannot lift structural ETNN coordinates: incidence has "
+            f"{incidence.shape[1]} columns, but the target rank has "
+            f"{num_cells} cells."
+        )
+
+    indices = incidence.indices()
+    values = incidence.values().abs().to(lower_coordinates.dtype)
+    nonzero_mask = values != 0
+    indices = indices[:, nonzero_mask]
+    values = values[nonzero_mask]
+
+    coordinates = lower_coordinates.new_zeros(
+        (num_cells, lower_coordinates.shape[1])
+    )
+    weights = lower_coordinates.new_zeros((num_cells, 1))
+    if values.numel() == 0:
+        return coordinates
+
+    lower_idx, cell_idx = indices
+    coordinates.index_add_(
+        0,
+        cell_idx,
+        lower_coordinates[lower_idx] * values.unsqueeze(-1),
+    )
+    weights.index_add_(0, cell_idx, values.unsqueeze(-1))
+
+    # Degenerate target cells retain zero coordinates; nonzero columns receive
+    # their absolute-incidence-weighted barycenter.
+    weights = weights.clamp_min(torch.finfo(weights.dtype).eps)
+    return coordinates / weights
+
+
+def _build_lappe_cell_coordinates(
+    batch,
+    coordinate_attr: str,
+    max_rank: int,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> dict[int, torch.Tensor]:
+    """Lift rank-0 LapPE coordinates recursively through incidences.
+
+    Rank 0 reads the graph-derived coordinate matrix stored at
+    ``coordinate_attr``.  For each higher rank, absolute ``incidence_r`` values
+    average rank-``r-1`` coordinates into rank-``r`` cells.  This recursive
+    policy matches the available TopoBench data contract and deliberately keeps
+    structural coordinates separate from physical geometry.
+
+    Parameters
+    ----------
+    batch : torch_geometric.data.Data
+        Lifted batch with rank-wise features and consecutive incidences.
+    coordinate_attr : str
+        Rank-0 structural-coordinate attribute, normally ``LapPE``.
+    max_rank : int
+        Highest visible rank requiring coordinates.
+    device : torch.device
+        Active model device.
+    dtype : torch.dtype
+        Active feature dtype.
+
+    Returns
+    -------
+    dict[int, torch.Tensor]
+        Structural coordinates indexed by cell rank.
+
+    Raises
+    ------
+    AttributeError
+        If coordinates, rank features, or required incidences are missing.
+    ValueError
+        If rank-0 coordinates are malformed or misaligned with ``x_0``.
+    """
+    if not hasattr(batch, coordinate_attr):
+        raise AttributeError(
+            "Structural-LapPE ETNN expected rank-0 coordinates at "
+            f"`{coordinate_attr}`."
+        )
+
+    rank_0_coordinates = getattr(batch, coordinate_attr).to(
+        device=device,
+        dtype=dtype,
+    )
+    if rank_0_coordinates.ndim != 2:
+        raise ValueError(
+            "Structural-LapPE ETNN expected a rank-0 coordinate matrix at "
+            f"`{coordinate_attr}`, but found shape "
+            f"{tuple(rank_0_coordinates.shape)}."
+        )
+    if rank_0_coordinates.shape[0] != batch.x_0.shape[0]:
+        raise ValueError(
+            "Structural-LapPE ETNN expected one coordinate row per rank-0 "
+            f"cell, but found {rank_0_coordinates.shape[0]} coordinates for "
+            f"{batch.x_0.shape[0]} cells."
+        )
+
+    coordinates = {0: rank_0_coordinates}
+    for rank in range(1, max_rank + 1):
+        feature_key = f"x_{rank}"
+        if not hasattr(batch, feature_key):
+            raise AttributeError(
+                "Structural-LapPE ETNN expected rank-"
+                f"{rank} features at `{feature_key}`."
+            )
+        incidence_key = f"incidence_{rank}"
+        if not hasattr(batch, incidence_key):
+            raise AttributeError(
+                "Structural-LapPE ETNN needs incidence matrices to lift "
+                f"coordinates, but `{incidence_key}` is missing."
+            )
+
+        incidence = getattr(batch, incidence_key).coalesce().to(device)
+        coordinates[rank] = _average_coordinates_through_incidence(
+            lower_coordinates=coordinates[rank - 1],
+            incidence=incidence,
+            num_cells=getattr(batch, feature_key).shape[0],
+        )
+    return coordinates
+
+
+def _squared_coordinate_distances(
+    src_coordinates: torch.Tensor,
+    dst_coordinates: torch.Tensor,
+    edge_index: torch.Tensor,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    """Compute E(n)-invariant squared distances for relation edges.
+
+    Parameters
+    ----------
+    src_coordinates : torch.Tensor
+        Sender-cell structural coordinates.
+    dst_coordinates : torch.Tensor
+        Receiver-cell structural coordinates.
+    edge_index : torch.Tensor
+        Relation edges in ``[sender, receiver]`` format.
+    dtype : torch.dtype
+        Floating dtype for the distance channel.
+
+    Returns
+    -------
+    torch.Tensor
+        Squared distances with shape ``[num_edges, 1]``.
+    """
+    if edge_index.numel() == 0:
+        return src_coordinates.new_empty((0, 1), dtype=dtype)
+    sender, receiver = edge_index
+    delta = src_coordinates[sender] - dst_coordinates[receiver]
+    return delta.pow(2).sum(dim=-1, keepdim=True).to(dtype)
 
 
 class ETNNCoordinatePolicy(nn.Module):

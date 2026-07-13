@@ -25,11 +25,9 @@ import math
 
 import pytest
 import torch
+from torch_geometric.data import Data
 
 import topobench.nn.backbones.combinatorial.etnn_coordinate_policy as etnn_policy_module
-from test.nn.backbones.combinatorial.test_etnn_lappe import (
-    create_lappe_complex_batch,
-)
 from topobench.data.utils.utils import load_manual_graph_second_structure
 from topobench.dataloader.utils import collate_fn
 from topobench.nn.backbones.combinatorial.etnn_coordinate_policy import (
@@ -46,6 +44,99 @@ from topobench.nn.backbones.combinatorial.etnn_coordinate_policy import (
 from topobench.transforms.liftings.graph2combinatorial.graph_induced_cc import (
     GraphTriangleInducedCC,
 )
+
+
+def create_mock_complex_batch():
+    """Create a standalone lifted combinatorial-complex test batch.
+
+    The consolidated test suite must not import fixtures from the incremental
+    coordinate-free or LapPE submissions.  This fixture directly describes the
+    rank-wise feature and sparse-neighborhood contract produced by TopoBench's
+    graph-to-combinatorial lifting.
+
+    Returns
+    -------
+    torch_geometric.data.Data
+        Three-rank complex with node, edge, and face features plus every
+        relation consumed by the public coordinate-policy configs.
+    """
+    x_0 = torch.randn(4, 16)
+    x_1 = torch.randn(4, 16)
+    x_2 = torch.randn(2, 16)
+
+    # Canonical node-edge and edge-face incidence matrices.  Their transposes
+    # supply the reverse message directions used by the ETNN neighborhood set.
+    incidence_1 = torch.sparse_coo_tensor(
+        indices=torch.tensor(
+            [
+                [0, 1, 1, 2, 2, 3, 0, 3],
+                [0, 0, 1, 1, 2, 2, 3, 3],
+            ]
+        ),
+        values=torch.ones(8),
+        size=(4, 4),
+    ).coalesce()
+    incidence_2 = torch.sparse_coo_tensor(
+        indices=torch.tensor(
+            [
+                [0, 1, 2, 1, 2, 3],
+                [0, 0, 0, 1, 1, 1],
+            ]
+        ),
+        values=torch.ones(6),
+        size=(4, 2),
+    ).coalesce()
+
+    # Same-rank adjacencies exercise feature updates at all visible ranks.
+    adjacency_0 = torch.sparse_coo_tensor(
+        indices=torch.tensor([[0, 1, 1, 2, 2, 3], [1, 0, 2, 1, 3, 2]]),
+        values=torch.ones(6),
+        size=(4, 4),
+    ).coalesce()
+    adjacency_1 = torch.sparse_coo_tensor(
+        indices=torch.tensor([[0, 1, 1, 2, 2, 3], [1, 0, 2, 1, 3, 2]]),
+        values=torch.ones(6),
+        size=(4, 4),
+    ).coalesce()
+    adjacency_2 = torch.sparse_coo_tensor(
+        indices=torch.tensor([[0, 1], [1, 0]]),
+        values=torch.ones(2),
+        size=(2, 2),
+    ).coalesce()
+
+    return Data(
+        x_0=x_0,
+        x_1=x_1,
+        x_2=x_2,
+        y=torch.tensor([1]),
+        batch_0=torch.zeros(x_0.shape[0], dtype=torch.long),
+        batch_1=torch.zeros(x_1.shape[0], dtype=torch.long),
+        batch_2=torch.zeros(x_2.shape[0], dtype=torch.long),
+        **{
+            "up_adjacency-0": adjacency_0,
+            "up_adjacency-1": adjacency_1,
+            "up_adjacency-2": adjacency_2,
+            "up_incidence-0": incidence_1.T.coalesce(),
+            "down_incidence-1": incidence_1,
+            "up_incidence-1": incidence_2.T.coalesce(),
+            "down_incidence-2": incidence_2,
+        },
+    )
+
+
+def create_lappe_complex_batch():
+    """Add coordinate-lifting incidences to the standalone mock complex.
+
+    Returns
+    -------
+    torch_geometric.data.Data
+        Mock complex whose canonical ``incidence_r`` tensors support recursive
+        LapPE coordinate averaging from rank 0 through rank 2.
+    """
+    batch = create_mock_complex_batch()
+    batch.incidence_1 = batch["down_incidence-1"]
+    batch.incidence_2 = batch["down_incidence-2"]
+    return batch
 
 
 def _collate_topobench_data_list(data_list):
