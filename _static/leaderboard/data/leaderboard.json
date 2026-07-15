@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at_utc": "2026-07-13T09:41:21+00:00",
+  "generated_at_utc": "2026-07-15T08:26:49+00:00",
   "tasks": {
     "community_detection": {
       "metric": "accuracy",
