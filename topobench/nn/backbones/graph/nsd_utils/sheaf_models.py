@@ -145,3 +145,67 @@ class LocalConcatSheafLearner(SheafLearner):
             result = maps.view(-1, self.out_shape[0])
 
         return result
+
+
+class IdentitySheafLearner(SheafLearner):
+    """
+    Sheaf learner that returns fixed identity restriction maps.
+
+    Unlike :class:`LocalConcatSheafLearner`, this learner has no learnable
+    parameters: every restriction map ``F_{v<e}`` is the identity. The
+    resulting sheaf Laplacian therefore collapses to the standard graph
+    Laplacian, yielding the Identity Sheaf Network (ISN) baseline of
+    Hernandez Caralt et al. used to ablate sheaf learning [1].
+
+    Parameters
+    ----------
+    in_channels : int
+        Number of input channels per node. Unused (kept for interface
+        compatibility with :class:`LocalConcatSheafLearner`).
+    out_shape : tuple of int
+        Shape of the restriction maps per edge. ``(d,)`` for a diagonal
+        sheaf (identity diagonal is all ones) or ``(d, d)`` for a general
+        sheaf (the d x d identity matrix).
+
+    References
+    ----------
+    [1] Hernandez Caralt et al. "On the Necessity of Learnable Sheaf
+        Laplacians." GRaM Workshop, ICLR 2026. https://arxiv.org/abs/2603.05395
+    """
+
+    def __init__(self, in_channels: int, out_shape: tuple[int, ...]):
+        super().__init__()
+        assert len(out_shape) in [1, 2]
+        self.in_channels = in_channels
+        self.out_shape = out_shape
+
+    def forward(self, x, edge_index):
+        """
+        Return identity restriction maps for every edge.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Node feature matrix of shape [num_nodes, in_channels]. Used only
+            for dtype/device; its values do not affect the output.
+        edge_index : torch.Tensor
+            Edge indices of shape [2, num_edges].
+
+        Returns
+        -------
+        torch.Tensor
+            Identity restriction maps of shape [num_edges, *out_shape].
+        """
+        num_edges = edge_index.size(1)
+        if len(self.out_shape) == 1:
+            # Diagonal sheaf: the identity diagonal is all ones.
+            return torch.ones(
+                num_edges,
+                self.out_shape[0],
+                dtype=x.dtype,
+                device=x.device,
+            )
+        # General sheaf: broadcast the d x d identity matrix to every edge.
+        d = self.out_shape[0]
+        eye = torch.eye(d, dtype=x.dtype, device=x.device)
+        return eye.unsqueeze(0).expand(num_edges, d, d)

@@ -28,6 +28,14 @@ class SheafDiffusion(nn.Module):
         - output_dim (int): Dimension of output features.
         - sheaf_act (str): Activation function for sheaf learning.
         - orth (str): Orthogonalization method.
+        - add_hp (bool, optional): Add a fixed high-pass channel (default False).
+        - add_lp (bool, optional): Add a fixed low-pass channel (default False).
+        - normalised (bool, optional): Use the normalized sheaf Laplacian
+          (default False).
+        - deg_normalised (bool, optional): Use degree normalization instead;
+          mutually exclusive with ``normalised`` (default False).
+        - second_linear (bool, optional): Add an extra input projection before
+          propagation (default False).
     """
 
     def __init__(self, edge_index, args):
@@ -35,14 +43,24 @@ class SheafDiffusion(nn.Module):
 
         assert args["d"] > 0
         self.d = args["d"]
+        # Optional fixed high-/low-pass channels grow each stalk by one dim each.
+        self.add_hp = args.get("add_hp", False)
+        self.add_lp = args.get("add_lp", False)
+        self.final_d = self.d + int(self.add_hp) + int(self.add_lp)
+        # Laplacian normalization options (mutually exclusive).
+        self.normalised = args.get("normalised", False)
+        self.deg_normalised = args.get("deg_normalised", False)
+        # Optional extra input projection before propagation.
+        self.second_linear = args.get("second_linear", False)
+
         self.edge_index = edge_index
-        self.hidden_dim = args["hidden_channels"] * self.d
+        self.hidden_channels = args["hidden_channels"]
+        self.hidden_dim = self.hidden_channels * self.final_d
         self.device = args["device"]
         self.layers = args["layers"]
         self.input_dropout = args["input_dropout"]
         self.dropout = args["dropout"]
         self.input_dim = args["input_dim"]
-        self.hidden_channels = args["hidden_channels"]
         self.output_dim = args["output_dim"]
         self.sheaf_act = args["sheaf_act"]
         self.orth_trans = args["orth"]

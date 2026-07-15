@@ -215,6 +215,64 @@ def compute_learnable_diag_laplacian_indices(
     return diag_indices, non_diag_indices
 
 
+def compute_fixed_diag_laplacian_indices(size, edge_index, learned_d, total_d):
+    """
+    Compute sparse indices for the FIXED (non-learnable) stalk dimensions.
+
+    When high-pass (``add_hp``) or low-pass (``add_lp``) components are enabled,
+    each node's stalk grows from ``learned_d`` to ``total_d``. The extra
+    dimensions ``[learned_d, total_d)`` carry fixed (non-learned) values. This
+    helper returns the sparse positions for those fixed dimensions, mirroring
+    :func:`compute_learnable_diag_laplacian_indices` but over the fixed range.
+
+    Parameters
+    ----------
+    size : int
+        Number of nodes in the graph.
+    edge_index : torch.Tensor
+        Edge indices of shape [2, num_edges] where edge_index[0] < edge_index[1].
+    learned_d : int
+        Dimension of the learned block (start of the fixed range).
+    total_d : int
+        Full stalk dimension per node (end of the fixed range).
+
+    Returns
+    -------
+    diag_indices : torch.Tensor
+        Sparse indices for the fixed diagonal entries.
+    non_diag_indices : torch.Tensor
+        Sparse indices for the fixed off-diagonal entries.
+    """
+    assert torch.all(edge_index[0] < edge_index[1])
+    row, col = edge_index
+    device = edge_index.device
+    # The fixed dimensions occupy the range [learned_d, total_d) in each block.
+    # Blocks are diagonal, so row and column templates are intentionally equal.
+    row_template = torch.arange(learned_d, total_d, device=device).view(1, -1)
+    col_template = row_template
+
+    non_diag_row_indices = (row_template + total_d * row.unsqueeze(1)).reshape(
+        1, -1
+    )
+    non_diag_col_indices = (col_template + total_d * col.unsqueeze(1)).reshape(
+        1, -1
+    )
+    non_diag_indices = torch.cat(
+        (non_diag_row_indices, non_diag_col_indices), dim=0
+    )
+
+    diag = torch.arange(0, size, device=device)
+    diag_row_indices = (row_template + total_d * diag.unsqueeze(1)).reshape(
+        1, -1
+    )
+    diag_col_indices = (col_template + total_d * diag.unsqueeze(1)).reshape(
+        1, -1
+    )
+    diag_indices = torch.cat((diag_row_indices, diag_col_indices), dim=0)
+
+    return diag_indices, non_diag_indices
+
+
 def mergesp(index1, value1, index2, value2):
     """
     Merge two sparse matrices with disjoint indices into one.
