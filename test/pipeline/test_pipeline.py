@@ -6,10 +6,7 @@ from test._utils.simplified_pipeline import run
 
 DATASET = "graph/MUTAG"  # ADD YOUR DATASET HERE
 MODELS = [
-    "graph/gcn",
-    "cell/topotune",
-    "simplicial/topotune",
-    "graph/fagcn",
+    "graph/fagcn"
 ]  # ADD ONE OR SEVERAL MODELS OF YOUR CHOICE HERE
 
 
@@ -33,7 +30,7 @@ class TestPipeline:
                         "trainer.min_epochs=1",
                         "trainer.check_val_every_n_epoch=1",
                         "trainer.accelerator=cpu",
-                        "trainer.devices=[1]",
+                        "trainer.devices=1",
                         "paths=test",
                         "callbacks=model_checkpoint",
                     ],
