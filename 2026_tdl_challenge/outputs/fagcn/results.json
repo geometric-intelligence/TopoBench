@@ -1,0 +1,1934 @@
+{
+  "metadata": {
+    "study_id": "2026-07-16_00-27-17",
+    "model_config": "graph/fagcn",
+    "generated_at_utc": "2026-07-15T20:01:26.820391+00:00",
+    "n_runs": 24,
+    "train_seeds": [
+      42
+    ],
+    "heatmap_note": "Cells show mean \u00b1 std over train_seeds (in-distribution test)."
+  },
+  "results": [
+    {
+      "experiment": "community_detection",
+      "wandb_project": "challenge_community_detection",
+      "wandb_run_name": "fagcn_hom_0-0.1__deg_1-2.5__gamma_1.5-2__s42",
+      "train_seed": 42,
+      "homophily": "h_lo",
+      "avg_degree": "d_lo",
+      "power_law": "pl_lo",
+      "run_slug": "h_lo__d_lo__pl_lo",
+      "test_loss": 2.2826740741729736,
+      "test_best_rerun_accuracy": 0.3005959093570709,
+      "test_best_rerun_mse": null,
+      "test_triangles_total_structural": null,
+      "test_mse_by_total_triangles": null,
+      "ood_test": {
+        "h_lo__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.3004049062728882,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.30105432868003845,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.3009779155254364,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.3038429319858551,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.30349913239479065,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.3042631149291992,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.3042631149291992,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.3059057295322418,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.30632591247558594,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.30743372440338135,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.3084269165992737,
+          "test_best_rerun_mse": null
+        }
+      },
+      "output_dir": "D:\\ML_with_Graphs\\topobench\\logs\\train\\runs\\notebook_gu_grid_2026-07-16_00-27-17__community_detection__00__h_lo__d_lo__pl_lo__s42",
+      "wandb_config": {
+        "AvgTime/train_epoch_mean": 1.9969344984555075,
+        "AvgTime/train_epoch_std": 0.11506039835582169,
+        "model/params/total": 8353,
+        "model/params/trainable": 8353,
+        "model/params/non_trainable": 0
+      }
+    },
+    {
+      "experiment": "community_detection",
+      "wandb_project": "challenge_community_detection",
+      "wandb_run_name": "fagcn_hom_0-0.1__deg_1-2.5__gamma_4-5__s42",
+      "train_seed": 42,
+      "homophily": "h_lo",
+      "avg_degree": "d_lo",
+      "power_law": "pl_hi",
+      "run_slug": "h_lo__d_lo__pl_hi",
+      "test_loss": 2.2797932624816895,
+      "test_best_rerun_accuracy": 0.3020475208759308,
+      "test_best_rerun_mse": null,
+      "test_triangles_total_structural": null,
+      "test_mse_by_total_triangles": null,
+      "ood_test": {
+        "h_lo__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.3022003173828125,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.3022385239601135,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.3016273081302643,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.30460691452026367,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.30487433075904846,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.3046833276748657,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.3049125075340271,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.30609673261642456,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.30636411905288696,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.3073955178260803,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.3087325096130371,
+          "test_best_rerun_mse": null
+        }
+      },
+      "output_dir": "D:\\ML_with_Graphs\\topobench\\logs\\train\\runs\\notebook_gu_grid_2026-07-16_00-27-17__community_detection__01__h_lo__d_lo__pl_hi__s42",
+      "wandb_config": {
+        "AvgTime/train_epoch_mean": 2.177211736608868,
+        "AvgTime/train_epoch_std": 0.277189902858678,
+        "model/params/total": 8353,
+        "model/params/trainable": 8353,
+        "model/params/non_trainable": 0
+      }
+    },
+    {
+      "experiment": "community_detection",
+      "wandb_project": "challenge_community_detection",
+      "wandb_run_name": "fagcn_hom_0-0.1__deg_4-5__gamma_1.5-2__s42",
+      "train_seed": 42,
+      "homophily": "h_lo",
+      "avg_degree": "d_hi",
+      "power_law": "pl_lo",
+      "run_slug": "h_lo__d_hi__pl_lo",
+      "test_loss": 2.274120330810547,
+      "test_best_rerun_accuracy": 0.3034609258174896,
+      "test_best_rerun_mse": null,
+      "test_triangles_total_structural": null,
+      "test_mse_by_total_triangles": null,
+      "ood_test": {
+        "h_lo__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.302620530128479,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.3022385239601135,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.3030407130718231,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.3060203194618225,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.306440532207489,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.30716630816459656,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.306402325630188,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.3093055188655853,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.30972573161125183,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.31140652298927307,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.3125525116920471,
+          "test_best_rerun_mse": null
+        }
+      },
+      "output_dir": "D:\\ML_with_Graphs\\topobench\\logs\\train\\runs\\notebook_gu_grid_2026-07-16_00-27-17__community_detection__02__h_lo__d_hi__pl_lo__s42",
+      "wandb_config": {
+        "AvgTime/train_epoch_mean": 2.187999201508669,
+        "AvgTime/train_epoch_std": 0.2012708217129656,
+        "model/params/total": 8353,
+        "model/params/trainable": 8353,
+        "model/params/non_trainable": 0
+      }
+    },
+    {
+      "experiment": "community_detection",
+      "wandb_project": "challenge_community_detection",
+      "wandb_run_name": "fagcn_hom_0-0.1__deg_4-5__gamma_4-5__s42",
+      "train_seed": 42,
+      "homophily": "h_lo",
+      "avg_degree": "d_hi",
+      "power_law": "pl_hi",
+      "run_slug": "h_lo__d_hi__pl_hi",
+      "test_loss": 2.2749154567718506,
+      "test_best_rerun_accuracy": 0.3041103184223175,
+      "test_best_rerun_mse": null,
+      "test_triangles_total_structural": null,
+      "test_mse_by_total_triangles": null,
+      "ood_test": {
+        "h_lo__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.3028497099876404,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.3022003173828125,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.3038429319858551,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.30686071515083313,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.3067079186439514,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.30716630816459656,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.3080449104309082,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.3110627233982086,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.31071892380714417,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.31220871210098267,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.31423333287239075,
+          "test_best_rerun_mse": null
+        }
+      },
+      "output_dir": "D:\\ML_with_Graphs\\topobench\\logs\\train\\runs\\notebook_gu_grid_2026-07-16_00-27-17__community_detection__03__h_lo__d_hi__pl_hi__s42",
+      "wandb_config": {
+        "AvgTime/train_epoch_mean": 2.1893680517186116,
+        "AvgTime/train_epoch_std": 0.15667614876411878,
+        "model/params/total": 8353,
+        "model/params/trainable": 8353,
+        "model/params/non_trainable": 0
+      }
+    },
+    {
+      "experiment": "community_detection",
+      "wandb_project": "challenge_community_detection",
+      "wandb_run_name": "fagcn_hom_0.4-0.6__deg_1-2.5__gamma_1.5-2__s42",
+      "train_seed": 42,
+      "homophily": "h_mid",
+      "avg_degree": "d_lo",
+      "power_law": "pl_lo",
+      "run_slug": "h_mid__d_lo__pl_lo",
+      "test_loss": 2.196831226348877,
+      "test_best_rerun_accuracy": 0.3223317265510559,
+      "test_best_rerun_mse": null,
+      "test_triangles_total_structural": null,
+      "test_mse_by_total_triangles": null,
+      "ood_test": {
+        "h_lo__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.29368171095848083,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.29501873254776,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.29643210768699646,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.29574450850486755,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.3212239146232605,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.32309573888778687,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.3291313350200653,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.340705931186676,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.34250134229660034,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.3499121367931366,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.3565971553325653,
+          "test_best_rerun_mse": null
+        }
+      },
+      "output_dir": "D:\\ML_with_Graphs\\topobench\\logs\\train\\runs\\notebook_gu_grid_2026-07-16_00-27-17__community_detection__04__h_mid__d_lo__pl_lo__s42",
+      "wandb_config": {
+        "AvgTime/train_epoch_mean": 2.19984409464411,
+        "AvgTime/train_epoch_std": 0.13628975389386183,
+        "model/params/total": 8353,
+        "model/params/trainable": 8353,
+        "model/params/non_trainable": 0
+      }
+    },
+    {
+      "experiment": "community_detection",
+      "wandb_project": "challenge_community_detection",
+      "wandb_run_name": "fagcn_hom_0.4-0.6__deg_1-2.5__gamma_4-5__s42",
+      "train_seed": 42,
+      "homophily": "h_mid",
+      "avg_degree": "d_lo",
+      "power_law": "pl_hi",
+      "run_slug": "h_mid__d_lo__pl_hi",
+      "test_loss": 2.2111873626708984,
+      "test_best_rerun_accuracy": 0.31572312116622925,
+      "test_best_rerun_mse": null,
+      "test_triangles_total_structural": null,
+      "test_mse_by_total_triangles": null,
+      "ood_test": {
+        "h_lo__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.2891741096973419,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.2894415259361267,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.29070210456848145,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.29196271300315857,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.31774774193763733,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.3187791407108307,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.3228283226490021,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.3342883288860321,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.33803194761276245,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.34429672360420227,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.35201314091682434,
+          "test_best_rerun_mse": null
+        }
+      },
+      "output_dir": "D:\\ML_with_Graphs\\topobench\\logs\\train\\runs\\notebook_gu_grid_2026-07-16_00-27-17__community_detection__05__h_mid__d_lo__pl_hi__s42",
+      "wandb_config": {
+        "AvgTime/train_epoch_mean": 2.15307579109137,
+        "AvgTime/train_epoch_std": 0.15746562140922885,
+        "model/params/total": 8353,
+        "model/params/trainable": 8353,
+        "model/params/non_trainable": 0
+      }
+    },
+    {
+      "experiment": "community_detection",
+      "wandb_project": "challenge_community_detection",
+      "wandb_run_name": "fagcn_hom_0.4-0.6__deg_4-5__gamma_1.5-2__s42",
+      "train_seed": 42,
+      "homophily": "h_mid",
+      "avg_degree": "d_hi",
+      "power_law": "pl_lo",
+      "run_slug": "h_mid__d_hi__pl_lo",
+      "test_loss": 2.4912755489349365,
+      "test_best_rerun_accuracy": 0.2704943120479584,
+      "test_best_rerun_mse": null,
+      "test_triangles_total_structural": null,
+      "test_mse_by_total_triangles": null,
+      "ood_test": {
+        "h_lo__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.16846206784248352,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.16418366134166718,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.18572847545146942,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.1809534728527069,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.2426465004682541,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.23500649631023407,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.2735120952129364,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.31625792384147644,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.321605920791626,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.37565895915031433,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.40831995010375977,
+          "test_best_rerun_mse": null
+        }
+      },
+      "output_dir": "D:\\ML_with_Graphs\\topobench\\logs\\train\\runs\\notebook_gu_grid_2026-07-16_00-27-17__community_detection__06__h_mid__d_hi__pl_lo__s42",
+      "wandb_config": {
+        "AvgTime/train_epoch_mean": 2.095746260422927,
+        "AvgTime/train_epoch_std": 0.11490429051472713,
+        "model/params/total": 8353,
+        "model/params/trainable": 8353,
+        "model/params/non_trainable": 0
+      }
+    },
+    {
+      "experiment": "community_detection",
+      "wandb_project": "challenge_community_detection",
+      "wandb_run_name": "fagcn_hom_0.4-0.6__deg_4-5__gamma_4-5__s42",
+      "train_seed": 42,
+      "homophily": "h_mid",
+      "avg_degree": "d_hi",
+      "power_law": "pl_hi",
+      "run_slug": "h_mid__d_hi__pl_hi",
+      "test_loss": 2.115556240081787,
+      "test_best_rerun_accuracy": 0.34334173798561096,
+      "test_best_rerun_mse": null,
+      "test_triangles_total_structural": null,
+      "test_mse_by_total_triangles": null,
+      "ood_test": {
+        "h_lo__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.27045610547065735,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.26743829250335693,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.2720605134963989,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.27110549807548523,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.3302009403705597,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.32661011815071106,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.33558714389801025,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.37279394268989563,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.3777599632740021,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.39876994490623474,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.42478418350219727,
+          "test_best_rerun_mse": null
+        }
+      },
+      "output_dir": "D:\\ML_with_Graphs\\topobench\\logs\\train\\runs\\notebook_gu_grid_2026-07-16_00-27-17__community_detection__07__h_mid__d_hi__pl_hi__s42",
+      "wandb_config": {
+        "AvgTime/train_epoch_mean": 2.0560966164174705,
+        "AvgTime/train_epoch_std": 0.07833305130967314,
+        "model/params/total": 8353,
+        "model/params/trainable": 8353,
+        "model/params/non_trainable": 0
+      }
+    },
+    {
+      "experiment": "community_detection",
+      "wandb_project": "challenge_community_detection",
+      "wandb_run_name": "fagcn_hom_0.9-1__deg_1-2.5__gamma_1.5-2__s42",
+      "train_seed": 42,
+      "homophily": "h_hi",
+      "avg_degree": "d_lo",
+      "power_law": "pl_lo",
+      "run_slug": "h_hi__d_lo__pl_lo",
+      "test_loss": 2.327955961227417,
+      "test_best_rerun_accuracy": 0.3429979383945465,
+      "test_best_rerun_mse": null,
+      "test_triangles_total_structural": null,
+      "test_mse_by_total_triangles": null,
+      "ood_test": {
+        "h_lo__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.1668194681406021,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.15982885658740997,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.18263427913188934,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.17969287931919098,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.24558790028095245,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.24150049686431885,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.27538391947746277,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.2877607047557831,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.34918633103370667,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.41485217213630676,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.45694857835769653,
+          "test_best_rerun_mse": null
+        }
+      },
+      "output_dir": "D:\\ML_with_Graphs\\topobench\\logs\\train\\runs\\notebook_gu_grid_2026-07-16_00-27-17__community_detection__08__h_hi__d_lo__pl_lo__s42",
+      "wandb_config": {
+        "AvgTime/train_epoch_mean": 2.0478870501885047,
+        "AvgTime/train_epoch_std": 0.07085075351922424,
+        "model/params/total": 8353,
+        "model/params/trainable": 8353,
+        "model/params/non_trainable": 0
+      }
+    },
+    {
+      "experiment": "community_detection",
+      "wandb_project": "challenge_community_detection",
+      "wandb_run_name": "fagcn_hom_0.9-1__deg_1-2.5__gamma_4-5__s42",
+      "train_seed": 42,
+      "homophily": "h_hi",
+      "avg_degree": "d_lo",
+      "power_law": "pl_hi",
+      "run_slug": "h_hi__d_lo__pl_hi",
+      "test_loss": 2.3321492671966553,
+      "test_best_rerun_accuracy": 0.34700894355773926,
+      "test_best_rerun_mse": null,
+      "test_triangles_total_structural": null,
+      "test_mse_by_total_triangles": null,
+      "ood_test": {
+        "h_lo__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.16120406985282898,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.1552448570728302,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.17610207200050354,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.17785927653312683,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.2432194948196411,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.23882649838924408,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.2774849236011505,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.2863091230392456,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.34059134125709534,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.4154633581638336,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.4609595835208893,
+          "test_best_rerun_mse": null
+        }
+      },
+      "output_dir": "D:\\ML_with_Graphs\\topobench\\logs\\train\\runs\\notebook_gu_grid_2026-07-16_00-27-17__community_detection__09__h_hi__d_lo__pl_hi__s42",
+      "wandb_config": {
+        "AvgTime/train_epoch_mean": 2.0649147629737854,
+        "AvgTime/train_epoch_std": 0.06983383435516206,
+        "model/params/total": 8353,
+        "model/params/trainable": 8353,
+        "model/params/non_trainable": 0
+      }
+    },
+    {
+      "experiment": "community_detection",
+      "wandb_project": "challenge_community_detection",
+      "wandb_run_name": "fagcn_hom_0.9-1__deg_4-5__gamma_1.5-2__s42",
+      "train_seed": 42,
+      "homophily": "h_hi",
+      "avg_degree": "d_hi",
+      "power_law": "pl_lo",
+      "run_slug": "h_hi__d_hi__pl_lo",
+      "test_loss": 2.001049518585205,
+      "test_best_rerun_accuracy": 0.4628695845603943,
+      "test_best_rerun_mse": null,
+      "test_triangles_total_structural": null,
+      "test_mse_by_total_triangles": null,
+      "ood_test": {
+        "h_lo__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.17178547382354736,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.16494765877723694,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.1948200762271881,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.189777672290802,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.2662923038005829,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.2576209008693695,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.30999311804771423,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.31205591559410095,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.3789059519767761,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.3840247392654419,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.5029032230377197,
+          "test_best_rerun_mse": null
+        }
+      },
+      "output_dir": "D:\\ML_with_Graphs\\topobench\\logs\\train\\runs\\notebook_gu_grid_2026-07-16_00-27-17__community_detection__10__h_hi__d_hi__pl_lo__s42",
+      "wandb_config": {
+        "AvgTime/train_epoch_mean": 2.105614264806112,
+        "AvgTime/train_epoch_std": 0.1707303737017022,
+        "model/params/total": 8353,
+        "model/params/trainable": 8353,
+        "model/params/non_trainable": 0
+      }
+    },
+    {
+      "experiment": "community_detection",
+      "wandb_project": "challenge_community_detection",
+      "wandb_run_name": "fagcn_hom_0.9-1__deg_4-5__gamma_4-5__s42",
+      "train_seed": 42,
+      "homophily": "h_hi",
+      "avg_degree": "d_hi",
+      "power_law": "pl_hi",
+      "run_slug": "h_hi__d_hi__pl_hi",
+      "test_loss": 1.7704553604125977,
+      "test_best_rerun_accuracy": 0.5261670351028442,
+      "test_best_rerun_mse": null,
+      "test_triangles_total_structural": null,
+      "test_mse_by_total_triangles": null,
+      "ood_test": {
+        "h_lo__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.18347467482089996,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.17678967118263245,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.200664684176445,
+          "test_best_rerun_mse": null
+        },
+        "h_lo__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.19875468313694,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.27668270468711853,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.2682405114173889,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.30731913447380066,
+          "test_best_rerun_mse": null
+        },
+        "h_mid__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": 0.3200397193431854,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": 0.3897547423839569,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": 0.3977767527103424,
+          "test_best_rerun_mse": null
+        },
+        "h_hi__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": 0.47532278299331665,
+          "test_best_rerun_mse": null
+        }
+      },
+      "output_dir": "D:\\ML_with_Graphs\\topobench\\logs\\train\\runs\\notebook_gu_grid_2026-07-16_00-27-17__community_detection__11__h_hi__d_hi__pl_hi__s42",
+      "wandb_config": {
+        "AvgTime/train_epoch_mean": 2.064209085244399,
+        "AvgTime/train_epoch_std": 0.07762385681120937,
+        "model/params/total": 8353,
+        "model/params/trainable": 8353,
+        "model/params/non_trainable": 0
+      }
+    },
+    {
+      "experiment": "triangle_counting",
+      "wandb_project": "challenge_triangle_counting",
+      "wandb_run_name": "fagcn_hom_0-0.1__deg_1-2.5__gamma_1.5-2__s42",
+      "train_seed": 42,
+      "homophily": "h_lo",
+      "avg_degree": "d_lo",
+      "power_law": "pl_lo",
+      "run_slug": "h_lo__d_lo__pl_lo",
+      "test_loss": 95.3149642944336,
+      "test_best_rerun_accuracy": null,
+      "test_best_rerun_mse": 92.3638916015625,
+      "test_triangles_total_structural": 1388.0,
+      "test_mse_by_total_triangles": 0.06654459049103927,
+      "ood_test": {
+        "h_lo__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 16.024707794189453,
+          "test_triangles_total_structural": 190.0,
+          "test_mse_by_total_triangles": 0.08434056733783922
+        },
+        "h_lo__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 10582.39453125,
+          "test_triangles_total_structural": 13185.0,
+          "test_mse_by_total_triangles": 0.8026086106370875
+        },
+        "h_lo__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 281.36358642578125,
+          "test_triangles_total_structural": 2967.0,
+          "test_mse_by_total_triangles": 0.09483100317687268
+        },
+        "h_mid__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 7376.228515625,
+          "test_triangles_total_structural": 7485.0,
+          "test_mse_by_total_triangles": 0.9854680715597862
+        },
+        "h_mid__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 145.33987426757812,
+          "test_triangles_total_structural": 1158.0,
+          "test_mse_by_total_triangles": 0.12550939055922117
+        },
+        "h_mid__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 171769.4375,
+          "test_triangles_total_structural": 43064.0,
+          "test_mse_by_total_triangles": 3.9887014095300017
+        },
+        "h_mid__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 15404.86328125,
+          "test_triangles_total_structural": 14262.0,
+          "test_mse_by_total_triangles": 1.0801334512165195
+        },
+        "h_hi__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 45687.08203125,
+          "test_triangles_total_structural": 19509.0,
+          "test_mse_by_total_triangles": 2.341846431454713
+        },
+        "h_hi__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 3571.07080078125,
+          "test_triangles_total_structural": 5625.0,
+          "test_mse_by_total_triangles": 0.63485703125
+        },
+        "h_hi__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 753362.6875,
+          "test_triangles_total_structural": 88403.0,
+          "test_mse_by_total_triangles": 8.521913142087937
+        },
+        "h_hi__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 261516.0,
+          "test_triangles_total_structural": 60093.0,
+          "test_mse_by_total_triangles": 4.351854625330738
+        }
+      },
+      "output_dir": "D:\\ML_with_Graphs\\topobench\\logs\\train\\runs\\notebook_gu_grid_2026-07-16_00-27-17__triangle_counting__00__h_lo__d_lo__pl_lo__s42",
+      "wandb_config": {
+        "AvgTime/train_epoch_mean": 1.0415049076080323,
+        "AvgTime/train_epoch_std": 0.035892868778347825,
+        "model/params/total": 7726,
+        "model/params/trainable": 7726,
+        "model/params/non_trainable": 0
+      }
+    },
+    {
+      "experiment": "triangle_counting",
+      "wandb_project": "challenge_triangle_counting",
+      "wandb_run_name": "fagcn_hom_0-0.1__deg_1-2.5__gamma_4-5__s42",
+      "train_seed": 42,
+      "homophily": "h_lo",
+      "avg_degree": "d_lo",
+      "power_law": "pl_hi",
+      "run_slug": "h_lo__d_lo__pl_hi",
+      "test_loss": 2.2297914028167725,
+      "test_best_rerun_accuracy": null,
+      "test_best_rerun_mse": 2.200671434402466,
+      "test_triangles_total_structural": 190.0,
+      "test_mse_by_total_triangles": 0.011582481233697189,
+      "ood_test": {
+        "h_lo__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 208.09205627441406,
+          "test_triangles_total_structural": 1388.0,
+          "test_mse_by_total_triangles": 0.1499222307452551
+        },
+        "h_lo__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 13176.0576171875,
+          "test_triangles_total_structural": 13185.0,
+          "test_mse_by_total_triangles": 0.999321776047592
+        },
+        "h_lo__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 420.9111022949219,
+          "test_triangles_total_structural": 2967.0,
+          "test_mse_by_total_triangles": 0.14186420704244082
+        },
+        "h_mid__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 8185.42431640625,
+          "test_triangles_total_structural": 7485.0,
+          "test_mse_by_total_triangles": 1.093577062980127
+        },
+        "h_mid__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 177.2946014404297,
+          "test_triangles_total_structural": 1158.0,
+          "test_mse_by_total_triangles": 0.1531041463216146
+        },
+        "h_mid__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 178660.859375,
+          "test_triangles_total_structural": 43064.0,
+          "test_mse_by_total_triangles": 4.148728854147316
+        },
+        "h_mid__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 16243.876953125,
+          "test_triangles_total_structural": 14262.0,
+          "test_mse_by_total_triangles": 1.1389620637445659
+        },
+        "h_hi__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 47783.453125,
+          "test_triangles_total_structural": 19509.0,
+          "test_mse_by_total_triangles": 2.4493030460300376
+        },
+        "h_hi__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 3985.122802734375,
+          "test_triangles_total_structural": 5625.0,
+          "test_mse_by_total_triangles": 0.7084662760416667
+        },
+        "h_hi__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 765529.9375,
+          "test_triangles_total_structural": 88403.0,
+          "test_mse_by_total_triangles": 8.659547045914731
+        },
+        "h_hi__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 267106.8125,
+          "test_triangles_total_structural": 60093.0,
+          "test_mse_by_total_triangles": 4.44489062786015
+        }
+      },
+      "output_dir": "D:\\ML_with_Graphs\\topobench\\logs\\train\\runs\\notebook_gu_grid_2026-07-16_00-27-17__triangle_counting__01__h_lo__d_lo__pl_hi__s42",
+      "wandb_config": {
+        "AvgTime/train_epoch_mean": 1.0563561409077746,
+        "AvgTime/train_epoch_std": 0.05625310202770651,
+        "model/params/total": 7726,
+        "model/params/trainable": 7726,
+        "model/params/non_trainable": 0
+      }
+    },
+    {
+      "experiment": "triangle_counting",
+      "wandb_project": "challenge_triangle_counting",
+      "wandb_run_name": "fagcn_hom_0-0.1__deg_4-5__gamma_1.5-2__s42",
+      "train_seed": 42,
+      "homophily": "h_lo",
+      "avg_degree": "d_hi",
+      "power_law": "pl_lo",
+      "run_slug": "h_lo__d_hi__pl_lo",
+      "test_loss": 3990.125732421875,
+      "test_best_rerun_accuracy": null,
+      "test_best_rerun_mse": 3785.629150390625,
+      "test_triangles_total_structural": 13185.0,
+      "test_mse_by_total_triangles": 0.28711635573686956,
+      "ood_test": {
+        "h_lo__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 3803.083251953125,
+          "test_triangles_total_structural": 1388.0,
+          "test_mse_by_total_triangles": 2.7399735244619055
+        },
+        "h_lo__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 3333.6357421875,
+          "test_triangles_total_structural": 190.0,
+          "test_mse_by_total_triangles": 17.545451274671052
+        },
+        "h_lo__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 2033.6318359375,
+          "test_triangles_total_structural": 2967.0,
+          "test_mse_by_total_triangles": 0.6854168641514998
+        },
+        "h_mid__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 5338.72119140625,
+          "test_triangles_total_structural": 7485.0,
+          "test_mse_by_total_triangles": 0.7132560041958917
+        },
+        "h_mid__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 3000.30078125,
+          "test_triangles_total_structural": 1158.0,
+          "test_mse_by_total_triangles": 2.5909333171416233
+        },
+        "h_mid__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 134326.21875,
+          "test_triangles_total_structural": 43064.0,
+          "test_mse_by_total_triangles": 3.1192229878785063
+        },
+        "h_mid__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 9014.5888671875,
+          "test_triangles_total_structural": 14262.0,
+          "test_mse_by_total_triangles": 0.6320704576628453
+        },
+        "h_hi__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 32731.447265625,
+          "test_triangles_total_structural": 19509.0,
+          "test_mse_by_total_triangles": 1.67776140579348
+        },
+        "h_hi__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 3641.671630859375,
+          "test_triangles_total_structural": 5625.0,
+          "test_mse_by_total_triangles": 0.6474082899305555
+        },
+        "h_hi__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 672346.375,
+          "test_triangles_total_structural": 88403.0,
+          "test_mse_by_total_triangles": 7.605470119792315
+        },
+        "h_hi__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 217648.640625,
+          "test_triangles_total_structural": 60093.0,
+          "test_mse_by_total_triangles": 3.621863455394139
+        }
+      },
+      "output_dir": "D:\\ML_with_Graphs\\topobench\\logs\\train\\runs\\notebook_gu_grid_2026-07-16_00-27-17__triangle_counting__02__h_lo__d_hi__pl_lo__s42",
+      "wandb_config": {
+        "AvgTime/train_epoch_mean": 1.0664588178907122,
+        "AvgTime/train_epoch_std": 0.035772835640271165,
+        "model/params/total": 7726,
+        "model/params/trainable": 7726,
+        "model/params/non_trainable": 0
+      }
+    },
+    {
+      "experiment": "triangle_counting",
+      "wandb_project": "challenge_triangle_counting",
+      "wandb_run_name": "fagcn_hom_0-0.1__deg_4-5__gamma_4-5__s42",
+      "train_seed": 42,
+      "homophily": "h_lo",
+      "avg_degree": "d_hi",
+      "power_law": "pl_hi",
+      "run_slug": "h_lo__d_hi__pl_hi",
+      "test_loss": 141.98927307128906,
+      "test_best_rerun_accuracy": null,
+      "test_best_rerun_mse": 139.6327667236328,
+      "test_triangles_total_structural": 2967.0,
+      "test_mse_by_total_triangles": 0.047061936880226765,
+      "ood_test": {
+        "h_lo__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 251.33026123046875,
+          "test_triangles_total_structural": 1388.0,
+          "test_mse_by_total_triangles": 0.18107367523808987
+        },
+        "h_lo__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 386.8062744140625,
+          "test_triangles_total_structural": 190.0,
+          "test_mse_by_total_triangles": 2.0358224969161185
+        },
+        "h_lo__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 9933.017578125,
+          "test_triangles_total_structural": 13185.0,
+          "test_mse_by_total_triangles": 0.7533574196530148
+        },
+        "h_mid__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 6508.00732421875,
+          "test_triangles_total_structural": 7485.0,
+          "test_mse_by_total_triangles": 0.8694732564086506
+        },
+        "h_mid__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 335.9008483886719,
+          "test_triangles_total_structural": 1158.0,
+          "test_mse_by_total_triangles": 0.29006981726137465
+        },
+        "h_mid__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 166661.765625,
+          "test_triangles_total_structural": 43064.0,
+          "test_mse_by_total_triangles": 3.87009487332807
+        },
+        "h_mid__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 13179.5078125,
+          "test_triangles_total_structural": 14262.0,
+          "test_mse_by_total_triangles": 0.9240995521315384
+        },
+        "h_hi__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 42610.84765625,
+          "test_triangles_total_structural": 19509.0,
+          "test_mse_by_total_triangles": 2.184163599172177
+        },
+        "h_hi__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 3011.586181640625,
+          "test_triangles_total_structural": 5625.0,
+          "test_mse_by_total_triangles": 0.5353930989583333
+        },
+        "h_hi__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 739883.0,
+          "test_triangles_total_structural": 88403.0,
+          "test_mse_by_total_triangles": 8.369433164032895
+        },
+        "h_hi__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 252018.9375,
+          "test_triangles_total_structural": 60093.0,
+          "test_mse_by_total_triangles": 4.1938152114222955
+        }
+      },
+      "output_dir": "D:\\ML_with_Graphs\\topobench\\logs\\train\\runs\\notebook_gu_grid_2026-07-16_00-27-17__triangle_counting__03__h_lo__d_hi__pl_hi__s42",
+      "wandb_config": {
+        "AvgTime/train_epoch_mean": 0.9785881042480469,
+        "AvgTime/train_epoch_std": 0.0042324066162109375,
+        "model/params/total": 7726,
+        "model/params/trainable": 7726,
+        "model/params/non_trainable": 0
+      }
+    },
+    {
+      "experiment": "triangle_counting",
+      "wandb_project": "challenge_triangle_counting",
+      "wandb_run_name": "fagcn_hom_0.4-0.6__deg_1-2.5__gamma_1.5-2__s42",
+      "train_seed": 42,
+      "homophily": "h_mid",
+      "avg_degree": "d_lo",
+      "power_law": "pl_lo",
+      "run_slug": "h_mid__d_lo__pl_lo",
+      "test_loss": 5376.6171875,
+      "test_best_rerun_accuracy": null,
+      "test_best_rerun_mse": 5539.0830078125,
+      "test_triangles_total_structural": 7485.0,
+      "test_mse_by_total_triangles": 0.7400244499415498,
+      "ood_test": {
+        "h_lo__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 1226.200439453125,
+          "test_triangles_total_structural": 1388.0,
+          "test_mse_by_total_triangles": 0.8834297114215598
+        },
+        "h_lo__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 1754.9156494140625,
+          "test_triangles_total_structural": 190.0,
+          "test_mse_by_total_triangles": 9.236398154810855
+        },
+        "h_lo__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 7278.177734375,
+          "test_triangles_total_structural": 13185.0,
+          "test_mse_by_total_triangles": 0.5520043787921881
+        },
+        "h_lo__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 719.4345703125,
+          "test_triangles_total_structural": 2967.0,
+          "test_mse_by_total_triangles": 0.2424787901289181
+        },
+        "h_mid__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 1440.7235107421875,
+          "test_triangles_total_structural": 1158.0,
+          "test_mse_by_total_triangles": 1.244148109449212
+        },
+        "h_mid__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 154330.078125,
+          "test_triangles_total_structural": 43064.0,
+          "test_mse_by_total_triangles": 3.5837376491965447
+        },
+        "h_mid__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 10600.4755859375,
+          "test_triangles_total_structural": 14262.0,
+          "test_mse_by_total_triangles": 0.7432671144255715
+        },
+        "h_hi__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 37669.30859375,
+          "test_triangles_total_structural": 19509.0,
+          "test_mse_by_total_triangles": 1.9308682451048234
+        },
+        "h_hi__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 2830.54638671875,
+          "test_triangles_total_structural": 5625.0,
+          "test_mse_by_total_triangles": 0.5032082465277777
+        },
+        "h_hi__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 712013.1875,
+          "test_triangles_total_structural": 88403.0,
+          "test_mse_by_total_triangles": 8.054174490684705
+        },
+        "h_hi__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 235841.0625,
+          "test_triangles_total_structural": 60093.0,
+          "test_mse_by_total_triangles": 3.9246012430732367
+        }
+      },
+      "output_dir": "D:\\ML_with_Graphs\\topobench\\logs\\train\\runs\\notebook_gu_grid_2026-07-16_00-27-17__triangle_counting__04__h_mid__d_lo__pl_lo__s42",
+      "wandb_config": {
+        "AvgTime/train_epoch_mean": 0.9467288255691528,
+        "AvgTime/train_epoch_std": 0.013383269309997559,
+        "model/params/total": 7726,
+        "model/params/trainable": 7726,
+        "model/params/non_trainable": 0
+      }
+    },
+    {
+      "experiment": "triangle_counting",
+      "wandb_project": "challenge_triangle_counting",
+      "wandb_run_name": "fagcn_hom_0.4-0.6__deg_1-2.5__gamma_4-5__s42",
+      "train_seed": 42,
+      "homophily": "h_mid",
+      "avg_degree": "d_lo",
+      "power_law": "pl_hi",
+      "run_slug": "h_mid__d_lo__pl_hi",
+      "test_loss": 140.39102172851562,
+      "test_best_rerun_accuracy": null,
+      "test_best_rerun_mse": 148.32168579101562,
+      "test_triangles_total_structural": 1158.0,
+      "test_mse_by_total_triangles": 0.12808435733248327,
+      "ood_test": {
+        "h_lo__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 151.34542846679688,
+          "test_triangles_total_structural": 1388.0,
+          "test_mse_by_total_triangles": 0.10903849313169804
+        },
+        "h_lo__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 24.86581802368164,
+          "test_triangles_total_structural": 190.0,
+          "test_mse_by_total_triangles": 0.1308727264404297
+        },
+        "h_lo__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 12375.2578125,
+          "test_triangles_total_structural": 13185.0,
+          "test_mse_by_total_triangles": 0.938586106370876
+        },
+        "h_lo__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 291.59967041015625,
+          "test_triangles_total_structural": 2967.0,
+          "test_mse_by_total_triangles": 0.09828098092691481
+        },
+        "h_mid__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 7732.76904296875,
+          "test_triangles_total_structural": 7485.0,
+          "test_mse_by_total_triangles": 1.0331020765489312
+        },
+        "h_mid__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 175818.765625,
+          "test_triangles_total_structural": 43064.0,
+          "test_mse_by_total_triangles": 4.082731878715401
+        },
+        "h_mid__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 15471.400390625,
+          "test_triangles_total_structural": 14262.0,
+          "test_mse_by_total_triangles": 1.0847987933406955
+        },
+        "h_hi__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 46527.62109375,
+          "test_triangles_total_structural": 19509.0,
+          "test_mse_by_total_triangles": 2.384931113524527
+        },
+        "h_hi__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 3697.831298828125,
+          "test_triangles_total_structural": 5625.0,
+          "test_mse_by_total_triangles": 0.6573922309027778
+        },
+        "h_hi__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 759562.8125,
+          "test_triangles_total_structural": 88403.0,
+          "test_mse_by_total_triangles": 8.592047922581813
+        },
+        "h_hi__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 263589.1875,
+          "test_triangles_total_structural": 60093.0,
+          "test_mse_by_total_triangles": 4.386354275872398
+        }
+      },
+      "output_dir": "D:\\ML_with_Graphs\\topobench\\logs\\train\\runs\\notebook_gu_grid_2026-07-16_00-27-17__triangle_counting__05__h_mid__d_lo__pl_hi__s42",
+      "wandb_config": {
+        "AvgTime/train_epoch_mean": 0.9533860683441162,
+        "AvgTime/train_epoch_std": 0,
+        "model/params/total": 7726,
+        "model/params/trainable": 7726,
+        "model/params/non_trainable": 0
+      }
+    },
+    {
+      "experiment": "triangle_counting",
+      "wandb_project": "challenge_triangle_counting",
+      "wandb_run_name": "fagcn_hom_0.4-0.6__deg_4-5__gamma_1.5-2__s42",
+      "train_seed": 42,
+      "homophily": "h_mid",
+      "avg_degree": "d_hi",
+      "power_law": "pl_lo",
+      "run_slug": "h_mid__d_hi__pl_lo",
+      "test_loss": 109944.4765625,
+      "test_best_rerun_accuracy": null,
+      "test_best_rerun_mse": 79509.71875,
+      "test_triangles_total_structural": 43064.0,
+      "test_mse_by_total_triangles": 1.8463152226918076,
+      "ood_test": {
+        "h_lo__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 114993.3359375,
+          "test_triangles_total_structural": 1388.0,
+          "test_mse_by_total_triangles": 82.84822473883285
+        },
+        "h_lo__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 126042.1328125,
+          "test_triangles_total_structural": 190.0,
+          "test_mse_by_total_triangles": 663.3796463815789
+        },
+        "h_lo__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 64757.34765625,
+          "test_triangles_total_structural": 13185.0,
+          "test_mse_by_total_triangles": 4.9114408537163445
+        },
+        "h_lo__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 112038.546875,
+          "test_triangles_total_structural": 2967.0,
+          "test_mse_by_total_triangles": 37.76155944556791
+        },
+        "h_mid__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 91633.171875,
+          "test_triangles_total_structural": 7485.0,
+          "test_mse_by_total_triangles": 12.242240731462926
+        },
+        "h_mid__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 120761.3203125,
+          "test_triangles_total_structural": 1158.0,
+          "test_mse_by_total_triangles": 104.28438714378238
+        },
+        "h_mid__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 75631.7890625,
+          "test_triangles_total_structural": 14262.0,
+          "test_mse_by_total_triangles": 5.303028261288739
+        },
+        "h_hi__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 70230.9140625,
+          "test_triangles_total_structural": 19509.0,
+          "test_mse_by_total_triangles": 3.5999238332308163
+        },
+        "h_hi__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 102739.7578125,
+          "test_triangles_total_structural": 5625.0,
+          "test_mse_by_total_triangles": 18.264845833333332
+        },
+        "h_hi__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 427743.15625,
+          "test_triangles_total_structural": 88403.0,
+          "test_mse_by_total_triangles": 4.838559282490413
+        },
+        "h_hi__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 111613.3125,
+          "test_triangles_total_structural": 60093.0,
+          "test_mse_by_total_triangles": 1.8573429933602916
+        }
+      },
+      "output_dir": "D:\\ML_with_Graphs\\topobench\\logs\\train\\runs\\notebook_gu_grid_2026-07-16_00-27-17__triangle_counting__06__h_mid__d_hi__pl_lo__s42",
+      "wandb_config": {
+        "AvgTime/train_epoch_mean": 1.0457441687583924,
+        "AvgTime/train_epoch_std": 0.08852150106136213,
+        "model/params/total": 7726,
+        "model/params/trainable": 7726,
+        "model/params/non_trainable": 0
+      }
+    },
+    {
+      "experiment": "triangle_counting",
+      "wandb_project": "challenge_triangle_counting",
+      "wandb_run_name": "fagcn_hom_0.4-0.6__deg_4-5__gamma_4-5__s42",
+      "train_seed": 42,
+      "homophily": "h_mid",
+      "avg_degree": "d_hi",
+      "power_law": "pl_hi",
+      "run_slug": "h_mid__d_hi__pl_hi",
+      "test_loss": 8669.322265625,
+      "test_best_rerun_accuracy": null,
+      "test_best_rerun_mse": 8300.7109375,
+      "test_triangles_total_structural": 14262.0,
+      "test_mse_by_total_triangles": 0.5820159120389847,
+      "ood_test": {
+        "h_lo__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 5939.5810546875,
+          "test_triangles_total_structural": 1388.0,
+          "test_mse_by_total_triangles": 4.279237071100504
+        },
+        "h_lo__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 7456.59423828125,
+          "test_triangles_total_structural": 190.0,
+          "test_mse_by_total_triangles": 39.24523283305921
+        },
+        "h_lo__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 4971.39501953125,
+          "test_triangles_total_structural": 13185.0,
+          "test_mse_by_total_triangles": 0.37704929992652636
+        },
+        "h_lo__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 4807.1083984375,
+          "test_triangles_total_structural": 2967.0,
+          "test_mse_by_total_triangles": 1.6201915734538255
+        },
+        "h_mid__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 6470.4599609375,
+          "test_triangles_total_structural": 7485.0,
+          "test_mse_by_total_triangles": 0.8644569086088845
+        },
+        "h_mid__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 6560.64404296875,
+          "test_triangles_total_structural": 1158.0,
+          "test_mse_by_total_triangles": 5.66549571931671
+        },
+        "h_mid__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 133467.0,
+          "test_triangles_total_structural": 43064.0,
+          "test_mse_by_total_triangles": 3.0992708526843766
+        },
+        "h_hi__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 30930.033203125,
+          "test_triangles_total_structural": 19509.0,
+          "test_mse_by_total_triangles": 1.5854238148098314
+        },
+        "h_hi__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 5357.658203125,
+          "test_triangles_total_structural": 5625.0,
+          "test_mse_by_total_triangles": 0.9524725694444445
+        },
+        "h_hi__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 661074.375,
+          "test_triangles_total_structural": 88403.0,
+          "test_mse_by_total_triangles": 7.477963134735247
+        },
+        "h_hi__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 206973.921875,
+          "test_triangles_total_structural": 60093.0,
+          "test_mse_by_total_triangles": 3.4442268130231475
+        }
+      },
+      "output_dir": "D:\\ML_with_Graphs\\topobench\\logs\\train\\runs\\notebook_gu_grid_2026-07-16_00-27-17__triangle_counting__07__h_mid__d_hi__pl_hi__s42",
+      "wandb_config": {
+        "AvgTime/train_epoch_mean": 1.030092802914706,
+        "AvgTime/train_epoch_std": 0.06366161715438177,
+        "model/params/total": 7726,
+        "model/params/trainable": 7726,
+        "model/params/non_trainable": 0
+      }
+    },
+    {
+      "experiment": "triangle_counting",
+      "wandb_project": "challenge_triangle_counting",
+      "wandb_run_name": "fagcn_hom_0.9-1__deg_1-2.5__gamma_1.5-2__s42",
+      "train_seed": 42,
+      "homophily": "h_hi",
+      "avg_degree": "d_lo",
+      "power_law": "pl_lo",
+      "run_slug": "h_hi__d_lo__pl_lo",
+      "test_loss": 27103.583984375,
+      "test_best_rerun_accuracy": null,
+      "test_best_rerun_mse": 27714.529296875,
+      "test_triangles_total_structural": 19509.0,
+      "test_mse_by_total_triangles": 1.4206022500832949,
+      "ood_test": {
+        "h_lo__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 17469.912109375,
+          "test_triangles_total_structural": 1388.0,
+          "test_mse_by_total_triangles": 12.586392009636167
+        },
+        "h_lo__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 20537.38671875,
+          "test_triangles_total_structural": 190.0,
+          "test_mse_by_total_triangles": 108.09150904605264
+        },
+        "h_lo__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 6893.5615234375,
+          "test_triangles_total_structural": 13185.0,
+          "test_mse_by_total_triangles": 0.5228336384859689
+        },
+        "h_lo__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 15658.138671875,
+          "test_triangles_total_structural": 2967.0,
+          "test_mse_by_total_triangles": 5.2774313016093695
+        },
+        "h_mid__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 13072.078125,
+          "test_triangles_total_structural": 7485.0,
+          "test_mse_by_total_triangles": 1.746436623246493
+        },
+        "h_mid__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 18846.796875,
+          "test_triangles_total_structural": 1158.0,
+          "test_mse_by_total_triangles": 16.275299546632123
+        },
+        "h_mid__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 111685.5625,
+          "test_triangles_total_structural": 43064.0,
+          "test_mse_by_total_triangles": 2.5934786016161993
+        },
+        "h_mid__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 10959.7861328125,
+          "test_triangles_total_structural": 14262.0,
+          "test_mse_by_total_triangles": 0.7684606740157411
+        },
+        "h_hi__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 14237.2734375,
+          "test_triangles_total_structural": 5625.0,
+          "test_mse_by_total_triangles": 2.531070833333333
+        },
+        "h_hi__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 600689.125,
+          "test_triangles_total_structural": 88403.0,
+          "test_mse_by_total_triangles": 6.794895252423561
+        },
+        "h_hi__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 175508.609375,
+          "test_triangles_total_structural": 60093.0,
+          "test_mse_by_total_triangles": 2.920616533955702
+        }
+      },
+      "output_dir": "D:\\ML_with_Graphs\\topobench\\logs\\train\\runs\\notebook_gu_grid_2026-07-16_00-27-17__triangle_counting__08__h_hi__d_lo__pl_lo__s42",
+      "wandb_config": {
+        "AvgTime/train_epoch_mean": 1.1905748844146729,
+        "AvgTime/train_epoch_std": 0,
+        "model/params/total": 7726,
+        "model/params/trainable": 7726,
+        "model/params/non_trainable": 0
+      }
+    },
+    {
+      "experiment": "triangle_counting",
+      "wandb_project": "challenge_triangle_counting",
+      "wandb_run_name": "fagcn_hom_0.9-1__deg_1-2.5__gamma_4-5__s42",
+      "train_seed": 42,
+      "homophily": "h_hi",
+      "avg_degree": "d_lo",
+      "power_law": "pl_hi",
+      "run_slug": "h_hi__d_lo__pl_hi",
+      "test_loss": 2634.048828125,
+      "test_best_rerun_accuracy": null,
+      "test_best_rerun_mse": 2789.031005859375,
+      "test_triangles_total_structural": 5625.0,
+      "test_mse_by_total_triangles": 0.495827734375,
+      "ood_test": {
+        "h_lo__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 661.7766723632812,
+          "test_triangles_total_structural": 1388.0,
+          "test_mse_by_total_triangles": 0.47678434608305564
+        },
+        "h_lo__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 1007.951904296875,
+          "test_triangles_total_structural": 190.0,
+          "test_mse_by_total_triangles": 5.305010022615131
+        },
+        "h_lo__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 8347.5087890625,
+          "test_triangles_total_structural": 13185.0,
+          "test_mse_by_total_triangles": 0.6331064686433447
+        },
+        "h_lo__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 333.8193359375,
+          "test_triangles_total_structural": 2967.0,
+          "test_mse_by_total_triangles": 0.11251073000926862
+        },
+        "h_mid__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 5854.3955078125,
+          "test_triangles_total_structural": 7485.0,
+          "test_mse_by_total_triangles": 0.7821503684452238
+        },
+        "h_mid__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 814.5055541992188,
+          "test_triangles_total_structural": 1158.0,
+          "test_mse_by_total_triangles": 0.7033726720200507
+        },
+        "h_mid__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 159765.125,
+          "test_triangles_total_structural": 43064.0,
+          "test_mse_by_total_triangles": 3.709946242801412
+        },
+        "h_mid__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 11656.484375,
+          "test_triangles_total_structural": 14262.0,
+          "test_mse_by_total_triangles": 0.8173106419155799
+        },
+        "h_hi__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 39785.26171875,
+          "test_triangles_total_structural": 19509.0,
+          "test_mse_by_total_triangles": 2.0393286031447024
+        },
+        "h_hi__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 724495.1875,
+          "test_triangles_total_structural": 88403.0,
+          "test_mse_by_total_triangles": 8.195368794045452
+        },
+        "h_hi__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 243065.703125,
+          "test_triangles_total_structural": 60093.0,
+          "test_mse_by_total_triangles": 4.044825572446042
+        }
+      },
+      "output_dir": "D:\\ML_with_Graphs\\topobench\\logs\\train\\runs\\notebook_gu_grid_2026-07-16_00-27-17__triangle_counting__09__h_hi__d_lo__pl_hi__s42",
+      "wandb_config": {
+        "AvgTime/train_epoch_mean": 1.0625122785568237,
+        "AvgTime/train_epoch_std": 0.02574145793914795,
+        "model/params/total": 7726,
+        "model/params/trainable": 7726,
+        "model/params/non_trainable": 0
+      }
+    },
+    {
+      "experiment": "triangle_counting",
+      "wandb_project": "challenge_triangle_counting",
+      "wandb_run_name": "fagcn_hom_0.9-1__deg_4-5__gamma_1.5-2__s42",
+      "train_seed": 42,
+      "homophily": "h_hi",
+      "avg_degree": "d_hi",
+      "power_law": "pl_lo",
+      "run_slug": "h_hi__d_hi__pl_lo",
+      "test_loss": 504114.65625,
+      "test_best_rerun_accuracy": null,
+      "test_best_rerun_mse": 325955.3125,
+      "test_triangles_total_structural": 88403.0,
+      "test_mse_by_total_triangles": 3.687152161125754,
+      "ood_test": {
+        "h_lo__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 414641.90625,
+          "test_triangles_total_structural": 1388.0,
+          "test_mse_by_total_triangles": 298.733361851585
+        },
+        "h_lo__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 445077.46875,
+          "test_triangles_total_structural": 190.0,
+          "test_mse_by_total_triangles": 2342.5129934210527
+        },
+        "h_lo__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 293160.9375,
+          "test_triangles_total_structural": 13185.0,
+          "test_mse_by_total_triangles": 22.234428327645052
+        },
+        "h_lo__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 412860.46875,
+          "test_triangles_total_structural": 2967.0,
+          "test_mse_by_total_triangles": 139.1508152173913
+        },
+        "h_mid__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 362401.59375,
+          "test_triangles_total_structural": 7485.0,
+          "test_mse_by_total_triangles": 48.41704659318637
+        },
+        "h_mid__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 433232.5,
+          "test_triangles_total_structural": 1158.0,
+          "test_mse_by_total_triangles": 374.1213298791019
+        },
+        "h_mid__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 177339.6875,
+          "test_triangles_total_structural": 43064.0,
+          "test_mse_by_total_triangles": 4.118049588983838
+        },
+        "h_mid__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 327867.75,
+          "test_triangles_total_structural": 14262.0,
+          "test_mse_by_total_triangles": 22.988904080774084
+        },
+        "h_hi__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 290051.65625,
+          "test_triangles_total_structural": 19509.0,
+          "test_mse_by_total_triangles": 14.867581949356707
+        },
+        "h_hi__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 393171.90625,
+          "test_triangles_total_structural": 5625.0,
+          "test_mse_by_total_triangles": 69.89722777777777
+        },
+        "h_hi__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 174198.28125,
+          "test_triangles_total_structural": 60093.0,
+          "test_mse_by_total_triangles": 2.898811529629075
+        }
+      },
+      "output_dir": "D:\\ML_with_Graphs\\topobench\\logs\\train\\runs\\notebook_gu_grid_2026-07-16_00-27-17__triangle_counting__10__h_hi__d_hi__pl_lo__s42",
+      "wandb_config": {
+        "AvgTime/train_epoch_mean": 0.9954917430877686,
+        "AvgTime/train_epoch_std": 0,
+        "model/params/total": 7726,
+        "model/params/trainable": 7726,
+        "model/params/non_trainable": 0
+      }
+    },
+    {
+      "experiment": "triangle_counting",
+      "wandb_project": "challenge_triangle_counting",
+      "wandb_run_name": "fagcn_hom_0.9-1__deg_4-5__gamma_4-5__s42",
+      "train_seed": 42,
+      "homophily": "h_hi",
+      "avg_degree": "d_hi",
+      "power_law": "pl_hi",
+      "run_slug": "h_hi__d_hi__pl_hi",
+      "test_loss": 112716.0,
+      "test_best_rerun_accuracy": null,
+      "test_best_rerun_mse": 110060.0546875,
+      "test_triangles_total_structural": 60093.0,
+      "test_mse_by_total_triangles": 1.8314954268800026,
+      "ood_test": {
+        "h_lo__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 182551.3125,
+          "test_triangles_total_structural": 1388.0,
+          "test_mse_by_total_triangles": 131.52111851585013
+        },
+        "h_lo__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 198572.0,
+          "test_triangles_total_structural": 190.0,
+          "test_mse_by_total_triangles": 1045.1157894736841
+        },
+        "h_lo__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 113015.8125,
+          "test_triangles_total_structural": 13185.0,
+          "test_mse_by_total_triangles": 8.571544368600682
+        },
+        "h_lo__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 179742.40625,
+          "test_triangles_total_structural": 2967.0,
+          "test_mse_by_total_triangles": 60.580521149309064
+        },
+        "h_mid__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 150989.5625,
+          "test_triangles_total_structural": 7485.0,
+          "test_mse_by_total_triangles": 20.172286239144956
+        },
+        "h_mid__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 191474.078125,
+          "test_triangles_total_structural": 1158.0,
+          "test_mse_by_total_triangles": 165.34894484024178
+        },
+        "h_mid__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 89941.1875,
+          "test_triangles_total_structural": 43064.0,
+          "test_mse_by_total_triangles": 2.088546988203604
+        },
+        "h_mid__d_hi__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 129369.4375,
+          "test_triangles_total_structural": 14262.0,
+          "test_mse_by_total_triangles": 9.070918349460104
+        },
+        "h_hi__d_lo__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 114647.625,
+          "test_triangles_total_structural": 19509.0,
+          "test_mse_by_total_triangles": 5.876653083192373
+        },
+        "h_hi__d_lo__pl_hi": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 167358.6875,
+          "test_triangles_total_structural": 5625.0,
+          "test_mse_by_total_triangles": 29.752655555555556
+        },
+        "h_hi__d_hi__pl_lo": {
+          "test_best_rerun_accuracy": null,
+          "test_best_rerun_mse": 379409.375,
+          "test_triangles_total_structural": 88403.0,
+          "test_mse_by_total_triangles": 4.291815605805233
+        }
+      },
+      "output_dir": "D:\\ML_with_Graphs\\topobench\\logs\\train\\runs\\notebook_gu_grid_2026-07-16_00-27-17__triangle_counting__11__h_hi__d_hi__pl_hi__s42",
+      "wandb_config": {
+        "AvgTime/train_epoch_mean": 1.0662812846047538,
+        "AvgTime/train_epoch_std": 0.07523016688652492,
+        "model/params/total": 7726,
+        "model/params/trainable": 7726,
+        "model/params/non_trainable": 0
+      }
+    }
+  ]
+}
