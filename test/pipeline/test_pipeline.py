@@ -32,6 +32,8 @@ class TestPipeline:
                         "trainer.max_epochs=2",
                         "trainer.min_epochs=1",
                         "trainer.check_val_every_n_epoch=1",
+                        "trainer.accelerator=cpu",
+                        "trainer.devices=1",
                         "paths=test",
                         "callbacks=model_checkpoint",
                     ],
