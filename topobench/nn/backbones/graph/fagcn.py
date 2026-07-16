@@ -20,8 +20,8 @@ residual weight that retains self-information.
 The forward pass returns node embeddings of shape [num_nodes, out_channels]
 and is compatible with :class:`topobench.nn.wrappers.GNNWrapper`.
 
-Reference
----------
+References
+----------
 Bo, D., Wang, X., Shi, C., & Shen, H. (2021).
 Beyond Low-frequency Information in Graph Convolutional Networks.
 AAAI 2021. https://arxiv.org/abs/2101.00797
@@ -33,111 +33,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import FAConv
 
-"""
-class FAConv(MessagePassing):
-    # Single frequency-adaptive graph convolution layer.
-
-    # Implements Eq. 5 from Bo et al. (AAAI 2021):
-
-    #     h_i' = eps * h_i + sum_{j in N(i)} alpha_ij / sqrt(d_i * d_j) * h_j
-
-    # where alpha_ij = tanh(a^T [h_i || h_j]).
-
-    # Parameters
-    # ----------
-    # channels : int
-    #     Node feature dimension (input and output are the same size).
-    # eps : float, optional
-    #     Residual self-loop weight. Defaults to 0.1.
-    # dropout : float, optional
-    #     Dropout probability applied to attention coefficients. Defaults to 0.0.
-    
-
-    def __init__(
-        self,
-        channels: int,
-        eps: float = 0.1,
-        dropout: float = 0.0,
-    ) -> None:
-        super().__init__(aggr="add")
-        self.channels = channels
-        self.eps = eps
-        self.dropout = dropout
-
-        # Attention vector: a^T [h_i || h_j] -> scalar
-        self.att = nn.Linear(2 * channels, 1, bias=False)
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        edge_index: torch.Tensor,
-    ) -> torch.Tensor:
-        # Compute one FA-GCN layer forward pass.
-
-        # Parameters
-        # ----------
-        # x : torch.Tensor
-        #     Node features of shape ``[num_nodes, channels]``.
-        # edge_index : torch.Tensor
-        #     Graph connectivity in COO format of shape ``[2, num_edges]``.
-
-        # Returns
-        # -------
-        # torch.Tensor
-        #     Updated node embeddings of shape ``[num_nodes, channels]``.
-        
-        num_nodes = x.size(0)
-
-        # Compute degree-based normalisation: 1 / sqrt(d_i)
-        row, col = edge_index
-        deg = degree(col, num_nodes=num_nodes, dtype=x.dtype)
-        deg_inv_sqrt = deg.pow(-0.5)
-        deg_inv_sqrt[deg_inv_sqrt == float("inf")] = 0.0
-
-        # Propagate: aggregates alpha_ij / sqrt(d_i*d_j) * h_j
-        agg = self.propagate(
-            edge_index,
-            x=x,
-            deg_inv_sqrt=deg_inv_sqrt,
-        )
-
-        # Residual self term: eps * h_i
-        return self.eps * x + agg
-
-    def message(
-        self,
-        x_i,
-        x_j,
-        deg_inv_sqrt_i,
-        deg_inv_sqrt_j,
-    ):
-        # Compute signed, degree-normalised messages.
-
-        # Parameters
-        # ----------
-        # x_i : torch.Tensor
-        #     Target node features of shape ``[num_edges, channels]``.
-        # x_j : torch.Tensor
-        #     Source node features of shape ``[num_edges, channels]``.
-        # deg_inv_sqrt_i : torch.Tensor
-        #     Inverse sqrt degree of target nodes, shape ``[num_edges]``.
-        # deg_inv_sqrt_j : torch.Tensor
-        #     Inverse sqrt degree of source nodes, shape ``[num_edges]``.
-
-        # Returns
-        # -------
-        # torch.Tensor
-        #     Messages of shape ``[num_edges, channels]``.
-        
-        # alpha_ij = tanh(a^T [h_i || h_j])  in (-1, 1)
-        alpha = torch.tanh(self.att(torch.cat([x_i, x_j], dim=-1)))
-        alpha = F.dropout(alpha, p=self.dropout, training=self.training)
-
-        # Degree normalisation: 1 / sqrt(d_i * d_j)
-        norm = deg_inv_sqrt_i * deg_inv_sqrt_j
-
-        return alpha * norm.unsqueeze(-1) * x_j
-"""
 
 class FAGCN(nn.Module):
     """Frequency Adaptive Graph Convolutional Network (FAGCN).
@@ -198,7 +93,9 @@ class FAGCN(nn.Module):
 
         self.in_channels = in_channels
         self.hidden_channels = hidden_channels
-        self.out_channels = out_channels if out_channels is not None else hidden_channels
+        self.out_channels = (
+            out_channels if out_channels is not None else hidden_channels
+        )
         self.num_layers = num_layers
         self.eps = eps
         self.dropout = dropout
@@ -208,7 +105,10 @@ class FAGCN(nn.Module):
 
         # Stack of FAConv layers (all operate at hidden_channels)
         self.convs = nn.ModuleList(
-            [FAConv(hidden_channels, eps=eps, dropout=dropout) for _ in range(num_layers)]
+            [
+                FAConv(hidden_channels, eps=eps, dropout=dropout)
+                for _ in range(num_layers)
+            ]
         )
 
         # Optional output projection if out_channels != hidden_channels
@@ -246,12 +146,14 @@ class FAGCN(nn.Module):
         torch.Tensor
             Node embeddings of shape ``[num_nodes, out_channels]``.
         """
+        # Store initial features for FAConv (x_0 in PyG's FAConv)
         x0 = x
+
         # Input projection + activation + dropout  (Sec. 4 in paper)
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = F.relu(self.lin(x))
 
-        # Stack FA-GCN layers
+        # Stack FA-GCN layers — PyG's FAConv takes (x, x_0, edge_index)
         for conv in self.convs:
             x = F.dropout(x, p=self.dropout, training=self.training)
             x = conv(x, x0, edge_index)
