@@ -3,8 +3,8 @@
 import pytest
 import torch
 from torch_geometric.data import Batch, Data
-
-from topobench.nn.backbones.graph.fagcn import FAGCN, FAConv
+from torch_geometric.nn import FAConv
+from topobench.nn.backbones.graph.fagcn import FAGCN
 from topobench.nn.wrappers import GNNWrapper
 
 

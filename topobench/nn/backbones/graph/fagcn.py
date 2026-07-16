@@ -32,7 +32,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import FAConv
-from torch_geometric.utils import add_self_loops, degree
 
 """
 class FAConv(MessagePassing):
