@@ -65,7 +65,7 @@ class FAGCN(nn.Module):
     >>> from topobench.nn.backbones.graph.fagcn import FAGCN
     >>> model = FAGCN(in_channels=16, hidden_channels=32)
     >>> x = torch.randn(10, 16)
-    >>> edge_index = torch.tensor([[0,1,2],[1,2,0]])
+    >>> edge_index = torch.tensor([[0, 1, 2], [1, 2, 0]])
     >>> out = model(x=x, edge_index=edge_index)
     >>> out.shape
     torch.Size([10, 32])
@@ -100,10 +100,12 @@ class FAGCN(nn.Module):
         self.eps = eps
         self.dropout = dropout
 
-        # Input projection (paper uses a single linear layer + dropout)
+        # Input projection maps raw features to hidden_channels
         self.lin = nn.Linear(in_channels, hidden_channels)
 
         # Stack of FAConv layers (all operate at hidden_channels)
+        # PyG's FAConv takes (x, x_0, edge_index) where x_0 are the
+        # initial projected features kept constant across all layers.
         self.convs = nn.ModuleList(
             [
                 FAConv(hidden_channels, eps=eps, dropout=dropout)
@@ -146,14 +148,16 @@ class FAGCN(nn.Module):
         torch.Tensor
             Node embeddings of shape ``[num_nodes, out_channels]``.
         """
-        # Store initial features for FAConv (x_0 in PyG's FAConv)
-        x0 = x
-
-        # Input projection + activation + dropout  (Sec. 4 in paper)
+        # Input projection + activation + dropout (Sec. 4 in paper)
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = F.relu(self.lin(x))
 
+        # x_0 must be in hidden_channels space (same dim as x)
+        # so we store it after projection, not before
+        x0 = x
+
         # Stack FA-GCN layers — PyG's FAConv takes (x, x_0, edge_index)
+        # where x_0 are the initial projected features
         for conv in self.convs:
             x = F.dropout(x, p=self.dropout, training=self.training)
             x = conv(x, x0, edge_index)

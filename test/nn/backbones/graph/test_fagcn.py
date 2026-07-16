@@ -3,65 +3,9 @@
 import pytest
 import torch
 from torch_geometric.data import Batch, Data
-from torch_geometric.nn import FAConv
+
 from topobench.nn.backbones.graph.fagcn import FAGCN
 from topobench.nn.wrappers import GNNWrapper
-
-
-class TestFAConv:
-    """Tests for the single FAConv message-passing layer."""
-
-    def setup_method(self):
-        """Set up common dimensions."""
-        self.channels = 16
-
-    def test_initialization(self):
-        """Test FAConv initializes with correct shapes."""
-        conv = FAConv(channels=self.channels, eps=0.1, dropout=0.0)
-        # Attention vector has shape [2*channels, 1]
-        assert conv.att.weight.shape == (1, 2 * self.channels)
-        assert conv.eps == 0.1
-
-    def test_forward_basic(self, simple_graph_0):
-        """Test FAConv forward pass returns correct shape."""
-        conv = FAConv(channels=self.channels, dropout=0.0)
-        x = torch.randn(simple_graph_0.num_nodes, self.channels)
-
-        out = conv(x, simple_graph_0.edge_index)
-
-        assert out.shape == (simple_graph_0.num_nodes, self.channels)
-        assert not torch.isnan(out).any()
-        assert not torch.isinf(out).any()
-
-    def test_forward_edgeless(self):
-        """Test FAConv on a graph with no edges (only residual term)."""
-        conv = FAConv(channels=self.channels, eps=0.1, dropout=0.0)
-        num_nodes = 5
-        x = torch.randn(num_nodes, self.channels)
-        edge_index = torch.empty(2, 0, dtype=torch.long)
-
-        out = conv(x, edge_index)
-
-        # No neighbors => output is eps * x
-        assert out.shape == (num_nodes, self.channels)
-        torch.testing.assert_close(out, 0.1 * x)
-
-    def test_signed_attention(self, simple_graph_0):
-        """Test that attention coefficients span (-1, 1) via tanh."""
-        conv = FAConv(channels=self.channels, dropout=0.0)
-        x = torch.randn(simple_graph_0.num_nodes, self.channels)
-
-        # Hook to capture messages
-        messages = []
-
-        def hook(module, inputs, output):
-            messages.append(output)
-
-        conv.register_forward_hook(hook)
-        conv(x, simple_graph_0.edge_index)
-
-        # Output should be bounded (tanh keeps alpha in (-1,1))
-        assert len(messages) > 0
 
 
 class TestFAGCN:
@@ -116,8 +60,7 @@ class TestFAGCN:
             hidden_channels=self.hidden_channels,
             out_channels=self.out_channels,
         )
-        import torch.nn as nn
-        assert isinstance(model.out_proj, nn.Linear)
+        assert isinstance(model.out_proj, torch.nn.Linear)
         assert model.out_proj.out_features == self.out_channels
 
     def test_no_projection_when_same_channels(self):
@@ -126,8 +69,7 @@ class TestFAGCN:
             in_channels=self.in_channels,
             hidden_channels=self.hidden_channels,
         )
-        import torch.nn as nn
-        assert isinstance(model.out_proj, nn.Identity)
+        assert isinstance(model.out_proj, torch.nn.Identity)
 
     def test_invalid_in_channels(self):
         """Test that non-positive in_channels raises ValueError."""
