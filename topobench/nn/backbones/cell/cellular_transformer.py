@@ -451,6 +451,7 @@ class CellularTransformer(nn.Module):
         coadjacency_2,
         incidence_1,
         incidence_2,
+        rwpe_0=None, rwpe_1=None, rwpe_2=None,
     ):
         """Forward pass.
 
@@ -472,6 +473,12 @@ class CellularTransformer(nn.Module):
             Sparse incidence between ranks 0 and 1, shape [n_0, n_1].
         incidence_2 : torch.Tensor
             Sparse incidence between ranks 1 and 2, shape [n_1, n_2].
+        rwpe_0 : torch.Tensor, optional
+            Precomputed random-walk PE for rank 0, shape [n_0, pe_steps].
+        rwpe_1 : torch.Tensor, optional
+            Precomputed random-walk PE for rank 1, shape [n_1, pe_steps].
+        rwpe_2 : torch.Tensor, optional
+            Precomputed random-walk PE for rank 2, shape [n_2, pe_steps].
 
         Returns
         -------
@@ -491,11 +498,16 @@ class CellularTransformer(nn.Module):
 
         xs = [x_0, x_1, x_2]
         if self.pe_type == "rwpe":
-            intra = [adjacency_0, coadjacency_1, coadjacency_2]
-            with torch.no_grad():
-                pes = [
-                    random_walk_pe(matrix, self.pe_steps) for matrix in intra
-                ]
+            if rwpe_0 is not None:
+                # Fast path: precomputed by CellRandomWalkPE transform
+                pes = [rwpe_0, rwpe_1, rwpe_2]
+            else:
+                # Fallback: compute on-the-fly (backward compat)
+                intra = [adjacency_0, coadjacency_1, coadjacency_2]
+                with torch.no_grad():
+                    pes = [
+                        random_walk_pe(matrix, self.pe_steps) for matrix in intra
+                    ]
             xs = [
                 torch.cat([x, pe.to(x.dtype)], dim=-1)
                 for x, pe in zip(xs, pes, strict=True)

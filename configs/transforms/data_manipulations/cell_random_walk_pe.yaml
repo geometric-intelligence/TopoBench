@@ -1,0 +1,3 @@
+# @package _global_
+_target_: topobench.transforms.feature_liftings.cell_random_walk_pe.CellRandomWalkPE
+pe_steps: 8  # overridden by experiment YAML via ${pe_steps}

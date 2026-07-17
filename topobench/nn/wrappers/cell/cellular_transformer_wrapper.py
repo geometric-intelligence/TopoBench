@@ -29,6 +29,13 @@ class CellularTransformerWrapper(AbstractWrapper):
         dict
             Dictionary containing the updated model output.
         """
+
+        # --- NEW: pull precomputed PE (None if transform not used) ---
+        rwpe_0 = getattr(batch, "rwpe_0", None)
+        rwpe_1 = getattr(batch, "rwpe_1", None)
+        rwpe_2 = getattr(batch, "rwpe_2", None)
+
+
         x_0, x_1, x_2 = self.backbone(
             x_0=batch.x_0,
             x_1=batch.x_1,
@@ -38,6 +45,9 @@ class CellularTransformerWrapper(AbstractWrapper):
             coadjacency_2=batch.coadjacency_2.coalesce(),
             incidence_1=batch.incidence_1.coalesce(),
             incidence_2=batch.incidence_2.coalesce(),
+            rwpe_0=rwpe_0,
+            rwpe_1=rwpe_1,
+            rwpe_2=rwpe_2,
         )
 
         model_out = {"labels": batch.y, "batch_0": batch.batch_0}
@@ -45,3 +55,7 @@ class CellularTransformerWrapper(AbstractWrapper):
         model_out["x_1"] = x_1
         model_out["x_2"] = x_2
         return model_out
+
+
+
+
