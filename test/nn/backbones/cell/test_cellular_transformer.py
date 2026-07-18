@@ -235,6 +235,37 @@ def testCellularTransformer_block_diagonal_batching():
         assert torch.allclose(one, two[n:], atol=1e-5)
 
 
+def testCellularTransformer_precomputed_pe_equivalence():
+    """Precomputed RWPE (fast path) must equal on-the-fly computation.
+
+    The CellRandomWalkPE transform precomputes the encodings at
+    preprocessing time; this pins the invariant that both code paths
+    produce identical outputs.
+    """
+    torch.manual_seed(0)
+    inputs = _cell_inputs()
+    model = CellularTransformer(
+        16, 32, num_layers=2, num_heads=4, att_dropout=0.0
+    )
+    model.eval()
+    from topobench.nn.backbones.cell.cellular_transformer import (
+        random_walk_pe,
+    )
+
+    pes = [
+        random_walk_pe(inputs["adjacency_0"], model.pe_steps),
+        random_walk_pe(inputs["coadjacency_1"], model.pe_steps),
+        random_walk_pe(inputs["coadjacency_2"], model.pe_steps),
+    ]
+    with torch.no_grad():
+        on_the_fly = model(**inputs)
+        precomputed = model(
+            **inputs, rwpe_0=pes[0], rwpe_1=pes[1], rwpe_2=pes[2]
+        )
+    for a, b in zip(on_the_fly, precomputed, strict=True):
+        assert torch.allclose(a, b, atol=1e-6)
+
+
 def testCellularTransformerLayer():
     """Test that a single layer preserves shapes across ranks."""
     torch.manual_seed(0)

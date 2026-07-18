@@ -451,7 +451,9 @@ class CellularTransformer(nn.Module):
         coadjacency_2,
         incidence_1,
         incidence_2,
-        rwpe_0=None, rwpe_1=None, rwpe_2=None,
+        rwpe_0=None,
+        rwpe_1=None,
+        rwpe_2=None,
     ):
         """Forward pass.
 
@@ -506,7 +508,8 @@ class CellularTransformer(nn.Module):
                 intra = [adjacency_0, coadjacency_1, coadjacency_2]
                 with torch.no_grad():
                     pes = [
-                        random_walk_pe(matrix, self.pe_steps) for matrix in intra
+                        random_walk_pe(matrix, self.pe_steps)
+                        for matrix in intra
                     ]
             xs = [
                 torch.cat([x, pe.to(x.dtype)], dim=-1)

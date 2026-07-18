@@ -35,7 +35,6 @@ class CellularTransformerWrapper(AbstractWrapper):
         rwpe_1 = getattr(batch, "rwpe_1", None)
         rwpe_2 = getattr(batch, "rwpe_2", None)
 
-
         x_0, x_1, x_2 = self.backbone(
             x_0=batch.x_0,
             x_1=batch.x_1,
@@ -55,7 +54,3 @@ class CellularTransformerWrapper(AbstractWrapper):
         model_out["x_1"] = x_1
         model_out["x_2"] = x_2
         return model_out
-
-
-
-

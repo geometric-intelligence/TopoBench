@@ -1,7 +1,6 @@
 # @package _global_
 defaults:
 - override /transforms: GPSE_cell
-- data_manipulations@data_transform_4: cell_random_walk_pe
 
 transforms:
   hopse_encoding:
@@ -11,14 +10,3 @@ transforms:
 
   graph2cell_lifting:
     neighborhoods: ${transforms.hopse_encoding.neighborhoods}
-
-pe_steps: 8
-
-# Override model backbone 
-model:
-  backbone:
-    pe_steps: ${pe_steps}
-
-# Configure the new transform
-data_transform_4:
-  pe_steps: ${pe_steps}
