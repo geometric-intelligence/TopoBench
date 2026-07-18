@@ -73,6 +73,57 @@ def test_smcn_rejects_unknown_activation():
         )
 
 
+def test_smcn_rejects_unknown_tuple_pooling():
+    """SMCN should fail clearly for unsupported tuple pooling."""
+    with pytest.raises(ValueError, match="Unsupported tuple_pooling"):
+        SMCN(
+            in_channels=8,
+            hidden_channels=16,
+            tuple_pooling="max",
+        )
+
+
+def test_smcn_rejects_unknown_tuple_selection():
+    """SMCN should fail clearly for unsupported tuple selection."""
+    with pytest.raises(ValueError, match="Unsupported tuple_selection"):
+        SMCN(
+            in_channels=8,
+            hidden_channels=16,
+            tuple_selection="max",
+        )
+
+
+def test_smcn_looks_up_sparse_binary_marking():
+    """SMCN should look up tuple incidence markings from sparse indices."""
+    incidence = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.0, 1.0],
+        ]
+    ).to_sparse()
+    low_indices = torch.tensor([0, 0, 1, 1])
+    high_indices = torch.tensor([0, 1, 0, 1])
+
+    markings = SMCN._lookup_sparse_binary_marking(
+        incidence, low_indices, high_indices
+    )
+
+    assert torch.equal(markings, torch.tensor([1.0, 0.0, 0.0, 1.0]))
+
+
+def test_smcn_looks_up_empty_sparse_binary_marking():
+    """SMCN should return zeros when sparse tuple incidence has no entries."""
+    incidence = torch.sparse_coo_tensor(size=(2, 2)).coalesce()
+    low_indices = torch.tensor([0, 1])
+    high_indices = torch.tensor([0, 1])
+
+    markings = SMCN._lookup_sparse_binary_marking(
+        incidence, low_indices, high_indices
+    )
+
+    assert torch.equal(markings, torch.zeros(2))
+
+
 def test_smcn_builds_binary_rank02_incidence():
     """SMCN should compose rank 0-to-2 incidence from incidences 0-to-1 and 1-to-2."""
     incidence_1 = torch.tensor(
@@ -149,7 +200,8 @@ def test_smcn_pools_rank02_tuple_features_to_rank0():
         "low_indices": torch.tensor([0, 1, 0]),
     }
 
-    pooled = SMCN.pool_rank02_to_rank0(subcomplex, num_low_cells=3)
+    model = SMCN(in_channels=8, hidden_channels=16, tuple_pooling="sum")
+    pooled = model.pool_rank02_to_rank0(subcomplex, num_low_cells=3)
 
     assert torch.equal(
         pooled,
@@ -161,6 +213,80 @@ def test_smcn_pools_rank02_tuple_features_to_rank0():
             ]
         ),
     )
+
+
+def test_smcn_mean_pools_rank02_tuple_features_to_rank0():
+    """SMCN should average tuple features when tuple_pooling is mean."""
+    subcomplex = {
+        "tuple_features": torch.tensor(
+            [
+                [1.0, 2.0],
+                [3.0, 4.0],
+                [5.0, 6.0],
+            ]
+        ),
+        "low_indices": torch.tensor([0, 1, 0]),
+    }
+
+    model = SMCN(in_channels=8, hidden_channels=16, tuple_pooling="mean")
+    pooled = model.pool_rank02_to_rank0(subcomplex, num_low_cells=3)
+
+    assert torch.equal(
+        pooled,
+        torch.tensor(
+            [
+                [3.0, 4.0],
+                [3.0, 4.0],
+                [0.0, 0.0],
+            ]
+        ),
+    )
+
+
+def test_smcn_rejects_negative_marking_embed_dim():
+    """SMCN should fail clearly for negative marking embedding dimensions."""
+    with pytest.raises(ValueError, match="marking_embed_dim"):
+        SMCN(
+            in_channels=8,
+            hidden_channels=16,
+            marking_embed_dim=-1,
+        )
+
+
+def test_smcn_encodes_scalar_rank02_marking_by_default():
+    """SMCN should use scalar binary marking by default."""
+    model = SMCN(in_channels=8, hidden_channels=16)
+
+    marking_features = model.encode_rank02_marking(torch.tensor([0.0, 1.0]))
+
+    assert torch.equal(marking_features, torch.tensor([[0.0], [1.0]]))
+
+
+def test_smcn_embeds_rank02_marking_when_requested():
+    """SMCN should embed binary marking when marking_embed_dim is positive."""
+    model = SMCN(in_channels=8, hidden_channels=16, marking_embed_dim=4)
+
+    marking_features = model.encode_rank02_marking(torch.tensor([0.0, 1.0]))
+
+    assert marking_features.shape == (2, 4)
+
+
+def test_smcn_encodes_rank02_tuple_features():
+    """SMCN should encode selected rank-0/2 tuple features."""
+    batch = Data(
+        x_0=torch.ones(2, 8),
+        x_2=2 * torch.ones(1, 8),
+    )
+    low_indices = torch.tensor([0, 1])
+    high_indices = torch.tensor([0, 0])
+    binary_marking = torch.tensor([1.0, 0.0])
+    model = SMCN(in_channels=8, hidden_channels=16, marking_embed_dim=4)
+
+    tuple_features = model.encode_rank02_tuple_features(
+        batch, low_indices, high_indices, binary_marking
+    )
+
+    assert tuple_features.shape == (2, 16)
 
 
 def test_smcn_builds_and_pools_rank02_subcomplex():
@@ -196,7 +322,7 @@ def test_smcn_filters_rank02_tuples_across_batched_graphs():
     incidence_2 = torch.tensor(
         [
             [1.0, 0.0],
-            [1.0, 0.0],
+            [0.0, 0.0],
             [0.0, 1.0],
             [0.0, 1.0],
         ]
@@ -215,8 +341,103 @@ def test_smcn_filters_rank02_tuples_across_batched_graphs():
 
     assert torch.equal(subcomplex["low_indices"], torch.tensor([0, 1, 2, 3]))
     assert torch.equal(subcomplex["high_indices"], torch.tensor([0, 0, 1, 1]))
-    assert torch.equal(subcomplex["binary_marking"], torch.ones(4))
+    assert torch.equal(
+        subcomplex["binary_marking"], torch.tensor([1.0, 0.0, 1.0, 1.0])
+    )
     assert subcomplex["tuple_features"].shape == (4, 16)
+
+
+def test_smcn_keeps_all_rank02_tuples_by_default():
+    """SMCN should keep same-graph non-incident tuples by default."""
+    incidence_1 = torch.eye(2).to_sparse()
+    incidence_2 = torch.tensor([[1.0], [0.0]]).to_sparse()
+    batch = Data(
+        x_0=torch.ones(2, 8),
+        x_2=2 * torch.ones(1, 8),
+        incidence_1=incidence_1,
+        incidence_2=incidence_2,
+    )
+    model = SMCN(in_channels=8, hidden_channels=16)
+
+    subcomplex = model.build_rank02_subcomplex(batch)
+
+    assert torch.equal(subcomplex["low_indices"], torch.tensor([0, 1]))
+    assert torch.equal(subcomplex["high_indices"], torch.tensor([0, 0]))
+    assert torch.equal(subcomplex["binary_marking"], torch.tensor([1.0, 0.0]))
+    assert subcomplex["tuple_features"].shape == (2, 16)
+
+
+def test_smcn_filters_to_incident_rank02_tuples_when_requested():
+    """SMCN should keep only incident tuples in incident selection mode."""
+    incidence_1 = torch.eye(2).to_sparse()
+    incidence_2 = torch.tensor([[1.0], [0.0]]).to_sparse()
+    batch = Data(
+        x_0=torch.ones(2, 8),
+        x_2=2 * torch.ones(1, 8),
+        incidence_1=incidence_1,
+        incidence_2=incidence_2,
+    )
+    model = SMCN(
+        in_channels=8, hidden_channels=16, tuple_selection="incident"
+    )
+
+    subcomplex = model.build_rank02_subcomplex(batch)
+
+    assert torch.equal(subcomplex["low_indices"], torch.tensor([0]))
+    assert torch.equal(subcomplex["high_indices"], torch.tensor([0]))
+    assert torch.equal(subcomplex["binary_marking"], torch.tensor([1.0]))
+    assert subcomplex["tuple_features"].shape == (1, 16)
+
+
+def test_smcn_builds_rank02_subcomplex_edges():
+    """SMCN should build tuple-level low, high, and incidence edge indices."""
+    model = SMCN(in_channels=8, hidden_channels=16)
+    low_indices = torch.tensor([0, 0, 1])
+    high_indices = torch.tensor([0, 1, 1])
+
+    edges = model.build_rank02_subcomplex_edges(low_indices, high_indices)
+
+    assert torch.equal(
+        edges["edge_index_low_adjacency"], torch.tensor([[0, 1], [1, 0]])
+    )
+    assert torch.equal(
+        edges["edge_index_high_adjacency"], torch.tensor([[1, 2], [2, 1]])
+    )
+    assert torch.equal(
+        edges["edge_index_incidence"], torch.tensor([[0, 1, 2], [0, 1, 2]])
+    )
+
+
+def test_smcn_builds_empty_rank02_subcomplex_edges():
+    """SMCN should return empty edge indices when there are no tuples."""
+    model = SMCN(in_channels=8, hidden_channels=16)
+    low_indices = torch.empty(0, dtype=torch.long)
+    high_indices = torch.empty(0, dtype=torch.long)
+
+    edges = model.build_rank02_subcomplex_edges(low_indices, high_indices)
+
+    assert edges["edge_index_low_adjacency"].shape == (2, 0)
+    assert edges["edge_index_high_adjacency"].shape == (2, 0)
+    assert edges["edge_index_incidence"].shape == (2, 0)
+
+
+def test_smcn_rank02_subcomplex_includes_edge_indices():
+    """SMCN rank-0/2 subcomplex output should include placeholder edge indices."""
+    incidence_1 = torch.eye(2).to_sparse()
+    incidence_2 = torch.tensor([[1.0], [0.0]]).to_sparse()
+    batch = Data(
+        x_0=torch.ones(2, 8),
+        x_2=2 * torch.ones(1, 8),
+        incidence_1=incidence_1,
+        incidence_2=incidence_2,
+    )
+    model = SMCN(in_channels=8, hidden_channels=16)
+
+    subcomplex = model.build_rank02_subcomplex(batch)
+
+    assert "edge_index_low_adjacency" in subcomplex
+    assert "edge_index_high_adjacency" in subcomplex
+    assert "edge_index_incidence" in subcomplex
 
 
 def test_smcn_pools_empty_rank02_tuple_features_to_rank0():
@@ -226,6 +447,7 @@ def test_smcn_pools_empty_rank02_tuple_features_to_rank0():
         "low_indices": torch.empty(0, dtype=torch.long),
     }
 
-    pooled = SMCN.pool_rank02_to_rank0(subcomplex, num_low_cells=3)
+    model = SMCN(in_channels=8, hidden_channels=16, tuple_pooling="sum")
+    pooled = model.pool_rank02_to_rank0(subcomplex, num_low_cells=3)
 
     assert torch.equal(pooled, torch.zeros(3, 2))
