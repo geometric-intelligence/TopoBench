@@ -10,8 +10,13 @@ class SubComplexLayer(torch.nn.Module):
     indices, then applies separate relation-wise transforms and activation.
     """
 
-    def __init__(self, channels, activation_layer=torch.nn.ReLU):
+    def __init__(
+        self, channels, activation_layer=torch.nn.ReLU, aggregation="mean"
+    ):
         super().__init__()
+        if aggregation not in {"sum", "mean"}:
+            raise ValueError(f"Unsupported aggregation: {aggregation}")
+        self.aggregation = aggregation
         self.self_linear = torch.nn.Linear(channels, channels)
         self.low_linear = torch.nn.Linear(channels, channels)
         self.high_linear = torch.nn.Linear(channels, channels)
@@ -38,13 +43,19 @@ class SubComplexLayer(torch.nn.Module):
 
         return self.activation(updates)
 
-    @staticmethod
-    def _aggregate(features, edge_index):
-        """Sum source tuple features into target tuple slots."""
+    def _aggregate(self, features, edge_index):
+        """Aggregate source tuple features into target tuple slots."""
         if edge_index.numel() == 0:
             return torch.zeros_like(features)
+
+        source, target = edge_index
         messages = torch.zeros_like(features)
-        messages.index_add_(0, edge_index[1], features[edge_index[0]])
+        messages.index_add_(0, target, features[source])
+        if self.aggregation == "mean":
+            counts = features.new_zeros(features.size(0))
+            counts.index_add_(0, target, features.new_ones(target.size(0)))
+            messages = messages / counts.clamp_min(1).unsqueeze(-1)
+
         return messages
 
 
@@ -66,6 +77,8 @@ class SMCN(torch.nn.Module):
         tuple_pooling="sum",
         tuple_selection="all",
         marking_embed_dim=0,
+        subcomplex_aggregation="mean",
+        max_rank02_tuples=None,
     ):
         super().__init__()
         self.neighborhoods = neighborhoods or []
@@ -78,6 +91,12 @@ class SMCN(torch.nn.Module):
         if tuple_selection not in {"all", "incident"}:
             raise ValueError(f"Unsupported tuple_selection: {tuple_selection}")
         self.tuple_selection = tuple_selection
+
+        if subcomplex_aggregation not in {"sum", "mean"}:
+            raise ValueError(
+                f"Unsupported subcomplex_aggregation: {subcomplex_aggregation}"
+            )
+        self.subcomplex_aggregation = subcomplex_aggregation
 
         activation_layer = self._get_activation(activation)
         self.rank_updates = torch.nn.ModuleDict(
@@ -108,12 +127,20 @@ class SMCN(torch.nn.Module):
 
         if use_subcomplex_signal:
             self.rank02_tuple_update = SubComplexLayer(
-                hidden_channels, activation_layer
+                hidden_channels,
+                activation_layer,
+                aggregation=subcomplex_aggregation,
             )
         else:
             self.rank02_tuple_update = self._make_rank_update(
                 hidden_channels, hidden_channels, layers, activation_layer
             )
+
+        if max_rank02_tuples is not None and max_rank02_tuples <= 0:
+            raise ValueError(
+                f"max_rank02_tuples must be positive, got {max_rank02_tuples}"
+            )
+        self.max_rank02_tuples = max_rank02_tuples
 
     @staticmethod
     def _get_activation(name):
@@ -253,6 +280,11 @@ class SMCN(torch.nn.Module):
             low_indices = low_indices[incident_tuples]
             high_indices = high_indices[incident_tuples]
             binary_marking = binary_marking[incident_tuples]
+
+        if self.max_rank02_tuples is not None:
+            low_indices = low_indices[: self.max_rank02_tuples]
+            high_indices = high_indices[: self.max_rank02_tuples]
+            binary_marking = binary_marking[: self.max_rank02_tuples]
 
         tuple_features = self.encode_rank02_tuple_features(
             batch, low_indices, high_indices, binary_marking

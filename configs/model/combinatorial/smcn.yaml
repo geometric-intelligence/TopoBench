@@ -22,6 +22,7 @@ backbone:
   use_subcomplex_signal: false
   tuple_pooling: sum
   subcomplex_aggregation: mean
+  max_rank02_tuples: null
   tuple_selection: all
   neighborhoods:
     - up_adjacency-1

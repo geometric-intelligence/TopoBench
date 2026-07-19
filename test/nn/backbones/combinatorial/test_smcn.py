@@ -16,9 +16,9 @@ def test_subcomplex_layer_has_relation_specific_transforms():
     assert isinstance(layer.high_linear, torch.nn.Linear)
     assert isinstance(layer.incidence_linear, torch.nn.Linear)
 
-def test_subcomplex_layer_aggregates_placeholder_edges():
-    """SubComplexLayer should aggregate tuple features over each edge family."""
-    layer = SubComplexLayer(channels=2)
+def test_subcomplex_layer_sum_aggregates_placeholder_edges():
+    """SubComplexLayer should sum tuple features when aggregation is sum."""
+    layer = SubComplexLayer(channels=2, aggregation="sum")
     with torch.no_grad():
         for linear in (
             layer.self_linear,
@@ -57,6 +57,63 @@ def test_subcomplex_layer_aggregates_placeholder_edges():
             ]
         ),
     )
+
+def test_subcomplex_layer_mean_aggregates_placeholder_edges():
+    """SubComplexLayer should average incoming messages when aggregation is mean."""
+    layer = SubComplexLayer(channels=2, aggregation="mean")
+    with torch.no_grad():
+        for linear in (
+            layer.self_linear,
+            layer.low_linear,
+            layer.high_linear,
+            layer.incidence_linear,
+        ):
+            linear.weight.copy_(torch.eye(2))
+            linear.bias.zero_()
+
+    tuple_features = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.0, 2.0],
+            [3.0, 0.0],
+        ]
+    )
+    edge_index_low_adjacency = torch.tensor([[0, 2], [1, 1]])
+    empty_edge_index = torch.empty(2, 0, dtype=torch.long)
+
+    out = layer(
+        tuple_features,
+        edge_index_low_adjacency,
+        empty_edge_index,
+        empty_edge_index,
+    )
+
+    assert torch.equal(
+        out,
+        torch.tensor(
+            [
+                [1.0, 0.0],
+                [2.0, 2.0],
+                [3.0, 0.0],
+            ]
+        ),
+    )
+
+
+def test_subcomplex_layer_rejects_unknown_aggregation():
+    """SubComplexLayer should fail clearly for unsupported aggregation."""
+    with pytest.raises(ValueError, match="Unsupported aggregation"):
+        SubComplexLayer(channels=2, aggregation="max")
+
+
+def test_smcn_rejects_unknown_subcomplex_aggregation():
+    """SMCN should fail clearly for unsupported subcomplex aggregation."""
+    with pytest.raises(ValueError, match="Unsupported subcomplex_aggregation"):
+        SMCN(
+            in_channels=8,
+            hidden_channels=16,
+            subcomplex_aggregation="max",
+        )
 
 def test_smcn_forward_returns_rank_dict():
     """SMCN should return updated rank-wise features."""
@@ -370,6 +427,50 @@ def test_smcn_uses_subcomplex_layer_when_enabled():
     assert subcomplex["tuple_features"].shape == (3, 16)
     assert set(out.keys()) == {0, 1, 2}
     assert out[0].shape == (3, 16)
+
+def test_smcn_rejects_non_positive_max_rank02_tuples():
+    """SMCN should fail clearly for non-positive rank-0/2 tuple caps."""
+    with pytest.raises(ValueError, match="max_rank02_tuples"):
+        SMCN(in_channels=8, hidden_channels=16, max_rank02_tuples=0)
+
+
+def test_smcn_caps_rank02_tuples_when_requested():
+    """SMCN should keep only the first rank-0/2 tuples when capped."""
+    incidence_1 = torch.eye(3).to_sparse()
+    incidence_2 = torch.ones(3, 2).to_sparse()
+    batch = Data(
+        x_0=torch.ones(3, 8),
+        x_2=2 * torch.ones(2, 8),
+        incidence_1=incidence_1,
+        incidence_2=incidence_2,
+    )
+    model = SMCN(in_channels=8, hidden_channels=16, max_rank02_tuples=4)
+
+    subcomplex = model.build_rank02_subcomplex(batch)
+
+    assert torch.equal(subcomplex["low_indices"], torch.tensor([0, 0, 1, 1]))
+    assert torch.equal(subcomplex["high_indices"], torch.tensor([0, 1, 0, 1]))
+    assert subcomplex["binary_marking"].shape == (4,)
+    assert subcomplex["tuple_features"].shape == (4, 16)
+
+
+def test_smcn_keeps_all_rank02_tuples_when_uncapped():
+    """SMCN should keep all rank-0/2 tuples when no cap is configured."""
+    incidence_1 = torch.eye(3).to_sparse()
+    incidence_2 = torch.ones(3, 2).to_sparse()
+    batch = Data(
+        x_0=torch.ones(3, 8),
+        x_2=2 * torch.ones(2, 8),
+        incidence_1=incidence_1,
+        incidence_2=incidence_2,
+    )
+    model = SMCN(in_channels=8, hidden_channels=16)
+
+    subcomplex = model.build_rank02_subcomplex(batch)
+
+    assert subcomplex["low_indices"].shape == (6,)
+    assert subcomplex["high_indices"].shape == (6,)
+    assert subcomplex["tuple_features"].shape == (6, 16)
 
 def test_smcn_builds_and_pools_rank02_subcomplex():
     """SMCN should build rank-0/2 tuples and pool them back to rank 0."""
