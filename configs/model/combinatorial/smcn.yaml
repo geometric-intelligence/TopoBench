@@ -23,7 +23,7 @@ backbone:
   tuple_pooling: sum
   subcomplex_aggregation: mean
   max_rank02_tuples: null
-  tuple_selection: all
+  tuple_selection: incident
   neighborhoods:
     - up_adjacency-1
     - up_incidence-0
