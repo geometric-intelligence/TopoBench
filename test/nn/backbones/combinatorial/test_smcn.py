@@ -4,7 +4,24 @@ import pytest
 import torch
 from torch_geometric.data import Data
 
-from topobench.nn.backbones.combinatorial.smcn import SMCN, SubComplexLayer
+from topobench.nn.backbones.combinatorial.smcn import (
+    SMCN,
+    SubComplexLayer,
+    SubComplexRelationConv,
+)
+
+
+def _set_linear_identity(linear):
+    linear.weight.copy_(torch.eye(linear.in_features, linear.out_features))
+    linear.bias.zero_()
+
+
+def _set_relation_conv_identity(conv):
+    _set_linear_identity(conv.message_linear)
+    if conv.bridge_linear is not None:
+        _set_linear_identity(conv.bridge_linear)
+    _set_linear_identity(conv.update[0])
+    _set_linear_identity(conv.update[2])
 
 
 def test_subcomplex_layer_has_relation_specific_transforms():
@@ -12,22 +29,17 @@ def test_subcomplex_layer_has_relation_specific_transforms():
     layer = SubComplexLayer(channels=2)
 
     assert isinstance(layer.self_linear, torch.nn.Linear)
-    assert isinstance(layer.low_linear, torch.nn.Linear)
-    assert isinstance(layer.high_linear, torch.nn.Linear)
-    assert isinstance(layer.incidence_linear, torch.nn.Linear)
+    assert isinstance(layer.low_conv, SubComplexRelationConv)
+    assert isinstance(layer.high_conv, SubComplexRelationConv)
+    assert isinstance(layer.incidence_conv, SubComplexRelationConv)
 
 def test_subcomplex_layer_sum_aggregates_placeholder_edges():
     """SubComplexLayer should sum tuple features when aggregation is sum."""
     layer = SubComplexLayer(channels=2, aggregation="sum")
     with torch.no_grad():
-        for linear in (
-            layer.self_linear,
-            layer.low_linear,
-            layer.high_linear,
-            layer.incidence_linear,
-        ):
-            linear.weight.copy_(torch.eye(2))
-            linear.bias.zero_()
+        _set_linear_identity(layer.self_linear)
+        for conv in (layer.low_conv, layer.high_conv, layer.incidence_conv):
+            _set_relation_conv_identity(conv)
 
     tuple_features = torch.tensor(
         [
@@ -62,16 +74,9 @@ def test_subcomplex_layer_aggregates_low_bridge_edge_features():
     """SubComplexLayer should aggregate low bridge features aligned to tuple edges."""
     layer = SubComplexLayer(channels=2, aggregation="sum")
     with torch.no_grad():
-        for linear in (
-            layer.self_linear,
-            layer.low_linear,
-            layer.high_linear,
-            layer.incidence_linear,
-            layer.low_bridge_linear,
-            layer.high_bridge_linear,
-        ):
-            linear.weight.copy_(torch.eye(2))
-            linear.bias.zero_()
+        _set_linear_identity(layer.self_linear)
+        for conv in (layer.low_conv, layer.high_conv, layer.incidence_conv):
+            _set_relation_conv_identity(conv)
 
     tuple_features = torch.zeros(2, 2)
     edge_index_low_adjacency = torch.tensor([[0], [1]])
@@ -93,16 +98,9 @@ def test_subcomplex_layer_aggregates_high_bridge_edge_features():
     """SubComplexLayer should aggregate high bridge features aligned to tuple edges."""
     layer = SubComplexLayer(channels=2, aggregation="sum")
     with torch.no_grad():
-        for linear in (
-            layer.self_linear,
-            layer.low_linear,
-            layer.high_linear,
-            layer.incidence_linear,
-            layer.low_bridge_linear,
-            layer.high_bridge_linear,
-        ):
-            linear.weight.copy_(torch.eye(2))
-            linear.bias.zero_()
+        _set_linear_identity(layer.self_linear)
+        for conv in (layer.low_conv, layer.high_conv, layer.incidence_conv):
+            _set_relation_conv_identity(conv)
 
     tuple_features = torch.zeros(2, 2)
     edge_index_low_adjacency = torch.empty((2, 0), dtype=torch.long)
@@ -124,14 +122,9 @@ def test_subcomplex_layer_mean_aggregates_placeholder_edges():
     """SubComplexLayer should average incoming messages when aggregation is mean."""
     layer = SubComplexLayer(channels=2, aggregation="mean")
     with torch.no_grad():
-        for linear in (
-            layer.self_linear,
-            layer.low_linear,
-            layer.high_linear,
-            layer.incidence_linear,
-        ):
-            linear.weight.copy_(torch.eye(2))
-            linear.bias.zero_()
+        _set_linear_identity(layer.self_linear)
+        for conv in (layer.low_conv, layer.high_conv, layer.incidence_conv):
+            _set_relation_conv_identity(conv)
 
     tuple_features = torch.tensor(
         [

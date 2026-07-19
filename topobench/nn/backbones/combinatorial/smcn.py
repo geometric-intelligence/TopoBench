@@ -1,14 +1,71 @@
-"""Pipeline-safe SMCN placeholder backbone."""
+"""SMCN combinatorial backbone."""
 
 import torch
 
 
-class SubComplexLayer(torch.nn.Module):
-    """Placeholder layer for rank-0/2 subcomplexes.
+class SubComplexRelationConv(torch.nn.Module):
+    """Message-passing block for one rank-0/2 subcomplex relation."""
 
-    This layer builds relation-specific tuple messages over subcomplex edge
-    indices. Optional bridge-cell features are treated as edge-aligned features
-    for the corresponding low/high relation.
+    def __init__(
+        self,
+        channels,
+        activation_layer=torch.nn.ReLU,
+        aggregation="mean",
+        use_bridge_features=False,
+    ):
+        super().__init__()
+        if aggregation not in {"sum", "mean"}:
+            raise ValueError(f"Unsupported aggregation: {aggregation}")
+        self.aggregation = aggregation
+        self.use_bridge_features = use_bridge_features
+        self.message_linear = torch.nn.Linear(channels, channels)
+        self.bridge_linear = (
+            torch.nn.Linear(channels, channels) if use_bridge_features else None
+        )
+        self.update = torch.nn.Sequential(
+            torch.nn.Linear(channels, channels),
+            activation_layer(),
+            torch.nn.Linear(channels, channels),
+        )
+
+    def forward(self, tuple_features, edge_index, bridge_features=None):
+        """Aggregate relation messages into target tuple slots."""
+        messages = self._aggregate_messages(
+            tuple_features, edge_index, bridge_features
+        )
+        return self.update(messages)
+
+    def _aggregate_messages(self, tuple_features, edge_index, bridge_features=None):
+        """Aggregate transformed source messages into target tuple slots."""
+        if edge_index.numel() == 0:
+            return torch.zeros_like(tuple_features)
+
+        source, target = edge_index
+        edge_messages = self.message_linear(tuple_features[source])
+        if (
+            self.use_bridge_features
+            and bridge_features is not None
+            and self.bridge_linear is not None
+        ):
+            edge_messages = edge_messages + self.bridge_linear(bridge_features)
+
+        messages = tuple_features.new_zeros(tuple_features.shape)
+        messages.index_add_(0, target, edge_messages)
+        if self.aggregation == "mean":
+            counts = tuple_features.new_zeros(tuple_features.size(0))
+            counts.index_add_(0, target, tuple_features.new_ones(target.size(0)))
+            messages = messages / counts.clamp_min(1).unsqueeze(-1)
+
+        return messages
+
+
+class SubComplexLayer(torch.nn.Module):
+    """SCL-style layer for rank-0/2 subcomplex tuple features.
+
+    The reference SMCN layer separates low-adjacency, high-adjacency, and
+    incidence tuple messages. TopoBench batches do not directly store SMCN
+    subcomplex tensors, so this layer consumes the tuple graph built by
+    :class:`SMCN` and keeps each relation in a separate message-passing block.
     """
 
     def __init__(
@@ -19,11 +76,23 @@ class SubComplexLayer(torch.nn.Module):
             raise ValueError(f"Unsupported aggregation: {aggregation}")
         self.aggregation = aggregation
         self.self_linear = torch.nn.Linear(channels, channels)
-        self.low_linear = torch.nn.Linear(channels, channels)
-        self.high_linear = torch.nn.Linear(channels, channels)
-        self.incidence_linear = torch.nn.Linear(channels, channels)
-        self.low_bridge_linear = torch.nn.Linear(channels, channels)
-        self.high_bridge_linear = torch.nn.Linear(channels, channels)
+        self.low_conv = SubComplexRelationConv(
+            channels,
+            activation_layer,
+            aggregation,
+            use_bridge_features=True,
+        )
+        self.high_conv = SubComplexRelationConv(
+            channels,
+            activation_layer,
+            aggregation,
+            use_bridge_features=True,
+        )
+        self.incidence_conv = SubComplexRelationConv(
+            channels,
+            activation_layer,
+            aggregation,
+        )
         self.activation = activation_layer()
 
     def forward(
@@ -36,27 +105,25 @@ class SubComplexLayer(torch.nn.Module):
         high_bridge_features=None,
     ):
         """Update tuple features using relation-specific subcomplex edges."""
-        low_messages = self._aggregate_relation_messages(
+        low_messages = self.low_conv(
             tuple_features,
             edge_index_low_adjacency,
-            low_bridge_features,
-            self.low_bridge_linear,
+            bridge_features=low_bridge_features,
         )
-        high_messages = self._aggregate_relation_messages(
+        high_messages = self.high_conv(
             tuple_features,
             edge_index_high_adjacency,
-            high_bridge_features,
-            self.high_bridge_linear,
+            bridge_features=high_bridge_features,
         )
-        incidence_messages = self._aggregate_relation_messages(
+        incidence_messages = self.incidence_conv(
             tuple_features, edge_index_incidence
         )
 
         updates = (
             self.self_linear(tuple_features)
-            + self.low_linear(low_messages)
-            + self.high_linear(high_messages)
-            + self.incidence_linear(incidence_messages)
+            + low_messages
+            + high_messages
+            + incidence_messages
         )
 
         return self.activation(updates)
@@ -65,22 +132,11 @@ class SubComplexLayer(torch.nn.Module):
         self, tuple_features, edge_index, bridge_features=None, bridge_linear=None
     ):
         """Aggregate source tuple messages plus optional edge bridge features."""
-        if edge_index.numel() == 0:
-            return torch.zeros_like(tuple_features)
-
-        source, target = edge_index
-        edge_messages = tuple_features[source]
-        if bridge_features is not None:
-            edge_messages = edge_messages + bridge_linear(bridge_features)
-
-        messages = tuple_features.new_zeros(tuple_features.shape)
-        messages.index_add_(0, target, edge_messages)
-        if self.aggregation == "mean":
-            counts = tuple_features.new_zeros(tuple_features.size(0))
-            counts.index_add_(0, target, tuple_features.new_ones(target.size(0)))
-            messages = messages / counts.clamp_min(1).unsqueeze(-1)
-
-        return messages
+        if bridge_linear is not None and bridge_features is not None:
+            bridge_features = bridge_linear(bridge_features)
+        return self.low_conv._aggregate_messages(
+            tuple_features, edge_index, bridge_features
+        )
 
     def _aggregate(self, features, edge_index):
         """Aggregate source tuple features into target tuple slots."""
@@ -102,11 +158,7 @@ class SubComplexLayer(torch.nn.Module):
         return messages
 
 class SMCN(torch.nn.Module):
-    """Skeleton Scalable Multi-Cellular Network backbone.
-
-    This placeholder only applies rank-wise linear updates so the TopoBench
-    pipeline can validate combinatorial model integration.
-    """
+    """Scalable Multi-Cellular Network backbone for combinatorial batches."""
 
     def __init__(
         self,
@@ -206,7 +258,7 @@ class SMCN(torch.nn.Module):
     ):
         modules = []
         current_channels = in_channels
-        for layer_idx in range(max(layers, 1)):
+        for _layer_idx in range(max(layers, 1)):
             modules.append(torch.nn.Linear(current_channels, hidden_channels))
             current_channels = hidden_channels
             if activation_layer is not torch.nn.Identity:
@@ -517,7 +569,7 @@ class SMCN(torch.nn.Module):
             tuple_lookup = {
                 (int(low_id), int(high_id)): int(tuple_id)
                 for tuple_id, (low_id, high_id) in enumerate(
-                    zip(low_indices.tolist(), high_indices.tolist())
+                    zip(low_indices.tolist(), high_indices.tolist(), strict=True)
                 )
             }
             edge_chunks = []
@@ -570,7 +622,7 @@ class SMCN(torch.nn.Module):
             tuple_lookup = {
                 (int(low_id), int(high_id)): int(tuple_id)
                 for tuple_id, (low_id, high_id) in enumerate(
-                    zip(low_indices.tolist(), high_indices.tolist())
+                    zip(low_indices.tolist(), high_indices.tolist(), strict=True)
                 )
             }
             edge_chunks = []
