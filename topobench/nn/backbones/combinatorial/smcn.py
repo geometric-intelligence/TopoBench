@@ -22,6 +22,8 @@ class SubComplexLayer(torch.nn.Module):
         self.high_linear = torch.nn.Linear(channels, channels)
         self.incidence_linear = torch.nn.Linear(channels, channels)
         self.activation = activation_layer()
+        self.low_bridge_linear = torch.nn.Linear(channels, channels)
+        self.high_bridge_linear = torch.nn.Linear(channels, channels)
 
     def forward(
         self,
@@ -29,10 +31,24 @@ class SubComplexLayer(torch.nn.Module):
         edge_index_low_adjacency,
         edge_index_high_adjacency,
         edge_index_incidence,
+        low_bridge_features=None,
+        high_bridge_features=None,
     ):
         """Update tuple features using placeholder subcomplex edges."""
         low_messages = self._aggregate(tuple_features, edge_index_low_adjacency)
         high_messages = self._aggregate(tuple_features, edge_index_high_adjacency)
+        if low_bridge_features is not None:
+            low_messages = low_messages + self._aggregate_edge_features(
+                self.low_bridge_linear(low_bridge_features),
+                edge_index_low_adjacency,
+                tuple_features.size(0),
+            )
+        if high_bridge_features is not None:
+            high_messages = high_messages + self._aggregate_edge_features(
+                self.high_bridge_linear(high_bridge_features),
+                edge_index_high_adjacency,
+                tuple_features.size(0),
+            )
         incidence_messages = self._aggregate(tuple_features, edge_index_incidence)
 
         tuple_self = self.self_linear(tuple_features)
@@ -59,6 +75,21 @@ class SubComplexLayer(torch.nn.Module):
         return messages
 
 
+    def _aggregate_edge_features(self, edge_features, edge_index, num_tuples):
+        """Aggregate edge-aligned features into target tuple slots."""
+        messages = edge_features.new_zeros((num_tuples, edge_features.size(-1)))
+        if edge_index.numel() == 0 or edge_features.numel() == 0:
+            return messages
+
+        target = edge_index[1]
+        messages.index_add_(0, target, edge_features)
+        if self.aggregation == "mean":
+            counts = edge_features.new_zeros(num_tuples)
+            counts.index_add_(0, target, edge_features.new_ones(target.size(0)))
+            messages = messages / counts.clamp_min(1).unsqueeze(-1)
+
+        return messages
+
 class SMCN(torch.nn.Module):
     """Skeleton Scalable Multi-Cellular Network backbone.
 
@@ -81,6 +112,7 @@ class SMCN(torch.nn.Module):
         max_rank02_tuples=None,
     ):
         super().__init__()
+        self.hidden_channels = hidden_channels
         self.neighborhoods = neighborhoods or []
         self.layers = layers
         self.use_subcomplex_signal = use_subcomplex_signal
@@ -294,7 +326,10 @@ class SMCN(torch.nn.Module):
             binary_marking = binary_marking[: self.max_rank02_tuples]
 
         subcomplex_edges = self.build_rank02_subcomplex_edges(
-            low_indices, high_indices
+            low_indices,
+            high_indices,
+            getattr(batch, "incidence_1", None),
+            getattr(batch, "incidence_2", None),
         )
 
         return {
@@ -313,13 +348,26 @@ class SMCN(torch.nn.Module):
         tuple_features = self.encode_rank02_tuple_features(
             batch, low_indices, high_indices, binary_marking
         )
-
+        low_bridge_features = self._gather_bridge_features(
+            batch,
+            "x_1",
+            subcomplex.get("bridge_index_low_adjacency"),
+            subcomplex["edge_index_low_adjacency"],
+        )
+        high_bridge_features = self._gather_bridge_features(
+            batch,
+            "x_0",
+            subcomplex.get("bridge_index_high_adjacency"),
+            subcomplex["edge_index_high_adjacency"],
+        )
         if self.use_subcomplex_signal:
             tuple_features = self.rank02_tuple_update(
                 tuple_features,
                 subcomplex["edge_index_low_adjacency"],
                 subcomplex["edge_index_high_adjacency"],
                 subcomplex["edge_index_incidence"],
+                low_bridge_features=low_bridge_features,
+                high_bridge_features=high_bridge_features,
             )
         else:
             tuple_features = self.rank02_tuple_update(tuple_features)
@@ -328,6 +376,19 @@ class SMCN(torch.nn.Module):
             **subcomplex,
             "tuple_features": tuple_features,
         }
+
+    def _gather_bridge_features(
+        self, batch, feature_name, bridge_indices, edge_index
+    ):
+        """Gather bridge-cell features when every tuple edge has a bridge."""
+        if bridge_indices is None or not hasattr(batch, feature_name):
+            return None
+        if bridge_indices.numel() == 0 or bridge_indices.numel() != edge_index.size(1):
+            return None
+        bridge_features = getattr(batch, feature_name)[bridge_indices]
+        if bridge_features.size(-1) != self.hidden_channels:
+            return None
+        return bridge_features
 
     def pool_rank02_to_rank0(self, subcomplex, num_low_cells):
         """Pool rank-0/2 tuple features back to rank-0 cells."""
@@ -350,7 +411,7 @@ class SMCN(torch.nn.Module):
             pooled = pooled / counts.clamp_min(1).unsqueeze(-1)
 
         return pooled
-    
+
     def pool_rank02_to_rank2(self, subcomplex, num_high_cells):
         """Pool rank-0/2 tuple features back to rank-2 cells."""
         tuple_features = subcomplex["tuple_features"]
@@ -360,7 +421,7 @@ class SMCN(torch.nn.Module):
         )
         if tuple_features.numel() == 0:
             return pooled
-        
+
         pooled = pooled.index_add(0, high_indices, tuple_features)
         if self.tuple_pooling == "mean":
             counts = tuple_features.new_zeros(num_high_cells)
@@ -394,13 +455,16 @@ class SMCN(torch.nn.Module):
             return binary_marking.unsqueeze(-1).to(torch.float32)
         return self.rank02_marking_embed(binary_marking.long())
 
-    def build_rank02_subcomplex_edges(self, low_indices, high_indices):
-        """Build placeholder tuple-level edge indices for rank-0/2 subcomplexes."""
+    def build_rank02_subcomplex_edges(
+        self, low_indices, high_indices, incidence_1=None, incidence_2=None
+    ):
+        """Build tuple-level edge indices for rank-0/2 subcomplexes."""
         device = low_indices.device
         num_tuples = low_indices.numel()
         empty_edge_index = torch.empty(
             (2, 0), dtype=torch.long, device=device
         )
+        empty_bridge_index = torch.empty(0, dtype=torch.long, device=device)
         tuple_ids = torch.arange(num_tuples, device=device)
         edge_index_incidence = torch.stack([tuple_ids, tuple_ids])
 
@@ -416,8 +480,132 @@ class SMCN(torch.nn.Module):
                 )
             return torch.cat(edge_chunks, dim=1) if edge_chunks else empty_edge_index
 
+        def low_adjacency_edges_with_bridges(incidence_1, incidence_2):
+            if incidence_1 is None or incidence_2 is None:
+                return shared_cell_edges(low_indices), empty_bridge_index
+
+            incidence_1 = incidence_1.coalesce()
+            incidence_2 = incidence_2.coalesce()
+            incidence_1_indices = incidence_1.indices()
+            incidence_2_indices = incidence_2.indices()
+            vertices_by_edge = [
+                incidence_1_indices[0, incidence_1_indices[1] == edge_id]
+                for edge_id in range(incidence_1.size(1))
+            ]
+            edges_by_face = [
+                incidence_2_indices[0, incidence_2_indices[1] == face_id]
+                for face_id in range(incidence_2.size(1))
+            ]
+
+            tuple_lookup = {
+                (int(low_id), int(high_id)): int(tuple_id)
+                for tuple_id, (low_id, high_id) in enumerate(
+                    zip(low_indices.tolist(), high_indices.tolist())
+                )
+            }
+            edge_chunks = []
+            bridge_chunks = []
+            for face_id, edge_ids in enumerate(edges_by_face):
+                for edge_id in edge_ids.tolist():
+                    tuple_group = [
+                        tuple_lookup[(int(vertex_id), face_id)]
+                        for vertex_id in vertices_by_edge[edge_id].tolist()
+                        if (int(vertex_id), face_id) in tuple_lookup
+                    ]
+                    if len(tuple_group) < 2:
+                        continue
+                    pairs = torch.combinations(
+                        torch.tensor(tuple_group, dtype=torch.long, device=device),
+                        r=2,
+                    ).t()
+                    directed_pairs = torch.cat([pairs, pairs.flip(0)], dim=1)
+                    edge_chunks.append(directed_pairs)
+                    bridge_chunks.append(
+                        torch.full(
+                            (directed_pairs.size(1),),
+                            edge_id,
+                            dtype=torch.long,
+                            device=device,
+                        )
+                    )
+
+            if not edge_chunks:
+                return empty_edge_index, empty_bridge_index
+            return torch.cat(edge_chunks, dim=1), torch.cat(bridge_chunks)
+
+        def high_adjacency_edges_with_bridges(incidence_1, incidence_2):
+            if incidence_1 is None or incidence_2 is None:
+                return shared_cell_edges(high_indices), empty_bridge_index
+
+            incidence_1 = incidence_1.coalesce()
+            incidence_2 = incidence_2.coalesce()
+            incidence_1_indices = incidence_1.indices()
+            incidence_2_indices = incidence_2.indices()
+            edges_by_vertex = [
+                incidence_1_indices[1, incidence_1_indices[0] == vertex_id]
+                for vertex_id in range(incidence_1.size(0))
+            ]
+            faces_by_edge = [
+                incidence_2_indices[1, incidence_2_indices[0] == edge_id]
+                for edge_id in range(incidence_2.size(0))
+            ]
+
+            tuple_lookup = {
+                (int(low_id), int(high_id)): int(tuple_id)
+                for tuple_id, (low_id, high_id) in enumerate(
+                    zip(low_indices.tolist(), high_indices.tolist())
+                )
+            }
+            edge_chunks = []
+            bridge_chunks = []
+            for vertex_id, edge_ids in enumerate(edges_by_vertex):
+                if edge_ids.numel() == 0:
+                    continue
+                face_ids = torch.unique(
+                    torch.cat(
+                        [faces_by_edge[edge_id] for edge_id in edge_ids.tolist()]
+                    )
+                )
+                tuple_group = [
+                    tuple_lookup[(vertex_id, int(face_id))]
+                    for face_id in face_ids.tolist()
+                    if (vertex_id, int(face_id)) in tuple_lookup
+                ]
+                if len(tuple_group) < 2:
+                    continue
+                pairs = torch.combinations(
+                    torch.tensor(tuple_group, dtype=torch.long, device=device),
+                    r=2,
+                ).t()
+                directed_pairs = torch.cat([pairs, pairs.flip(0)], dim=1)
+                edge_chunks.append(directed_pairs)
+                bridge_chunks.append(
+                    torch.full(
+                        (directed_pairs.size(1),),
+                        vertex_id,
+                        dtype=torch.long,
+                        device=device,
+                    )
+                )
+
+            if not edge_chunks:
+                return empty_edge_index, empty_bridge_index
+            return torch.cat(edge_chunks, dim=1), torch.cat(bridge_chunks)
+
+        (
+            edge_index_low_adjacency,
+            bridge_index_low_adjacency,
+        ) = low_adjacency_edges_with_bridges(incidence_1, incidence_2)
+
+        (
+            edge_index_high_adjacency,
+            bridge_index_high_adjacency,
+        ) = high_adjacency_edges_with_bridges(incidence_1, incidence_2)
+
         return {
-            "edge_index_low_adjacency": shared_cell_edges(low_indices),
-            "edge_index_high_adjacency": shared_cell_edges(high_indices),
+            "edge_index_low_adjacency": edge_index_low_adjacency,
+            "edge_index_high_adjacency": edge_index_high_adjacency,
             "edge_index_incidence": edge_index_incidence,
+            "bridge_index_low_adjacency": bridge_index_low_adjacency,
+            "bridge_index_high_adjacency": bridge_index_high_adjacency,
         }

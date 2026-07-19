@@ -58,6 +58,37 @@ def test_subcomplex_layer_sum_aggregates_placeholder_edges():
         ),
     )
 
+def test_subcomplex_layer_aggregates_low_bridge_edge_features():
+    """SubComplexLayer should aggregate low bridge features aligned to tuple edges."""
+    layer = SubComplexLayer(channels=2, aggregation="sum")
+    with torch.no_grad():
+        for linear in (
+            layer.self_linear,
+            layer.low_linear,
+            layer.high_linear,
+            layer.incidence_linear,
+            layer.low_bridge_linear,
+            layer.high_bridge_linear,
+        ):
+            linear.weight.copy_(torch.eye(2))
+            linear.bias.zero_()
+
+    tuple_features = torch.zeros(2, 2)
+    edge_index_low_adjacency = torch.tensor([[0], [1]])
+    edge_index_high_adjacency = torch.empty((2, 0), dtype=torch.long)
+    edge_index_incidence = torch.empty((2, 0), dtype=torch.long)
+    low_bridge_features = torch.tensor([[10.0, 20.0]])
+
+    out = layer(
+        tuple_features,
+        edge_index_low_adjacency,
+        edge_index_high_adjacency,
+        edge_index_incidence,
+        low_bridge_features=low_bridge_features,
+    )
+
+    assert torch.equal(out, torch.tensor([[0.0, 0.0], [10.0, 20.0]]))
+
 def test_subcomplex_layer_mean_aggregates_placeholder_edges():
     """SubComplexLayer should average incoming messages when aggregation is mean."""
     layer = SubComplexLayer(channels=2, aggregation="mean")
@@ -599,6 +630,65 @@ def test_smcn_builds_rank02_subcomplex_edges():
         edges["edge_index_incidence"], torch.tensor([[0, 1, 2], [0, 1, 2]])
     )
 
+
+def test_smcn_builds_rank02_low_adjacency_bridge_indices():
+    """SMCN should attach rank-1 bridge ids to rank-0/2 low-adjacency edges."""
+    model = SMCN(in_channels=8, hidden_channels=16)
+    low_indices = torch.tensor([0, 1, 2])
+    high_indices = torch.tensor([0, 0, 0])
+    incidence_1 = torch.tensor(
+        [
+            [1.0, 0.0, 1.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 1.0],
+        ]
+    ).to_sparse()
+    incidence_2 = torch.ones(3, 1).to_sparse()
+
+    edges = model.build_rank02_subcomplex_edges(
+        low_indices, high_indices, incidence_1, incidence_2
+    )
+
+    assert torch.equal(
+        edges["edge_index_low_adjacency"],
+        torch.tensor(
+            [
+                [0, 1, 1, 2, 0, 2],
+                [1, 0, 2, 1, 2, 0],
+            ]
+        ),
+    )
+    assert torch.equal(
+        edges["bridge_index_low_adjacency"], torch.tensor([0, 0, 1, 1, 2, 2])
+    )
+
+def test_smcn_builds_rank02_high_adjacency_bridge_indices():
+    """SMCN should attach rank-0 bridge ids to rank-0/2 high-adjacency edges."""
+    model = SMCN(in_channels=8, hidden_channels=16)
+    low_indices = torch.tensor([0, 0])
+    high_indices = torch.tensor([0, 1])
+    incidence_1 = torch.tensor(
+        [
+            [1.0, 1.0],
+            [1.0, 0.0],
+            [0.0, 1.0],
+        ]
+    ).to_sparse()
+    incidence_2 = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.0, 1.0],
+        ]
+    ).to_sparse()
+
+    edges = model.build_rank02_subcomplex_edges(
+        low_indices, high_indices, incidence_1, incidence_2
+    )
+
+    assert torch.equal(
+        edges["edge_index_high_adjacency"], torch.tensor([[0, 1], [1, 0]])
+    )
+    assert torch.equal(edges["bridge_index_high_adjacency"], torch.tensor([0, 0]))
 
 def test_smcn_builds_empty_rank02_subcomplex_edges():
     """SMCN should return empty edge indices when there are no tuples."""
