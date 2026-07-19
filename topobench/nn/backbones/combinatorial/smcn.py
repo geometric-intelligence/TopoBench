@@ -127,6 +127,8 @@ class SMCN(torch.nn.Module):
         self.neighborhoods = neighborhoods or []
         self.layers = layers
         self.use_subcomplex_signal = use_subcomplex_signal
+        self.rank02_low_bridge_encoder = torch.nn.Linear(in_channels, hidden_channels)
+        self.rank02_high_bridge_encoder = torch.nn.Linear(in_channels, hidden_channels)
         if tuple_pooling not in {"sum", "mean"}:
             raise ValueError(f"Unsupported tuple_pooling: {tuple_pooling}")
         self.tuple_pooling = tuple_pooling
@@ -371,6 +373,12 @@ class SMCN(torch.nn.Module):
             subcomplex.get("bridge_index_high_adjacency"),
             subcomplex["edge_index_high_adjacency"],
         )
+
+        if low_bridge_features is not None:
+            low_bridge_features = self.rank02_low_bridge_encoder(low_bridge_features)
+
+        if high_bridge_features is not None:
+            high_bridge_features = self.rank02_high_bridge_encoder(high_bridge_features)
         if self.use_subcomplex_signal:
             tuple_features = self.rank02_tuple_update(
                 tuple_features,
@@ -397,8 +405,6 @@ class SMCN(torch.nn.Module):
         if bridge_indices.numel() == 0 or bridge_indices.numel() != edge_index.size(1):
             return None
         bridge_features = getattr(batch, feature_name)[bridge_indices]
-        if bridge_features.size(-1) != self.hidden_channels:
-            return None
         return bridge_features
 
     def pool_rank02_to_rank0(self, subcomplex, num_low_cells):

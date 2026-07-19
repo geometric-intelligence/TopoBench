@@ -294,6 +294,66 @@ def test_smcn_looks_up_empty_sparse_binary_marking():
     assert torch.equal(markings, torch.zeros(2))
 
 
+def test_smcn_projects_raw_bridge_features_to_hidden_channels():
+    """SMCN should project raw bridge-cell features before subcomplex update."""
+    incidence_1 = torch.tensor([[1.0], [1.0]]).to_sparse()
+    incidence_2 = torch.tensor([[1.0]]).to_sparse()
+    batch = Data(
+        x_0=torch.zeros(2, 2),
+        x_1=torch.tensor([[2.0, 3.0]]),
+        x_2=torch.zeros(1, 2),
+        incidence_1=incidence_1,
+        incidence_2=incidence_2,
+    )
+    model = SMCN(
+        in_channels=2,
+        hidden_channels=3,
+        use_subcomplex_signal=True,
+        tuple_selection="incident",
+        activation="identity",
+    )
+    with torch.no_grad():
+        model.rank02_low_bridge_encoder.weight.copy_(
+            torch.tensor([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
+        )
+        model.rank02_low_bridge_encoder.bias.zero_()
+
+    subcomplex = model.build_rank02_subcomplex(batch)
+    raw_bridge_features = model._gather_bridge_features(
+        batch,
+        "x_1",
+        subcomplex["bridge_index_low_adjacency"],
+        subcomplex["edge_index_low_adjacency"],
+    )
+    projected = model.rank02_low_bridge_encoder(raw_bridge_features)
+
+    assert torch.equal(projected, torch.tensor([[2.0, 3.0, 5.0], [2.0, 3.0, 5.0]]))
+
+
+def test_smcn_forward_uses_subcomplex_signal_with_projected_bridges():
+    """SMCN should run subcomplex updates when bridge channels differ from hidden channels."""
+    incidence_1 = torch.tensor([[1.0], [1.0]]).to_sparse()
+    incidence_2 = torch.tensor([[1.0]]).to_sparse()
+    batch = Data(
+        x_0=torch.ones(2, 2),
+        x_1=torch.ones(1, 2),
+        x_2=torch.ones(1, 2),
+        incidence_1=incidence_1,
+        incidence_2=incidence_2,
+    )
+    model = SMCN(
+        in_channels=2,
+        hidden_channels=3,
+        use_subcomplex_signal=True,
+        tuple_selection="incident",
+    )
+
+    out = model(batch)
+
+    assert out[0].shape == (2, 3)
+    assert out[1].shape == (1, 3)
+    assert out[2].shape == (1, 3)
+
 def test_smcn_builds_binary_rank02_incidence():
     """SMCN should compose rank 0-to-2 incidence from incidences 0-to-1 and 1-to-2."""
     incidence_1 = torch.tensor(
