@@ -339,10 +339,14 @@ class SMCN(torch.nn.Module):
         if not hasattr(batch, "x_0") or not hasattr(batch, "x_2"):
             raise ValueError("Batch must have x_0 and x_2 attributes.")
 
-        incidence_0_2 = torch.sparse.mm(
-            abs(batch.incidence_1).coalesce(),
-            abs(batch.incidence_2).coalesce(),
-        ).coalesce()
+        incidence_1 = abs(batch.incidence_1).coalesce()
+        incidence_2 = abs(batch.incidence_2).coalesce()
+        incidence_device = incidence_1.device
+        if incidence_device.type == "cuda":
+            incidence_1 = incidence_1.cpu()
+            incidence_2 = incidence_2.cpu()
+
+        incidence_0_2 = torch.sparse.mm(incidence_1, incidence_2).coalesce()
         if incidence_0_2._nnz() > 0:
             incidence_0_2 = torch.sparse_coo_tensor(
                 incidence_0_2.indices(),
@@ -350,6 +354,7 @@ class SMCN(torch.nn.Module):
                 incidence_0_2.size(),
                 device=incidence_0_2.device,
             ).coalesce()
+        incidence_0_2 = incidence_0_2.to(incidence_device)
 
         num_low_cells = batch.x_0.size(0)
         num_high_cells = batch.x_2.size(0)
