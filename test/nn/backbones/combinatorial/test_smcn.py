@@ -7,12 +7,27 @@ from torch_geometric.data import Data
 from topobench.nn.backbones.combinatorial.smcn import SMCN, SubComplexLayer
 
 
+def test_subcomplex_layer_has_relation_specific_transforms():
+    """SubComplexLayer should use separate transforms for each relation type."""
+    layer = SubComplexLayer(channels=2)
+
+    assert isinstance(layer.self_linear, torch.nn.Linear)
+    assert isinstance(layer.low_linear, torch.nn.Linear)
+    assert isinstance(layer.high_linear, torch.nn.Linear)
+    assert isinstance(layer.incidence_linear, torch.nn.Linear)
+
 def test_subcomplex_layer_aggregates_placeholder_edges():
     """SubComplexLayer should aggregate tuple features over each edge family."""
     layer = SubComplexLayer(channels=2)
     with torch.no_grad():
-        layer.linear.weight.copy_(torch.eye(2))
-        layer.linear.bias.zero_()
+        for linear in (
+            layer.self_linear,
+            layer.low_linear,
+            layer.high_linear,
+            layer.incidence_linear,
+        ):
+            linear.weight.copy_(torch.eye(2))
+            linear.bias.zero_()
 
     tuple_features = torch.tensor(
         [

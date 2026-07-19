@@ -7,12 +7,15 @@ class SubComplexLayer(torch.nn.Module):
     """Placeholder layer for rank-0/2 subcomplexes.
 
     This layer aggregates tuple features over placeholder subcomplex edge
-    indices, then applies a linear transformation and activation.
+    indices, then applies separate relation-wise transforms and activation.
     """
 
     def __init__(self, channels, activation_layer=torch.nn.ReLU):
         super().__init__()
-        self.linear = torch.nn.Linear(channels, channels)
+        self.self_linear = torch.nn.Linear(channels, channels)
+        self.low_linear = torch.nn.Linear(channels, channels)
+        self.high_linear = torch.nn.Linear(channels, channels)
+        self.incidence_linear = torch.nn.Linear(channels, channels)
         self.activation = activation_layer()
 
     def forward(
@@ -27,8 +30,13 @@ class SubComplexLayer(torch.nn.Module):
         high_messages = self._aggregate(tuple_features, edge_index_high_adjacency)
         incidence_messages = self._aggregate(tuple_features, edge_index_incidence)
 
-        updates = tuple_features + low_messages + high_messages + incidence_messages
-        return self.activation(self.linear(updates))
+        tuple_self = self.self_linear(tuple_features)
+        low_msg = self.low_linear(low_messages)
+        high_msg = self.high_linear(high_messages)
+        incidence_msg = self.incidence_linear(incidence_messages)
+        updates = tuple_self + low_msg + high_msg + incidence_msg
+
+        return self.activation(updates)
 
     @staticmethod
     def _aggregate(features, edge_index):
