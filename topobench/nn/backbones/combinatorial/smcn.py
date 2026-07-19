@@ -218,6 +218,7 @@ class SMCN(torch.nn.Module):
             and hasattr(batch, "x_2")
         ):
             subcomplex = self.build_rank02_subcomplex(batch)
+            subcomplex = self.forward_rank02_subcomplex(batch, subcomplex)
             pooled_features = self.pool_rank02_to_rank0(
                 subcomplex, num_low_cells=batch.x_0.size(0)
             )
@@ -286,30 +287,40 @@ class SMCN(torch.nn.Module):
             high_indices = high_indices[: self.max_rank02_tuples]
             binary_marking = binary_marking[: self.max_rank02_tuples]
 
-        tuple_features = self.encode_rank02_tuple_features(
-            batch, low_indices, high_indices, binary_marking
-        )
         subcomplex_edges = self.build_rank02_subcomplex_edges(
             low_indices, high_indices
         )
-
-        if self.use_subcomplex_signal:
-            tuple_features = self.rank02_tuple_update(
-                tuple_features,
-                subcomplex_edges["edge_index_low_adjacency"],
-                subcomplex_edges["edge_index_high_adjacency"],
-                subcomplex_edges["edge_index_incidence"],
-            )
-        else:
-            tuple_features = self.rank02_tuple_update(tuple_features)
 
         return {
             "incidence_0_2": incidence_0_2,
             "low_indices": low_indices,
             "high_indices": high_indices,
             "binary_marking": binary_marking,
-            "tuple_features": tuple_features,
             **subcomplex_edges,
+        }
+
+    def forward_rank02_subcomplex(self, batch, subcomplex):
+        """Encode and update rank-0/2 tuple features for a subcomplex."""
+        low_indices = subcomplex["low_indices"]
+        high_indices = subcomplex["high_indices"]
+        binary_marking = subcomplex["binary_marking"]
+        tuple_features = self.encode_rank02_tuple_features(
+            batch, low_indices, high_indices, binary_marking
+        )
+
+        if self.use_subcomplex_signal:
+            tuple_features = self.rank02_tuple_update(
+                tuple_features,
+                subcomplex["edge_index_low_adjacency"],
+                subcomplex["edge_index_high_adjacency"],
+                subcomplex["edge_index_incidence"],
+            )
+        else:
+            tuple_features = self.rank02_tuple_update(tuple_features)
+
+        return {
+            **subcomplex,
+            "tuple_features": tuple_features,
         }
 
     def pool_rank02_to_rank0(self, subcomplex, num_low_cells):

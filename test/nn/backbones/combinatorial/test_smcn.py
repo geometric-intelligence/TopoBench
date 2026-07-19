@@ -251,6 +251,7 @@ def test_smcn_builds_binary_rank02_incidence():
     model = SMCN(in_channels=8, hidden_channels=16)
 
     subcomplex = model.build_rank02_subcomplex(batch)
+    subcomplex = model.forward_rank02_subcomplex(batch, subcomplex)
     incidence_0_2 = subcomplex["incidence_0_2"]
 
     assert incidence_0_2.is_sparse
@@ -284,6 +285,7 @@ def test_smcn_builds_empty_rank02_subcomplex_when_no_rank2_cells():
     model = SMCN(in_channels=8, hidden_channels=16)
 
     subcomplex = model.build_rank02_subcomplex(batch)
+    subcomplex = model.forward_rank02_subcomplex(batch, subcomplex)
     incidence_0_2 = subcomplex["incidence_0_2"]
 
     assert incidence_0_2.is_sparse
@@ -421,6 +423,7 @@ def test_smcn_uses_subcomplex_layer_when_enabled():
     )
 
     subcomplex = model.build_rank02_subcomplex(batch)
+    subcomplex = model.forward_rank02_subcomplex(batch, subcomplex)
     out = model(batch)
 
     assert isinstance(model.rank02_tuple_update, SubComplexLayer)
@@ -447,6 +450,7 @@ def test_smcn_caps_rank02_tuples_when_requested():
     model = SMCN(in_channels=8, hidden_channels=16, max_rank02_tuples=4)
 
     subcomplex = model.build_rank02_subcomplex(batch)
+    subcomplex = model.forward_rank02_subcomplex(batch, subcomplex)
 
     assert torch.equal(subcomplex["low_indices"], torch.tensor([0, 0, 1, 1]))
     assert torch.equal(subcomplex["high_indices"], torch.tensor([0, 1, 0, 1]))
@@ -467,6 +471,7 @@ def test_smcn_keeps_all_rank02_tuples_when_uncapped():
     model = SMCN(in_channels=8, hidden_channels=16)
 
     subcomplex = model.build_rank02_subcomplex(batch)
+    subcomplex = model.forward_rank02_subcomplex(batch, subcomplex)
 
     assert subcomplex["low_indices"].shape == (6,)
     assert subcomplex["high_indices"].shape == (6,)
@@ -491,6 +496,7 @@ def test_smcn_builds_and_pools_rank02_subcomplex():
     model = SMCN(in_channels=8, hidden_channels=16)
 
     subcomplex = model.build_rank02_subcomplex(batch)
+    subcomplex = model.forward_rank02_subcomplex(batch, subcomplex)
     pooled = model.pool_rank02_to_rank0(
         subcomplex,
         num_low_cells=batch.x_0.size(0),
@@ -521,6 +527,7 @@ def test_smcn_filters_rank02_tuples_across_batched_graphs():
     model = SMCN(in_channels=8, hidden_channels=16)
 
     subcomplex = model.build_rank02_subcomplex(batch)
+    subcomplex = model.forward_rank02_subcomplex(batch, subcomplex)
 
     assert torch.equal(subcomplex["low_indices"], torch.tensor([0, 1, 2, 3]))
     assert torch.equal(subcomplex["high_indices"], torch.tensor([0, 0, 1, 1]))
@@ -543,6 +550,7 @@ def test_smcn_keeps_all_rank02_tuples_by_default():
     model = SMCN(in_channels=8, hidden_channels=16)
 
     subcomplex = model.build_rank02_subcomplex(batch)
+    subcomplex = model.forward_rank02_subcomplex(batch, subcomplex)
 
     assert torch.equal(subcomplex["low_indices"], torch.tensor([0, 1]))
     assert torch.equal(subcomplex["high_indices"], torch.tensor([0, 0]))
@@ -565,6 +573,7 @@ def test_smcn_filters_to_incident_rank02_tuples_when_requested():
     )
 
     subcomplex = model.build_rank02_subcomplex(batch)
+    subcomplex = model.forward_rank02_subcomplex(batch, subcomplex)
 
     assert torch.equal(subcomplex["low_indices"], torch.tensor([0]))
     assert torch.equal(subcomplex["high_indices"], torch.tensor([0]))
@@ -621,6 +630,7 @@ def test_smcn_rank02_subcomplex_includes_edge_indices():
     assert "edge_index_low_adjacency" in subcomplex
     assert "edge_index_high_adjacency" in subcomplex
     assert "edge_index_incidence" in subcomplex
+    assert "tuple_features" not in subcomplex
 
 
 def test_smcn_pools_empty_rank02_tuple_features_to_rank0():
