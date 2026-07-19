@@ -2,6 +2,44 @@
 
 import torch
 
+
+class SubComplexLayer(torch.nn.Module):
+    """Placeholder layer for rank-0/2 subcomplexes.
+
+    This layer aggregates tuple features over placeholder subcomplex edge
+    indices, then applies a linear transformation and activation.
+    """
+
+    def __init__(self, channels, activation_layer=torch.nn.ReLU):
+        super().__init__()
+        self.linear = torch.nn.Linear(channels, channels)
+        self.activation = activation_layer()
+
+    def forward(
+        self,
+        tuple_features,
+        edge_index_low_adjacency,
+        edge_index_high_adjacency,
+        edge_index_incidence,
+    ):
+        """Update tuple features using placeholder subcomplex edges."""
+        low_messages = self._aggregate(tuple_features, edge_index_low_adjacency)
+        high_messages = self._aggregate(tuple_features, edge_index_high_adjacency)
+        incidence_messages = self._aggregate(tuple_features, edge_index_incidence)
+
+        updates = tuple_features + low_messages + high_messages + incidence_messages
+        return self.activation(self.linear(updates))
+
+    @staticmethod
+    def _aggregate(features, edge_index):
+        """Sum source tuple features into target tuple slots."""
+        if edge_index.numel() == 0:
+            return torch.zeros_like(features)
+        messages = torch.zeros_like(features)
+        messages.index_add_(0, edge_index[1], features[edge_index[0]])
+        return messages
+
+
 class SMCN(torch.nn.Module):
     """Skeleton Scalable Multi-Cellular Network backbone.
 
@@ -60,12 +98,14 @@ class SMCN(torch.nn.Module):
             hidden_channels,
         )
 
-        self.rank02_tuple_update = self._make_rank_update(
-            hidden_channels,
-            hidden_channels,
-            layers,
-            activation_layer,
-        )
+        if use_subcomplex_signal:
+            self.rank02_tuple_update = SubComplexLayer(
+                hidden_channels, activation_layer
+            )
+        else:
+            self.rank02_tuple_update = self._make_rank_update(
+                hidden_channels, hidden_channels, layers, activation_layer
+            )
 
     @staticmethod
     def _get_activation(name):
@@ -212,6 +252,17 @@ class SMCN(torch.nn.Module):
         subcomplex_edges = self.build_rank02_subcomplex_edges(
             low_indices, high_indices
         )
+
+        if self.use_subcomplex_signal:
+            tuple_features = self.rank02_tuple_update(
+                tuple_features,
+                subcomplex_edges["edge_index_low_adjacency"],
+                subcomplex_edges["edge_index_high_adjacency"],
+                subcomplex_edges["edge_index_incidence"],
+            )
+        else:
+            tuple_features = self.rank02_tuple_update(tuple_features)
+
         return {
             "incidence_0_2": incidence_0_2,
             "low_indices": low_indices,
@@ -257,7 +308,6 @@ class SMCN(torch.nn.Module):
             dim=-1,
         )
         tuple_features = self.rank02_tuple_encoder(tuple_inputs)
-        tuple_features = self.rank02_tuple_update(tuple_features)
         return tuple_features
 
     def encode_rank02_marking(self, binary_marking):
@@ -276,27 +326,20 @@ class SMCN(torch.nn.Module):
         tuple_ids = torch.arange(num_tuples, device=device)
         edge_index_incidence = torch.stack([tuple_ids, tuple_ids])
 
-        low_edges = []
-        high_edges = []
-        for i in range(num_tuples):
-            for j in range(i + 1, num_tuples):
-                if low_indices[i] == low_indices[j]:
-                    low_edges.append(
-                        torch.tensor([[i, j], [j, i]], device=device)
-                    )
-                if high_indices[i] == high_indices[j]:
-                    high_edges.append(
-                        torch.tensor([[i, j], [j, i]], device=device)
-                    )
+        def shared_cell_edges(cell_indices):
+            edge_chunks = []
+            for cell_id in cell_indices.unique():
+                group = tuple_ids[cell_indices == cell_id]
+                if group.numel() < 2:
+                    continue
+                pairs = torch.combinations(group, r=2).t()
+                edge_chunks.append(
+                    torch.cat([pairs, pairs.flip(0)], dim=1)
+                )
+            return torch.cat(edge_chunks, dim=1) if edge_chunks else empty_edge_index
 
-        edge_index_low_adjacency = (
-            torch.cat(low_edges, dim=1) if low_edges else empty_edge_index
-        )
-        edge_index_high_adjacency = (
-            torch.cat(high_edges, dim=1) if high_edges else empty_edge_index
-        )
         return {
-            "edge_index_low_adjacency": edge_index_low_adjacency,
-            "edge_index_high_adjacency": edge_index_high_adjacency,
+            "edge_index_low_adjacency": shared_cell_edges(low_indices),
+            "edge_index_high_adjacency": shared_cell_edges(high_indices),
             "edge_index_incidence": edge_index_incidence,
         }

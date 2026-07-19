@@ -4,8 +4,44 @@ import pytest
 import torch
 from torch_geometric.data import Data
 
-from topobench.nn.backbones.combinatorial.smcn import SMCN
+from topobench.nn.backbones.combinatorial.smcn import SMCN, SubComplexLayer
 
+
+def test_subcomplex_layer_aggregates_placeholder_edges():
+    """SubComplexLayer should aggregate tuple features over each edge family."""
+    layer = SubComplexLayer(channels=2)
+    with torch.no_grad():
+        layer.linear.weight.copy_(torch.eye(2))
+        layer.linear.bias.zero_()
+
+    tuple_features = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.0, 2.0],
+            [3.0, 0.0],
+        ]
+    )
+    edge_index_low_adjacency = torch.tensor([[0, 1], [1, 0]])
+    edge_index_high_adjacency = torch.tensor([[1, 2], [2, 1]])
+    edge_index_incidence = torch.tensor([[0, 1, 2], [0, 1, 2]])
+
+    out = layer(
+        tuple_features,
+        edge_index_low_adjacency,
+        edge_index_high_adjacency,
+        edge_index_incidence,
+    )
+
+    assert torch.equal(
+        out,
+        torch.tensor(
+            [
+                [2.0, 2.0],
+                [4.0, 4.0],
+                [6.0, 2.0],
+            ]
+        ),
+    )
 
 def test_smcn_forward_returns_rank_dict():
     """SMCN should return updated rank-wise features."""
@@ -288,6 +324,37 @@ def test_smcn_encodes_rank02_tuple_features():
 
     assert tuple_features.shape == (2, 16)
 
+
+def test_smcn_uses_subcomplex_layer_when_enabled():
+    """SMCN should update rank-0/2 tuple features with SubComplexLayer when enabled."""
+    incidence_1 = torch.tensor(
+        [
+            [1.0, 0.0, 1.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 1.0],
+        ]
+    ).to_sparse()
+    incidence_2 = torch.tensor([[1.0], [1.0], [1.0]]).to_sparse()
+    batch = Data(
+        x_0=torch.ones(3, 8),
+        x_1=torch.ones(3, 8),
+        x_2=2 * torch.ones(1, 8),
+        incidence_1=incidence_1,
+        incidence_2=incidence_2,
+    )
+    model = SMCN(
+        in_channels=8,
+        hidden_channels=16,
+        use_subcomplex_signal=True,
+    )
+
+    subcomplex = model.build_rank02_subcomplex(batch)
+    out = model(batch)
+
+    assert isinstance(model.rank02_tuple_update, SubComplexLayer)
+    assert subcomplex["tuple_features"].shape == (3, 16)
+    assert set(out.keys()) == {0, 1, 2}
+    assert out[0].shape == (3, 16)
 
 def test_smcn_builds_and_pools_rank02_subcomplex():
     """SMCN should build rank-0/2 tuples and pool them back to rank 0."""
