@@ -219,11 +219,17 @@ class SMCN(torch.nn.Module):
         ):
             subcomplex = self.build_rank02_subcomplex(batch)
             subcomplex = self.forward_rank02_subcomplex(batch, subcomplex)
-            pooled_features = self.pool_rank02_to_rank0(
+            pooled_rank0 = self.pool_rank02_to_rank0(
                 subcomplex, num_low_cells=batch.x_0.size(0)
             )
-            if pooled_features.shape == outputs[0].shape:
-                outputs[0] = outputs[0] + pooled_features
+            if pooled_rank0.shape == outputs[0].shape:
+                outputs[0] = outputs[0] + pooled_rank0
+
+            pooled_rank2 = self.pool_rank02_to_rank2(
+                subcomplex, num_high_cells=batch.x_2.size(0)
+            )
+            if 2 in outputs and pooled_rank2.shape == outputs[2].shape:
+                outputs[2] = outputs[2] + pooled_rank2
 
         return outputs
 
@@ -343,6 +349,27 @@ class SMCN(torch.nn.Module):
             )
             pooled = pooled / counts.clamp_min(1).unsqueeze(-1)
 
+        return pooled
+    
+    def pool_rank02_to_rank2(self, subcomplex, num_high_cells):
+        """Pool rank-0/2 tuple features back to rank-2 cells."""
+        tuple_features = subcomplex["tuple_features"]
+        high_indices = subcomplex["high_indices"]
+        pooled = tuple_features.new_zeros(
+            (num_high_cells, tuple_features.size(-1))
+        )
+        if tuple_features.numel() == 0:
+            return pooled
+        
+        pooled = pooled.index_add(0, high_indices, tuple_features)
+        if self.tuple_pooling == "mean":
+            counts = tuple_features.new_zeros(num_high_cells)
+            counts = counts.index_add(
+                0,
+                high_indices,
+                tuple_features.new_ones(high_indices.size(0)),
+            )
+            pooled = pooled / counts.clamp_min(1).unsqueeze(-1)
         return pooled
 
     def encode_rank02_tuple_features(

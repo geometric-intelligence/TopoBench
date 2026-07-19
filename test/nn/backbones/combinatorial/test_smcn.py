@@ -644,3 +644,95 @@ def test_smcn_pools_empty_rank02_tuple_features_to_rank0():
     pooled = model.pool_rank02_to_rank0(subcomplex, num_low_cells=3)
 
     assert torch.equal(pooled, torch.zeros(3, 2))
+
+
+def test_smcn_pools_rank02_tuple_features_to_rank2():
+    """SMCN should sum tuple features back onto their rank-2 cells."""
+    subcomplex = {
+        "tuple_features": torch.tensor(
+            [
+                [1.0, 2.0],
+                [3.0, 4.0],
+                [5.0, 6.0],
+            ]
+        ),
+        "high_indices": torch.tensor([0, 1, 0]),
+    }
+
+    model = SMCN(in_channels=8, hidden_channels=16, tuple_pooling="sum")
+    pooled = model.pool_rank02_to_rank2(subcomplex, num_high_cells=3)
+
+    assert torch.equal(
+        pooled,
+        torch.tensor(
+            [
+                [6.0, 8.0],
+                [3.0, 4.0],
+                [0.0, 0.0],
+            ]
+        ),
+    )
+
+
+def test_smcn_mean_pools_rank02_tuple_features_to_rank2():
+    """SMCN should average tuple features back onto rank-2 cells."""
+    subcomplex = {
+        "tuple_features": torch.tensor(
+            [
+                [1.0, 2.0],
+                [3.0, 4.0],
+                [5.0, 6.0],
+            ]
+        ),
+        "high_indices": torch.tensor([0, 1, 0]),
+    }
+
+    model = SMCN(in_channels=8, hidden_channels=16, tuple_pooling="mean")
+    pooled = model.pool_rank02_to_rank2(subcomplex, num_high_cells=3)
+
+    assert torch.equal(
+        pooled,
+        torch.tensor(
+            [
+                [3.0, 4.0],
+                [3.0, 4.0],
+                [0.0, 0.0],
+            ]
+        ),
+    )
+
+
+def test_smcn_pools_empty_rank02_tuple_features_to_rank2():
+    """SMCN should return zeros when no rank-0/2 tuples pool to rank 2."""
+    subcomplex = {
+        "tuple_features": torch.empty(0, 2),
+        "high_indices": torch.empty(0, dtype=torch.long),
+    }
+
+    model = SMCN(in_channels=8, hidden_channels=16, tuple_pooling="sum")
+    pooled = model.pool_rank02_to_rank2(subcomplex, num_high_cells=3)
+
+    assert torch.equal(pooled, torch.zeros(3, 2))
+
+
+def test_smcn_forward_updates_rank2_shape_with_subcomplex_signal():
+    """SMCN should keep rank-2 outputs pipeline-shaped after rank-0/2 pooling."""
+    incidence_1 = torch.eye(3).to_sparse()
+    incidence_2 = torch.ones(3, 2).to_sparse()
+    batch = Data(
+        x_0=torch.ones(3, 8),
+        x_1=torch.ones(3, 8),
+        x_2=2 * torch.ones(2, 8),
+        incidence_1=incidence_1,
+        incidence_2=incidence_2,
+    )
+    model = SMCN(
+        in_channels=8,
+        hidden_channels=16,
+        use_subcomplex_signal=True,
+    )
+
+    out = model(batch)
+
+    assert out[0].shape == (3, 16)
+    assert out[2].shape == (2, 16)
