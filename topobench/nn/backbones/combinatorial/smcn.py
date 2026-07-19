@@ -6,8 +6,9 @@ import torch
 class SubComplexLayer(torch.nn.Module):
     """Placeholder layer for rank-0/2 subcomplexes.
 
-    This layer aggregates tuple features over placeholder subcomplex edge
-    indices, then applies separate relation-wise transforms and activation.
+    This layer builds relation-specific tuple messages over subcomplex edge
+    indices. Optional bridge-cell features are treated as edge-aligned features
+    for the corresponding low/high relation.
     """
 
     def __init__(
@@ -21,9 +22,9 @@ class SubComplexLayer(torch.nn.Module):
         self.low_linear = torch.nn.Linear(channels, channels)
         self.high_linear = torch.nn.Linear(channels, channels)
         self.incidence_linear = torch.nn.Linear(channels, channels)
-        self.activation = activation_layer()
         self.low_bridge_linear = torch.nn.Linear(channels, channels)
         self.high_bridge_linear = torch.nn.Linear(channels, channels)
+        self.activation = activation_layer()
 
     def forward(
         self,
@@ -34,46 +35,56 @@ class SubComplexLayer(torch.nn.Module):
         low_bridge_features=None,
         high_bridge_features=None,
     ):
-        """Update tuple features using placeholder subcomplex edges."""
-        low_messages = self._aggregate(tuple_features, edge_index_low_adjacency)
-        high_messages = self._aggregate(tuple_features, edge_index_high_adjacency)
-        if low_bridge_features is not None:
-            low_messages = low_messages + self._aggregate_edge_features(
-                self.low_bridge_linear(low_bridge_features),
-                edge_index_low_adjacency,
-                tuple_features.size(0),
-            )
-        if high_bridge_features is not None:
-            high_messages = high_messages + self._aggregate_edge_features(
-                self.high_bridge_linear(high_bridge_features),
-                edge_index_high_adjacency,
-                tuple_features.size(0),
-            )
-        incidence_messages = self._aggregate(tuple_features, edge_index_incidence)
+        """Update tuple features using relation-specific subcomplex edges."""
+        low_messages = self._aggregate_relation_messages(
+            tuple_features,
+            edge_index_low_adjacency,
+            low_bridge_features,
+            self.low_bridge_linear,
+        )
+        high_messages = self._aggregate_relation_messages(
+            tuple_features,
+            edge_index_high_adjacency,
+            high_bridge_features,
+            self.high_bridge_linear,
+        )
+        incidence_messages = self._aggregate_relation_messages(
+            tuple_features, edge_index_incidence
+        )
 
-        tuple_self = self.self_linear(tuple_features)
-        low_msg = self.low_linear(low_messages)
-        high_msg = self.high_linear(high_messages)
-        incidence_msg = self.incidence_linear(incidence_messages)
-        updates = tuple_self + low_msg + high_msg + incidence_msg
+        updates = (
+            self.self_linear(tuple_features)
+            + self.low_linear(low_messages)
+            + self.high_linear(high_messages)
+            + self.incidence_linear(incidence_messages)
+        )
 
         return self.activation(updates)
 
-    def _aggregate(self, features, edge_index):
-        """Aggregate source tuple features into target tuple slots."""
+    def _aggregate_relation_messages(
+        self, tuple_features, edge_index, bridge_features=None, bridge_linear=None
+    ):
+        """Aggregate source tuple messages plus optional edge bridge features."""
         if edge_index.numel() == 0:
-            return torch.zeros_like(features)
+            return torch.zeros_like(tuple_features)
 
         source, target = edge_index
-        messages = torch.zeros_like(features)
-        messages.index_add_(0, target, features[source])
+        edge_messages = tuple_features[source]
+        if bridge_features is not None:
+            edge_messages = edge_messages + bridge_linear(bridge_features)
+
+        messages = tuple_features.new_zeros(tuple_features.shape)
+        messages.index_add_(0, target, edge_messages)
         if self.aggregation == "mean":
-            counts = features.new_zeros(features.size(0))
-            counts.index_add_(0, target, features.new_ones(target.size(0)))
+            counts = tuple_features.new_zeros(tuple_features.size(0))
+            counts.index_add_(0, target, tuple_features.new_ones(target.size(0)))
             messages = messages / counts.clamp_min(1).unsqueeze(-1)
 
         return messages
 
+    def _aggregate(self, features, edge_index):
+        """Aggregate source tuple features into target tuple slots."""
+        return self._aggregate_relation_messages(features, edge_index)
 
     def _aggregate_edge_features(self, edge_features, edge_index, num_tuples):
         """Aggregate edge-aligned features into target tuple slots."""

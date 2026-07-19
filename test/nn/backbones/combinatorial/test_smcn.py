@@ -89,6 +89,37 @@ def test_subcomplex_layer_aggregates_low_bridge_edge_features():
 
     assert torch.equal(out, torch.tensor([[0.0, 0.0], [10.0, 20.0]]))
 
+def test_subcomplex_layer_aggregates_high_bridge_edge_features():
+    """SubComplexLayer should aggregate high bridge features aligned to tuple edges."""
+    layer = SubComplexLayer(channels=2, aggregation="sum")
+    with torch.no_grad():
+        for linear in (
+            layer.self_linear,
+            layer.low_linear,
+            layer.high_linear,
+            layer.incidence_linear,
+            layer.low_bridge_linear,
+            layer.high_bridge_linear,
+        ):
+            linear.weight.copy_(torch.eye(2))
+            linear.bias.zero_()
+
+    tuple_features = torch.zeros(2, 2)
+    edge_index_low_adjacency = torch.empty((2, 0), dtype=torch.long)
+    edge_index_high_adjacency = torch.tensor([[0], [1]])
+    edge_index_incidence = torch.empty((2, 0), dtype=torch.long)
+    high_bridge_features = torch.tensor([[3.0, 4.0]])
+
+    out = layer(
+        tuple_features,
+        edge_index_low_adjacency,
+        edge_index_high_adjacency,
+        edge_index_incidence,
+        high_bridge_features=high_bridge_features,
+    )
+
+    assert torch.equal(out, torch.tensor([[0.0, 0.0], [3.0, 4.0]]))
+
 def test_subcomplex_layer_mean_aggregates_placeholder_edges():
     """SubComplexLayer should average incoming messages when aggregation is mean."""
     layer = SubComplexLayer(channels=2, aggregation="mean")
