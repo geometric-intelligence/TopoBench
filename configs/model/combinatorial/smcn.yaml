@@ -19,7 +19,7 @@ backbone:
   _target_: topobench.nn.backbones.combinatorial.smcn.SMCN
   in_channels: ${model.feature_encoder.out_channels}
   hidden_channels: ${model.feature_encoder.out_channels}
-  use_subcomplex_signal: false
+  use_subcomplex_signal: true
   tuple_pooling: mean
   subcomplex_aggregation: mean
   max_rank02_tuples: 512
