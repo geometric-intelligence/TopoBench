@@ -21,6 +21,7 @@ backbone:
   hidden_channels: ${model.feature_encoder.out_channels}
   use_subcomplex_signal: false
   tuple_pooling: sum
+  subcomplex_aggregation: mean
   tuple_selection: all
   neighborhoods:
     - up_adjacency-1
