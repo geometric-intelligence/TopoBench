@@ -531,6 +531,7 @@ class GaugeModel(nn.Module):
                     tau=self.tau,
                     n_gated=self.n_gated,
                 )
+                for _ in range(self.n_layers)
             ]
         )
 
