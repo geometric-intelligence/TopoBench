@@ -169,7 +169,7 @@ class LocalCoordinatesLayer(torch.nn.Module):
 
         self.fflayer = FFBlock(self.d, self.d, self.d, bias=self.bias)
 
-    def forward(self, edge_index: Tensor, Z: Tensor) -> Tensor:
+    def forward(self, Z: Tensor, edge_index: Tensor) -> Tensor:
         """Forward pass computing per-node local orthonormal frames.
 
         Implements equations (2)-(4): the neighborhood-smoothed reconstruction
@@ -178,11 +178,11 @@ class LocalCoordinatesLayer(torch.nn.Module):
 
         Parameters
         ----------
+        Z : Tensor
+            Node embeddings of shape ``[N, d]``.
         edge_index : Tensor
             Edge index tensor of shape ``[2, E]`` with source and destination
             node indices.
-        Z : Tensor
-            Node embeddings of shape ``[N, d]``.
 
         Returns
         -------
@@ -257,7 +257,7 @@ class GatedFlatteningLayer(nn.Module):
         self.gamma = gamma
         self.tau = tau
 
-    def forward(self, edge_index: Tensor, Q: Tensor) -> Tensor:
+    def forward(self, Q: Tensor, edge_index: Tensor) -> Tensor:
         """Forward pass smoothing the per-node frames over the graph.
 
         Implements equations (6)-(8): gating weights from neighboring frame
@@ -266,11 +266,11 @@ class GatedFlatteningLayer(nn.Module):
 
         Parameters
         ----------
+        Q : Tensor
+            Per-node orthonormal frames of shape ``[N, r, d]``.
         edge_index : Tensor
             Edge index tensor of shape ``[2, E]`` with source and destination
             node indices.
-        Q : Tensor
-            Per-node orthonormal frames of shape ``[N, r, d]``.
 
         Returns
         -------
@@ -325,9 +325,9 @@ class NodeUpdateLayer(torch.nn.Module):
     out_channels : int
         Number of output features.
     phi_hidden_layers : int or None, optional
-        Number of hidden layers of the MLP residual ``phi``. If ``None`` the
-        residual is disabled (matching the reference implementation)
-        (default: 1).
+        Number of hidden layers of the MLP residual ``phi``. Must be at least 1
+        when not ``None``. If ``None`` the residual is disabled (matching the
+        reference implementation) (default: 1).
     phi_hidden_dim : int or None, optional
         Hidden width of the residual MLP ``phi``. Defaults to
         ``max(in_channels, out_channels)`` when ``None`` (default: None).
@@ -344,7 +344,7 @@ class NodeUpdateLayer(torch.nn.Module):
         super().__init__()
 
         self.phi = None
-        # this is the learnable function applied to z (if phi_hidden_dim isn't None)
+        # this is the learnable function applied to z (if phi_hidden_layers isn't None)
         if phi_hidden_layers is not None:
             self.phi = FFBlock(
                 in_channels=in_channels,
@@ -358,7 +358,7 @@ class NodeUpdateLayer(torch.nn.Module):
         # this is the learnable matrix applied to tilde(z)
         self.W = torch.nn.Linear(in_channels, out_channels, bias=False)
 
-    def forward(self, edge_index: Tensor, Z: Tensor, Q: Tensor) -> Tensor:
+    def forward(self, Z: Tensor, Q: Tensor, edge_index: Tensor) -> Tensor:
         """Forward pass updating the node features.
 
         Implements equations (9)-(10): the frame projection of the node
@@ -367,13 +367,13 @@ class NodeUpdateLayer(torch.nn.Module):
 
         Parameters
         ----------
-        edge_index : Tensor
-            Edge index tensor of shape ``[2, E]`` with source and destination
-            node indices.
         Z : Tensor
             Node embeddings of shape ``[N, d]``.
         Q : Tensor
             Per-node orthonormal frames of shape ``[N, r, d]``.
+        edge_index : Tensor
+            Edge index tensor of shape ``[2, E]`` with source and destination
+            node indices.
 
         Returns
         -------
@@ -434,8 +434,8 @@ class GaugeLayer(torch.nn.Module):
         Whether the linear layers use a bias term (default: True).
     phi_hidden_layers : int or None, optional
         Number of hidden layers of the MLP residual ``phi`` in the node update.
-        If ``None`` the residual is disabled (matching the reference
-        implementation) (default: 1).
+        Must be at least 1 when not ``None``. If ``None`` the residual is
+        disabled (matching the reference implementation) (default: 1).
     phi_hidden_dim : int or None, optional
         Hidden width of the residual MLP ``phi``. Defaults to ``d_embedd`` when
         ``None`` (default: None).
@@ -479,16 +479,16 @@ class GaugeLayer(torch.nn.Module):
             phi_hidden_dim=phi_hidden_dim,
         )
 
-    def forward(self, edge_index: Tensor, x: Tensor) -> tuple[Tensor, Tensor]:
+    def forward(self, x: Tensor, edge_index: Tensor) -> tuple[Tensor, Tensor]:
         """Forward pass of a single gauge layer.
 
         Parameters
         ----------
+        x : Tensor
+            Node embeddings of shape ``[N, d]``.
         edge_index : Tensor
             Edge index tensor of shape ``[2, E]`` with source and destination
             node indices.
-        x : Tensor
-            Node embeddings of shape ``[N, d]``.
 
         Returns
         -------
@@ -498,12 +498,12 @@ class GaugeLayer(torch.nn.Module):
             Per-node orthonormal frames of shape ``[N, r, d]``.
         """
 
-        Q = self.local_coords_layer(edge_index, x)
+        Q = self.local_coords_layer(x, edge_index)
 
         for layer in self.gated_flattening_layers:
-            Q = layer(edge_index, Q)
+            Q = layer(Q, edge_index)
 
-        Znew = self.node_update_layer(edge_index, x, Q)
+        Znew = self.node_update_layer(x, Q, edge_index)
 
         return Znew, Q
 
@@ -536,8 +536,8 @@ class GaugeModel(nn.Module):
         Whether the linear layers use a bias term (default: True).
     phi_hidden_layers : int or None, optional
         Number of hidden layers of the MLP residual ``phi`` in the node update.
-        If ``None`` the residual is disabled (matching the reference
-        implementation) (default: 1).
+        Must be at least 1 when not ``None``. If ``None`` the residual is
+        disabled (matching the reference implementation) (default: 1).
     phi_hidden_dim : int or None, optional
         Hidden width of the residual MLP ``phi``. Defaults to ``d_embedd`` when
         ``None`` (default: None).
@@ -587,16 +587,16 @@ class GaugeModel(nn.Module):
             ]
         )
 
-    def forward(self, edge_index: Tensor, x: Tensor) -> tuple[Tensor, Tensor]:
+    def forward(self, x: Tensor, edge_index: Tensor) -> tuple[Tensor, Tensor]:
         """Forward pass of the full model.
 
         Parameters
         ----------
+        x : Tensor
+            Input node features of shape ``[N, in_channels]``.
         edge_index : Tensor
             Edge index tensor of shape ``[2, E]`` with source and destination
             node indices.
-        x : Tensor
-            Input node features of shape ``[N, in_channels]``.
 
         Returns
         -------
@@ -609,6 +609,6 @@ class GaugeModel(nn.Module):
         z = self.input_projector(x)
 
         for layer in self.layers:
-            z, Q = layer(edge_index, z)
+            z, Q = layer(z, edge_index)
 
         return z, Q
