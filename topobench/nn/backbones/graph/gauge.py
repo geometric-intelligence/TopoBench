@@ -115,8 +115,8 @@ class FFBlock(nn.Module):
             Output tensor of shape ``[..., out_channels]``.
         """
 
-        x = self.model(x)
         x = self.norm(x)
+        x = self.model(x)
 
         return x
 
