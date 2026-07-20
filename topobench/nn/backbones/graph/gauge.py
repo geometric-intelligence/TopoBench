@@ -359,7 +359,7 @@ class NodeUpdateLayer(torch.nn.Module):
         """
 
         # step 0: bind commonly used values to variable names
-        src, _ = edge_index[0], edge_index[1]
+        src, dst = edge_index[0], edge_index[1]
         N = Z.size(0)  # num_nodes for scatter ops
 
         # step 1: calculate tilde(z)
@@ -377,7 +377,7 @@ class NodeUpdateLayer(torch.nn.Module):
         # realized via the self.phi function
         # cf. equation (10)
         Znew = scatter_mean(
-            Z_tilde[src], index=src, dim=0, dim_size=N
+            Z_tilde[src], index=dst, dim=0, dim_size=N
         ) + self.phi(Z)
 
         return Znew
