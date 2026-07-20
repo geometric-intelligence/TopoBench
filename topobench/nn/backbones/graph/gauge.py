@@ -18,8 +18,7 @@ paper:
 """
 
 import torch
-from torch import nn
-from torch_geometric.typing import Tensor
+from torch import Tensor, nn
 from torch_scatter import scatter_add, scatter_mean, scatter_softmax
 
 
