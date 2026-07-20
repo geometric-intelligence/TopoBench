@@ -567,14 +567,6 @@ class SMCN(torch.nn.Module):
             incidence_2 = incidence_2.coalesce()
             incidence_1_indices = incidence_1.indices()
             incidence_2_indices = incidence_2.indices()
-            vertices_by_edge = [
-                incidence_1_indices[0, incidence_1_indices[1] == edge_id]
-                for edge_id in range(incidence_1.size(1))
-            ]
-            edges_by_face = [
-                incidence_2_indices[0, incidence_2_indices[1] == face_id]
-                for face_id in range(incidence_2.size(1))
-            ]
 
             tuple_lookup = {
                 (int(low_id), int(high_id)): int(tuple_id)
@@ -582,14 +574,30 @@ class SMCN(torch.nn.Module):
                     zip(low_indices.tolist(), high_indices.tolist(), strict=True)
                 )
             }
+            vertices_by_edge = {}
+            for vertex_id, edge_id in zip(
+                incidence_1_indices[0].tolist(),
+                incidence_1_indices[1].tolist(),
+                strict=True,
+            ):
+                vertices_by_edge.setdefault(edge_id, []).append(vertex_id)
+
+            edges_by_face = {}
+            for edge_id, face_id in zip(
+                incidence_2_indices[0].tolist(),
+                incidence_2_indices[1].tolist(),
+                strict=True,
+            ):
+                edges_by_face.setdefault(face_id, []).append(edge_id)
+
             edge_chunks = []
             bridge_chunks = []
-            for face_id, edge_ids in enumerate(edges_by_face):
-                for edge_id in edge_ids.tolist():
+            for face_id in high_indices.unique().tolist():
+                for edge_id in edges_by_face.get(face_id, []):
                     tuple_group = [
-                        tuple_lookup[(int(vertex_id), face_id)]
-                        for vertex_id in vertices_by_edge[edge_id].tolist()
-                        if (int(vertex_id), face_id) in tuple_lookup
+                        tuple_lookup[(vertex_id, face_id)]
+                        for vertex_id in vertices_by_edge.get(edge_id, [])
+                        if (vertex_id, face_id) in tuple_lookup
                     ]
                     if len(tuple_group) < 2:
                         continue
@@ -620,14 +628,6 @@ class SMCN(torch.nn.Module):
             incidence_2 = incidence_2.coalesce()
             incidence_1_indices = incidence_1.indices()
             incidence_2_indices = incidence_2.indices()
-            edges_by_vertex = [
-                incidence_1_indices[1, incidence_1_indices[0] == vertex_id]
-                for vertex_id in range(incidence_1.size(0))
-            ]
-            faces_by_edge = [
-                incidence_2_indices[1, incidence_2_indices[0] == edge_id]
-                for edge_id in range(incidence_2.size(0))
-            ]
 
             tuple_lookup = {
                 (int(low_id), int(high_id)): int(tuple_id)
@@ -635,20 +635,39 @@ class SMCN(torch.nn.Module):
                     zip(low_indices.tolist(), high_indices.tolist(), strict=True)
                 )
             }
+            edges_by_vertex = {}
+            for vertex_id, edge_id in zip(
+                incidence_1_indices[0].tolist(),
+                incidence_1_indices[1].tolist(),
+                strict=True,
+            ):
+                edges_by_vertex.setdefault(vertex_id, []).append(edge_id)
+
+            faces_by_edge = {}
+            for edge_id, face_id in zip(
+                incidence_2_indices[0].tolist(),
+                incidence_2_indices[1].tolist(),
+                strict=True,
+            ):
+                faces_by_edge.setdefault(edge_id, []).append(face_id)
+
             edge_chunks = []
             bridge_chunks = []
-            for vertex_id, edge_ids in enumerate(edges_by_vertex):
-                if edge_ids.numel() == 0:
+            for vertex_id in low_indices.unique().tolist():
+                edge_ids = edges_by_vertex.get(vertex_id, [])
+                if not edge_ids:
                     continue
-                face_ids = torch.unique(
-                    torch.cat(
-                        [faces_by_edge[edge_id] for edge_id in edge_ids.tolist()]
-                    )
+                face_ids = sorted(
+                    {
+                        face_id
+                        for edge_id in edge_ids
+                        for face_id in faces_by_edge.get(edge_id, [])
+                    }
                 )
                 tuple_group = [
-                    tuple_lookup[(vertex_id, int(face_id))]
-                    for face_id in face_ids.tolist()
-                    if (vertex_id, int(face_id)) in tuple_lookup
+                    tuple_lookup[(vertex_id, face_id)]
+                    for face_id in face_ids
+                    if (vertex_id, face_id) in tuple_lookup
                 ]
                 if len(tuple_group) < 2:
                     continue
