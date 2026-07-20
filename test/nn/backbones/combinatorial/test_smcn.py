@@ -939,3 +939,40 @@ def test_smcn_forward_updates_rank2_shape_with_subcomplex_signal():
 
     assert out[0].shape == (3, 16)
     assert out[2].shape == (2, 16)
+
+
+def test_smcn_reuses_cached_rank02_subcomplex(monkeypatch):
+    """SMCN should cache structural rank-0/2 tensors for repeated batches."""
+    incidence_1 = torch.eye(3).to_sparse()
+    incidence_2 = torch.ones(3, 2).to_sparse()
+    batch = Data(
+        x_0=torch.ones(3, 8),
+        x_2=2 * torch.ones(2, 8),
+        incidence_1=incidence_1,
+        incidence_2=incidence_2,
+    )
+    model = SMCN(
+        in_channels=8,
+        hidden_channels=16,
+        tuple_selection="incident",
+    )
+    calls = 0
+    original_builder = model.build_rank02_subcomplex_edges
+
+    def counting_builder(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original_builder(*args, **kwargs)
+
+    monkeypatch.setattr(model, "build_rank02_subcomplex_edges", counting_builder)
+
+    first = model.build_rank02_subcomplex(batch)
+    second = model.build_rank02_subcomplex(batch)
+
+    assert calls == 1
+    assert len(model._rank02_subcomplex_cache) == 1
+    assert torch.equal(first["low_indices"], second["low_indices"])
+    assert torch.equal(first["high_indices"], second["high_indices"])
+    assert torch.equal(
+        first["edge_index_low_adjacency"], second["edge_index_low_adjacency"]
+    )

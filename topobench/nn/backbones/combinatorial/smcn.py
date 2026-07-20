@@ -1,5 +1,7 @@
 """SMCN combinatorial backbone."""
 
+from collections import OrderedDict
+
 import torch
 
 
@@ -238,6 +240,8 @@ class SMCN(torch.nn.Module):
                 f"max_rank02_tuples must be positive, got {max_rank02_tuples}"
             )
         self.max_rank02_tuples = max_rank02_tuples
+        self._rank02_subcomplex_cache = OrderedDict()
+        self._max_rank02_subcomplex_cache_size = 128
 
     @staticmethod
     def _get_activation(name):
@@ -264,6 +268,58 @@ class SMCN(torch.nn.Module):
             if activation_layer is not torch.nn.Identity:
                 modules.append(activation_layer())
         return torch.nn.Sequential(*modules)
+
+    @staticmethod
+    def _sparse_structure_signature(tensor):
+        """Create a hashable signature for a sparse incidence structure."""
+        tensor = tensor.coalesce()
+        indices = tensor.indices().detach().cpu().reshape(-1).tolist()
+        return tuple(tensor.size()), tuple(indices)
+
+    @staticmethod
+    def _dense_structure_signature(tensor):
+        """Create a hashable signature for a dense structural vector."""
+        return tuple(tensor.detach().cpu().reshape(-1).tolist())
+
+    def _rank02_subcomplex_cache_key(
+        self, batch, incidence_1, incidence_2, num_low_cells, num_high_cells
+    ):
+        """Build a cache key for rank-0/2 structural tensors."""
+        key = (
+            self.tuple_selection,
+            self.max_rank02_tuples,
+            num_low_cells,
+            num_high_cells,
+            self._sparse_structure_signature(incidence_1),
+            self._sparse_structure_signature(incidence_2),
+        )
+        if self.tuple_selection == "all" and hasattr(batch, "batch_0"):
+            key = (*key, self._dense_structure_signature(batch.batch_0))
+        if self.tuple_selection == "all" and hasattr(batch, "batch_2"):
+            key = (*key, self._dense_structure_signature(batch.batch_2))
+        return key
+
+    def _get_cached_rank02_subcomplex(self, cache_key, device):
+        """Return cached rank-0/2 structure on the requested device."""
+        cached = self._rank02_subcomplex_cache.get(cache_key)
+        if cached is None:
+            return None
+        self._rank02_subcomplex_cache.move_to_end(cache_key)
+        return {name: tensor.to(device) for name, tensor in cached.items()}
+
+    def _cache_rank02_subcomplex(self, cache_key, subcomplex):
+        """Store bounded rank-0/2 structural tensors for repeated batches."""
+        self._rank02_subcomplex_cache[cache_key] = {
+            name: tensor.detach()
+            for name, tensor in subcomplex.items()
+        }
+        self._rank02_subcomplex_cache.move_to_end(cache_key)
+        while (
+            len(self._rank02_subcomplex_cache)
+            > self._max_rank02_subcomplex_cache_size
+        ):
+            self._rank02_subcomplex_cache.popitem(last=False)
+
 
     @staticmethod
     def _lookup_sparse_binary_marking(incidence, low_indices, high_indices):
@@ -346,6 +402,20 @@ class SMCN(torch.nn.Module):
             incidence_1 = incidence_1.cpu()
             incidence_2 = incidence_2.cpu()
 
+        num_low_cells = batch.x_0.size(0)
+        num_high_cells = batch.x_2.size(0)
+        device = batch.x_0.device
+        cache_key = self._rank02_subcomplex_cache_key(
+            batch,
+            incidence_1,
+            incidence_2,
+            num_low_cells,
+            num_high_cells,
+        )
+        cached_subcomplex = self._get_cached_rank02_subcomplex(cache_key, device)
+        if cached_subcomplex is not None:
+            return cached_subcomplex
+
         incidence_0_2 = torch.sparse.mm(incidence_1, incidence_2).coalesce()
         if incidence_0_2._nnz() > 0:
             incidence_0_2 = torch.sparse_coo_tensor(
@@ -356,8 +426,6 @@ class SMCN(torch.nn.Module):
             ).coalesce()
         incidence_0_2 = incidence_0_2.to(incidence_device)
 
-        num_low_cells = batch.x_0.size(0)
-        num_high_cells = batch.x_2.size(0)
         if (
             incidence_0_2.size(0) != num_low_cells
             or incidence_0_2.size(1) != num_high_cells
@@ -368,7 +436,6 @@ class SMCN(torch.nn.Module):
                 f"got {incidence_0_2.size()}"
             )
 
-        device = batch.x_0.device
         if self.tuple_selection == "incident":
             low_indices, high_indices = incidence_0_2.indices().to(device)
             binary_marking = torch.ones(
@@ -407,13 +474,15 @@ class SMCN(torch.nn.Module):
             getattr(batch, "incidence_2", None),
         )
 
-        return {
+        subcomplex = {
             "incidence_0_2": incidence_0_2,
             "low_indices": low_indices,
             "high_indices": high_indices,
             "binary_marking": binary_marking,
             **subcomplex_edges,
         }
+        self._cache_rank02_subcomplex(cache_key, subcomplex)
+        return subcomplex
 
     def forward_rank02_subcomplex(self, batch, subcomplex):
         """Encode and update rank-0/2 tuple features for a subcomplex."""
