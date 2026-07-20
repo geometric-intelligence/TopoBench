@@ -314,8 +314,10 @@ class NodeUpdateLayer(torch.nn.Module):
 
     Each node embedding is projected onto the subspace spanned by its local
     frame and mapped through a learnable matrix (equation (9)). The projected
-    features are then aggregated over the neighborhood and combined with a
-    learnable residual transformation of the original embedding (equation (10)).
+    features are then aggregated over the neighborhood and, when the residual is
+    enabled, combined with a learnable transformation ``phi`` of the original
+    embedding (equation (10)). Setting ``phi_hidden_layers`` to ``None`` disables
+    the residual and recovers the reference behavior.
 
     Parameters
     ----------
@@ -323,14 +325,36 @@ class NodeUpdateLayer(torch.nn.Module):
         Number of input features.
     out_channels : int
         Number of output features.
+    phi_hidden_layers : int or None, optional
+        Number of hidden layers of the MLP residual ``phi``. If ``None`` the
+        residual is disabled (matching the reference implementation)
+        (default: 1).
+    phi_hidden_dim : int or None, optional
+        Hidden width of the residual MLP ``phi``. Defaults to
+        ``max(in_channels, out_channels)`` when ``None`` (default: None).
     """
 
     # eqns. 9-10
-    def __init__(self, in_channels: int, out_channels: int):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        phi_hidden_layers: int | None = 1,
+        phi_hidden_dim: int | None = None,
+    ):
         super().__init__()
 
-        # this is the learnable function applied to z
-        self.phi = torch.nn.Linear(in_channels, out_channels)
+        self.phi = None
+        # this is the learnable function applied to z (if phi_hidden_dim isn't None)
+        if phi_hidden_layers is not None:
+            self.phi = FFBlock(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                hidden_dim=phi_hidden_dim
+                if phi_hidden_dim is not None
+                else max(in_channels, out_channels),
+                n_hidden_layers=phi_hidden_layers,
+            )
 
         # this is the learnable matrix applied to tilde(z)
         self.W = torch.nn.Linear(in_channels, out_channels, bias=False)
@@ -339,8 +363,8 @@ class NodeUpdateLayer(torch.nn.Module):
         """Forward pass updating the node features.
 
         Implements equations (9)-(10): the frame projection of the node
-        embeddings (equation (9)) followed by the neighborhood aggregation with
-        a learnable residual connection (equation (10)).
+        embeddings (equation (9)) followed by the neighborhood aggregation and,
+        when enabled, a learnable residual connection (equation (10)).
 
         Parameters
         ----------
@@ -373,12 +397,15 @@ class NodeUpdateLayer(torch.nn.Module):
 
         # EQUATION no. (10)
         # DIVERGENCE FROM REFERENCE IMPLEMENTATION
-        # Contrary to the reference implementation we do not omit the "residual connection"
-        # realized via the self.phi function
+        # Contrary to the reference implementation we optionally add a "residual
+        # connection" realized via the self.phi function. It is enabled by
+        # default and can be disabled (recovering the reference behavior) by
+        # passing phi_hidden_layers=None, in which case self.phi is None.
         # cf. equation (10)
-        Znew = scatter_mean(
-            Z_tilde[src], index=dst, dim=0, dim_size=N
-        ) + self.phi(Z)
+        Znew = scatter_mean(Z_tilde[src], index=dst, dim=0, dim_size=N)
+
+        if self.phi is not None:
+            Znew = Znew + self.phi(Z)
 
         return Znew
 
@@ -406,6 +433,13 @@ class GaugeLayer(torch.nn.Module):
         Temperature used to scale the attention and gating logits (default: 1.0).
     bias : bool, optional
         Whether the linear layers use a bias term (default: True).
+    phi_hidden_layers : int or None, optional
+        Number of hidden layers of the MLP residual ``phi`` in the node update.
+        If ``None`` the residual is disabled (matching the reference
+        implementation) (default: 1).
+    phi_hidden_dim : int or None, optional
+        Hidden width of the residual MLP ``phi``. Defaults to ``d_embedd`` when
+        ``None`` (default: None).
     """
 
     def __init__(
@@ -416,6 +450,8 @@ class GaugeLayer(torch.nn.Module):
         gamma: float = 0.01,
         tau: float = 1.0,
         bias=True,
+        phi_hidden_layers: int | None = 1,
+        phi_hidden_dim: int | None = None,
     ):
         super().__init__()
 
@@ -437,7 +473,12 @@ class GaugeLayer(torch.nn.Module):
             ]
         )
 
-        self.node_update_layer = NodeUpdateLayer(self.d_embedd, self.d_embedd)
+        self.node_update_layer = NodeUpdateLayer(
+            self.d_embedd,
+            self.d_embedd,
+            phi_hidden_layers=phi_hidden_layers,
+            phi_hidden_dim=phi_hidden_dim,
+        )
 
     def forward(self, edge_index: Tensor, x: Tensor) -> tuple[Tensor, Tensor]:
         """Forward pass of a single gauge layer.
@@ -494,6 +535,13 @@ class GaugeModel(nn.Module):
         Temperature used to scale the attention and gating logits (default: 1.0).
     bias : bool, optional
         Whether the linear layers use a bias term (default: True).
+    phi_hidden_layers : int or None, optional
+        Number of hidden layers of the MLP residual ``phi`` in the node update.
+        If ``None`` the residual is disabled (matching the reference
+        implementation) (default: 1).
+    phi_hidden_dim : int or None, optional
+        Hidden width of the residual MLP ``phi``. Defaults to ``d_embedd`` when
+        ``None`` (default: None).
     """
 
     def __init__(
@@ -506,6 +554,8 @@ class GaugeModel(nn.Module):
         gamma=0.01,
         tau: float = 1.0,
         bias=True,
+        phi_hidden_layers: int | None = 1,
+        phi_hidden_dim: int | None = None,
     ):
         super().__init__()
 
@@ -531,6 +581,8 @@ class GaugeModel(nn.Module):
                     tau=self.tau,
                     n_gated=self.n_gated,
                     bias=bias,
+                    phi_hidden_layers=phi_hidden_layers,
+                    phi_hidden_dim=phi_hidden_dim,
                 )
                 for _ in range(self.n_layers)
             ]
