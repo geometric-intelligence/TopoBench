@@ -369,26 +369,31 @@ class SMCN(torch.nn.Module):
             )
 
         device = batch.x_0.device
-        low_indices = torch.arange(num_low_cells, device=device).repeat_interleave(
-            num_high_cells
-        )
-        high_indices = torch.arange(num_high_cells, device=device).repeat(
-            num_low_cells
-        )
-
-        if hasattr(batch, "batch_0") and hasattr(batch, "batch_2"):
-            same_graph = batch.batch_0[low_indices] == batch.batch_2[high_indices]
-            low_indices = low_indices[same_graph]
-            high_indices = high_indices[same_graph]
-
-        binary_marking = self._lookup_sparse_binary_marking(
-            incidence_0_2, low_indices, high_indices
-        )
         if self.tuple_selection == "incident":
-            incident_tuples = binary_marking.bool()
-            low_indices = low_indices[incident_tuples]
-            high_indices = high_indices[incident_tuples]
-            binary_marking = binary_marking[incident_tuples]
+            low_indices, high_indices = incidence_0_2.indices().to(device)
+            binary_marking = torch.ones(
+                low_indices.size(0),
+                dtype=incidence_0_2.dtype,
+                device=device,
+            )
+        else:
+            low_indices = torch.arange(
+                num_low_cells, device=device
+            ).repeat_interleave(num_high_cells)
+            high_indices = torch.arange(num_high_cells, device=device).repeat(
+                num_low_cells
+            )
+
+            if hasattr(batch, "batch_0") and hasattr(batch, "batch_2"):
+                same_graph = (
+                    batch.batch_0[low_indices] == batch.batch_2[high_indices]
+                )
+                low_indices = low_indices[same_graph]
+                high_indices = high_indices[same_graph]
+
+            binary_marking = self._lookup_sparse_binary_marking(
+                incidence_0_2, low_indices, high_indices
+            )
 
         if self.max_rank02_tuples is not None:
             low_indices = low_indices[: self.max_rank02_tuples]

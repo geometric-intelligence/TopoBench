@@ -696,6 +696,35 @@ def test_smcn_filters_to_incident_rank02_tuples_when_requested():
     assert subcomplex["tuple_features"].shape == (1, 16)
 
 
+def test_smcn_incident_selection_uses_sparse_incidence_pairs():
+    """SMCN should skip non-incident rank-0/2 tuples in incident mode."""
+    incidence_1 = torch.eye(4).to_sparse()
+    incidence_2 = torch.tensor(
+        [
+            [1.0, 0.0],
+            [0.0, 0.0],
+            [0.0, 1.0],
+            [0.0, 1.0],
+        ]
+    ).to_sparse()
+    batch = Data(
+        x_0=torch.ones(4, 8),
+        x_2=2 * torch.ones(2, 8),
+        incidence_1=incidence_1,
+        incidence_2=incidence_2,
+    )
+    model = SMCN(
+        in_channels=8,
+        hidden_channels=16,
+        tuple_selection="incident",
+    )
+
+    subcomplex = model.build_rank02_subcomplex(batch)
+
+    assert torch.equal(subcomplex["low_indices"], torch.tensor([0, 2, 3]))
+    assert torch.equal(subcomplex["high_indices"], torch.tensor([0, 1, 1]))
+    assert torch.equal(subcomplex["binary_marking"], torch.ones(3))
+
 def test_smcn_builds_rank02_subcomplex_edges():
     """SMCN should build tuple-level low, high, and incidence edge indices."""
     model = SMCN(in_channels=8, hidden_channels=16)
