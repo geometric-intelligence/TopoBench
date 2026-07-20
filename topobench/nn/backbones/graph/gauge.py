@@ -168,6 +168,7 @@ class LocalCoordinatesLayer(torch.nn.Module):
         )
 
         self.fflayer = FFBlock(self.d, self.d, self.d, bias=self.bias)
+        self.preqr_norm = nn.LayerNorm(self.d)
 
     def forward(self, Z: Tensor, edge_index: Tensor) -> Tensor:
         """Forward pass computing per-node local orthonormal frames.
@@ -218,8 +219,9 @@ class LocalCoordinatesLayer(torch.nn.Module):
         # norm*out is of shape [N,r,d] while Z is of shape [N,d], hence we insert a new axis at -2
         qhat = Z.unsqueeze(-2) - norm * out
 
-        # there should be a feedforward module here and a norm module (combined into a single module for brevity)
+        # feedforward followed by a LayerNorm, then QR (eq. 4)
         qhat = self.fflayer(qhat)
+        qhat = self.preqr_norm(qhat)
 
         # EQUATION no. (4)
         # xx has shape [N, r, d] so now we can do the QR decomposition to obtain an orthonormal basis
