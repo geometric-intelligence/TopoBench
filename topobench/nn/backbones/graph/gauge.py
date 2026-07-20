@@ -98,7 +98,7 @@ class FFBlock(nn.Module):
             els.append(nn.Dropout(self.dropout))
 
         self.model = torch.nn.Sequential(*els)
-        self.norm = nn.LayerNorm(self.out_channels)
+        self.norm = nn.LayerNorm(self.in_channels)
 
     def forward(self, x: Tensor) -> Tensor:
         """Forward pass.
