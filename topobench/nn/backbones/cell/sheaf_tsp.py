@@ -316,7 +316,11 @@ class SheafConvLayer(nn.Module):
     filter_order : int
         Polynomial filter order K (powers 0..K are used).
     dropout : float
-        Dropout rate.
+        Dropout rate on the signal path (input of the stalk lift).
+    mlp_dropout : float
+        Dropout rate on the input of the restriction-map learner —
+        regularizes the learned transports without corrupting the
+        filtered signal (surgical regularization).
     filter_basis : str
         Polynomial basis for the spectral filter: ``"monomial"``
         (default; raw powers L̂^k as in Eq. 10) or ``"chebyshev"``
@@ -335,6 +339,7 @@ class SheafConvLayer(nn.Module):
         stalk_dim: int = 2,
         filter_order: int = 3,
         dropout: float = 0.0,
+        mlp_dropout: float = 0.0,
         filter_basis: str = "monomial",
     ):
         super().__init__()
@@ -349,6 +354,7 @@ class SheafConvLayer(nn.Module):
         self.stalk_dim = stalk_dim
         self.filter_order = filter_order
         self.dropout = dropout
+        self.mlp_dropout = mlp_dropout
         self.filter_basis = filter_basis
 
         # Learnable restriction maps
@@ -405,8 +411,12 @@ class SheafConvLayer(nn.Module):
         d2 = (x[src] - x[dst]).pow(2).mean(dim=-1)
         k = torch.exp(-d2 / (4.0 * t))
 
-        # Learn restriction maps
-        R = self.map_learner(x, edge_index)  # (E, d, d)
+        # Learn restriction maps; MLP-input dropout regularizes the
+        # learned transports without touching the signal path.
+        R = self.map_learner(
+            F.dropout(x, p=self.mlp_dropout, training=self.training),
+            edge_index,
+        )  # (E, d, d)
 
         # Build (kernel-weighted) Sheaf Laplacian
         use_sparse = N * d > 2000
@@ -517,7 +527,11 @@ class SheafTSP(nn.Module):
     filter_order : int, optional
         Polynomial filter order K per layer; powers 0..K (default: 3).
     dropout : float, optional
-        Dropout rate (default: 0.0).
+        Dropout rate on the signal path (default: 0.0).
+    mlp_dropout : float, optional
+        Dropout rate on the restriction-map learner input — surgical
+        regularization of the learned transports that leaves the
+        filtered signal clean (default: 0.0).
     filter_basis : str, optional
         Basis for the spectral filter in each layer: ``"monomial"``
         (raw powers of L̂, Eq. 10) or ``"chebyshev"`` (Chebyshev
@@ -553,6 +567,7 @@ class SheafTSP(nn.Module):
         stalk_dim: int = 2,
         filter_order: int = 3,
         dropout: float = 0.0,
+        mlp_dropout: float = 0.0,
         filter_basis: str = "monomial",
         last_act: bool = False,
         **kwargs,
@@ -578,6 +593,7 @@ class SheafTSP(nn.Module):
                     stalk_dim=stalk_dim,
                     filter_order=filter_order,
                     dropout=dropout,
+                    mlp_dropout=mlp_dropout,
                     filter_basis=filter_basis,
                 )
             )

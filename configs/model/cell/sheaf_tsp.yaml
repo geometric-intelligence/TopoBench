@@ -20,6 +20,11 @@ backbone:
   stalk_dim: 2
   filter_order: 3
   dropout: 0.0
+  # Surgical regularization: dropout on the restriction-map learner
+  # input only (learned transports), leaving the signal path clean —
+  # signal-path dropout corrupts the rank-2 count pathway (see
+  # BATTLE_PLAN.md experiment log).
+  mlp_dropout: 0.5
   # Spectral filter basis: "monomial" (raw powers of the normalized
   # Sheaf Laplacian) or "chebyshev" (T_k(L^ - I), better conditioned).
   filter_basis: monomial
@@ -34,6 +39,9 @@ backbone_wrapper:
   _target_: topobench.nn.wrappers.SheafTSPWrapper
   _partial_: true
   wrapper_name: SheafTSPWrapper
+  # The wrapper does its own x_0 residual; the base class's post-hoc
+  # LayerNorm residual would normalize away the rank-2 count signal.
+  residual_connections: false
   out_channels: ${model.feature_encoder.out_channels}
   num_cell_dimensions: ${infer_num_cell_dimensions:${oc.select:model.feature_encoder.selected_dimensions,null},${model.feature_encoder.in_channels}}
 
