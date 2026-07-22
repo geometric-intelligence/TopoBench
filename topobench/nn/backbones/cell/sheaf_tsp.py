@@ -321,6 +321,12 @@ class SheafConvLayer(nn.Module):
         Dropout rate on the input of the restriction-map learner —
         regularizes the learned transports without corrupting the
         filtered signal (surgical regularization).
+    kernel_distance : str
+        ``"feature"`` (raw ‖x_i − x_j‖²) or ``"transport"``
+        (‖s_i − R_e s_j‖² under the learned maps) inside the
+        Gaussian edge kernel.
+    ppr_alpha : float
+        Teleport probability for the ``"ppr"`` basis initialization.
     filter_basis : str
         Polynomial basis for the spectral filter: ``"monomial"``
         (default; raw powers L̂^k as in Eq. 10) or ``"chebyshev"``
@@ -341,13 +347,19 @@ class SheafConvLayer(nn.Module):
         dropout: float = 0.0,
         mlp_dropout: float = 0.0,
         filter_basis: str = "monomial",
+        kernel_distance: str = "feature",
+        ppr_alpha: float = 0.1,
     ):
         super().__init__()
         if filter_order < 1:
             raise ValueError("filter_order must be >= 1")
-        if filter_basis not in ("monomial", "chebyshev"):
+        if filter_basis not in ("monomial", "chebyshev", "ppr"):
             raise ValueError(
-                "filter_basis must be 'monomial' or 'chebyshev'"
+                "filter_basis must be 'monomial', 'chebyshev' or 'ppr'"
+            )
+        if kernel_distance not in ("feature", "transport"):
+            raise ValueError(
+                "kernel_distance must be 'feature' or 'transport'"
             )
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -356,6 +368,7 @@ class SheafConvLayer(nn.Module):
         self.dropout = dropout
         self.mlp_dropout = mlp_dropout
         self.filter_basis = filter_basis
+        self.kernel_distance = kernel_distance
 
         # Learnable restriction maps
         self.map_learner = RestrictionMapLearner(in_channels, stalk_dim)
@@ -367,9 +380,23 @@ class SheafConvLayer(nn.Module):
 
         # Per-order filter weight matrices W_k (paper Eq. 10).
         # Init: W_0 = I, W_{k>0} = 0 → layer starts near-identity.
-        W = torch.zeros(filter_order + 1, out_channels, out_channels)
-        W[0] = torch.eye(out_channels)
-        self.filter_weights = nn.Parameter(W)
+        # In "ppr" mode the per-order matrices are replaced by K+1
+        # scalars on the sheaf lazy-walk operator P = I - L̂/2
+        # (spectrum in [0, 1]), initialized to the personalized-
+        # PageRank profile w_k = α(1-α)^k — decoupled long-range
+        # low-pass diffusion (HiGCN/APPNP-style) that concentrates
+        # on the bottom eigensections of the sheaf Laplacian.
+        if filter_basis == "ppr":
+            a = ppr_alpha
+            w = [a * (1.0 - a) ** k for k in range(filter_order)]
+            w.append((1.0 - a) ** filter_order)
+            self.filter_weights = nn.Parameter(torch.tensor(w))
+        else:
+            W = torch.zeros(
+                filter_order + 1, out_channels, out_channels
+            )
+            W[0] = torch.eye(out_channels)
+            self.filter_weights = nn.Parameter(W)
 
         # Learned pooling back to node space: (N, d*C) → (N, C)
         self.pool = nn.Linear(stalk_dim * out_channels, out_channels)
@@ -405,18 +432,36 @@ class SheafConvLayer(nn.Module):
         C = self.out_channels
         src, dst = edge_index[0], edge_index[1]
 
-        # Gaussian kernel edge weights k_ij (paper Eq. 8); the squared
-        # distance is a per-channel mean so the scale is C-independent.
-        t = F.softplus(self.log_bandwidth) + 1e-6
-        d2 = (x[src] - x[dst]).pow(2).mean(dim=-1)
-        k = torch.exp(-d2 / (4.0 * t))
-
         # Learn restriction maps; MLP-input dropout regularizes the
         # learned transports without touching the signal path.
         R = self.map_learner(
             F.dropout(x, p=self.mlp_dropout, training=self.training),
             edge_index,
         )  # (E, d, d)
+
+        # Lift channels into stalk fibers: (N, C) → (N*d, C)
+        s = self.lift(
+            F.dropout(x, p=self.dropout, training=self.training)
+        ).view(N * d, C)
+
+        # Gaussian kernel edge weights k_ij (paper Eq. 8); the squared
+        # distance is a per-channel mean so the scale is C-independent.
+        t = F.softplus(self.log_bandwidth) + 1e-6
+        if self.kernel_distance == "transport":
+            # Transport-aware distance ‖s_u − R_e s_v‖²: weights edges
+            # by inconsistency under the learned map instead of raw
+            # feature similarity, so transport-consistent (not merely
+            # similar) neighbors couple strongly — the sheaf-native
+            # form of Eq. 8 (smoothness w.r.t. learned structure).
+            s3 = s.view(N, d, C)
+            d2 = (
+                (s3[src] - torch.bmm(R, s3[dst]))
+                .pow(2)
+                .mean(dim=(1, 2))
+            )
+        else:
+            d2 = (x[src] - x[dst]).pow(2).mean(dim=-1)
+        k = torch.exp(-d2 / (4.0 * t))
 
         # Build (kernel-weighted) Sheaf Laplacian
         use_sparse = N * d > 2000
@@ -448,11 +493,6 @@ class SheafConvLayer(nn.Module):
         else:
             L = L * (dvec.unsqueeze(1) * dvec.unsqueeze(0))
 
-        # Lift channels into stalk fibers: (N, C) → (N*d, C)
-        s = self.lift(
-            F.dropout(x, p=self.dropout, training=self.training)
-        ).view(N * d, C)
-
         # Transport-alignment regularizer (Eq. 15): Dirichlet energy
         # of the lifted signal. The signal is detached so gradients
         # flow only into the transports R and kernel bandwidth t.
@@ -463,6 +503,19 @@ class SheafConvLayer(nn.Module):
         # Polynomial filter with per-order weights (Eq. 10)
         def Lmm(v: torch.Tensor) -> torch.Tensor:
             return torch.sparse.mm(L, v) if use_sparse else L @ v
+
+        if self.filter_basis == "ppr":
+            # Decoupled scalar filter on the sheaf lazy walk
+            # P = I - L̂/2 (spectrum ⊂ [0, 1]): y = Σ_k w_k P^k s.
+            # Stable at large K; PPR init makes it personalized-
+            # PageRank diffusion over the sheaf at epoch 0.
+            y = self.filter_weights[0] * s
+            v = s
+            for kk in range(1, self.filter_order + 1):
+                v = v - 0.5 * Lmm(v)
+                y = y + self.filter_weights[kk] * v
+            y = self.pool(y.view(N, d * C))
+            return self.norm(y + self.bias)
 
         y = s @ self.filter_weights[0]
         if self.filter_basis == "chebyshev":
@@ -534,10 +587,23 @@ class SheafTSP(nn.Module):
         filtered signal clean (default: 0.0).
     filter_basis : str, optional
         Basis for the spectral filter in each layer: ``"monomial"``
-        (raw powers of L̂, Eq. 10) or ``"chebyshev"`` (Chebyshev
+        (raw powers of L̂, Eq. 10), ``"chebyshev"`` (Chebyshev
         polynomials T_k(L̂ − I), a better-conditioned realization of
         the paper's Spectral Sheaf Filtering with identical cost and
-        parameter count). Default: ``"monomial"``.
+        parameter count) or ``"ppr"`` (decoupled scalar coefficients
+        on the sheaf lazy walk P = I − L̂/2, PPR-initialized —
+        long-range low-pass diffusion concentrating on the bottom
+        eigensections, stable at large ``filter_order``).
+        Default: ``"monomial"``.
+    kernel_distance : str, optional
+        Distance inside the Gaussian edge kernel: ``"feature"``
+        (raw ‖x_i − x_j‖², Eq. 8) or ``"transport"`` (inconsistency
+        under the learned map ‖s_i − R_e s_j‖² on lifted stalk
+        signals — weights edges by transport-consistency instead of
+        feature similarity). Default: ``"feature"``.
+    ppr_alpha : float, optional
+        Teleport probability initializing the ``"ppr"`` filter
+        scalars w_k = α(1−α)^k (default: 0.1).
     last_act : bool, optional
         Whether to apply activation after the last layer
         (default: False).
@@ -569,6 +635,8 @@ class SheafTSP(nn.Module):
         dropout: float = 0.0,
         mlp_dropout: float = 0.0,
         filter_basis: str = "monomial",
+        kernel_distance: str = "feature",
+        ppr_alpha: float = 0.1,
         last_act: bool = False,
         **kwargs,
     ):
@@ -595,6 +663,8 @@ class SheafTSP(nn.Module):
                     dropout=dropout,
                     mlp_dropout=mlp_dropout,
                     filter_basis=filter_basis,
+                    kernel_distance=kernel_distance,
+                    ppr_alpha=ppr_alpha,
                 )
             )
 

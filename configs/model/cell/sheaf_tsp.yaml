@@ -26,8 +26,14 @@ backbone:
   # BATTLE_PLAN.md experiment log).
   mlp_dropout: 0.5
   # Spectral filter basis: "monomial" (raw powers of the normalized
-  # Sheaf Laplacian) or "chebyshev" (T_k(L^ - I), better conditioned).
+  # Sheaf Laplacian), "chebyshev" (T_k(L^ - I), better conditioned)
+  # or "ppr" (scalar coefficients on the sheaf lazy walk I - L^/2,
+  # PPR-initialized; pair with filter_order 8-10).
   filter_basis: monomial
+  # Gaussian kernel distance: "feature" (raw ||x_i - x_j||^2) or
+  # "transport" (||s_i - R_e s_j||^2 under the learned maps).
+  kernel_distance: feature
+  ppr_alpha: 0.1
   # Transport-alignment regularizer (Tandon et al., Eq. 15).
   # Picked up by TBLoss via configs/loss/default.yaml
   # (modules_losses.backbone) and summed with the task loss.
