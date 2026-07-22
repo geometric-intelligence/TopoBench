@@ -7,15 +7,15 @@ feature_encoder:
   _target_: topobench.nn.encoders.${model.feature_encoder.encoder_name}
   encoder_name: AllCellFeatureEncoder
   in_channels: ${infer_in_channels:${dataset},${oc.select:transforms,null}}
-  out_channels: 64
+  out_channels: 512
   proj_dropout: 0.0
 
 backbone:
   _target_: topobench.nn.backbones.GaugeModel
-  n_layers: 4
+  n_layers: 2
   in_channels: ${model.feature_encoder.out_channels}
   d_embedd: ${model.feature_encoder.out_channels}   # must match out_channels (residual + readout)
-  r: 4                                               # frame dim; must satisfy r <= d_embedd
+  r: 16                                               # frame dim; must satisfy r <= d_embedd
   n_gated: 2
   gamma: 0.01
   tau: 1.0
