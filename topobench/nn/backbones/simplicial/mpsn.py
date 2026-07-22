@@ -177,9 +177,7 @@ def _ordered_pairs(
             dst, src = dst[keep], src[keep]
             dst_all.append(dst)
             src_all.append(src)
-            shared_all.append(
-                torch.full_like(dst, value)
-            )
+            shared_all.append(torch.full_like(dst, value))
         start += count
 
     if not dst_all:
@@ -274,21 +272,37 @@ class MPSNLayer(nn.Module):
         self.use_upper = use_upper
 
         # Rank 0 (nodes): co-boundary (edges) + upper (via edges).
-        self.msg_0_cob = _mlp(2 * h, h, activation)  # Eq. (2): co-boundary msg M_C
-        self.msg_0_up = _mlp(3 * h, h, activation)   # Eq. (4): upper msg M_N^ (shared co-face)
-        self.upd_0 = _mlp(3 * h, h, activation)      # Eq. (5): rank-0 update U
+        self.msg_0_cob = _mlp(
+            2 * h, h, activation
+        )  # Eq. (2): co-boundary msg M_C
+        self.msg_0_up = _mlp(
+            3 * h, h, activation
+        )  # Eq. (4): upper msg M_N^ (shared co-face)
+        self.upd_0 = _mlp(3 * h, h, activation)  # Eq. (5): rank-0 update U
 
         # Rank 1 (edges): boundary + co-boundary + lower + upper.
-        self.msg_1_bnd = _mlp(2 * h, h, activation)  # Eq. (1): boundary msg M_B
-        self.msg_1_cob = _mlp(2 * h, h, activation)  # Eq. (2): co-boundary msg M_C
-        self.msg_1_low = _mlp(3 * h, h, activation)  # Eq. (3): lower msg M_Nv (shared face)
-        self.msg_1_up = _mlp(3 * h, h, activation)   # Eq. (4): upper msg M_N^ (shared co-face)
-        self.upd_1 = _mlp(5 * h, h, activation)      # Eq. (5): rank-1 update U
+        self.msg_1_bnd = _mlp(
+            2 * h, h, activation
+        )  # Eq. (1): boundary msg M_B
+        self.msg_1_cob = _mlp(
+            2 * h, h, activation
+        )  # Eq. (2): co-boundary msg M_C
+        self.msg_1_low = _mlp(
+            3 * h, h, activation
+        )  # Eq. (3): lower msg M_Nv (shared face)
+        self.msg_1_up = _mlp(
+            3 * h, h, activation
+        )  # Eq. (4): upper msg M_N^ (shared co-face)
+        self.upd_1 = _mlp(5 * h, h, activation)  # Eq. (5): rank-1 update U
 
         # Rank 2 (faces): boundary (edges) + lower (via edges).
-        self.msg_2_bnd = _mlp(2 * h, h, activation)  # Eq. (1): boundary msg M_B
-        self.msg_2_low = _mlp(3 * h, h, activation)  # Eq. (3): lower msg M_Nv (shared face)
-        self.upd_2 = _mlp(3 * h, h, activation)      # Eq. (5): rank-2 update U
+        self.msg_2_bnd = _mlp(
+            2 * h, h, activation
+        )  # Eq. (1): boundary msg M_B
+        self.msg_2_low = _mlp(
+            3 * h, h, activation
+        )  # Eq. (3): lower msg M_Nv (shared face)
+        self.upd_2 = _mlp(3 * h, h, activation)  # Eq. (5): rank-2 update U
 
     def _zeros(self, num: int, ref: torch.Tensor) -> torch.Tensor:
         """Allocate a zero message buffer matching ``ref`` device/dtype.
@@ -410,9 +424,7 @@ class MPSNLayer(nn.Module):
             n1, self.msg_1_up, d, x1, s, x1, sh, x2, enabled=self.use_upper
         )
         # Eq. (5): h_e = U(x_e, sum m_B, sum m_C, sum m_Nv, sum m_N^)
-        h1 = self.upd_1(
-            torch.cat([x1, m1_bnd, m1_cob, m1_low, m1_up], dim=-1)
-        )
+        h1 = self.upd_1(torch.cat([x1, m1_bnd, m1_cob, m1_low, m1_up], dim=-1))
 
         # --- Rank 2 (faces) ---
         d, s = index["bnd2"]
