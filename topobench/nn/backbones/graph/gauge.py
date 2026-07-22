@@ -17,9 +17,202 @@ paper:
 - :class:`GaugeModel` -- the full stack of gauge layers.
 """
 
+import math
+from collections.abc import Callable
+
 import torch
 from torch import Tensor, nn
 from torch_scatter import scatter_add, scatter_mean, scatter_softmax
+
+activation_dict: dict[str, Callable] = {
+    "relu": nn.ReLU,
+    "leaky_relu": nn.LeakyReLU,
+    "gelu": nn.GELU,
+    "sigmoid": nn.Sigmoid,
+}
+
+
+class MultiHeadLinear(nn.Module):
+    """Per-head (per-subspace) linear layer.
+
+    Applies ``r_dim`` independent linear maps, one per head, so that head ``h``
+    transforms its own slice of the input with its own weight matrix and bias.
+    The per-head weights are stored stacked in a single parameter and applied
+    with a batched ``einsum``.
+
+    Parameters
+    ----------
+    in_channels : int
+        Number of input features per head.
+    out_channels : int
+        Number of output features per head.
+    r_dim : int
+        Number of heads (subspaces) ``r``.
+    bias : bool, optional
+        Whether each head uses a bias term (default: True).
+    device : torch.device or str or None, optional
+        Device on which to allocate the parameters (default: None).
+    dtype : torch.dtype or None, optional
+        Data type of the parameters (default: None).
+    """
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        r_dim: int,
+        bias: bool = True,
+        device=None,
+        dtype=None,
+    ):
+        super().__init__()
+
+        factory_kwargs = {"device": device, "dtype": dtype}
+
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.bias = bias
+        self.r_dim = r_dim
+
+        self.superW = nn.Parameter(
+            torch.empty(
+                self.r_dim,
+                self.out_channels,
+                self.in_channels,
+                **factory_kwargs,
+            )
+        )
+
+        if self.bias:
+            self.superB = nn.Parameter(
+                torch.empty(self.r_dim, self.out_channels, **factory_kwargs),
+            )
+        else:
+            self.register_parameter("superB", None)
+
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        """Initialize the per-head weights and biases.
+
+        Uses the same scheme as :class:`torch.nn.Linear` (a uniform
+        distribution bounded by ``1 / sqrt(in_channels)``), with the fan-in
+        taken per head rather than over the stacked parameter.
+        """
+        bound = 1 / math.sqrt(self.in_channels)
+
+        torch.nn.init.uniform_(self.superW, -bound, bound)
+
+        if self.bias:
+            torch.nn.init.uniform_(self.superB, -bound, bound)
+
+    def forward(self, Z: Tensor) -> Tensor:
+        """Apply the per-head linear maps.
+
+        Parameters
+        ----------
+        Z : Tensor
+            Input tensor of shape ``[N, r, in_channels]`` where ``r`` is the
+            number of heads.
+
+        Returns
+        -------
+        Tensor
+            Output tensor of shape ``[N, r, out_channels]``.
+        """
+        if self.bias:
+            return torch.einsum("roi,Nri->Nro", self.superW, Z) + self.superB
+
+        return torch.einsum("roi,Nri->Nro", self.superW, Z)
+
+
+class MultiHeadFF(nn.Module):
+    """Per-head feed-forward network (a distinct MLP per subspace).
+
+    Stacks :class:`MultiHeadLinear` layers interleaved with activations and
+    dropout so that each of the ``r`` heads is transformed by its own
+    multi-layer perceptron. Activations and dropout are applied only between
+    layers, never after the output layer.
+
+    Parameters
+    ----------
+    in_channels : int
+        Number of input features per head.
+    out_channels : int
+        Number of output features per head.
+    r : int
+        Number of heads (subspaces) ``r``.
+    hidden_dims : list of int or None, optional
+        Widths of the hidden layers. If ``None`` the network is a single
+        per-head linear map (default: None).
+    act : str, optional
+        Name of the activation applied between layers, resolved via
+        ``activation_dict`` (default: "leaky_relu").
+    drop : float, optional
+        Dropout probability applied between layers (default: 0.0).
+    bias : bool, optional
+        Whether each per-head linear layer uses a bias term (default: True).
+    """
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        r: int,
+        hidden_dims: list[int] | None = None,
+        act: str = "leaky_relu",
+        drop: float = 0.0,
+        bias: bool = True,
+    ):
+        super().__init__()
+
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.act = act
+        self.dropout = drop
+        self.r = r
+        self.bias = bias
+
+        self.layer_sizes = [self.in_channels]
+
+        if hidden_dims is not None:
+            self.layer_sizes += [j for j in hidden_dims]
+        self.layer_sizes += [self.out_channels]
+
+        els = []
+        for j in range(len(self.layer_sizes) - 1):
+            els.append(
+                MultiHeadLinear(
+                    self.layer_sizes[j],
+                    self.layer_sizes[j + 1],
+                    r_dim=self.r,
+                    bias=self.bias,
+                )
+            )
+
+            if j < len(self.layer_sizes) - 2:
+                els.append(activation_dict[self.act]())
+                els.append(nn.Dropout(self.dropout))
+
+        self.model = nn.Sequential(*els)
+
+    def forward(self, Z: Tensor) -> Tensor:
+        """Apply the per-head feed-forward network.
+
+        Parameters
+        ----------
+        Z : Tensor
+            Input tensor of shape ``[N, r, in_channels]`` where ``r`` is the
+            number of heads.
+
+        Returns
+        -------
+        Tensor
+            Output tensor of shape ``[N, r, out_channels]``.
+        """
+        Zhat = self.model(Z)
+
+        return Zhat
 
 
 class FFBlock(nn.Module):
@@ -162,9 +355,8 @@ class LocalCoordinatesLayer(torch.nn.Module):
         )
 
         # f_sim = f, computing similarity of node features
-        self.f_sim = torch.nn.Sequential(
-            torch.nn.Linear(2 * self.d, 1, bias=self.bias),
-            torch.nn.LeakyReLU(),
+        self.f_sim = MultiHeadFF(
+            2 * self.d, 1, r=self.r, hidden_dims=[2 * self.d]
         )
 
         self.fflayer = FFBlock(self.d, self.d, self.d, bias=self.bias)
@@ -199,10 +391,11 @@ class LocalCoordinatesLayer(torch.nn.Module):
         Zh = Zh.reshape(N, self.r, self.d)  # [N, r, d]
 
         # EQUATION no. (3)
-        # f_vals has shape [N, r]
+        # f_vals has shape [N, r, 1]
         f_vals = (
             self.f_sim(torch.concat((Zh[src], Zh[dst]), dim=-1)) / self.tau
         )
+
         f_vals = f_vals.squeeze(-1)  # remove last singleton dimension
         alphas = torch.softmax(f_vals, dim=-1).unsqueeze(-1)  # [E, r, 1]
 
