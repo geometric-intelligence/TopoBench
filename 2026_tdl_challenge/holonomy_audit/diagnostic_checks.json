@@ -1,0 +1,70 @@
+{
+  "gauge_invariance": {
+    "n_trials": 1000,
+    "max_twist_dev": 6.661338147750939e-16,
+    "max_gain_dev": 2.7755575615628914e-15,
+    "max_flip_dev": 0.0
+  },
+  "bundle_edge_det": {
+    "n": 3347,
+    "min": 0.9999997019767761,
+    "median": 1.0,
+    "frac_below_1e6": 0.0,
+    "frac_below_1e3": 0.0
+  },
+  "bundle_loop_det": {
+    "n": 6566,
+    "min": 0.9999993443489075,
+    "median": 1.0,
+    "frac_below_1e6": 0.0,
+    "frac_below_1e3": 0.0
+  },
+  "bundle_twist_stability": {
+    "eps_1e-08": 2.8538362923989e-08,
+    "eps_1e-06": 1.4921924750180463e-06,
+    "eps_0.0001": 6.863542061530908e-05
+  },
+  "diag_edge_det": {
+    "n": 3347,
+    "min": 3.5562925404519774e-07,
+    "median": 0.09834088385105133,
+    "frac_below_1e6": 0.00029877502240812666,
+    "frac_below_1e3": 0.0358530026889752
+  },
+  "diag_loop_det": {
+    "n": 6566,
+    "min": 3.021861732198372e-13,
+    "median": 0.0027117757126688957,
+    "frac_below_1e6": 0.038684130368565335,
+    "frac_below_1e3": 0.40161437709412123
+  },
+  "diag_twist_stability": {
+    "eps_1e-08": 0.0,
+    "eps_1e-06": 1.793918062995319e-05,
+    "eps_0.0001": 0.027816267698676633
+  },
+  "general_edge_det": {
+    "n": 3347,
+    "min": 2.807565806506318e-06,
+    "median": 0.0869426429271698,
+    "frac_below_1e6": 0.0,
+    "frac_below_1e3": 0.028981177173588286
+  },
+  "general_loop_det": {
+    "n": 6566,
+    "min": 0.0,
+    "median": 0.0005442852561827749,
+    "frac_below_1e6": 0.058026195552848006,
+    "frac_below_1e3": 0.5644227840389887
+  },
+  "general_twist_stability": {
+    "eps_1e-08": 2.9853575437630236e-07,
+    "eps_1e-06": 0.02588851614061382,
+    "eps_0.0001": 0.19485167741439424
+  },
+  "intervention_flatness": {
+    "max_abs_twist": 0.0,
+    "max_abs_gain_minus_1": 0.0,
+    "max_frobenius_H_minus_I": 0.0
+  }
+}

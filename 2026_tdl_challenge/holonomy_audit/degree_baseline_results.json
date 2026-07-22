@@ -1,0 +1,302 @@
+[
+  {
+    "setting": "graphuniverse_homophily_hi",
+    "seed": 0,
+    "const": 0.9386573433876038,
+    "n_nodes": 0.86893040271598,
+    "n+edges": 0.09800357987784798,
+    "deg_stats": 0.04556577782417219,
+    "deg_moments": 0.04779565017796726,
+    "deg_hist": 0.0559726992112506
+  },
+  {
+    "setting": "graphuniverse_homophily_hi",
+    "seed": 1,
+    "const": 0.4797362685203552,
+    "n_nodes": 0.7530443114105823,
+    "n+edges": 0.2399270840036339,
+    "deg_stats": 0.027137853408677727,
+    "deg_moments": 0.028148087729860532,
+    "deg_hist": 0.010706432079631664
+  },
+  {
+    "setting": "graphuniverse_homophily_hi",
+    "seed": 2,
+    "const": 0.5954357981681824,
+    "n_nodes": 0.7222320471292875,
+    "n+edges": 0.1806065288698767,
+    "deg_stats": 0.1137191687454118,
+    "deg_moments": 0.08422583631030858,
+    "deg_hist": 0.33671119367756785
+  },
+  {
+    "setting": "graphuniverse_homophily_hi",
+    "seed": 3,
+    "const": 0.8725998997688293,
+    "n_nodes": 0.8413130646071763,
+    "n+edges": 0.29314140604008365,
+    "deg_stats": 0.04021103708813387,
+    "deg_moments": 0.03249665949720172,
+    "deg_hist": 0.0825383036005008
+  },
+  {
+    "setting": "graphuniverse_homophily_hi",
+    "seed": 4,
+    "const": 1.3154497146606445,
+    "n_nodes": 1.307299506731752,
+    "n+edges": 0.8865879821031927,
+    "deg_stats": 0.1420358492170099,
+    "deg_moments": 0.1425067688413751,
+    "deg_hist": 0.1438224146750608
+  },
+  {
+    "setting": "graphuniverse_homophily_hi",
+    "seed": 5,
+    "const": 1.4009208679199219,
+    "n_nodes": 1.5437930913060436,
+    "n+edges": 0.2613838002818277,
+    "deg_stats": 0.204201390559349,
+    "deg_moments": 0.19621717545716705,
+    "deg_hist": 0.22335326457143279
+  },
+  {
+    "setting": "graphuniverse_homophily_hi",
+    "seed": 6,
+    "const": 0.7138487100601196,
+    "n_nodes": 0.631082608386043,
+    "n+edges": 0.13145924505406553,
+    "deg_stats": 0.09680255823648595,
+    "deg_moments": 0.09207187122382657,
+    "deg_hist": 0.12360183126830071
+  },
+  {
+    "setting": "graphuniverse_homophily_hi",
+    "seed": 7,
+    "const": 0.7567690014839172,
+    "n_nodes": 0.6546699786548787,
+    "n+edges": 0.5052650019058318,
+    "deg_stats": 0.15508744922940942,
+    "deg_moments": 0.15978170206708892,
+    "deg_hist": 0.17370500157575536
+  },
+  {
+    "setting": "graphuniverse_homophily_hi",
+    "seed": 8,
+    "const": 1.4318889379501343,
+    "n_nodes": 1.4652046888562276,
+    "n+edges": 0.2909450409031695,
+    "deg_stats": 0.5470445986197923,
+    "deg_moments": 0.22769224335713675,
+    "deg_hist": 0.6551390060948243
+  },
+  {
+    "setting": "graphuniverse_homophily_hi",
+    "seed": 9,
+    "const": 0.7879214286804199,
+    "n_nodes": 0.6587097256566652,
+    "n+edges": 0.06793264781640948,
+    "deg_stats": 0.09109900395289149,
+    "deg_moments": 0.08593285301060065,
+    "deg_hist": 0.08232123241928738
+  },
+  {
+    "setting": "graphuniverse_homophily_lo",
+    "seed": 0,
+    "const": 0.6900237798690796,
+    "n_nodes": 0.651150390321379,
+    "n+edges": 0.18242664013065438,
+    "deg_stats": 0.24216914229658354,
+    "deg_moments": 0.23155199455970962,
+    "deg_hist": 0.33119865599977527
+  },
+  {
+    "setting": "graphuniverse_homophily_lo",
+    "seed": 1,
+    "const": 0.853269100189209,
+    "n_nodes": 0.6140593619344396,
+    "n+edges": 0.4650090196988782,
+    "deg_stats": 0.15995506708773566,
+    "deg_moments": 0.14100613616960034,
+    "deg_hist": 0.45186714524890287
+  },
+  {
+    "setting": "graphuniverse_homophily_lo",
+    "seed": 2,
+    "const": 0.4545278549194336,
+    "n_nodes": 0.6944492532070655,
+    "n+edges": 0.411116186654329,
+    "deg_stats": 0.09707514211225908,
+    "deg_moments": 0.13960237395470237,
+    "deg_hist": 0.09531829821288623
+  },
+  {
+    "setting": "graphuniverse_homophily_lo",
+    "seed": 3,
+    "const": 0.3078886568546295,
+    "n_nodes": 0.296139949716414,
+    "n+edges": 0.050459020203359704,
+    "deg_stats": 0.07371510896611136,
+    "deg_moments": 0.09556184460897876,
+    "deg_hist": 0.18972305255365388
+  },
+  {
+    "setting": "graphuniverse_homophily_lo",
+    "seed": 4,
+    "const": 1.002631664276123,
+    "n_nodes": 0.9964272032950162,
+    "n+edges": 0.40302404644459816,
+    "deg_stats": 0.12927720058778494,
+    "deg_moments": 0.2758628970956485,
+    "deg_hist": 0.12260223737355357
+  },
+  {
+    "setting": "graphuniverse_homophily_lo",
+    "seed": 5,
+    "const": 1.1846479177474976,
+    "n_nodes": 1.2140782056747077,
+    "n+edges": 0.5835749662699652,
+    "deg_stats": 0.23404442921306734,
+    "deg_moments": 0.18580579884856702,
+    "deg_hist": 0.3511331570875408
+  },
+  {
+    "setting": "graphuniverse_homophily_lo",
+    "seed": 6,
+    "const": 0.9479010701179504,
+    "n_nodes": 0.9773042624748628,
+    "n+edges": 0.4821306517943392,
+    "deg_stats": 0.18156999707092353,
+    "deg_moments": 0.17293776376658948,
+    "deg_hist": 0.3855992101987893
+  },
+  {
+    "setting": "graphuniverse_homophily_lo",
+    "seed": 7,
+    "const": 0.8105332255363464,
+    "n_nodes": 0.669339812096987,
+    "n+edges": 0.5423202743293648,
+    "deg_stats": 0.19590606554626394,
+    "deg_moments": 0.19358943930498107,
+    "deg_hist": 0.3865291662372221
+  },
+  {
+    "setting": "graphuniverse_homophily_lo",
+    "seed": 8,
+    "const": 1.9979430437088013,
+    "n_nodes": 1.7523425893218918,
+    "n+edges": 0.7565606666196977,
+    "deg_stats": 0.5222938152043124,
+    "deg_moments": 0.47611151721243883,
+    "deg_hist": 0.7675297569560598
+  },
+  {
+    "setting": "graphuniverse_homophily_lo",
+    "seed": 9,
+    "const": 0.5313380360603333,
+    "n_nodes": 0.3776130815754479,
+    "n+edges": 0.22305702845639647,
+    "deg_stats": 0.15188367270806802,
+    "deg_moments": 0.14245882953613764,
+    "deg_hist": 0.2417393701911543
+  },
+  {
+    "setting": "regular_n100_r6",
+    "seed": 0,
+    "const": 1.8047575950622559,
+    "n_nodes": 1.8047579159517815,
+    "n+edges": 1.8047579159517815,
+    "deg_stats": 1.8047579159517815,
+    "deg_moments": 1.8047579159517815,
+    "deg_hist": 1.8047579159517815
+  },
+  {
+    "setting": "regular_n100_r6",
+    "seed": 1,
+    "const": 3.276606321334839,
+    "n_nodes": 3.2766059659500106,
+    "n+edges": 3.2766059659500106,
+    "deg_stats": 3.2766059659500106,
+    "deg_moments": 3.2766059659500106,
+    "deg_hist": 3.2766059659500106
+  },
+  {
+    "setting": "regular_n100_r6",
+    "seed": 2,
+    "const": 1.1187152862548828,
+    "n_nodes": 1.1187160131749259,
+    "n+edges": 1.1187160131749259,
+    "deg_stats": 1.1187160131749259,
+    "deg_moments": 1.1187160131749259,
+    "deg_hist": 1.1187160131749259
+  },
+  {
+    "setting": "regular_n100_r6",
+    "seed": 3,
+    "const": 0.727393627166748,
+    "n_nodes": 0.7273941591039114,
+    "n+edges": 0.7273941591039114,
+    "deg_stats": 0.7273941591039114,
+    "deg_moments": 0.7273941591039114,
+    "deg_hist": 0.7273941591039114
+  },
+  {
+    "setting": "regular_n100_r6",
+    "seed": 4,
+    "const": 0.42453905940055847,
+    "n_nodes": 0.42453906978859207,
+    "n+edges": 0.42453906978859207,
+    "deg_stats": 0.42453906978859207,
+    "deg_moments": 0.42453906978859207,
+    "deg_hist": 0.42453906978859207
+  },
+  {
+    "setting": "regular_n100_r6",
+    "seed": 5,
+    "const": 1.975130319595337,
+    "n_nodes": 1.9751302685213878,
+    "n+edges": 1.9751302685213878,
+    "deg_stats": 1.9751302685213878,
+    "deg_moments": 1.9751302685213878,
+    "deg_hist": 1.9751302685213878
+  },
+  {
+    "setting": "regular_n100_r6",
+    "seed": 6,
+    "const": 0.7551466226577759,
+    "n_nodes": 0.755148163377569,
+    "n+edges": 0.755148163377569,
+    "deg_stats": 0.755148163377569,
+    "deg_moments": 0.755148163377569,
+    "deg_hist": 0.755148163377569
+  },
+  {
+    "setting": "regular_n100_r6",
+    "seed": 7,
+    "const": 1.6753380298614502,
+    "n_nodes": 1.675338154494431,
+    "n+edges": 1.675338154494431,
+    "deg_stats": 1.675338154494431,
+    "deg_moments": 1.675338154494431,
+    "deg_hist": 1.675338154494431
+  },
+  {
+    "setting": "regular_n100_r6",
+    "seed": 8,
+    "const": 1.0949801206588745,
+    "n_nodes": 1.094979945412244,
+    "n+edges": 1.094979945412244,
+    "deg_stats": 1.094979945412244,
+    "deg_moments": 1.094979945412244,
+    "deg_hist": 1.094979945412244
+  },
+  {
+    "setting": "regular_n100_r6",
+    "seed": 9,
+    "const": 0.4953046441078186,
+    "n_nodes": 0.49530456585625315,
+    "n+edges": 0.49530456585625315,
+    "deg_stats": 0.49530456585625315,
+    "deg_moments": 0.49530456585625315,
+    "deg_hist": 0.49530456585625315
+  }
+]
