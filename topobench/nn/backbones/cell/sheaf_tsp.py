@@ -187,9 +187,7 @@ def _sheaf_laplacian_coo(
     Rt = R.transpose(1, 2)
     RtR = torch.bmm(Rt, R)
     I_blk = (
-        torch.eye(d, device=device, dtype=dtype)
-        .unsqueeze(0)
-        .expand(E, d, d)
+        torch.eye(d, device=device, dtype=dtype).unsqueeze(0).expand(E, d, d)
     )
     w = edge_weights.view(E, 1, 1)
 
@@ -327,6 +325,12 @@ class SheafConvLayer(nn.Module):
         Gaussian edge kernel.
     ppr_alpha : float
         Teleport probability for the ``"ppr"`` basis initialization.
+    reg_form : str
+        Transport regularizer form: ``"dirichlet"`` (Eq. 15 energy
+        $\\mathrm{tr}(s^\top L_{\\mathcal F} s)$) or ``"alignment"``
+        (negative mean kernel alignment
+        $-\\overline{\\exp(-\\lVert s_i - R_e s_j\rVert^2/4t)}$,
+        Tandon et al. App. D — bounded per edge).
     filter_basis : str
         Polynomial basis for the spectral filter: ``"monomial"``
         (default; raw powers L̂^k as in Eq. 10) or ``"chebyshev"``
@@ -349,6 +353,7 @@ class SheafConvLayer(nn.Module):
         filter_basis: str = "monomial",
         kernel_distance: str = "feature",
         ppr_alpha: float = 0.1,
+        reg_form: str = "dirichlet",
     ):
         super().__init__()
         if filter_order < 1:
@@ -361,6 +366,8 @@ class SheafConvLayer(nn.Module):
             raise ValueError(
                 "kernel_distance must be 'feature' or 'transport'"
             )
+        if reg_form not in ("dirichlet", "alignment"):
+            raise ValueError("reg_form must be 'dirichlet' or 'alignment'")
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.stalk_dim = stalk_dim
@@ -369,6 +376,7 @@ class SheafConvLayer(nn.Module):
         self.mlp_dropout = mlp_dropout
         self.filter_basis = filter_basis
         self.kernel_distance = kernel_distance
+        self.reg_form = reg_form
 
         # Learnable restriction maps
         self.map_learner = RestrictionMapLearner(in_channels, stalk_dim)
@@ -392,9 +400,7 @@ class SheafConvLayer(nn.Module):
             w.append((1.0 - a) ** filter_order)
             self.filter_weights = nn.Parameter(torch.tensor(w))
         else:
-            W = torch.zeros(
-                filter_order + 1, out_channels, out_channels
-            )
+            W = torch.zeros(filter_order + 1, out_channels, out_channels)
             W[0] = torch.eye(out_channels)
             self.filter_weights = nn.Parameter(W)
 
@@ -454,11 +460,7 @@ class SheafConvLayer(nn.Module):
             # similar) neighbors couple strongly — the sheaf-native
             # form of Eq. 8 (smoothness w.r.t. learned structure).
             s3 = s.view(N, d, C)
-            d2 = (
-                (s3[src] - torch.bmm(R, s3[dst]))
-                .pow(2)
-                .mean(dim=(1, 2))
-            )
+            d2 = (s3[src] - torch.bmm(R, s3[dst])).pow(2).mean(dim=(1, 2))
         else:
             d2 = (x[src] - x[dst]).pow(2).mean(dim=-1)
         k = torch.exp(-d2 / (4.0 * t))
@@ -493,12 +495,25 @@ class SheafConvLayer(nn.Module):
         else:
             L = L * (dvec.unsqueeze(1) * dvec.unsqueeze(0))
 
-        # Transport-alignment regularizer (Eq. 15): Dirichlet energy
-        # of the lifted signal. The signal is detached so gradients
-        # flow only into the transports R and kernel bandwidth t.
+        # Transport regularizer (Eq. 15). Signal detached in both
+        # forms so gradients flow only into the transports R and the
+        # kernel bandwidth t.
         s_d = s.detach()
-        Ls_d = torch.sparse.mm(L, s_d) if use_sparse else L @ s_d
-        self.last_dirichlet = (s_d * Ls_d).sum() / max(s_d.numel(), 1)
+        if self.reg_form == "alignment":
+            # Kernel-alignment form (Tandon et al., App. D): reward
+            # transports that align neighbors. Bounded in (0, 1] per
+            # edge, so genuinely dissimilar pairs (e.g. cross-community
+            # edges) saturate instead of dominating the gradient the
+            # way a quadratic Dirichlet penalty lets them.
+            s3d = s_d.view(N, d, C)
+            diff2 = (s3d[src] - torch.bmm(R, s3d[dst])).pow(2).mean(dim=(1, 2))
+            align = torch.exp(-diff2 / (4.0 * t))
+            self.last_dirichlet = (
+                -align.mean() if align.numel() > 0 else s_d.new_zeros(())
+            )
+        else:
+            Ls_d = torch.sparse.mm(L, s_d) if use_sparse else L @ s_d
+            self.last_dirichlet = (s_d * Ls_d).sum() / max(s_d.numel(), 1)
 
         # Polynomial filter with per-order weights (Eq. 10)
         def Lmm(v: torch.Tensor) -> torch.Tensor:
@@ -604,6 +619,10 @@ class SheafTSP(nn.Module):
     ppr_alpha : float, optional
         Teleport probability initializing the ``"ppr"`` filter
         scalars w_k = α(1−α)^k (default: 0.1).
+    reg_form : str, optional
+        Transport regularizer form: ``"dirichlet"`` (Eq. 15) or
+        ``"alignment"`` (bounded kernel-alignment reward, Tandon
+        et al. App. D). Default: ``"dirichlet"``.
     last_act : bool, optional
         Whether to apply activation after the last layer
         (default: False).
@@ -637,6 +656,7 @@ class SheafTSP(nn.Module):
         filter_basis: str = "monomial",
         kernel_distance: str = "feature",
         ppr_alpha: float = 0.1,
+        reg_form: str = "dirichlet",
         last_act: bool = False,
         **kwargs,
     ):
@@ -665,6 +685,7 @@ class SheafTSP(nn.Module):
                     filter_basis=filter_basis,
                     kernel_distance=kernel_distance,
                     ppr_alpha=ppr_alpha,
+                    reg_form=reg_form,
                 )
             )
 
@@ -741,9 +762,7 @@ class SheafDirichletLoss:
         self.loss_weight = loss_weight
 
     def __repr__(self) -> str:
-        return (
-            f"{self.__class__.__name__}(loss_weight={self.loss_weight})"
-        )
+        return f"{self.__class__.__name__}(loss_weight={self.loss_weight})"
 
     def __call__(self, model_out: dict, batch) -> torch.Tensor:
         """Compute the weighted regularizer term.
