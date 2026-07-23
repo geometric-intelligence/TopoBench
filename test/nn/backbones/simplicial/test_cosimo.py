@@ -112,6 +112,77 @@ def test_cosimo_layer_uses_independent_branch_times():
     assert "2_x1_lower" in layer.raw_times
 
 
+def test_cosimo_taylor_diffusion_stabilizes_nonfinite_values():
+    """Test finite guard for numerically unstable Taylor responses."""
+    layer = COSIMOLayer(
+        in_channels=(1, 1, 1),
+        out_channels=(1, 1, 1),
+        t_init=1.0,
+        taylor_order=2,
+        normalize_laplacian=False,
+    )
+    indices = torch.tensor([[0], [0]])
+    values = torch.tensor([1.0e20])
+    laplacian = torch.sparse_coo_tensor(indices, values, (1, 1))
+    x = torch.tensor([[1.0e20]])
+
+    out = layer.taylor_diffusion(laplacian, x, torch.tensor(1.0))
+
+    assert torch.isfinite(out).all()
+
+
+def test_cosimo_taylor_diffusion_can_disable_stabilization():
+    """Test opt-out path for raw diffusion diagnostics."""
+    layer = COSIMOLayer(
+        in_channels=(1, 1, 1),
+        out_channels=(1, 1, 1),
+        t_init=1.0,
+        taylor_order=2,
+        stabilize=False,
+        normalize_laplacian=False,
+    )
+    indices = torch.tensor([[0], [0]])
+    values = torch.tensor([1.0e20])
+    laplacian = torch.sparse_coo_tensor(indices, values, (1, 1))
+    x = torch.tensor([[1.0e20]])
+
+    out = layer.taylor_diffusion(laplacian, x, torch.tensor(1.0))
+
+    assert not torch.isfinite(out).all()
+
+
+def test_cosimo_normalizes_sparse_taylor_operator():
+    """Test sparse diffusion operator row-sum normalization."""
+    layer = COSIMOLayer(
+        in_channels=(1, 1, 1),
+        out_channels=(1, 1, 1),
+        t_init=1.0,
+        taylor_order=1,
+    )
+    indices = torch.tensor([[0, 0], [0, 1]])
+    values = torch.tensor([2.0, -6.0])
+    operator = torch.sparse_coo_tensor(indices, values, (2, 2))
+
+    normalized = layer.normalize_operator(operator).coalesce()
+
+    assert torch.isclose(normalized.values().abs().sum(), torch.tensor(1.0))
+
+
+def test_cosimo_normalizes_dense_taylor_operator():
+    """Test dense diffusion operator row-sum normalization."""
+    layer = COSIMOLayer(
+        in_channels=(1, 1, 1),
+        out_channels=(1, 1, 1),
+        t_init=1.0,
+        taylor_order=1,
+    )
+    operator = torch.tensor([[2.0, -6.0], [1.0, 1.0]])
+
+    normalized = layer.normalize_operator(operator)
+
+    assert torch.isclose(normalized[0].abs().sum(), torch.tensor(1.0))
+
+
 @pytest.mark.parametrize(
     ("kwargs", "match"),
     [

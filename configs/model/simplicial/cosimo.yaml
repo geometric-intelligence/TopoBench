@@ -30,6 +30,8 @@ backbone:
   diffusion_method: taylor
   taylor_order: 6
   update_func: relu
+  stabilize: true
+  normalize_laplacian: true
 
 backbone_wrapper:
   _target_: topobench.nn.wrappers.SCCNNWrapper

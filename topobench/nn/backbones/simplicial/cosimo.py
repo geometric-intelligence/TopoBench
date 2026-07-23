@@ -39,6 +39,11 @@ class COSIMO(nn.Module):
     update_func : str, optional
         Nonlinearity applied after each layer. One of ``"relu"``,
         ``"sigmoid"``, ``"tanh"``, ``"leaky_relu"``, or ``None``.
+    stabilize : bool, optional
+        Whether to replace non-finite diffusion responses by finite values.
+    normalize_laplacian : bool, optional
+        Whether to divide Taylor diffusion operators by their maximum absolute
+        row sum.
     """
 
     def __init__(
@@ -51,6 +56,8 @@ class COSIMO(nn.Module):
         diffusion_method="taylor",
         taylor_order=6,
         update_func="relu",
+        stabilize=True,
+        normalize_laplacian=True,
     ):
         super().__init__()
         if len(in_channels_all) != 3 or len(hidden_channels_all) != 3:
@@ -81,6 +88,8 @@ class COSIMO(nn.Module):
                 diffusion_method=diffusion_method,
                 taylor_order=taylor_order,
                 update_func=update_func,
+                stabilize=stabilize,
+                normalize_laplacian=normalize_laplacian,
             )
             for _ in range(n_layers)
         )
@@ -141,6 +150,11 @@ class COSIMOLayer(nn.Module):
         Number of Taylor terms for sparse exponential diffusion.
     update_func : str, optional
         Nonlinearity applied after channel mixing.
+    stabilize : bool, optional
+        Whether to replace non-finite diffusion responses by finite values.
+    normalize_laplacian : bool, optional
+        Whether to divide Taylor diffusion operators by their maximum absolute
+        row sum.
     """
 
     _VALID_METHODS = {"exact", "taylor"}
@@ -155,6 +169,8 @@ class COSIMOLayer(nn.Module):
         diffusion_method="taylor",
         taylor_order=6,
         update_func="relu",
+        stabilize=True,
+        normalize_laplacian=True,
     ):
         super().__init__()
         if diffusion_method not in self._VALID_METHODS:
@@ -176,6 +192,8 @@ class COSIMOLayer(nn.Module):
         self.num_branches = num_branches
         self.taylor_order = taylor_order
         self.update_func = update_func
+        self.stabilize = stabilize
+        self.normalize_laplacian = normalize_laplacian
 
         self.mix_0 = nn.Linear(
             num_branches * (in_channels[0] + in_channels[1]),
@@ -239,7 +257,7 @@ class COSIMOLayer(nn.Module):
                     self.diffuse(laplacian_0, x_0, branch, "x0_self"),
                     self.diffuse(
                         laplacian_0,
-                        torch.mm(incidence_1, x_1),
+                        self.matmul(incidence_1, x_1),
                         branch,
                         "x1_to_x0",
                     ),
@@ -252,13 +270,13 @@ class COSIMOLayer(nn.Module):
                     self.diffuse(laplacian_up_1, x_1, branch, "x1_upper"),
                     self.diffuse(
                         laplacian_down_1,
-                        torch.mm(incidence_1.T, x_0),
+                        self.matmul(incidence_1.T, x_0),
                         branch,
                         "x0_to_x1",
                     ),
                     self.diffuse(
                         laplacian_up_1,
-                        torch.mm(incidence_2, x_2),
+                        self.matmul(incidence_2, x_2),
                         branch,
                         "x2_to_x1",
                     ),
@@ -271,7 +289,7 @@ class COSIMOLayer(nn.Module):
                     self.diffuse(laplacian_up_2, x_2, branch, "x2_upper"),
                     self.diffuse(
                         laplacian_down_2,
-                        torch.mm(incidence_2.T, x_1),
+                        self.matmul(incidence_2.T, x_1),
                         branch,
                         "x1_to_x2",
                     ),
@@ -330,7 +348,11 @@ class COSIMOLayer(nn.Module):
         )
         laplacian = laplacian.to(device=x.device, dtype=x.dtype)
         if self.diffusion_method == "exact":
-            return torch.matrix_exp(-time * laplacian.to_dense()) @ x
+            return self.ensure_finite(
+                torch.matrix_exp(-time * laplacian.to_dense()) @ x
+            )
+        if self.normalize_laplacian:
+            laplacian = self.normalize_operator(laplacian)
         return self.taylor_diffusion(laplacian, x, time)
 
     def taylor_diffusion(self, laplacian, x, time):
@@ -353,9 +375,77 @@ class COSIMOLayer(nn.Module):
         result = x
         term = x
         for order in range(1, self.taylor_order + 1):
-            term = (-time / order) * torch.mm(laplacian, term)
+            term = (-time / order) * self.matmul(laplacian, term)
+            term = self.ensure_finite(term)
             result = result + term
-        return result
+            result = self.ensure_finite(result)
+        return self.ensure_finite(result)
+
+    def matmul(self, operator, x):
+        """Multiply a sparse or dense operator by a feature matrix.
+
+        Parameters
+        ----------
+        operator : torch.Tensor
+            Sparse or dense linear operator.
+        x : torch.Tensor
+            Feature matrix.
+
+        Returns
+        -------
+        torch.Tensor
+            Matrix product ``operator @ x``.
+        """
+        if operator.is_sparse:
+            return torch.sparse.mm(operator.coalesce(), x)
+        return torch.mm(operator, x)
+
+    def normalize_operator(self, operator):
+        """Normalize an operator by its maximum absolute row sum.
+
+        Parameters
+        ----------
+        operator : torch.Tensor
+            Sparse or dense linear operator.
+
+        Returns
+        -------
+        torch.Tensor
+            Operator divided by a scale of at least one.
+        """
+        if operator.is_sparse:
+            op = operator.coalesce()
+            row_sum = torch.zeros(
+                op.shape[0], device=op.device, dtype=op.dtype
+            )
+            row_sum.scatter_add_(0, op.indices()[0], op.values().abs())
+            scale = row_sum.max().clamp_min(1.0)
+            return torch.sparse_coo_tensor(
+                op.indices(),
+                op.values() / scale,
+                op.shape,
+                device=op.device,
+                dtype=op.dtype,
+            )
+        scale = operator.abs().sum(dim=1).max().clamp_min(1.0)
+        return operator / scale
+
+    def ensure_finite(self, x):
+        """Replace non-finite values when stabilization is enabled.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Tensor to sanitize.
+
+        Returns
+        -------
+        torch.Tensor
+            Finite tensor when stabilization is enabled, otherwise ``x``.
+        """
+        if not self.stabilize:
+            return x
+        return torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
 
     def update(self, x):
         """Apply the configured pointwise nonlinearity.
