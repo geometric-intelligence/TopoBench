@@ -380,8 +380,14 @@ class LocalCoordinatesLayer(torch.nn.Module):
             self.d, self.d * self.r, bias=self.bias
         )
 
-        # f_sim is the learnable function f that scores the similarity of
-        # neighboring node features (one score per subspace).
+        # f_sim is the learnable function f of equation (3) that scores the
+        # similarity of neighboring node features (one score per subspace).
+        #
+        # Divergence from the reference implementation: the reference scores
+        # each edge with a single linear map on the raw embeddings
+        # (score_lin(cat([x[src], x[dst]])), a Linear(2*d -> r)). Here we use a
+        # more expressive per-subspace MLP applied to the projected multi-path
+        # embeddings Zh (shape [E, r, 2*d]), yielding the same [E, r] scores.
         self.f_sim = MultiHeadFF(
             2 * self.d,
             1,
