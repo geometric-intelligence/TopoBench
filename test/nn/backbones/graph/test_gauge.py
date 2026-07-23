@@ -643,3 +643,36 @@ class TestGaugeWrapper:
         assert model_out["x_0"].shape == (N, d)
         assert "labels" in model_out
         assert "batch_0" in model_out
+
+    def test_forward_residual_off(self, simple_graph_0):
+        """With the residual disabled the backbone width may differ from the input.
+
+        This mirrors the shipped config (``residual_connections: false``,
+        ``out_channels = d_embedd`` != encoder width), so the embedding width is
+        free to differ from ``in_channels``.
+
+        Parameters
+        ----------
+        simple_graph_0 : torch_geometric.data.Data
+            Test graph fixture.
+        """
+        in_channels, d, r = 5, 8, 3
+        N = simple_graph_0.num_nodes
+        model = GaugeModel(
+            n_layers=2, in_channels=in_channels, r=r, d_embedd=d
+        )
+        wrapper = GaugeWrapper(
+            model,
+            out_channels=d,
+            num_cell_dimensions=1,
+            residual_connections=False,
+        )
+        assert wrapper.residual_connections is False
+        batch = torch_geometric.data.Data(
+            x_0=torch.randn(N, in_channels),
+            edge_index=simple_graph_0.edge_index,
+            y=simple_graph_0.y,
+            batch_0=torch.zeros(N, dtype=torch.long),
+        )
+        model_out = wrapper(batch)
+        assert model_out["x_0"].shape == (N, d)

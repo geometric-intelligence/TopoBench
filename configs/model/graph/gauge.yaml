@@ -14,7 +14,7 @@ backbone:
   _target_: topobench.nn.backbones.GaugeModel
   n_layers: 2
   in_channels: ${model.feature_encoder.out_channels}
-  d_embedd: 512   # must match out_channels (residual + readout)
+  d_embedd: 512   # backbone embedding width; readout consumes this (see readout.hidden_dim). r <= d_embedd
   r: 16                                               # frame dim; must satisfy r <= d_embedd
   n_gated: 2
   gamma: 0.01
