@@ -49,9 +49,20 @@ class SheafTSPWrapper(AbstractWrapper):
         # Warm-start one channel so the count signal is readable from
         # epoch 0: with dropout in the feature path, a fully zero init
         # never matures before early stopping fires on the plateau of
-        # the crude density solution.
+        # the crude density solution. ``tri_warm`` sets the strength;
+        # large values make the count channel dominate the regression
+        # from the start (the count is exact by construction, so the
+        # readout only has to learn a scale).
         with torch.no_grad():
-            self.tri_embed.weight[0, 0] = 0.1
+            self.tri_embed.weight[0, 0] = kwargs.get("tri_warm", 0.1)
+        # Learnable gate on the feature streams entering x_0. Init 1.0
+        # (identity at epoch 0). Each task trains its own weights, so
+        # a counting task may drive the gate toward 0, which leaves the
+        # sum-pooled representation an exact linear image of the
+        # triangle count; a node-classification task keeps it near 1.
+        self.use_stream_gate = kwargs.get("stream_gate", False)
+        if self.use_stream_gate:
+            self.stream_gate = nn.Parameter(torch.ones(1))
 
     def forward(self, batch):
         r"""Forward pass for the SheafTSP wrapper.
@@ -96,6 +107,8 @@ class SheafTSPWrapper(AbstractWrapper):
         x_0 = torch.sparse.mm(batch.incidence_1, x_1)
         if hasattr(batch, "x_0") and batch.x_0.shape == x_0.shape:
             x_0 = x_0 + batch.x_0
+        if self.use_stream_gate:
+            x_0 = self.stream_gate * x_0
 
         # Rank-2 degree signal: t_e = |B_2| 1 counts 2-cells per edge,
         # t_v = |B_1| t_e sums those counts onto endpoints.  Injected

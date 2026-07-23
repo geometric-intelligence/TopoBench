@@ -38,6 +38,8 @@ backbone:
   # "alignment" (bounded kernel-alignment reward, HilbNets App. D).
   # Alignment: -27% dense-cell TRI, neutral elsewhere, CD gates hold.
   reg_form: alignment
+  # Zero-init per-layer global mean-context term (x += W_g mean(x)).
+  global_context: false
   # Transport-alignment regularizer (Tandon et al., Eq. 15).
   # Picked up by TBLoss via configs/loss/default.yaml
   # (modules_losses.backbone) and summed with the task loss.
@@ -54,6 +56,10 @@ backbone_wrapper:
   residual_connections: false
   # Warm-init strength of the rank-2 count channel (see wrapper).
   tri_warm: 0.1
+  # Learnable scalar gate on the feature streams entering x_0
+  # (init 1.0); lets a task suppress feature noise around the count
+  # channel during training.
+  stream_gate: false
   out_channels: ${model.feature_encoder.out_channels}
   num_cell_dimensions: ${infer_num_cell_dimensions:${oc.select:model.feature_encoder.selected_dimensions,null},${model.feature_encoder.in_channels}}
 

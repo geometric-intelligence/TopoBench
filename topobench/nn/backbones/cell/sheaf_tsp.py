@@ -623,6 +623,9 @@ class SheafTSP(nn.Module):
         Transport regularizer form: ``"dirichlet"`` (Eq. 15) or
         ``"alignment"`` (bounded kernel-alignment reward, Tandon
         et al. App. D). Default: ``"dirichlet"``.
+    global_context : bool, optional
+        Add a zero-initialized per-layer global mean-context term
+        ``x += W_g mean(x)`` (default: False).
     last_act : bool, optional
         Whether to apply activation after the last layer
         (default: False).
@@ -657,6 +660,7 @@ class SheafTSP(nn.Module):
         kernel_distance: str = "feature",
         ppr_alpha: float = 0.1,
         reg_form: str = "dirichlet",
+        global_context: bool = False,
         last_act: bool = False,
         **kwargs,
     ):
@@ -671,6 +675,17 @@ class SheafTSP(nn.Module):
 
         # Summed sheaf Dirichlet energy of the last forward (Eq. 15)
         self.dirichlet_energy: torch.Tensor | None = None
+
+        # Optional per-layer global mean-context: x += W_g mean(x).
+        # Zero-init keeps epoch-0 behavior identical; gives every cell
+        # a whole-complex summary at each layer.
+        self.global_context = global_context
+        if global_context:
+            self.gctx = nn.ModuleList()
+            for _ in range(n_layers):
+                lin = nn.Linear(in_channels, in_channels, bias=False)
+                nn.init.zeros_(lin.weight)
+                self.gctx.append(lin)
 
         self.layers = nn.ModuleList()
         for _ in range(n_layers):
@@ -730,6 +745,8 @@ class SheafTSP(nn.Module):
                 reg = reg + layer.last_dirichlet
             # Residual connection
             x = x + x_new
+            if self.global_context:
+                x = x + self.gctx[i](x.mean(dim=0, keepdim=True))
             if i < self.n_layers - 1 or self.last_act:
                 x = F.relu(x)
 
