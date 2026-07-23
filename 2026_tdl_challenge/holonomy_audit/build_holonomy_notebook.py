@@ -322,7 +322,7 @@ $|\det| \sim 10^{-2}$), which is why their twist must be read with care.
 *Stability*: under $\varepsilon$-perturbations the bundle twist is steady,
 but near-singular general loop products jitter by $\approx 0.2$ rad at
 $\varepsilon = 10^{-4}$; §11 retains this caveat. *Exactness of the
-intervention*: after the flattening of §6.5, the maximum
+intervention*: after the flattening of §6.4, the maximum
 $|\mathrm{twist}|$, $|\mathrm{gain} - 1|$ and $\lVert H - I \rVert_F$ over
 every audited triangle are exactly $0.0$.
 """),
@@ -355,7 +355,9 @@ else:
 In DC-SBM generators, triangle counts correlate strongly with degree
 statistics. Those are precisely the star-shaped patterns a message-passing
 core can access (Chen et al., 2020). The degree shortcut is therefore the
-skeptical explanation carried through every test below.
+skeptical explanation carried through every test below. Each hypothesis
+states a prediction and names the figure that tests it; §6 reports the result
+and verdict for each.
 
 ### H1. Recruitment is task-shaped
 
@@ -363,53 +365,28 @@ An $SO(2)$ model should move from
 $\bar{\theta}_{\text{init}}$ to
 $\bar{\theta}_{\text{final}} \gg \bar{\theta}_{\text{init}}$ for triangle
 counting, but remain near initialisation for community detection despite
-successful training. **Test:** Figure 1. **Result:** NSP moves from $0.010$ to
-$0.388 \pm 0.078$ rad for counting and ends at $0.029 \pm 0.005$ rad for
-community detection (Welch $t=14.6$). NSD moves from $0.018$ to
-$0.423 \pm 0.075$ rad for counting, but its control arm is bimodal; medians
-are $0.399$ versus $0.018$ (Mann–Whitney $p=0.14$). **Verdict:** supported
-cleanly for NSP; NSD supports recruitment on counting, but its task contrast
-is descriptive rather than claimed.
+successful training. **Test:** Figure 1.
 
 ### H2. Map families respond through their available channels
 
 Diagonal maps should respond through gain and flip rather than twist; general
 maps should mix twist with gain ($\text{gain} \neq 1$); bundle maps should
-recruit twist at $\text{gain}=1$. **Test:** Figure 2. **Result:** bundle gain
-is $1$ identically; diagonal and general gains collapse to $0.042$ and
-$0.039$; diagonal frustration under community-detection training falls from
-$0.483$ to $0.105$. **Verdict:** supported in all three parts.
+recruit twist at $\text{gain}=1$. **Test:** Figure 2.
 
 ### H3. Recruited holonomy pays off in counting skill
 
 More recruited twist should predict lower counting error within and across
-map families. **Test:** Figure 3 and the per-split baselines. **Result:**
-bundle twist and error are uncorrelated ($r=-0.18$, $p=0.58$). The bundle is
-worse than the constant predictor ($\Delta=+0.62 \pm 0.43$); the ridge reaches
-$0.110$ MSE while the best sheaf model reaches $0.71$. **Verdict:** not
-supported.
+map families. **Test:** Figure 3 and the per-split baselines.
 
 ### H4. Recruited geometry is load-bearing
 
 Flattening a trained connection should degrade counting and leave the
 community-detection control unchanged. **Test:** Figures 4, 6, and 7.
-**Result:** at 30 training graphs, counting damage is $+0.48 \pm 0.68$ for NSP
-($p=0.052$) and $+0.17 \pm 0.80$ for NSD; neither harm nor equivalence is
-established at $\delta=0.20$. Community detection is equivalent within that
-margin at $p_{\mathrm{TOST}}<10^{-3}$ for both dynamics. At $N=3000$, damage
-reaches $+14$ MSE per seed and persists on 200 fresh test graphs. **Verdict:**
-indeterminate at the matched small budget; supported at scale. The control
-task behaves as predicted.
 
 ### H5. Load-bearing geometry is cycle-functional
 
 If the dependence in H4 reflects triangle-sensitive computation, it should
-survive when degree statistics are fixed. **Test:** Figures 5–7. **Result:**
-with identifiers, the bundle recruits $0.035 \to 0.501$ rad yet is worse than
-the constant predictor ($p_{\mathrm{Holm}}=0.003$). With constant features,
-every family is within $|\Delta|\leq0.007$, with twist exactly $0.000$. At
-scale, twist climbs to a full radian while performance remains at the constant
-predictor; on 200 test graphs $|\Delta|\leq0.04$. **Verdict:** not supported.
+survive when degree statistics are fixed. **Test:** Figures 5–7.
 """),
 md(r"""
 ## 5&ensp;Design and protocol
@@ -566,8 +543,8 @@ md(r"""
 |---|---|---|
 | Geometry is recruited | NSP triangle-counting twist rises forty-fold (§6.1) | Community detection stays near-flat |
 | Response depends on map family | Twist, gain and flip separate the families (§6.2) | Gauge and numerical checks (§3.1) |
-| Connection becomes load-bearing | Flattening damage grows with data (§6.7) | Small-data result is unresolved (§6.5) |
-| Cycle-specific use is not established | Fixed-degree models stay at the constant baseline (§6.6–§6.7) | Twist keeps increasing regardless |
+| Connection becomes load-bearing | Flattening damage grows with data (§6.6) | Small-data result is unresolved (§6.4) |
+| Cycle-specific use is not established | Fixed-degree models stay at the constant baseline (§6.5–§6.6) | Twist keeps increasing regardless |
 
 ### 6.1&ensp;H1: recruitment is task-shaped
 
@@ -762,15 +739,7 @@ print(f"bundle-only correlation, twist change vs raw MSE: "
       f"r={r.statistic:+.2f}, p={r.pvalue:.2f} (n={len(df[(df.task=='triangle_counting') & (df.sheaf_type=='bundle')])})")
 """),
     md(r"""
-### 6.4&ensp;H1 across the two dynamics
-
-This check asks whether H1 depends on the dynamics. Wave and diffusion recruit
-comparable counting twist ($0.378\pm0.078$ and $0.405\pm0.075$ rad). Because
-NSD's control is unstable, only recruitment—not the full task contrast—is
-robust across dynamics.
-"""),
-    md(r"""
-### 6.5&ensp;H4 intervention: deleting the geometry
+### 6.4&ensp;H4 intervention: deleting the geometry
 
 To test H4, we flatten the connection after training. In the Cayley
 parametrisation, the restriction map of the zero
@@ -842,7 +811,7 @@ else:
                   f"{d.std(ddof=1):.4f} (n={len(d)})")
 """),
     md(r"""
-### 6.6&ensp;H5: counting on regular graphs
+### 6.5&ensp;H5: counting on regular graphs
 
 H5 requires a test without the degree shortcut. $r$-regular graphs fix
 $(n,r)=(100,6)$, following the motivation—but not the
@@ -941,7 +910,7 @@ else:
               "| twist max =", round(rc.final_twist.max(), 4))
 """),
     md(r"""
-### 6.7&ensp;H4 and H5 at scale: the reversal
+### 6.6&ensp;H4 and H5 at scale: the reversal
 
 The small-budget intervention cannot resolve H4, so we repeat it as the
 training set grows. We trained the diagonal and bundle models at
@@ -1076,6 +1045,13 @@ $p=0.14$ remain descriptive. Degree-baseline construction and per-split
 constants are printed above; the seven-statistic ridge reaches $0.110$ MSE
 against the best sheaf model's $0.71$.
 
+### Recruitment across the two dynamics
+
+Wave and diffusion recruit comparable counting twist ($0.378\pm0.078$ and
+$0.405\pm0.075$ rad), so H1's recruitment holds under both dynamics. Only the
+full task contrast does not: because NSD's control arm is unstable, that
+contrast is robust for NSP alone.
+
 ## 10&ensp;Reproduction on 200 graphs
 
 The curves above use eight fixed test graphs. To check their stability, we
@@ -1173,7 +1149,7 @@ hidden units), and NSD's bimodal control arm limits its recruitment claim to
 a description. Whether larger stalks recruit richer holonomy than a single
 rotation plane is open. The audit reads the final layer; it does not track
 how loop products evolve across layers. The flattening intervention is exact
-only for the bundle family (the argument in §6.5); the fixed-epoch protocol means large-$N$ models
+only for the bundle family (the argument in §6.4); the fixed-epoch protocol means large-$N$ models
 also see proportionally more gradient steps.
 
 *Interpretive.* The polar twist of near-singular general-map loop products is
