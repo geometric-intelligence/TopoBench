@@ -4,6 +4,6 @@ defaults:
 # Triangle-only 2-cells: the up-Laplacian and the wrapper's rank-2
 # degree signal then carry exact triangle structure instead of noisy
 # arbitrary-length cycle membership (cycles up to length 10 measurably
-# hurt both tasks; see BATTLE_PLAN.md experiment log).
+# hurt both tasks; see docs/BATTLE_PLAN.md experiment log).
 graph2cell_lifting:
   max_cell_length: 3
