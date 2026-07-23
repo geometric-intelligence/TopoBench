@@ -57,46 +57,41 @@ CELLS = [
 
 **Team Sheafu** · Topological Deep Learning Challenge 2026, Track 1
 
-This executable submission audits learned sheaf restriction maps. The
-companion paper, *Measuring Triangle Holonomy in Sheaf Neural Networks*
-([arXiv:2607.19514](https://arxiv.org/abs/2607.19514)), gives the longer argument.
+This notebook audits learned sheaf restriction maps. Formal definitions and
+proofs are in the companion paper, *Measuring Triangle Holonomy in Sheaf
+Neural Networks*
+([arXiv:2607.19514](https://arxiv.org/abs/2607.19514)).
 
 **Finding in one line.** Learned sheaf geometry is *recruited, then required,
 but never cycle-functional* in these experiments.
 
-The audit composes learned edge transports around every triangle and reports
-three gauge-invariant quantities: *twist*, *gain*, and *flip*. Triangle
-counting recruits roughly forty-fold $SO(2)$ twist; community detection does
-not. At first, a ridge on seven degree statistics wins six-fold and flattening
-is unresolved. With one hundred times more data, flattening is catastrophic,
-yet fixed-degree graphs defeat every model at every scale. All experiments run
-on CPU; the instrument is unit-tested.
+We compose learned edge transports around each triangle and measure *twist*,
+*gain*, and *flip*. Under NSP, triangle counting recruits roughly forty-fold
+$SO(2)$ twist while community detection does not. A ridge on seven degree
+statistics wins six-fold at the matched small budget, where the flattening
+result is unresolved. With one hundred times more training data, flattening
+is catastrophic. On fixed-degree graphs, however, every model fails at every
+scale. The instrument is unit-tested; all experiments run on CPU.
 """),
     md(r"""
 ## Takeaways
 
-Three things, in plain terms.
+1. **Training recruits geometry.** For triangle counting, rotation-capable
+   NSP maps twist about 40x more than at initialisation. For community
+   detection, they stay flat. NSD recruits similar counting twist, but its
+   community-control arm is bimodal.
 
-1. **We measured something nobody had checked.** Sheaf networks are motivated
-   by holonomy: a feature carried around a cycle can return changed, which
-   would let the model sense cycles that ordinary message passing cannot. We
-   built a gauge-invariant, unit-tested instrument and measured whether trained
-   models actually do this.
+2. **Recruitment is not counting skill.** A ridge regression on seven degree
+   statistics beats every sheaf model six-fold. On fixed-degree graphs, where
+   that shortcut is absent, no model beats predicting the average at any
+   scale, even as twist grows.
 
-2. **The geometry is real, and it is task-specific.** Trained to count
-   triangles, the rotation-capable maps twist about 40x more than at
-   initialisation; trained to detect communities, they stay flat. The model
-   recruits the geometry, and only when the task needs it.
+3. **The trained model can still depend on the geometry.** At the largest
+   training scale, flattening the learned connection is catastrophic.
 
-3. **But it never does the job it is sold for.** A ridge regression on seven
-   degree statistics beats every sheaf model six-fold, and on fixed-degree
-   graphs — where that shortcut is gone — no model beats predicting the average
-   at any scale, even as the twist keeps growing. The model comes to depend on
-   its geometry, yet never turns it into a working cycle counter.
-
-Having holonomy is not the same as using it. In these experiments the geometry
-is *recruited, then required, but never cycle-functional* — and a benchmark
-with a degree shortcut cannot tell a geometric model from a plain regressor.
+In these experiments, the geometry is *recruited, then required, but never
+cycle-functional*. A benchmark with a degree shortcut cannot establish that a
+geometric model counts cycles.
 """),
     md(r"""
 ## How to use and reproduce
@@ -115,30 +110,27 @@ Scripts listed near the end regenerate the JSON files.
 
 ## 1&ensp;Research question
 
-Sheaf neural networks (Hansen & Gebhart, 2020; Bodnar et al., 2022) attach a
-stalk to each node and a learnable restriction map to each edge. Orthogonal
-maps induce discrete parallel transport (Singer & Wu, 2012; Barbero et al.,
-2022). Its product around a cycle need not be the identity. This holonomy
-could expose cycles beyond 1-WL message passing, which cannot count connected
-induced patterns on three or more nodes, including triangles (Chen et al.,
-2020; Morris et al., 2019).
+Sheaf neural networks attach a stalk to each node and a learnable restriction
+map to each edge (Hansen & Gebhart, 2020; Bodnar et al., 2022). Orthogonal maps
+define discrete parallel transport (Singer & Wu, 2012; Barbero et al., 2022).
+The product of those transports around a cycle need not be the identity. This
+holonomy could expose cycles that 1-WL message passing cannot count, including
+triangles (Chen et al., 2020; Morris et al., 2019).
 
 This geometry is usually unmeasured. Identity restrictions already match
 learned sheaves on standard benchmarks (Hernández Caralt et al., 2026).
 **Does a trained sheaf model bend; if so, when, and does it matter?**
 
-We ask: **Q1 (existence):** does a
-trained model develop holonomy at all? **Q2 (task-shaping):** does holonomy
-appear specifically when the task rewards cycle sensitivity? **Q3
-(function):** is it causally load-bearing? GraphUniverse (Van Langendonck et
-al., 2026) supplies triangle counting and a smoothing-solvable community
-control.
+We ask three questions: **Q1 (existence):** does training produce holonomy?
+**Q2 (task-shaping):** does it appear when the task rewards cycle sensitivity?
+**Q3 (function):** does the trained model depend on it? GraphUniverse supplies
+triangle counting and a smoothing-solvable community control (Van Langendonck
+et al., 2026).
 
-**Contributions.** (i) A per-cycle audit with three
-conjugation-invariant readouts (twist, gain, flip) derived from the polar
-decomposition, proved and verified to machine precision. (ii) Unit-tested
-transport capture inside TopoBench (Telyatnikov et al., 2025). (iii) 460
-controlled runs separating recruitment, dependence, and cycle function.
+The audit uses three conjugation-invariant readouts—twist, gain, and flip—and
+unit-tested transport capture inside TopoBench (Telyatnikov et al., 2025).
+Across 460 controlled runs, it separates recruitment, dependence, and cycle
+function.
 """),
     md(r"""
 ## 2&ensp;Setting
@@ -184,7 +176,7 @@ are a per-node linear classifier and mean-pool plus linear regression.
 
 ### 2.3&ensp;Sheaf notation
 
-**Notation.** Let $G = (V, E)$ be an undirected graph, $n = \lvert V \rvert$.
+Let $G = (V, E)$ be an undirected graph, $n = \lvert V \rvert$.
 Node features are $X \in \mathbb{R}^{n \times f}$. A cellular sheaf attaches a
 *stalk* $\mathcal{F}(v) \cong \mathbb{R}^d$ to each node and
 $\mathcal{F}(e) \cong \mathbb{R}^d$ to each edge; $d$ is the stalk dimension.
@@ -220,10 +212,9 @@ based at $v_0$ is
 
 $$H_C \;=\; T_{v_{k-1} \to v_0} \cdots \, T_{v_1 \to v_2}\, T_{v_0 \to v_1} \;\in\; \mathbb{R}^{d \times d}.$$
 
-A single edge map, on its own, means nothing: rotate the basis in either
-stalk and the map's entries change while the model computes exactly the same
-function. Only around a closed loop do the arbitrary choices cancel — a gauge
-invariance, so the audit reports loop quantities alone.
+A single edge map depends on the bases chosen for its endpoint stalks. Around
+a closed loop, those arbitrary basis choices cancel. The audit therefore
+reports only loop quantities.
 
 **Proposition 2.5** (Gauge covariance). Let $\{G_v\}_{v \in V}$ be orthogonal
 changes of basis, acting by
@@ -235,12 +226,10 @@ $$H_C \;\mapsto\; G_{v_0} H_C\, G_{v_0}^{\top}.$$
 interior factors telescope: each $G_{v_i}^{\top} G_{v_i} = I$ cancels, leaving
 only the conjugation at the basepoint. $\square$
 
-Hence any *conjugation-invariant* functional of $H_C$ is a gauge-invariant
-property of the learned sheaf. Which functionals? Every invertible matrix is
-a rotation followed by a stretch — the polar decomposition $H = QP$, with
+Any *conjugation-invariant* functional of $H_C$ is therefore gauge-invariant.
+The polar decomposition separates rotation from stretch: $H = QP$, with
 $Q = UV^{\top}$ orthogonal and $P = V \Sigma V^{\top} \succeq 0$ from an
-SVD $H = U \Sigma V^{\top}$ — and each factor answers a different question
-about the loop. We read out three quantities.
+SVD $H = U \Sigma V^{\top}$. We use three readouts.
 
 **Definition 2.6** (Readouts). For a holonomy matrix $H \in \mathbb{R}^{d\times d}$:
 
@@ -278,28 +267,24 @@ $\operatorname{tr}(Q)$ unchanged. (ii)–(iv) are direct computations. $\square$
     md(r"""
 ## 3&ensp;Instrument: holonomy readouts
 
-**Instrument** (Figure 1). Given a trained model and an input graph, the
-audit does four things: run one forward pass; read the learned blocks
+Figure 1 shows the audit. For a trained model and an input graph, we run one
+forward pass; read the learned blocks
 $-F_{u \trianglelefteq e}^{\top} F_{v \trianglelefteq e}$ directly off the
 model's Laplacian builder, *before* degree normalisation, inserting both
 orientations of each edge (the reverse transport is the transpose, which for
 orthogonal maps is the inverse); enumerate the triangles of $G$; and compose
-transports around each triangle, evaluating Definition 2.6. Both the metric
-and the capture harness are unit-tested (26 tests), including a random-gauge
-test of Proposition 2.5 and, for bundle maps, a check that every captured
-transport is orthogonal to $10^{-4}$.
+transports around each triangle. We then evaluate Definition 2.6. The metric
+and capture harness have 26 tests, including a random-gauge test of Proposition
+2.5 and a check that every captured bundle transport is orthogonal to
+$10^{-4}$.
 
-**Remark 3.1** (How the readouts earned their keep). Our first version of the
-audit fooled us. We measured only the naive quantities — the Frobenius
-distance $\lVert H - I \rVert_F$ and a rotation angle read directly from
-$\operatorname{tr}(H)$ — and the diagonal model promptly reported a "rotation
-angle" of $\pi/2$. It has no rotations to report; the formula was returning
-the arccosine of a near-zero trace, an artefact of applying an $O(d)$ formula
-to a nearly singular matrix. General maps misled in the opposite direction,
-inflating the Frobenius readout with stretch that has nothing to do with
-rotation. The polar and determinant readouts of Definition 2.6 exist to close
-both loopholes, and §5.2 shows the gain channel catching exactly this class
-of error in the wild.
+The naive readouts fail here. A rotation angle computed directly from
+$\operatorname{tr}(H)$ assigns the diagonal model an angle of $\pi/2$, even
+though diagonal maps cannot rotate continuously: the near-zero trace is an
+artefact of applying an $O(d)$ formula to a nearly singular matrix.
+$\lVert H-I\rVert_F$ has the opposite problem for general maps because it
+mixes stretch with rotation. The polar and determinant readouts separate
+these effects; §6.2 shows the resulting channels by map family.
 """),
     code(r"""
 # Figure 1: the audit, drawn. (Schematic; consumed by the papers as fig1.)
@@ -390,8 +375,8 @@ print(f"polar twist of a pure stretch       : {math.degrees(polar_twist(stretch)
     md(r"""
 ### 3.1&ensp;Instrument verification numerics
 
-Four checks run end-to-end on models trained at the sweep's exact protocol
-(`verify_diagnostic.py`; loaded below). *Gauge invariance*: conjugating random $SO(2)$ transports by 1,000
+`verify_diagnostic.py`, loaded below, runs four checks on models trained with
+the sweep protocol. *Gauge invariance*: conjugating random $SO(2)$ transports by 1,000
 random per-node orthogonal gauges — rotations and reflections — moves twist,
 gain and flip by at most $\sim 10^{-15}$. *Singularity rates*: bundle
 transports and loop products have $|\det| = 1$ exactly, while trained
@@ -399,8 +384,8 @@ diagonal and general loop products are strongly contractive (median
 $|\det| \sim 10^{-2}$), which is why their twist must be read with care.
 *Stability*: under $\varepsilon$-perturbations the bundle twist is steady,
 but near-singular general loop products jitter by $\approx 0.2$ rad at
-$\varepsilon = 10^{-4}$ — a quantified caveat we carry into §7. *Exactness of
-the intervention*: after the flattening of §5.5, the maximum
+$\varepsilon = 10^{-4}$; §11 retains this caveat. *Exactness of the
+intervention*: after the flattening of §6.5, the maximum
 $|\mathrm{twist}|$, $|\mathrm{gain} - 1|$ and $\lVert H - I \rVert_F$ over
 every audited triangle are exactly $0.0$.
 """),
@@ -498,9 +483,9 @@ md(r"""
 | Intervention | Flatten a **trained** bundle model, leaving its other weights fixed | Whether that trained solution depends on its connection |
 | Ablation | Train an ISN flat from scratch, with all weights co-adapted | Whether a flat architecture can solve the task |
 
-The intervention is not the ISN ablation of Hernández Caralt et al. (2026).
 Community detection is the smoothing control; triangle counting tests loop
-transport. Random regular graphs remove degree statistics.
+transport; random regular graphs remove degree statistics. The intervention
+is not the ISN ablation of Hernández Caralt et al. (2026).
 
 ### 5.1&ensp;Training and evaluation protocol
 
@@ -511,7 +496,7 @@ homophily $[0.9,1.0]$, low $[0.0,0.1]$; 30 training/8 test graphs; 100–160
 nodes; 5–7 communities; $n=10$ primary seeds and 3 original low-homophily
 seeds. Each resamples data and initialisation.
 
-**Protocol.** Adam (lr $10^{-2}$), batch size 8, 60 epochs; the primary grid
+Adam (lr $10^{-2}$), batch size 8, 60 epochs. The primary grid
 is $2 \times 2 \times 3 \times 10 = 120$ runs, and with the 40 intervention
 runs and 120 degree-controlled runs (two feature modes) the controls batch
 totals 280. Holonomy is measured initially and after training. Plots show
@@ -642,10 +627,10 @@ md(r"""
 
 | Claim | Primary evidence | Control |
 |---|---|---|
-| Geometry is recruited | NSP triangle-counting twist rises forty-fold (§5.1) | Community detection stays near-flat |
-| Response depends on map family | Twist, gain and flip separate the families (§5.2) | Gauge and numerical checks (§3.0) |
-| Connection becomes load-bearing | Flattening damage grows with data (§5.7) | Small-data result is unresolved (§5.5) |
-| Cycle-specific use is not established | Fixed-degree models stay at the constant baseline (§5.6–§5.7) | Twist keeps increasing regardless |
+| Geometry is recruited | NSP triangle-counting twist rises forty-fold (§6.1) | Community detection stays near-flat |
+| Response depends on map family | Twist, gain and flip separate the families (§6.2) | Gauge and numerical checks (§3.1) |
+| Connection becomes load-bearing | Flattening damage grows with data (§6.7) | Small-data result is unresolved (§6.5) |
+| Cycle-specific use is not established | Fixed-degree models stay at the constant baseline (§6.6–§6.7) | Twist keeps increasing regardless |
 
 ### 6.1&ensp;H1: recruitment is task-shaped
 
@@ -718,7 +703,8 @@ plt.show()
     md(r"""
 ### 6.2&ensp;H2: family capacities and instrument validity
 
-Figure 3 matches Proposition 2.7. Bundle twist changes while
+The hypothesis predicts a different response from each map family. Figure 3
+shows that separation. Bundle twist changes while
 $|\det H|=1$ identically. Diagonal and general gains contract to $0.042$ and
 $0.039$. Under community training, diagonal frustration falls from $0.483$
 (chance) to $0.105$, consistent with signed-graph balance (Cartwright &
@@ -794,7 +780,9 @@ plt.show()
     md(r"""
 ### 6.3&ensp;H3: recruited twist does not confer skill
 
-Bundle twist and error are uncorrelated ($r=-0.18$, $p=0.58$). The per-split
+If recruited twist improves counting, more twist should accompany lower
+error. Figure 4 shows no such relationship: bundle twist and error are
+uncorrelated ($r=-0.18$, $p=0.58$). The per-split
 constant error averages $0.93$, not the nominal $1$; the bundle is worse by
 $\Delta=+0.62\pm0.43$. A ridge on seven degree summaries reaches $0.110$ MSE,
 versus $0.71$ for the best sheaf model: a six-fold shortcut advantage,
@@ -839,19 +827,21 @@ print(f"bundle-only correlation, twist change vs raw MSE: "
     md(r"""
 ### 6.4&ensp;H1 across the two dynamics
 
-Wave and diffusion recruit comparable counting twist
-($0.378\pm0.078$ and $0.405\pm0.075$ rad). Because NSD's control is unstable,
-only recruitment—not the full task contrast—is robust across dynamics.
+This check asks whether H1 depends on the dynamics. Wave and diffusion recruit
+comparable counting twist ($0.378\pm0.078$ and $0.405\pm0.075$ rad). Because
+NSD's control is unstable, only recruitment—not the full task contrast—is
+robust across dynamics.
 """),
     md(r"""
 ### 6.5&ensp;H4 intervention: deleting the geometry
 
-**Lemma 5.1.** In the Cayley parametrisation, the restriction map of the zero
+To test H4, we flatten the connection after training. In the Cayley
+parametrisation, the restriction map of the zero
 parameter vector is the identity: with $A$ the skew-symmetric matrix built
 from the parameters, $Q = (I - A)(I + A)^{-1}$, and $A = 0$ gives $Q = I$.
 Zeroing every sheaf-learner parameter therefore sets every edge transport to
 $I$ — an exactly flat connection — while leaving all other trained weights
-untouched. $\square$
+untouched.
 
 Flattening leaves all other trained weights fixed; unlike an ISN ablation
 (Hernández Caralt et al., 2026), it asks whether this curved solution depends
@@ -917,7 +907,8 @@ else:
     md(r"""
 ### 6.6&ensp;H5: counting on regular graphs
 
-$r$-regular graphs fix $(n,r)=(100,6)$, following the motivation—but not the
+H5 requires a test without the degree shortcut. $r$-regular graphs fix
+$(n,r)=(100,6)$, following the motivation—but not the
 thousands-of-graphs, several-$(n,r)$ scale—of Chen et al. (2020). Degree
 statistics are constant while triangle counts vary (asymptotically
 $\mathrm{Poisson}((r-1)^3/6) \approx \mathrm{Poisson}(20.8)$; empirically
@@ -1015,7 +1006,8 @@ else:
     md(r"""
 ### 6.7&ensp;H4 and H5 at scale: the reversal
 
-We trained the diagonal and bundle models at
+The small-budget intervention cannot resolve H4, so we repeat it as the
+training set grows. We trained the diagonal and bundle models at
 $N_{\mathrm{train}} \in \{30, 100, 300, 1000, 3000\}$ on both datasets,
 with fixed test splits (3 seeds), bundle flattening, and refitted baselines.
 Pre-declared outcomes were: (1) improvement plus flattening damage; (2)
@@ -1025,20 +1017,17 @@ seed (bundle $1.11 \to 0.52$; diagonal $0.70 \to 0.29$) — and flattening,
 indeterminate at $N=30$, reaches $+14$ MSE per seed at $N=3000$. Yet the
 ridge remains $\approx0.075$ at every $N$. Regular graphs give (3): twist
 reaches a full radian while performance stays at the constant predictor.
-Data makes geometry necessary, not cycle-functional.
-
-Flattened errors include co-adaptation in a coupled system. The regular null
-shows that the load-bearing computation is not wiring.
+Data makes geometry necessary, not cycle-functional. Flattened errors include
+co-adaptation in a coupled system. The regular null shows that the
+load-bearing computation is not wiring.
 
 ## 7&ensp;Discussion and verdict
 
-Optimisation recruits geometry selectively, eventually depends on it, and
-routes the cheapest available signal through it—here, degree statistics.
-Recruitment, dependence, and cycle function are distinct; only the first two
-are demonstrated. This mechanism complements the identity-sheaf result of
-Hernández Caralt et al. (2026). Mechanistic claims should measure geometry,
-delete it, and test degree-controlled graphs. **Verdict:** recruited, then
-required, never cycle-functional.
+The experiments separate three claims: training recruits geometry; the
+trained solution depends on it at scale; but that dependence does not produce
+cycle counting when degree statistics are fixed. This complements the
+identity-sheaf result of Hernández Caralt et al. (2026). **Verdict:**
+recruited, then required, never cycle-functional.
 """),
     code(r"""
 sc = pd.DataFrame(json.loads(Path("scaling_results.json").read_text()))
@@ -1137,14 +1126,13 @@ for n in SIZES:
 
 ## 8&ensp;Instrument verification and diagnostic detail
 
-The numerical checks in §3.1 appear early because their code must precede the
-analysis cells. They establish gauge invariance to $\sim 10^{-15}$,
+The checks in §3.1 establish gauge invariance to $\sim 10^{-15}$,
 bundle $|\det|=1$, near-singular general-map jitter of $\approx 0.2$ rad at
 $\varepsilon=10^{-4}$, and exact flattening at $0.0$.
 
 ## 9&ensp;NSD bimodality and degree baselines
 
-Figure 2c contains the NSD deep-dive: seven of ten community seeds lie near
+Figure 2c shows why the NSD task contrast remains descriptive: seven of ten community seeds lie near
 $0.015$ rad; three lie near $1.6$ rad with accuracies $0.44$–$0.47$ rather
 than $0.53$–$0.67$. Hence medians $0.399$ versus $0.018$ and Mann–Whitney
 $p=0.14$ remain descriptive. Degree-baseline construction and per-split
@@ -1153,8 +1141,8 @@ against the best sheaf model's $0.71$.
 
 ## 10&ensp;Reproduction on 200 graphs
 
-A fair objection: the curves above rest on eight fixed test graphs. We
-therefore re-evaluated the pivotal models — GraphUniverse at
+The curves above use eight fixed test graphs. To check their stability, we
+re-evaluated the pivotal models—GraphUniverse at
 $N \in \{300, 3000\}$ and regular graphs at $N = 3000$ — on freshly
 generated 200-graph test families. Checkpoints were not saved, so each
 configuration was retrained under its identical seed, protocol and training
@@ -1163,15 +1151,12 @@ difference $0$; 72% of runs within $0.01$; a few long $N = 3000$ runs drift
 by up to $0.26$, since `scatter_add` in the sheaf Laplacian is not
 bit-reproducible over 60 epochs).
 
-Every pre-registered sign survives the larger test (Figure 8): flattening
+The larger test preserves every pre-registered sign (Figure 8): flattening
 remains catastrophic on GraphUniverse; both families still beat the constant
 at $N = 3000$ on every seed; the ridge baseline still beats them; and twist
-still grows past a radian. Better, the one place the small test had
-misled us, it had misled us *against* our own conclusion: on eight graphs
-the regular-graph models appeared to sit noisily above the constant
-predictor, whereas on 200 they sit exactly on it ($|\Delta| \le 0.04$). The
-larger test removes an artefact and leaves the dissociation cleaner than we
-had claimed.
+still grows past a radian. On eight graphs, the regular-graph models appeared
+to sit noisily above the constant predictor; on 200 they sit exactly on it
+($|\Delta| \le 0.04$). The larger test removes that small-test artefact.
 """),
     code(r"""
 bt = pd.DataFrame(json.loads(Path("bigtest_results.json").read_text()))
@@ -1240,170 +1225,23 @@ print(f"  median {np.median(diffs):.4f} | max {diffs.max():.3f} | "
       f"(scatter_add non-reproducibility)")
 """),
     md(r"""
-## 11&ensp;Statistical summary
+## 11&ensp;Limitations
 
-Table 1 collects every test in the study — effect sizes, confidence
-intervals, Holm corrections and TOST equivalence bounds — with clustered
-pooling flagged wherever the two dynamics share seeds. Sample sizes are
-moderate by design ($n = 10$ per cell in the controls; $n = 3$ in the
-scaling grid), and we lean on the order-of-magnitude effects rather than
-significance thresholds.
-"""),
-    code(r"""
-def ci95(d):
-    se = d.std(ddof=1) / np.sqrt(len(d))
-    tc = stats.t.ppf(.975, len(d) - 1)
-    return f"[{d.mean()-tc*se:+.3f}, {d.mean()+tc*se:+.3f}]"
-
-
-tests = []
-for fam in ["nsp", "nsd"]:
-    sub = df[(df.sheaf_type == "bundle") & (df.family == fam) &
-             (df.regime == "homophily_hi")]
-    a = sub[sub.task == "triangle_counting"]["final_twist_mean"]
-    b = sub[sub.task == "community_detection"]["final_twist_mean"]
-    tt = stats.ttest_ind(a, b, equal_var=False)
-    sp = np.sqrt((a.var(ddof=1) + b.var(ddof=1)) / 2)
-    dof = len(a) + len(b) - 2
-    g = (a.mean() - b.mean()) / sp * (1 - 3 / (4 * dof - 1))  # Hedges small-sample correction
-    tests.append([f"H3.2 recruitment ({fam}): final twist, TC vs CD", "Welch t",
-                  f"{tt.statistic:.2f}", f"{tt.pvalue:.2g}", f"g={g:.1f}", "",
-                  f"{a.mean():.3f} vs {b.mean():.3f} rad (n={len(a)}/group)"])
-
-tri = df[df.task == "triangle_counting"]
-b_ = tri[tri.sheaf_type == "bundle"]
-prb = stats.pearsonr(b_["recruited_twist"], b_["metric"])
-tests.append(["H3.4 payoff: recruited twist vs error (bundle only)", "Pearson r",
-              f"{prb.statistic:+.2f}", f"{prb.pvalue:.2f}", "", "", "n=12"])
-pr = stats.pearsonr(tri["recruited_twist"], tri["metric"])
-tests.append(["H3.4 payoff: pooled (DESCRIPTIVE — clustered seeds/families)",
-              "Pearson r", f"{pr.statistic:+.2f}", "—", "", "",
-              f"n={len(tri)}; not treated as inferential"])
-
-hi = tri[tri.regime == "homophily_hi"].copy()
-hi["delta_base"] = hi.apply(lambda r: r.metric - BASE_GU[(r.regime, r.seed)], axis=1)
-tt = stats.ttest_ind(hi[hi.sheaf_type == "diag"]["metric"],
-                     hi[hi.sheaf_type == "bundle"]["metric"], equal_var=False)
-tests.append(["H3.4 skill: diagonal vs bundle error (GU hi)", "Welch t",
-              f"{tt.statistic:.2f}", f"{tt.pvalue:.3f}", "", "",
-              "degrees of failure, not skill (see baseline rows)"])
-for m in ["diag", "general", "bundle"]:
-    d = hi[hi.sheaf_type == m]["delta_base"]
-    t1 = stats.ttest_1samp(d, 0)
-    tests.append([f"H3.4 GU hi: {m} vs ACTUAL const baseline", "paired t on Δ",
-                  f"{t1.statistic:+.2f}", f"{t1.pvalue:.3f}",
-                  f"dz={d.mean()/d.std(ddof=1):+.2f}", ci95(d),
-                  f"Δ={d.mean():+.3f}±{d.std(ddof=1):.3f} (n=6, clustered)"])
-
-if lob is not None:
-    for task in ["triangle_counting", "community_detection"]:
-        for fam in ["nsp", "nsd"]:
-            sf = lob[(lob.task == task) & (lob.family == fam)]
-            d = sf["metric_lobotomy"] - sf["metric"]
-            tt = stats.ttest_rel(sf["metric_lobotomy"], sf["metric"])
-            tests.append([f"H3.5 intervention {fam}: {task}", "paired t on Δ",
-                          f"{tt.statistic:+.2f}", f"{tt.pvalue:.3f}",
-                          f"dz={d.mean()/d.std(ddof=1):+.2f}", ci95(d),
-                          f"Δ={d.mean():+.3f}±{d.std(ddof=1):.3f} (n={len(d)})"])
-        sp_ = lob[lob.task == task]
-        d = sp_["metric_lobotomy"] - sp_["metric"]
-        tt = stats.ttest_rel(sp_["metric_lobotomy"], sp_["metric"])
-        tests.append([f"H3.5 intervention POOLED: {task}", "paired t on Δ",
-                      f"{tt.statistic:+.2f}", f"{tt.pvalue:.3f}",
-                      f"dz={d.mean()/d.std(ddof=1):+.2f}", ci95(d),
-                      f"Δ={d.mean():+.3f}±{d.std(ddof=1):.3f} (n=6, CLUSTERED: 3 seeds x 2 dynamics)"])
-
-if reg is not None:
-    reg2 = reg.copy()
-    reg2["delta_base"] = reg2.apply(lambda r: r.metric - BASE_REG[r.seed], axis=1)
-    ps = {}
-    for m in ["diag", "bundle", "general"]:
-        d = reg2[reg2.sheaf_type == m]["delta_base"]
-        t1 = stats.ttest_1samp(d, 0)
-        ps[m] = (t1, d)
-    order = sorted(ps, key=lambda m: ps[m][0].pvalue)
-    holm = {m: min(ps[m][0].pvalue * (3 - i), 1.0) for i, m in enumerate(order)}
-    for m in ["diag", "bundle", "general"]:
-        t1, d = ps[m]
-        tests.append([f"Sec5.6 regular: {m} vs ACTUAL const baseline", "paired t on Δ",
-                      f"{t1.statistic:+.2f}",
-                      f"{t1.pvalue:.4f} (Holm {holm[m]:.4f})",
-                      f"dz={d.mean()/d.std(ddof=1):+.2f}", ci95(d),
-                      f"Δ={d.mean():+.3f}±{d.std(ddof=1):.3f} (n=6, clustered)"])
-
-# Robust recruitment tests (NSD's CD arm is bimodal; means are invalid there).
-for fam in ["nsp", "nsd"]:
-    sub = df[(df.sheaf_type == "bundle") & (df.family == fam)]
-    a = sub[sub.task == "triangle_counting"]["final_twist_mean"]
-    b = sub[sub.task == "community_detection"]["final_twist_mean"]
-    u = stats.mannwhitneyu(a, b, alternative="two-sided")
-    tests.append([f"H3.2 recruitment ({fam}), robust", "Mann-Whitney U",
-                  f"{u.statistic:.0f}", f"{u.pvalue:.2g}", "", "",
-                  f"medians {a.median():.3f} vs {b.median():.3f} rad"])
-
-# TOST equivalence tests against the pre-registered margin delta = 0.20.
-DELTA = 0.20
-def tost_p(d, delta=DELTA):
-    n = len(d); se = d.std(ddof=1) / np.sqrt(n)
-    p_lo = 1 - stats.t.cdf((d.mean() + delta) / se, n - 1)
-    p_hi = stats.t.cdf((d.mean() - delta) / se, n - 1)
-    return max(p_lo, p_hi)
-
-if lob is not None:
-    for task in ["triangle_counting", "community_detection"]:
-        for fam in ["nsp", "nsd"]:
-            sf = lob[(lob.task == task) & (lob.family == fam)]
-            d = sf["metric_lobotomy"] - sf["metric"]
-            tests.append([f"H3.5 TOST equivalence (|Δ|<{DELTA}) {fam}: {task}",
-                          "TOST", "", f"{tost_p(d):.3f}", "", "",
-                          "equivalent" if tost_p(d) < 0.05 else "NOT established"])
-
-# Measured degree shortcut (ridge regressors on the same splits).
-if degbase is not None:
-    gb = degbase[degbase.setting == "graphuniverse_homophily_hi"]
-    tests.append(["Sec5.3 measured shortcut: ridge on degree moments (GU hi)",
-                  "test MSE", f"{gb['deg_moments'].mean():.3f}", "—", "", "",
-                  f"vs const {gb['const'].mean():.3f}; best neural "
-                  f"{hi[hi.sheaf_type=='diag']['metric'].mean():.3f} (n=10 splits)"])
-
-# Constant-feature regular-graph arm: all families sit on the baseline.
-if reg_const is not None:
-    rc = reg_const.copy()
-    rc["delta_base"] = rc.apply(lambda r: r.metric - BASE_REG[r.seed], axis=1)
-    for m in ["diag", "bundle", "general"]:
-        d = rc[rc.sheaf_type == m]["delta_base"]
-        t1 = stats.ttest_1samp(d, 0)
-        tests.append([f"Sec5.6 regular (CONSTANT features): {m} vs baseline",
-                      "paired t on Δ", f"{t1.statistic:+.2f}", f"{t1.pvalue:.3f}",
-                      f"dz={d.mean()/d.std(ddof=1):+.2f}", ci95(d),
-                      f"Δ={d.mean():+.4f}±{d.std(ddof=1):.4f} (n={len(d)})"])
-
-summary = pd.DataFrame(
-    tests,
-    columns=["comparison", "test", "statistic", "p", "effect", "95% CI", "note"])
-pd.set_option("display.max_colwidth", 90)
-summary
-"""),
-    md(r"""
-## 12&ensp;Limitations
-
-*Statistical.* Ten seeds per cell power the primary contrasts; the scaling
-grid uses three. The counting-task intervention at small $N$ remains
-indeterminate at the pre-registered margin — that is a statement about
-resolution, reported as such — and pooled rows share seeds across dynamics,
-which we flag as clustered wherever they appear.
+*Statistical.* The primary contrasts use ten seeds per cell; the scaling grid
+uses three. The counting-task intervention at small $N$ remains indeterminate
+at the pre-registered margin.
 
 *Architectural.* The audited models are small ($d = 2$, two layers, 32
 hidden units), and NSD's bimodal control arm limits its recruitment claim to
 a description. Whether larger stalks recruit richer holonomy than a single
 rotation plane is open. The audit reads the final layer; it does not track
 how loop products evolve across layers. The flattening intervention is exact
-only for the bundle family (Lemma 5.1); the fixed-epoch protocol means large-$N$ models
+only for the bundle family (the argument in §6.5); the fixed-epoch protocol means large-$N$ models
 also see proportionally more gradient steps.
 
 *Interpretive.* The polar twist of near-singular general-map loop products is
 numerically fragile ($\approx 0.2$ rad jitter at $10^{-4}$ perturbations;
-§3.0), so diagonal and general twist values are indicative only. Gaussian
+§3.1), so diagonal and general twist values are indicative only. Gaussian
 identifiers formally exceed the anonymous-MPNN ceiling (Abboud et al.,
 2021), so the regular-graph failures are facts about training at this
 budget, not corollaries of expressivity theory. The probe grid is synthetic,
@@ -1412,7 +1250,7 @@ the triangle-sparse low-homophily arm (3 seeds) shows correspondingly weaker
 recruitment. Triangles are the shortest cycles; longer ones await. The matched
 small-budget comparisons use only 30 training graphs.
 
-## 13&ensp;Outlook
+## 12&ensp;Outlook
 
 Concrete next steps are to audit every layer rather than only the last;
 extend the readouts beyond triangles to longer cycle bases; repeat the
