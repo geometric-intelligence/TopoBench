@@ -36,7 +36,8 @@ backbone:
   ppr_alpha: 0.1
   # Transport regularizer form: "dirichlet" (Eq. 15 energy) or
   # "alignment" (bounded kernel-alignment reward, HilbNets App. D).
-  reg_form: dirichlet
+  # Alignment: -27% dense-cell TRI, neutral elsewhere, CD gates hold.
+  reg_form: alignment
   # Transport-alignment regularizer (Tandon et al., Eq. 15).
   # Picked up by TBLoss via configs/loss/default.yaml
   # (modules_losses.backbone) and summed with the task loss.
