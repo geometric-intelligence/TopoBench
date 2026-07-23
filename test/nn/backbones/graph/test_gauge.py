@@ -568,6 +568,50 @@ class TestGaugeModel:
             fflayer = layer.local_coords_layer.fflayer
             assert any(isinstance(m, nn.GELU) for m in fflayer.model)
 
+    def test_dropout_propagates_to_ffblocks(self):
+        """The ``dropout`` argument reaches every feed-forward block.
+
+        The probability must flow from the model down to the ``fflayer`` of
+        each local-coordinates layer and the ``phi`` residual of each node
+        update.
+        """
+        model = GaugeModel(
+            n_layers=2, in_channels=5, r=3, d_embedd=8, dropout=0.42
+        )
+        for layer in model.layers:
+            fflayer = layer.local_coords_layer.fflayer
+            phi = layer.node_update_layer.phi
+            for block in (fflayer, phi):
+                dropouts = [
+                    m for m in block.model if isinstance(m, nn.Dropout)
+                ]
+                assert dropouts
+                assert all(m.p == 0.42 for m in dropouts)
+
+    def test_f_sim_dropout_propagates(self):
+        """The ``f_sim_dropout`` knob reaches ``f_sim`` and is independent.
+
+        It must only affect the similarity network, leaving the feed-forward
+        block dropout governed by ``dropout``.
+        """
+        model = GaugeModel(
+            n_layers=2,
+            in_channels=5,
+            r=3,
+            d_embedd=8,
+            dropout=0.1,
+            f_sim_dropout=0.5,
+        )
+        for layer in model.layers:
+            f_sim = layer.local_coords_layer.f_sim
+            f_sim_drops = [m for m in f_sim.model if isinstance(m, nn.Dropout)]
+            assert f_sim_drops
+            assert all(m.p == 0.5 for m in f_sim_drops)
+            # The feed-forward block keeps its own dropout probability.
+            fflayer = layer.local_coords_layer.fflayer
+            ff_drops = [m for m in fflayer.model if isinstance(m, nn.Dropout)]
+            assert all(m.p == 0.1 for m in ff_drops)
+
 
 class TestGaugeWrapper:
     """Tests for the topobench wrapper around the gauge model."""

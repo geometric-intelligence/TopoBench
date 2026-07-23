@@ -344,6 +344,11 @@ class LocalCoordinatesLayer(torch.nn.Module):
     f_sim_act : str, optional
         Name of the activation used by the per-head similarity network
         ``f_sim``, resolved via ``activation_dict`` (default: "leaky_relu").
+    dropout : float, optional
+        Dropout probability used by the feed-forward block (default: 0.3).
+    f_sim_dropout : float, optional
+        Dropout probability used by the per-head similarity network ``f_sim``
+        (default: 0.0).
     """
 
     # Equations (2)-(4).
@@ -355,6 +360,8 @@ class LocalCoordinatesLayer(torch.nn.Module):
         bias: bool = True,
         act: str = "gelu",
         f_sim_act: str = "leaky_relu",
+        dropout: float = 0.3,
+        f_sim_dropout: float = 0.0,
     ):
         super().__init__()
 
@@ -364,6 +371,8 @@ class LocalCoordinatesLayer(torch.nn.Module):
         self.bias = bias
         self.act = act
         self.f_sim_act = f_sim_act
+        self.dropout = dropout
+        self.f_sim_dropout = f_sim_dropout
 
         # Combine the per-subspace projectors into a single nn.Linear layer;
         # reshape into r separate projectors afterwards.
@@ -379,10 +388,16 @@ class LocalCoordinatesLayer(torch.nn.Module):
             r=self.r,
             hidden_dims=[2 * self.d],
             act=self.f_sim_act,
+            drop=self.f_sim_dropout,
         )
 
         self.fflayer = FFBlock(
-            self.d, self.d, self.d, bias=self.bias, act=self.act
+            self.d,
+            self.d,
+            self.d,
+            bias=self.bias,
+            act=self.act,
+            drop=self.dropout,
         )
         self.preqr_norm = nn.LayerNorm(self.d)
 
@@ -551,6 +566,8 @@ class NodeUpdateLayer(torch.nn.Module):
     act : str, optional
         Name of the activation used by the residual MLP ``phi``, resolved via
         ``activation_dict`` (default: "gelu").
+    dropout : float, optional
+        Dropout probability used by the residual MLP ``phi`` (default: 0.3).
     """
 
     # Equations (9)-(10).
@@ -561,6 +578,7 @@ class NodeUpdateLayer(torch.nn.Module):
         phi_hidden_layers: int | None = 1,
         phi_hidden_dim: int | None = None,
         act: str = "gelu",
+        dropout: float = 0.3,
     ):
         super().__init__()
 
@@ -575,6 +593,7 @@ class NodeUpdateLayer(torch.nn.Module):
                 else max(in_channels, out_channels),
                 n_hidden_layers=phi_hidden_layers,
                 act=act,
+                drop=dropout,
             )
 
         # Learnable matrix applied to the frame-projected embedding tilde(z).
@@ -664,6 +683,11 @@ class GaugeLayer(torch.nn.Module):
     f_sim_act : str, optional
         Name of the activation used by the per-head similarity network
         ``f_sim``, resolved via ``activation_dict`` (default: "leaky_relu").
+    dropout : float, optional
+        Dropout probability used by the feed-forward blocks (default: 0.3).
+    f_sim_dropout : float, optional
+        Dropout probability used by the per-head similarity network ``f_sim``
+        (default: 0.0).
     """
 
     def __init__(
@@ -678,6 +702,8 @@ class GaugeLayer(torch.nn.Module):
         phi_hidden_dim: int | None = None,
         act: str = "gelu",
         f_sim_act: str = "leaky_relu",
+        dropout: float = 0.3,
+        f_sim_dropout: float = 0.0,
     ):
         super().__init__()
 
@@ -689,6 +715,8 @@ class GaugeLayer(torch.nn.Module):
         self.d_embedd = d_embedd
         self.act = act
         self.f_sim_act = f_sim_act
+        self.dropout = dropout
+        self.f_sim_dropout = f_sim_dropout
 
         self.local_coords_layer = LocalCoordinatesLayer(
             r_subspaces=r,
@@ -697,6 +725,8 @@ class GaugeLayer(torch.nn.Module):
             bias=bias,
             act=act,
             f_sim_act=f_sim_act,
+            dropout=dropout,
+            f_sim_dropout=f_sim_dropout,
         )
 
         self.gated_flattening_layers = nn.ModuleList(
@@ -712,6 +742,7 @@ class GaugeLayer(torch.nn.Module):
             phi_hidden_layers=phi_hidden_layers,
             phi_hidden_dim=phi_hidden_dim,
             act=act,
+            dropout=dropout,
         )
 
     def forward(self, x: Tensor, edge_index: Tensor) -> tuple[Tensor, Tensor]:
@@ -782,6 +813,11 @@ class GaugeModel(nn.Module):
     f_sim_act : str, optional
         Name of the activation used by the per-head similarity network
         ``f_sim``, resolved via ``activation_dict`` (default: "leaky_relu").
+    dropout : float, optional
+        Dropout probability used by the feed-forward blocks (default: 0.3).
+    f_sim_dropout : float, optional
+        Dropout probability used by the per-head similarity network ``f_sim``
+        (default: 0.0).
     """
 
     def __init__(
@@ -798,6 +834,8 @@ class GaugeModel(nn.Module):
         phi_hidden_dim: int | None = None,
         act: str = "gelu",
         f_sim_act: str = "leaky_relu",
+        dropout: float = 0.3,
+        f_sim_dropout: float = 0.0,
     ):
         super().__init__()
 
@@ -811,6 +849,8 @@ class GaugeModel(nn.Module):
         self.n_gated = n_gated
         self.act = act
         self.f_sim_act = f_sim_act
+        self.dropout = dropout
+        self.f_sim_dropout = f_sim_dropout
 
         self.input_projector = nn.Sequential(
             nn.Linear(in_channels, d_embedd), nn.LayerNorm(d_embedd)
@@ -829,6 +869,8 @@ class GaugeModel(nn.Module):
                     phi_hidden_dim=phi_hidden_dim,
                     act=self.act,
                     f_sim_act=self.f_sim_act,
+                    dropout=self.dropout,
+                    f_sim_dropout=self.f_sim_dropout,
                 )
                 for _ in range(self.n_layers)
             ]
