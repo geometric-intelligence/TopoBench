@@ -157,6 +157,24 @@ class TestMultiHeadFF:
         Z = torch.randn(7, 3, 4)
         assert net(Z).shape == (7, 3, 2)
 
+    def test_final_activation(self):
+        """``final_activation`` appends the activation after the output layer."""
+        net = MultiHeadFF(
+            in_channels=4,
+            out_channels=2,
+            r=3,
+            hidden_dims=[8],
+            act="leaky_relu",
+            final_activation=True,
+        )
+        # Output layer is followed by the activation, not left bare.
+        assert isinstance(net.model[-1], nn.LeakyReLU)
+        # Two activations total: one between layers, one after the output.
+        acts = [m for m in net.model if isinstance(m, nn.LeakyReLU)]
+        assert len(acts) == 2
+        Z = torch.randn(7, 3, 4)
+        assert net(Z).shape == (7, 3, 2)
+
 
 class TestFFBlock:
     """Tests for the feed-forward block."""
@@ -539,6 +557,32 @@ class TestGaugeModel:
         for layer in model.layers:
             f_sim = layer.local_coords_layer.f_sim
             assert any(isinstance(m, nn.LeakyReLU) for m in f_sim.model)
+
+    @pytest.mark.parametrize("f_sim_act", list(activation_dict.keys()))
+    def test_f_sim_act_applied_to_final_score(self, f_sim_act):
+        """``f_sim`` ends on its activation, matching the reference score_lin.
+
+        The reference ``score_lin`` (Linear -> activation) activates the score
+        before the softmax; here ``f_sim`` is built with ``final_activation``,
+        so the last module of its sequential is the activation.
+
+        Parameters
+        ----------
+        f_sim_act : str
+            Name of the similarity-scorer activation to test.
+        """
+        model = GaugeModel(
+            n_layers=2,
+            in_channels=5,
+            r=3,
+            d_embedd=8,
+            f_sim_act=f_sim_act,
+        )
+        expected = activation_dict[f_sim_act]
+        for layer in model.layers:
+            f_sim = layer.local_coords_layer.f_sim
+            assert f_sim.final_activation is True
+            assert isinstance(f_sim.model[-1], expected)
 
     @pytest.mark.parametrize("f_sim_act", list(activation_dict.keys()))
     def test_f_sim_act_propagates(self, f_sim_act):

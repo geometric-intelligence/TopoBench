@@ -152,6 +152,9 @@ class MultiHeadFF(nn.Module):
         Dropout probability applied between layers (default: 0.0).
     bias : bool, optional
         Whether each per-head linear layer uses a bias term (default: True).
+    final_activation : bool, optional
+        Whether to apply the activation after the output layer as well. When
+        ``False`` the activation is applied only between layers (default: False).
     """
 
     def __init__(
@@ -163,6 +166,7 @@ class MultiHeadFF(nn.Module):
         act: str = "leaky_relu",
         drop: float = 0.0,
         bias: bool = True,
+        final_activation: bool = False,
     ):
         super().__init__()
 
@@ -172,6 +176,7 @@ class MultiHeadFF(nn.Module):
         self.dropout = drop
         self.r = r
         self.bias = bias
+        self.final_activation = final_activation
 
         self.layer_sizes = [self.in_channels]
 
@@ -193,6 +198,11 @@ class MultiHeadFF(nn.Module):
             if j < len(self.layer_sizes) - 2:
                 els.append(activation_dict[self.act]())
                 els.append(nn.Dropout(self.dropout))
+
+        # Optionally activate the output as well (e.g. the reference score_lin
+        # applies its activation to the final score before the softmax).
+        if self.final_activation:
+            els.append(activation_dict[self.act]())
 
         self.model = nn.Sequential(*els)
 
@@ -385,9 +395,11 @@ class LocalCoordinatesLayer(torch.nn.Module):
         #
         # Divergence from the reference implementation: the reference scores
         # each edge with a single linear map on the raw embeddings
-        # (score_lin(cat([x[src], x[dst]])), a Linear(2*d -> r)). Here we use a
+        # (score_lin = Sequential(Linear(2*d -> r), LeakyReLU())). Here we use a
         # more expressive per-subspace MLP applied to the projected multi-path
         # embeddings Zh (shape [E, r, 2*d]), yielding the same [E, r] scores.
+        # As in the reference, final_activation applies f_sim_act (LeakyReLU by
+        # default) to the score itself before the softmax.
         self.f_sim = MultiHeadFF(
             2 * self.d,
             1,
@@ -395,6 +407,7 @@ class LocalCoordinatesLayer(torch.nn.Module):
             hidden_dims=[2 * self.d],
             act=self.f_sim_act,
             drop=self.f_sim_dropout,
+            final_activation=True,
         )
 
         self.fflayer = FFBlock(
@@ -436,6 +449,8 @@ class LocalCoordinatesLayer(torch.nn.Module):
         Zh = Zh.reshape(N, self.r, self.d)  # [N, r, d]
 
         # Equation (3): score each edge per subspace; f_vals has shape [E, r, 1].
+        # f_sim ends on its activation (final_activation=True), matching the
+        # reference score_lin (Linear -> LeakyReLU) before the softmax.
         f_vals = (
             self.f_sim(torch.concat((Zh[src], Zh[dst]), dim=-1)) / self.tau
         )
