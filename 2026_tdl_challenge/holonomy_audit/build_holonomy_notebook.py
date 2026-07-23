@@ -267,7 +267,7 @@ $\operatorname{tr}(Q)$ unchanged. (ii)–(iv) are direct computations. $\square$
     md(r"""
 ## 3&ensp;Instrument: holonomy readouts
 
-Figure 1 shows the audit. For a trained model and an input graph, we run one
+The audit works as follows. For a trained model and an input graph, we run one
 forward pass; read the learned blocks
 $-F_{u \trianglelefteq e}^{\top} F_{v \trianglelefteq e}$ directly off the
 model's Laplacian builder, *before* degree normalisation, inserting both
@@ -285,69 +285,6 @@ artefact of applying an $O(d)$ formula to a nearly singular matrix.
 $\lVert H-I\rVert_F$ has the opposite problem for general maps because it
 mixes stretch with rotation. The polar and determinant readouts separate
 these effects; §6.2 shows the resulting channels by map family.
-"""),
-    code(r"""
-# Figure 1: the audit, drawn. (Schematic; consumed by the papers as fig1.)
-import matplotlib.pyplot as plt
-import numpy as np
-from matplotlib.patches import FancyArrowPatch, Arc, Circle
-
-BLUE = "#0072B2"
-fig, ax = plt.subplots(figsize=(6.95, 3.35), constrained_layout=True)
-ax.set_axis_off()
-ax.set_aspect("equal")
-ax.set_xlim(-2.15, 2.15)
-ax.set_ylim(-1.10, 1.85)
-
-# Base complex, edge samples, and stalk attachments.
-b0, b1, b2 = (np.array(p) for p in
-              [(-0.76, -0.02), (0.76, -0.02), (0.00, 0.67)])
-stalks = [np.array((-1.35, -0.63)), np.array((1.35, -0.63)),
-          np.array((0.00, 1.38))]
-for P, Q in [(b0, b1), (b1, b2), (b2, b0)]:
-    ax.plot([P[0], Q[0]], [P[1], Q[1]], color="#C7C7C7", lw=1.1, zorder=1)
-for P, S in zip([b0, b1, b2], stalks):
-    ax.plot([P[0], S[0]], [P[1], S[1]], color="#A8A8A8", lw=0.9,
-            ls=(0, (1.2, 2.0)), zorder=0)
-    ax.plot(*P, "o", color="#222222", ms=4.2, zorder=5)
-for i, (P, Q) in enumerate([(b1, b2), (b2, b0), (b0, b1)], start=1):
-    M = (P + Q) / 2
-    ax.plot(*M, "o", color=BLUE, ms=4.0, zorder=6)
-    ax.text(M[0] + 0.04, M[1] + 0.04, rf"$e_{i}$", color="#777777",
-            fontsize=5.8, ha="left", va="bottom")
-
-for i, S in enumerate(stalks):
-    ax.add_patch(Circle(S, 0.29, facecolor="#F2F8FC", edgecolor=BLUE,
-                        lw=1.35, zorder=2))
-    ax.text(*S, rf"$\mathcal{{F}}(v_{i})$", color=BLUE, fontsize=8,
-            ha="center", va="center", zorder=3)
-
-# Curved transports between stalks.
-for P, Q, rad, lab, pos in [
-        (stalks[0], stalks[1], -0.13, r"$T_{0\to 1}$", (0.00, -0.93)),
-        (stalks[1], stalks[2], -0.10, r"$T_{1\to 2}$", (0.88, 0.58)),
-        (stalks[2], stalks[0], -0.10, r"$T_{2\to 0}$", (-0.88, 0.58))]:
-    ax.add_patch(FancyArrowPatch(P, Q, connectionstyle=f"arc3,rad={rad}",
-                    arrowstyle="-|>", mutation_scale=9, shrinkA=22, shrinkB=22,
-                    lw=1.35, color=BLUE, zorder=4))
-    ax.text(*pos, lab, color=BLUE, fontsize=7, ha="center", va="center",
-            bbox=dict(boxstyle="round,pad=0.13", fc="white", ec="none", alpha=0.96))
-
-# Classical comparison of a vector x with its returned vector H_C x.
-origin = np.array([-1.96, 0.69])
-ax.annotate("", xy=origin + np.array([0.03, 0.55]), xytext=origin,
-            arrowprops=dict(arrowstyle="-|>", lw=1.35, color="#888888"))
-th = 0.48
-ax.annotate("", xy=origin + 0.55 * np.array([np.sin(th), np.cos(th)]), xytext=origin,
-            arrowprops=dict(arrowstyle="-|>", lw=1.6, color=BLUE))
-ax.add_patch(Arc(origin, 0.46, 0.46, theta1=90 - np.degrees(th), theta2=90,
-                 lw=0.9, color=BLUE))
-ax.text(origin[0] - 0.05, origin[1] + 0.58, r"$x$", fontsize=7, color="#777777")
-ax.text(origin[0] + 0.28, origin[1] + 0.48, r"$H_Cx$", fontsize=7, color=BLUE)
-ax.text(origin[0] + 0.10, origin[1] + 0.20, r"$\theta$", fontsize=7.5, color=BLUE)
-
-ax.set_title("Figure 1: triangle holonomy", fontsize=8)
-plt.show()
 """),
     code(r"""
 import math
@@ -426,7 +363,7 @@ An $SO(2)$ model should move from
 $\bar{\theta}_{\text{init}}$ to
 $\bar{\theta}_{\text{final}} \gg \bar{\theta}_{\text{init}}$ for triangle
 counting, but remain near initialisation for community detection despite
-successful training. **Test:** Figure 2. **Result:** NSP moves from $0.010$ to
+successful training. **Test:** Figure 1. **Result:** NSP moves from $0.010$ to
 $0.388 \pm 0.078$ rad for counting and ends at $0.029 \pm 0.005$ rad for
 community detection (Welch $t=14.6$). NSD moves from $0.018$ to
 $0.423 \pm 0.075$ rad for counting, but its control arm is bimodal; medians
@@ -438,7 +375,7 @@ is descriptive rather than claimed.
 
 Diagonal maps should respond through gain and flip rather than twist; general
 maps should mix twist with gain ($\text{gain} \neq 1$); bundle maps should
-recruit twist at $\text{gain}=1$. **Test:** Figure 3. **Result:** bundle gain
+recruit twist at $\text{gain}=1$. **Test:** Figure 2. **Result:** bundle gain
 is $1$ identically; diagonal and general gains collapse to $0.042$ and
 $0.039$; diagonal frustration under community-detection training falls from
 $0.483$ to $0.105$. **Verdict:** supported in all three parts.
@@ -446,7 +383,7 @@ $0.483$ to $0.105$. **Verdict:** supported in all three parts.
 ### H3. Recruited holonomy pays off in counting skill
 
 More recruited twist should predict lower counting error within and across
-map families. **Test:** Figure 4 and the per-split baselines. **Result:**
+map families. **Test:** Figure 3 and the per-split baselines. **Result:**
 bundle twist and error are uncorrelated ($r=-0.18$, $p=0.58$). The bundle is
 worse than the constant predictor ($\Delta=+0.62 \pm 0.43$); the ridge reaches
 $0.110$ MSE while the best sheaf model reaches $0.71$. **Verdict:** not
@@ -455,7 +392,7 @@ supported.
 ### H4. Recruited geometry is load-bearing
 
 Flattening a trained connection should degrade counting and leave the
-community-detection control unchanged. **Test:** Figures 5, 7, and 8.
+community-detection control unchanged. **Test:** Figures 4, 6, and 7.
 **Result:** at 30 training graphs, counting damage is $+0.48 \pm 0.68$ for NSP
 ($p=0.052$) and $+0.17 \pm 0.80$ for NSD; neither harm nor equivalence is
 established at $\delta=0.20$. Community detection is equivalent within that
@@ -467,7 +404,7 @@ task behaves as predicted.
 ### H5. Load-bearing geometry is cycle-functional
 
 If the dependence in H4 reflects triangle-sensitive computation, it should
-survive when degree statistics are fixed. **Test:** Figures 6–8. **Result:**
+survive when degree statistics are fixed. **Test:** Figures 5–7. **Result:**
 with identifiers, the bundle recruits $0.035 \to 0.501$ rad yet is worse than
 the constant predictor ($p_{\mathrm{Holm}}=0.003$). With constant features,
 every family is within $|\Delta|\leq0.007$, with twist exactly $0.000$. At
@@ -691,7 +628,7 @@ def fig_recruitment(regime="homophily_hi"):
     ax.set_title("c  NSD (bimodal control arm)", loc="left")
     ax.set_ylabel("final twist (rad)")
     finish_axis(ax)
-    fig.suptitle("Figure 2: triangle counting selectively recruits SO(2) "
+    fig.suptitle("Figure 1: triangle counting selectively recruits SO(2) "
                  "loop rotation (paired seeds; medians for NSD)", y=1.10,
                  fontsize=8)
     return fig
@@ -703,7 +640,7 @@ plt.show()
     md(r"""
 ### 6.2&ensp;H2: family capacities and instrument validity
 
-The hypothesis predicts a different response from each map family. Figure 3
+The hypothesis predicts a different response from each map family. Figure 2
 shows that separation. Bundle twist changes while
 $|\det H|=1$ identically. Diagonal and general gains contract to $0.042$ and
 $0.039$. Under community training, diagonal frustration falls from $0.483$
@@ -768,7 +705,7 @@ def fig_readouts(family="nsp", regime="homophily_hi"):
     ax.set_ylabel(r"$\log_{10}|\det H|$")
     ax.set_title("c  loop contraction", loc="left")
     finish_axis(ax)
-    fig.suptitle("Figure 3: different map families respond through different "
+    fig.suptitle("Figure 2: different map families respond through different "
                  "loop channels (NSP; points = seeds, mean ± 95% CI)",
                  y=1.10, fontsize=8)
     return fig
@@ -781,7 +718,7 @@ plt.show()
 ### 6.3&ensp;H3: recruited twist does not confer skill
 
 If recruited twist improves counting, more twist should accompany lower
-error. Figure 4 shows no such relationship: bundle twist and error are
+error. Figure 3 shows no such relationship: bundle twist and error are
 uncorrelated ($r=-0.18$, $p=0.58$). The per-split
 constant error averages $0.93$, not the nominal $1$; the bundle is worse by
 $\Delta=+0.62\pm0.43$. A ridge on seven degree summaries reaches $0.110$ MSE,
@@ -807,7 +744,7 @@ def fig_pays():
             ha="right", va="bottom", fontsize=6.0, color="#555555")
     ax.set_xlabel(r"twist change $\Delta\theta$ (rad)")
     ax.set_ylabel(r"$\Delta_{\mathrm{const}}$ (test MSE $-$ constant)")
-    ax.set_title("Figure 4: more loop rotation does not predict\n"
+    ax.set_title("Figure 3: more loop rotation does not predict\n"
                  "better counting within SO(2) models", loc="left", fontsize=7.5)
     ax.legend(loc="upper left")
     finish_axis(ax)
@@ -887,7 +824,7 @@ else:
             ax.set_xlabel(xlab)
             ax.set_title(ttl, loc="left")
             finish_axis(ax)
-        fig.suptitle("Figure 5: flattening is harmless for the control task "
+        fig.suptitle("Figure 4: flattening is harmless for the control task "
                      "and unresolved at small data (seeds + mean ± 95% CI; "
                      "positive = worse)", y=1.14, fontsize=8)
         return fig
@@ -973,7 +910,7 @@ else:
         axB.set_ylabel(r"twist change $\Delta\theta$ (rad)")
         axB.set_title("b  yet rotation is recruited", loc="left")
         finish_axis(axB)
-        fig.suptitle("Figure 6: fixed-degree regular graphs exhibit twist "
+        fig.suptitle("Figure 5: fixed-degree regular graphs exhibit twist "
                      "without cycle-counting skill (Gaussian identifiers; "
                      "seeds + mean ± 95% CI)", y=1.10, fontsize=8)
         return fig
@@ -1103,7 +1040,7 @@ def fig_scaling():
         Line2D([], [], color=BASE_C["constant"], ls=":", label="constant"),
         Line2D([], [], color=BASE_C["degree"], ls="--", label="degree ridge"),
     ], loc="upper right", fontsize=6.0)
-    fig.suptitle("Figure 7: connection dependence emerges with data --- "
+    fig.suptitle("Figure 6: connection dependence emerges with data --- "
                  "without cycle-specific benefit (NSP; thin lines = seeds, "
                  "thick = mean)", y=1.04, fontsize=8)
     return fig
@@ -1132,7 +1069,7 @@ $\varepsilon=10^{-4}$, and exact flattening at $0.0$.
 
 ## 9&ensp;NSD bimodality and degree baselines
 
-Figure 2c shows why the NSD task contrast remains descriptive: seven of ten community seeds lie near
+Figure 1c shows why the NSD task contrast remains descriptive: seven of ten community seeds lie near
 $0.015$ rad; three lie near $1.6$ rad with accuracies $0.44$–$0.47$ rather
 than $0.53$–$0.67$. Hence medians $0.399$ versus $0.018$ and Mann–Whitney
 $p=0.14$ remain descriptive. Degree-baseline construction and per-split
@@ -1151,7 +1088,7 @@ difference $0$; 72% of runs within $0.01$; a few long $N = 3000$ runs drift
 by up to $0.26$, since `scatter_add` in the sheaf Laplacian is not
 bit-reproducible over 60 epochs).
 
-The larger test preserves every pre-registered sign (Figure 8): flattening
+The larger test preserves every pre-registered sign (Figure 7): flattening
 remains catastrophic on GraphUniverse; both families still beat the constant
 at $N = 3000$ on every seed; the ridge baseline still beats them; and twist
 still grows past a radian. On eight graphs, the regular-graph models appeared
@@ -1204,7 +1141,7 @@ def fig_bigtest():
     axB.set_ylabel(r"$\Delta_{\mathrm{flat}}$ on 200 graphs (MSE)")
     axB.set_title("b  flattening damage persists", loc="left")
     finish_axis(axB)
-    fig.suptitle("Figure 8: the key signs persist on 200 fresh test graphs",
+    fig.suptitle("Figure 7: the key signs persist on 200 fresh test graphs",
                  y=1.10, fontsize=8)
     return fig
 
