@@ -338,6 +338,12 @@ class LocalCoordinatesLayer(torch.nn.Module):
         Temperature used to scale the attention logits (default: 1.0).
     bias : bool, optional
         Whether the linear layers use a bias term (default: True).
+    act : str, optional
+        Name of the activation used by the feed-forward block, resolved via
+        ``activation_dict`` (default: "gelu").
+    f_sim_act : str, optional
+        Name of the activation used by the per-head similarity network
+        ``f_sim``, resolved via ``activation_dict`` (default: "leaky_relu").
     """
 
     # eqns. 2-4
@@ -347,6 +353,8 @@ class LocalCoordinatesLayer(torch.nn.Module):
         d_embedd: int,
         tau: float = 1.0,
         bias: bool = True,
+        act: str = "gelu",
+        f_sim_act: str = "leaky_relu",
     ):
         super().__init__()
 
@@ -354,6 +362,8 @@ class LocalCoordinatesLayer(torch.nn.Module):
         self.tau = tau
         self.d = d_embedd
         self.bias = bias
+        self.act = act
+        self.f_sim_act = f_sim_act
 
         # combine the projectors into a single nn.Linear layer, reshape afterwards!
         self.initial_projector = torch.nn.Linear(
@@ -362,10 +372,16 @@ class LocalCoordinatesLayer(torch.nn.Module):
 
         # f_sim = f, computing similarity of node features
         self.f_sim = MultiHeadFF(
-            2 * self.d, 1, r=self.r, hidden_dims=[2 * self.d]
+            2 * self.d,
+            1,
+            r=self.r,
+            hidden_dims=[2 * self.d],
+            act=self.f_sim_act,
         )
 
-        self.fflayer = FFBlock(self.d, self.d, self.d, bias=self.bias)
+        self.fflayer = FFBlock(
+            self.d, self.d, self.d, bias=self.bias, act=self.act
+        )
         self.preqr_norm = nn.LayerNorm(self.d)
 
     def forward(self, Z: Tensor, edge_index: Tensor) -> Tensor:
@@ -532,6 +548,9 @@ class NodeUpdateLayer(torch.nn.Module):
     phi_hidden_dim : int or None, optional
         Hidden width of the residual MLP ``phi``. Defaults to
         ``max(in_channels, out_channels)`` when ``None`` (default: None).
+    act : str, optional
+        Name of the activation used by the residual MLP ``phi``, resolved via
+        ``activation_dict`` (default: "gelu").
     """
 
     # eqns. 9-10
@@ -541,6 +560,7 @@ class NodeUpdateLayer(torch.nn.Module):
         out_channels: int,
         phi_hidden_layers: int | None = 1,
         phi_hidden_dim: int | None = None,
+        act: str = "gelu",
     ):
         super().__init__()
 
@@ -554,6 +574,7 @@ class NodeUpdateLayer(torch.nn.Module):
                 if phi_hidden_dim is not None
                 else max(in_channels, out_channels),
                 n_hidden_layers=phi_hidden_layers,
+                act=act,
             )
 
         # this is the learnable matrix applied to tilde(z)
@@ -640,6 +661,12 @@ class GaugeLayer(torch.nn.Module):
     phi_hidden_dim : int or None, optional
         Hidden width of the residual MLP ``phi``. Defaults to ``d_embedd`` when
         ``None`` (default: None).
+    act : str, optional
+        Name of the activation used by the feed-forward blocks, resolved via
+        ``activation_dict`` (default: "gelu").
+    f_sim_act : str, optional
+        Name of the activation used by the per-head similarity network
+        ``f_sim``, resolved via ``activation_dict`` (default: "leaky_relu").
     """
 
     def __init__(
@@ -652,6 +679,8 @@ class GaugeLayer(torch.nn.Module):
         bias=True,
         phi_hidden_layers: int | None = 1,
         phi_hidden_dim: int | None = None,
+        act: str = "gelu",
+        f_sim_act: str = "leaky_relu",
     ):
         super().__init__()
 
@@ -661,9 +690,16 @@ class GaugeLayer(torch.nn.Module):
         self.n_gated = n_gated
         self.gamma = gamma
         self.d_embedd = d_embedd
+        self.act = act
+        self.f_sim_act = f_sim_act
 
         self.local_coords_layer = LocalCoordinatesLayer(
-            r_subspaces=r, d_embedd=d_embedd, tau=tau, bias=bias
+            r_subspaces=r,
+            d_embedd=d_embedd,
+            tau=tau,
+            bias=bias,
+            act=act,
+            f_sim_act=f_sim_act,
         )
 
         self.gated_flattening_layers = nn.ModuleList(
@@ -678,6 +714,7 @@ class GaugeLayer(torch.nn.Module):
             self.d_embedd,
             phi_hidden_layers=phi_hidden_layers,
             phi_hidden_dim=phi_hidden_dim,
+            act=act,
         )
 
     def forward(self, x: Tensor, edge_index: Tensor) -> tuple[Tensor, Tensor]:
@@ -742,6 +779,12 @@ class GaugeModel(nn.Module):
     phi_hidden_dim : int or None, optional
         Hidden width of the residual MLP ``phi``. Defaults to ``d_embedd`` when
         ``None`` (default: None).
+    act : str, optional
+        Name of the activation used by the feed-forward blocks, resolved via
+        ``activation_dict`` (default: "gelu").
+    f_sim_act : str, optional
+        Name of the activation used by the per-head similarity network
+        ``f_sim``, resolved via ``activation_dict`` (default: "leaky_relu").
     """
 
     def __init__(
@@ -756,6 +799,8 @@ class GaugeModel(nn.Module):
         bias=True,
         phi_hidden_layers: int | None = 1,
         phi_hidden_dim: int | None = None,
+        act: str = "gelu",
+        f_sim_act: str = "leaky_relu",
     ):
         super().__init__()
 
@@ -767,6 +812,8 @@ class GaugeModel(nn.Module):
         self.r = r
         self.d_embedd = d_embedd
         self.n_gated = n_gated
+        self.act = act
+        self.f_sim_act = f_sim_act
 
         self.input_projector = nn.Sequential(
             nn.Linear(in_channels, d_embedd), nn.LayerNorm(d_embedd)
@@ -783,6 +830,8 @@ class GaugeModel(nn.Module):
                     bias=bias,
                     phi_hidden_layers=phi_hidden_layers,
                     phi_hidden_dim=phi_hidden_dim,
+                    act=self.act,
+                    f_sim_act=self.f_sim_act,
                 )
                 for _ in range(self.n_layers)
             ]

@@ -511,6 +511,63 @@ class TestGaugeModel:
         z, _ = model(x, batch.edge_index)
         assert z.shape == (n_total, 8)
 
+    @pytest.mark.parametrize("act", list(activation_dict.keys()))
+    def test_activation_propagates_to_ffblocks(self, act):
+        """The ``act`` argument reaches every feed-forward block.
+
+        The activation must flow from the model down to the ``fflayer`` of each
+        local-coordinates layer and the ``phi`` residual of each node update.
+
+        Parameters
+        ----------
+        act : str
+            Name of the activation function to test.
+        """
+        model = GaugeModel(n_layers=2, in_channels=5, r=3, d_embedd=8, act=act)
+        expected = activation_dict[act]
+        for layer in model.layers:
+            fflayer = layer.local_coords_layer.fflayer
+            assert any(isinstance(m, expected) for m in fflayer.model)
+            phi = layer.node_update_layer.phi
+            assert any(isinstance(m, expected) for m in phi.model)
+
+    def test_f_sim_act_defaults_to_leaky_relu(self):
+        """The similarity scorer defaults to LeakyReLU, independent of ``act``."""
+        model = GaugeModel(
+            n_layers=2, in_channels=5, r=3, d_embedd=8, act="gelu"
+        )
+        for layer in model.layers:
+            f_sim = layer.local_coords_layer.f_sim
+            assert any(isinstance(m, nn.LeakyReLU) for m in f_sim.model)
+
+    @pytest.mark.parametrize("f_sim_act", list(activation_dict.keys()))
+    def test_f_sim_act_propagates(self, f_sim_act):
+        """The ``f_sim_act`` argument reaches every similarity network.
+
+        The knob is independent of ``act``: it must only affect ``f_sim``, not
+        the ``fflayer`` feed-forward blocks.
+
+        Parameters
+        ----------
+        f_sim_act : str
+            Name of the similarity-scorer activation to test.
+        """
+        model = GaugeModel(
+            n_layers=2,
+            in_channels=5,
+            r=3,
+            d_embedd=8,
+            act="gelu",
+            f_sim_act=f_sim_act,
+        )
+        expected = activation_dict[f_sim_act]
+        for layer in model.layers:
+            f_sim = layer.local_coords_layer.f_sim
+            assert any(isinstance(m, expected) for m in f_sim.model)
+            # ``act`` still governs the feed-forward block independently.
+            fflayer = layer.local_coords_layer.fflayer
+            assert any(isinstance(m, nn.GELU) for m in fflayer.model)
+
 
 class TestGaugeWrapper:
     """Tests for the topobench wrapper around the gauge model."""

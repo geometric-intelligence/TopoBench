@@ -20,6 +20,8 @@ backbone:
   gamma: 0.01
   tau: 1.0
   bias: true
+  act: gelu                                          # feed-forward activation: relu|leaky_relu|gelu|sigmoid
+  f_sim_act: leaky_relu                              # similarity-scorer (f_sim) activation: relu|leaky_relu|gelu|sigmoid
   phi_hidden_layers: 1                               # null -> disable residual (reference behavior)
   phi_hidden_dim: null                               # null -> defaults to d_embedd
 
