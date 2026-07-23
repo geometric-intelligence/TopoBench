@@ -110,10 +110,16 @@ class SheafTSPWrapper(AbstractWrapper):
         if self.use_stream_gate:
             x_0 = self.stream_gate * x_0
 
-        # Rank-2 degree signal: t_e = |B_2| 1 counts 2-cells per edge,
-        # t_v = |B_1| t_e sums those counts onto endpoints.  Injected
-        # through the zero-initialized embedding (see __init__).
-        if hasattr(batch, "incidence_2"):
+        # Rank-2 count signal, injected through the zero-initialized
+        # embedding (see __init__). Preferred source: exact per-node
+        # triangle counts from the TriangleDegree transform (the cycle
+        # lifting attaches a cycle basis only, which undercounts
+        # triangles on dense graphs). Fallback: the lifting-derived
+        # degree t_v = |B_1||B_2|1.
+        t_v = None
+        if hasattr(batch, "tri_degree"):
+            t_v = batch.tri_degree.to(dtype=x_1.dtype)
+        elif hasattr(batch, "incidence_2"):
             inc2 = batch.incidence_2.coalesce()
             if inc2.shape[1] > 0:
                 ones_2 = torch.ones(
@@ -123,7 +129,8 @@ class SheafTSPWrapper(AbstractWrapper):
                 t_v = torch.sparse.mm(
                     torch.abs(batch.incidence_1.coalesce()), t_e
                 )
-                x_0 = x_0 + self.tri_embed(t_v)
+        if t_v is not None and t_v.shape[0] == x_0.shape[0]:
+            x_0 = x_0 + self.tri_embed(t_v)
         model_out["x_0"] = x_0
 
         # Expose the sheaf Dirichlet energy (Eq. 15 regularizer) only

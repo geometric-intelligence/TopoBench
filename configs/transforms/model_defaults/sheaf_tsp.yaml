@@ -1,4 +1,5 @@
 defaults:
+  - data_manipulations@triangle_degree: triangle_degree
   - liftings/graph2cell@graph2cell_lifting: cycle
 
 # Triangle-only 2-cells: the up-Laplacian and the wrapper's rank-2
