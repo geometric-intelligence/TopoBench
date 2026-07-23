@@ -73,6 +73,32 @@ yet fixed-degree graphs defeat every model at every scale. All experiments run
 on CPU; the instrument is unit-tested.
 """),
     md(r"""
+## Takeaways
+
+Three things, in plain terms.
+
+1. **We measured something nobody had checked.** Sheaf networks are motivated
+   by holonomy: a feature carried around a cycle can return changed, which
+   would let the model sense cycles that ordinary message passing cannot. We
+   built a gauge-invariant, unit-tested instrument and measured whether trained
+   models actually do this.
+
+2. **The geometry is real, and it is task-specific.** Trained to count
+   triangles, the rotation-capable maps twist about 40x more than at
+   initialisation; trained to detect communities, they stay flat. The model
+   recruits the geometry, and only when the task needs it.
+
+3. **But it never does the job it is sold for.** A ridge regression on seven
+   degree statistics beats every sheaf model six-fold, and on fixed-degree
+   graphs — where that shortcut is gone — no model beats predicting the average
+   at any scale, even as the twist keeps growing. The model comes to depend on
+   its geometry, yet never turns it into a working cycle counter.
+
+Having holonomy is not the same as using it. In these experiments the geometry
+is *recruited, then required, but never cycle-functional* — and a benchmark
+with a degree shortcut cannot tell a geometric model from a plain regressor.
+"""),
+    md(r"""
 ## How to use and reproduce
 
 The committed notebook is fully executed. To rerun it, use Python 3.11 and
