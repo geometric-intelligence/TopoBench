@@ -346,7 +346,7 @@ class LocalCoordinatesLayer(torch.nn.Module):
         ``f_sim``, resolved via ``activation_dict`` (default: "leaky_relu").
     """
 
-    # eqns. 2-4
+    # Equations (2)-(4).
     def __init__(
         self,
         r_subspaces: int,
@@ -365,12 +365,14 @@ class LocalCoordinatesLayer(torch.nn.Module):
         self.act = act
         self.f_sim_act = f_sim_act
 
-        # combine the projectors into a single nn.Linear layer, reshape afterwards!
+        # Combine the per-subspace projectors into a single nn.Linear layer;
+        # reshape into r separate projectors afterwards.
         self.initial_projector = torch.nn.Linear(
             self.d, self.d * self.r, bias=self.bias
         )
 
-        # f_sim = f, computing similarity of node features
+        # f_sim is the learnable function f that scores the similarity of
+        # neighboring node features (one score per subspace).
         self.f_sim = MultiHeadFF(
             2 * self.d,
             1,
@@ -408,38 +410,38 @@ class LocalCoordinatesLayer(torch.nn.Module):
         N = Z.size(0)  # num_nodes
         src, dst = edge_index[0], edge_index[1]
 
-        # nr. 1: we project the input matrix x into r different subspaces
+        # Project the node embeddings into r different subspaces.
         Zh = self.initial_projector(Z)  # [N, r*d]
         Zh = Zh.reshape(N, self.r, self.d)  # [N, r, d]
 
-        # EQUATION no. (3)
-        # f_vals has shape [N, r, 1]
+        # Equation (3): score each edge per subspace; f_vals has shape [E, r, 1].
         f_vals = (
             self.f_sim(torch.concat((Zh[src], Zh[dst]), dim=-1)) / self.tau
         )
 
-        f_vals = f_vals.squeeze(-1)  # remove last singleton dimension
+        f_vals = f_vals.squeeze(-1)  # drop the trailing singleton -> [E, r]
         alphas = torch.softmax(f_vals, dim=-1).unsqueeze(-1)  # [E, r, 1]
 
-        # EQUATION no. (2)
+        # Equation (2): aggregate the weighted neighbor projections per node.
         out = scatter_add(
             alphas * Zh[src, :, :], index=dst, dim=0, dim_size=N
-        )  # tensor of shape (E, r, d)
+        )  # [N, r, d]
 
-        # we need to clamp as nodes with degree 0 would have a scatter_add of 0
-        # this should give us a tensor of shape [N, r]
+        # Normalize by the aggregated weights; clamp so that degree-0 nodes
+        # (whose scatter_add is 0) do not produce a division by zero. [N, r, 1]
         norm = 1 / (scatter_add(alphas, dst, dim=0, dim_size=N).clamp(1e-6))
 
-        # norm*out should be [N, r, d] with norm broadcasted along the last dimension (d)
-        # norm*out is of shape [N,r,d] while Z is of shape [N,d], hence we insert a new axis at -2
+        # norm * out broadcasts norm along the last dimension (d) to give
+        # [N, r, d]. Z is [N, d], so we insert a subspace axis at -2 before
+        # subtracting.
         qhat = Z.unsqueeze(-2) - norm * out
 
-        # feedforward followed by a LayerNorm, then QR (eq. 4)
+        # Feed-forward followed by a LayerNorm, then QR (equation (4)).
         qhat = self.fflayer(qhat)
         qhat = self.preqr_norm(qhat)
 
-        # EQUATION no. (4)
-        # xx has shape [N, r, d] so now we can do the QR decomposition to obtain an orthonormal basis
+        # Equation (4): qhat is [N, r, d]; transpose to [N, d, r] and apply QR
+        # to obtain an orthonormal basis per node.
         Q, _ = torch.linalg.qr(qhat.mT)
 
         return Q.mT
@@ -465,8 +467,7 @@ class GatedFlatteningLayer(nn.Module):
         Temperature used to scale the gating logits (default: 1.0).
     """
 
-    # eqns.5-8
-
+    # Equations (5)-(8).
     def __init__(self, r: int, gamma: float = 0.01, tau: float = 1.0):
         super().__init__()
 
@@ -494,32 +495,31 @@ class GatedFlatteningLayer(nn.Module):
         Tensor
             Smoothed per-node orthonormal frames of shape ``[N, r, d]``.
         """
-        # eqns. (6-8)
-
+        # Equations (6)-(8).
         N = Q.size(0)  # num_nodes
         src, dst = edge_index[0], edge_index[1]
         k = Q.size(-2)  # with k fixed, the trace of eye(k) = k
 
-        # EQUATION no. (6)
-        # the trace of the identity of size k = k
+        # Equation (6): gating weight from the overlap of neighboring frames.
+        # The trace of the k-by-k identity equals k.
         g_vec = scatter_softmax(
             ((Q[src] * Q[dst]).sum((-2, -1)) - k) / self.tau,
             index=dst,
             dim_size=N,
         )
 
-        # technical note: in theory wed need to compute gij
-        # for all pairs of nodes which becomes unnecessary only because we only
-        # sum over neighbors menaning that non-neighbor entries are irrelevant
+        # Technical note: in principle g_ij is defined for all pairs of nodes,
+        # but because we only sum over neighbors, non-neighbor entries never
+        # contribute and need not be computed.
 
-        # EQUATION no. (7)
+        # Equation (7): blend the original frame with the gated neighbor
+        # aggregate.
         Qagg = scatter_add(
             g_vec[:, None, None] * Q[src], dim=0, index=dst, dim_size=N
         )
         Qhat = (1 - self.gamma) * Q + self.gamma * Qagg
 
-        # EQUATION no. (8)
-        # lastly we do the QR decomposition again to obtain an orthonormal basis:
+        # Equation (8): re-orthonormalize the blended frame with another QR.
         Qnew, _ = torch.linalg.qr(Qhat.mT)
 
         return Qnew.mT
@@ -553,7 +553,7 @@ class NodeUpdateLayer(torch.nn.Module):
         ``activation_dict`` (default: "gelu").
     """
 
-    # eqns. 9-10
+    # Equations (9)-(10).
     def __init__(
         self,
         in_channels: int,
@@ -565,7 +565,7 @@ class NodeUpdateLayer(torch.nn.Module):
         super().__init__()
 
         self.phi = None
-        # this is the learnable function applied to z (if phi_hidden_layers isn't None)
+        # Learnable function applied to z (only when phi_hidden_layers is not None).
         if phi_hidden_layers is not None:
             self.phi = FFBlock(
                 in_channels=in_channels,
@@ -577,7 +577,7 @@ class NodeUpdateLayer(torch.nn.Module):
                 act=act,
             )
 
-        # this is the learnable matrix applied to tilde(z)
+        # Learnable matrix applied to the frame-projected embedding tilde(z).
         self.W = torch.nn.Linear(in_channels, out_channels, bias=False)
 
     def forward(self, Z: Tensor, Q: Tensor, edge_index: Tensor) -> Tensor:
@@ -603,26 +603,23 @@ class NodeUpdateLayer(torch.nn.Module):
             Updated node embeddings of shape ``[N, out_channels]``.
         """
 
-        # step 0: bind commonly used values to variable names
+        # Step 0: bind commonly used values to local names.
         src, dst = edge_index[0], edge_index[1]
-        N = Z.size(0)  # num_nodes for scatter ops
+        N = Z.size(0)  # num_nodes, for the scatter ops
 
-        # step 1: calculate tilde(z)
-
-        # EQUATION no. (9)
-        # Q has shape [N,r,d] and z has shape [N, d]
-        # we want to transform each vector in z via the matrix [r,d] batching over the first dimension
+        # Step 1: compute the frame-projected embedding tilde(z).
+        # Equation (9): Q is [N, r, d] and Z is [N, d]; project each node
+        # embedding onto its own frame, batching over the node dimension.
         QtZ = torch.einsum("ijk,ik->ij", Q, Z)
         Z_tilde = torch.einsum("ikj, ik->ij", Q, QtZ)
         Z_tilde = self.W(Z_tilde)
 
-        # EQUATION no. (10)
-        # DIVERGENCE FROM REFERENCE IMPLEMENTATION
-        # Contrary to the reference implementation we optionally add a "residual
-        # connection" realized via the self.phi function. It is enabled by
-        # default and can be disabled (recovering the reference behavior) by
-        # passing phi_hidden_layers=None, in which case self.phi is None.
-        # cf. equation (10)
+        # Equation (10): aggregate the projected embeddings over the neighborhood.
+        #
+        # Divergence from the reference implementation: we optionally add a
+        # residual connection through self.phi. It is enabled by default and can
+        # be disabled (recovering the reference behavior) by passing
+        # phi_hidden_layers=None, in which case self.phi is None.
         Znew = scatter_mean(Z_tilde[src], index=dst, dim=0, dim_size=N)
 
         if self.phi is not None:
