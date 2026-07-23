@@ -216,11 +216,12 @@ class MultiHeadFF(nn.Module):
 
 
 class FFBlock(nn.Module):
-    """Feed-forward block with GELU activations, dropout and a final LayerNorm.
+    """Feed-forward block with activations, dropout and a final LayerNorm.
 
-    The block consists of ``n_hidden_layers`` hidden linear layers with GELU
-    activations followed by an output linear layer, with dropout applied after
-    every layer and layer normalization applied to the output.
+    The block consists of ``n_hidden_layers`` hidden linear layers with an
+    activation resolved via ``activation_dict`` followed by an output linear
+    layer, with dropout applied after every layer and layer normalization
+    applied to the output.
 
     Parameters
     ----------
@@ -236,6 +237,9 @@ class FFBlock(nn.Module):
         Dropout probability (default: 0.3).
     bias : bool, optional
         Whether the linear layers use a bias term (default: True).
+    act : str, optional
+        Name of the activation applied after each hidden layer, resolved via
+        ``activation_dict`` (default: "gelu").
     """
 
     def __init__(
@@ -246,6 +250,7 @@ class FFBlock(nn.Module):
         n_hidden_layers: int = 1,
         drop: float = 0.3,
         bias: bool = True,
+        act: str = "gelu",
     ):
         super().__init__()
 
@@ -255,6 +260,7 @@ class FFBlock(nn.Module):
         self.hidden_dimension = hidden_dim
         self.bias = bias
         self.n_hidden_layers = n_hidden_layers
+        self.act = act
 
         assert self.n_hidden_layers >= 1
 
@@ -267,7 +273,7 @@ class FFBlock(nn.Module):
                         self.in_channels, self.hidden_dimension, bias=self.bias
                     )
                 )
-                els.append(nn.GELU())
+                els.append(activation_dict[self.act]())
 
             elif layer_index < self.n_hidden_layers:
                 els.append(
@@ -277,7 +283,7 @@ class FFBlock(nn.Module):
                         bias=self.bias,
                     )
                 )
-                els.append(nn.GELU())
+                els.append(activation_dict[self.act]())
 
             else:
                 els.append(
