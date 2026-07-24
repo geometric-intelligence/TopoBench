@@ -646,8 +646,11 @@ class TestGaugeModel:
     def test_f_sim_dropout_propagates(self):
         """The ``f_sim_dropout`` knob reaches ``f_sim`` and is independent.
 
-        It must only affect the similarity network, leaving the feed-forward
-        block dropout governed by ``dropout``.
+        It must only configure the similarity network, leaving the
+        feed-forward block dropout governed by ``dropout``. Because ``f_sim``
+        has no hidden layers, ``MultiHeadFF`` (which applies dropout only
+        between layers) instantiates no active dropout module, so the check is
+        on the propagated probability rather than on the module list.
         """
         model = GaugeModel(
             n_layers=2,
@@ -658,13 +661,13 @@ class TestGaugeModel:
             f_sim_dropout=0.5,
         )
         for layer in model.layers:
-            f_sim = layer.local_coords_layer.f_sim
-            f_sim_drops = [m for m in f_sim.model if isinstance(m, nn.Dropout)]
-            assert f_sim_drops
-            assert all(m.p == 0.5 for m in f_sim_drops)
+            local = layer.local_coords_layer
+            assert local.f_sim_dropout == 0.5
+            assert local.f_sim.dropout == 0.5
             # The feed-forward block keeps its own dropout probability.
-            fflayer = layer.local_coords_layer.fflayer
-            ff_drops = [m for m in fflayer.model if isinstance(m, nn.Dropout)]
+            ff_drops = [
+                m for m in local.fflayer.model if isinstance(m, nn.Dropout)
+            ]
             assert all(m.p == 0.1 for m in ff_drops)
 
 
