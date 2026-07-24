@@ -18,7 +18,7 @@ backbone:
   in_channels: ${model.feature_encoder.out_channels}
   n_layers: 3
   stalk_dim: 2
-  filter_order: 3
+  filter_order: 10
   dropout: 0.0
   # Surgical regularization: dropout on the restriction-map learner
   # input only (learned transports), leaving the signal path clean —
@@ -29,10 +29,10 @@ backbone:
   # Sheaf Laplacian), "chebyshev" (T_k(L^ - I), better conditioned)
   # or "ppr" (scalar coefficients on the sheaf lazy walk I - L^/2,
   # PPR-initialized; pair with filter_order 8-10).
-  filter_basis: monomial
+  filter_basis: ppr
   # Gaussian kernel distance: "feature" (raw ||x_i - x_j||^2) or
   # "transport" (||s_i - R_e s_j||^2 under the learned maps).
-  kernel_distance: feature
+  kernel_distance: transport
   ppr_alpha: 0.1
   # Transport regularizer form: "dirichlet" (Eq. 15 energy) or
   # "alignment" (bounded kernel-alignment reward, HilbNets App. D).
