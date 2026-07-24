@@ -22,7 +22,9 @@ class SubComplexRelationConv(torch.nn.Module):
         self.use_bridge_features = use_bridge_features
         self.message_linear = torch.nn.Linear(channels, channels)
         self.bridge_linear = (
-            torch.nn.Linear(channels, channels) if use_bridge_features else None
+            torch.nn.Linear(channels, channels)
+            if use_bridge_features
+            else None
         )
         self.update = torch.nn.Sequential(
             torch.nn.Linear(channels, channels),
@@ -37,7 +39,9 @@ class SubComplexRelationConv(torch.nn.Module):
         )
         return self.update(messages)
 
-    def _aggregate_messages(self, tuple_features, edge_index, bridge_features=None):
+    def _aggregate_messages(
+        self, tuple_features, edge_index, bridge_features=None
+    ):
         """Aggregate transformed source messages into target tuple slots."""
         if edge_index.numel() == 0:
             return torch.zeros_like(tuple_features)
@@ -55,7 +59,9 @@ class SubComplexRelationConv(torch.nn.Module):
         messages.index_add_(0, target, edge_messages)
         if self.aggregation == "mean":
             counts = tuple_features.new_zeros(tuple_features.size(0))
-            counts.index_add_(0, target, tuple_features.new_ones(target.size(0)))
+            counts.index_add_(
+                0, target, tuple_features.new_ones(target.size(0))
+            )
             messages = messages / counts.clamp_min(1).unsqueeze(-1)
 
         return messages
@@ -131,7 +137,11 @@ class SubComplexLayer(torch.nn.Module):
         return self.activation(updates)
 
     def _aggregate_relation_messages(
-        self, tuple_features, edge_index, bridge_features=None, bridge_linear=None
+        self,
+        tuple_features,
+        edge_index,
+        bridge_features=None,
+        bridge_linear=None,
     ):
         """Aggregate source tuple messages plus optional edge bridge features."""
         if bridge_linear is not None and bridge_features is not None:
@@ -146,7 +156,9 @@ class SubComplexLayer(torch.nn.Module):
 
     def _aggregate_edge_features(self, edge_features, edge_index, num_tuples):
         """Aggregate edge-aligned features into target tuple slots."""
-        messages = edge_features.new_zeros((num_tuples, edge_features.size(-1)))
+        messages = edge_features.new_zeros(
+            (num_tuples, edge_features.size(-1))
+        )
         if edge_index.numel() == 0 or edge_features.numel() == 0:
             return messages
 
@@ -154,10 +166,13 @@ class SubComplexLayer(torch.nn.Module):
         messages.index_add_(0, target, edge_features)
         if self.aggregation == "mean":
             counts = edge_features.new_zeros(num_tuples)
-            counts.index_add_(0, target, edge_features.new_ones(target.size(0)))
+            counts.index_add_(
+                0, target, edge_features.new_ones(target.size(0))
+            )
             messages = messages / counts.clamp_min(1).unsqueeze(-1)
 
         return messages
+
 
 class SMCN(torch.nn.Module):
     """Scalable Multi-Cellular Network backbone for combinatorial batches."""
@@ -181,8 +196,12 @@ class SMCN(torch.nn.Module):
         self.neighborhoods = neighborhoods or []
         self.layers = layers
         self.use_subcomplex_signal = use_subcomplex_signal
-        self.rank02_low_bridge_encoder = torch.nn.Linear(in_channels, hidden_channels)
-        self.rank02_high_bridge_encoder = torch.nn.Linear(in_channels, hidden_channels)
+        self.rank02_low_bridge_encoder = torch.nn.Linear(
+            in_channels, hidden_channels
+        )
+        self.rank02_high_bridge_encoder = torch.nn.Linear(
+            in_channels, hidden_channels
+        )
         if tuple_pooling not in {"sum", "mean"}:
             raise ValueError(f"Unsupported tuple_pooling: {tuple_pooling}")
         self.tuple_pooling = tuple_pooling
@@ -310,8 +329,7 @@ class SMCN(torch.nn.Module):
     def _cache_rank02_subcomplex(self, cache_key, subcomplex):
         """Store bounded rank-0/2 structural tensors for repeated batches."""
         self._rank02_subcomplex_cache[cache_key] = {
-            name: tensor.detach()
-            for name, tensor in subcomplex.items()
+            name: tensor.detach() for name, tensor in subcomplex.items()
         }
         self._rank02_subcomplex_cache.move_to_end(cache_key)
         while (
@@ -319,7 +337,6 @@ class SMCN(torch.nn.Module):
             > self._max_rank02_subcomplex_cache_size
         ):
             self._rank02_subcomplex_cache.popitem(last=False)
-
 
     @staticmethod
     def _lookup_sparse_binary_marking(incidence, low_indices, high_indices):
@@ -388,7 +405,9 @@ class SMCN(torch.nn.Module):
 
     def build_rank02_subcomplex(self, batch):
         """Build the rank-0/2 subcomplex from the rank-1/2 incidence matrices."""
-        if not hasattr(batch, "incidence_1") or not hasattr(batch, "incidence_2"):
+        if not hasattr(batch, "incidence_1") or not hasattr(
+            batch, "incidence_2"
+        ):
             raise ValueError(
                 "Batch must have incidence_1 and incidence_2 attributes."
             )
@@ -412,7 +431,9 @@ class SMCN(torch.nn.Module):
             num_low_cells,
             num_high_cells,
         )
-        cached_subcomplex = self._get_cached_rank02_subcomplex(cache_key, device)
+        cached_subcomplex = self._get_cached_rank02_subcomplex(
+            cache_key, device
+        )
         if cached_subcomplex is not None:
             return cached_subcomplex
 
@@ -506,10 +527,14 @@ class SMCN(torch.nn.Module):
         )
 
         if low_bridge_features is not None:
-            low_bridge_features = self.rank02_low_bridge_encoder(low_bridge_features)
+            low_bridge_features = self.rank02_low_bridge_encoder(
+                low_bridge_features
+            )
 
         if high_bridge_features is not None:
-            high_bridge_features = self.rank02_high_bridge_encoder(high_bridge_features)
+            high_bridge_features = self.rank02_high_bridge_encoder(
+                high_bridge_features
+            )
         if self.use_subcomplex_signal:
             tuple_features = self.rank02_tuple_update(
                 tuple_features,
@@ -533,7 +558,10 @@ class SMCN(torch.nn.Module):
         """Gather bridge-cell features when every tuple edge has a bridge."""
         if bridge_indices is None or not hasattr(batch, feature_name):
             return None
-        if bridge_indices.numel() == 0 or bridge_indices.numel() != edge_index.size(1):
+        if (
+            bridge_indices.numel() == 0
+            or bridge_indices.numel() != edge_index.size(1)
+        ):
             return None
         bridge_features = getattr(batch, feature_name)[bridge_indices]
         return bridge_features
@@ -609,9 +637,7 @@ class SMCN(torch.nn.Module):
         """Build tuple-level edge indices for rank-0/2 subcomplexes."""
         device = low_indices.device
         num_tuples = low_indices.numel()
-        empty_edge_index = torch.empty(
-            (2, 0), dtype=torch.long, device=device
-        )
+        empty_edge_index = torch.empty((2, 0), dtype=torch.long, device=device)
         empty_bridge_index = torch.empty(0, dtype=torch.long, device=device)
         tuple_ids = torch.arange(num_tuples, device=device)
         edge_index_incidence = torch.stack([tuple_ids, tuple_ids])
@@ -623,10 +649,12 @@ class SMCN(torch.nn.Module):
                 if group.numel() < 2:
                     continue
                 pairs = torch.combinations(group, r=2).t()
-                edge_chunks.append(
-                    torch.cat([pairs, pairs.flip(0)], dim=1)
-                )
-            return torch.cat(edge_chunks, dim=1) if edge_chunks else empty_edge_index
+                edge_chunks.append(torch.cat([pairs, pairs.flip(0)], dim=1))
+            return (
+                torch.cat(edge_chunks, dim=1)
+                if edge_chunks
+                else empty_edge_index
+            )
 
         def low_adjacency_edges_with_bridges(incidence_1, incidence_2):
             if incidence_1 is None or incidence_2 is None:
@@ -640,7 +668,11 @@ class SMCN(torch.nn.Module):
             tuple_lookup = {
                 (int(low_id), int(high_id)): int(tuple_id)
                 for tuple_id, (low_id, high_id) in enumerate(
-                    zip(low_indices.tolist(), high_indices.tolist(), strict=True)
+                    zip(
+                        low_indices.tolist(),
+                        high_indices.tolist(),
+                        strict=True,
+                    )
                 )
             }
             vertices_by_edge = {}
@@ -671,7 +703,9 @@ class SMCN(torch.nn.Module):
                     if len(tuple_group) < 2:
                         continue
                     pairs = torch.combinations(
-                        torch.tensor(tuple_group, dtype=torch.long, device=device),
+                        torch.tensor(
+                            tuple_group, dtype=torch.long, device=device
+                        ),
                         r=2,
                     ).t()
                     directed_pairs = torch.cat([pairs, pairs.flip(0)], dim=1)
@@ -701,7 +735,11 @@ class SMCN(torch.nn.Module):
             tuple_lookup = {
                 (int(low_id), int(high_id)): int(tuple_id)
                 for tuple_id, (low_id, high_id) in enumerate(
-                    zip(low_indices.tolist(), high_indices.tolist(), strict=True)
+                    zip(
+                        low_indices.tolist(),
+                        high_indices.tolist(),
+                        strict=True,
+                    )
                 )
             }
             edges_by_vertex = {}
