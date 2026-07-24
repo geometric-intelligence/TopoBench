@@ -366,8 +366,112 @@ class TestSANEncoderForward:
 class TestSheafGATAttention:
     """Behaviour of the multi-head GAT-style attention module."""
 
-    def test_row_stochastic_over_source(self, small_graph):
+    @pytest.mark.parametrize("variant", ["gat", "gatv2"])
+    def test_row_stochastic_over_source(self, small_graph, variant):
         """Attention coefficients sum to one per source node.
+
+        This is the defining property of the attention matrix Lambda in
+        equation (2) of Barbero et al. (2022): the softmax runs over
+        ``k in N_i``, so every row is a probability mass function.
+
+        Parameters
+        ----------
+        small_graph : tuple
+            Fixture tuple ``(x, edge_index, num_nodes)``.
+        variant : str
+            Attention scoring function under test.
+        """
+        x, edge_index, n = small_graph
+        loop = torch.arange(n).unsqueeze(0).expand(2, -1)
+        aug = torch.cat([edge_index, loop], dim=1)
+
+        attn = SheafGATAttention(
+            in_channels=x.size(1), num_heads=2, attention_variant=variant
+        )
+        with torch.no_grad():
+            alpha = attn(x, aug)
+        src = aug[0]
+        sums = torch.zeros(n)
+        sums.scatter_add_(0, src, alpha)
+        torch.testing.assert_close(sums, torch.ones(n), atol=1e-5, rtol=1e-5)
+
+    @pytest.mark.parametrize("variant", ["gat", "gatv2"])
+    def test_head_dim_override(self, variant):
+        """Explicit ``head_dim`` decouples projection size from in_channels.
+
+        Parameters
+        ----------
+        variant : str
+            Attention scoring function under test.
+        """
+        attn = SheafGATAttention(
+            in_channels=8, num_heads=2, head_dim=5, attention_variant=variant
+        )
+        assert attn.head_dim == 5
+        assert attn.lin_src.out_features == 10
+
+    @pytest.mark.parametrize("variant", ["gat", "gatv2"])
+    def test_non_divisible_head_split_uses_floor(self, variant):
+        """``head_dim`` defaults to floor(in_channels / num_heads).
+
+        Mirrors PyG's ``GATConv`` behaviour: the input channel count need
+        not be divisible by the number of heads.
+
+        Parameters
+        ----------
+        variant : str
+            Attention scoring function under test.
+        """
+        attn = SheafGATAttention(
+            in_channels=7, num_heads=2, attention_variant=variant
+        )
+        assert attn.head_dim == 3
+        assert attn.lin_src.out_features == 6
+
+    def test_zero_heads_rejected(self):
+        """``num_heads`` must be at least 1."""
+        with pytest.raises(AssertionError):
+            SheafGATAttention(in_channels=4, num_heads=0)
+
+    def test_unknown_variant_rejected(self):
+        """Only ``'gat'`` and ``'gatv2'`` are accepted."""
+        with pytest.raises(ValueError, match="Unknown attention variant"):
+            SheafGATAttention(in_channels=4, attention_variant="gatv3")
+
+    @pytest.mark.parametrize("variant", ["gat", "gatv2"])
+    def test_reset_parameters(self, variant):
+        """Reset is idempotent on shape and produces finite values.
+
+        Parameters
+        ----------
+        variant : str
+            Attention scoring function under test.
+        """
+        attn = SheafGATAttention(
+            in_channels=8, num_heads=2, attention_variant=variant
+        )
+        before = attn.lin_src.weight.detach().clone()
+        attn.reset_parameters()
+        after = attn.lin_src.weight.detach().clone()
+        assert before.shape == after.shape
+        assert torch.all(torch.isfinite(after))
+
+    def test_variant_parameter_sets_differ(self):
+        """GAT shares one W and two score halves; GATv2 does the reverse.
+
+        Equation (2) of the paper scores ``LeakyReLU(a [W x_i || W x_j])``
+        with a single shared ``W``, whereas GATv2 (dissertation section
+        3.1) scores ``a^T LeakyReLU(W [x_i || x_j])`` and therefore needs
+        a separate target projection.
+        """
+        gat = SheafGATAttention(in_channels=8, attention_variant="gat")
+        assert gat.lin_tgt is None and gat.att_tgt is not None
+
+        gatv2 = SheafGATAttention(in_channels=8, attention_variant="gatv2")
+        assert gatv2.lin_tgt is not None and gatv2.att_tgt is None
+
+    def test_variants_produce_different_scores(self, small_graph):
+        """The two scoring functions are genuinely different operators.
 
         Parameters
         ----------
@@ -378,43 +482,14 @@ class TestSheafGATAttention:
         loop = torch.arange(n).unsqueeze(0).expand(2, -1)
         aug = torch.cat([edge_index, loop], dim=1)
 
-        attn = SheafGATAttention(in_channels=x.size(1), num_heads=2)
+        torch.manual_seed(0)
+        gat = SheafGATAttention(in_channels=x.size(1), attention_variant="gat")
+        torch.manual_seed(0)
+        gatv2 = SheafGATAttention(
+            in_channels=x.size(1), attention_variant="gatv2"
+        )
         with torch.no_grad():
-            alpha = attn(x, aug)
-        src = aug[0]
-        sums = torch.zeros(n)
-        sums.scatter_add_(0, src, alpha)
-        torch.testing.assert_close(sums, torch.ones(n), atol=1e-5, rtol=1e-5)
-
-    def test_head_dim_override(self):
-        """Explicit ``head_dim`` decouples projection size from in_channels."""
-        attn = SheafGATAttention(in_channels=8, num_heads=2, head_dim=5)
-        assert attn.head_dim == 5
-        assert attn.lin.out_features == 10
-
-    def test_non_divisible_head_split_uses_floor(self):
-        """``head_dim`` defaults to floor(in_channels / num_heads).
-
-        Mirrors PyG's ``GATConv`` behaviour: the input channel count need
-        not be divisible by the number of heads.
-        """
-        attn = SheafGATAttention(in_channels=7, num_heads=2)
-        assert attn.head_dim == 3
-        assert attn.lin.out_features == 6
-
-    def test_zero_heads_rejected(self):
-        """``num_heads`` must be at least 1."""
-        with pytest.raises(AssertionError):
-            SheafGATAttention(in_channels=4, num_heads=0)
-
-    def test_reset_parameters(self):
-        """Reset is idempotent on shape and produces finite values."""
-        attn = SheafGATAttention(in_channels=8, num_heads=2)
-        before = attn.lin.weight.detach().clone()
-        attn.reset_parameters()
-        after = attn.lin.weight.detach().clone()
-        assert before.shape == after.shape
-        assert torch.all(torch.isfinite(after))
+            assert not torch.allclose(gat(x, aug), gatv2(x, aug))
 
 
 class TestSelfLoopAugmentation:
@@ -671,3 +746,245 @@ class TestInductiveModels:
         model(x, edge_index)
         for sl in model.sheaf_learners:
             assert sl.L is not None
+
+
+class TestPaperProperties:
+    """Assert the defining claims of Barbero et al. (2022) hold.
+
+    These tests pin the mathematical structure the paper specifies,
+    rather than the incidental shapes of this implementation, so that a
+    refactor that silently breaks faithfulness fails loudly.
+    """
+
+    @staticmethod
+    def _dense_adjacency(builder, maps, alpha, n, d):
+        """Materialize a builder's sparse output as a dense matrix.
+
+        Parameters
+        ----------
+        builder : nn.Module
+            One of the sheaf adjacency builders.
+        maps : torch.Tensor
+            Restriction map parameters for the builder.
+        alpha : torch.Tensor
+            Attention coefficients over the augmented edge index.
+        n : int
+            Number of nodes.
+        d : int
+            Stalk dimension.
+
+        Returns
+        -------
+        torch.Tensor
+            Dense adjacency of shape [n * d, n * d].
+        """
+        (idx, val), _ = builder(maps, alpha)
+        return torch.sparse_coo_tensor(idx, val, (n * d, n * d)).to_dense()
+
+    @staticmethod
+    def _row_stochastic_alpha(edge_index, n, seed=0):
+        """Build a valid row-stochastic attention vector.
+
+        Parameters
+        ----------
+        edge_index : torch.Tensor
+            Directed edge index without self-loops.
+        n : int
+            Number of nodes.
+        seed : int, optional
+            Seed for the random scores. Default is 0.
+
+        Returns
+        -------
+        torch.Tensor
+            Attention values over ``[edges | self-loops]``.
+        """
+        from torch_scatter import scatter_softmax
+
+        torch.manual_seed(seed)
+        src = torch.cat([edge_index[0], torch.arange(n)])
+        raw = torch.randn(edge_index.size(1) + n)
+        return scatter_softmax(raw, src, dim=0)
+
+    def test_restriction_maps_are_orthogonal(self):
+        """Bundle restriction maps satisfy ``F^T F = I``.
+
+        The paper states "for our purposes, we use orthogonal restriction
+        maps, i.e. F_{v<|e} in O(d)".
+        """
+        from topobench.nn.backbones.graph.nsd_utils.orthogonal import (
+            Orthogonal,
+        )
+
+        d = 4
+        torch.manual_seed(0)
+        for orth_map in ("cayley", "matrix_exp"):
+            transform = Orthogonal(d=d, orthogonal_map=orth_map)
+            maps = transform(torch.randn(10, d * (d + 1) // 2))
+            gram = maps.transpose(-1, -2) @ maps
+            torch.testing.assert_close(
+                gram,
+                torch.eye(d).expand_as(gram),
+                atol=1e-5,
+                rtol=1e-5,
+            )
+
+    def test_adjacency_block_rows_are_row_stochastic(self, small_graph):
+        """Block rows of ``Lambda_hat * A_F`` sum to one.
+
+        Equation (3) broadcasts the row-stochastic Lambda over d x d
+        blocks. With orthogonal transport blocks the spectral norm of
+        block ``(i, j)`` is exactly ``alpha_ij``, so each block row must
+        sum to one.
+
+        Parameters
+        ----------
+        small_graph : tuple
+            Fixture tuple ``(x, edge_index, num_nodes)``.
+        """
+        _, edge_index, n = small_graph
+        d = 4
+        alpha = self._row_stochastic_alpha(edge_index, n)
+        builder = NormConnectionSheafAdjacencyBuilder(
+            n, edge_index, d=d, orth_map="cayley"
+        )
+        torch.manual_seed(1)
+        params = torch.randn(edge_index.size(1), d * (d + 1) // 2)
+        adjacency = self._dense_adjacency(builder, params, alpha, n, d)
+
+        for i in range(n):
+            total = 0.0
+            for j in range(n):
+                block = adjacency[i * d:(i + 1) * d, j * d:(j + 1) * d]
+                if block.abs().max() > 0:
+                    total += torch.linalg.matrix_norm(block, ord=2).item()
+            assert abs(total - 1.0) < 1e-4
+
+    def test_diagonal_blocks_are_scaled_identity(self, small_graph):
+        """Self-loop blocks equal ``alpha_ii * I_d``.
+
+        The sheaf adjacency has added self-loops with
+        ``A_F(i, i) = F_i^T F_i``, which is the identity for orthogonal
+        restriction maps.
+
+        Parameters
+        ----------
+        small_graph : tuple
+            Fixture tuple ``(x, edge_index, num_nodes)``.
+        """
+        _, edge_index, n = small_graph
+        d = 4
+        num_edges = edge_index.size(1)
+        alpha = self._row_stochastic_alpha(edge_index, n)
+        builder = NormConnectionSheafAdjacencyBuilder(
+            n, edge_index, d=d, orth_map="cayley"
+        )
+        torch.manual_seed(1)
+        params = torch.randn(num_edges, d * (d + 1) // 2)
+        adjacency = self._dense_adjacency(builder, params, alpha, n, d)
+
+        for i in range(n):
+            block = adjacency[i * d:(i + 1) * d, i * d:(i + 1) * d]
+            torch.testing.assert_close(
+                block,
+                alpha[num_edges + i] * torch.eye(d),
+                atol=1e-6,
+                rtol=1e-6,
+            )
+
+    def test_transport_blocks_are_transposes(self, small_graph):
+        """``P_ji`` equals ``P_ij^T`` once attention scaling is removed.
+
+        The sheaf adjacency is built from ``P_ij = F_i^T F_j``, so the
+        reverse block must be its transpose; only the attention
+        coefficient differs by direction.
+
+        Parameters
+        ----------
+        small_graph : tuple
+            Fixture tuple ``(x, edge_index, num_nodes)``.
+        """
+        _, edge_index, n = small_graph
+        d = 4
+        alpha = self._row_stochastic_alpha(edge_index, n)
+        builder = NormConnectionSheafAdjacencyBuilder(
+            n, edge_index, d=d, orth_map="cayley"
+        )
+        torch.manual_seed(1)
+        params = torch.randn(edge_index.size(1), d * (d + 1) // 2)
+        adjacency = self._dense_adjacency(builder, params, alpha, n, d)
+
+        for i in range(n):
+            for j in range(n):
+                if i == j:
+                    continue
+                forward = adjacency[i * d:(i + 1) * d, j * d:(j + 1) * d]
+                if forward.abs().max() == 0:
+                    continue
+                reverse = adjacency[j * d:(j + 1) * d, i * d:(i + 1) * d]
+                scale_f = torch.linalg.matrix_norm(forward, ord=2)
+                scale_r = torch.linalg.matrix_norm(reverse, ord=2)
+                torch.testing.assert_close(
+                    forward / scale_f,
+                    (reverse / scale_r).T,
+                    atol=1e-4,
+                    rtol=1e-4,
+                )
+
+    def test_residual_update_matches_equation_six(self, small_graph):
+        """Res-SheafAN adds ``sigma((A - I) (I kron W1) X W2)`` to ``X``.
+
+        Checks equation (6) against a dense reference built from the same
+        adjacency, rather than merely asserting that the residual flag
+        changes the output.
+
+        Parameters
+        ----------
+        small_graph : tuple
+            Fixture tuple ``(x, edge_index, num_nodes)``.
+        """
+        import torch.nn.functional as F
+
+        x, edge_index, n = small_graph
+        d, hidden_channels = 2, 4
+        config = {
+            "d": d,
+            "layers": 1,
+            "hidden_channels": hidden_channels,
+            "input_dim": x.size(1),
+            "output_dim": 6,
+            "device": "cpu",
+            "input_dropout": 0.0,
+            "dropout": 0.0,
+            "sheaf_act": "tanh",
+            "orth": "cayley",
+            "num_heads": 1,
+            "residual": True,
+        }
+        torch.manual_seed(3)
+        model = InductiveSheafAttentionBundle(config).eval()
+
+        # Recompute the single layer by hand from the model's own pieces.
+        with torch.no_grad():
+            h = model.lin1(x)
+            h = F.elu(h)
+            h = h.view(n * d, -1)
+
+            builder = model._build_adjacency(n, edge_index)
+            aug = _augment_with_self_loops(edge_index, n)
+            maps = model.sheaf_learners[0](h.reshape(n, -1), edge_index)
+            alpha = model.sheaf_attentions[0](h.reshape(n, -1), aug)
+            (idx, val), _ = builder(maps, alpha)
+            adjacency = torch.sparse_coo_tensor(
+                idx, val, (n * d, n * d)
+            ).to_dense()
+
+            transformed = model.left_right_linear(
+                h, model.lin_left_weights[0], model.lin_right_weights[0], n
+            )
+            expected = h + F.elu(adjacency @ transformed - transformed)
+            expected = model.lin2(expected.reshape(n, -1))
+
+            actual = model(x, edge_index)
+
+        torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-5)

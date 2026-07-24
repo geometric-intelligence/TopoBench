@@ -11,15 +11,34 @@ Three variants matching the restriction-map families of NSD:
 Each variant follows the SheafAN forward update (Barbero et al., 2022,
 equation 5)::
 
-    X_{t+1} = sigma( (Lambda_hat * A_F) (I_n kron W1) X_t W2 )
+    X_{t+1} = sigma( (Lambda_hat(X_t) * A_F) (I_n kron W1_t) X_t W2_t )
 
 or the Res-SheafAN variant (equation 6) when ``residual`` is enabled::
 
-    X_{t+1} = X_t + sigma( ((Lambda_hat * A_F) - I) (I_n kron W1) X_t W2 )
+    X_{t+1} = X_t
+              + sigma( ((Lambda_hat(X_t) * A_F) - I)
+                       (I_n kron W1_t) X_t W2_t )
+
+with W1_t in R^{d x d} acting on the stalk axis and W2_t in
+R^{f_t x f_{t+1}} acting on the channel axis, exactly as in the paper.
 
 The attention-weighted sheaf adjacency ``Lambda_hat * A_F`` is built by
-the adjacency builders; ``Lambda`` is the GAT-style attention computed
-on the augmented edge index (original edges plus self-loops).
+the adjacency builders, where ``Lambda_hat = Lambda kron 1_d`` is the
+Kronecker-broadcast attention matrix of equation (3) and ``A_F`` is the
+sheaf adjacency with added self-loops, ``A_F(i, j) = F_i^T F_j =: P_ij``.
+``Lambda`` is the GAT-style attention of equation (2), computed on the
+augmented edge index (original edges plus self-loops).
+
+The paper reports results for orthogonal restriction maps only ("for
+our purposes, we use orthogonal restriction maps, i.e. F_{v<|e} in
+O(d)"), which is the ``bundle`` variant; ``diag`` and ``general`` are
+provided in parity with NSD and go beyond the published model.
+
+Equation (6) is implemented as written. The extended dissertation adds a
+learned per-stalk vector eps in [-1, 1]^d to the residual term of its
+ANSD model (dissertation equation 3.23), but that trick belongs to ANSD
+rather than to the paper's Res-SheafAN, so it is deliberately absent
+here.
 """
 
 import torch
@@ -69,10 +88,11 @@ class _InductiveSheafAttentionBase(SheafDiffusion):
     Parameters
     ----------
     config : dict
-        See ``SheafDiffusion``. Two extra keys are honoured:
+        See ``SheafDiffusion``. Three extra keys are honoured:
         ``residual`` (bool, default False) selects the Res-SheafAN
-        update; ``num_heads`` (int, default 1) controls multi-head
-        attention.
+        update of equation (6); ``num_heads`` (int, default 1) controls
+        multi-head attention; ``attention_variant`` (str, default
+        ``'gat'``) selects the scoring function of equation (2).
     """
 
     def __init__(self, config):
@@ -80,6 +100,7 @@ class _InductiveSheafAttentionBase(SheafDiffusion):
         self.config = config
         self.residual = config.get("residual", False)
         self.num_heads = config.get("num_heads", 1)
+        self.attention_variant = config.get("attention_variant", "gat")
 
         self.lin_right_weights = nn.ModuleList()
         self.lin_left_weights = nn.ModuleList()
@@ -110,6 +131,7 @@ class _InductiveSheafAttentionBase(SheafDiffusion):
                 SheafGATAttention(
                     in_channels=self.hidden_dim,
                     num_heads=self.num_heads,
+                    attention_variant=self.attention_variant,
                 )
             )
 

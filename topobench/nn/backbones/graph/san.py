@@ -69,6 +69,12 @@ class SANEncoder(Module):
     residual : bool, optional
         If True, use the Res-SheafAN update (equation 6); otherwise the
         plain SheafAN update (equation 5). Default is False.
+    attention_variant : str, optional
+        Scoring function for the attention coefficients of equation (2).
+        ``'gat'`` matches the paper, which states that equation (2) is
+        "the same attention mechanism utilised in GAT"; ``'gatv2'``
+        matches the extended dissertation, which reports using GATv2 in
+        the experiments. Default is ``'gat'``.
     **kwargs : dict
         Additional keyword arguments (ignored, kept for Hydra
         flexibility).
@@ -88,6 +94,7 @@ class SANEncoder(Module):
         orth="cayley",
         num_heads=1,
         residual=False,
+        attention_variant="gat",
         **kwargs,
     ):
         super().__init__()
@@ -124,6 +131,7 @@ class SANEncoder(Module):
             "orth": orth,
             "num_heads": num_heads,
             "residual": residual,
+            "attention_variant": attention_variant,
         }
 
         self.san_model = self.sheaf_class(self.sheaf_config)

@@ -5,13 +5,26 @@ These builders mirror the LaplacianBuilder family but assemble the
 attention-weighted sheaf adjacency matrix used by SheafAN
 (Barbero et al., 2022), rather than the sheaf Laplacian used by NSD.
 
+Equation (3) of the paper defines the sheaf adjacency with added
+self-loops as ``A_F-hat(i, j) = F_{i<|e}^T F_{j<|e} =: P_ij`` and
+broadcasts the row-stochastic attention matrix over stalks with
+``Lambda-hat = Lambda kron 1_d``. What these builders return is the
+Hadamard product ``Lambda-hat * A_F-hat`` appearing in equations (4)
+and (5).
+
 For an ordered tril edge (i, j) with i < j, the (i, j) and (j, i) blocks
-of the sheaf adjacency are P_ij = F_i^T F_j and P_ji = P_ij^T. SheafAN
-takes the Hadamard product of A_F with a Kronecker-broadcast attention
-matrix, so each block is rescaled by a scalar attention coefficient that
-depends on direction (alpha_ij for the (i, j) block, alpha_ji for the
-(j, i) block). Diagonal blocks are identity matrices scaled by the
-self-loop attention alpha_ii.
+are P_ij = F_i^T F_j and P_ji = P_ij^T. Each block is rescaled by a
+scalar attention coefficient that depends on direction (alpha_ij for the
+(i, j) block, alpha_ji for the (j, i) block). Diagonal blocks are
+identity matrices scaled by the self-loop attention alpha_ii, which is
+exact for the orthogonal restriction maps the paper uses, since
+``A_F-hat(i, i) = F_i^T F_i = I`` for F_i in O(d).
+
+Note for the ``diag`` and ``general`` builders: those families are NSD
+parity extensions rather than published SheafAN settings, and they reuse
+the same identity diagonal blocks. Strictly, equation (3) would give
+``F_{i<|e_i}^T F_{i<|e_i}`` there, which is only the identity in the
+orthogonal case.
 """
 
 import torch
@@ -160,11 +173,18 @@ class NormConnectionSheafAdjacencyBuilder(_SheafAdjacencyBuilder):
     """
     Sheaf adjacency builder with orthogonal restriction maps.
 
-    Mirrors the paper-faithful setting of SheafAN, where restriction
-    maps live in O(d). The lower-triangular Cayley or matrix-exponential
-    parameterization is reused from NSD's bundle builder. No degree
-    normalization is applied, in keeping with equation (5) of the SAN
-    paper.
+    Mirrors the paper-faithful setting of SheafAN: "for our purposes, we
+    use orthogonal restriction maps, i.e. F_{v<|e} in O(d), effectively
+    learning an O(d)-vector bundle". The lower-triangular Cayley or
+    matrix-exponential parameterization is reused from NSD's bundle
+    builder.
+
+    No degree normalization is applied. The paper's equation (3) uses the
+    plain sheaf adjacency A_F-hat, not the normalized sheaf Laplacian of
+    equation (1); the row-stochastic attention matrix already plays that
+    role, since orthogonal transport is norm-preserving and "the
+    attention coefficients play the complementary role of adjusting the
+    strength or magnitude of the incoming messages".
 
     Parameters
     ----------

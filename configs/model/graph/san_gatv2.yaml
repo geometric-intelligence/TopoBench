@@ -1,6 +1,17 @@
+# Sheaf Attention Network with the GATv2 scoring function.
+#
+# The paper (Barbero et al., 2022) defines the attention coefficients in
+# equation (2) and states that "this is the same attention mechanism
+# utilised in GAT", which is what `graph/san` implements. The extended
+# version of the work (Barbero, "Attention-based Sheaf Neural Networks",
+# MLMI dissertation, 2022, section 3.1) instead reports that "in our
+# experiments we implement the GATv2 attention mechanism as it is
+# provably more powerful and empirically outperforms the GAT attention
+# mechanism". This config reproduces that experimental setting; every
+# other hyperparameter is identical to `graph/san`.
 _target_: topobench.model.TBModel
 
-model_name: san
+model_name: san_gatv2
 model_domain: graph
 
 feature_encoder:
@@ -21,7 +32,7 @@ backbone:
   input_dropout: 0.0
   num_heads: 8 # dissertation Table B.1 fixes Attention Heads = 8
   residual: false # true -> Res-SheafAN, paper equation (6)
-  attention_variant: gat # paper equation (2); 'gatv2' per dissertation
+  attention_variant: gatv2 # dissertation section 3.1 experimental setting
   orth: cayley # cayley or matrix_exp
 
 backbone_wrapper:
