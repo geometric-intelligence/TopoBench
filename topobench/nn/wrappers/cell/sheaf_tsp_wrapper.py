@@ -8,6 +8,7 @@ Produces embeddings for all cell dimensions via incidence propagation.
 import torch
 import torch.nn as nn
 
+from topobench.nn.backbones.cell.sheaf_tsp import SheafConvLayer
 from topobench.nn.wrappers.base import AbstractWrapper
 
 
@@ -63,6 +64,66 @@ class SheafTSPWrapper(AbstractWrapper):
         self.use_stream_gate = kwargs.get("stream_gate", False)
         if self.use_stream_gate:
             self.stream_gate = nn.Parameter(torch.ones(1))
+        # Sheaf-petals branch: sheaf convolution on the triangle
+        # co-membership graph (nodes are adjacent when they share a
+        # triangle). The substrate follows HiGCN's order-2 petal
+        # observation; the mechanism is our own — learned O(d)
+        # transports and kernel weighting via SheafConvLayer. Petal
+        # edges come from A .* A^2 > 0 on the raw adjacency, so the
+        # branch is exact and independent of the cycle-basis lifting.
+        # Zero-init fusion keeps epoch-0 behavior identical.
+        self.use_petals = kwargs.get("petals", False)
+        if self.use_petals:
+            c = kwargs["out_channels"]
+            self.petals = SheafConvLayer(
+                in_channels=c,
+                out_channels=c,
+                stalk_dim=kwargs.get("petals_stalk_dim", 2),
+                filter_order=kwargs.get("petals_filter_order", 3),
+                mlp_dropout=kwargs.get("petals_mlp_dropout", 0.5),
+            )
+            self.petals_fuse = nn.Linear(c, c, bias=False)
+            nn.init.zeros_(self.petals_fuse.weight)
+
+    @staticmethod
+    def _petal_edges(batch, n_nodes):
+        """Edges of the triangle co-membership graph.
+
+        Two nodes are petal-adjacent when they are graph-adjacent and
+        share at least one common neighbor, i.e. their edge lies in a
+        triangle: the nonzero pattern of A .* A^2 restricted to u < v.
+        Computed from ``incidence_1`` (exact, lifting-independent).
+
+        Parameters
+        ----------
+        batch : torch_geometric.data.Data
+            Batch with ``incidence_1``.
+        n_nodes : int
+            Number of 0-cells in the batch.
+
+        Returns
+        -------
+        torch.Tensor or None
+            Edge index of shape (2, E_petal), or None.
+        """
+        if not hasattr(batch, "incidence_1"):
+            return None
+        inc1 = torch.abs(batch.incidence_1.coalesce())
+        # A = |B1||B1|^T minus the degree diagonal
+        aa = torch.sparse.mm(inc1, inc1.transpose(0, 1)).coalesce()
+        idx, val = aa.indices(), aa.values()
+        off = idx[0] != idx[1]
+        A = torch.sparse_coo_tensor(
+            idx[:, off],
+            torch.ones(int(off.sum()), device=val.device),
+            (n_nodes, n_nodes),
+        ).coalesce()
+        # Common-neighbor counts on adjacent pairs: A .* (A @ A)
+        A2 = torch.sparse.mm(A, A)
+        tri = A.mul(A2).coalesce()
+        ti, tv = tri.indices(), tri.values()
+        keep = (tv > 0) & (ti[0] < ti[1])
+        return ti[:, keep]
 
     def forward(self, batch):
         r"""Forward pass for the SheafTSP wrapper.
@@ -131,6 +192,13 @@ class SheafTSPWrapper(AbstractWrapper):
                 )
         if t_v is not None and t_v.shape[0] == x_0.shape[0]:
             x_0 = x_0 + self.tri_embed(t_v)
+
+        # Sheaf-petals branch on the triangle co-membership graph.
+        if self.use_petals and hasattr(batch, "x_0"):
+            petal_ei = self._petal_edges(batch, x_0.shape[0])
+            if petal_ei is not None and petal_ei.shape[1] > 0:
+                x_p = self.petals(batch.x_0, petal_ei)
+                x_0 = x_0 + self.petals_fuse(x_p)
         model_out["x_0"] = x_0
 
         # Expose the sheaf Dirichlet energy (Eq. 15 regularizer) only

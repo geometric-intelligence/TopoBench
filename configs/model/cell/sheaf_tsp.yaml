@@ -60,6 +60,14 @@ backbone_wrapper:
   # (init 1.0); lets a task suppress feature noise around the count
   # channel during training.
   stream_gate: false
+  # Sheaf-petals branch: SheafConvLayer on the triangle co-membership
+  # graph (A .* A^2 > 0), zero-init fusion into x_0. Substrate follows
+  # HiGCN's order-2 petal observation; mechanism (learned transports,
+  # kernel weighting) is SheafTSP's own.
+  petals: false
+  petals_stalk_dim: 2
+  petals_filter_order: 3
+  petals_mlp_dropout: 0.5
   out_channels: ${model.feature_encoder.out_channels}
   num_cell_dimensions: ${infer_num_cell_dimensions:${oc.select:model.feature_encoder.selected_dimensions,null},${model.feature_encoder.in_channels}}
 
