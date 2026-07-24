@@ -33,6 +33,7 @@ def test_subcomplex_layer_has_relation_specific_transforms():
     assert isinstance(layer.high_conv, SubComplexRelationConv)
     assert isinstance(layer.incidence_conv, SubComplexRelationConv)
 
+
 def test_subcomplex_layer_sum_aggregates_placeholder_edges():
     """SubComplexLayer should sum tuple features when aggregation is sum."""
     layer = SubComplexLayer(channels=2, aggregation="sum")
@@ -70,6 +71,7 @@ def test_subcomplex_layer_sum_aggregates_placeholder_edges():
         ),
     )
 
+
 def test_subcomplex_layer_aggregates_low_bridge_edge_features():
     """SubComplexLayer should aggregate low bridge features aligned to tuple edges."""
     layer = SubComplexLayer(channels=2, aggregation="sum")
@@ -94,6 +96,7 @@ def test_subcomplex_layer_aggregates_low_bridge_edge_features():
 
     assert torch.equal(out, torch.tensor([[0.0, 0.0], [10.0, 20.0]]))
 
+
 def test_subcomplex_layer_aggregates_high_bridge_edge_features():
     """SubComplexLayer should aggregate high bridge features aligned to tuple edges."""
     layer = SubComplexLayer(channels=2, aggregation="sum")
@@ -117,6 +120,7 @@ def test_subcomplex_layer_aggregates_high_bridge_edge_features():
     )
 
     assert torch.equal(out, torch.tensor([[0.0, 0.0], [3.0, 4.0]]))
+
 
 def test_subcomplex_layer_mean_aggregates_placeholder_edges():
     """SubComplexLayer should average incoming messages when aggregation is mean."""
@@ -169,6 +173,7 @@ def test_smcn_rejects_unknown_subcomplex_aggregation():
             hidden_channels=16,
             subcomplex_aggregation="max",
         )
+
 
 def test_smcn_forward_returns_rank_dict():
     """SMCN should return updated rank-wise features."""
@@ -320,7 +325,9 @@ def test_smcn_projects_raw_bridge_features_to_hidden_channels():
     )
     projected = model.rank02_low_bridge_encoder(raw_bridge_features)
 
-    assert torch.equal(projected, torch.tensor([[2.0, 3.0, 5.0], [2.0, 3.0, 5.0]]))
+    assert torch.equal(
+        projected, torch.tensor([[2.0, 3.0, 5.0], [2.0, 3.0, 5.0]])
+    )
 
 
 def test_smcn_forward_uses_subcomplex_signal_with_projected_bridges():
@@ -346,6 +353,7 @@ def test_smcn_forward_uses_subcomplex_signal_with_projected_bridges():
     assert out[0].shape == (2, 3)
     assert out[1].shape == (1, 3)
     assert out[2].shape == (1, 3)
+
 
 def test_smcn_builds_binary_rank02_incidence():
     """SMCN should compose rank 0-to-2 incidence from incidences 0-to-1 and 1-to-2."""
@@ -406,8 +414,12 @@ def test_smcn_builds_empty_rank02_subcomplex_when_no_rank2_cells():
     assert incidence_0_2.is_sparse
     assert incidence_0_2.shape == (3, 0)
     assert incidence_0_2._nnz() == 0
-    assert torch.equal(subcomplex["low_indices"], torch.empty(0, dtype=torch.long))
-    assert torch.equal(subcomplex["high_indices"], torch.empty(0, dtype=torch.long))
+    assert torch.equal(
+        subcomplex["low_indices"], torch.empty(0, dtype=torch.long)
+    )
+    assert torch.equal(
+        subcomplex["high_indices"], torch.empty(0, dtype=torch.long)
+    )
     assert torch.equal(subcomplex["binary_marking"], torch.empty(0))
     assert subcomplex["tuple_features"].shape == (0, 16)
 
@@ -546,6 +558,7 @@ def test_smcn_uses_subcomplex_layer_when_enabled():
     assert set(out.keys()) == {0, 1, 2}
     assert out[0].shape == (3, 16)
 
+
 def test_smcn_rejects_non_positive_max_rank02_tuples():
     """SMCN should fail clearly for non-positive rank-0/2 tuple caps."""
     with pytest.raises(ValueError, match="max_rank02_tuples"):
@@ -591,6 +604,7 @@ def test_smcn_keeps_all_rank02_tuples_when_uncapped():
     assert subcomplex["low_indices"].shape == (6,)
     assert subcomplex["high_indices"].shape == (6,)
     assert subcomplex["tuple_features"].shape == (6, 16)
+
 
 def test_smcn_builds_and_pools_rank02_subcomplex():
     """SMCN should build rank-0/2 tuples and pool them back to rank 0."""
@@ -683,9 +697,7 @@ def test_smcn_filters_to_incident_rank02_tuples_when_requested():
         incidence_1=incidence_1,
         incidence_2=incidence_2,
     )
-    model = SMCN(
-        in_channels=8, hidden_channels=16, tuple_selection="incident"
-    )
+    model = SMCN(in_channels=8, hidden_channels=16, tuple_selection="incident")
 
     subcomplex = model.build_rank02_subcomplex(batch)
     subcomplex = model.forward_rank02_subcomplex(batch, subcomplex)
@@ -724,6 +736,7 @@ def test_smcn_incident_selection_uses_sparse_incidence_pairs():
     assert torch.equal(subcomplex["low_indices"], torch.tensor([0, 2, 3]))
     assert torch.equal(subcomplex["high_indices"], torch.tensor([0, 1, 1]))
     assert torch.equal(subcomplex["binary_marking"], torch.ones(3))
+
 
 def test_smcn_builds_rank02_subcomplex_edges():
     """SMCN should build tuple-level low, high, and incidence edge indices."""
@@ -775,6 +788,7 @@ def test_smcn_builds_rank02_low_adjacency_bridge_indices():
         edges["bridge_index_low_adjacency"], torch.tensor([0, 0, 1, 1, 2, 2])
     )
 
+
 def test_smcn_builds_rank02_high_adjacency_bridge_indices():
     """SMCN should attach rank-0 bridge ids to rank-0/2 high-adjacency edges."""
     model = SMCN(in_channels=8, hidden_channels=16)
@@ -801,7 +815,10 @@ def test_smcn_builds_rank02_high_adjacency_bridge_indices():
     assert torch.equal(
         edges["edge_index_high_adjacency"], torch.tensor([[0, 1], [1, 0]])
     )
-    assert torch.equal(edges["bridge_index_high_adjacency"], torch.tensor([0, 0]))
+    assert torch.equal(
+        edges["bridge_index_high_adjacency"], torch.tensor([0, 0])
+    )
+
 
 def test_smcn_builds_empty_rank02_subcomplex_edges():
     """SMCN should return empty edge indices when there are no tuples."""
@@ -964,7 +981,9 @@ def test_smcn_reuses_cached_rank02_subcomplex(monkeypatch):
         calls += 1
         return original_builder(*args, **kwargs)
 
-    monkeypatch.setattr(model, "build_rank02_subcomplex_edges", counting_builder)
+    monkeypatch.setattr(
+        model, "build_rank02_subcomplex_edges", counting_builder
+    )
 
     first = model.build_rank02_subcomplex(batch)
     second = model.build_rank02_subcomplex(batch)

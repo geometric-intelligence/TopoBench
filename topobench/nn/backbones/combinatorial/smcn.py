@@ -6,7 +6,19 @@ import torch
 
 
 class SubComplexRelationConv(torch.nn.Module):
-    """Message-passing block for one rank-0/2 subcomplex relation."""
+    """Message-passing block for one rank-0/2 subcomplex relation.
+
+    Parameters
+    ----------
+    channels : int
+        Number of input and output feature channels.
+    activation_layer : type[torch.nn.Module], optional
+        Activation module class used inside the update network.
+    aggregation : {"sum", "mean"}, optional
+        Reduction used for incoming relation messages.
+    use_bridge_features : bool, optional
+        Whether edge-aligned bridge-cell features are added to messages.
+    """
 
     def __init__(
         self,
@@ -33,7 +45,22 @@ class SubComplexRelationConv(torch.nn.Module):
         )
 
     def forward(self, tuple_features, edge_index, bridge_features=None):
-        """Aggregate relation messages into target tuple slots."""
+        """Aggregate relation messages into target tuple slots.
+
+        Parameters
+        ----------
+        tuple_features : torch.Tensor
+            Features associated with rank-0/2 tuples.
+        edge_index : torch.Tensor
+            Source and target tuple indices with shape ``[2, num_edges]``.
+        bridge_features : torch.Tensor or None, optional
+            Optional edge-aligned bridge-cell features.
+
+        Returns
+        -------
+        torch.Tensor
+            Updated tuple features.
+        """
         messages = self._aggregate_messages(
             tuple_features, edge_index, bridge_features
         )
@@ -42,7 +69,22 @@ class SubComplexRelationConv(torch.nn.Module):
     def _aggregate_messages(
         self, tuple_features, edge_index, bridge_features=None
     ):
-        """Aggregate transformed source messages into target tuple slots."""
+        """Aggregate transformed source messages into target tuple slots.
+
+        Parameters
+        ----------
+        tuple_features : torch.Tensor
+            Features associated with rank-0/2 tuples.
+        edge_index : torch.Tensor
+            Source and target tuple indices with shape ``[2, num_edges]``.
+        bridge_features : torch.Tensor or None, optional
+            Optional edge-aligned bridge-cell features.
+
+        Returns
+        -------
+        torch.Tensor
+            Aggregated messages for each tuple.
+        """
         if edge_index.numel() == 0:
             return torch.zeros_like(tuple_features)
 
@@ -74,6 +116,15 @@ class SubComplexLayer(torch.nn.Module):
     incidence tuple messages. TopoBench batches do not directly store SMCN
     subcomplex tensors, so this layer consumes the tuple graph built by
     :class:`SMCN` and keeps each relation in a separate message-passing block.
+
+    Parameters
+    ----------
+    channels : int
+        Number of input and output tuple feature channels.
+    activation_layer : type[torch.nn.Module], optional
+        Activation module class used by relation updates.
+    aggregation : {"sum", "mean"}, optional
+        Reduction used for incoming relation messages.
     """
 
     def __init__(
@@ -112,7 +163,28 @@ class SubComplexLayer(torch.nn.Module):
         low_bridge_features=None,
         high_bridge_features=None,
     ):
-        """Update tuple features using relation-specific subcomplex edges."""
+        """Update tuple features using relation-specific subcomplex edges.
+
+        Parameters
+        ----------
+        tuple_features : torch.Tensor
+            Features associated with rank-0/2 tuples.
+        edge_index_low_adjacency : torch.Tensor
+            Tuple edges for low-cell adjacency.
+        edge_index_high_adjacency : torch.Tensor
+            Tuple edges for high-cell adjacency.
+        edge_index_incidence : torch.Tensor
+            Tuple self-edges carrying incidence markings.
+        low_bridge_features : torch.Tensor or None, optional
+            Optional bridge features for low-adjacency tuple edges.
+        high_bridge_features : torch.Tensor or None, optional
+            Optional bridge features for high-adjacency tuple edges.
+
+        Returns
+        -------
+        torch.Tensor
+            Updated tuple features.
+        """
         low_messages = self.low_conv(
             tuple_features,
             edge_index_low_adjacency,
@@ -143,7 +215,24 @@ class SubComplexLayer(torch.nn.Module):
         bridge_features=None,
         bridge_linear=None,
     ):
-        """Aggregate source tuple messages plus optional edge bridge features."""
+        """Aggregate source tuple messages plus optional edge bridge features.
+
+        Parameters
+        ----------
+        tuple_features : torch.Tensor
+            Features associated with rank-0/2 tuples.
+        edge_index : torch.Tensor
+            Source and target tuple indices with shape ``[2, num_edges]``.
+        bridge_features : torch.Tensor or None, optional
+            Optional edge-aligned bridge-cell features.
+        bridge_linear : torch.nn.Linear or None, optional
+            Optional projection applied to bridge features.
+
+        Returns
+        -------
+        torch.Tensor
+            Aggregated relation messages.
+        """
         if bridge_linear is not None and bridge_features is not None:
             bridge_features = bridge_linear(bridge_features)
         return self.low_conv._aggregate_messages(
@@ -151,11 +240,39 @@ class SubComplexLayer(torch.nn.Module):
         )
 
     def _aggregate(self, features, edge_index):
-        """Aggregate source tuple features into target tuple slots."""
+        """Aggregate source tuple features into target tuple slots.
+
+        Parameters
+        ----------
+        features : torch.Tensor
+            Source tuple features.
+        edge_index : torch.Tensor
+            Source and target tuple indices with shape ``[2, num_edges]``.
+
+        Returns
+        -------
+        torch.Tensor
+            Aggregated features for each tuple.
+        """
         return self._aggregate_relation_messages(features, edge_index)
 
     def _aggregate_edge_features(self, edge_features, edge_index, num_tuples):
-        """Aggregate edge-aligned features into target tuple slots."""
+        """Aggregate edge-aligned features into target tuple slots.
+
+        Parameters
+        ----------
+        edge_features : torch.Tensor
+            Features aligned with tuple edges.
+        edge_index : torch.Tensor
+            Source and target tuple indices with shape ``[2, num_edges]``.
+        num_tuples : int
+            Number of target tuple slots.
+
+        Returns
+        -------
+        torch.Tensor
+            Aggregated edge features for each tuple.
+        """
         messages = edge_features.new_zeros(
             (num_tuples, edge_features.size(-1))
         )
@@ -175,7 +292,34 @@ class SubComplexLayer(torch.nn.Module):
 
 
 class SMCN(torch.nn.Module):
-    """Scalable Multi-Cellular Network backbone for combinatorial batches."""
+    """Scalable Multi-Cellular Network backbone for combinatorial batches.
+
+    Parameters
+    ----------
+    in_channels : int
+        Input feature dimension for every available cell rank.
+    hidden_channels : int
+        Hidden feature dimension returned for every available cell rank.
+    neighborhoods : list[str] or None, optional
+        Neighborhood names kept for compatibility with TopoBench configs.
+    layers : int, optional
+        Number of placeholder rank-wise linear layers.
+    activation : {"relu", "gelu", "tanh", "identity"} or None, optional
+        Activation used after placeholder linear layers.
+    use_subcomplex_signal : bool, optional
+        Whether to add rank-0/2 tuple signals to rank-wise outputs.
+    tuple_pooling : {"sum", "mean"}, optional
+        Reduction used when tuple features are pooled back to cells.
+    tuple_selection : {"all", "incident"}, optional
+        Strategy used to choose rank-0/2 tuples.
+    marking_embed_dim : int, optional
+        Embedding size for binary tuple markings. A value of zero uses the raw
+        scalar marking.
+    subcomplex_aggregation : {"sum", "mean"}, optional
+        Reduction used inside subcomplex relation message passing.
+    max_rank02_tuples : int or None, optional
+        Optional cap on the number of rank-0/2 tuples.
+    """
 
     def __init__(
         self,
@@ -264,6 +408,18 @@ class SMCN(torch.nn.Module):
 
     @staticmethod
     def _get_activation(name):
+        """Return the activation module class for a config name.
+
+        Parameters
+        ----------
+        name : str or None
+            Activation identifier from the model config.
+
+        Returns
+        -------
+        type[torch.nn.Module]
+            Activation module class.
+        """
         activations = {
             "relu": torch.nn.ReLU,
             "gelu": torch.nn.GELU,
@@ -279,6 +435,25 @@ class SMCN(torch.nn.Module):
     def _make_rank_update(
         in_channels, hidden_channels, layers, activation_layer
     ):
+        """Build a placeholder rank-wise update network.
+
+        Parameters
+        ----------
+        in_channels : int
+            Input feature dimension.
+        hidden_channels : int
+            Output feature dimension.
+        layers : int
+            Number of linear layers to apply.
+        activation_layer : type[torch.nn.Module]
+            Activation module class inserted after each linear layer, except
+            for identity activations.
+
+        Returns
+        -------
+        torch.nn.Sequential
+            Sequential placeholder update network.
+        """
         modules = []
         current_channels = in_channels
         for _layer_idx in range(max(layers, 1)):
@@ -290,20 +465,61 @@ class SMCN(torch.nn.Module):
 
     @staticmethod
     def _sparse_structure_signature(tensor):
-        """Create a hashable signature for a sparse incidence structure."""
+        """Create a hashable signature for a sparse incidence structure.
+
+        Parameters
+        ----------
+        tensor : torch.Tensor
+            Sparse structural tensor to summarize.
+
+        Returns
+        -------
+        tuple
+            Hashable shape and index signature.
+        """
         tensor = tensor.coalesce()
         indices = tensor.indices().detach().cpu().reshape(-1).tolist()
         return tuple(tensor.size()), tuple(indices)
 
     @staticmethod
     def _dense_structure_signature(tensor):
-        """Create a hashable signature for a dense structural vector."""
+        """Create a hashable signature for a dense structural vector.
+
+        Parameters
+        ----------
+        tensor : torch.Tensor
+            Dense structural tensor to summarize.
+
+        Returns
+        -------
+        tuple
+            Hashable flattened-value signature.
+        """
         return tuple(tensor.detach().cpu().reshape(-1).tolist())
 
     def _rank02_subcomplex_cache_key(
         self, batch, incidence_1, incidence_2, num_low_cells, num_high_cells
     ):
-        """Build a cache key for rank-0/2 structural tensors."""
+        """Build a cache key for rank-0/2 structural tensors.
+
+        Parameters
+        ----------
+        batch : torch_geometric.data.Data
+            TopoBench batch containing optional graph assignment vectors.
+        incidence_1 : torch.Tensor
+            Sparse vertex-edge incidence matrix.
+        incidence_2 : torch.Tensor
+            Sparse edge-face incidence matrix.
+        num_low_cells : int
+            Number of rank-0 cells.
+        num_high_cells : int
+            Number of rank-2 cells.
+
+        Returns
+        -------
+        tuple
+            Hashable cache key for the structural subcomplex tensors.
+        """
         key = (
             self.tuple_selection,
             self.max_rank02_tuples,
@@ -319,7 +535,20 @@ class SMCN(torch.nn.Module):
         return key
 
     def _get_cached_rank02_subcomplex(self, cache_key, device):
-        """Return cached rank-0/2 structure on the requested device."""
+        """Return cached rank-0/2 structure on the requested device.
+
+        Parameters
+        ----------
+        cache_key : tuple
+            Key created from rank-0/2 structural tensors.
+        device : torch.device
+            Device where returned tensors should live.
+
+        Returns
+        -------
+        dict[str, torch.Tensor] or None
+            Cached subcomplex tensors, or ``None`` when the key is absent.
+        """
         cached = self._rank02_subcomplex_cache.get(cache_key)
         if cached is None:
             return None
@@ -327,7 +556,15 @@ class SMCN(torch.nn.Module):
         return {name: tensor.to(device) for name, tensor in cached.items()}
 
     def _cache_rank02_subcomplex(self, cache_key, subcomplex):
-        """Store bounded rank-0/2 structural tensors for repeated batches."""
+        """Store bounded rank-0/2 structural tensors for repeated batches.
+
+        Parameters
+        ----------
+        cache_key : tuple
+            Key created from rank-0/2 structural tensors.
+        subcomplex : dict[str, torch.Tensor]
+            Structural subcomplex tensors to cache.
+        """
         self._rank02_subcomplex_cache[cache_key] = {
             name: tensor.detach() for name, tensor in subcomplex.items()
         }
@@ -340,7 +577,22 @@ class SMCN(torch.nn.Module):
 
     @staticmethod
     def _lookup_sparse_binary_marking(incidence, low_indices, high_indices):
-        """Look up binary incidence values for selected sparse matrix entries."""
+        """Look up binary incidence values for selected sparse matrix entries.
+
+        Parameters
+        ----------
+        incidence : torch.Tensor
+            Sparse rank-0 to rank-2 incidence matrix.
+        low_indices : torch.Tensor
+            Rank-0 tuple indices.
+        high_indices : torch.Tensor
+            Rank-2 tuple indices.
+
+        Returns
+        -------
+        torch.Tensor
+            Binary marking for each selected tuple.
+        """
         if low_indices.numel() == 0:
             return torch.empty(
                 0, dtype=incidence.dtype, device=low_indices.device
@@ -372,7 +624,18 @@ class SMCN(torch.nn.Module):
         return markings
 
     def forward(self, batch):
-        """Apply placeholder rank-wise updates to available cell features."""
+        """Apply rank-wise updates and optional subcomplex signal.
+
+        Parameters
+        ----------
+        batch : torch_geometric.data.Data
+            TopoBench combinatorial batch.
+
+        Returns
+        -------
+        dict[int, torch.Tensor]
+            Updated cell features keyed by rank.
+        """
         outputs = {}
         for rank in range(3):
             x = getattr(batch, f"x_{rank}", None)
@@ -404,7 +667,19 @@ class SMCN(torch.nn.Module):
         return outputs
 
     def build_rank02_subcomplex(self, batch):
-        """Build the rank-0/2 subcomplex from the rank-1/2 incidence matrices."""
+        """Build the rank-0/2 subcomplex from incidence matrices.
+
+        Parameters
+        ----------
+        batch : torch_geometric.data.Data
+            TopoBench combinatorial batch with ``incidence_1``,
+            ``incidence_2``, ``x_0``, and ``x_2`` attributes.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            Rank-0/2 subcomplex indices, markings, and tuple edge structures.
+        """
         if not hasattr(batch, "incidence_1") or not hasattr(
             batch, "incidence_2"
         ):
@@ -506,7 +781,20 @@ class SMCN(torch.nn.Module):
         return subcomplex
 
     def forward_rank02_subcomplex(self, batch, subcomplex):
-        """Encode and update rank-0/2 tuple features for a subcomplex."""
+        """Encode and update rank-0/2 tuple features for a subcomplex.
+
+        Parameters
+        ----------
+        batch : torch_geometric.data.Data
+            TopoBench combinatorial batch containing cell features.
+        subcomplex : dict[str, torch.Tensor]
+            Rank-0/2 subcomplex structure from ``build_rank02_subcomplex``.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            Subcomplex dictionary with updated tuple features added.
+        """
         low_indices = subcomplex["low_indices"]
         high_indices = subcomplex["high_indices"]
         binary_marking = subcomplex["binary_marking"]
@@ -555,7 +843,24 @@ class SMCN(torch.nn.Module):
     def _gather_bridge_features(
         self, batch, feature_name, bridge_indices, edge_index
     ):
-        """Gather bridge-cell features when every tuple edge has a bridge."""
+        """Gather bridge-cell features when every tuple edge has a bridge.
+
+        Parameters
+        ----------
+        batch : torch_geometric.data.Data
+            TopoBench combinatorial batch containing bridge features.
+        feature_name : str
+            Name of the batch feature tensor to gather from.
+        bridge_indices : torch.Tensor or None
+            Bridge-cell indices aligned with tuple edges.
+        edge_index : torch.Tensor
+            Tuple edge index used to validate bridge alignment.
+
+        Returns
+        -------
+        torch.Tensor or None
+            Edge-aligned bridge features, or ``None`` when unavailable.
+        """
         if bridge_indices is None or not hasattr(batch, feature_name):
             return None
         if (
@@ -567,7 +872,20 @@ class SMCN(torch.nn.Module):
         return bridge_features
 
     def pool_rank02_to_rank0(self, subcomplex, num_low_cells):
-        """Pool rank-0/2 tuple features back to rank-0 cells."""
+        """Pool rank-0/2 tuple features back to rank-0 cells.
+
+        Parameters
+        ----------
+        subcomplex : dict[str, torch.Tensor]
+            Subcomplex dictionary containing tuple features and low indices.
+        num_low_cells : int
+            Number of rank-0 cells in the batch.
+
+        Returns
+        -------
+        torch.Tensor
+            Pooled rank-0 cell features.
+        """
         tuple_features = subcomplex["tuple_features"]
         low_indices = subcomplex["low_indices"]
         pooled = tuple_features.new_zeros(
@@ -589,7 +907,20 @@ class SMCN(torch.nn.Module):
         return pooled
 
     def pool_rank02_to_rank2(self, subcomplex, num_high_cells):
-        """Pool rank-0/2 tuple features back to rank-2 cells."""
+        """Pool rank-0/2 tuple features back to rank-2 cells.
+
+        Parameters
+        ----------
+        subcomplex : dict[str, torch.Tensor]
+            Subcomplex dictionary containing tuple features and high indices.
+        num_high_cells : int
+            Number of rank-2 cells in the batch.
+
+        Returns
+        -------
+        torch.Tensor
+            Pooled rank-2 cell features.
+        """
         tuple_features = subcomplex["tuple_features"]
         high_indices = subcomplex["high_indices"]
         pooled = tuple_features.new_zeros(
@@ -612,7 +943,24 @@ class SMCN(torch.nn.Module):
     def encode_rank02_tuple_features(
         self, batch, low_indices, high_indices, binary_marking
     ):
-        """Encode rank-0/2 tuple features from given indices and binary marking."""
+        """Encode rank-0/2 tuple features from indices and markings.
+
+        Parameters
+        ----------
+        batch : torch_geometric.data.Data
+            TopoBench combinatorial batch containing ``x_0`` and ``x_2``.
+        low_indices : torch.Tensor
+            Rank-0 tuple indices.
+        high_indices : torch.Tensor
+            Rank-2 tuple indices.
+        binary_marking : torch.Tensor
+            Binary incidence marking for each tuple.
+
+        Returns
+        -------
+        torch.Tensor
+            Encoded tuple features.
+        """
         marking_features = self.encode_rank02_marking(binary_marking)
         tuple_inputs = torch.cat(
             [
@@ -626,7 +974,18 @@ class SMCN(torch.nn.Module):
         return tuple_features
 
     def encode_rank02_marking(self, binary_marking):
-        """Encode rank-0/2 binary marking into a feature vector."""
+        """Encode rank-0/2 binary marking into a feature vector.
+
+        Parameters
+        ----------
+        binary_marking : torch.Tensor
+            Binary incidence marking for each tuple.
+
+        Returns
+        -------
+        torch.Tensor
+            Raw scalar or embedded marking features.
+        """
         if self.rank02_marking_embed is None:
             return binary_marking.unsqueeze(-1).to(torch.float32)
         return self.rank02_marking_embed(binary_marking.long())
@@ -634,7 +993,26 @@ class SMCN(torch.nn.Module):
     def build_rank02_subcomplex_edges(
         self, low_indices, high_indices, incidence_1=None, incidence_2=None
     ):
-        """Build tuple-level edge indices for rank-0/2 subcomplexes."""
+        """Build tuple-level edge indices for rank-0/2 subcomplexes.
+
+        Parameters
+        ----------
+        low_indices : torch.Tensor
+            Rank-0 tuple indices.
+        high_indices : torch.Tensor
+            Rank-2 tuple indices.
+        incidence_1 : torch.Tensor or None, optional
+            Sparse vertex-edge incidence matrix used for bridge-aware low
+            adjacency edges.
+        incidence_2 : torch.Tensor or None, optional
+            Sparse edge-face incidence matrix used for bridge-aware high
+            adjacency edges.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            Tuple edge indices and bridge indices for subcomplex relations.
+        """
         device = low_indices.device
         num_tuples = low_indices.numel()
         empty_edge_index = torch.empty((2, 0), dtype=torch.long, device=device)
@@ -643,6 +1021,18 @@ class SMCN(torch.nn.Module):
         edge_index_incidence = torch.stack([tuple_ids, tuple_ids])
 
         def shared_cell_edges(cell_indices):
+            """Build tuple edges between tuples sharing one cell.
+
+            Parameters
+            ----------
+            cell_indices : torch.Tensor
+                Cell index assigned to each tuple.
+
+            Returns
+            -------
+            torch.Tensor
+                Directed tuple edges with shape ``[2, num_edges]``.
+            """
             edge_chunks = []
             for cell_id in cell_indices.unique():
                 group = tuple_ids[cell_indices == cell_id]
@@ -657,6 +1047,20 @@ class SMCN(torch.nn.Module):
             )
 
         def low_adjacency_edges_with_bridges(incidence_1, incidence_2):
+            """Build low-adjacency tuple edges and edge bridges.
+
+            Parameters
+            ----------
+            incidence_1 : torch.Tensor or None
+                Sparse vertex-edge incidence matrix.
+            incidence_2 : torch.Tensor or None
+                Sparse edge-face incidence matrix.
+
+            Returns
+            -------
+            tuple[torch.Tensor, torch.Tensor]
+                Tuple edge index and aligned rank-1 bridge indices.
+            """
             if incidence_1 is None or incidence_2 is None:
                 return shared_cell_edges(low_indices), empty_bridge_index
 
@@ -724,6 +1128,20 @@ class SMCN(torch.nn.Module):
             return torch.cat(edge_chunks, dim=1), torch.cat(bridge_chunks)
 
         def high_adjacency_edges_with_bridges(incidence_1, incidence_2):
+            """Build high-adjacency tuple edges and edge bridges.
+
+            Parameters
+            ----------
+            incidence_1 : torch.Tensor or None
+                Sparse vertex-edge incidence matrix.
+            incidence_2 : torch.Tensor or None
+                Sparse edge-face incidence matrix.
+
+            Returns
+            -------
+            tuple[torch.Tensor, torch.Tensor]
+                Tuple edge index and aligned rank-0 bridge indices.
+            """
             if incidence_1 is None or incidence_2 is None:
                 return shared_cell_edges(high_indices), empty_bridge_index
 
