@@ -404,7 +404,7 @@ class LocalCoordinatesLayer(torch.nn.Module):
             2 * self.d,
             1,
             r=self.r,
-            hidden_dims=[2 * self.d],
+            hidden_dims=None,
             act=self.f_sim_act,
             drop=self.f_sim_dropout,
             final_activation=True,
