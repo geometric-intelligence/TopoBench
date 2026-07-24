@@ -196,12 +196,23 @@ class TestFFBlock:
         x = torch.randn(5, 3, 4)
         assert block(x).shape == (5, 3, 8)
 
-    def test_requires_at_least_one_hidden_layer(self):
-        """Fewer than one hidden layer is rejected."""
+    def test_rejects_negative_hidden_layers(self):
+        """A negative number of hidden layers is rejected."""
         with pytest.raises(AssertionError):
             FFBlock(
-                in_channels=4, out_channels=8, hidden_dim=16, n_hidden_layers=0
+                in_channels=4, out_channels=8, hidden_dim=16, n_hidden_layers=-1
             )
+
+    def test_zero_hidden_layers_is_single_linear(self):
+        """With no hidden layers the block is a single linear map."""
+        block = FFBlock(
+            in_channels=4, out_channels=8, hidden_dim=16, n_hidden_layers=0
+        )
+        linears = [m for m in block.model if isinstance(m, nn.Linear)]
+        assert len(linears) == 1
+        assert linears[0].in_features == 4
+        assert linears[0].out_features == 8
+        assert block(torch.randn(5, 4)).shape == (5, 8)
 
     @pytest.mark.parametrize("n_hidden_layers", [1, 2, 3])
     def test_num_hidden_layers(self, n_hidden_layers):

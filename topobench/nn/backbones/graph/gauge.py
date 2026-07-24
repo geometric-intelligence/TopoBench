@@ -242,7 +242,8 @@ class FFBlock(nn.Module):
     hidden_dim : int
         Number of hidden units in the intermediate layers.
     n_hidden_layers : int, optional
-        Number of hidden layers (must be at least 1) (default: 1).
+        Number of hidden layers (must be at least 0). With ``0`` the block
+        reduces to a single ``Linear(in_channels, out_channels)`` (default: 1).
     drop : float, optional
         Dropout probability (default: 0.3).
     bias : bool, optional
@@ -272,39 +273,30 @@ class FFBlock(nn.Module):
         self.n_hidden_layers = n_hidden_layers
         self.act = act
 
-        assert self.n_hidden_layers >= 1
+        assert self.n_hidden_layers >= 0
 
         els = []
 
-        for layer_index in range(self.n_hidden_layers + 1):
-            if layer_index == 0:
-                els.append(
-                    nn.Linear(
-                        self.in_channels, self.hidden_dimension, bias=self.bias
-                    )
-                )
-                els.append(activation_dict[self.act]())
-
-            elif layer_index < self.n_hidden_layers:
-                els.append(
-                    nn.Linear(
-                        self.hidden_dimension,
-                        self.hidden_dimension,
-                        bias=self.bias,
-                    )
-                )
-                els.append(activation_dict[self.act]())
-
-            else:
-                els.append(
-                    nn.Linear(
-                        self.hidden_dimension,
-                        self.out_channels,
-                        bias=self.bias,
-                    )
-                )
-
+        # Hidden layers (none when n_hidden_layers == 0).
+        for layer_index in range(self.n_hidden_layers):
+            in_dim = (
+                self.in_channels if layer_index == 0 else self.hidden_dimension
+            )
+            els.append(
+                nn.Linear(in_dim, self.hidden_dimension, bias=self.bias)
+            )
+            els.append(activation_dict[self.act]())
             els.append(nn.Dropout(self.dropout))
+
+        # Output layer. With no hidden layers this is a single linear map from
+        # in_channels to out_channels.
+        out_in_dim = (
+            self.in_channels
+            if self.n_hidden_layers == 0
+            else self.hidden_dimension
+        )
+        els.append(nn.Linear(out_in_dim, self.out_channels, bias=self.bias))
+        els.append(nn.Dropout(self.dropout))
 
         self.model = torch.nn.Sequential(*els)
         self.norm = nn.LayerNorm(self.in_channels)
@@ -578,11 +570,13 @@ class NodeUpdateLayer(torch.nn.Module):
     out_channels : int
         Number of output features.
     phi_hidden_layers : int or None, optional
-        Number of hidden layers of the MLP residual ``phi``. Must be at least 1
-        when not ``None``. If ``None`` the residual is disabled (matching the
-        reference implementation) (default: 1).
+        Number of hidden layers of the MLP residual ``phi``. With ``0`` the
+        residual is a single linear map (no hidden layer). If ``None`` the
+        residual is disabled entirely (matching the reference implementation)
+        (default: 1).
     phi_hidden_dim : int or None, optional
-        Hidden width of the residual MLP ``phi``. Defaults to
+        Hidden width of the residual MLP ``phi`` (unused when
+        ``phi_hidden_layers`` is ``0``). Defaults to
         ``max(in_channels, out_channels)`` when ``None`` (default: None).
     act : str, optional
         Name of the activation used by the residual MLP ``phi``, resolved via
@@ -693,8 +687,9 @@ class GaugeLayer(torch.nn.Module):
         Whether the linear layers use a bias term (default: True).
     phi_hidden_layers : int or None, optional
         Number of hidden layers of the MLP residual ``phi`` in the node update.
-        Must be at least 1 when not ``None``. If ``None`` the residual is
-        disabled (matching the reference implementation) (default: 1).
+        With ``0`` the residual is a single linear map (no hidden layer). If
+        ``None`` the residual is disabled entirely (matching the reference
+        implementation) (default: 1).
     phi_hidden_dim : int or None, optional
         Hidden width of the residual MLP ``phi``. Defaults to ``d_embedd`` when
         ``None`` (default: None).
@@ -823,8 +818,9 @@ class GaugeModel(nn.Module):
         Whether the linear layers use a bias term (default: True).
     phi_hidden_layers : int or None, optional
         Number of hidden layers of the MLP residual ``phi`` in the node update.
-        Must be at least 1 when not ``None``. If ``None`` the residual is
-        disabled (matching the reference implementation) (default: 1).
+        With ``0`` the residual is a single linear map (no hidden layer). If
+        ``None`` the residual is disabled entirely (matching the reference
+        implementation) (default: 1).
     phi_hidden_dim : int or None, optional
         Hidden width of the residual MLP ``phi``. Defaults to ``d_embedd`` when
         ``None`` (default: None).

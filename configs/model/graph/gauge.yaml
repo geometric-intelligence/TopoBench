@@ -24,8 +24,8 @@ backbone:
   f_sim_act: leaky_relu                              # similarity-scorer (f_sim) activation: relu|leaky_relu|gelu|sigmoid
   dropout: 0.1                                        # dropout in the feed-forward blocks (fflayer + phi); reference default
   f_sim_dropout: 0.0                                 # dropout in the similarity-scorer (f_sim)
-  phi_hidden_layers: 1                               # null -> disable residual (reference behavior)
-  phi_hidden_dim: null                               # null -> defaults to d_embedd
+  phi_hidden_layers: 0                               # 0 -> single linear residual; null -> disable residual (reference behavior)
+  phi_hidden_dim: null                               # null -> defaults to d_embedd (unused when phi_hidden_layers == 0)
 
 backbone_wrapper:
   _target_: topobench.nn.wrappers.GaugeWrapper
