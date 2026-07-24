@@ -61,11 +61,14 @@ except ImportError:
 class RestrictionMapLearner(nn.Module):
     """Learn restriction maps F_{v<e} : F_v → F_e for each edge.
 
-    For stalk_dim d, each map is a d×d matrix parameterized as a
-    rotation (Cayley transform of a skew-symmetric matrix) to stay
-    well-conditioned and preserve volume — following the Bundle
-    Neural Network (BuNN) parameterization [Deng et al., 2024] and
-    the orthogonal transport classes of Tandon et al., Appendix E.
+    For stalk_dim d, each map is a d×d rotation (Cayley transform of a
+    skew-symmetric matrix) — following the Bundle Neural Network (BuNN)
+    parameterization [Deng et al., 2024] and the orthogonal transport
+    classes of Tandon et al., Appendix E. The Cayley image is the dense
+    subset of SO(d) excluding rotations with a -1 eigenvalue. The skew
+    generator is antisymmetrized over the edge direction, which makes
+    the transports orientation-equivariant (R_{vu} = R_{uv}^{-1}) and
+    the model invariant to node relabeling.
 
     Parameters
     ----------
@@ -110,8 +113,14 @@ class RestrictionMapLearner(nn.Module):
         d = self.stalk_dim
         E = edge_index.shape[1]
         src, dst = edge_index[0], edge_index[1]
-        edge_feat = torch.cat([x[src], x[dst]], dim=-1)
-        params = self.mlp(edge_feat)  # (E, n_skew)
+        # Antisymmetrized generator: params(u,v) = -params(v,u), so the
+        # skew matrix flips sign under edge reversal and the Cayley map
+        # yields R_{vu} = R_{uv}^{-1} by construction. Transports are
+        # therefore orientation-equivariant and independent of node
+        # labeling (the u < v canonicalization carries no information).
+        feat_uv = torch.cat([x[src], x[dst]], dim=-1)
+        feat_vu = torch.cat([x[dst], x[src]], dim=-1)
+        params = self.mlp(feat_uv) - self.mlp(feat_vu)  # (E, n_skew)
 
         if d == 1:
             return torch.ones(E, 1, 1, device=x.device, dtype=x.dtype)
@@ -507,7 +516,11 @@ class SheafConvLayer(nn.Module):
             # way a quadratic Dirichlet penalty lets them.
             s3d = s_d.view(N, d, C)
             diff2 = (s3d[src] - torch.bmm(R, s3d[dst])).pow(2).mean(dim=(1, 2))
-            align = torch.exp(-diff2 / (4.0 * t))
+            # Bandwidth detached inside the regularizer: with learnable
+            # t the reward saturates as t grows, independent of the
+            # transports, so alignment gradients must flow into R only.
+            # The forward kernel still trains t via the task loss.
+            align = torch.exp(-diff2 / (4.0 * t.detach()))
             self.last_dirichlet = (
                 -align.mean() if align.numel() > 0 else s_d.new_zeros(())
             )
