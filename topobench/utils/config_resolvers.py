@@ -607,12 +607,20 @@ def infer_in_channels(dataset, transforms):
         List with dimensions of the input channels.
     """
     num_features = dataset.parameters.num_features
-    if isinstance(num_features, int) and transforms is not None:
-        num_features = (
-            num_features
-            + check_pses_in_transforms(transforms)
-            + check_fes_in_transforms(transforms)
-        )
+    # PSEs/FEs with concat_to_x augment node features. Apply here for both
+    # scalar and list num_features so lifting paths below see the right dim.
+    if transforms is not None:
+        pe_fe_extra = check_pses_in_transforms(
+            transforms
+        ) + check_fes_in_transforms(transforms)
+        if pe_fe_extra:
+            if isinstance(num_features, int):
+                num_features = num_features + pe_fe_extra
+            else:
+                num_features = omegaconf.OmegaConf.create(
+                    [int(num_features[0]) + pe_fe_extra]
+                    + [int(f) for f in list(num_features)[1:]]
+                )
 
     # Make it possible to pass lifting configuration as file path
     if transforms is not None and transforms.keys() == {"liftings"}:
@@ -757,17 +765,9 @@ def infer_in_channels(dataset, transforms):
             return [num_features]
 
         else:
-            pe_features = (
-                check_pses_in_transforms(transforms)
-                if transforms is not None
-                else 0
-            )
-            fe_features = (
-                check_fes_in_transforms(transforms)
-                if transforms is not None
-                else 0
-            )
-            return [num_features[0] + pe_features + fe_features]
+            # List num_features (e.g. node + edge); PE/FE already folded into
+            # index 0 above when present.
+            return [num_features[0]]
 
     # This else is never executed
     else:

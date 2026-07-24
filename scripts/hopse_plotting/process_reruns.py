@@ -31,12 +31,23 @@ metrics). Panels are arranged in a grid with **at most four columns** (extra dat
 next row). One shared x-axis label ``Parameter count (total)``; end-to-end timing y-label notes no
 preprocessing. Colors match ``plot_topology_timing.py``.
 
+**Peak GPU memory** (optional ``--memory-plots``): for each raw run, resolve the assigned GPU from
+``trainer.devices`` (exactly one index expected — parallel single-GPU jobs on a multi-GPU node).
+Read W&B system history (``run.history(stream=\"events\")``; keys like
+``system.gpu.{i}.memoryAllocatedBytes``), take **peak** and **mean** allocated bytes on that
+device, convert to GB (/1e9), then seed-aggregate like timing. Writes (1) param-count vs
+peak/mean-mem scatter plots (same facets as timing) and (2) diagnostic CSVs listing mean±std
+per (model, dataset) plus flagged runs (missing/ambiguous ``trainer.devices``, empty system
+history, etc.).
+
 Run from repo root (``sys.path`` includes this directory when invoking the script)::
 
     python scripts/hopse_plotting/process_reruns.py
     python scripts/hopse_plotting/process_reruns.py --keep-incomplete-seeds
     python scripts/hopse_plotting/process_reruns.py --write-raw-csv scripts/hopse_plotting/csvs/best_runs_rerun_raw.csv
     python scripts/hopse_plotting/process_reruns.py --scatter-plots
+    python scripts/hopse_plotting/process_reruns.py --memory-plots
+    python scripts/hopse_plotting/process_reruns.py --probe-system-columns
 
 Requires ``wandb`` and ``WANDB_API_KEY`` (or ``wandb login``).
 """
@@ -45,6 +56,8 @@ from __future__ import annotations
 
 import argparse
 import math
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
@@ -107,9 +120,283 @@ SUMMARY_EPOCH_MEAN = f"{SUMMARY_COLUMN_PREFIX}AvgTime/train_epoch_mean"
 SUMMARY_EPOCH_STD = f"{SUMMARY_COLUMN_PREFIX}AvgTime/train_epoch_std"
 PARAM_COUNT_COL = "model.params.total"
 DEFAULT_SCATTER_DIR = PLOTS_DIR / "rerun_timing_vs_params"
+DEFAULT_MEMORY_SCATTER_DIR = PLOTS_DIR / "rerun_memory_vs_params"
+DEFAULT_MEMORY_TABLE_CSV = CSV_DIR / "best_runs_rerun_peak_gpu_mem.csv"
+DEFAULT_MEMORY_FLAGGED_CSV = CSV_DIR / "best_runs_rerun_peak_gpu_mem_flagged.csv"
+# Computed from W&B system history; seed-aggregated like timing summary columns.
+SUMMARY_PEAK_GPU_MEM_GB = f"{SUMMARY_COLUMN_PREFIX}peak_gpu_mem_GB"
+SUMMARY_MEAN_GPU_MEM_GB = f"{SUMMARY_COLUMN_PREFIX}mean_gpu_mem_GB"
 # Single scatter facet for MANTRA Betti (same run / timing for β₁ and β₂ columns).
 MANTRA_BETTI_SCATTER_DATASET_H = f"{MANTRA_BETTI_HYDRA_DATASET}__scatter_f1joint"
 SCATTER_MAX_COLS = 4
+
+# W&B system stream keys (verified on ``best_runs_rerun``: dots, not slashes).
+_SYSTEM_GPU_MEM_BYTES_TMPL = "system.gpu.{i}.memoryAllocatedBytes"
+_SYSTEM_GPU_MEM_PCT_TMPL = "system.gpu.{i}.memoryAllocated"
+_BYTES_PER_GB = 1e9
+DEFAULT_SYSTEM_HISTORY_SAMPLES = 100_000
+
+
+@dataclass
+class PeakGpuMemResult:
+    """Per-run GPU memory from W&B system metrics on ``trainer.devices``."""
+
+    peak_mem_gb: float | None = None
+    mean_mem_gb: float | None = None
+    device_index: int | None = None
+    flagged: bool = False
+    flag_reason: str = ""
+    mean_util_pct: float | None = None
+    system_columns_sample: list[str] = field(default_factory=list)
+
+
+def _coerce_device_index(v: Any) -> int | None:
+    if v is None or isinstance(v, bool):
+        return None
+    if isinstance(v, int):
+        return int(v)
+    if isinstance(v, float) and float(v).is_integer():
+        return int(v)
+    if isinstance(v, str):
+        s = v.strip()
+        if not s:
+            return None
+        try:
+            f = float(s)
+            if f.is_integer():
+                return int(f)
+        except ValueError:
+            return None
+    return None
+
+
+def parse_trainer_device_indices(config: Mapping[str, Any] | None) -> tuple[list[int] | None, str]:
+    """
+    Resolve Lightning ``trainer.devices`` to a list of GPU indices.
+
+    Reruns set ``trainer.devices=[k]`` (one physical GPU). A bare integer in Lightning often
+    means *device count*, not an index — those are rejected as ambiguous.
+    """
+    from utils import flatten_config, get_from_flat
+
+    if not config:
+        return None, "missing run.config"
+    flat = flatten_config(dict(config))
+    raw = get_from_flat(flat, "trainer.devices")
+    if raw in (None, ""):
+        # Nested dict before flatten (some W&B payloads).
+        trainer = config.get("trainer") if isinstance(config, Mapping) else None
+        if isinstance(trainer, Mapping):
+            raw = trainer.get("devices")
+    if raw in (None, ""):
+        return None, "trainer.devices missing"
+
+    raw = _unwrap_wandb_value(raw)
+    if isinstance(raw, (list, tuple)):
+        idxs: list[int] = []
+        for item in raw:
+            ix = _coerce_device_index(_unwrap_wandb_value(item))
+            if ix is None:
+                return None, f"trainer.devices has non-int entry {item!r}"
+            idxs.append(ix)
+        return idxs, ""
+    if isinstance(raw, str):
+        s = raw.strip()
+        if s.startswith("[") and s.endswith("]"):
+            inner = s[1:-1].strip()
+            if not inner:
+                return [], ""
+            idxs = []
+            for part in inner.split(","):
+                ix = _coerce_device_index(part.strip())
+                if ix is None:
+                    return None, f"trainer.devices string not parseable: {raw!r}"
+                idxs.append(ix)
+            return idxs, ""
+        ix = _coerce_device_index(s)
+        if ix is None:
+            return None, f"trainer.devices string not parseable: {raw!r}"
+        return None, (
+            f"trainer.devices={raw!r} is a bare int (Lightning device *count*, not index); "
+            "expected a one-element list like [0]"
+        )
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        return None, (
+            f"trainer.devices={raw!r} is a bare number (Lightning device *count*, not index); "
+            "expected a one-element list like [0]"
+        )
+    return None, f"trainer.devices has unsupported type {type(raw).__name__}: {raw!r}"
+
+
+def _resolve_system_mem_bytes_column(columns: list[str], device_index: int) -> str | None:
+    """Prefer ``memoryAllocatedBytes``; accept slash-separated variants if present."""
+    preferred = [
+        _SYSTEM_GPU_MEM_BYTES_TMPL.format(i=device_index),
+        f"system/gpu.{device_index}.memoryAllocatedBytes",
+        f"system.gpu.{device_index}.memory_allocated_bytes",
+    ]
+    colset = set(columns)
+    for c in preferred:
+        if c in colset:
+            return c
+    # Fuzzy: any column mentioning this GPU index and allocated bytes.
+    needle = f"gpu.{device_index}."
+    for c in columns:
+        cl = c.lower().replace("/", ".")
+        if needle in cl and "memoryallocatedbytes" in cl.replace("_", ""):
+            return c
+    return None
+
+
+def _resolve_system_util_column(columns: list[str], device_index: int) -> str | None:
+    preferred = [
+        f"system.gpu.{device_index}.gpu",
+        f"system/gpu.{device_index}.gpu",
+    ]
+    colset = set(columns)
+    for c in preferred:
+        if c in colset:
+            return c
+    return None
+
+
+def compute_peak_gpu_mem_for_run(
+    run,
+    *,
+    samples: int = DEFAULT_SYSTEM_HISTORY_SAMPLES,
+    print_columns_once: list[bool] | None = None,
+) -> PeakGpuMemResult:
+    """
+    Peak allocated GPU memory (GB) on the single device in ``trainer.devices``.
+
+    Flagged (no peak) when devices ≠ exactly one index, system history is missing, or the
+    memory column is absent / all-NaN. Does **not** infer the GPU from utilization (parallel
+    single-GPU jobs make multiple GPUs look \"active\" on the node).
+    """
+    from utils import run_with_wandb_retry
+
+    cfg = dict(run.config or {})
+    idxs, err = parse_trainer_device_indices(cfg)
+    if err:
+        return PeakGpuMemResult(flagged=True, flag_reason=err)
+    assert idxs is not None
+    if len(idxs) == 0:
+        return PeakGpuMemResult(flagged=True, flag_reason="trainer.devices is empty")
+    if len(idxs) != 1:
+        return PeakGpuMemResult(
+            flagged=True,
+            flag_reason=f"trainer.devices has {len(idxs)} entries {idxs} (expected exactly 1)",
+            device_index=None,
+        )
+    device_index = int(idxs[0])
+
+    def _fetch():
+        # Documented stream name is ``events``; older snippets used ``system`` (alias).
+        return run.history(stream="events", samples=int(samples))
+
+    try:
+        hist = run_with_wandb_retry(_fetch, label=f"W&B system history {getattr(run, 'id', '?')}")
+    except Exception as e:
+        return PeakGpuMemResult(
+            flagged=True,
+            flag_reason=f"history fetch failed: {type(e).__name__}: {e}",
+            device_index=device_index,
+        )
+
+    if hist is None or getattr(hist, "empty", True):
+        return PeakGpuMemResult(
+            flagged=True,
+            flag_reason="empty system history (stream=events)",
+            device_index=device_index,
+        )
+
+    columns = [str(c) for c in hist.columns.tolist()]
+    if print_columns_once is not None and print_columns_once and not print_columns_once[0]:
+        print_columns_once[0] = True
+        print("  (probe) system history columns for first run:")
+        for c in columns:
+            print(f"    {c}")
+
+    mem_col = _resolve_system_mem_bytes_column(columns, device_index)
+    if mem_col is None:
+        pct_col = _SYSTEM_GPU_MEM_PCT_TMPL.format(i=device_index)
+        has_pct = pct_col in columns or f"system/gpu.{device_index}.memoryAllocated" in columns
+        return PeakGpuMemResult(
+            flagged=True,
+            flag_reason=(
+                f"no memoryAllocatedBytes column for gpu.{device_index} "
+                f"(percent column present={has_pct}); columns sample={columns[:12]!r}…"
+            ),
+            device_index=device_index,
+            system_columns_sample=columns[:40],
+        )
+
+    mem_bytes = pd.to_numeric(hist[mem_col], errors="coerce")
+    finite = mem_bytes.notna() & np.isfinite(mem_bytes.to_numpy(dtype=float))
+    if not bool(finite.any()):
+        return PeakGpuMemResult(
+            flagged=True,
+            flag_reason=f"all-NaN values in {mem_col}",
+            device_index=device_index,
+            system_columns_sample=columns[:40],
+        )
+    peak_bytes = float(mem_bytes.loc[finite].max())
+    mean_bytes = float(mem_bytes.loc[finite].mean())
+
+    mean_util: float | None = None
+    util_col = _resolve_system_util_column(columns, device_index)
+    if util_col is not None:
+        util = pd.to_numeric(hist[util_col], errors="coerce")
+        if util.notna().any():
+            mean_util = float(util.mean(skipna=True))
+
+    return PeakGpuMemResult(
+        peak_mem_gb=float(peak_bytes) / _BYTES_PER_GB,
+        mean_mem_gb=float(mean_bytes) / _BYTES_PER_GB,
+        device_index=device_index,
+        flagged=False,
+        mean_util_pct=mean_util,
+        system_columns_sample=columns[:40],
+    )
+
+
+def augment_run_row_peak_gpu_mem(
+    row: dict[str, Any],
+    run,
+    *,
+    samples: int,
+    flagged_rows: list[dict[str, Any]],
+    print_columns_once: list[bool],
+) -> dict[str, Any]:
+    """Attach peak/mean ``summary_*_gpu_mem_GB`` or append a flagged diagnostic row."""
+    from utils import _serialize_cell
+
+    out = dict(row)
+    res = compute_peak_gpu_mem_for_run(
+        run, samples=samples, print_columns_once=print_columns_once
+    )
+    meta = {
+        "identifiers_run_id": str(out.get("identifiers_run_id", getattr(run, "id", ""))),
+        "identifiers_run_name": str(out.get("identifiers_run_name", getattr(run, "name", "") or "")),
+        "identifiers_run_url": str(out.get("identifiers_run_url", getattr(run, "url", "") or "")),
+        "model": str(out.get("model", "")),
+        "dataset": str(out.get("dataset", "")),
+        "seed": str(out.get(SEED_COLUMN, "")),
+        "trainer_devices_device_index": (
+            "" if res.device_index is None else str(res.device_index)
+        ),
+        "mean_util_pct": (
+            "" if res.mean_util_pct is None else f"{res.mean_util_pct:.4g}"
+        ),
+        "flag_reason": res.flag_reason,
+    }
+    if res.flagged or res.peak_mem_gb is None or res.mean_mem_gb is None:
+        flagged_rows.append(meta)
+        return out
+
+    out[SUMMARY_PEAK_GPU_MEM_GB] = _serialize_cell(res.peak_mem_gb)
+    out[SUMMARY_MEAN_GPU_MEM_GB] = _serialize_cell(res.mean_mem_gb)
+    return out
 
 
 def augment_run_row_wandb_timing(row: dict[str, Any], run) -> dict[str, Any]:
@@ -175,24 +462,57 @@ def collect_runs_single_project(
     *,
     run_state: str | None = "finished",
     verbose: bool = True,
-) -> list[dict[str, Any]]:
+    fetch_peak_gpu_mem: bool = False,
+    system_history_samples: int = DEFAULT_SYSTEM_HISTORY_SAMPLES,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """
+    Export finished (or filtered) runs from one project.
+
+    Returns ``(rows, flagged_peak_mem_rows)``. The flagged list is non-empty only when
+    ``fetch_peak_gpu_mem`` is True (runs where peak memory could not be attributed safely).
+    """
     import wandb
 
     api = wandb.Api(timeout=120)
     rows: list[dict[str, Any]] = []
+    flagged: list[dict[str, Any]] = []
+    print_columns_once = [False]
     _filt = f"state={run_state}" if run_state else "all states"
     if verbose:
         print(f"  (fetch) {entity}/{project} ({_filt})", flush=True)
+        if fetch_peak_gpu_mem:
+            print(
+                f"  (peak GPU mem) system history samples={system_history_samples} "
+                f"via trainer.devices -> system.gpu.{{i}}.memoryAllocatedBytes",
+                flush=True,
+            )
     count = 0
     runs_gen = iter_runs(api, entity, project, state=run_state)
     for run in runs_gen:
         base = run_to_row(entity=entity, project=project, run=run)
-        rows.append(augment_run_row_wandb_timing(base, run))
+        row = augment_run_row_wandb_timing(base, run)
+        if fetch_peak_gpu_mem:
+            row = augment_run_row_peak_gpu_mem(
+                row,
+                run,
+                samples=system_history_samples,
+                flagged_rows=flagged,
+                print_columns_once=print_columns_once,
+            )
+        rows.append(row)
         count += 1
-        if verbose and count % 250 == 0:
-            print(f"    … {count} run(s) so far", flush=True)
+        if verbose and count % 25 == 0:
+            extra = f", flagged_mem={len(flagged)}" if fetch_peak_gpu_mem else ""
+            print(f"    … {count} run(s) so far{extra}", flush=True)
     if verbose:
         print(f"    -> {count} run(s)", flush=True)
+        if fetch_peak_gpu_mem:
+            n_ok = sum(1 for r in rows if str(r.get(SUMMARY_PEAK_GPU_MEM_GB, "")).strip())
+            print(
+                f"    peak GPU mem: {n_ok} ok, {len(flagged)} flagged "
+                f"(skipped for aggregation)",
+                flush=True,
+            )
         if rows:
             peek = pd.DataFrame(rows)
             if "model" in peek.columns:
@@ -202,7 +522,7 @@ def collect_runs_single_project(
                     "    (If a model is missing, its reruns may still be non-finished — try "
                     "--run-state all, or confirm runs use this entity/project.)"
                 )
-    return rows
+    return rows, flagged
 
 
 def _summary_metric_columns_for_rerun_export(df: pd.DataFrame) -> list[str] | None:
@@ -210,6 +530,10 @@ def _summary_metric_columns_for_rerun_export(df: pd.DataFrame) -> list[str] | No
     extra: list[str] = []
     if SUMMARY_RUNTIME in df.columns:
         extra.append(SUMMARY_RUNTIME)
+    if SUMMARY_PEAK_GPU_MEM_GB in df.columns:
+        extra.append(SUMMARY_PEAK_GPU_MEM_GB)
+    if SUMMARY_MEAN_GPU_MEM_GB in df.columns:
+        extra.append(SUMMARY_MEAN_GPU_MEM_GB)
     if not cols and not extra:
         return None
     return sorted(set(cols) | set(extra))
@@ -640,8 +964,8 @@ _COAL_WALL_STD = "_coalesced_wall_runtime_std"
 def build_rerun_timing_vs_params_frame(agg: pd.DataFrame) -> pd.DataFrame:
     """
     Best-val rerun row per ``(model, dataset, _sub_id)`` (same picks as performance tables),
-    with parameter count, wall runtime mean±std over seeds, and train-epoch mean mean±std
-    over seeds (seed-aggregated CSV columns).
+    with parameter count, wall runtime mean±std over seeds, train-epoch mean mean±std
+    over seeds, and (when present) peak GPU memory GB mean±std over seeds.
     """
     from plot_topology_timing import _domain_from_model, _pretty_legend_label, enrich_submodel_columns
 
@@ -656,6 +980,12 @@ def build_rerun_timing_vs_params_frame(agg: pd.DataFrame) -> pd.DataFrame:
     ep_m = f"{SUMMARY_EPOCH_MEAN}__mean"
     ep_s = f"{SUMMARY_EPOCH_MEAN}__std"
     has_ep = ep_m in work.columns
+    mem_m = f"{SUMMARY_PEAK_GPU_MEM_GB}__mean"
+    mem_s = f"{SUMMARY_PEAK_GPU_MEM_GB}__std"
+    has_mem = mem_m in work.columns
+    mean_mem_m = f"{SUMMARY_MEAN_GPU_MEM_GB}__mean"
+    mean_mem_s = f"{SUMMARY_MEAN_GPU_MEM_GB}__std"
+    has_mean_mem = mean_mem_m in work.columns
 
     rows: list[dict[str, Any]] = []
     gc = ["model", "dataset", "_sub_id"]
@@ -686,9 +1016,25 @@ def build_rerun_timing_vs_params_frame(agg: pd.DataFrame) -> pd.DataFrame:
             if ep_s in w.index:
                 esd = float(pd.to_numeric(w.get(ep_s), errors="coerce"))
 
+        pmem = float("nan")
+        pmem_sd = float("nan")
+        if has_mem:
+            pmem = float(pd.to_numeric(w.get(mem_m), errors="coerce"))
+            if mem_s in w.index:
+                pmem_sd = float(pd.to_numeric(w.get(mem_s), errors="coerce"))
+
+        mmem = float("nan")
+        mmem_sd = float("nan")
+        if has_mean_mem:
+            mmem = float(pd.to_numeric(w.get(mean_mem_m), errors="coerce"))
+            if mean_mem_s in w.index:
+                mmem_sd = float(pd.to_numeric(w.get(mean_mem_s), errors="coerce"))
+
         legend = _pretty_legend_label(mk, bb)
         model = str(w.get("model", "")).strip()
         plot_dom = _domain_from_model(model) or ""
+        n_seeds = pd.to_numeric(w.get("n_seeds"), errors="coerce")
+        n_seeds_i = int(n_seeds) if pd.notna(n_seeds) else 0
 
         def one_row(dataset_h: str) -> None:
             rows.append(
@@ -704,6 +1050,11 @@ def build_rerun_timing_vs_params_frame(agg: pd.DataFrame) -> pd.DataFrame:
                     "wall_std": wsd,
                     "epoch_mean": em,
                     "epoch_std": esd,
+                    "peak_mem_mean": pmem,
+                    "peak_mem_std": pmem_sd,
+                    "mean_mem_mean": mmem,
+                    "mean_mem_std": mmem_sd,
+                    "n_seeds": n_seeds_i,
                 }
             )
 
@@ -713,6 +1064,143 @@ def build_rerun_timing_vs_params_frame(agg: pd.DataFrame) -> pd.DataFrame:
             one_row(hydra_dataset_key_from_loader_identity(ds_raw))
 
     return pd.DataFrame(rows)
+
+
+def build_peak_mem_diagnostic_table(
+    df_raw: pd.DataFrame,
+    flagged: list[dict[str, Any]],
+) -> pd.DataFrame:
+    """
+    Per ``(model, dataset)``: seed-mean/std of per-run peak and within-run-mean GPU GB,
+    plus ``n_seeds`` / ``n_flagged``.
+
+    Uses raw per-run memory columns (not best-val collapse) so the diagnostic matches the
+    requested grouping.
+    """
+    out_cols = [
+        "model",
+        "dataset",
+        "mean_peak_mem_GB",
+        "std_peak_mem_GB",
+        "mean_mean_mem_GB",
+        "std_mean_mem_GB",
+        "n_seeds",
+        "n_flagged",
+    ]
+    flagged_df = pd.DataFrame(flagged) if flagged else pd.DataFrame()
+    if not flagged_df.empty and {"model", "dataset"}.issubset(flagged_df.columns):
+        n_flag = (
+            flagged_df.groupby(["model", "dataset"], dropna=False)
+            .size()
+            .rename("n_flagged")
+            .reset_index()
+        )
+    else:
+        n_flag = pd.DataFrame(columns=["model", "dataset", "n_flagged"])
+
+    has_peak = SUMMARY_PEAK_GPU_MEM_GB in df_raw.columns
+    has_mean = SUMMARY_MEAN_GPU_MEM_GB in df_raw.columns
+    if df_raw.empty or not (has_peak or has_mean):
+        if n_flag.empty:
+            return pd.DataFrame(columns=out_cols)
+        n_flag = n_flag.copy()
+        for c in (
+            "mean_peak_mem_GB",
+            "std_peak_mem_GB",
+            "mean_mean_mem_GB",
+            "std_mean_mem_GB",
+        ):
+            n_flag[c] = float("nan")
+        n_flag["n_seeds"] = 0
+        return n_flag[out_cols]
+
+    work = df_raw.copy()
+    if has_peak:
+        work["_peak"] = pd.to_numeric(work[SUMMARY_PEAK_GPU_MEM_GB], errors="coerce")
+    else:
+        work["_peak"] = np.nan
+    if has_mean:
+        work["_mean"] = pd.to_numeric(work[SUMMARY_MEAN_GPU_MEM_GB], errors="coerce")
+    else:
+        work["_mean"] = np.nan
+
+    valid = work.loc[
+        (work["_peak"].notna() & np.isfinite(work["_peak"].to_numpy(dtype=float)))
+        | (work["_mean"].notna() & np.isfinite(work["_mean"].to_numpy(dtype=float)))
+    ]
+    if valid.empty:
+        stats = pd.DataFrame(
+            columns=[
+                "model",
+                "dataset",
+                "mean_peak_mem_GB",
+                "std_peak_mem_GB",
+                "mean_mean_mem_GB",
+                "std_mean_mem_GB",
+                "n_seeds",
+            ]
+        )
+    else:
+
+        def _std0(s: pd.Series) -> float:
+            s = pd.to_numeric(s, errors="coerce").dropna()
+            if s.empty:
+                return float("nan")
+            return float(s.std(ddof=0))
+
+        g = valid.groupby(["model", "dataset"], dropna=False)
+        stats = g.agg(
+            mean_peak_mem_GB=("_peak", "mean"),
+            std_peak_mem_GB=("_peak", _std0),
+            mean_mean_mem_GB=("_mean", "mean"),
+            std_mean_mem_GB=("_mean", _std0),
+            n_seeds=("_peak", "size"),
+        ).reset_index()
+
+    out = stats.merge(n_flag, on=["model", "dataset"], how="outer")
+    if "n_flagged" not in out.columns:
+        out["n_flagged"] = 0
+    out["n_flagged"] = pd.to_numeric(out["n_flagged"], errors="coerce").fillna(0).astype(int)
+    if "n_seeds" not in out.columns:
+        out["n_seeds"] = 0
+    out["n_seeds"] = pd.to_numeric(out["n_seeds"], errors="coerce").fillna(0).astype(int)
+    for c in (
+        "mean_peak_mem_GB",
+        "std_peak_mem_GB",
+        "mean_mean_mem_GB",
+        "std_mean_mem_GB",
+    ):
+        if c not in out.columns:
+            out[c] = float("nan")
+    out = out.sort_values(["model", "dataset"], kind="stable").reset_index(drop=True)
+    return out[out_cols]
+
+
+def probe_one_run_system_columns(entity: str, project: str, *, run_state: str | None) -> None:
+    """Print system-history columns for one finished run (column-name verification)."""
+    import wandb
+
+    api = wandb.Api(timeout=120)
+    runs_gen = iter_runs(api, entity, project, state=run_state)
+    run = next(iter(runs_gen), None)
+    if run is None:
+        print(f"No runs in {entity}/{project} (state={run_state!r}).")
+        return
+    print(f"Probe run id={run.id} name={run.name!r}")
+    idxs, err = parse_trainer_device_indices(dict(run.config or {}))
+    print(f"  trainer.devices -> {idxs!r}" + (f" ({err})" if err else ""))
+    hist = run.history(stream="events", samples=min(5000, DEFAULT_SYSTEM_HISTORY_SAMPLES))
+    cols = [] if hist is None else [str(c) for c in hist.columns.tolist()]
+    print(f"  history rows={0 if hist is None else len(hist)}; columns ({len(cols)}):")
+    for c in cols:
+        print(f"    {c}")
+    if idxs and len(idxs) == 1:
+        res = compute_peak_gpu_mem_for_run(run, samples=DEFAULT_SYSTEM_HISTORY_SAMPLES)
+        print(
+            f"  peak_mem_gb={res.peak_mem_gb} mean_mem_gb={res.mean_mem_gb} "
+            f"device={res.device_index} flagged={res.flagged} reason={res.flag_reason!r} "
+            f"mean_util={res.mean_util_pct}"
+        )
 
 
 def _expanded_hydra_paths_in_table_order() -> list[str]:
@@ -1029,7 +1517,48 @@ def main() -> None:
         type=int,
         default=150,
         metavar="DPI",
-        help="DPI for --scatter-plots PNGs (default: 150)",
+        help="DPI for --scatter-plots / --memory-plots PNGs (default: 150)",
+    )
+    p.add_argument(
+        "--memory-plots",
+        action="store_true",
+        help=(
+            "Fetch W&B system history peak GPU memory (assigned GPU from trainer.devices), "
+            "write diagnostic CSVs and param-count vs peak-mem scatter plots."
+        ),
+    )
+    p.add_argument(
+        "--memory-dir",
+        type=Path,
+        default=DEFAULT_MEMORY_SCATTER_DIR,
+        help=f"Directory for --memory-plots PNGs (default: {DEFAULT_MEMORY_SCATTER_DIR})",
+    )
+    p.add_argument(
+        "--memory-table-csv",
+        type=Path,
+        default=DEFAULT_MEMORY_TABLE_CSV,
+        help=f"Per (model, dataset) peak-mem summary CSV (default: {DEFAULT_MEMORY_TABLE_CSV})",
+    )
+    p.add_argument(
+        "--memory-flagged-csv",
+        type=Path,
+        default=DEFAULT_MEMORY_FLAGGED_CSV,
+        help=f"Flagged runs CSV for --memory-plots (default: {DEFAULT_MEMORY_FLAGGED_CSV})",
+    )
+    p.add_argument(
+        "--system-history-samples",
+        type=int,
+        default=DEFAULT_SYSTEM_HISTORY_SAMPLES,
+        metavar="N",
+        help=(
+            "W&B run.history(stream='events', samples=N) for peak memory "
+            f"(default: {DEFAULT_SYSTEM_HISTORY_SAMPLES}). Increase for very long runs."
+        ),
+    )
+    p.add_argument(
+        "--probe-system-columns",
+        action="store_true",
+        help="Print system-history columns for one run and exit (verify GPU metric key names).",
     )
     args = p.parse_args()
 
@@ -1039,13 +1568,22 @@ def main() -> None:
     else:
         run_state = str(args.run_state)
 
+    if args.probe_system_columns:
+        probe_one_run_system_columns(args.entity, args.project, run_state=run_state)
+        return
+
     if not args.keep_incomplete_seeds and int(args.required_seeds) < 1:
         p.error("--required-seeds must be >= 1 unless --keep-incomplete-seeds is set.")
 
     verbose = not args.quiet
     print(f"Entity: {args.entity}  project: {args.project!r}")
-    rows = collect_runs_single_project(
-        args.entity, args.project, run_state=run_state, verbose=verbose
+    rows, flagged_mem = collect_runs_single_project(
+        args.entity,
+        args.project,
+        run_state=run_state,
+        verbose=verbose,
+        fetch_peak_gpu_mem=bool(args.memory_plots),
+        system_history_samples=int(args.system_history_samples),
     )
     df_raw = dataframe_from_rows(rows)
     if args.write_raw_csv is not None:
@@ -1263,6 +1801,148 @@ def main() -> None:
                             f"Scatter plots: skip per-epoch figure for band {stem_suffix!r} "
                             "(no finite epoch_mean)."
                         )
+
+    if args.memory_plots:
+        mem_table = build_peak_mem_diagnostic_table(df_raw, flagged_mem)
+        args.memory_table_csv.parent.mkdir(parents=True, exist_ok=True)
+        mem_table.to_csv(args.memory_table_csv, index=False)
+        print(
+            f"Wrote peak-mem diagnostic table: {args.memory_table_csv} "
+            f"({len(mem_table)} rows)"
+        )
+        if not mem_table.empty and verbose:
+            n_flag_tot = int(mem_table["n_flagged"].sum())
+            n_ok_tot = int(mem_table["n_seeds"].sum())
+            print(
+                f"  peak-mem seeds ok={n_ok_tot}, flagged runs={n_flag_tot} "
+                f"({100.0 * n_flag_tot / max(n_ok_tot + n_flag_tot, 1):.1f}% of raw attempts)"
+            )
+            # Compact console preview of groups with any flags.
+            flagged_groups = mem_table.loc[mem_table["n_flagged"] > 0]
+            if not flagged_groups.empty:
+                print("  groups with n_flagged > 0:")
+                for _, rr in flagged_groups.iterrows():
+                    print(
+                        f"    {rr['model']} | {rr['dataset']}: "
+                        f"n_seeds={int(rr['n_seeds'])} n_flagged={int(rr['n_flagged'])}"
+                    )
+
+        flagged_df = pd.DataFrame(flagged_mem) if flagged_mem else pd.DataFrame(
+            columns=[
+                "identifiers_run_id",
+                "identifiers_run_name",
+                "identifiers_run_url",
+                "model",
+                "dataset",
+                "seed",
+                "trainer_devices_device_index",
+                "mean_util_pct",
+                "flag_reason",
+            ]
+        )
+        args.memory_flagged_csv.parent.mkdir(parents=True, exist_ok=True)
+        flagged_df.to_csv(args.memory_flagged_csv, index=False)
+        print(f"Wrote flagged peak-mem runs: {args.memory_flagged_csv} ({len(flagged_df)} rows)")
+
+        scatter_df = build_rerun_timing_vs_params_frame(agg)
+        if scatter_df.empty:
+            print("Memory plots: no data (empty aggregate or could not build best-val picks).")
+        else:
+            _pc = pd.to_numeric(scatter_df["param_count"], errors="coerce")
+            scatter_df = scatter_df.loc[_pc.notna() & np.isfinite(_pc.to_numpy(dtype=float))].copy()
+            if scatter_df.empty:
+                print("Memory plots: no rows with finite parameter count.")
+            else:
+                has_peak_y = (
+                    "peak_mem_mean" in scatter_df.columns
+                    and scatter_df["peak_mem_mean"].notna().any()
+                    and np.isfinite(scatter_df["peak_mem_mean"].to_numpy(dtype=float)).any()
+                )
+                has_mean_y = (
+                    "mean_mem_mean" in scatter_df.columns
+                    and scatter_df["mean_mem_mean"].notna().any()
+                    and np.isfinite(scatter_df["mean_mem_mean"].to_numpy(dtype=float)).any()
+                )
+                if not has_peak_y and not has_mean_y:
+                    print(
+                        "Memory plots: no finite peak/mean mem in best-val picks "
+                        "(check flagged CSV / system metrics)."
+                    )
+                else:
+                    scatter_bands: tuple[
+                        tuple[str, list[str], Callable[[pd.DataFrame], pd.DataFrame], str], ...
+                    ] = (
+                        ("cell", _dataset_order_cell(), _filter_scatter_cell, "Cell"),
+                        (
+                            "simplicial_graph",
+                            _dataset_order_simplicial_graph_benchmarks(),
+                            _filter_scatter_simplicial_graph_benchmarks,
+                            "Simplicial (graph)",
+                        ),
+                        (
+                            "simplicial_mantra",
+                            _dataset_order_simplicial_mantra(),
+                            _filter_scatter_simplicial_mantra,
+                            "Simplicial (MANTRA)",
+                        ),
+                    )
+                    for stem_suffix, ds_order, filt_fn, title_suffix in scatter_bands:
+                        sub = filt_fn(scatter_df)
+                        if sub.empty:
+                            print(
+                                f"Memory plots: skip band {stem_suffix!r} (no rows after filter)."
+                            )
+                            continue
+                        if (
+                            "peak_mem_mean" in sub.columns
+                            and sub["peak_mem_mean"].notna().any()
+                            and np.isfinite(sub["peak_mem_mean"].to_numpy(dtype=float)).any()
+                        ):
+                            emit_rerun_scatter_timing_vs_params(
+                                sub,
+                                y_mean_col="peak_mem_mean",
+                                y_std_col="peak_mem_std",
+                                stem=f"rerun_peak_gpu_mem_vs_params_{stem_suffix}",
+                                suptitle=(
+                                    "Best model peak GPU memory vs. parameter count: "
+                                    f"{title_suffix}"
+                                ),
+                                y_label="Peak GPU memory (GB)",
+                                x_label="Parameter count (total)",
+                                dataset_order=ds_order,
+                                out_dir=Path(args.memory_dir),
+                                dpi=int(args.scatter_dpi),
+                            )
+                        else:
+                            print(
+                                f"Memory plots: skip peak figure for band {stem_suffix!r} "
+                                "(no finite peak_mem_mean)."
+                            )
+                        if (
+                            "mean_mem_mean" in sub.columns
+                            and sub["mean_mem_mean"].notna().any()
+                            and np.isfinite(sub["mean_mem_mean"].to_numpy(dtype=float)).any()
+                        ):
+                            emit_rerun_scatter_timing_vs_params(
+                                sub,
+                                y_mean_col="mean_mem_mean",
+                                y_std_col="mean_mem_std",
+                                stem=f"rerun_mean_gpu_mem_vs_params_{stem_suffix}",
+                                suptitle=(
+                                    "Best model mean GPU memory vs. parameter count: "
+                                    f"{title_suffix}"
+                                ),
+                                y_label="Mean GPU memory allocated (GB)",
+                                x_label="Parameter count (total)",
+                                dataset_order=ds_order,
+                                out_dir=Path(args.memory_dir),
+                                dpi=int(args.scatter_dpi),
+                            )
+                        else:
+                            print(
+                                f"Memory plots: skip mean figure for band {stem_suffix!r} "
+                                "(no finite mean_mem_mean)."
+                            )
 
 
 if __name__ == "__main__":
