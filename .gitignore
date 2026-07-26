@@ -81,16 +81,20 @@ target/
 # Jupyter Notebook
 .ipynb_checkpoints
 notebooks/
+data/
 notebooks/*
 tutorials/data/
 tutorials/data/*
 tutorials/lightning_logs/
 tutorials/lightning_logs/*
+tutorials/*.csv
 tutorials/checkpoints
 tutorials/checkpoints/*
 
-# GraphUniverse challenge notebook outputs (JSON + figures)
-2026_tdl_challenge/outputs/
+# GraphUniverse challenge notebook outputs (JSON + figures); keep results.json tracked
+2026_tdl_challenge/outputs/**
+!2026_tdl_challenge/outputs/**/
+!2026_tdl_challenge/outputs/**/results.json
 
 # IPython
 profile_default/
@@ -190,8 +194,14 @@ notebooks/tmp
 /tutorials/lightning_logs/
 /tutorials/datasets/
 
+# scripts
+scripts/hopse_plotting/csvs
+scripts/hopse_plotting/plots
+scripts/hopse_plotting/tables
+
 # wandb
 wandb/
+result_BREC/
 
 # ruff
 .ruff_cache/

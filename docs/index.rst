@@ -355,6 +355,12 @@ Combinatorial complexes
 |                                   | Networks <htt                     |
 |                                   | ps://arxiv.org/pdf/2410.06530>`__ |
 +-----------------------------------+-----------------------------------+
+| HOPSE                             | Higher-Order Positional and       |
+|                                   | Structural Encodings on           |
+|                                   | combinatorial complexes; see      |
+|                                   | ``topobench.nn.backbones.combi    |
+|                                   | natorial.hopse``                  |
++-----------------------------------+-----------------------------------+
 
 **Remark:** TopoBench includes
 `TopoTune <https://arxiv.org/pdf/2410.06530>`__, a comprehensive
@@ -991,6 +997,7 @@ domains <https://arxiv.org/pdf/2402.02441>`__
    :maxdepth: 2
 
    tdl-challenge-2026/index
+   leaderboard/index
    tdl-challenge-2025/index
    api/index
    contributing/index
