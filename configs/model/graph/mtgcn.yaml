@@ -1,0 +1,50 @@
+_target_: topobench.model.TBModel
+
+model_name: mtgcn
+model_domain: graph
+
+feature_encoder:
+  _target_: topobench.nn.encoders.${model.feature_encoder.encoder_name}
+  encoder_name: AllCellFeatureEncoder
+  in_channels: ${infer_in_channels:${dataset},${oc.select:transforms,null}}
+  out_channels: 64
+  proj_dropout: 0.0
+
+backbone:
+  _target_: topobench.nn.backbones.MTGCNEncoder
+  in_channels: ${model.feature_encoder.out_channels}
+  hidden_channels: ${model.feature_encoder.out_channels}
+  num_layers: 4
+  num_tracks: 2
+  num_heads: 1
+  dropout: 0.1
+  propagation_weight: 0.8
+  use_residual: true
+  use_output_residual: true
+  normalization: symmetric
+  add_self_loops: true
+  make_undirected: true
+  temperature: 1.0
+  affiliation_source: hybrid
+  use_entropy_sharpening: false
+  sharpening_power: 2.0
+  output_norm: layer
+
+backbone_wrapper:
+  _target_: topobench.nn.wrappers.GNNWrapper
+  _partial_: true
+  wrapper_name: GNNWrapper
+  out_channels: ${model.feature_encoder.out_channels}
+  residual_connections: false
+  num_cell_dimensions: ${infer_num_cell_dimensions:${oc.select:model.feature_encoder.selected_dimensions,null},${model.feature_encoder.in_channels}}
+
+readout:
+  _target_: topobench.nn.readouts.NoReadOut
+  readout_name: NoReadOut
+  num_cell_dimensions: ${infer_num_cell_dimensions:${oc.select:model.feature_encoder.selected_dimensions,null},${model.feature_encoder.in_channels}}
+  hidden_dim: ${model.feature_encoder.out_channels}
+  out_channels: ${dataset.parameters.num_classes}
+  task_level: ${define_task_level:${dataset.parameters.task_level},${dataset.split_params.learning_setting}}
+  pooling_type: sum
+
+compile: false
