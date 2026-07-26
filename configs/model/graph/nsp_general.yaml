@@ -1,9 +1,11 @@
-# O(d)-NSP: Neural Sheaf Propagation with orthogonal restriction maps.
+# Gen-NSP: Neural Sheaf Propagation with general (full d x d) restriction maps.
 # Suk et al., "Surfing on the Neural Sheaf" (https://openreview.net/pdf?id=xOXFkyRzTlu)
-# Best-performing variant on the most heterophilic datasets of Table 1.
+# Most expressive variant of Table 1, and the only one that propagates the
+# unnormalised sheaf Laplacian (see `SHEAF_TYPES` in topobench/nn/backbones/graph/nsp.py),
+# hence the smaller leapfrog step.
 _target_: topobench.model.TBModel
 
-model_name: nsp
+model_name: nsp_general
 model_domain: graph
 
 feature_encoder:
@@ -20,9 +22,8 @@ backbone:
   hidden_dim: ${model.feature_encoder.out_channels}
   num_layers: 2 # Table 2 sweeps {2,3,4,5,6,8}
   d: 4 # stalk dimension; Table 2 sweeps [2,5], and it must divide hidden_dim
-  step_size: 1.0 # leapfrog step h; Table 2 sweeps [0.1,1.0]
-  sheaf_type: bundle # orthogonal restriction maps -> O(d)-NSP
-  orth: cayley
+  step_size: 0.5 # leapfrog step h; Table 2 sweeps [0.1,1.0]
+  sheaf_type: general # unconstrained restriction maps -> Gen-NSP
   dropout: 0.4 # Table 2 sweeps layer dropout in [0.0,0.9]
   input_dropout: 0.0
 
