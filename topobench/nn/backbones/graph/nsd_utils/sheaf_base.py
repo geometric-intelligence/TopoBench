@@ -47,4 +47,6 @@ class SheafDiffusion(nn.Module):
         self.sheaf_act = args["sheaf_act"]
         self.orth_trans = args["orth"]
         self.laplacian_builder = None
+
+
 SheafPropagation = SheafDiffusion

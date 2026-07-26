@@ -66,7 +66,13 @@ class LoadManager:
 
             try:
                 # Use importlib to safely import the module
-                package_name = package_dir.parent.parent.stem + "." + package_dir.parent.stem + "." + package_dir.stem
+                package_name = (
+                    package_dir.parent.parent.stem
+                    + "."
+                    + package_dir.parent.stem
+                    + "."
+                    + package_dir.stem
+                )
                 module_name = f"{package_name}.{file_path.stem}"
                 module = importlib.import_module(module_name)
 

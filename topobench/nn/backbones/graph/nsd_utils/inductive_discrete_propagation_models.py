@@ -142,13 +142,15 @@ class InductiveDiscreteDiagSheafPropagation(SheafPropagation):
             x_layer = x_layer.reshape(-1, actual_num_nodes * self.d).t()
             x_layer = self.lin_right_weights[layer](x_layer)
 
-            x_layer = torch_sparse.spmm(L[0], L[1], x_layer.size(0), x_layer.size(0), x_layer)
+            x_layer = torch_sparse.spmm(
+                L[0], L[1], x_layer.size(0), x_layer.size(0), x_layer
+            )
             x_layer = F.elu(x_layer)
 
             x_new = 2 * x_curr - x_prev - x_layer
             x_prev = x_curr
             x_curr = x_new
-        
+
         x = x_curr
 
         # Reshape using actual number of nodes
@@ -329,14 +331,16 @@ class InductiveDiscreteBundleSheafPropagation(SheafPropagation):
             )
 
             # Use the adjacency matrix rather than the diagonal
-            x_layer = torch_sparse.spmm(L[0], L[1], x_layer.size(0), x_layer.size(0), x_layer)
+            x_layer = torch_sparse.spmm(
+                L[0], L[1], x_layer.size(0), x_layer.size(0), x_layer
+            )
 
             x_layer = F.elu(x_layer)
 
             x_new = 2 * x_curr - x_prev - x_layer
             x_prev = x_curr
             x_curr = x_new
-        
+
         x = x_curr
 
         # Reshape using actual number of nodes
@@ -496,14 +500,16 @@ class InductiveDiscreteGeneralSheafPropagation(SheafPropagation):
             )
 
             # Use the adjacency matrix rather than the diagonal
-            x_layer = torch_sparse.spmm(L[0], L[1], x_layer.size(0), x_layer.size(0), x_layer)
+            x_layer = torch_sparse.spmm(
+                L[0], L[1], x_layer.size(0), x_layer.size(0), x_layer
+            )
 
             x_layer = F.elu(x_layer)
 
             x_new = 2 * x_curr - x_prev - x_layer
             x_prev = x_curr
             x_curr = x_new
-        
+
         x = x_curr
 
         # To detect the numerical instabilities of SVD.
