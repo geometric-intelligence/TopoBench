@@ -452,6 +452,61 @@ class TestGaugeModel:
         assert Q.shape == (N, r, d)
         assert _is_orthonormal(Q)
 
+    def test_return_initial_true_returns_initial_projection(
+        self, simple_graph_0
+    ):
+        """With ``return_initial=True`` the initial projection is returned.
+
+        The default forward pass yields the triple ``(z, Q, z0)`` where ``z0``
+        is exactly the input projection of ``x`` (before any gauge layer).
+
+        Parameters
+        ----------
+        simple_graph_0 : torch_geometric.data.Data
+            Test graph fixture.
+        """
+        in_channels, d, r = 5, 8, 3
+        N = simple_graph_0.num_nodes
+        model = GaugeModel(
+            n_layers=2, in_channels=in_channels, r=r, d_embedd=d
+        )
+        model.eval()
+        x = torch.randn(N, in_channels)
+
+        out = model(x, simple_graph_0.edge_index, return_initial=True)
+        assert len(out) == 3
+        z, Q, z0 = out
+        assert z.shape == (N, d)
+        assert Q.shape == (N, r, d)
+        assert z0.shape == (N, d)
+        # z0 is precisely the input projection, unaffected by the gauge layers.
+        assert torch.allclose(z0, model.input_projector(x))
+
+    def test_return_initial_default_returns_pair(self, simple_graph_0):
+        """Omitting ``return_initial`` returns the ``(z, Q)`` pair by default.
+
+        Parameters
+        ----------
+        simple_graph_0 : torch_geometric.data.Data
+            Test graph fixture.
+        """
+        model = GaugeModel(n_layers=2, in_channels=5, r=3, d_embedd=8)
+        x = torch.randn(simple_graph_0.num_nodes, 5)
+        assert len(model(x, simple_graph_0.edge_index)) == 2
+
+    def test_return_initial_false_returns_pair(self, simple_graph_0):
+        """With ``return_initial=False`` only ``(z, Q)`` is returned.
+
+        Parameters
+        ----------
+        simple_graph_0 : torch_geometric.data.Data
+            Test graph fixture.
+        """
+        model = GaugeModel(n_layers=2, in_channels=5, r=3, d_embedd=8)
+        x = torch.randn(simple_graph_0.num_nodes, 5)
+        out = model(x, simple_graph_0.edge_index)
+        assert len(out) == 2
+
     @pytest.mark.parametrize("n_layers", [1, 2, 4])
     def test_num_layers(self, simple_graph_0, n_layers):
         """The model stacks the requested number of gauge layers.
@@ -675,7 +730,10 @@ class TestGaugeWrapper:
     """Tests for the topobench wrapper around the gauge model."""
 
     def test_forward(self, simple_graph_0):
-        """The wrapper forwards node embeddings as ``x_0``.
+        """The wrapper forwards node embeddings and the initial state.
+
+        In addition to ``x_0`` it exposes the initial projection ``z_0`` and
+        the final frames ``Q`` (consumed by the custom loss).
 
         Parameters
         ----------
@@ -699,6 +757,8 @@ class TestGaugeWrapper:
         )
         model_out = wrapper(batch)
         assert model_out["x_0"].shape == (N, d)
+        assert model_out["z_0"].shape == (N, d)
+        assert model_out["Q"].shape == (N, r, d)
         assert "labels" in model_out
         assert "batch_0" in model_out
 
