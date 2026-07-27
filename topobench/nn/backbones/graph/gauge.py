@@ -894,7 +894,7 @@ class GaugeModel(nn.Module):
         )
 
     def forward(
-        self, x: Tensor, edge_index: Tensor, return_initial: bool = True
+        self, x: Tensor, edge_index: Tensor, return_initial: bool = False
     ) -> tuple[Tensor, Tensor]:
         """Forward pass of the full model.
 
@@ -906,7 +906,7 @@ class GaugeModel(nn.Module):
             Edge index tensor of shape ``[2, E]`` with source and destination
             node indices.
         return_initial : bool
-            Whether to return the initial projection of x (default: True).
+            Whether to return the initial projection of x (default: False).
 
         Returns
         -------
