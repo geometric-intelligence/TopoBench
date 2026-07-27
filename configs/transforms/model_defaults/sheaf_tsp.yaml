@@ -1,10 +1,9 @@
 defaults:
   - data_manipulations@triangle_degree: triangle_degree
-  - liftings/graph2cell@graph2cell_lifting: cycle
+  - liftings/graph2cell@graph2cell_lifting: clique_cell
 
-# Triangle-only 2-cells: the up-Laplacian and the wrapper's rank-2
-# degree signal then carry exact triangle structure instead of noisy
-# arbitrary-length cycle membership (cycles up to length 10 measurably
-# hurt both tasks; see docs/BATTLE_PLAN.md experiment log).
-graph2cell_lifting:
-  max_cell_length: 3
+# All triangles as 2-cells (CellCliqueLifting): the triangle set is
+# canonical, so the lifted complex and the diffusion operator's
+# up-adjacency are invariant under node relabeling. Cycle-basis
+# liftings are traversal-order-dependent and undercount triangles on
+# dense graphs (see docs/BATTLE_PLAN.md experiment log).
