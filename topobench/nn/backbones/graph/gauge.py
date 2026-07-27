@@ -835,6 +835,8 @@ class GaugeModel(nn.Module):
     f_sim_dropout : float, optional
         Dropout probability used by the per-head similarity network ``f_sim``
         (default: 0.0).
+    **kwargs : dict
+        Additional arguments.
     """
 
     def __init__(
@@ -853,6 +855,7 @@ class GaugeModel(nn.Module):
         f_sim_act: str = "leaky_relu",
         dropout: float = 0.3,
         f_sim_dropout: float = 0.0,
+        **kwargs,
     ):
         super().__init__()
 
