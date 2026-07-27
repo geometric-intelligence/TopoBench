@@ -893,7 +893,9 @@ class GaugeModel(nn.Module):
             ]
         )
 
-    def forward(self, x: Tensor, edge_index: Tensor) -> tuple[Tensor, Tensor]:
+    def forward(
+        self, x: Tensor, edge_index: Tensor, return_initial: bool = True
+    ) -> tuple[Tensor, Tensor]:
         """Forward pass of the full model.
 
         Parameters
@@ -903,6 +905,8 @@ class GaugeModel(nn.Module):
         edge_index : Tensor
             Edge index tensor of shape ``[2, E]`` with source and destination
             node indices.
+        return_initial : bool
+            Whether to return the initial projection of x (default: True).
 
         Returns
         -------
@@ -911,10 +915,19 @@ class GaugeModel(nn.Module):
         Q : Tensor
             Per-node orthonormal frames of shape ``[N, r, d_embedd]`` from the
             last gauge layer.
+        z0 : Tensor
+            The initial projection of ``x``, of shape ``[N, d_embedd]``. Only
+            returned when ``return_initial`` is True.
         """
         z = self.input_projector(x)
 
+        if return_initial:
+            z0 = z.clone()
+
         for layer in self.layers:
             z, Q = layer(z, edge_index)
+
+        if return_initial:
+            return z, Q, z0
 
         return z, Q

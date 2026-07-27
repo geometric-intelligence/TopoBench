@@ -24,9 +24,13 @@ class GaugeWrapper(AbstractWrapper):
         dict
             Dictionary containing the updated model output.
         """
-        z, _Q = self.backbone(batch.x_0, batch.edge_index)
+        z, Q, z0 = self.backbone(
+            batch.x_0, batch.edge_index, return_initial=True
+        )
 
         model_out = {"labels": batch.y, "batch_0": batch.batch_0}
         model_out["x_0"] = z
+        model_out["z_0"] = z0
+        model_out["Q"] = Q
 
         return model_out
