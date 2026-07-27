@@ -4,7 +4,11 @@ import pytest
 import torch
 import torch_geometric
 
-from topobench.loss.model.DirichletLoss import DirichletLoss
+# Import from the package (populated by the loss-discovery mechanism), not the
+# submodule: `from ...model.DirichletLoss import DirichletLoss` would force-import
+# the submodule and shadow the class registered on the package, breaking hydra's
+# `_target_: topobench.loss.model.DirichletLoss` resolution in later tests.
+from topobench.loss.model import DirichletLoss
 
 
 def _make_inputs(N=3, r=2, d=4, edge_index=None, requires_grad=False):
