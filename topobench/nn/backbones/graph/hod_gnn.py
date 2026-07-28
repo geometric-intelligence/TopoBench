@@ -369,7 +369,9 @@ class HODGNN(torch.nn.Module):
         if self.aggregation == "mean":
             deg = torch.zeros(num_nodes, dtype=dtype, device=edge_index.device)
             deg.index_add_(0, dst, values)
-            values = values / deg.clamp(min=1)[dst]
+            # Guard only true zero degrees so fractional weighted degrees
+            # still yield an exact mean.
+            values = values / deg.masked_fill(deg == 0, 1)[dst]
         return torch.sparse_coo_tensor(
             torch.stack([dst, src]),
             values,
@@ -496,7 +498,8 @@ class HODGNN(torch.nn.Module):
             batch = torch.zeros(n, dtype=torch.long, device=device)
 
         # Within-graph local index of every node and the padded source-axis
-        # length (largest graph in the batch).
+        # length (largest graph in the batch). Assumes nodes of each graph
+        # are contiguous in the batch vector, as PyG's Batch guarantees.
         counts = torch.bincount(batch)
         offsets = torch.cumsum(counts, dim=0) - counts
         idx_local = torch.arange(n, device=device) - offsets[batch]

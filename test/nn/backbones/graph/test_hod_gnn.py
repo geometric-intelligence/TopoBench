@@ -108,6 +108,10 @@ def _make_model(**kwargs):
         structural_init=False,
     )
     defaults.update(kwargs)
+    # Seed the global RNG so randomly initialised weights are reproducible
+    # (an unlucky init can e.g. kill every ReLU in a layer and zero the
+    # gradients that TestTraining asserts to be nonzero).
+    torch.manual_seed(0)
     return HODGNN(**defaults)
 
 
