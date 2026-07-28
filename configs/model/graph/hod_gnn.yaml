@@ -30,7 +30,14 @@ backbone:
   encoder_hidden: 64
   encoder_channels: 32
   activation: relu # "silu" (analytic) improves substructure counting (paper App. G.1)
-  aggregation: sum # "sum" = paper's GIN; "mean" = row-normalised Theorem-4.2 operator
+  # "mean" (default here) = the row-normalised random-walk operator from the
+  # constructive proof of the paper's Theorem 4.2: with structural_init the
+  # derivative diagonals start exactly at RWSE and stay degree-normalised,
+  # which is scale-stable across the GraphUniverse density grid and trains
+  # stably under the challenge's fixed single learning rate. "sum" = the
+  # paper's GIN aggregation; combined with structural_init its walk-count
+  # scale features destabilise training on dense graphs at lr 1e-3 (see PR).
+  aggregation: mean
   structural_init: true
   include_input: true
   base_dropout: 0.0

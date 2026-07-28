@@ -142,6 +142,9 @@ class HODGNN(torch.nn.Module):
     aggregation : str, optional
         Neighbour aggregation, ``"sum"`` (GIN, the paper's default) or
         ``"mean"`` (row-normalised random walk, the Theorem 4.2 operator).
+        With ``structural_init``, ``"sum"`` yields walk-count-scale features
+        that can destabilise training on dense graphs under hot learning
+        rates, whereas ``"mean"`` keeps them in ``[0, 1]``.
         Default is ``"sum"``.
     structural_init : bool, optional
         Apply the paper's Appendix F initialisation (constant-one input
