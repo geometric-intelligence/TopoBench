@@ -61,14 +61,21 @@ except ImportError:
 class RestrictionMapLearner(nn.Module):
     """Learn restriction maps F_{v<e} : F_v → F_e for each edge.
 
-    For stalk_dim d, each map is a d×d rotation (Cayley transform of a
-    skew-symmetric matrix) — following the Bundle Neural Network (BuNN)
-    parameterization [Deng et al., 2024] and the orthogonal transport
-    classes of Tandon et al., Appendix E. The Cayley image is the dense
-    subset of SO(d) excluding rotations with a -1 eigenvalue. The skew
-    generator is antisymmetrized over the edge direction, which makes
-    the transports orientation-equivariant (R_{vu} = R_{uv}^{-1}) and
-    the model invariant to node relabeling.
+    For stalk_dim d, each map is a d×d rotation obtained from a
+    skew-symmetric generator — following the Bundle Neural Network
+    (BuNN) parameterization [Deng et al., 2024] and the orthogonal
+    transport classes of Tandon et al., Appendix E. Two projections
+    onto SO(d) are available. ``"cayley"``: R = (I-S)(I+S)^{-1}, whose
+    image is the dense subset of SO(d) excluding rotations with a -1
+    eigenvalue; reaching near-antipodal maps requires generator norms
+    tan(theta/2), which diverge as theta approaches pi. ``"exp"``:
+    R = exp(S), surjective onto SO(d) with bounded generators (at
+    d = 2, exp(S) is the rotation by the generator's angle parameter),
+    removing the antipodal obstruction relevant to heterophilic
+    transport. The generator is antisymmetrized over the edge
+    direction in both cases, which makes the transports
+    orientation-equivariant (R_{vu} = R_{uv}^{-1}) and the model
+    invariant to node relabeling.
 
     Parameters
     ----------
@@ -76,10 +83,20 @@ class RestrictionMapLearner(nn.Module):
         Input feature dimension (used to condition the maps).
     stalk_dim : int
         Dimension of each stalk vector space.
+    rotation_param : str
+        Projection onto SO(d): ``"cayley"`` or ``"exp"``.
     """
 
-    def __init__(self, in_channels: int, stalk_dim: int):
+    def __init__(
+        self,
+        in_channels: int,
+        stalk_dim: int,
+        rotation_param: str = "cayley",
+    ):
         super().__init__()
+        if rotation_param not in ("cayley", "exp"):
+            raise ValueError("rotation_param must be 'cayley' or 'exp'")
+        self.rotation_param = rotation_param
         self.stalk_dim = stalk_dim
         # Number of free parameters in a skew-symmetric d×d matrix
         n_skew = stalk_dim * (stalk_dim - 1) // 2
@@ -130,6 +147,11 @@ class RestrictionMapLearner(nn.Module):
         S[:, self._triu[0], self._triu[1]] = params
         S[:, self._triu[1], self._triu[0]] = -params
 
+        if self.rotation_param == "exp":
+            # Exponential map: surjective onto SO(d); at d = 2 this is
+            # the rotation by the generator's angle, so antipodal maps
+            # are reachable with bounded generators.
+            return torch.matrix_exp(S)
         # Cayley transform: R = (I + S)^{-1}(I - S)  →  orthogonal
         # (equals (I - S)(I + S)^{-1} since the factors commute)
         eye = torch.eye(d, device=x.device, dtype=x.dtype).unsqueeze(0)
@@ -363,6 +385,7 @@ class SheafConvLayer(nn.Module):
         kernel_distance: str = "feature",
         ppr_alpha: float = 0.1,
         reg_form: str = "dirichlet",
+        rotation_param: str = "cayley",
     ):
         super().__init__()
         if filter_order < 1:
@@ -388,7 +411,9 @@ class SheafConvLayer(nn.Module):
         self.reg_form = reg_form
 
         # Learnable restriction maps
-        self.map_learner = RestrictionMapLearner(in_channels, stalk_dim)
+        self.map_learner = RestrictionMapLearner(
+            in_channels, stalk_dim, rotation_param=rotation_param
+        )
 
         # Lift channels into stalk fibers: (N, C) → (N*d, C).
         # Each stalk coordinate receives its own linear view of the
@@ -673,6 +698,7 @@ class SheafTSP(nn.Module):
         kernel_distance: str = "feature",
         ppr_alpha: float = 0.1,
         reg_form: str = "dirichlet",
+        rotation_param: str = "cayley",
         global_context: bool = False,
         last_act: bool = False,
         **kwargs,
@@ -714,6 +740,7 @@ class SheafTSP(nn.Module):
                     kernel_distance=kernel_distance,
                     ppr_alpha=ppr_alpha,
                     reg_form=reg_form,
+                    rotation_param=rotation_param,
                 )
             )
 

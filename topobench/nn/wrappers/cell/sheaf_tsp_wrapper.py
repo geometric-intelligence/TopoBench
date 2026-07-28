@@ -72,6 +72,12 @@ class SheafTSPWrapper(AbstractWrapper):
         # edges come from A .* A^2 > 0 on the raw adjacency, so the
         # branch is exact and independent of the cycle-basis lifting.
         # Zero-init fusion keeps epoch-0 behavior identical.
+        # Count-signal source: "auto" prefers the TriangleDegree
+        # transform when present; "incidence" always derives t_v from
+        # the lifted complex as |B_1||B_2|1 — exact under the clique
+        # lifting (each triangle at a node contributes 2), endogenous
+        # to the same incidence structure all lifted models consume.
+        self.count_source = kwargs.get("count_source", "auto")
         self.use_petals = kwargs.get("petals", False)
         if self.use_petals:
             c = kwargs["out_channels"]
@@ -178,7 +184,10 @@ class SheafTSPWrapper(AbstractWrapper):
         # triangles on dense graphs). Fallback: the lifting-derived
         # degree t_v = |B_1||B_2|1.
         t_v = None
-        if hasattr(batch, "tri_degree"):
+        use_transform = self.count_source == "auto" and hasattr(
+            batch, "tri_degree"
+        )
+        if use_transform:
             t_v = batch.tri_degree.to(dtype=x_1.dtype)
         elif hasattr(batch, "incidence_2"):
             inc2 = batch.incidence_2.coalesce()

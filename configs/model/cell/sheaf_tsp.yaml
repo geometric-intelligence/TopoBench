@@ -38,6 +38,10 @@ backbone:
   # "alignment" (bounded kernel-alignment reward, HilbNets App. D).
   # Alignment: -27% dense-cell TRI, neutral elsewhere, CD gates hold.
   reg_form: alignment
+  # SO(d) projection for restriction maps: "cayley" (dense subset of
+  # SO(d); antipodal maps need diverging generators) or "exp"
+  # (surjective; antipodal reachable with bounded generators).
+  rotation_param: cayley
   # Zero-init per-layer global mean-context term (x += W_g mean(x)).
   global_context: false
   # Transport-alignment regularizer (Tandon et al., Eq. 15).
@@ -56,6 +60,10 @@ backbone_wrapper:
   residual_connections: false
   # Warm-init strength of the rank-2 count channel (see wrapper).
   tri_warm: 0.1
+  # Count-signal source: "auto" (TriangleDegree transform when
+  # present) or "incidence" (|B_1||B_2|1 from the lifted complex;
+  # exact under the clique lifting).
+  count_source: auto
   # Learnable scalar gate on the feature streams entering x_0
   # (init 1.0); lets a task suppress feature noise around the count
   # channel during training.
