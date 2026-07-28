@@ -1,5 +1,4 @@
 defaults:
-  - data_manipulations@triangle_degree: triangle_degree
   - liftings/graph2cell@graph2cell_lifting: clique_cell
 
 # All triangles as 2-cells (CellCliqueLifting): the triangle set is
