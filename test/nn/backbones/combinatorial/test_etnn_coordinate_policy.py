@@ -6,8 +6,8 @@ with LapPE structural pseudo-coordinates, and with physical Euclidean
 coordinates.  These tests therefore protect both model wiring and the geometry
 contracts behind the physical policy.
 
-The test file is organized around the public design questions reviewers are
-likely to care about:
+The test file is organized around the coordinate-policy model's public
+behavior and geometry contracts:
 
 1. Does the unified backbone preserve the coordinate-free GraphUniverse path?
 2. Does the structural LapPE policy consume graph-derived pseudo-coordinates
@@ -49,9 +49,8 @@ from topobench.transforms.liftings.graph2combinatorial.graph_induced_cc import (
 def create_mock_complex_batch():
     """Create a standalone lifted combinatorial-complex test batch.
 
-    The consolidated test suite must not import fixtures from the incremental
-    coordinate-free or LapPE submissions.  This fixture directly describes the
-    rank-wise feature and sparse-neighborhood contract produced by TopoBench's
+    This fixture directly describes the rank-wise feature and
+    sparse-neighborhood contract produced by TopoBench's
     graph-to-combinatorial lifting.
 
     Returns
@@ -496,9 +495,9 @@ def test_coordinate_policy_physical_requires_pos():
 def test_coordinate_policy_rejects_unknown_policy():
     """Policy names should be explicit to avoid ambiguous model behavior.
 
-    The consolidated challenge config should be reproducible.  Unsupported
-    modes such as ``auto`` are rejected here so coordinate use is a visible
-    model choice instead of hidden dataset-dependent behavior.
+    The public config should be reproducible. Unsupported modes such as
+    ``auto`` are rejected here so coordinate use is a visible model choice
+    instead of hidden dataset-dependent behavior.
     """
     with pytest.raises(ValueError, match="Unsupported"):
         create_coordinate_policy_etnn("auto")

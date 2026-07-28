@@ -143,9 +143,8 @@ class TestETNNPipeline:
     )
     def test_coordinate_policy_physical_qm9_one_epoch_pipeline_smoke(self):
         """Exercise QM9 -> lifting -> physical ETNN -> readout -> loss."""
-        # Physical coordinate-policy ETNN is the consolidated PR's new
-        # paper-faithful path. This skipped smoke documents the exact
-        # end-to-end command path without making ordinary CI process QM9.
+        # This skipped smoke documents the physical policy's exact end-to-end
+        # command path without making ordinary CI process QM9.
         with hydra.initialize(version_base="1.3", config_path="../../configs"):
             cfg = hydra.compose(
                 config_name="run.yaml",
