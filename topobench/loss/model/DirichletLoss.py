@@ -10,7 +10,7 @@ from topobench.loss.base import AbstractLoss
 
 
 class DirichletLoss(AbstractLoss):
-    r"""Dirichlet-energy regularization loss for the Gauge model.
+    r"""Dirichlet-energy regularization loss for the Gauge model (cf. paper equation (13)).
 
     Measures how smoothly the node embeddings vary across edges once projected
     onto each node's local frame ``Q``. Each node embedding is projected onto
@@ -42,7 +42,7 @@ class DirichletLoss(AbstractLoss):
         return f"{self.__class__.__name__}(lamb={self.lamb}, reduction={self.reduce})"
 
     def forward(self, model_out: dict, batch: Data) -> Tensor:
-        r"""Compute the Dirichlet-energy regularization loss.
+        r"""Compute the Dirichlet-energy regularization loss according to the paper's eq. 13.
 
         Parameters
         ----------
