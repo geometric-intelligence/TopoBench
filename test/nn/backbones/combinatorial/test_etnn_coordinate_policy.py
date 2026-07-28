@@ -33,14 +33,18 @@ from topobench.dataloader.utils import collate_fn
 from topobench.nn.backbones.combinatorial.etnn_coordinate_policy import (
     ETNNCoordinatePolicy,
     _batch_norm_physical_invariants,
+    _build_lappe_cell_coordinates,
     _build_physical_cell_geometry,
     _build_vertex_memberships,
     _edge_channels_for_coordinate_policy,
     _ETNNCoordinatePolicyLayer,
+    _neighborhood_to_edge_index,
     _normalize_physical_invariants,
     _physical_relation_invariants,
+    _squared_coordinate_distances,
     _validate_physical_coordinates,
 )
+from topobench.nn.wrappers.combinatorial import TuneWrapper
 from topobench.transforms.liftings.graph2combinatorial.graph_induced_cc import (
     GraphTriangleInducedCC,
 )
@@ -251,6 +255,266 @@ def test_coordinate_policy_structural_lappe_runs_from_lappe():
     assert out[1].shape == batch.x_1.shape
     assert out[2].shape == batch.x_2.shape
     assert model.layers[0].edge_channels == 2
+
+
+def test_coordinate_policy_none_outputs_fit_tune_wrapper_contract():
+    """Coordinate-free outputs should satisfy ``TuneWrapper``."""
+    batch = create_mock_complex_batch()
+    wrapper = TuneWrapper(
+        backbone=create_coordinate_policy_etnn("none"),
+        out_channels=16,
+        num_cell_dimensions=3,
+        residual_connections=False,
+    )
+
+    out = wrapper(batch)
+
+    assert torch.equal(out["labels"], batch.y)
+    assert torch.equal(out["batch_0"], batch.batch_0)
+    assert out["x_0"].shape == batch.x_0.shape
+    assert out["x_1"].shape == batch.x_1.shape
+    assert out["x_2"].shape == batch.x_2.shape
+
+
+def test_coordinate_policy_none_handles_empty_rank_with_stored_zero_edges():
+    """Stored zero placeholders should not create messages for empty ranks."""
+    batch = create_mock_complex_batch()
+    batch.x_2 = torch.empty(0, 16)
+    batch.batch_2 = torch.empty(0, dtype=torch.long)
+    batch["up_adjacency-2"] = torch.sparse_coo_tensor(
+        indices=torch.tensor([[0, 1], [0, 1]]),
+        values=torch.zeros(2),
+        size=(2, 2),
+    ).coalesce()
+    batch["up_incidence-1"] = torch.sparse_coo_tensor(
+        indices=torch.empty(2, 0, dtype=torch.long),
+        values=torch.empty(0),
+        size=(0, 4),
+    ).coalesce()
+    batch["down_incidence-2"] = torch.sparse_coo_tensor(
+        indices=torch.empty(2, 0, dtype=torch.long),
+        values=torch.empty(0),
+        size=(4, 0),
+    ).coalesce()
+
+    out = create_coordinate_policy_etnn("none")(batch)
+
+    assert out[0].shape == batch.x_0.shape
+    assert out[1].shape == batch.x_1.shape
+    assert out[2].shape == batch.x_2.shape
+
+
+def test_neighborhood_to_edge_index_uses_columns_as_senders():
+    """Sparse relation rows are receivers and columns are senders."""
+    up_incidence_0 = torch.sparse_coo_tensor(
+        indices=torch.tensor([[0, 0], [0, 1]]),
+        values=torch.ones(2),
+        size=(1, 2),
+    ).coalesce()
+    batch = Data(**{"up_incidence-0": up_incidence_0})
+
+    edge_index, edge_attr = _neighborhood_to_edge_index(
+        batch=batch,
+        neighborhood="up_incidence-0",
+        src_rank=0,
+        dst_rank=1,
+        device=torch.device("cpu"),
+        dtype=torch.float32,
+        num_src_cells=2,
+        num_dst_cells=1,
+    )
+
+    expected_edge_index = torch.tensor([[0, 1], [0, 0]])
+    assert torch.equal(edge_index, expected_edge_index)
+    assert edge_attr.shape == (2, 1)
+
+
+def test_neighborhood_to_edge_index_compacts_empty_rank_placeholders():
+    """Sparse axes should compact placeholders for graphs with empty ranks."""
+    rank_2_adjacency = torch.sparse_coo_tensor(
+        indices=torch.tensor([[0, 1, 2], [0, 2, 1]]),
+        values=torch.tensor([0.0, 1.0, 1.0]),
+        size=(3, 3),
+    ).coalesce()
+    batch = Data(
+        x_2=torch.randn(2, 16),
+        batch_2=torch.tensor([1, 1]),
+        **{"up_adjacency-2": rank_2_adjacency},
+    )
+
+    edge_index, edge_attr = _neighborhood_to_edge_index(
+        batch=batch,
+        neighborhood="up_adjacency-2",
+        src_rank=2,
+        dst_rank=2,
+        device=torch.device("cpu"),
+        dtype=torch.float32,
+        num_src_cells=2,
+        num_dst_cells=2,
+    )
+
+    expected_edge_index = torch.tensor([[1, 0], [0, 1]])
+    assert torch.equal(edge_index, expected_edge_index)
+    assert edge_attr.shape == (2, 1)
+
+
+def test_neighborhood_to_edge_index_rejects_ambiguous_sparse_axis():
+    """Sparse-axis compaction should require rank-wise batch metadata."""
+    rank_2_adjacency = torch.sparse_coo_tensor(
+        indices=torch.tensor([[1, 2], [2, 1]]),
+        values=torch.ones(2),
+        size=(3, 3),
+    ).coalesce()
+    batch = Data(
+        x_2=torch.randn(2, 16),
+        **{"up_adjacency-2": rank_2_adjacency},
+    )
+
+    with pytest.raises(ValueError, match="batch_2"):
+        _neighborhood_to_edge_index(
+            batch=batch,
+            neighborhood="up_adjacency-2",
+            src_rank=2,
+            dst_rank=2,
+            device=torch.device("cpu"),
+            dtype=torch.float32,
+            num_src_cells=2,
+            num_dst_cells=2,
+        )
+
+
+def test_coordinate_policy_requires_neighborhoods():
+    """A typed ETNN backbone should require at least one relation."""
+    with pytest.raises(ValueError, match="at least one neighborhood"):
+        ETNNCoordinatePolicy(
+            in_channels=16,
+            hidden_channels=8,
+            out_channels=16,
+            neighborhoods=[],
+        )
+
+
+def test_coordinate_policy_structural_lappe_requires_lappe_attribute():
+    """Structural mode should not silently synthesize missing coordinates."""
+    batch = create_lappe_complex_batch()
+
+    with pytest.raises(AttributeError, match="LapPE"):
+        create_coordinate_policy_etnn("structural_lappe")(batch)
+
+
+def test_coordinate_policy_structural_lappe_validates_rank_0_rows():
+    """LapPE rows should align one-to-one with rank-0 cells."""
+    batch = create_lappe_complex_batch()
+    batch.LapPE = torch.randn(batch.x_0.shape[0] + 1, 3)
+
+    with pytest.raises(ValueError, match="one coordinate row per rank-0"):
+        create_coordinate_policy_etnn("structural_lappe")(batch)
+
+
+def test_structural_lappe_coordinates_are_barycentric_by_rank():
+    """Higher-rank structural coordinates should use incidence averages."""
+    batch = create_lappe_complex_batch()
+    batch.LapPE = torch.tensor(
+        [
+            [0.0, 0.0],
+            [2.0, 0.0],
+            [2.0, 2.0],
+            [0.0, 2.0],
+        ]
+    )
+
+    coordinates = _build_lappe_cell_coordinates(
+        batch=batch,
+        coordinate_attr="LapPE",
+        max_rank=2,
+        device=torch.device("cpu"),
+        dtype=torch.float32,
+    )
+
+    expected_rank_1 = torch.tensor(
+        [
+            [1.0, 0.0],
+            [2.0, 1.0],
+            [1.0, 2.0],
+            [0.0, 1.0],
+        ]
+    )
+    expected_rank_2 = torch.tensor(
+        [
+            [4.0 / 3.0, 1.0],
+            [1.0, 4.0 / 3.0],
+        ]
+    )
+    assert torch.allclose(coordinates[0], batch.LapPE)
+    assert torch.allclose(coordinates[1], expected_rank_1)
+    assert torch.allclose(coordinates[2], expected_rank_2)
+
+
+def test_structural_lappe_coordinates_handle_empty_rank():
+    """Empty ranks should receive empty structural-coordinate tensors."""
+    batch = create_lappe_complex_batch()
+    batch.LapPE = torch.randn(batch.x_0.shape[0], 3)
+    batch.x_2 = torch.empty(0, 16)
+    batch.batch_2 = torch.empty(0, dtype=torch.long)
+    batch.incidence_2 = torch.sparse_coo_tensor(
+        indices=torch.empty(2, 0, dtype=torch.long),
+        values=torch.empty(0),
+        size=(batch.x_1.shape[0], 0),
+    ).coalesce()
+
+    coordinates = _build_lappe_cell_coordinates(
+        batch=batch,
+        coordinate_attr="LapPE",
+        max_rank=2,
+        device=torch.device("cpu"),
+        dtype=torch.float32,
+    )
+
+    assert coordinates[2].shape == (0, 3)
+
+
+def test_structural_lappe_coordinates_validate_incidence_source_axis():
+    """Incidence source rows should align with lower-rank coordinates."""
+    batch = create_lappe_complex_batch()
+    batch.LapPE = torch.randn(batch.x_0.shape[0], 3)
+    batch.incidence_1 = torch.sparse_coo_tensor(
+        indices=torch.empty(2, 0, dtype=torch.long),
+        values=torch.empty(0),
+        size=(batch.x_0.shape[0] + 1, batch.x_1.shape[0]),
+    ).coalesce()
+
+    with pytest.raises(ValueError, match="source rows"):
+        _build_lappe_cell_coordinates(
+            batch=batch,
+            coordinate_attr="LapPE",
+            max_rank=2,
+            device=torch.device("cpu"),
+            dtype=torch.float32,
+        )
+
+
+def test_structural_lappe_squared_distance_is_rigid_motion_invariant():
+    """Structural distances should ignore rigid coordinate-frame choices."""
+    src = torch.tensor([[0.0, 0.0], [2.0, 0.0]])
+    dst = torch.tensor([[1.0, 1.0], [3.0, 0.0]])
+    edge_index = torch.tensor([[0, 1], [0, 1]])
+    base = _squared_coordinate_distances(
+        src,
+        dst,
+        edge_index,
+        torch.float32,
+    )
+
+    rotation_reflection = torch.tensor([[0.0, -1.0], [-1.0, 0.0]])
+    translation = torch.tensor([4.0, -2.0])
+    transformed = _squared_coordinate_distances(
+        src @ rotation_reflection.T + translation,
+        dst @ rotation_reflection.T + translation,
+        edge_index,
+        torch.float32,
+    )
+
+    assert torch.allclose(base, transformed)
 
 
 @pytest.mark.parametrize("coordinate_policy", ["none", "structural_lappe"])
