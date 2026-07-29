@@ -132,6 +132,7 @@ def _make_mlp(
     dropout: float,
     activation: str,
     use_batch_norm: bool,
+    final_activation: bool = False,
 ) -> nn.Sequential:
     """Build the MLP used by ETNN message and feature-update functions.
 
@@ -149,6 +150,11 @@ def _make_mlp(
         Activation name resolved by :func:`_get_activation`.
     use_batch_norm : bool
         Whether to normalize the hidden representation.
+    final_activation : bool, optional
+        Whether to apply the configured activation after the output linear
+        layer. The submitted coordinate-policy models leave this disabled.
+        The controlled QM9 parity wrapper enables it only for relation-message
+        MLPs to match the pinned NSAPH ``lean=False`` implementation.
 
     Returns
     -------
@@ -161,6 +167,8 @@ def _make_mlp(
         layers.append(nn.BatchNorm1d(hidden_channels))
     layers.extend([copy.deepcopy(activation_module), nn.Dropout(dropout)])
     layers.append(nn.Linear(hidden_channels, out_channels))
+    if final_activation:
+        layers.append(copy.deepcopy(activation_module))
     return nn.Sequential(*layers)
 
 
@@ -189,6 +197,9 @@ class _ETNNMessagePassing(nn.Module):
         Message-MLP activation name.
     use_batch_norm : bool
         Whether to normalize the hidden message representation.
+    final_activation : bool, optional
+        Whether the relation-message MLP applies an activation after its
+        output linear layer.
     """
 
     def __init__(
@@ -198,6 +209,7 @@ class _ETNNMessagePassing(nn.Module):
         dropout: float,
         activation: str,
         use_batch_norm: bool,
+        final_activation: bool = False,
     ) -> None:
         super().__init__()
         self.message_mlp = _make_mlp(
@@ -207,6 +219,7 @@ class _ETNNMessagePassing(nn.Module):
             dropout=dropout,
             activation=activation,
             use_batch_norm=use_batch_norm,
+            final_activation=final_activation,
         )
         self.edge_gate = nn.Sequential(
             nn.Linear(hidden_channels, 1),
