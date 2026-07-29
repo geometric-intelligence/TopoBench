@@ -339,24 +339,14 @@ class TestLocalCoordinatesLayer:
         assert torch.allclose(Q[2], Q1[2])
         assert not torch.allclose(Q[1], Q1[1])
 
-    @pytest.mark.xfail(
-        reason="LocalCoordinatesLayer silently truncates r to d instead of "
-        "keeping r subspaces when r > d_embedd."
-    )
-    def test_r_greater_than_d(self, simple_graph_0):
-        """The frame must keep ``r`` subspaces even when ``r > d_embedd``.
+    def test_r_greater_than_d_raises(self):
+        """``r > d_embedd`` is rejected instead of silently truncating to d.
 
-        Parameters
-        ----------
-        simple_graph_0 : torch_geometric.data.Data
-            Test graph fixture.
+        A d-dimensional space admits at most d orthonormal frame vectors, so
+        the layer must refuse to be constructed rather than dropping subspaces.
         """
-        d, r = 3, 8
-        N = simple_graph_0.num_nodes
-        layer = LocalCoordinatesLayer(r_subspaces=r, d_embedd=d)
-        Z = torch.randn(N, d)
-        Q = layer(Z, simple_graph_0.edge_index)
-        assert Q.shape == (N, r, d)
+        with pytest.raises(ValueError):
+            LocalCoordinatesLayer(r_subspaces=8, d_embedd=3)
 
     def test_respects_edge_direction(self):
         """A directed edge only influences its destination, never its source."""
