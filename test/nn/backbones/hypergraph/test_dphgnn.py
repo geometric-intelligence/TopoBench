@@ -30,6 +30,91 @@ def _permute_incidence(incidence, perm):
     return dense[perm].to_sparse().coalesce()
 
 
+@torch.no_grad()
+def _hypergcn_adjacency_reference(incidence, x, num_nodes, with_mediators):
+    """Unvectorized, per-hyperedge Python-loop reference implementation.
+
+    This is the original ``_hypergcn_adjacency`` body, kept here (rather
+    than in ``dphgnn.py``) purely as an oracle for
+    ``test_hypergcn_adjacency_matches_reference``: it is exact by
+    construction (no batching/padding tricks) but pays a CPU-GPU sync
+    (``.item()``) per hyperedge, which is why ``dphgnn._hypergcn_adjacency``
+    was vectorized.
+    """
+    indices = incidence.indices()
+    row, col = indices[0], indices[1]
+    order = torch.argsort(col, stable=True)
+    row, col = row[order], col[order]
+    _, counts = torch.unique_consecutive(col, return_counts=True)
+
+    edge_row, edge_col, edge_val = [], [], []
+    start = 0
+    for count in counts.tolist():
+        members = row[start : start + count]
+        start += count
+        if count < 2:
+            continue
+        member_x = x[members]
+        dist = torch.cdist(member_x, member_x)
+        flat_argmax = torch.argmax(dist).item()
+        i_local, j_local = flat_argmax // count, flat_argmax % count
+        i, j = members[i_local].item(), members[j_local].item()
+        edge_row += [i, j]
+        edge_col += [j, i]
+        edge_val += [1.0, 1.0]
+        if with_mediators and count > 2:
+            weight = 1.0 / (2 * count - 3)
+            for k_local in range(count):
+                if k_local in (i_local, j_local):
+                    continue
+                k = members[k_local].item()
+                edge_row += [i, k, j, k]
+                edge_col += [k, i, k, j]
+                edge_val += [weight, weight, weight, weight]
+
+    if not edge_row:
+        empty = torch.zeros((2, 0), dtype=torch.long, device=x.device)
+        return torch.sparse_coo_tensor(
+            empty,
+            torch.zeros(0, device=x.device, dtype=x.dtype),
+            (num_nodes, num_nodes),
+        ).coalesce()
+
+    edge_indices = torch.tensor(
+        [edge_row, edge_col], dtype=torch.long, device=x.device
+    )
+    values = torch.tensor(edge_val, device=x.device, dtype=x.dtype)
+    return torch.sparse_coo_tensor(
+        edge_indices, values, (num_nodes, num_nodes)
+    ).coalesce()
+
+
+def _ragged_incidence(cardinalities, seed):
+    """Build a random incidence matrix with the given hyperedge sizes.
+
+    A cardinality of 0 produces an unused hyperedge column (no rows), to
+    exercise the "hyperedge absent from `col`" degenerate case alongside
+    genuine singleton (cardinality 1) and larger hyperedges.
+    """
+    generator = torch.Generator().manual_seed(seed)
+    num_nodes = sum(cardinalities)
+    rows, cols = [], []
+    node = 0
+    for edge, card in enumerate(cardinalities):
+        members = torch.randperm(num_nodes, generator=generator)[:card]
+        for m in members.tolist():
+            rows.append(m)
+            cols.append(edge)
+        node += card
+    values = torch.ones(len(rows), dtype=torch.float64)
+    indices = torch.tensor([rows, cols], dtype=torch.long)
+    incidence = torch.sparse_coo_tensor(
+        indices, values, (num_nodes, len(cardinalities))
+    ).coalesce()
+    x = torch.randn(num_nodes, 8, generator=generator, dtype=torch.float64)
+    return incidence, x, num_nodes
+
+
 class TestDPHGNN:
     """Unit tests for DPHGNN."""
 
@@ -177,6 +262,35 @@ class TestDPHGNN:
         assert "DPHGNN" in repr(self.model)
         for name, module in self.model.named_children():
             assert module.__class__.__name__ in repr(module), name
+
+    @pytest.mark.parametrize("with_mediators", [False, True])
+    @pytest.mark.parametrize(
+        "cardinalities",
+        [
+            [3, 2, 1, 0],
+            [2, 2, 2],
+            [5, 4, 3, 2, 1, 0],
+            [6],
+        ],
+    )
+    def test_hypergcn_adjacency_matches_reference(
+        self, cardinalities, with_mediators
+    ):
+        """Vectorized `_hypergcn_adjacency` must exactly match the
+        per-hyperedge Python-loop reference, including tie-breaking, for
+        hyperedges of ragged cardinality (this is what the padding/masking
+        in the vectorized version must reproduce bit-for-bit).
+        """
+        incidence, x, num_nodes = _ragged_incidence(cardinalities, seed=0)
+
+        vectorized = dphgnn._hypergcn_adjacency(
+            incidence, x, num_nodes, with_mediators
+        ).to_dense()
+        reference = _hypergcn_adjacency_reference(
+            incidence, x, num_nodes, with_mediators
+        ).to_dense()
+
+        assert torch.equal(vectorized, reference)
 
     def test_hypergcn_adjacency_all_singletons(self):
         """No hyperedge with cardinality >= 2 yields an empty adjacency."""

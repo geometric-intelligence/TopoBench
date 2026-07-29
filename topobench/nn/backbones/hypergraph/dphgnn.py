@@ -37,7 +37,7 @@ def _inv_pow(degree, power):
     """
     out = torch.zeros_like(degree)
     mask = degree > 0
-    out[mask] = degree[mask].pow(power)
+    out[mask] = degree[mask].pow(power).to(out.dtype)
     return out
 
 
@@ -307,6 +307,17 @@ def _hypergcn_adjacency(incidence, x, num_nodes, with_mediators):
     ``no_grad``: only the resulting structure is used downstream. Ties in
     the arg max would break permutation equivariance; the toy test fixture
     uses continuous features to avoid this in practice.
+
+    Implementation is batched: every hyperedge's member list is right-padded
+    into a single ``[num_valid_hyperedges, k_max, d]`` tensor (``k_max`` the
+    largest cardinality present), so a single batched ``torch.cdist`` and
+    ``argmax`` replace what would otherwise be a per-hyperedge Python loop
+    with a ``.item()`` CPU-GPU sync at every iteration — the latter is the
+    dominant cost for hypergraphs with many hyperedges. Padded entries are
+    masked to ``-inf`` before the arg max so they can never be selected;
+    this is proven (and unit-tested against a reference loop implementation)
+    to reproduce the unpadded arg max exactly, tie-breaking included, since
+    padding is always appended after the real members of a hyperedge.
     """
     indices = incidence.indices()
     row, col = indices[0], indices[1]
@@ -314,32 +325,8 @@ def _hypergcn_adjacency(incidence, x, num_nodes, with_mediators):
     row, col = row[order], col[order]
     _, counts = torch.unique_consecutive(col, return_counts=True)
 
-    edge_row, edge_col, edge_val = [], [], []
-    start = 0
-    for count in counts.tolist():
-        members = row[start : start + count]
-        start += count
-        if count < 2:
-            continue
-        member_x = x[members]
-        dist = torch.cdist(member_x, member_x)
-        flat_argmax = torch.argmax(dist).item()
-        i_local, j_local = flat_argmax // count, flat_argmax % count
-        i, j = members[i_local].item(), members[j_local].item()
-        edge_row += [i, j]
-        edge_col += [j, i]
-        edge_val += [1.0, 1.0]
-        if with_mediators and count > 2:
-            weight = 1.0 / (2 * count - 3)
-            for k_local in range(count):
-                if k_local in (i_local, j_local):
-                    continue
-                k = members[k_local].item()
-                edge_row += [i, k, j, k]
-                edge_col += [k, i, k, j]
-                edge_val += [weight, weight, weight, weight]
-
-    if not edge_row:
+    valid = counts >= 2
+    if not bool(valid.any()):
         empty = torch.zeros((2, 0), dtype=torch.long, device=x.device)
         return torch.sparse_coo_tensor(
             empty,
@@ -347,10 +334,62 @@ def _hypergcn_adjacency(incidence, x, num_nodes, with_mediators):
             (num_nodes, num_nodes),
         ).coalesce()
 
-    edge_indices = torch.tensor(
-        [edge_row, edge_col], dtype=torch.long, device=x.device
+    offsets = torch.cumsum(counts, dim=0) - counts
+    counts_valid = counts[valid]
+    offsets_valid = offsets[valid]
+    num_groups = counts_valid.shape[0]
+    k_max = int(counts_valid.max().item())
+
+    pos = (
+        torch.arange(k_max, device=x.device)
+        .unsqueeze(0)
+        .expand(num_groups, k_max)
     )
-    values = torch.tensor(edge_val, device=x.device, dtype=x.dtype)
+    member_mask = pos < counts_valid.unsqueeze(1)
+    flat_pos = torch.clamp(
+        offsets_valid.unsqueeze(1) + pos, max=row.shape[0] - 1
+    )
+    members = row[flat_pos]  # [num_groups, k_max]; garbage where ~member_mask
+
+    member_x = x[members]
+    dist = torch.cdist(member_x, member_x)
+    pair_mask = member_mask.unsqueeze(2) & member_mask.unsqueeze(1)
+    dist = dist.masked_fill(~pair_mask, float("-inf"))
+    flat_argmax = torch.argmax(dist.reshape(num_groups, -1), dim=1)
+    i_local, j_local = flat_argmax // k_max, flat_argmax % k_max
+    group_idx = torch.arange(num_groups, device=x.device)
+    node_i = members[group_idx, i_local]
+    node_j = members[group_idx, j_local]
+
+    edge_row = [node_i, node_j]
+    edge_col = [node_j, node_i]
+    ones = torch.ones(num_groups, device=x.device, dtype=x.dtype)
+    edge_val = [ones, ones]
+
+    if with_mediators:
+        has_mediators = counts_valid > 2
+        is_pivot = (pos == i_local.unsqueeze(1)) | (
+            pos == j_local.unsqueeze(1)
+        )
+        mediator_mask = member_mask & ~is_pivot & has_mediators.unsqueeze(1)
+        # Matches the reference `1.0 / (2 * count - 3)` (Python floats are
+        # float64), rounding to `x.dtype` only once, at the very end.
+        weight = (1.0 / (2 * counts_valid.double() - 3)).to(x.dtype)
+
+        g_idx, k_idx = mediator_mask.nonzero(as_tuple=True)
+        if g_idx.numel() > 0:
+            node_k = members[g_idx, k_idx]
+            node_i_sel, node_j_sel, w_sel = (
+                node_i[g_idx],
+                node_j[g_idx],
+                weight[g_idx],
+            )
+            edge_row += [node_i_sel, node_k, node_j_sel, node_k]
+            edge_col += [node_k, node_i_sel, node_k, node_j_sel]
+            edge_val += [w_sel, w_sel, w_sel, w_sel]
+
+    edge_indices = torch.stack([torch.cat(edge_row), torch.cat(edge_col)])
+    values = torch.cat(edge_val)
     return torch.sparse_coo_tensor(
         edge_indices, values, (num_nodes, num_nodes)
     ).coalesce()
