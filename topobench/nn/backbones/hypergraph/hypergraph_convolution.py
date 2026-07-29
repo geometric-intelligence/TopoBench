@@ -77,9 +77,11 @@ class HyperGraphConvolution(Module):
         Whether to reapproximate the Laplacian, by default True.
     cuda : int or None, optional
         The CUDA device index, by default None.
+    **kwargs : dict, optional
+        Required for TopoBench to do evaluation.
     """
 
-    def __init__(self, a, b, reapproximate=True, cuda=None):
+    def __init__(self, a, b, reapproximate=True, cuda=None, **kwargs):
         super().__init__()
         self.a, self.b = a, b
         self.reapproximate = reapproximate
