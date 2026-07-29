@@ -129,6 +129,7 @@ def test_cosimo_taylor_diffusion_stabilizes_nonfinite_values():
     out = layer.taylor_diffusion(laplacian, x, torch.tensor(1.0))
 
     assert torch.isfinite(out).all()
+    assert out.abs().max() <= layer.max_abs_value
 
 
 def test_cosimo_taylor_diffusion_can_disable_stabilization():
@@ -149,6 +150,21 @@ def test_cosimo_taylor_diffusion_can_disable_stabilization():
     out = layer.taylor_diffusion(laplacian, x, torch.tensor(1.0))
 
     assert not torch.isfinite(out).all()
+
+
+def test_cosimo_diffusion_time_is_bounded():
+    """Test learned diffusion times cannot exceed the configured cap."""
+    layer = COSIMOLayer(
+        in_channels=(1, 1, 1),
+        out_channels=(1, 1, 1),
+        t_init=1.0,
+        max_diffusion_time=0.25,
+    )
+    layer.raw_times["0_x0_self"].data.fill_(100.0)
+
+    time = layer.diffusion_time(0, "x0_self", torch.ones(1, 1))
+
+    assert torch.isclose(time, torch.tensor(0.25))
 
 
 def test_cosimo_normalizes_sparse_taylor_operator():
@@ -191,6 +207,8 @@ def test_cosimo_normalizes_dense_taylor_operator():
         ({"t_init": 0.0}, "t_init"),
         ({"num_branches": 0}, "num_branches"),
         ({"taylor_order": 0}, "taylor_order"),
+        ({"max_diffusion_time": 0.0}, "max_diffusion_time"),
+        ({"max_abs_value": 0.0}, "max_abs_value"),
     ],
 )
 def test_cosimo_layer_validation(kwargs, match):

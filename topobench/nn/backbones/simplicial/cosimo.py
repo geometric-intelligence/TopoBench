@@ -44,6 +44,14 @@ class COSIMO(nn.Module):
     normalize_laplacian : bool, optional
         Whether to divide Taylor diffusion operators by their maximum absolute
         row sum.
+    max_diffusion_time : float, optional
+        Upper bound for each learned diffusion time.
+    max_abs_value : float, optional
+        Absolute value used to clip stabilized diffusion responses.
+    residual : bool, optional
+        Whether to add an inter-layer residual connection at every rank.
+    layer_norm : bool, optional
+        Whether to apply per-rank layer normalization after each layer.
     """
 
     def __init__(
@@ -58,6 +66,10 @@ class COSIMO(nn.Module):
         update_func="relu",
         stabilize=True,
         normalize_laplacian=True,
+        max_diffusion_time=2.0,
+        max_abs_value=1.0e4,
+        residual=True,
+        layer_norm=True,
     ):
         super().__init__()
         if len(in_channels_all) != 3 or len(hidden_channels_all) != 3:
@@ -69,6 +81,9 @@ class COSIMO(nn.Module):
         if num_branches < 1:
             raise ValueError("num_branches must be at least 1.")
 
+        self.residual = residual
+        self.layer_norm = layer_norm
+
         self.in_linear_0 = nn.Linear(
             in_channels_all[0], hidden_channels_all[0]
         )
@@ -78,6 +93,17 @@ class COSIMO(nn.Module):
         self.in_linear_2 = nn.Linear(
             in_channels_all[2], hidden_channels_all[2]
         )
+
+        if layer_norm:
+            self.norms = nn.ModuleList(
+                nn.ModuleList(
+                    nn.LayerNorm(hidden_channels_all[rank])
+                    for rank in range(3)
+                )
+                for _ in range(n_layers)
+            )
+        else:
+            self.norms = None
 
         self.layers = nn.ModuleList(
             COSIMOLayer(
@@ -90,6 +116,8 @@ class COSIMO(nn.Module):
                 update_func=update_func,
                 stabilize=stabilize,
                 normalize_laplacian=normalize_laplacian,
+                max_diffusion_time=max_diffusion_time,
+                max_abs_value=max_abs_value,
             )
             for _ in range(n_layers)
         )
@@ -118,8 +146,20 @@ class COSIMO(nn.Module):
             self.in_linear_1(x_1),
             self.in_linear_2(x_2),
         )
-        for layer in self.layers:
-            x_all = layer(x_all, laplacian_all, incidence_all)
+        for depth, layer in enumerate(self.layers):
+            out_all = layer(x_all, laplacian_all, incidence_all)
+            if self.residual:
+                out_all = tuple(
+                    out + res for out, res in zip(out_all, x_all, strict=True)
+                )
+            if self.norms is not None:
+                out_all = tuple(
+                    norm(out)
+                    for norm, out in zip(
+                        self.norms[depth], out_all, strict=True
+                    )
+                )
+            x_all = out_all
         return x_all
 
 
@@ -155,6 +195,10 @@ class COSIMOLayer(nn.Module):
     normalize_laplacian : bool, optional
         Whether to divide Taylor diffusion operators by their maximum absolute
         row sum.
+    max_diffusion_time : float, optional
+        Upper bound for each learned diffusion time.
+    max_abs_value : float, optional
+        Absolute value used to clip stabilized diffusion responses.
     """
 
     _VALID_METHODS = {"exact", "taylor"}
@@ -171,6 +215,8 @@ class COSIMOLayer(nn.Module):
         update_func="relu",
         stabilize=True,
         normalize_laplacian=True,
+        max_diffusion_time=2.0,
+        max_abs_value=1.0e4,
     ):
         super().__init__()
         if diffusion_method not in self._VALID_METHODS:
@@ -187,6 +233,10 @@ class COSIMOLayer(nn.Module):
             raise ValueError("num_branches must be at least 1.")
         if taylor_order < 1:
             raise ValueError("taylor_order must be at least 1.")
+        if max_diffusion_time <= 0:
+            raise ValueError("max_diffusion_time must be positive.")
+        if max_abs_value <= 0:
+            raise ValueError("max_abs_value must be positive.")
 
         self.diffusion_method = diffusion_method
         self.num_branches = num_branches
@@ -194,18 +244,29 @@ class COSIMOLayer(nn.Module):
         self.update_func = update_func
         self.stabilize = stabilize
         self.normalize_laplacian = normalize_laplacian
+        self.max_diffusion_time = max_diffusion_time
+        self.max_abs_value = max_abs_value
 
+        # The raw (un-diffused) same-rank signal is concatenated alongside the
+        # diffused branch responses. Because ``exp(-t L)`` is a low-pass
+        # (smoothing) filter, giving the linear mixer direct access to the raw
+        # signal lets it realize high-pass responses of the form
+        # ``a * x - b * exp(-t L) x``. Those are exactly the filters needed on
+        # heterophilic complexes, where pure diffusion oversmooths and destroys
+        # the class signal.
         self.mix_0 = nn.Linear(
-            num_branches * (in_channels[0] + in_channels[1]),
+            num_branches * (in_channels[0] + in_channels[1]) + in_channels[0],
             out_channels[0],
         )
         self.mix_1 = nn.Linear(
             num_branches
-            * (in_channels[0] + 2 * in_channels[1] + in_channels[2]),
+            * (in_channels[0] + 2 * in_channels[1] + in_channels[2])
+            + in_channels[1],
             out_channels[1],
         )
         self.mix_2 = nn.Linear(
-            num_branches * (in_channels[1] + 2 * in_channels[2]),
+            num_branches * (in_channels[1] + 2 * in_channels[2])
+            + in_channels[2],
             out_channels[2],
         )
 
@@ -248,9 +309,11 @@ class COSIMOLayer(nn.Module):
             laplacian_down_2, laplacian_up_2 = laplacian_2
         incidence_1, incidence_2 = incidence_all
 
-        x_0_branches = []
-        x_1_branches = []
-        x_2_branches = []
+        # Seed each rank with its raw same-rank signal so the mixer can build
+        # high-pass (heterophily-friendly) filters, not only low-pass diffusion.
+        x_0_branches = [x_0]
+        x_1_branches = [x_1]
+        x_2_branches = [x_2]
         for branch in range(self.num_branches):
             x_0_branches.extend(
                 [
@@ -343,9 +406,7 @@ class COSIMOLayer(nn.Module):
         torch.Tensor
             Diffused feature matrix.
         """
-        time = F.softplus(self.raw_times[f"{branch}_{time_name}"]).to(
-            device=x.device, dtype=x.dtype
-        )
+        time = self.diffusion_time(branch, time_name, x)
         laplacian = laplacian.to(device=x.device, dtype=x.dtype)
         if self.diffusion_method == "exact":
             return self.ensure_finite(
@@ -354,6 +415,13 @@ class COSIMOLayer(nn.Module):
         if self.normalize_laplacian:
             laplacian = self.normalize_operator(laplacian)
         return self.taylor_diffusion(laplacian, x, time)
+
+    def diffusion_time(self, branch, time_name, x):
+        """Return a positive, bounded diffusion time for a branch."""
+        time = F.softplus(self.raw_times[f"{branch}_{time_name}"]).to(
+            device=x.device, dtype=x.dtype
+        )
+        return time.clamp(max=self.max_diffusion_time)
 
     def taylor_diffusion(self, laplacian, x, time):
         r"""Sparse Taylor approximation of the heat kernel action.
@@ -397,7 +465,8 @@ class COSIMOLayer(nn.Module):
             Matrix product ``operator @ x``.
         """
         if operator.is_sparse:
-            return torch.sparse.mm(operator.coalesce(), x)
+            op = operator if operator.is_coalesced() else operator.coalesce()
+            return torch.sparse.mm(op, x)
         return torch.mm(operator, x)
 
     def normalize_operator(self, operator):
@@ -426,7 +495,7 @@ class COSIMOLayer(nn.Module):
                 op.shape,
                 device=op.device,
                 dtype=op.dtype,
-            )
+            ).coalesce()
         scale = operator.abs().sum(dim=1).max().clamp_min(1.0)
         return operator / scale
 
@@ -445,7 +514,8 @@ class COSIMOLayer(nn.Module):
         """
         if not self.stabilize:
             return x
-        return torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
+        x = torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
+        return x.clamp(min=-self.max_abs_value, max=self.max_abs_value)
 
     def update(self, x):
         """Apply the configured pointwise nonlinearity.
