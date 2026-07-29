@@ -307,6 +307,86 @@ class TestLocalCoordinatesLayer:
         assert not torch.isnan(Q).any()
         assert not torch.isinf(Q).any()
 
+    def test_all_nodes_isolated_no_nan(self):
+        """
+        A graph with zero edges still produces finite, orthonormal frames.
+
+        """
+        d, r = 8, 3
+        edge_index = torch.tensor([[], []], dtype=torch.long)
+        Z = torch.randn(3, d)
+        layer = LocalCoordinatesLayer(r_subspaces=r, d_embedd=d)
+        Q = layer(Z, edge_index)
+        assert Q.shape == (3, r, d)
+        assert _is_orthonormal(Q)
+        assert not torch.isnan(Q).any()
+
+    def test_isolated_nodes_independent(self):
+        """
+        With no edges, changing one node's features must not affect others.
+
+        """
+        d, r = 8, 3
+        edge_index = torch.tensor([[],[]], dtype =torch.long)
+        Z = torch.randn(3, d)
+        Z1 = Z.clone()
+        Z1[1] = torch.randn(d)
+        layer = LocalCoordinatesLayer(r_subspaces=r, d_embedd=d)
+        Q = layer(Z, edge_index)
+        Q1 = layer(Z1, edge_index)
+        assert torch.allclose(Q[0], Q1[0])
+        assert torch.allclose(Q[2], Q1[2])
+        assert not torch.allclose(Q[1], Q1[1])
+
+    @pytest.mark.xfail(
+        reason="LocalCoordinatesLayer silently truncates r to d instead of "
+        "keeping r subspaces when r > d_embedd."
+    )
+    def test_r_greater_than_d(self, simple_graph_0):
+        """The frame must keep ``r`` subspaces even when ``r > d_embedd``.
+
+        Parameters
+        ----------
+        simple_graph_0 : torch_geometric.data.Data
+            Test graph fixture.
+        """
+        d, r = 3, 8
+        N = simple_graph_0.num_nodes
+        layer = LocalCoordinatesLayer(r_subspaces=r, d_embedd=d)
+        Z = torch.randn(N, d)
+        Q = layer(Z, simple_graph_0.edge_index)
+        assert Q.shape == (N, r, d)
+
+    def test_respects_edge_direction(self):
+        """A directed edge only influences its destination, never its source."""
+        d, r = 8, 3
+        edge_index = torch.tensor([[0], [1]], dtype=torch.long)
+        Z = torch.randn(2, d)
+        Z1 = Z.clone()
+        Z1[1] = torch.randn(d)
+        layer = LocalCoordinatesLayer(r_subspaces=r, d_embedd=d)
+        Q = layer(Z, edge_index)
+        Q1 = layer(Z1, edge_index)
+        assert torch.allclose(Q[0], Q1[0])
+        assert not torch.allclose(Q[1], Q1[1])
+
+    def test_star_topology_no_nan(self):
+        """A hub node with far more neighbors than the rest of the graph must not produce NaNs."""
+        d, r = 8, 3
+        n_leaves = 20
+        N = n_leaves + 1
+        leaves = torch.arange(1, N)
+        hub = torch.zeros(n_leaves, dtype=torch.long)
+        src = torch.cat([hub, leaves])
+        dst = torch.cat([leaves, hub])
+        edge_index = torch.stack([src, dst])
+        layer = LocalCoordinatesLayer(r_subspaces=r, d_embedd=d)
+        Z = torch.randn(N, d)
+        Q = layer(Z, edge_index)
+        assert Q.shape == (N, r, d)
+        assert _is_orthonormal(Q)
+        assert not torch.isnan(Q).any() and not torch.isinf(Q).any()
+
 
 class TestGatedFlatteningLayer:
     """Tests for the gated flattening (frame smoothing) layer."""
@@ -334,6 +414,24 @@ class TestGatedFlatteningLayer:
         """The gated flattening layer is parameter-free."""
         gate = GatedFlatteningLayer(r=3)
         assert list(gate.parameters()) == []
+
+    @pytest.mark.xfail(
+        reason="QR's backward is undefined for rank-deficient input; "
+        "gamma=1.0 zeroes an isolated node's blend, causing NaN/Inf grads."
+    )
+    def test_isolated_node_gamma_one_backward(self):
+        """Gradients must stay finite even when gamma=1.0 zeroes an isolated node's blend."""
+        d, r = 8, 3
+        N = 3
+        edge_index = torch.tensor([[], []], dtype=torch.long)
+        Z = torch.randn(N, d, requires_grad=True)
+        Q = LocalCoordinatesLayer(r_subspaces=r, d_embedd=d)(Z, edge_index)
+        gate = GatedFlatteningLayer(r=r, gamma=1.0)
+        Qnew = gate(Q, edge_index)
+        Qnew.sum().backward()
+        assert Z.grad is not None
+        assert not torch.isnan(Z.grad).any()
+        assert not torch.isinf(Z.grad).any()
 
 
 class TestNodeUpdateLayer:
@@ -390,6 +488,26 @@ class TestNodeUpdateLayer:
         )
         assert isinstance(layer.phi, FFBlock)
 
+    def test_supports_different_in_out_channels(self, simple_graph_0):
+        """The update maps to ``out_channels`` even when it differs from ``in_channels``.
+
+        Parameters
+        ----------
+        simple_graph_0 : torch_geometric.data.Data
+            Test graph fixture.
+        """
+        d, r = 8, 3
+        out_channels = 12
+        N = simple_graph_0.num_nodes
+        Z = torch.randn(N, d)
+        Q = LocalCoordinatesLayer(r_subspaces=r, d_embedd=d)(
+            Z, simple_graph_0.edge_index
+        )
+        layer = NodeUpdateLayer(
+            in_channels=d, out_channels=out_channels, phi_hidden_layers=1
+        )
+        assert layer(Z, Q, simple_graph_0.edge_index).shape == (N, out_channels)
+
 
 class TestGaugeLayer:
     """Tests for a single gauge message-passing layer."""
@@ -428,6 +546,23 @@ class TestGaugeLayer:
         x = torch.randn(simple_graph_0.num_nodes, d)
         Znew, Q = layer(x, simple_graph_0.edge_index)
         assert _is_orthonormal(Q)
+
+    def test_all_nodes_isolated_no_nan(self):
+
+        """A zero-edge graph stays finite through the full gauge layer."""
+
+        d, r = 8, 3
+        N = 3
+        edge_index = torch.tensor([[], []], dtype=torch.long)
+        layer = GaugeLayer(d_embedd=d, r=r, n_gated=2)
+        x = torch.randn(N, d)
+        Znew, Q = layer(x, edge_index)
+        assert Znew.shape == (N, d)
+        assert Q.shape == (N, r, d)
+        assert _is_orthonormal(Q)
+        assert not torch.isnan(Znew).any() and not torch.isinf(Znew).any()
+        assert not torch.isnan(Q).any() and not torch.isinf(Q).any()
+
 
 
 class TestGaugeModel:
@@ -724,6 +859,21 @@ class TestGaugeModel:
                 m for m in local.fflayer.model if isinstance(m, nn.Dropout)
             ]
             assert all(m.p == 0.1 for m in ff_drops)
+
+    def test_all_nodes_isolated_no_nan(self):
+        """A zero-edge graph stays finite through the full stacked model."""
+        in_channels, d, r, N = 5, 8, 3, 3
+        edge_index = torch.tensor([[], []], dtype=torch.long)
+        model = GaugeModel(
+            n_layers=2, in_channels=in_channels, r=r, d_embedd=d
+        )
+        x = torch.randn(N, in_channels)
+        z, Q = model(x, edge_index)
+        assert z.shape == (N, d)
+        assert Q.shape == (N, r, d)
+        assert _is_orthonormal(Q)
+        assert not torch.isnan(z).any() and not torch.isinf(z).any()
+        assert not torch.isnan(Q).any() and not torch.isinf(Q).any()
 
 
 class TestGaugeWrapper:
