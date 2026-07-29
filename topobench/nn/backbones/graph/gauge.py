@@ -367,6 +367,16 @@ class LocalCoordinatesLayer(torch.nn.Module):
     ):
         super().__init__()
 
+        # A d-dimensional space admits at most d orthonormal frame vectors, so
+        # r > d would be silently truncated to d by the reduced-mode QR in
+        # forward. Reject it explicitly instead of dropping subspaces.
+        if r_subspaces > d_embedd:
+            raise ValueError(
+                f"r_subspaces ({r_subspaces}) cannot exceed d_embedd "
+                f"({d_embedd}): a d-dimensional space admits at most d "
+                "orthonormal frame vectors."
+            )
+
         self.r = r_subspaces
         self.tau = tau
         self.d = d_embedd

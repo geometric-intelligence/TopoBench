@@ -131,3 +131,102 @@ def test_dirichlet_loss_detaches_initial_embedding():
     assert model_out["Q"].grad is not None
     # z_0 is used only as a detached target, so no gradient reaches it.
     assert model_out["z_0"].grad is None
+
+
+def test_dirichlet_loss_one_isolated_node_finite():
+    """A single isolated node among otherwise-connected nodes stays finite."""
+    N = 3
+    edge_index = torch.tensor([[0, 1], [1, 0]], dtype=torch.long)
+    model_out, batch = _make_inputs(N=N, edge_index=edge_index)
+    loss = DirichletLoss().forward(model_out, batch)
+    assert torch.isfinite(loss)
+    assert loss.item() >= 0.0
+
+
+def test_dirichlet_loss_all_nodes_isolated():
+    """A zero-edge graph still produces a finite, non-negative loss."""
+    N = 3
+    edge_index = torch.tensor([[], []], dtype=torch.long)
+    model_out, batch = _make_inputs(N=N, edge_index=edge_index)
+    loss = DirichletLoss().forward(model_out, batch)
+    assert torch.isfinite(loss)
+    assert loss.item() >= 0.0
+
+
+def test_dirichlet_loss_near_zero_projection_grad_finite():
+    """Gradients stay finite when a node's projection is exactly zero."""
+    model_out, batch = _make_inputs(requires_grad=True)
+    with torch.no_grad():
+        model_out["z_0"][0] = 0.0
+    loss = DirichletLoss().forward(model_out, batch)
+    loss.backward()
+    assert torch.isfinite(model_out["Q"].grad).all()
+    assert torch.isfinite(model_out["x_0"].grad).all()
+
+
+def _cycle_edge_index(N, offset=0):
+    """Build a directed cycle over ``N`` nodes, indices shifted by ``offset``.
+
+    Parameters
+    ----------
+    N : int
+        Number of nodes in the cycle.
+    offset : int, optional
+        Amount to shift node indices by, for packing into a larger batch
+        (default: 0).
+
+    Returns
+    -------
+    torch.Tensor
+        Edge index of shape ``[2, N]``.
+    """
+    src = torch.arange(N) + offset
+    dst = torch.roll(src, -1)
+    return torch.stack([src, dst], dim=0)
+
+
+def test_dirichlet_loss_no_cross_graph_leakage():
+    """Perturbing one graph in a batch must not change another graph's gradient.
+
+    Two independent cycle graphs are packed into a single batch, Since the final reduction
+    is a plain mean over all nodes, graph B's gradient should be identical
+    regardless of what graph A's embeddings are.
+    """
+    N_a, N_b, r, d = 3, 3, 2, 4
+    N = N_a + N_b
+    edge_index = torch.cat(
+        [_cycle_edge_index(N_a), _cycle_edge_index(N_b, offset=N_a)], dim=1
+    )
+    batch = torch_geometric.data.Data(edge_index=edge_index, num_nodes=N)
+
+    x_0 = torch.randn(N, d, requires_grad=True)
+    z_0 = torch.randn(N, d)
+    Q = torch.randn(N, r, d, requires_grad=True)
+    model_out = {"x_0": x_0, "z_0": z_0, "Q": Q}
+    loss = DirichletLoss().forward(model_out, batch)
+    loss.backward()
+    grad_b_before = Q.grad[N_a:].clone()
+
+    # Perturb graph A's embeddings only; graph B's data is untouched.
+    x_0b = x_0.detach().clone()
+    x_0b[:N_a] = torch.randn(N_a, d)
+    x_0b.requires_grad_(True)
+    Qb = Q.detach().clone().requires_grad_(True)
+    model_out_2 = {"x_0": x_0b, "z_0": z_0, "Q": Qb}
+    loss2 = DirichletLoss().forward(model_out_2, batch)
+    loss2.backward()
+    grad_b_after = Qb.grad[N_a:]
+
+    assert torch.allclose(grad_b_before, grad_b_after)
+
+
+def test_dirichlet_loss_reductions_actually_differ():
+    """``sum`` and ``mean`` reductions must produce different losses."""
+    N, r, d = 3, 2, 4
+    edge_index = torch.tensor([[0, 1], [2, 2]], dtype=torch.long)
+    model_out, batch = _make_inputs(N=N, r=r, d=d, edge_index=edge_index)
+
+    loss_mean = DirichletLoss(reduction="mean").forward(model_out, batch)
+    loss_sum = DirichletLoss(reduction="sum").forward(model_out, batch)
+
+    assert not torch.allclose(loss_mean, loss_sum)
