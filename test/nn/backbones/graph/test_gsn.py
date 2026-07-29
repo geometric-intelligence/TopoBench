@@ -118,20 +118,20 @@ class TestVirtualNode:
         with pytest.raises(NotImplementedError):
             GSNGINVirtualNodeModule("edge", 2, IN, OUT, GSN)
 
-    def test_edge_attr_with_edge_dim_zero_raises(self):
-        """edge_attr present while edge_dim == 0 raises a RuntimeError."""
+    def test_edge_attr_ignored_when_edge_dim_zero(self):
+        """edge_attr present while edge_dim == 0 is tolerated (attr ignored)."""
         module = GSNGINVirtualNodeModule(
             "node", 2, IN, OUT, GSN, common_embedding_dim=8
         )
         data = node_data()
         edge_attr = torch.randn(EDGE_INDEX.size(1), 2)
-        with pytest.raises(RuntimeError):
-            module(
-                data.edge_index,
-                data.x,
-                data.node_gsn_encodings,
-                edge_attr=edge_attr,
-            )
+        out = module(
+            data.edge_index,
+            data.x,
+            data.node_gsn_encodings,
+            edge_attr=edge_attr,
+        )
+        assert out.shape == (NUM_NODES, OUT)
 
     def test_per_graph_independence(self):
         """The virtual node stays per-graph: batching must not mix graphs."""
