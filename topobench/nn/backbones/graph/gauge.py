@@ -22,6 +22,7 @@ from collections.abc import Callable
 
 import torch
 from torch import Tensor, nn
+from torch_geometric.utils import remove_self_loops
 from torch_scatter import scatter_add, scatter_mean, scatter_softmax
 
 activation_dict: dict[str, Callable] = {
@@ -932,6 +933,11 @@ class GaugeModel(nn.Module):
             The initial projection of ``x``, of shape ``[N, d_embedd]``. Only
             returned when ``return_initial`` is True.
         """
+        # Self-loops would make each node its own neighbor in the per-layer
+        # aggregation, which is not intended. Removed here (and, consistently,
+        # in DirichletLoss) so both aggregate over the same neighborhoods.
+        edge_index, _ = remove_self_loops(edge_index)
+
         z = self.input_projector(x)
 
         if return_initial:

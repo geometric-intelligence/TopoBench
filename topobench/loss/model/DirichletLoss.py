@@ -4,6 +4,7 @@ import torch
 from torch import Tensor
 from torch.nn import functional as F
 from torch_geometric.data import Data
+from torch_geometric.utils import remove_self_loops
 from torch_scatter import scatter
 
 from topobench.loss.base import AbstractLoss
@@ -65,7 +66,10 @@ class DirichletLoss(AbstractLoss):
         z0 = model_out["z_0"]  # [N, d]
 
         N = z0.size(0)
-        src, dst = batch.edge_index[0], batch.edge_index[1]
+        # Removed here (and, consistently, in the Gauge backbone) so the loss
+        # aggregates over the same self-loop-free neighborhoods as the model.
+        edge_index, _ = remove_self_loops(batch.edge_index)
+        src, dst = edge_index[0], edge_index[1]
 
         # this is essentially the zhat=StopGrad(z0)
         zhat = z0.detach()

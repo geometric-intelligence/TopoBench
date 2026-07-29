@@ -121,6 +121,27 @@ def test_dirichlet_loss_zero_when_frames_and_embeddings_align():
     assert torch.allclose(loss, torch.tensor(0.0), atol=1e-6)
 
 
+def test_dirichlet_loss_ignores_self_loops():
+    """Adding a self-loop on every node leaves the loss unchanged.
+
+    The loss strips self-loops from ``edge_index`` before aggregating over
+    neighbors, so an otherwise identical batch augmented with self-loops must
+    produce the same value as the original.
+    """
+    model_out, batch = _make_inputs()
+    looped, _ = torch_geometric.utils.add_self_loops(
+        batch.edge_index, num_nodes=batch.num_nodes
+    )
+    batch_looped = torch_geometric.data.Data(
+        edge_index=looped, num_nodes=batch.num_nodes
+    )
+
+    loss_fn = DirichletLoss()
+    base = loss_fn.forward(model_out, batch)
+    looped_loss = loss_fn.forward(model_out, batch_looped)
+    assert torch.allclose(base, looped_loss, atol=1e-6)
+
+
 def test_dirichlet_loss_detaches_initial_embedding():
     """Gradients flow to ``x_0`` and ``Q`` but not to the detached ``z_0``."""
     model_out, batch = _make_inputs(requires_grad=True)

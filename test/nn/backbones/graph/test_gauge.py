@@ -579,6 +579,37 @@ class TestGaugeModel:
         assert Q.shape == (N, r, d)
         assert _is_orthonormal(Q)
 
+    def test_self_loops_do_not_affect_output(self, simple_graph_0):
+        """Adding self-loops leaves the model output unchanged.
+
+        The model strips self-loops from ``edge_index`` before aggregating, so
+        feeding a graph augmented with a self-loop on every node must yield the
+        same embeddings and frames as the original graph.
+
+        Parameters
+        ----------
+        simple_graph_0 : torch_geometric.data.Data
+            Test graph fixture.
+        """
+        in_channels, d, r = 5, 8, 3
+        N = simple_graph_0.num_nodes
+        model = GaugeModel(
+            n_layers=2, in_channels=in_channels, r=r, d_embedd=d
+        )
+        model.eval()  # disable dropout so the comparison is deterministic
+        x = torch.randn(N, in_channels)
+
+        edge_index = simple_graph_0.edge_index
+        looped, _ = torch_geometric.utils.add_self_loops(
+            edge_index, num_nodes=N
+        )
+
+        z, Q = model(x, edge_index)
+        z_looped, Q_looped = model(x, looped)
+
+        assert torch.allclose(z, z_looped, atol=1e-6)
+        assert torch.allclose(Q, Q_looped, atol=1e-6)
+
     def test_return_initial_true_returns_initial_projection(
         self, simple_graph_0
     ):
