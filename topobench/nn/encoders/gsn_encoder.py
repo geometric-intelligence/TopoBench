@@ -274,7 +274,7 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
 
     def __init__(
         self,
-        substructures: list[nx.Graph],
+        substructures: list[nx.Graph] | None = None,
         pyg_kword: str = "gsn_encodings",
         lazy: bool = True,
         **kwargs,
@@ -561,6 +561,48 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
         self, data: torch_geometric.data.Data
     ) -> torch_geometric.data.Data:
         """
+        Return the batch unchanged, requiring the GSN encodings present.
+
+        As a model feature encoder this class is a pure passthrough: the
+        structural encodings are computed once and cached by the
+        ``GSNEncodings`` data-manipulation pre-transform (auto-attached via
+        ``configs/transforms/model_defaults/gsn.yaml``) and then ride along
+        on every collated batch. If the encodings are missing, the transform
+        was not applied, and we raise rather than silently (and expensively)
+        recomputing them inside the training loop.
+
+        Parameters
+        ----------
+        data : torch_geometric.data.Data
+            Input batch, expected to already carry the GSN encodings.
+
+        Returns
+        -------
+        torch_geometric.data.Data
+            The input ``data``, unchanged.
+
+        Raises
+        ------
+        RuntimeError
+            If the ``node_{pyg_kword}`` encodings are not present on ``data``.
+        """
+        if (
+            self._node_pyg_kword in data
+            and data[self._node_pyg_kword] is not None
+        ):
+            return data
+
+        raise RuntimeError(
+            f"'{self._node_pyg_kword}' not found on the batch. The GSN "
+            "encodings must be precomputed by the `GSNEncodings` "
+            "data-manipulation transform (auto-attached via "
+            "configs/transforms/model_defaults/gsn.yaml)."
+        )
+
+    def _encode(
+        self, data: torch_geometric.data.Data
+    ) -> torch_geometric.data.Data:
+        """
         Compute and attach GSN structural encodings to a PyG graph.
 
         Converts `data` to a `networkx.Graph` (via `pyg_to_nx`),
@@ -570,6 +612,10 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
         normalizes the resulting node and edge encodings by dividing
         by the number of automorphisms of the substructure that each
         orbit belongs to.
+
+        This is the heavy path, driven once per graph by the
+        ``GSNEncodings`` pre-transform; the model feature encoder never
+        calls it (see ``forward``).
 
         Parameters
         ----------

@@ -198,7 +198,7 @@ class TestGSNFeatureEncoder:
     def test_forward_triangle_counts(self):
         """Each node/edge of a triangle participates in exactly one triangle."""
         enc = GSNFeatureEncoder([nx.complete_graph(3)], lazy=False)
-        out = enc(triangle_data())
+        out = enc._encode(triangle_data())
         assert hasattr(out, "node_gsn_encodings")
         assert hasattr(out, "edge_gsn_encodings")
         # one node orbit channel, all counts normalized to 1.0
@@ -211,13 +211,13 @@ class TestGSNFeatureEncoder:
     def test_forward_induced_semantics(self):
         """Counting P3 inside a triangle yields zeros (induced counting)."""
         enc = GSNFeatureEncoder([nx.path_graph(3)], lazy=False)
-        out = enc(triangle_data())
+        out = enc._encode(triangle_data())
         assert torch.count_nonzero(out.node_gsn_encodings) == 0
 
     def test_forward_dtype(self):
         """Encodings adopt the node-feature dtype."""
         enc = GSNFeatureEncoder([nx.complete_graph(3)], lazy=False)
-        out = enc(triangle_data(dtype=torch.float64))
+        out = enc._encode(triangle_data(dtype=torch.float64))
         # encodings adopt the (round-tripped) node-feature dtype
         assert out.node_gsn_encodings.dtype == out.x.dtype
         assert out.edge_gsn_encodings.dtype == out.x.dtype
@@ -237,7 +237,9 @@ class TestGSNFeatureEncoder:
         assert getattr(data, "x", None) is None
 
         enc = GSNFeatureEncoder([nx.complete_graph(3)], lazy=False)
-        out = enc(data)  # would AttributeError if it assumed `data.x` existed
+        out = enc._encode(
+            data
+        )  # would AttributeError if it assumed `data.x` existed
         # encodings adopt the (round-tripped) x_0 dtype
         assert out.node_gsn_encodings.dtype == out.x_0.dtype
         assert out.edge_gsn_encodings.dtype == out.x_0.dtype
@@ -246,8 +248,8 @@ class TestGSNFeatureEncoder:
         """Lazy and eager precomputation give identical encodings."""
         lazy = GSNFeatureEncoder([nx.complete_graph(3)], lazy=True)
         eager = GSNFeatureEncoder([nx.complete_graph(3)], lazy=False)
-        out_lazy = lazy(triangle_data())
-        out_eager = eager(triangle_data())
+        out_lazy = lazy._encode(triangle_data())
+        out_eager = eager._encode(triangle_data())
         assert torch.allclose(
             out_lazy.node_gsn_encodings, out_eager.node_gsn_encodings
         )
@@ -263,7 +265,7 @@ class TestGSNFeatureEncoder:
         H.add_edge(0, 1)
         H.add_edge(1, 2)
         enc = GSNFeatureEncoder([H], lazy=False)
-        out = enc(triangle_data())
+        out = enc._encode(triangle_data())
         # identical to the canonical complete_graph(3) triangle motif
         assert torch.allclose(out.node_gsn_encodings, torch.ones(3, 1))
 
@@ -277,6 +279,21 @@ class TestGSNFeatureEncoder:
         data = Data(
             x=torch.ones(3, 2), edge_index=torch.empty(2, 0, dtype=torch.long)
         )
-        out = enc(data)
+        out = enc._encode(data)
         assert out.edge_gsn_encodings.shape == (0, enc._edge_channels)
         assert out.node_gsn_encodings.shape == (3, enc._node_channels)
+
+    def test_forward_passthrough_when_encodings_present(self):
+        """As a feature encoder, `forward` returns a batch that already has
+        encodings unchanged (the pre-transform is the producer)."""
+        enc = GSNFeatureEncoder(pyg_kword="gsn_encodings")
+        data = triangle_data()
+        data["node_gsn_encodings"] = torch.zeros(3, 1)
+        assert enc.forward(data) is data
+
+    def test_forward_raises_when_encodings_missing(self):
+        """`forward` refuses to recompute: a missing encoding is a config
+        error (the `GSNEncodings` pre-transform was not applied)."""
+        enc = GSNFeatureEncoder(pyg_kword="gsn_encodings")
+        with pytest.raises(RuntimeError):
+            enc.forward(triangle_data())
