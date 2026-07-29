@@ -1,1 +1,0 @@
-"Cooperative Graph Neural Networks"
