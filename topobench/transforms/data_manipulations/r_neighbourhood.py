@@ -31,7 +31,6 @@ def _bounded_simple_cycles(graph: nx.Graph, max_length: int) -> list:
             node, path = stack.pop()
             for neighbour in adjacency[node]:
                 if neighbour == start and len(path) >= 3:
-                    # Canonicalise direction to dedupe the two traversals.
                     reverse = (path[0], *path[:0:-1])
                     found[min(path, reverse)] = list(min(path, reverse))
                 elif (
@@ -79,15 +78,13 @@ def r_neighborhood(
     }
     edge_attr_idx = {}
     for L in range(2, r + 3):
-        # Initializing, useful to have an array of dim (L+1, 0)
+        # Initialization
         paths[L - 2] = np.zeros((0, L), dtype=int)
         edge_attr_idx[L - 2] = np.zeros((L - 1, 0))
         # Dividing the simple cycles depending on the length
         L_long_cycles = [cycle for cycle in cycles if len(cycle) == L]
         if L_long_cycles:
-            # Adding center of neighborhood as last element; useful to compute
-            # the index of each edge_attr. Note that paths[L-2] has dim.
-            # (num. paths, L+3)
+            # Adding center of neighborhood as last element
             paths[L - 2] = np.array(sorted(L_long_cycles))
 
     return paths, hops, edge_attr_idx
@@ -145,9 +142,7 @@ class RNeighbourhood(torch_geometric.transforms.BaseTransform):
                     for neighbour in graph.neighbors(centre):
                         rows[(centre, neighbour)] = [0, 1]
             else:
-                # One rotation per node as centre; the reverse traversal is
-                # omitted because it yields an identical per-path contribution
-                # after the layer's order-invariant path aggregation.
+                # One rotation per node as centre;
                 for cycle in paths[order]:
                     cycle = [int(node) for node in cycle]
                     for shift in range(length):
