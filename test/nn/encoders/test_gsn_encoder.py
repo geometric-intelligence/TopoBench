@@ -254,6 +254,40 @@ class TestGSNFeatureEncoder:
             out_lazy.node_gsn_encodings, out_eager.node_gsn_encodings
         )
 
+    def test_parallel_matches_serial(self):
+        """Parallel encoding (n_jobs=-1) matches serial (n_jobs=1) exactly.
+
+        Guards the joblib parallelization over substructures: the merged
+        counts must be identical to the in-process sequential path. Uses
+        several substructures and a graph containing triangles and a
+        4-cycle so more than one job actually contributes.
+        """
+        subs = [nx.complete_graph(3), nx.cycle_graph(4), nx.path_graph(3)]
+        edge_index = torch.tensor(
+            [
+                [0, 1, 1, 2, 2, 0, 2, 3, 3, 4, 4, 2],
+                [1, 0, 2, 1, 0, 2, 3, 2, 4, 3, 2, 4],
+            ],
+            dtype=torch.long,
+        )
+        data = Data(x=torch.ones(5, 2), edge_index=edge_index)
+
+        serial = GSNFeatureEncoder(subs, lazy=False, n_jobs=1)._encode(
+            data.clone()
+        )
+        parallel = GSNFeatureEncoder(subs, lazy=False, n_jobs=-1)._encode(
+            data.clone()
+        )
+
+        assert torch.allclose(
+            serial.node_gsn_encodings, parallel.node_gsn_encodings
+        )
+        assert torch.allclose(
+            serial.edge_gsn_encodings, parallel.edge_gsn_encodings
+        )
+        # sanity: the substructures actually match something
+        assert torch.count_nonzero(serial.node_gsn_encodings) > 0
+
     def test_regression_non_canonical_edge_orientation(self):
         """Motifs stored non-ascending must not KeyError and count correctly.
 
