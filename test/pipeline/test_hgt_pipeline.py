@@ -1,5 +1,8 @@
 """Pipeline configuration tests for the cell-complex HGT model."""
 
+import math
+from pathlib import Path
+
 import hydra
 import pytest
 import torch
@@ -97,9 +100,12 @@ def test_hgt_model_config_composes_and_instantiates(
 def test_hgt_two_epoch_batched_pipeline(
     dataset: str,
     batch_size: int,
+    tmp_path: Path,
 ) -> None:
     """Train, validate, and test batched CellHGT for two epochs."""
     hydra.core.global_hydra.GlobalHydra.instance().clear()
+    dataset_name = dataset.rsplit("/", maxsplit=1)[-1].lower()
+    output_dir = tmp_path / dataset_name
     with hydra.initialize(version_base="1.3", config_path="../../configs"):
         cfg = hydra.compose(
             config_name="run.yaml",
@@ -118,8 +124,25 @@ def test_hgt_two_epoch_batched_pipeline(
                 "trainer.devices=1",
                 "paths=test",
                 "callbacks=model_checkpoint",
+                f"trainer.default_root_dir={output_dir}",
+                f"callbacks.model_checkpoint.dirpath={output_dir / 'checkpoints'}",
             ],
             return_hydra_config=True,
         )
 
-    run(cfg)
+    result = run(cfg)
+
+    assert result["epochs_completed"] == 2
+    assert result["observed_train_batch_size"] == batch_size
+    assert result["observed_train_batch_size"] > 1
+
+    for metric_name in ("train/loss", "val/loss"):
+        assert metric_name in result["fit_metrics"], (
+            f"Missing fit metric: {metric_name}"
+        )
+        assert math.isfinite(float(result["fit_metrics"][metric_name]))
+
+    assert result["test_results"], "trainer.test returned no results"
+    test_metrics = result["test_results"][0]
+    assert "test/loss" in test_metrics, "Missing test metric: test/loss"
+    assert math.isfinite(float(test_metrics["test/loss"]))

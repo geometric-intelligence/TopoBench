@@ -1,9 +1,11 @@
 """Test pipeline for a particular dataset and model."""
 
+from collections.abc import Mapping
+from typing import TypedDict
+
 import hydra
-from lightning import Callback, Trainer
-from lightning.pytorch.loggers import Logger
-from omegaconf import DictConfig, OmegaConf
+from lightning import seed_everything
+from omegaconf import DictConfig
 
 from topobench.data.preprocessor import PreProcessor
 from topobench.dataloader import TBDataloader
@@ -12,14 +14,31 @@ from topobench.utils.config_resolvers import register_all_resolvers
 
 register_all_resolvers()
 
-def run(cfg: DictConfig) -> DictConfig:
+
+class PipelineRunResult(TypedDict):
+    """Structured evidence from a simplified pipeline run."""
+
+    epochs_completed: int
+    observed_train_batch_size: int
+    fit_metrics: dict[str, float]
+    test_results: list[Mapping[str, float]]
+
+
+def run(cfg: DictConfig) -> PipelineRunResult:
     """Run pipeline with given configuration.
 
     Parameters
     ----------
     cfg : DictConfig
         Configuration.
+
+    Returns
+    -------
+    PipelineRunResult
+        Evidence captured from training, validation, and testing.
     """
+    seed_everything(cfg.seed, workers=True)
+
     # Instantiate and load dataset
     dataset_loader = hydra.utils.instantiate(cfg.dataset.loader)
     dataset, dataset_dir = dataset_loader.load()
@@ -40,6 +59,9 @@ def run(cfg: DictConfig) -> DictConfig:
     else:
         raise ValueError("Invalid task_level")
 
+    first_train_batch = next(iter(datamodule.train_dataloader()))
+    observed_train_batch_size = int(first_train_batch.num_graphs)
+
     # Model for us is Network + logic: inputs backbone, readout, losses
     model = hydra.utils.instantiate(
         cfg.model,
@@ -57,7 +79,22 @@ def run(cfg: DictConfig) -> DictConfig:
     trainer.fit(
         model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path")
     )
+    fit_metrics = {
+        metric_name: float(
+            trainer.callback_metrics[metric_name].detach().cpu().item()
+        )
+        for metric_name in ("train/loss", "val/loss")
+        if metric_name in trainer.callback_metrics
+    }
+    epochs_completed = int(trainer.current_epoch)
     ckpt_path = trainer.checkpoint_callback.best_model_path
-    trainer.test(
+    test_results = trainer.test(
         model=model, datamodule=datamodule, ckpt_path=ckpt_path
     )
+
+    return {
+        "epochs_completed": epochs_completed,
+        "observed_train_batch_size": observed_train_batch_size,
+        "fit_metrics": fit_metrics,
+        "test_results": test_results,
+    }
