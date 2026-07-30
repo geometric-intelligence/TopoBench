@@ -4,12 +4,6 @@ import pytest
 import torch
 
 from topobench.nn.backbones.cell.smcn import SMCN
-from topobench.nn.backbones.cell.smcn_utils.difflift import (
-    CellScorer,
-    DiffLift,
-    DiffLiftEncoder,
-    EdgeSampler,
-)
 from topobench.nn.backbones.cell.smcn_utils.layers import (
     BagInit,
     BagPool,
@@ -22,6 +16,12 @@ from topobench.nn.backbones.cell.smcn_utils.structures import (
     adjacency_from_incidence,
     build_smcn_structures,
     hop_distance_buckets,
+)
+from topobench.nn.liftings.difflift import (
+    CellScorer,
+    DiffLift,
+    DiffLiftEncoder,
+    EdgeSampler,
 )
 
 

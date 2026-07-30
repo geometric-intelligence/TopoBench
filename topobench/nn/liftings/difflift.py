@@ -8,7 +8,7 @@ propagated through the discrete decisions by the straight-through
 estimator. Both the stochastic (Bernoulli) sampling of the paper and
 its deterministic thresholded variant are provided.
 
-The components are deliberately modular:
+The components are modular:
 
 - :class:`DiffLiftEncoder` — Step 1, node embeddings.
 - :class:`CellScorer` — Step 3, multiset scorer for any candidate cell
@@ -20,9 +20,11 @@ The components are deliberately modular:
   (``D_max = 2``): learned edges, then cycle-basis candidates of the
   augmented graph scored as 2-cells.
 
-The SMCN backbone in this package instantiates the encoder + scorer
-over the cycle-lifting candidates (rank-2 selection only), since its
-subcomplex marking machinery is anchored to the observed graph.
+The recipe is not tied to a target domain: the scorer accepts any
+candidate given its node membership, so the same components lift
+graphs to cell complexes (:class:`DiffLift`) or select hyperedges for
+a hypergraph model (pass candidate hyperedge memberships to
+:class:`CellScorer`).
 
 References
 ----------

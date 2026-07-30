@@ -27,10 +27,6 @@ https://openreview.net/forum?id=eC89CbINIw
 import torch
 from torch import nn
 
-from topobench.nn.backbones.cell.smcn_utils.difflift import (
-    CellScorer,
-    DiffLiftEncoder,
-)
 from topobench.nn.backbones.cell.smcn_utils.layers import (
     BagInit,
     BagPool,
@@ -40,6 +36,10 @@ from topobench.nn.backbones.cell.smcn_utils.layers import (
 )
 from topobench.nn.backbones.cell.smcn_utils.structures import (
     build_smcn_structures,
+)
+from topobench.nn.liftings.difflift import (
+    CellScorer,
+    DiffLiftEncoder,
 )
 
 
