@@ -253,7 +253,7 @@ def test_rank_without_destination_relation_is_carried_forward():
 
 def test_collated_relations_never_cross_graph_boundaries():
     graph_a = make_complex(num_faces=1)
-    graph_b = make_complex(num_faces=0, feature_shift=100.0)
+    graph_b = make_complex(num_faces=1, feature_shift=100.0)
     batch = collate_fn([loader_item(graph_a), loader_item(graph_b)])
 
     _, edge_index_dict = make_model().to_heterogeneous_inputs(batch)
@@ -270,10 +270,20 @@ def test_collated_relations_never_cross_graph_boundaries():
         destination_membership = memberships[destination_type][edge_index[1]]
         assert torch.equal(source_membership, destination_membership)
 
+    face_edge_types = [
+        ("rank_1", "up_incidence-1", "rank_2"),
+        ("rank_2", "down_incidence-2", "rank_1"),
+    ]
+    for source_type, relation, destination_type in face_edge_types:
+        edge_index = edge_index_dict[(source_type, relation, destination_type)]
+        assert torch.any(memberships[source_type][edge_index[0]] == 1)
+        assert torch.any(memberships[destination_type][edge_index[1]] == 1)
 
-def test_eval_output_is_equal_alone_and_in_a_batch():
+
+@pytest.mark.parametrize("num_faces_b", [0, 1])
+def test_eval_output_is_equal_alone_and_in_a_batch(num_faces_b):
     graph_a = make_complex(num_faces=1)
-    graph_b = make_complex(num_faces=0, feature_shift=100.0)
+    graph_b = make_complex(num_faces=num_faces_b, feature_shift=100.0)
     graph_a_batch = collate_fn([loader_item(graph_a)])
     graph_b_batch = collate_fn([loader_item(graph_b)])
     combined_batch = collate_fn([loader_item(graph_a), loader_item(graph_b)])
@@ -283,8 +293,8 @@ def test_eval_output_is_equal_alone_and_in_a_batch():
     output_b = model(graph_b_batch)
     combined_output = model(combined_batch)
 
-    counts_a = (3, 2, 1)
-    counts_b = (3, 2, 0)
+    counts_a = [graph_a[f"x_{rank}"].shape[0] for rank in range(3)]
+    counts_b = [graph_b[f"x_{rank}"].shape[0] for rank in range(3)]
     for rank, (count_a, count_b) in enumerate(
         zip(counts_a, counts_b, strict=True)
     ):
