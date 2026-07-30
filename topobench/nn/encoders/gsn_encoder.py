@@ -309,7 +309,7 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
         self._node_pyg_kword = f"node_{pyg_kword}"
         self._edge_pyg_kword = f"edge_{pyg_kword}"
 
-        self._lazy = lazy  # whether or not orbit paritions should be computet on instance creation or first call to forward
+        self._lazy = lazy  # whether or not orbit partitions should be computed on instance creation or first call to forward
         self._n_jobs = n_jobs  # joblib workers used to parallelize over substructures in `_gsn_encoding`
 
         self._precomputed = False
