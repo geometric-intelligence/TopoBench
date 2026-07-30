@@ -4,6 +4,7 @@ import hydra
 import pytest
 import torch
 
+from test._utils.simplified_pipeline import run
 from topobench.nn.backbones.combinatorial.hgt import CellHGT
 from topobench.utils.config_resolvers import register_all_resolvers
 
@@ -87,3 +88,38 @@ def test_hgt_model_config_composes_and_instantiates(
             cfg.transforms.one_hot_node_degree_features.transform_name
             == "OneHotDegreeFeatures"
         )
+
+
+@pytest.mark.parametrize(
+    ("dataset", "batch_size"),
+    [("graph/MUTAG", 16), ("graph/PROTEINS", 32)],
+)
+def test_hgt_two_epoch_batched_pipeline(
+    dataset: str,
+    batch_size: int,
+) -> None:
+    """Train, validate, and test batched CellHGT for two epochs."""
+    hydra.core.global_hydra.GlobalHydra.instance().clear()
+    with hydra.initialize(version_base="1.3", config_path="../../configs"):
+        cfg = hydra.compose(
+            config_name="run.yaml",
+            overrides=[
+                "model=cell/hgt",
+                f"dataset={dataset}",
+                f"dataset.dataloader_params.batch_size={batch_size}",
+                "model.feature_encoder.out_channels=32",
+                "model.backbone.heads=4",
+                "model.backbone.num_layers=2",
+                "model.backbone.dropout=0.0",
+                "trainer.max_epochs=2",
+                "trainer.min_epochs=1",
+                "trainer.check_val_every_n_epoch=1",
+                "trainer.accelerator=cpu",
+                "trainer.devices=1",
+                "paths=test",
+                "callbacks=model_checkpoint",
+            ],
+            return_hydra_config=True,
+        )
+
+    run(cfg)
