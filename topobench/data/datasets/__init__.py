@@ -143,6 +143,12 @@ from topobench.data.datasets.synthetic_heterogeneous_dataset import (  # noqa: E
     make_synthetic_heterogeneous_data as make_synthetic_heterogeneous_data,
 )
 
+# Replace the class object created by file-based discovery with the canonical
+# import so registry construction and serialization use a stable module path.
+MANUAL_DATASETS["SyntheticHeterogeneousDataset"] = (
+    SyntheticHeterogeneousDataset
+)
+
 for public_name in (
     "SyntheticHeterogeneousDataset",
     "make_synthetic_heterogeneous_data",
