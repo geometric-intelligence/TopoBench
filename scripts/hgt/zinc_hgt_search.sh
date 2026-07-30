@@ -16,6 +16,7 @@ Usage:
   zinc_hgt_search.sh heads <best_depth> [seed]
   zinc_hgt_search.sh width <best_depth> <best_heads> [seed]
   zinc_hgt_search.sh lr <best_depth> <best_heads> <best_width> [seed]
+  zinc_hgt_search.sh final <best_depth> <best_heads> <best_width> <best_lr> [seed]
 
 Environment:
   WANDB_PROJECT          Shared W&B project (default: cell-hgt-zinc)
@@ -67,6 +68,7 @@ run_candidate() {
     local width="$4"
     local learning_rate="$5"
     local seed="$6"
+    local run_test="$7"
 
     require_positive_integer "depth" "$depth"
     require_positive_integer "heads" "$heads"
@@ -87,6 +89,10 @@ run_candidate() {
     lr_tag="$(learning_rate_tag "$learning_rate")"
 
     local group_name="zinc-hgt-${phase}-s${seed}"
+    local job_type="${phase}-screen"
+    if [[ "$phase" == "final" ]]; then
+        job_type="final-evaluation"
+    fi
     local run_name
     run_name="zinc-hgt-${phase}-d${depth_tag}-h${heads_tag}"
     run_name+="-w${width_tag}-lr${lr_tag}-s${seed}"
@@ -94,7 +100,7 @@ run_candidate() {
     local -a wandb_arguments=(
         "logger.wandb.project=${WANDB_PROJECT_NAME}"
         "logger.wandb.group=${group_name}"
-        "logger.wandb.job_type=${phase}-screen"
+        "logger.wandb.job_type=${job_type}"
         "+logger.wandb.name=${run_name}"
         "logger.wandb.tags=[cell,hgt,zinc,hpo,${phase}]"
     )
@@ -129,7 +135,7 @@ run_candidate() {
         "callbacks.early_stopping.patience=10"
         "callbacks.early_stopping.min_delta=0.005"
         "train=true"
-        "test=true"
+        "test=${run_test}"
     )
 
     if command -v caffeinate >/dev/null 2>&1; then
@@ -159,7 +165,7 @@ case "$phase" in
         }
         seed="${2:-0}"
         for depth in 2 4 8; do
-            run_candidate "depth" "$depth" 4 64 0.001 "$seed"
+            run_candidate "depth" "$depth" 4 64 0.001 "$seed" false
         done
         ;;
     heads)
@@ -170,7 +176,8 @@ case "$phase" in
         best_depth="$2"
         seed="${3:-0}"
         for heads in 2 8; do
-            run_candidate "heads" "$best_depth" "$heads" 64 0.001 "$seed"
+            run_candidate \
+                "heads" "$best_depth" "$heads" 64 0.001 "$seed" false
         done
         ;;
     width)
@@ -182,7 +189,7 @@ case "$phase" in
         best_heads="$3"
         seed="${4:-0}"
         run_candidate "width" \
-            "$best_depth" "$best_heads" 128 0.001 "$seed"
+            "$best_depth" "$best_heads" 128 0.001 "$seed" false
         ;;
     lr)
         [[ "$#" -ge 4 && "$#" -le 5 ]] || {
@@ -200,8 +207,28 @@ case "$phase" in
                 "$best_heads" \
                 "$best_width" \
                 "$learning_rate" \
-                "$seed"
+                "$seed" \
+                false
         done
+        ;;
+    final)
+        [[ "$#" -ge 5 && "$#" -le 6 ]] || {
+            usage
+            exit 2
+        }
+        best_depth="$2"
+        best_heads="$3"
+        best_width="$4"
+        best_learning_rate="$5"
+        seed="${6:-0}"
+        run_candidate \
+            "final" \
+            "$best_depth" \
+            "$best_heads" \
+            "$best_width" \
+            "$best_learning_rate" \
+            "$seed" \
+            true
         ;;
     *)
         usage

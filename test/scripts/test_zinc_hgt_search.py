@@ -81,7 +81,7 @@ def test_depth_phase_builds_three_topotune_aligned_wandb_runs() -> None:
         assert "callbacks.early_stopping.patience=10" in command
         assert "callbacks.early_stopping.min_delta=0.005" in command
         assert "seed=0" in command
-        assert "test=true" in command
+        assert "test=false" in command
 
 
 def test_follow_up_phases_skip_existing_baseline_candidates() -> None:
@@ -116,6 +116,18 @@ def test_width_must_be_divisible_by_heads() -> None:
 
     assert result.returncode != 0
     assert "divisible" in result.stderr
+
+
+def test_final_phase_evaluates_only_the_selected_configuration() -> None:
+    result = run_launcher("final", "4", "8", "128", "0.0005", "3")
+
+    assert result.returncode == 0, result.stderr
+    commands = dry_run_commands(result)
+    assert len(commands) == 1
+    assert "logger.wandb.group=zinc-hgt-final-s3" in commands[0]
+    assert "logger.wandb.job_type=final-evaluation" in commands[0]
+    assert "zinc-hgt-final-d04-h08-w128-lr5e-4-s3" in commands[0]
+    assert "test=true" in commands[0]
 
 
 def test_unknown_phase_prints_usage_and_fails() -> None:

@@ -57,8 +57,8 @@ name and the complete Hydra command.
 500, validation interval 5, patience 10, StepLR inherited from
 `configs/optimizer/default.yaml`, and fixed dropout 0.1.
 
-**Step 4:** Dispatch the four staged phases and use `DRY_RUN=1` to print
-instead of execute.
+**Step 4:** Dispatch the four validation-only search phases and a separate
+final-evaluation phase. Use `DRY_RUN=1` to print instead of execute.
 
 **Step 5:** Run the focused pytest file and make it pass.
 
@@ -79,4 +79,3 @@ verify W&B, model, and trainer settings.
 **Step 4:** Run Ruff on the pytest file and `git diff --check`.
 
 **Step 5:** Commit the launcher, tests, and documentation.
-

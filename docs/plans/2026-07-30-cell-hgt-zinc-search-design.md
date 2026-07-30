@@ -38,9 +38,13 @@ that have already lost in an earlier stage.
    result already exists.
 4. `lr`: after choosing the architecture, run learning rates 0.0005 and
    0.002. The 0.001 result already exists.
+5. `final`: run exactly the selected depth, heads, width, and learning rate
+   with final test evaluation enabled.
 
 Each invocation uses exactly one seed. Candidates within a stage run
-sequentially.
+sequentially. Search candidates use `test=false` and must be selected only by
+validation MAE. The `final` phase is the only phase that evaluates the test
+split, preventing test-set leakage during hyperparameter selection.
 
 ## W&B organization
 
@@ -53,8 +57,8 @@ Runs are grouped by stage and seed, for example
 
 `zinc-hgt-depth-d04-h04-w064-lr1e-3-s0`
 
-Tags record `cell`, `hgt`, `zinc`, `hpo`, and the search stage. W&B receives
-the best-checkpoint validation and test metrics through TopoBench's
+Tags record `cell`, `hgt`, `zinc`, `hpo`, and the search stage. The final W&B
+run receives best-checkpoint validation and test metrics through TopoBench's
 `val_best_rerun/*` and `test_best_rerun/*` logging path.
 
 ## Interface and safety
@@ -66,10 +70,10 @@ zinc_hgt_search.sh depth [seed]
 zinc_hgt_search.sh heads <best_depth> [seed]
 zinc_hgt_search.sh width <best_depth> <best_heads> [seed]
 zinc_hgt_search.sh lr <best_depth> <best_heads> <best_width> [seed]
+zinc_hgt_search.sh final <best_depth> <best_heads> <best_width> <best_lr> [seed]
 ```
 
 `DRY_RUN=1` prints the exact commands without training. The launcher validates
 positive integer arguments and the HGT requirement that width be divisible by
 the number of heads. On macOS it uses `caffeinate -i`; elsewhere it invokes
 the project Python executable directly.
-
