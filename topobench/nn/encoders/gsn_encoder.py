@@ -9,12 +9,14 @@ of a fixed collection of substructures (motifs), following the
 Graph Substructure Network (GSN) approach.
 """
 
+import warnings
 from collections import namedtuple
 
 import networkx as nx
 import numpy as np
 import torch
 import torch_geometric
+from joblib import Parallel, delayed
 from networkx.algorithms.isomorphism import GraphMatcher
 from torch_geometric.data import Data
 from torch_geometric.utils import from_networkx, to_networkx
@@ -233,6 +235,17 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
         computed immediately upon construction (via `_precompute`).
         If `True` (default), this computation is deferred until the
         first call to `forward`.
+    n_jobs : int, optional
+        Number of parallel workers used by `_gsn_encoding` to annotate
+        a graph, one job per substructure (passed straight to
+        `joblib.Parallel`). ``-1`` (default) uses all available cores;
+        ``1`` runs in-process with no serialization overhead.
+        Parallelism is only worth it for graphs where the
+        subgraph-isomorphism search dominates the per-task overhead of
+        pickling the graph to each worker. Note that the encodings are
+        computed by a cached pre-transform, so set this to ``1`` if that
+        pre-transform itself already runs inside parallel workers, to
+        prevent CPU oversubscription.
 
     **kwargs : dict, optional
         Additional keyword arguments. Ignored by the encoder; accepted so
@@ -277,6 +290,7 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
         substructures: list[nx.Graph] | None = None,
         pyg_kword: str = "gsn_encodings",
         lazy: bool = True,
+        n_jobs: int = -1,
         **kwargs,
     ):
         """
@@ -296,6 +310,7 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
         self._edge_pyg_kword = f"edge_{pyg_kword}"
 
         self._lazy = lazy  # whether or not orbit paritions should be computet on instance creation or first call to forward
+        self._n_jobs = n_jobs  # joblib workers used to parallelize over substructures in `_gsn_encoding`
 
         self._precomputed = False
         self._substructure_orbits: (
@@ -472,6 +487,83 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
 
         self._precomputed = True
 
+    @staticmethod
+    def _process_one_substructure(
+        G: nx.Graph,
+        H: nx.Graph,
+        orbit_info: OrbitInformation,
+        node_channels: int,
+        edge_channels: int,
+    ) -> tuple[dict[int, np.array], dict[tuple[int, int], np.array]]:
+        """
+        Accumulate raw orbit counts for a single substructure.
+
+        Finds every subgraph isomorphism (embedding) of `H` into `G`
+        and, for each embedding, increments the count at the
+        corresponding global orbit index for every matched node and
+        edge. Counts are accumulated into local dictionaries and
+        returned rather than written onto `G`, so that this can run in
+        a separate worker process (see `_gsn_encoding`) without sharing
+        mutable state.
+
+        Parameters
+        ----------
+        G : nx.Graph
+            Target graph the substructure is searched in.
+        H : nx.Graph
+            Substructure (motif) to find embeddings of.
+        orbit_info : OrbitInformation
+            Orbit information for `H`, with node/edge orbit ids already
+            offset into the global numbering (see `_precompute`).
+        node_channels : int
+            Length of the per-node count vector (total node orbits).
+        edge_channels : int
+            Length of the per-edge count vector (total edge orbits).
+
+        Returns
+        -------
+        node_counts : dict of int to np.array
+            Per-node raw orbit counts, keyed by node id in `G`.
+        edge_counts : dict of (int, int) to np.array
+            Per-edge raw orbit counts, keyed by normalized edge
+            ``(min, max)`` in `G`.
+        """
+        node_counts: dict[int, np.array] = {
+            node: np.zeros(node_channels) for node in G.nodes
+        }
+        edge_counts: dict[tuple[int, int], np.array] = {
+            normalized_edge(u, v): np.zeros(edge_channels) for u, v in G.edges
+        }
+
+        # iterate over every embedding of the substructure into G and
+        # accumulate counts (NB: this loop body must stay inside the loop —
+        # accumulating only the last match is the bug in the original draft)
+        for matching_map in GraphMatcher(G, H).subgraph_isomorphisms_iter():
+            # pre-compute inverted matching_map
+            inverted_matching_map: dict[int, int] = invert_injective_dict(
+                matching_map
+            )
+
+            # nodes:
+            for node_id_G, node_id_H in matching_map.items():
+                # node orbits are globally contigous integers
+                corresponding_orbit = orbit_info.node_orbit_partition[
+                    node_id_H
+                ]
+                node_counts[node_id_G][corresponding_orbit] += 1
+
+            # edges:
+            for Hu, Hv in H.edges:
+                Gu, Gv = normalized_edge(
+                    inverted_matching_map[Hu], inverted_matching_map[Hv]
+                )
+                minH, maxH = normalized_edge(Hu, Hv)
+
+                edge_role = orbit_info.edge_orbit_partition[minH, maxH]
+                edge_counts[(Gu, Gv)][edge_role] += 1
+
+        return node_counts, edge_counts
+
     def _gsn_encoding(self, G: nx.Graph) -> nx.Graph:
         """
         Annotate a graph with raw (unnormalized) GSN orbit counts.
@@ -480,11 +572,14 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
         `self._node_pyg_kword`) of length `self._node_channels` on
         every node of `G`, and a zero-valued edge attribute (named
         `self._edge_pyg_kword`) of length `self._edge_channels` on
-        every edge of `G`. Then, for each substructure, finds every
-        subgraph isomorphism (embedding) of the substructure into `G`
-        and, for each embedding found, increments the count at the
-        corresponding global orbit index for every matched node and
-        edge.
+        every edge of `G`. Then processes each substructure (one
+        `joblib` job per substructure, controlled by `self._n_jobs`),
+        finding every subgraph isomorphism (embedding) of the
+        substructure into `G` and, for each embedding found,
+        incrementing the count at the corresponding global orbit index
+        for every matched node and edge. Per-substructure counts are
+        accumulated in the workers (see `_process_one_substructure`)
+        and merged back into `G`.
 
         Parameters
         ----------
@@ -516,44 +611,26 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
             self._edge_pyg_kword,
         )
 
-        for j, H in enumerate(self._substructures):
-            # now we need to find occurences of that substructure in our target graph:
-            # get mappings from target graph into substructure
-            occurences: list[dict[int, int]] = list(
-                GraphMatcher(G, H).subgraph_isomorphisms_iter()
+        # run each substructure independently; n_jobs=1 uses joblib's
+        # sequential backend (in-process, no pickling), so this is a single
+        # code path for both the serial and parallel cases.
+        results = Parallel(n_jobs=self._n_jobs)(
+            delayed(self._process_one_substructure)(
+                G,
+                H,
+                self._substructure_orbits[j],
+                self._node_channels,
+                self._edge_channels,
             )
+            for j, H in enumerate(self._substructures)
+        )
 
-            # now we can iterate over each of the occurence mappings and accumulate counts
-            for matching_map in occurences:
-                # pre-compute inverted matching_map
-                inverted_matching_map: dict[int, int] = invert_injective_dict(
-                    matching_map
-                )
-
-                # nodes:
-                for node_id_G, node_id_H in matching_map.items():
-                    # node orbits are globally contigous integers
-                    corresponding_orbit = self._substructure_orbits[
-                        j
-                    ].node_orbit_partition[node_id_H]
-                    G.nodes[node_id_G][self._node_pyg_kword][
-                        corresponding_orbit
-                    ] += 1
-
-                # edges:
-                for Hu, Hv in H.edges:
-                    Gu, Gv = (
-                        inverted_matching_map[Hu],
-                        inverted_matching_map[Hv],
-                    )
-                    Gu, Gv = min(Gu, Gv), max(Gu, Gv)
-
-                    minH, maxH = min(Hu, Hv), max(Hu, Hv)
-
-                    edge_role = self._substructure_orbits[
-                        j
-                    ].edge_orbit_partition[minH, maxH]
-                    G.edges[Gu, Gv][self._edge_pyg_kword][edge_role] += 1
+        # merge per-substructure counts back into G
+        for node_counts, edge_counts in results:
+            for node, counts in node_counts.items():
+                G.nodes[node][self._node_pyg_kword] += counts
+            for (u, v), counts in edge_counts.items():
+                G.edges[u, v][self._edge_pyg_kword] += counts
 
         return G
 
@@ -561,15 +638,17 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
         self, data: torch_geometric.data.Data
     ) -> torch_geometric.data.Data:
         """
-        Return the batch unchanged, requiring the GSN encodings present.
+        Return the batch with GSN encodings, computing them if missing.
 
-        As a model feature encoder this class is a pure passthrough: the
-        structural encodings are computed once and cached by the
-        ``GSNEncodings`` data-manipulation pre-transform (auto-attached via
-        ``configs/transforms/model_defaults/gsn.yaml``) and then ride along
-        on every collated batch. If the encodings are missing, the transform
-        was not applied, and we raise rather than silently (and expensively)
-        recomputing them inside the training loop.
+        As a model feature encoder this class is normally a pure
+        passthrough: the structural encodings are computed once and cached
+        by the ``GSNEncodings`` data-manipulation pre-transform
+        (auto-attached via ``configs/transforms/model_defaults/gsn.yaml``)
+        and then ride along on every collated batch. If the encodings are
+        missing the transform was not applied; rather than fail, we warn
+        and fall back to computing them on the fly via `_encode`. This is
+        expensive inside the training loop, so the warning flags that the
+        pre-transform should be enabled.
 
         Parameters
         ----------
@@ -579,12 +658,8 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
         Returns
         -------
         torch_geometric.data.Data
-            The input ``data``, unchanged.
-
-        Raises
-        ------
-        RuntimeError
-            If the ``node_{pyg_kword}`` encodings are not present on ``data``.
+            The input ``data`` with the GSN encodings attached (either the
+            precomputed ones, or freshly computed as a fallback).
         """
         if (
             self._node_pyg_kword in data
@@ -592,12 +667,16 @@ class GSNFeatureEncoder(AbstractFeatureEncoder):
         ):
             return data
 
-        raise RuntimeError(
-            f"'{self._node_pyg_kword}' not found on the batch. The GSN "
-            "encodings must be precomputed by the `GSNEncodings` "
+        warnings.warn(
+            f"'{self._node_pyg_kword}' not found on the batch; recomputing "
+            "the GSN encodings on the fly. This is expensive inside the "
+            "training loop -- precompute them with the `GSNEncodings` "
             "data-manipulation transform (auto-attached via "
-            "configs/transforms/model_defaults/gsn.yaml)."
+            "configs/transforms/model_defaults/gsn.yaml) to avoid this.",
+            stacklevel=2,
         )
+
+        return self._encode(data)
 
     def _encode(
         self, data: torch_geometric.data.Data

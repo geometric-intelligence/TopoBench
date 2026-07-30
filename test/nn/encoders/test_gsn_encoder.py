@@ -291,9 +291,12 @@ class TestGSNFeatureEncoder:
         data["node_gsn_encodings"] = torch.zeros(3, 1)
         assert enc.forward(data) is data
 
-    def test_forward_raises_when_encodings_missing(self):
-        """`forward` refuses to recompute: a missing encoding is a config
-        error (the `GSNEncodings` pre-transform was not applied)."""
-        enc = GSNFeatureEncoder(pyg_kword="gsn_encodings")
-        with pytest.raises(RuntimeError):
-            enc.forward(triangle_data())
+    def test_forward_warns_and_recomputes_when_encodings_missing(self):
+        """`forward` falls back to recomputing when encodings are missing,
+        warning that the `GSNEncodings` pre-transform should be applied."""
+        enc = GSNFeatureEncoder([nx.complete_graph(3)], lazy=False)
+        with pytest.warns(UserWarning, match="node_gsn_encodings"):
+            out = enc.forward(triangle_data())
+        # the fallback produces the same encodings as the pre-transform path
+        assert torch.allclose(out.node_gsn_encodings, torch.ones(3, 1))
+        assert torch.allclose(out.edge_gsn_encodings, torch.ones(6, 1))
