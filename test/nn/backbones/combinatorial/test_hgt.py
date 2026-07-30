@@ -6,6 +6,7 @@ import pytest
 import torch
 from torch_geometric.data import Data
 
+from topobench.dataloader.utils import collate_fn
 from topobench.nn.backbones.combinatorial.hgt import CellHGT
 
 NEIGHBORHOODS = [
@@ -86,6 +87,12 @@ def make_model(
         dropout=dropout,
         activation="relu",
     )
+
+
+def loader_item(data: Data):
+    """Adapt a data object to the input format expected by ``collate_fn``."""
+    keys = list(data.keys())
+    return ([data[key] for key in keys], keys)
 
 
 def test_to_heterogeneous_inputs_preserves_types_and_direction():
@@ -242,3 +249,67 @@ def test_rank_without_destination_relation_is_carried_forward():
 
     torch.testing.assert_close(output[1], batch.x_1)
     torch.testing.assert_close(output[2], batch.x_2)
+
+
+def test_collated_relations_never_cross_graph_boundaries():
+    graph_a = make_complex(num_faces=1)
+    graph_b = make_complex(num_faces=0, feature_shift=100.0)
+    batch = collate_fn([loader_item(graph_a), loader_item(graph_b)])
+
+    _, edge_index_dict = make_model().to_heterogeneous_inputs(batch)
+    memberships = {f"rank_{rank}": batch[f"batch_{rank}"] for rank in range(3)}
+
+    for (
+        source_type,
+        _,
+        destination_type,
+    ), edge_index in edge_index_dict.items():
+        if edge_index.numel() == 0:
+            continue
+        source_membership = memberships[source_type][edge_index[0]]
+        destination_membership = memberships[destination_type][edge_index[1]]
+        assert torch.equal(source_membership, destination_membership)
+
+
+def test_eval_output_is_equal_alone_and_in_a_batch():
+    graph_a = make_complex(num_faces=1)
+    graph_b = make_complex(num_faces=0, feature_shift=100.0)
+    graph_a_batch = collate_fn([loader_item(graph_a)])
+    graph_b_batch = collate_fn([loader_item(graph_b)])
+    combined_batch = collate_fn([loader_item(graph_a), loader_item(graph_b)])
+    model = make_model().eval()
+
+    output_a = model(graph_a_batch)
+    output_b = model(graph_b_batch)
+    combined_output = model(combined_batch)
+
+    counts_a = (3, 2, 1)
+    counts_b = (3, 2, 0)
+    for rank, (count_a, count_b) in enumerate(
+        zip(counts_a, counts_b, strict=True)
+    ):
+        assert combined_output[rank].shape[0] == count_a + count_b
+        torch.testing.assert_close(
+            combined_output[rank][:count_a],
+            output_a[rank],
+            rtol=1e-5,
+            atol=1e-6,
+        )
+        torch.testing.assert_close(
+            combined_output[rank][count_a : count_a + count_b],
+            output_b[rank],
+            rtol=1e-5,
+            atol=1e-6,
+        )
+
+
+def test_batch_with_no_faces_in_any_graph_is_supported():
+    graph_a = make_complex(num_faces=0)
+    graph_b = make_complex(num_faces=0, feature_shift=100.0)
+    batch = collate_fn([loader_item(graph_a), loader_item(graph_b)])
+
+    output = make_model()(batch)
+
+    assert output[0].shape == (6, 8)
+    assert output[1].shape == (4, 8)
+    assert output[2].shape == (0, 8)
