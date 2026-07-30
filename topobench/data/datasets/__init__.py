@@ -133,3 +133,19 @@ __all__ = [
 
 # For backwards compatibility, create individual imports
 locals().update(**MANUAL_DATASETS)
+
+# Factories are not discovered by ``DatasetManager`` and explicit imports keep
+# the dataset class bound to its canonical module in clean Python processes.
+from topobench.data.datasets.synthetic_heterogeneous_dataset import (  # noqa: E402
+    SyntheticHeterogeneousDataset as SyntheticHeterogeneousDataset,
+)
+from topobench.data.datasets.synthetic_heterogeneous_dataset import (  # noqa: E402
+    make_synthetic_heterogeneous_data as make_synthetic_heterogeneous_data,
+)
+
+for public_name in (
+    "SyntheticHeterogeneousDataset",
+    "make_synthetic_heterogeneous_data",
+):
+    if public_name not in __all__:
+        __all__.append(public_name)
