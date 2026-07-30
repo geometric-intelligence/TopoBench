@@ -250,8 +250,10 @@ class GSNGINVirtualNodeModel(torch.nn.Module):
         raises ``NotImplementedError``.
     num_layers : int
         Number of message-passing layers.
-    in_channels : int
-        Dimensionality of input node features.
+    in_channels : int or list of int
+        Dimensionality of input node features. A single-element list (as
+        produced by the ``infer_in_channels`` config resolver, e.g. ``[7]``)
+        is accepted and unwrapped to its scalar element.
     out_channels : int
         Dimensionality of the final per-node output.
     gsn_channels : int
@@ -320,6 +322,17 @@ class GSNGINVirtualNodeModel(torch.nn.Module):
         dropout: float = 0.0,
     ):
         super().__init__()
+
+        # `infer_in_channels` (used by the model config) passes the node-feature
+        # dimension as a single-element list, e.g. [7]; accept either that or a
+        # bare int and normalize to an int for the projection layers below.
+        if not isinstance(in_channels, int):
+            if len(in_channels) != 1:
+                raise ValueError(
+                    "GSNGINVirtualNodeModel expects a single node-feature "
+                    f"dimension, got in_channels={in_channels!r}."
+                )
+            in_channels = int(in_channels[0])
 
         self.num_layers = num_layers
         self.in_channels = in_channels
