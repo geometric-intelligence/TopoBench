@@ -27,6 +27,7 @@ requires-python = ">=3.11, <3.12"
 
 dependencies=[
     "torch==2.3.0",
+    "torch-geometric==2.8.0.post1",
     "tqdm",
     "charset-normalizer",
     "numpy",
