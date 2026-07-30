@@ -499,6 +499,8 @@ class COSIMOLayer(nn.Module):
         """
         if operator.is_sparse:
             op = operator.coalesce()
+            if op.shape[0] == 0:
+                return op
             row_sum = torch.zeros(
                 op.shape[0], device=op.device, dtype=op.dtype
             )
@@ -511,6 +513,8 @@ class COSIMOLayer(nn.Module):
                 device=op.device,
                 dtype=op.dtype,
             ).coalesce()
+        if operator.shape[0] == 0:
+            return operator
         scale = operator.abs().sum(dim=1).max().clamp_min(1.0)
         return operator / scale
 

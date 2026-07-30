@@ -199,6 +199,37 @@ def test_cosimo_normalizes_dense_taylor_operator():
     assert torch.isclose(normalized[0].abs().sum(), torch.tensor(1.0))
 
 
+def test_cosimo_normalizes_empty_sparse_operator():
+    """Test sparse normalization supports empty simplicial ranks."""
+    layer = COSIMOLayer(
+        in_channels=(1, 1, 1),
+        out_channels=(1, 1, 1),
+    )
+    operator = torch.sparse_coo_tensor(
+        torch.empty((2, 0), dtype=torch.long),
+        torch.empty((0,)),
+        (0, 0),
+    )
+
+    normalized = layer.normalize_operator(operator)
+
+    assert normalized.shape == operator.shape
+    assert normalized._nnz() == 0
+
+
+def test_cosimo_normalizes_empty_dense_operator():
+    """Test dense normalization supports empty simplicial ranks."""
+    layer = COSIMOLayer(
+        in_channels=(1, 1, 1),
+        out_channels=(1, 1, 1),
+    )
+    operator = torch.empty((0, 0))
+
+    normalized = layer.normalize_operator(operator)
+
+    assert normalized.shape == operator.shape
+
+
 @pytest.mark.parametrize(
     ("kwargs", "match"),
     [
