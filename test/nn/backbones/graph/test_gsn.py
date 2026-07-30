@@ -10,7 +10,7 @@ from torch_geometric.data import Batch, Data
 # (it looks the class module up in sys.modules).
 from topobench.nn.backbones.graph.gsn import (
     GSNGINVirtualNodeLayerV,
-    GSNGINVirtualNodeModule,
+    GSNGINVirtualNodeModel,
     mlp_builder,
     mlp_dimension_builder,
 )
@@ -83,14 +83,14 @@ class TestVirtualNode:
     @pytest.mark.parametrize("num_layers", [1, 3])
     def test_module_forward(self, num_layers):
         """Node-mode module maps to (N, out_channels) for any depth."""
-        module = GSNGINVirtualNodeModule(
+        module = GSNGINVirtualNodeModel(
             "node", num_layers, IN, OUT, GSN, common_embedding_dim=8
         )
         assert call_node_model(module, node_data()).shape == (NUM_NODES, OUT)
 
     def test_module_edge_dim_path(self):
         """The edge-feature path projects and runs."""
-        module = GSNGINVirtualNodeModule(
+        module = GSNGINVirtualNodeModel(
             "node", 2, IN, OUT, GSN, common_embedding_dim=8, edge_dim=2
         )
         data = node_data()
@@ -105,7 +105,7 @@ class TestVirtualNode:
 
     def test_module_no_batch_fallback(self):
         """A None batch vector is treated as a single graph."""
-        module = GSNGINVirtualNodeModule(
+        module = GSNGINVirtualNodeModel(
             "node", 2, IN, OUT, GSN, common_embedding_dim=8
         )
         data = node_data()
@@ -116,11 +116,11 @@ class TestVirtualNode:
     def test_edge_mode_not_implemented(self):
         """Edge mode is not implemented and raises."""
         with pytest.raises(NotImplementedError):
-            GSNGINVirtualNodeModule("edge", 2, IN, OUT, GSN)
+            GSNGINVirtualNodeModel("edge", 2, IN, OUT, GSN)
 
     def test_edge_attr_ignored_when_edge_dim_zero(self):
         """edge_attr present while edge_dim == 0 is tolerated (attr ignored)."""
-        module = GSNGINVirtualNodeModule(
+        module = GSNGINVirtualNodeModel(
             "node", 2, IN, OUT, GSN, common_embedding_dim=8
         )
         data = node_data()
@@ -146,7 +146,7 @@ class TestVirtualNode:
             edge_index=torch.tensor([[0, 1], [1, 0]]),
             node_gsn_encodings=torch.randn(2, GSN),
         )
-        module = GSNGINVirtualNodeModule(
+        module = GSNGINVirtualNodeModel(
             "node", 3, IN, OUT, GSN, common_embedding_dim=8
         )
         module.eval()
@@ -223,7 +223,7 @@ class TestBatchNormAndDropout:
 
     def test_vn_module_between_layer_norms_and_g_updaters(self):
         """VN module: intermediate BN, Identity on the last, BN in G-updaters."""
-        module = GSNGINVirtualNodeModule(
+        module = GSNGINVirtualNodeModel(
             "node",
             3,
             IN,
@@ -244,7 +244,7 @@ class TestBatchNormAndDropout:
 
     def test_vn_module_forward_train_mode_with_batch(self):
         """A BN/Dropout VN module runs in train mode on a real batch."""
-        module = GSNGINVirtualNodeModule(
+        module = GSNGINVirtualNodeModel(
             "node",
             3,
             IN,
@@ -261,7 +261,7 @@ class TestBatchNormAndDropout:
     def test_dropout_active_in_train_inactive_in_eval(self):
         """Dropout perturbs outputs in train mode but is a no-op in eval."""
         torch.manual_seed(0)
-        module = GSNGINVirtualNodeModule(
+        module = GSNGINVirtualNodeModel(
             "node", 3, IN, OUT, GSN, common_embedding_dim=8, dropout=0.5
         )
         batch = two_graph_batch()

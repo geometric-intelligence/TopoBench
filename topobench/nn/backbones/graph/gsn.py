@@ -7,7 +7,7 @@ into the aggregation as node-level structural encodings in the additive GSN-v
 form.
 
 - `GSNGINVirtualNodeLayerV` is a single GIN+VN message-passing layer.
-- `GSNGINVirtualNodeModule` stacks these layers, projecting the node (and
+- `GSNGINVirtualNodeModel` stacks these layers, projecting the node (and
   optional edge) features into a shared embedding space and maintaining a
   per-graph virtual node.
 
@@ -108,7 +108,7 @@ class GSNGINVirtualNodeLayerV(MessagePassing):
     Computes ``h_v' = UP(h~_v + sum_u sigma(h~_u + e'_{v,u}))`` for a node
     representation ``h~`` that is expected to already include the virtual-node
     and structural contributions (``h~_v = h_v + G + W_V x_v``), which are
-    formed by the enclosing :class:`GSNGINVirtualNodeModule`. The self term is
+    formed by the enclosing :class:`GSNGINVirtualNodeModel`. The self term is
     added explicitly (``x + propagate(...)``); messages apply the activation to
     the neighbour features plus the (already-embedded) edge features.
 
@@ -227,7 +227,7 @@ class GSNGINVirtualNodeLayerV(MessagePassing):
         return self.activation_fn(x_j + edge_attr)
 
 
-class GSNGINVirtualNodeModule(torch.nn.Module):
+class GSNGINVirtualNodeModel(torch.nn.Module):
     """
     Multi-layer GIN+VN model with additive GSN structural encodings.
 

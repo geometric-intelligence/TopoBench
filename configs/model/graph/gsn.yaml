@@ -24,7 +24,7 @@ feature_encoder:
 backbone:
   # NOTE: target the submodule (not the auto-discovered package alias), so
   # PyG's MessagePassing signature inspector resolves the class correctly.
-  _target_: topobench.nn.backbones.graph.gsn.GSNGINVirtualNodeModule
+  _target_: topobench.nn.backbones.graph.gsn.GSNGINVirtualNodeModel
   mode: node
   num_layers: 4
   # num_features is a list [node_features, edge_features]; the backbone
