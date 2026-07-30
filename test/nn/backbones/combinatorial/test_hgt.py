@@ -150,6 +150,19 @@ def test_constructor_rejects_nonpositive_heads():
         )
 
 
+def test_constructor_rejects_nonpositive_hidden_channels():
+    for hidden_channels in (0, -8):
+        with pytest.raises(
+            ValueError, match="hidden_channels must be.*positive"
+        ):
+            CellHGT(
+                hidden_channels=hidden_channels,
+                num_layers=1,
+                heads=2,
+                neighborhoods=NEIGHBORHOODS,
+            )
+
+
 def test_constructor_rejects_negative_route_rank():
     with pytest.raises(ValueError, match="between 0 and max_rank"):
         CellHGT(
@@ -194,12 +207,9 @@ def test_backward_produces_finite_hgt_gradients():
         if "convs" in name and parameter.requires_grad
     ]
     assert hgt_gradients
-    assert any(gradient is not None for gradient in hgt_gradients)
-    assert all(
-        torch.isfinite(gradient).all()
-        for gradient in hgt_gradients
-        if gradient is not None
-    )
+    for gradient in hgt_gradients:
+        assert gradient is not None
+        assert torch.isfinite(gradient).all()
 
 
 def test_eval_mode_is_deterministic():

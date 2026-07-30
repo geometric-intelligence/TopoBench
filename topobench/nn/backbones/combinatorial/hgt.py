@@ -73,6 +73,8 @@ class CellHGT(torch.nn.Module):
         super().__init__()
         if heads < 1:
             raise ValueError("heads must be a positive integer")
+        if hidden_channels < 1:
+            raise ValueError("hidden_channels must be a positive integer")
         if hidden_channels % heads != 0:
             raise ValueError(
                 "hidden_channels must be divisible by the number of heads"
