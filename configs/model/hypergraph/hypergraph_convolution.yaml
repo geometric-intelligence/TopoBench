@@ -1,8 +1,8 @@
-# @package _global_
+_target_: topobench.models.base_model.BaseModel
 
-model:
+backbone:
   _target_: topobench.nn.backbones.hypergraph.hypergraph_convolution.HyperGraphConvolution
-  a: 64
-  b: 64
-  reapproximate: true
-  cuda: null
+  a: 16
+  b: 8
+  reapproximate: False
+  cuda: 0
