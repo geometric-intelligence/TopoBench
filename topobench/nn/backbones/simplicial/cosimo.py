@@ -417,7 +417,22 @@ class COSIMOLayer(nn.Module):
         return self.taylor_diffusion(laplacian, x, time)
 
     def diffusion_time(self, branch, time_name, x):
-        """Return a positive, bounded diffusion time for a branch."""
+        """Return a positive, bounded diffusion time for a branch.
+
+        Parameters
+        ----------
+        branch : int
+            Branch index selecting the learnable diffusion time.
+        time_name : str
+            Diffusion path name selecting the learnable diffusion time.
+        x : torch.Tensor
+            Reference tensor whose device and dtype are reused.
+
+        Returns
+        -------
+        torch.Tensor
+            Positive scalar diffusion time clipped by ``max_diffusion_time``.
+        """
         time = F.softplus(self.raw_times[f"{branch}_{time_name}"]).to(
             device=x.device, dtype=x.dtype
         )
