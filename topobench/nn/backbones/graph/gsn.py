@@ -453,6 +453,7 @@ class GSNGINVirtualNodeModel(torch.nn.Module):
             If ``edge_attr`` is present while ``edge_dim == 0``.
         """
         device = x.device
+        dtype = x.dtype
 
         num_nodes = x.size(0)
 
@@ -465,10 +466,13 @@ class GSNGINVirtualNodeModel(torch.nn.Module):
         num_graphs: int = int(batch.max().item()) + 1
 
         # we initialize the virtual node matrix G
-        small_G = torch.zeros(num_graphs, self.d_embed, device=device)
+        small_G = torch.zeros(
+            num_graphs, self.d_embed, device=device, dtype=dtype
+        )
 
         # need to project node & edge features initially
         x = self.initial_node_projector(x)
+
         edge_attr = (
             self.initial_edge_projector(edge_attr)
             if edge_attr is not None
