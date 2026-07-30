@@ -207,6 +207,23 @@ For example, to reproduce Table 1 from the TopoBench paper:
 bash scripts/topobench/reproduce.sh
 ```
 
+### Batched cell-complex HGT
+
+Run the CPU smoke checks before starting the production experiment:
+
+```bash
+uv run python -m topobench experiment=cell_hgt_mutag_debug logger=csv
+uv run python -m topobench experiment=cell_hgt_proteins_debug logger=csv
+```
+
+All HGT experiments retain inductive mini-batching. The production ZINC
+configuration uses `batch_size=128` and the standard fixed split, so vary the
+training seed rather than the split seed:
+
+```bash
+uv run python -m topobench experiment=cell_hgt_zinc logger=csv seed=0,3,5,7,9 trainer.accelerator=gpu 'trainer.devices=[0]' --multirun
+```
+
 
 ## :anchor: Tutorials
 
