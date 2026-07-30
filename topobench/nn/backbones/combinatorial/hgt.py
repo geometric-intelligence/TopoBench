@@ -4,19 +4,49 @@ from __future__ import annotations
 
 import torch
 from torch_geometric.data import Data
+from torch_geometric.nn import HGTConv
 
 from topobench.data.utils import get_routes_from_neighborhoods
 
 
+def _activation(name: str) -> torch.nn.Module:
+    """Build an activation supported by the HGT configuration.
+
+    Parameters
+    ----------
+    name : str
+        Activation name.
+
+    Returns
+    -------
+    torch.nn.Module
+        Instantiated activation module.
+
+    Raises
+    ------
+    ValueError
+        If ``name`` is not a supported activation.
+    """
+    activations = {
+        "relu": torch.nn.ReLU,
+        "elu": torch.nn.ELU,
+        "tanh": torch.nn.Tanh,
+        "id": torch.nn.Identity,
+    }
+    if name not in activations:
+        raise ValueError(f"Unsupported activation: {name}")
+    return activations[name]()
+
+
 class CellHGT(torch.nn.Module):
-    """Map cell ranks and incidence relations to a heterogeneous graph.
+    """Apply heterogeneous attention across cell ranks and incidence relations.
 
     Parameters
     ----------
     hidden_channels : int
         Number of feature channels for every cell rank.
     num_layers : int
-        Number of HGT layers reserved for the backbone.
+        Number of stacked HGT layers.
     heads : int
         Number of attention heads. Must be positive and divide
         ``hidden_channels`` evenly.
@@ -25,9 +55,9 @@ class CellHGT(torch.nn.Module):
     max_rank : int, optional
         Highest cell rank represented by the backbone.
     dropout : float, optional
-        Dropout probability reserved for the HGT layers.
+        Dropout probability applied after each updated rank.
     activation : str, optional
-        Name of the activation reserved for the HGT layers.
+        Name of the activation applied after layer normalization.
     """
 
     def __init__(
@@ -95,6 +125,30 @@ class CellHGT(torch.nn.Module):
             )
         ]
         self.metadata = (self.node_types, self.edge_types)
+        self.convs = torch.nn.ModuleList(
+            [
+                HGTConv(
+                    in_channels=hidden_channels,
+                    out_channels=hidden_channels,
+                    metadata=self.metadata,
+                    heads=heads,
+                )
+                for _ in range(num_layers)
+            ]
+        )
+        self.norms = torch.nn.ModuleList(
+            [
+                torch.nn.ModuleDict(
+                    {
+                        node_type: torch.nn.LayerNorm(hidden_channels)
+                        for node_type in self.node_types
+                    }
+                )
+                for _ in range(num_layers)
+            ]
+        )
+        self.activation = _activation(activation)
+        self.dropout = torch.nn.Dropout(dropout)
 
     @staticmethod
     def node_type(rank: int) -> str:
@@ -151,17 +205,35 @@ class CellHGT(torch.nn.Module):
             )
         return x_dict, edge_index_dict
 
-    def forward(self, batch: Data):
-        """Apply HGT layers; implemented in the next TDD task.
+    def forward(self, batch: Data) -> dict[int, torch.Tensor]:
+        """Apply all HGT layers to one disjoint-union mini-batch.
 
         Parameters
         ----------
         batch : torch_geometric.data.Data
             Batched cell complex.
 
-        Raises
-        ------
-        NotImplementedError
-            Always raised because message passing is outside this task.
+        Returns
+        -------
+        dict of int to torch.Tensor
+            Updated feature tensor for every represented cell rank.
         """
-        raise NotImplementedError
+        x_dict, edge_index_dict = self.to_heterogeneous_inputs(batch)
+
+        for conv, norms in zip(self.convs, self.norms, strict=True):
+            previous = x_dict
+            messages = conv(previous, edge_index_dict)
+            x_dict = {}
+            for node_type, old_features in previous.items():
+                updated = messages.get(node_type)
+                if updated is None:
+                    x_dict[node_type] = old_features
+                    continue
+                x_dict[node_type] = self.dropout(
+                    self.activation(norms[node_type](updated))
+                )
+
+        return {
+            rank: x_dict[self.node_type(rank)]
+            for rank in range(self.max_rank + 1)
+        }

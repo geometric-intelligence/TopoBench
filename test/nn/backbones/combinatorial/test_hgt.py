@@ -166,3 +166,69 @@ def test_conversion_requires_every_configured_field():
 
     with pytest.raises(KeyError, match="up_incidence-1"):
         make_model().to_heterogeneous_inputs(batch)
+
+
+def test_forward_preserves_every_rank_shape_without_mutating_batch():
+    batch = make_complex()
+    original = {rank: batch[f"x_{rank}"].clone() for rank in range(3)}
+
+    output = make_model()(batch)
+
+    assert set(output) == {0, 1, 2}
+    for rank in range(3):
+        assert output[rank].shape == original[rank].shape
+        torch.testing.assert_close(batch[f"x_{rank}"], original[rank])
+
+
+def test_backward_produces_finite_hgt_gradients():
+    batch = make_complex()
+    model = make_model()
+
+    output = model(batch)
+    loss = sum(value.square().mean() for value in output.values())
+    loss.backward()
+
+    hgt_gradients = [
+        parameter.grad
+        for name, parameter in model.named_parameters()
+        if "convs" in name and parameter.requires_grad
+    ]
+    assert hgt_gradients
+    assert any(gradient is not None for gradient in hgt_gradients)
+    assert all(
+        torch.isfinite(gradient).all()
+        for gradient in hgt_gradients
+        if gradient is not None
+    )
+
+
+def test_eval_mode_is_deterministic():
+    batch = make_complex()
+    model = make_model(dropout=0.25).eval()
+
+    first = model(batch)
+    second = model(batch)
+
+    for rank in range(3):
+        torch.testing.assert_close(first[rank], second[rank])
+
+
+def test_forward_handles_an_empty_rank_two():
+    batch = make_complex(num_faces=0)
+
+    output = make_model()(batch)
+
+    assert output[0].shape == (3, 8)
+    assert output[1].shape == (2, 8)
+    assert output[2].shape == (0, 8)
+    assert all(torch.isfinite(value).all() for value in output.values())
+
+
+def test_rank_without_destination_relation_is_carried_forward():
+    batch = make_complex()
+    model = make_model(neighborhoods=["down_incidence-1"])
+
+    output = model(batch)
+
+    torch.testing.assert_close(output[1], batch.x_1)
+    torch.testing.assert_close(output[2], batch.x_2)
