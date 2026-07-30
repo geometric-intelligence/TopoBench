@@ -26,6 +26,41 @@ EDGE_TYPES = [
 
 
 @pytest.mark.parametrize(
+    ("experiment", "expected_dataset", "expected_batch_size"),
+    [
+        ("cell_hgt_mutag_debug", "MUTAG", 16),
+        ("cell_hgt_proteins_debug", "PROTEINS", 32),
+        ("cell_hgt_zinc", "ZINC", 128),
+    ],
+)
+def test_hgt_experiment_composes(
+    experiment: str,
+    expected_dataset: str,
+    expected_batch_size: int,
+) -> None:
+    """Compose each HGT experiment with its intended dataset and batching."""
+    hydra.core.global_hydra.GlobalHydra.instance().clear()
+    register_all_resolvers()
+    with hydra.initialize(version_base="1.3", config_path="../../configs"):
+        cfg = hydra.compose(
+            config_name="run.yaml",
+            overrides=[f"experiment={experiment}"],
+            return_hydra_config=True,
+        )
+
+    assert cfg.model._target_ == "topobench.model.TBModel"
+    assert (
+        cfg.model.backbone._target_
+        == "topobench.nn.backbones.combinatorial.hgt.CellHGT"
+    )
+    assert cfg.model.model_name == "hgt"
+    assert list(cfg.model.backbone.neighborhoods) == NEIGHBORHOODS
+    assert cfg.dataset.loader.parameters.data_name == expected_dataset
+    assert cfg.dataset.dataloader_params.batch_size == expected_batch_size
+    assert cfg.dataset.dataloader_params.batch_size > 1
+
+
+@pytest.mark.parametrize(
     ("dataset", "expected_in_channels", "expected_out_channels"),
     [
         ("MUTAG", [7, 4, 4], 2),
