@@ -246,10 +246,13 @@ must not maintain a second schema implementation.
 
 ### Typed feature encoder
 
-A `HeterogeneousNodeFeatureEncoder` owns one lazy linear projection per node
-type and maps all type-specific feature dimensions to a shared hidden width.
-It applies activation and dropout consistently across types. Missing features
-are an input-validation error.
+A `HeterogeneousNodeFeatureEncoder` owns one eagerly constructed linear
+projection per node type and maps all type-specific feature dimensions to a
+shared hidden width. The validated data specification supplies the input
+widths before optimizer construction. The encoder follows the existing
+TopoBench contract: it accepts `HeteroData`, updates each typed `x` store, and
+returns the encoded `HeteroData`. It applies activation and dropout
+consistently across types. Missing features are an input-validation error.
 
 ### Shared HGT core
 
@@ -285,9 +288,9 @@ remaining metadata-driven.
 
 ### Wrapper and readout
 
-A heterogeneous wrapper passes `batch.x_dict` and
-`batch.edge_index_dict` to either backbone and returns the complete output
-dictionary plus target labels.
+A heterogeneous wrapper receives the encoded `HeteroData`, passes
+`batch.x_dict` and `batch.edge_index_dict` to either backbone, and returns the
+complete output dictionary plus unfiltered target labels.
 
 A target-node readout applies a shared linear classifier to the selected node
 type. Both HGT and HeteroSAGE use the same encoder and readout.
