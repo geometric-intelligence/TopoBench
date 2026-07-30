@@ -26,19 +26,71 @@ EDGE_TYPES = [
 
 
 @pytest.mark.parametrize(
-    ("experiment", "expected_dataset", "expected_batch_size"),
+    (
+        "experiment",
+        "expected_dataset",
+        "expected_batch_size",
+        "expected_out_channels",
+        "expected_dropout",
+        "expected_trainer",
+    ),
     [
-        ("cell_hgt_mutag_debug", "MUTAG", 16),
-        ("cell_hgt_proteins_debug", "PROTEINS", 32),
-        ("cell_hgt_zinc", "ZINC", 128),
+        pytest.param(
+            "cell_hgt_mutag_debug",
+            "MUTAG",
+            16,
+            32,
+            0.0,
+            {
+                "accelerator": "cpu",
+                "devices": 1,
+                "min_epochs": 1,
+                "max_epochs": 2,
+                "check_val_every_n_epoch": 1,
+            },
+            id="mutag-debug",
+        ),
+        pytest.param(
+            "cell_hgt_proteins_debug",
+            "PROTEINS",
+            32,
+            32,
+            0.0,
+            {
+                "accelerator": "cpu",
+                "devices": 1,
+                "min_epochs": 1,
+                "max_epochs": 2,
+                "check_val_every_n_epoch": 1,
+            },
+            id="proteins-debug",
+        ),
+        pytest.param(
+            "cell_hgt_zinc",
+            "ZINC",
+            128,
+            64,
+            0.1,
+            {
+                "accelerator": "auto",
+                "devices": 1,
+                "min_epochs": 50,
+                "max_epochs": 500,
+                "check_val_every_n_epoch": 5,
+            },
+            id="zinc",
+        ),
     ],
 )
 def test_hgt_experiment_composes(
     experiment: str,
     expected_dataset: str,
     expected_batch_size: int,
+    expected_out_channels: int,
+    expected_dropout: float,
+    expected_trainer: dict[str, str | int],
 ) -> None:
-    """Compose each HGT experiment with its intended dataset and batching."""
+    """Compose each HGT experiment with its complete training contract."""
     hydra.core.global_hydra.GlobalHydra.instance().clear()
     register_all_resolvers()
     with hydra.initialize(version_base="1.3", config_path="../../configs"):
@@ -58,6 +110,21 @@ def test_hgt_experiment_composes(
     assert cfg.dataset.loader.parameters.data_name == expected_dataset
     assert cfg.dataset.dataloader_params.batch_size == expected_batch_size
     assert cfg.dataset.dataloader_params.batch_size > 1
+    assert cfg.model.feature_encoder.out_channels == expected_out_channels
+    assert cfg.model.feature_encoder.proj_dropout == pytest.approx(
+        expected_dropout
+    )
+    assert cfg.model.backbone.num_layers == 2
+    assert cfg.model.backbone.heads == 4
+    assert cfg.model.backbone.dropout == pytest.approx(expected_dropout)
+    for option, expected_value in expected_trainer.items():
+        assert cfg.trainer[option] == expected_value
+
+    if expected_dataset == "ZINC":
+        assert cfg.optimizer.parameters.lr == pytest.approx(0.001)
+        assert cfg.optimizer.parameters.weight_decay == pytest.approx(0.0001)
+        assert cfg.callbacks.early_stopping.patience == 10
+        assert cfg.callbacks.early_stopping.min_delta == pytest.approx(0.005)
 
 
 @pytest.mark.parametrize(
