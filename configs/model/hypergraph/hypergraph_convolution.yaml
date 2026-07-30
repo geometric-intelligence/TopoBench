@@ -6,3 +6,6 @@ backbone:
   b: 8
   reapproximate: False
   cuda: 0
+
+loss:
+ _target_: torch.nn.CrossEntropyLoss
