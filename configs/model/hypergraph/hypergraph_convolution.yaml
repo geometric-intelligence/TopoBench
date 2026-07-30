@@ -37,3 +37,5 @@ readout:
   out_channels: ${dataset.parameters.num_classes}
   task_level: ${define_task_level:${dataset.parameters.task_level},${dataset.split_params.learning_setting}}
   pooling_type: sum
+
+compile: false
