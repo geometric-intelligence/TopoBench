@@ -278,8 +278,11 @@ Existing `CellHGT` public attributes and tests remain valid.
 ### HeteroSAGE
 
 `HeteroSAGEBackbone` builds a `HeteroConv` layer for each message-passing
-layer and one bipartite `SAGEConv((-1, -1), hidden_channels)` per canonical
-edge type. Relation outputs aggregate by sum. Each layer applies normalization,
+layer and one eager bipartite
+`SAGEConv((hidden_channels, hidden_channels), hidden_channels)` per canonical
+edge type. The typed feature encoder has already projected every input into
+the common hidden width, so lazy relation parameters are unnecessary.
+Relation outputs aggregate by sum. Each layer applies normalization,
 activation, and dropout by node type. A node type that receives no relation
 output carries its previous representation forward.
 
@@ -308,6 +311,11 @@ For a full graph, the heterogeneous adapter selects the mask associated with
 the current phase. For a sampled graph, it slices logits and labels to the
 first `batch_size` seed nodes. It also reports the number of supervised
 examples so Lightning loss logging is weighted correctly.
+
+The sampling mode is passed explicitly from configuration. The adapter does
+not infer full versus sampled execution from incidental batch attributes.
+With directional neighbor sampling, the fanout depth must equal the model
+depth; configuration validation rejects a mismatch before training.
 
 Loss, evaluator, optimizer, callbacks, checkpoint selection, W&B integration,
 and best-checkpoint validation/test reruns remain shared.
@@ -407,9 +415,10 @@ Required regression protection:
 - the complete test suite before handoff.
 
 PyG must become an explicit project dependency rather than remaining only a
-transitive dependency. The supported version range must include the locked
-version and be exercised in CI. The local editable/development installation
-must not be treated as the compatibility baseline.
+transitive dependency. Version `2.8.0.post1`, already resolved by the lock
+file, is the initial supported baseline and must be exercised in CI. Broaden
+the range only with a compatibility matrix. The local editable/development
+installation must not be treated as the compatibility baseline.
 
 ## Primary References
 
