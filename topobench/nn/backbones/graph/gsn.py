@@ -350,7 +350,7 @@ class GSNGINVirtualNodeModule(torch.nn.Module):
             raise NotImplementedError("Edge mode not yet implemented!")
         self._layer_cls = GSNGINVirtualNodeLayerV
 
-        # default to a single hidden layer (i.e. a 2-layer MLP) when unspecified
+        # default to a single hidden layer (i.e. a 3-layer MLP) when unspecified
         arch = (
             [self.d_embed]
             if G_updater_architecture is None
