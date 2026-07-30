@@ -9,7 +9,26 @@ from topobench.data.utils import get_routes_from_neighborhoods
 
 
 class CellHGT(torch.nn.Module):
-    """Map cell ranks and incidence relations to a heterogeneous graph."""
+    """Map cell ranks and incidence relations to a heterogeneous graph.
+
+    Parameters
+    ----------
+    hidden_channels : int
+        Number of feature channels for every cell rank.
+    num_layers : int
+        Number of HGT layers reserved for the backbone.
+    heads : int
+        Number of attention heads. Must be positive and divide
+        ``hidden_channels`` evenly.
+    neighborhoods : sequence of str
+        Ordered incidence-neighborhood names to expose as edge types.
+    max_rank : int, optional
+        Highest cell rank represented by the backbone.
+    dropout : float, optional
+        Dropout probability reserved for the HGT layers.
+    activation : str, optional
+        Name of the activation reserved for the HGT layers.
+    """
 
     def __init__(
         self,
@@ -22,6 +41,8 @@ class CellHGT(torch.nn.Module):
         activation: str = "relu",
     ) -> None:
         super().__init__()
+        if heads < 1:
+            raise ValueError("heads must be a positive integer")
         if hidden_channels % heads != 0:
             raise ValueError(
                 "hidden_channels must be divisible by the number of heads"
@@ -51,8 +72,14 @@ class CellHGT(torch.nn.Module):
             tuple(route)
             for route in get_routes_from_neighborhoods(self.neighborhoods)
         ]
-        if any(max(route) > max_rank for route in self.routes):
-            raise ValueError("A neighborhood route exceeds max_rank")
+        if any(
+            rank < 0 or rank > max_rank
+            for route in self.routes
+            for rank in route
+        ):
+            raise ValueError(
+                "Neighborhood route ranks must be between 0 and max_rank"
+            )
 
         self.node_types = [
             self.node_type(rank) for rank in range(self.max_rank + 1)
@@ -71,11 +98,34 @@ class CellHGT(torch.nn.Module):
 
     @staticmethod
     def node_type(rank: int) -> str:
-        """Return the PyG node-type name for a cell rank."""
+        """Return the PyG node-type name for a cell rank.
+
+        Parameters
+        ----------
+        rank : int
+            Cell rank.
+
+        Returns
+        -------
+        str
+            Node-type name in ``rank_<rank>`` form.
+        """
         return f"rank_{rank}"
 
     def to_heterogeneous_inputs(self, batch: Data):
-        """Convert a batched TopoBench complex to PyG HGT dictionaries."""
+        """Convert a batched TopoBench complex to PyG HGT dictionaries.
+
+        Parameters
+        ----------
+        batch : torch_geometric.data.Data
+            Batched complex containing per-rank features and configured sparse
+            incidence neighborhoods.
+
+        Returns
+        -------
+        tuple of dict
+            Per-node-type feature tensors and per-edge-type PyG edge indices.
+        """
         x_dict = {}
         for rank in range(self.max_rank + 1):
             field = f"x_{rank}"
@@ -97,14 +147,21 @@ class CellHGT(torch.nn.Module):
                     f"Neighborhood {neighborhood} must be a sparse COO tensor"
                 )
             edge_index_dict[edge_type] = (
-                matrix.coalesce()
-                .indices()
-                .flip(0)
-                .contiguous()
-                .long()
+                matrix.coalesce().indices().flip(0).contiguous().long()
             )
         return x_dict, edge_index_dict
 
     def forward(self, batch: Data):
-        """Apply HGT layers; implemented in the next TDD task."""
+        """Apply HGT layers; implemented in the next TDD task.
+
+        Parameters
+        ----------
+        batch : torch_geometric.data.Data
+            Batched cell complex.
+
+        Raises
+        ------
+        NotImplementedError
+            Always raised because message passing is outside this task.
+        """
         raise NotImplementedError

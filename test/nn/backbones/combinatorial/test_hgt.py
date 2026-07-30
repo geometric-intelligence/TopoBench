@@ -24,18 +24,21 @@ def make_complex(
 ) -> Data:
     """Build a three-vertex, two-edge synthetic cell complex."""
     x_0 = (
-        torch.arange(3 * feature_dims[0], dtype=torch.float32)
-        .reshape(3, feature_dims[0])
+        torch.arange(3 * feature_dims[0], dtype=torch.float32).reshape(
+            3, feature_dims[0]
+        )
         + feature_shift
     )
     x_1 = (
-        torch.arange(2 * feature_dims[1], dtype=torch.float32)
-        .reshape(2, feature_dims[1])
+        torch.arange(2 * feature_dims[1], dtype=torch.float32).reshape(
+            2, feature_dims[1]
+        )
         + feature_shift
     )
     x_2 = (
-        torch.arange(num_faces * feature_dims[2], dtype=torch.float32)
-        .reshape(num_faces, feature_dims[2])
+        torch.arange(num_faces * feature_dims[2], dtype=torch.float32).reshape(
+            num_faces, feature_dims[2]
+        )
         + feature_shift
     )
 
@@ -134,6 +137,26 @@ def test_constructor_rejects_invalid_hyperparameters():
             num_layers=1,
             heads=2,
             neighborhoods=["up_adjacency-0"],
+        )
+
+
+def test_constructor_rejects_nonpositive_heads():
+    with pytest.raises(ValueError, match="heads must be.*positive"):
+        CellHGT(
+            hidden_channels=8,
+            num_layers=1,
+            heads=0,
+            neighborhoods=NEIGHBORHOODS,
+        )
+
+
+def test_constructor_rejects_negative_route_rank():
+    with pytest.raises(ValueError, match="between 0 and max_rank"):
+        CellHGT(
+            hidden_channels=8,
+            num_layers=1,
+            heads=2,
+            neighborhoods=["down_incidence-0"],
         )
 
 
