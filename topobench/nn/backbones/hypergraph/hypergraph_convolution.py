@@ -99,15 +99,15 @@ class HyperGraphConvolution(Module):
         self.W.data.uniform_(-std, std)
         self.bias.data.uniform_(-std, std)
 
-    def forward(self, structure, H, m=True):
+    def forward(self, H, structure, m=True):
         """Compute the forward pass of the HyperGraph Convolution layer.
 
         Parameters
         ----------
-        structure : torch.Tensor or dict
-            The structural matrix or hyperedge dictionary.
         H : torch.Tensor
             The hidden node features.
+        structure : torch.Tensor or dict
+            The structural matrix or hyperedge dictionary.
         m : bool, optional
             Whether to use mediators, by default True.
 
