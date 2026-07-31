@@ -136,22 +136,6 @@ TopoBench's modular and batched execution:
   NVIDIA A40 (24 task/setting combinations over three seeds) and generated
   [`results.json`](results.json).
 
-### Empirical runtime
-
-The final 72-run evaluation was executed on one NVIDIA A40 with PyTorch `2.3.0+cu121`.
-The timer excludes the first 10 training epochs of each run as warm-up.
-Values below summarize the per-run mean epoch times:
-
-| Task | Runs | Mean ± SD across runs | Range | Timed epochs |
-| --- | ---: | ---: | ---: | ---: |
-| Community detection | 36 | 3.090 ± 0.298 s | 2.478–3.675 s | 1,895 |
-| Triangle counting | 36 | 2.590 ± 0.281 s | 2.289–3.237 s | 380 |
-| **All runs** | **72** | **2.840 ± 0.383 s** | **2.289–3.675 s** | **2,275** |
-
-The complete notebook pipeline, including training, evaluation, OOD testing,
-artifact generation, and orchestration overhead, took 9,789 seconds
-(2 hours, 43 minutes, 9 seconds).
-
 ## Results
 
 The official evaluation completed 36 community-detection and 36
@@ -169,13 +153,37 @@ and `44`.
 
 Community-detection accuracy increases consistently with homophily. The
 highest mean accuracy occurs for high homophily, high average degree, and the
-larger power-law exponent range.
+larger power-law exponent range. Although the restriction maps can adapt
+messages from mixed hyperedges, these runs benefit most when the lifted
+neighborhoods provide strong within-community connectivity. The exponent has
+little overall effect on accuracy (`0.468` versus `0.478` when averaged over
+the other settings), and the small seed deviations indicate stable results.
 
 ![Triangle-counting normalized MSE across GraphUniverse structural settings](plots/heatmap_triangle_mse_over_triangles.png)
 
 Lower values are better for triangle counting. The model performs best in the
-larger power-law exponent range and is most challenged by dense,
-high-homophily graphs in the smaller exponent range.
+larger power-law exponent range and is most challenged by high-homophily,
+high-degree graphs in the smaller exponent range, whose heavy-tailed
+structure creates more variable triangle counts. The 1-hop hypergraph lifting
+does not encode triangles explicitly as 2-simplices, so the model must infer
+them from overlapping incidence patterns. Seed variation is also largest in
+the hardest setting.
+
+### Empirical runtime
+
+The final 72-run evaluation was executed on one NVIDIA A40 with PyTorch `2.3.0+cu121`.
+The timer excludes the first 10 training epochs of each run as warm-up.
+Values below summarize the per-run mean epoch times:
+
+| Task | Runs | Mean ± SD across runs | Range | Timed epochs |
+| --- | ---: | ---: | ---: | ---: |
+| Community detection | 36 | 3.090 ± 0.298 s | 2.478–3.675 s | 1,895 |
+| Triangle counting | 36 | 2.590 ± 0.281 s | 2.289–3.237 s | 380 |
+| **All runs** | **72** | **2.840 ± 0.383 s** | **2.289–3.675 s** | **2,275** |
+
+The complete notebook pipeline, including training, evaluation, OOD testing,
+artifact generation, and orchestration overhead, took 9,789 seconds
+(2 hours, 43 minutes, 9 seconds).
 
 ## Reference
 
