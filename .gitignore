@@ -212,3 +212,6 @@ uv.lock
 
 # Configuration files
 conf/
+
+# results
+2026_tdl_challenge/outputs/**/results.json
