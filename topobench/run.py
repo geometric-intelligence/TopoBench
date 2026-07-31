@@ -9,7 +9,7 @@ import lightning as L
 import numpy as np
 import rootutils
 import torch
-from lightning import Callback, LightningModule, Trainer
+from lightning import Callback, LightningDataModule, LightningModule, Trainer
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
 from lightning.pytorch.loggers import Logger
 from lightning.pytorch.loggers.wandb import WandbLogger
@@ -192,7 +192,7 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
 def rerun_best_model_checkpoint(
     checkpoint_model: LightningModule,
     cfg: DictConfig,
-    datamodule: LightningModule,
+    datamodule: LightningDataModule,
     device: torch.device,
     callbacks: list[Callback],
     logger: list[Logger],
@@ -210,7 +210,7 @@ def rerun_best_model_checkpoint(
         The model instance to load weights into.
     cfg : DictConfig
         Configuration composed by Hydra.
-    datamodule : LightningModule
+    datamodule : LightningDataModule
         The data module providing `val_dataloader` and `test_dataloader`.
     device : torch.device
         The target device (CPU/GPU) for the model.

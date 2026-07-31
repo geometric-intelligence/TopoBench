@@ -53,6 +53,7 @@ NEIGHBOR_EXPERIMENTS = (
         id="heterosage-neighbor",
     ),
 )
+_LOSS_REDUCTION_ABS_TOLERANCE = 1e-8
 
 
 def _compose(
@@ -120,6 +121,47 @@ def _assert_finite_metrics(
     }
     assert matching, f"No metrics with prefix {prefix!r}: {sorted(metrics)}"
     assert all(math.isfinite(float(value)) for value in matching.values())
+
+
+def _logged_rerun_metrics(
+    sink: MagicMock,
+    *,
+    phase: str,
+) -> dict[str, float]:
+    """Return one phase's metrics from a mocked external W&B sink."""
+    prefix = f"{phase}_best_rerun/"
+    matching = [
+        call.args[0]
+        for call in sink.log_metrics.call_args_list
+        if call.args
+        and isinstance(call.args[0], Mapping)
+        and call.args[0]
+        and all(str(name).startswith(prefix) for name in call.args[0])
+    ]
+    assert len(matching) == 1
+    return {
+        str(name).removeprefix(prefix): float(value)
+        for name, value in matching[0].items()
+    }
+
+
+def _assert_repeated_rerun_metrics(
+    first: Mapping[str, float],
+    second: Mapping[str, float],
+) -> None:
+    """Compare repeated sampled reruns without hiding metric drift."""
+    assert first.keys() == second.keys()
+    for name in first:
+        assert math.isfinite(first[name])
+        assert math.isfinite(second[name])
+        if name == "loss":
+            assert second[name] == pytest.approx(
+                first[name],
+                abs=_LOSS_REDUCTION_ABS_TOLERANCE,
+                rel=0,
+            )
+        else:
+            assert second[name] == first[name]
 
 
 @pytest.mark.parametrize(("experiment", "model_name"), EXPERIMENTS)
@@ -272,7 +314,13 @@ def test_neighbor_training_validation_checkpoint_and_best_rerun(
         experiment,
         tmp_path=tmp_path,
         max_epochs=1,
+        extra_overrides=(
+            "trainer.limit_val_batches=1.0",
+            "trainer.limit_test_batches=1.0",
+        ),
     )
+    assert cfg.trainer.limit_val_batches == 1.0
+    assert cfg.trainer.limit_test_batches == 1.0
     caplog.set_level(logging.INFO, logger="topobench.run")
 
     fit_metrics, objects = run(cfg)
@@ -307,6 +355,59 @@ def test_neighbor_training_validation_checkpoint_and_best_rerun(
     assert datamodule.test_dataloader() is datamodule.test_dataloader()
     assert not hasattr(datamodule.val_dataloader(), "_cached_batches")
     assert not hasattr(datamodule.test_dataloader(), "_cached_batches")
+
+    target_type = datamodule.spec.target_node_type
+    test_batch_sizes = [
+        int(batch[target_type].batch_size)
+        for batch in datamodule.test_dataloader()
+    ]
+    expected_test_count = int(datamodule.data[target_type].test_mask.sum())
+    assert test_batch_sizes == [4, 4, 2]
+    assert sum(test_batch_sizes) == expected_test_count
+
+    rerun_sinks = [
+        MagicMock(spec=WandbLogger),
+        MagicMock(spec=WandbLogger),
+    ]
+    for sink in rerun_sinks:
+        rng_before = torch.random.get_rng_state().clone()
+        rerun_best_model_checkpoint(
+            checkpoint_model=rerun_model,
+            cfg=cfg,
+            datamodule=datamodule,
+            device=torch.device("cpu"),
+            callbacks=objects["callbacks"],
+            logger=[sink],
+        )
+        assert torch.equal(torch.random.get_rng_state(), rng_before)
+        assert sink.log_metrics.call_count == 2
+
+    for phase in ("val", "test"):
+        first_metrics = _logged_rerun_metrics(
+            rerun_sinks[0],
+            phase=phase,
+        )
+        second_metrics = _logged_rerun_metrics(
+            rerun_sinks[1],
+            phase=phase,
+        )
+        _assert_repeated_rerun_metrics(first_metrics, second_metrics)
+
+        _, direct_metrics = _fixed_evaluation_signature(
+            rerun_model,
+            datamodule,
+            phase,
+        )
+        assert first_metrics.keys() == direct_metrics.keys()
+        for name in first_metrics:
+            if name == "loss":
+                assert first_metrics[name] == pytest.approx(
+                    direct_metrics[name],
+                    abs=_LOSS_REDUCTION_ABS_TOLERANCE,
+                    rel=0,
+                )
+            else:
+                assert first_metrics[name] == direct_metrics[name]
 
 
 @pytest.mark.parametrize(
