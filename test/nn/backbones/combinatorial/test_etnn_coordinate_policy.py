@@ -1,9 +1,8 @@
 """Tests for the consolidated coordinate-policy ETNN backbone.
 
-The coordinate-policy ETNN is intended to stand on its own as the final
-TopoBench ETNN model family: the same backbone should run without coordinates,
-with LapPE structural pseudo-coordinates, and with physical Euclidean
-coordinates.  These tests therefore protect both model wiring and the geometry
+The coordinate-policy ETNN exposes one TopoBench backbone that runs without
+coordinates, with LapPE structural pseudo-coordinates, or with physical
+Euclidean coordinates.  These tests protect both model wiring and the geometry
 contracts behind the physical policy.
 
 The test file is organized around the coordinate-policy model's public
@@ -614,7 +613,7 @@ def test_physical_policy_forward_backward_smoke(pos_update):
 
     This small synthetic smoke test catches broken autograd paths through
     physical coordinates, Hausdorff/diameter invariants, message passing, and
-    the optional coordinate-update loop before we spend time on QM9.
+    the optional coordinate-update loop before an end-to-end QM9 evaluation.
     """
     batch = create_lappe_complex_batch()
     batch.pos = torch.tensor(

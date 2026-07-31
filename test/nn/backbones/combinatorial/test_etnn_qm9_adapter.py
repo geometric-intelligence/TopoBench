@@ -1,7 +1,7 @@
 """Tests for the controlled NSAPH-QM9-to-TopoBench ETNN adapter.
 
-The apples-to-apples QM9 study uses the official processed molecular batches
-on both sides of the comparison.  These tests protect the adapter boundary:
+The controlled QM9 study uses the official processed molecular batches on
+both sides of the comparison.  These tests protect the adapter boundary:
 native feature rows, relation direction and order, physical invariant rows,
 coordinates, targets, and graph assignments must reach the TopoBench ETNN core
 without reinterpretation or cross-molecule leakage.

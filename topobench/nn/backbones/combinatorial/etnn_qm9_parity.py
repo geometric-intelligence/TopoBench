@@ -1,8 +1,8 @@
 """Protocol-matched ETNN core for the controlled QM9 reproduction.
 
-This module isolates the model-side comparison between the submitted TopoBench
-ETNN implementation and the pinned NSAPH ``experiment_1`` implementation.  It
-consumes :class:`~topobench.nn.backbones.combinatorial.etnn_qm9_adapter._QM9ParityBatch`
+This module isolates the model-side comparison between the TopoBench ETNN core
+and the pinned NSAPH ``experiment_1`` implementation.  It consumes
+:class:`~topobench.nn.backbones.combinatorial.etnn_qm9_adapter._QM9ParityBatch`
 objects produced from canonical native QM9CC batches.  Consequently, the
 wrapper does not lift molecules, recompute physical invariants, or alter
 targets and split membership.
@@ -18,7 +18,7 @@ The architecture matches the selected native configuration:
 * rank-wise pre-pool MLPs, sum pooling, and a scalar post-pool readout.
 
 The class is reproduction-specific.  It does not replace the coordinate-policy
-backbone or change any submitted GraphUniverse/QM9 model default.
+backbone or change any standard GraphUniverse/QM9 model default.
 """
 
 from __future__ import annotations

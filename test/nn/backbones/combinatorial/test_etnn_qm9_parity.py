@@ -233,8 +233,8 @@ def test_qm9_parity_rejects_missing_relation(
 
 
 def test_default_coordinate_policy_message_shape_is_unchanged() -> None:
-    """Keep the challenge model's default linear-ended message MLP unchanged."""
-    submitted = _ETNNMessagePassing(
+    """Keep the standard coordinate-policy message MLP linear-ended."""
+    default_message_passing = _ETNNMessagePassing(
         hidden_channels=8,
         edge_channels=1,
         dropout=0.0,
@@ -250,7 +250,7 @@ def test_default_coordinate_policy_message_shape_is_unchanged() -> None:
         final_activation=True,
     )
 
-    assert isinstance(submitted.message_mlp[-1], nn.Linear)
+    assert isinstance(default_message_passing.message_mlp[-1], nn.Linear)
     assert isinstance(parity.message_mlp[-1], nn.SiLU)
 
 

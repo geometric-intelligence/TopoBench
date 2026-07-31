@@ -152,7 +152,7 @@ def _make_mlp(
         Whether to normalize the hidden representation.
     final_activation : bool, optional
         Whether to apply the configured activation after the output linear
-        layer. The submitted coordinate-policy models leave this disabled.
+        layer. The standard coordinate-policy configs leave this disabled.
         The controlled QM9 parity wrapper enables it only for relation-message
         MLPs to match the pinned NSAPH ``lean=False`` implementation.
 
@@ -637,7 +637,7 @@ class ETNNCoordinatePolicy(nn.Module):
 
     The class exposes one ETNN model family whose behavior is controlled by an
     explicit coordinate policy.  This avoids ambiguous ``auto`` behavior: a
-    submitted experiment should state whether it is using no coordinates,
+    reproducible experiment should state whether it is using no coordinates,
     structural pseudo-coordinates, or physical Euclidean coordinates.
 
     All policies share the same TopoBench lifting contract, rank-wise
@@ -1649,7 +1649,7 @@ def _build_vertex_memberships(
 
         # incidence_r maps lower-rank cells to rank-r cells.  Multiplying the
         # previous vertex-to-lower-cell membership by |incidence_r| gives
-        # vertex-to-rank-r incidence.  We binarize after multiplication because
+        # vertex-to-rank-r incidence.  Binarize after multiplication because
         # a vertex can reach a higher-order cell through multiple lower cells.
         incidence = _dense_absolute_incidence(
             incidence=incidence,
@@ -1723,7 +1723,7 @@ def _compute_cell_centroids(
         coordinate_sums = membership.T @ vertex_coordinates
 
         # NSAPH stores explicit cell memberships.  A nonempty TopoBench cell
-        # with no recovered vertices means our incidence reconstruction is
+        # with no recovered vertices means the incidence reconstruction is
         # malformed, so fail rather than attach arbitrary zero geometry.
         if torch.any(counts == 0):
             bad = torch.nonzero(counts.flatten() == 0, as_tuple=False)

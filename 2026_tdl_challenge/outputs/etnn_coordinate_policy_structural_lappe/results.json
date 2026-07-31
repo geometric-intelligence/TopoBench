@@ -71,8 +71,7 @@
           "test_best_rerun_accuracy": 0.33176714181900024,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__00__h_lo__d_lo__pl_lo__s42"
+      }
     },
     {
       "experiment": "community_detection",
@@ -133,8 +132,7 @@
           "test_best_rerun_accuracy": 0.3402475416660309,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__00__h_lo__d_lo__pl_lo__s43"
+      }
     },
     {
       "experiment": "community_detection",
@@ -195,8 +193,7 @@
           "test_best_rerun_accuracy": 0.3208037316799164,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__00__h_lo__d_lo__pl_lo__s44"
+      }
     },
     {
       "experiment": "community_detection",
@@ -257,8 +254,7 @@
           "test_best_rerun_accuracy": 0.25085949897766113,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__01__h_lo__d_lo__pl_hi__s42"
+      }
     },
     {
       "experiment": "community_detection",
@@ -319,8 +315,7 @@
           "test_best_rerun_accuracy": 0.2646878957748413,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__01__h_lo__d_lo__pl_hi__s43"
+      }
     },
     {
       "experiment": "community_detection",
@@ -381,8 +376,7 @@
           "test_best_rerun_accuracy": 0.26678889989852905,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__01__h_lo__d_lo__pl_hi__s44"
+      }
     },
     {
       "experiment": "community_detection",
@@ -443,8 +437,7 @@
           "test_best_rerun_accuracy": 0.45480936765670776,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__02__h_lo__d_hi__pl_lo__s42"
+      }
     },
     {
       "experiment": "community_detection",
@@ -505,8 +498,7 @@
           "test_best_rerun_accuracy": 0.437466561794281,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__02__h_lo__d_hi__pl_lo__s43"
+      }
     },
     {
       "experiment": "community_detection",
@@ -567,8 +559,7 @@
           "test_best_rerun_accuracy": 0.4692871868610382,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__02__h_lo__d_hi__pl_lo__s44"
+      }
     },
     {
       "experiment": "community_detection",
@@ -629,8 +620,7 @@
           "test_best_rerun_accuracy": 0.4038887619972229,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__03__h_lo__d_hi__pl_hi__s42"
+      }
     },
     {
       "experiment": "community_detection",
@@ -691,8 +681,7 @@
           "test_best_rerun_accuracy": 0.38108333945274353,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__03__h_lo__d_hi__pl_hi__s43"
+      }
     },
     {
       "experiment": "community_detection",
@@ -753,8 +742,7 @@
           "test_best_rerun_accuracy": 0.4271143674850464,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__03__h_lo__d_hi__pl_hi__s44"
+      }
     },
     {
       "experiment": "community_detection",
@@ -815,8 +803,7 @@
           "test_best_rerun_accuracy": 0.6003896594047546,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__04__h_mid__d_lo__pl_lo__s42"
+      }
     },
     {
       "experiment": "community_detection",
@@ -877,8 +864,7 @@
           "test_best_rerun_accuracy": 0.6255634427070618,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__04__h_mid__d_lo__pl_lo__s43"
+      }
     },
     {
       "experiment": "community_detection",
@@ -939,8 +925,7 @@
           "test_best_rerun_accuracy": 0.6040950417518616,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__04__h_mid__d_lo__pl_lo__s44"
+      }
     },
     {
       "experiment": "community_detection",
@@ -1001,8 +986,7 @@
           "test_best_rerun_accuracy": 0.5956910252571106,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__05__h_mid__d_lo__pl_hi__s42"
+      }
     },
     {
       "experiment": "community_detection",
@@ -1063,8 +1047,7 @@
           "test_best_rerun_accuracy": 0.584574818611145,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__05__h_mid__d_lo__pl_hi__s43"
+      }
     },
     {
       "experiment": "community_detection",
@@ -1125,8 +1108,7 @@
           "test_best_rerun_accuracy": 0.5771258473396301,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__05__h_mid__d_lo__pl_hi__s44"
+      }
     },
     {
       "experiment": "community_detection",
@@ -1187,8 +1169,7 @@
           "test_best_rerun_accuracy": 0.6299946308135986,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__06__h_mid__d_hi__pl_lo__s42"
+      }
     },
     {
       "experiment": "community_detection",
@@ -1249,8 +1230,7 @@
           "test_best_rerun_accuracy": 0.6146382689476013,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__06__h_mid__d_hi__pl_lo__s43"
+      }
     },
     {
       "experiment": "community_detection",
@@ -1311,8 +1291,7 @@
           "test_best_rerun_accuracy": 0.6170448660850525,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__06__h_mid__d_hi__pl_lo__s44"
+      }
     },
     {
       "experiment": "community_detection",
@@ -1373,8 +1352,7 @@
           "test_best_rerun_accuracy": 0.6621972918510437,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__07__h_mid__d_hi__pl_hi__s42"
+      }
     },
     {
       "experiment": "community_detection",
@@ -1435,8 +1413,7 @@
           "test_best_rerun_accuracy": 0.666093647480011,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__07__h_mid__d_hi__pl_hi__s43"
+      }
     },
     {
       "experiment": "community_detection",
@@ -1497,8 +1474,7 @@
           "test_best_rerun_accuracy": 0.6598670482635498,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__07__h_mid__d_hi__pl_hi__s44"
+      }
     },
     {
       "experiment": "community_detection",
@@ -1559,8 +1535,7 @@
           "test_best_rerun_accuracy": 0.6545190811157227,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__08__h_hi__d_lo__pl_lo__s42"
+      }
     },
     {
       "experiment": "community_detection",
@@ -1621,8 +1596,7 @@
           "test_best_rerun_accuracy": 0.6613186597824097,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__08__h_hi__d_lo__pl_lo__s43"
+      }
     },
     {
       "experiment": "community_detection",
@@ -1683,8 +1657,7 @@
           "test_best_rerun_accuracy": 0.6473756432533264,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__08__h_hi__d_lo__pl_lo__s44"
+      }
     },
     {
       "experiment": "community_detection",
@@ -1745,8 +1718,7 @@
           "test_best_rerun_accuracy": 0.6891664862632751,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__09__h_hi__d_lo__pl_hi__s42"
+      }
     },
     {
       "experiment": "community_detection",
@@ -1807,8 +1779,7 @@
           "test_best_rerun_accuracy": 0.6812208890914917,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__09__h_hi__d_lo__pl_hi__s43"
+      }
     },
     {
       "experiment": "community_detection",
@@ -1869,8 +1840,7 @@
           "test_best_rerun_accuracy": 0.6870654821395874,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__09__h_hi__d_lo__pl_hi__s44"
+      }
     },
     {
       "experiment": "community_detection",
@@ -1931,8 +1901,7 @@
           "test_best_rerun_accuracy": 0.7009320855140686,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__10__h_hi__d_hi__pl_lo__s42"
+      }
     },
     {
       "experiment": "community_detection",
@@ -1993,8 +1962,7 @@
           "test_best_rerun_accuracy": 0.6986019015312195,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__10__h_hi__d_hi__pl_lo__s43"
+      }
     },
     {
       "experiment": "community_detection",
@@ -2055,8 +2023,7 @@
           "test_best_rerun_accuracy": 0.6925280690193176,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__10__h_hi__d_hi__pl_lo__s44"
+      }
     },
     {
       "experiment": "community_detection",
@@ -2117,8 +2084,7 @@
           "test_best_rerun_accuracy": 0.6391626596450806,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__11__h_hi__d_hi__pl_hi__s42"
+      }
     },
     {
       "experiment": "community_detection",
@@ -2179,8 +2145,7 @@
           "test_best_rerun_accuracy": 0.631790041923523,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__11__h_hi__d_hi__pl_hi__s43"
+      }
     },
     {
       "experiment": "community_detection",
@@ -2241,8 +2206,7 @@
           "test_best_rerun_accuracy": 0.6355336308479309,
           "test_best_rerun_mse": null
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__community_detection__11__h_hi__d_hi__pl_hi__s44"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -2325,8 +2289,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 3.6649419961559584
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__00__h_lo__d_lo__pl_lo__s42"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -2409,8 +2372,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 3.7497852287288036
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__00__h_lo__d_lo__pl_lo__s43"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -2493,8 +2455,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 3.4862681593530027
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__00__h_lo__d_lo__pl_lo__s44"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -2577,8 +2538,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 3.9127708822158986
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__01__h_lo__d_lo__pl_hi__s42"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -2661,8 +2621,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 3.847635643918593
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__01__h_lo__d_lo__pl_hi__s43"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -2745,8 +2704,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 3.8286296864859466
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__01__h_lo__d_lo__pl_hi__s44"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -2829,8 +2787,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 2.977211624066031
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__02__h_lo__d_hi__pl_lo__s42"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -2913,8 +2870,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 3.1624900674787413
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__02__h_lo__d_hi__pl_lo__s43"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -2997,8 +2953,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 3.3200682171800375
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__02__h_lo__d_hi__pl_lo__s44"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -3081,8 +3036,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 3.7942288411295824
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__03__h_lo__d_hi__pl_hi__s42"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -3165,8 +3119,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 3.831196281180836
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__03__h_lo__d_hi__pl_hi__s43"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -3249,8 +3202,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 3.79160036318706
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__03__h_lo__d_hi__pl_hi__s44"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -3333,8 +3285,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 1.061319733059591
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__04__h_mid__d_lo__pl_lo__s42"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -3417,8 +3368,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 1.1770955539746726
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__04__h_mid__d_lo__pl_lo__s43"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -3501,8 +3451,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 1.410684142703809
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__04__h_mid__d_lo__pl_lo__s44"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -3585,8 +3534,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 3.691447787179871
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__05__h_mid__d_lo__pl_hi__s42"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -3669,8 +3617,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 3.666153919757709
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__05__h_mid__d_lo__pl_hi__s43"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -3753,8 +3700,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 3.610753332334881
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__05__h_mid__d_lo__pl_hi__s44"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -3837,8 +3783,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 0.4607085904868288
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__06__h_mid__d_hi__pl_lo__s42"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -3921,8 +3866,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 0.740436308097449
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__06__h_mid__d_hi__pl_lo__s43"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -4005,8 +3949,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 0.5498048337576756
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__06__h_mid__d_hi__pl_lo__s44"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -4089,8 +4032,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 1.1167391064683074
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__07__h_mid__d_hi__pl_hi__s42"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -4173,8 +4115,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 0.9900311418343235
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__07__h_mid__d_hi__pl_hi__s43"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -4257,8 +4198,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 1.2825977807315327
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__07__h_mid__d_hi__pl_hi__s44"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -4341,8 +4281,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 0.44585794362488146
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__08__h_hi__d_lo__pl_lo__s42"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -4425,8 +4364,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 0.3942072404959812
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__08__h_hi__d_lo__pl_lo__s43"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -4509,8 +4447,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 0.5061299842015708
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__08__h_hi__d_lo__pl_lo__s44"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -4593,8 +4530,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 2.0580464862795997
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__09__h_hi__d_lo__pl_hi__s42"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -4677,8 +4613,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 1.1355860655567205
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__09__h_hi__d_lo__pl_hi__s43"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -4761,8 +4696,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 1.2310073032632753
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__09__h_hi__d_lo__pl_hi__s44"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -4845,8 +4779,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 0.30504979651332104
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__10__h_hi__d_hi__pl_lo__s42"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -4929,8 +4862,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 0.3484448388851447
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__10__h_hi__d_hi__pl_lo__s43"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -5013,8 +4945,7 @@
           "test_triangles_total_structural": 60093.0,
           "test_mse_by_total_triangles": 0.4084996380610054
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__10__h_hi__d_hi__pl_lo__s44"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -5097,8 +5028,7 @@
           "test_triangles_total_structural": 88403.0,
           "test_mse_by_total_triangles": 1.4845902783276586
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__11__h_hi__d_hi__pl_hi__s42"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -5181,8 +5111,7 @@
           "test_triangles_total_structural": 88403.0,
           "test_mse_by_total_triangles": 1.3579623464418629
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__11__h_hi__d_hi__pl_hi__s43"
+      }
     },
     {
       "experiment": "triangle_counting",
@@ -5265,8 +5194,7 @@
           "test_triangles_total_structural": 88403.0,
           "test_mse_by_total_triangles": 1.52974110748504
         }
-      },
-      "output_dir": "/tmp/gkhanal-runtime-dir/topobench-2799888/TopoBench/logs/train/runs/notebook_gu_grid_2026-07-14_03-50-01__triangle_counting__11__h_hi__d_hi__pl_hi__s44"
+      }
     }
   ]
 }
