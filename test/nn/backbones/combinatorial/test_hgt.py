@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 import torch
 from torch_geometric.data import Data
+from torch_geometric.nn import HGTConv
 
 from topobench.dataloader.utils import collate_fn
 from topobench.nn.backbones.combinatorial.hgt import CellHGT
@@ -250,6 +251,60 @@ def test_all_present_empty_relations_match_legacy_cell_hgt_forward():
         not torch.equal(output[rank], batch[f"x_{rank}"])
         for rank in range(model.max_rank + 1)
     )
+
+
+def test_reversed_neighborhood_order_matches_historical_cell_hgt_checkpoint():
+    """CellHGT keeps caller relation order for positional legacy weights."""
+    neighborhoods = list(reversed(NEIGHBORHOODS))
+    model = make_model(neighborhoods=neighborhoods).eval()
+    legacy = torch.nn.Module()
+    legacy.convs = torch.nn.ModuleList(
+        [
+            HGTConv(
+                in_channels=model.hidden_channels,
+                out_channels=model.hidden_channels,
+                metadata=(model.node_types, model.edge_types),
+                heads=model.heads,
+            )
+            for _ in range(model.num_layers)
+        ]
+    )
+    legacy.norms = torch.nn.ModuleList(
+        [
+            torch.nn.ModuleDict(
+                {
+                    node_type: torch.nn.LayerNorm(model.hidden_channels)
+                    for node_type in model.node_types
+                }
+            )
+            for _ in range(model.num_layers)
+        ]
+    )
+    model.load_state_dict(legacy.state_dict(), strict=True)
+    batch = make_complex()
+    x_dict, edge_index_dict = model.to_heterogeneous_inputs(batch)
+    assert list(edge_index_dict) == model.edge_types
+    expected = dict(x_dict)
+    for conv, norms in zip(legacy.convs, legacy.norms, strict=True):
+        previous = expected
+        messages = conv(previous, edge_index_dict)
+        expected = {
+            node_type: (
+                old_features
+                if messages.get(node_type) is None
+                else model.dropout(
+                    model.activation(norms[node_type](messages[node_type]))
+                )
+            )
+            for node_type, old_features in previous.items()
+        }
+
+    actual = model(batch)
+
+    assert model.internal_metadata == (model.node_types, model.edge_types)
+    assert tuple(model.state_dict()) == tuple(legacy.state_dict())
+    for rank in range(model.max_rank + 1):
+        assert torch.equal(actual[rank], expected[f"rank_{rank}"])
 
 
 def test_constructor_rejects_negative_route_rank():

@@ -161,11 +161,46 @@ def test_checkpoint_is_relation_order_independent() -> None:
 
     restored.load_state_dict(reference.state_dict(), strict=True)
     expected = reference(data.x_dict, data.edge_index_dict)
-    actual = restored(data.x_dict, data.edge_index_dict)
+    reversed_edges = dict(reversed(list(data.edge_index_dict.items())))
+    actual = restored(data.x_dict, reversed_edges)
 
     assert restored.internal_metadata == reference.internal_metadata
     for node_type in NODE_TYPES:
         torch.testing.assert_close(actual[node_type], expected[node_type])
+
+
+def test_forward_is_independent_of_edge_dictionary_iteration_order() -> None:
+    """HGT receives present relations in canonical metadata order."""
+    data = make_data()
+    model = make_model().eval()
+
+    expected = model(data.x_dict, data.edge_index_dict)
+    reversed_edges = dict(reversed(list(data.edge_index_dict.items())))
+    actual = model(data.x_dict, reversed_edges)
+
+    for node_type in NODE_TYPES:
+        assert torch.equal(actual[node_type], expected[node_type])
+
+
+def test_omitted_relation_subset_uses_canonical_internal_order() -> None:
+    """Filtering sampled relations never reintroduces mapping-order effects."""
+    data = make_data()
+    model = make_model().eval()
+    subset_types = [EDGE_TYPES[3], EDGE_TYPES[0], EDGE_TYPES[2]]
+    subset = {
+        edge_type: data.edge_index_dict[edge_type]
+        for edge_type in subset_types
+    }
+
+    internal = model.metadata_adapter.to_internal_edge_index_dict(subset)
+    expected_order = [
+        edge_type
+        for edge_type in model.internal_metadata[1]
+        if edge_type in internal
+    ]
+
+    assert list(internal) == expected_order
+    assert set(model(data.x_dict, subset)) == set(NODE_TYPES)
 
 
 def test_known_relations_may_be_omitted_from_a_sample() -> None:

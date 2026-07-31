@@ -86,6 +86,7 @@ class CellHGT(HGTBackbone):
             heads=heads,
             dropout=dropout,
             activation=activation,
+            _canonicalize_relations=False,
         )
 
     @staticmethod

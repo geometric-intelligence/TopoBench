@@ -28,6 +28,8 @@ class HGTBackbone(torch.nn.Module):
         heads: int,
         dropout: float,
         activation: str,
+        *,
+        _canonicalize_relations: bool = True,
     ) -> None:
         super().__init__()
         node_types, edge_types = metadata
@@ -40,7 +42,8 @@ class HGTBackbone(torch.nn.Module):
             dropout=dropout,
         )
         self.metadata_adapter = _HeterogeneousMetadataAdapter(
-            normalized_metadata
+            normalized_metadata,
+            canonicalize_relations=_canonicalize_relations,
         )
         self.node_types = list(self.metadata_adapter.node_types)
         self.edge_types = list(self.metadata_adapter.edge_types)

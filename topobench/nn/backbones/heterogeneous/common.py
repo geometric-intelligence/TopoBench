@@ -251,14 +251,26 @@ class _HeterogeneousMetadataAdapter:
     Identity aliases are retained whenever PyTorch can safely register them.
     Unsafe names and ambiguous relation joins use deterministic UTF-8-derived
     aliases. This preserves historical checkpoint keys for ordinary CellHGT
-    rank metadata while supporting arbitrary valid PyG names.
+    rank metadata while supporting arbitrary valid PyG names. Relation order
+    is either canonicalized for generic metadata-independent checkpoints or
+    retained for callers with historical positional semantics.
     """
 
-    def __init__(self, metadata: Metadata) -> None:
+    def __init__(
+        self,
+        metadata: Metadata,
+        *,
+        canonicalize_relations: bool,
+    ) -> None:
         node_types, edge_types = _normalize_metadata(*metadata)
         self.node_types = list(node_types)
         self.edge_types = list(edge_types)
         self.metadata: Metadata = (self.node_types, self.edge_types)
+        self._ordered_edge_types = (
+            sorted(self.edge_types)
+            if canonicalize_relations
+            else list(self.edge_types)
+        )
 
         identity_nodes = {
             node_type
@@ -338,7 +350,7 @@ class _HeterogeneousMetadataAdapter:
             ],
             [
                 self._edge_to_internal[edge_type]
-                for edge_type in sorted(self.edge_types)
+                for edge_type in self._ordered_edge_types
             ],
         )
 
@@ -363,10 +375,11 @@ class _HeterogeneousMetadataAdapter:
         self,
         edge_index_dict: Mapping[EdgeType, Tensor],
     ) -> dict[EdgeType, Tensor]:
-        """Remap the known relation subset in sample iteration order."""
+        """Remap a known relation subset in configured internal order."""
         return {
-            self._edge_to_internal[edge_type]: edge_index
-            for edge_type, edge_index in edge_index_dict.items()
+            self._edge_to_internal[edge_type]: edge_index_dict[edge_type]
+            for edge_type in self._ordered_edge_types
+            if edge_type in edge_index_dict
         }
 
     def to_external_x_dict(
