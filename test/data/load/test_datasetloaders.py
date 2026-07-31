@@ -6,7 +6,11 @@ import hydra
 from pathlib import Path
 from typing import List, Tuple, Dict, Any
 from omegaconf import DictConfig
+from torch_geometric.data import HeteroData
 from topobench.data.preprocessor.preprocessor import PreProcessor
+from topobench.utils.config_resolvers import register_all_resolvers
+
+
 class TestLoaders:
     """Comprehensive test suite for all dataset loaders."""
 
@@ -15,6 +19,7 @@ class TestLoaders:
         """Setup test environment before each test method."""
         # Existing setup code remains the same
         hydra.core.global_hydra.GlobalHydra.instance().clear()
+        register_all_resolvers()
         base_dir = Path(__file__).resolve().parents[3]
         self.config_files = self._gather_config_files(base_dir)
         self.relative_config_dir = "../../../configs"
@@ -78,9 +83,15 @@ class TestLoaders:
             job_name="run"
         ):
             print('Current config file: ', config_file)
+            overrides = [
+                f"dataset={data_domain}/{config_file}",
+                "model=graph/gat",
+            ]
+            if data_domain == "heterogeneous":
+                overrides.append("transforms=no_transform")
             parameters = hydra.compose(
                 config_name="run.yaml",
-                overrides=[f"dataset={data_domain}/{config_file}", f"model=graph/gat"],
+                overrides=overrides,
                 return_hydra_config=True,
             )
             dataset_loader = hydra.utils.instantiate(parameters.dataset.loader)
@@ -99,9 +110,15 @@ class TestLoaders:
             dataset, _ = self._load_dataset(data_domain, config_file)
 
             # Test dataset size and dimensions
-            if hasattr(dataset, "data"):
-                assert dataset.data.x.size(0) > 0, "Empty node features"
-                assert dataset.data.y.size(0) > 0, "Empty labels"
+            data = dataset[0]
+            if isinstance(data, HeteroData):
+                assert data.node_types
+                assert data.edge_types
+                for node_type in data.node_types:
+                    assert data[node_type].num_nodes > 0
+            else:
+                assert data.x.size(0) > 0, "Empty node features"
+                assert data.y.size(0) > 0, "Empty labels"
 
             # Below brakes with manual dataset
             # else:
@@ -109,7 +126,10 @@ class TestLoaders:
             #     assert dataset[0].y.size(0) > 0, "Empty labels"
 
             # Test node feature dimensions
-            if hasattr(dataset, 'num_node_features'):
+            if (
+                not isinstance(data, HeteroData)
+                and hasattr(dataset, 'num_node_features')
+            ):
                 assert dataset.data.x.size(1) == dataset.num_node_features
 
             # Below brakes with manual dataset
