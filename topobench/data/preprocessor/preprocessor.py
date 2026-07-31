@@ -234,7 +234,12 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             )
 
     def process(self) -> None:
-        """Method that processes the data."""
+        """Process and persist a homogeneous family of supported PyG data.
+
+        Pre-transforms retain PyG's existing semantics: they receive each
+        original object and may mutate it in place. This method does not copy
+        transform inputs or attempt rollback after a transform failure.
+        """
         if isinstance(
             self.dataset,
             (torch_geometric.data.Dataset, torch.utils.data.Dataset),
@@ -248,18 +253,35 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
                 f"HeteroData; received {type(self.dataset).__name__}"
             )
 
+        if not data_list:
+            raise ValueError(
+                "PreProcessor requires at least one Data or HeteroData item"
+            )
+
         if self.pre_transform is not None:
             print(f"\nApplying transforms to {len(data_list)} graphs...")
         processed: list[SupportedData] = []
-        for original in tqdm(
-            data_list,
-            desc="Processing graphs",
-            unit="graph",
+        expected_family: type[Data] | type[HeteroData] | None = None
+        for item_index, original in enumerate(
+            tqdm(
+                data_list,
+                desc="Processing graphs",
+                unit="graph",
+            )
         ):
             if not isinstance(original, (Data, HeteroData)):
                 raise TypeError(
-                    "Dataset item must be Data or HeteroData; "
+                    f"Dataset item {item_index} must be Data or HeteroData; "
                     f"received {type(original).__name__}"
+                )
+            original_family = _data_family(original)
+            if expected_family is None:
+                expected_family = original_family
+            elif original_family is not expected_family:
+                raise TypeError(
+                    f"Dataset item {item_index} has mixed representation: "
+                    f"expected {expected_family.__name__}, "
+                    f"received {original_family.__name__}"
                 )
             transformed = (
                 self.pre_transform(original)
@@ -268,13 +290,16 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             )
             if not isinstance(transformed, (Data, HeteroData)):
                 raise TypeError(
-                    "A pre-transform returned unsupported type "
-                    f"{type(transformed).__name__}"
+                    f"Pre-transform result for dataset item {item_index} "
+                    "must be Data or HeteroData; "
+                    f"received {type(transformed).__name__}"
                 )
-            if _data_family(original) is not _data_family(transformed):
+            transformed_family = _data_family(transformed)
+            if original_family is not transformed_family:
                 raise TypeError(
-                    "Pre-transforms must preserve Data versus HeteroData "
-                    "representation"
+                    "Pre-transform changed representation for dataset item "
+                    f"{item_index}: expected {original_family.__name__}, "
+                    f"received {transformed_family.__name__}"
                 )
             processed.append(transformed)
 
@@ -292,19 +317,52 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             The path to the processed data.
         """
         out = fs.torch_load(path)
-        assert isinstance(out, tuple)
-        assert len(out) >= 2 and len(out) <= 4
+        if not isinstance(out, tuple):
+            raise TypeError(
+                "Processed data artifact must be a tuple; "
+                f"received {type(out).__name__}"
+            )
+        if len(out) not in (2, 3, 4):
+            raise ValueError(
+                "Processed data artifact must contain 2, 3, or 4 elements; "
+                f"received {len(out)}"
+            )
+
+        data_cls: type[Data] | type[HeteroData] = Data
         if len(out) == 2:  # Backward compatibility (1).
             data, self.slices = out
         elif len(out) == 3:  # Backward compatibility (2).
             data, self.slices, data_cls = out
-        else:  # TU Datasets store additional element (__class__) in the processed file
-            data, self.slices, sizes, data_cls = out
+        else:  # TU Datasets store additional element (__class__).
+            data, self.slices, _, data_cls = out
 
+        if self.slices is not None and not isinstance(self.slices, dict):
+            raise TypeError(
+                "Processed data slices must be a dictionary or None; "
+                f"received {type(self.slices).__name__}"
+            )
+        if not isinstance(data, (dict, Data, HeteroData)):
+            raise TypeError(
+                "Processed data payload must be Data, HeteroData, or a "
+                f"dictionary; received {type(data).__name__}"
+            )
         if not isinstance(data, dict):  # Backward compatibility.
             self.data = data
-        else:
-            self.data = data_cls.from_dict(data)
+            return
+        if not isinstance(data_cls, type) or not issubclass(
+            data_cls,
+            (Data, HeteroData),
+        ):
+            received = (
+                data_cls.__name__
+                if isinstance(data_cls, type)
+                else type(data_cls).__name__
+            )
+            raise TypeError(
+                "Processed data class must be Data or HeteroData for a "
+                f"dictionary payload; received {received}"
+            )
+        self.data = data_cls.from_dict(data)
 
     def load_dataset_splits(
         self, split_params

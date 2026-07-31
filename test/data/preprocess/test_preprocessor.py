@@ -76,6 +76,27 @@ def _opposite_data_family(data):
     return HeteroData() if isinstance(data, Data) else Data()
 
 
+def _assert_synthetic_heterodata_equal(
+    expected: HeteroData,
+    actual: HeteroData,
+) -> None:
+    """Assert all persisted fields in the canonical fixture are identical."""
+    assert expected.metadata() == actual.metadata()
+    for attribute in ("x", "y", "train_mask", "val_mask", "test_mask"):
+        assert torch.equal(
+            expected["author"][attribute],
+            actual["author"][attribute],
+        )
+    assert torch.equal(expected["paper"].x, actual["paper"].x)
+    assert expected["venue"].num_nodes == actual["venue"].num_nodes
+    assert "x" not in actual["venue"]
+    for edge_type in expected.edge_types:
+        assert torch.equal(
+            expected[edge_type].edge_index,
+            actual[edge_type].edge_index,
+        )
+
+
 class TestPreProcessorBasic:
     """Test basic PreProcessor functionality."""
 
@@ -236,16 +257,14 @@ class TestPreProcessorProcessing:
         dataset = SyntheticHeterogeneousDataset(seed=7)
         identity = DictConfig({"transform_name": "Identity"})
 
+        original = dataset[0]
         first = PreProcessor(dataset, tmp_path, transforms_config=identity)
         reloaded = PreProcessor(dataset, tmp_path, transforms_config=identity)
 
         assert isinstance(first[0], HeteroData)
         assert isinstance(reloaded[0], HeteroData)
-        assert first[0].metadata() == reloaded[0].metadata()
-        assert torch.equal(
-            first[0]["author"].train_mask,
-            reloaded[0]["author"].train_mask,
-        )
+        _assert_synthetic_heterodata_equal(original, first[0])
+        _assert_synthetic_heterodata_equal(first[0], reloaded[0])
 
     def test_preprocessor_preserves_data_on_process_and_reload(self, tmp_path):
         """A processed homogeneous graph remains homogeneous after reload."""
@@ -293,9 +312,10 @@ class TestPreProcessorProcessing:
             preprocessor.process()
 
         assert str(error.value) == (
-            "Dataset item must be Data or HeteroData; received object"
+            "Dataset item 0 must be Data or HeteroData; received object"
         )
         preprocessor.save.assert_not_called()
+        assert not any(tmp_path.rglob("data.pt"))
 
     def test_preprocessor_rejects_unsupported_transform_result(
         self,
@@ -312,9 +332,11 @@ class TestPreProcessorProcessing:
             preprocessor.process()
 
         assert str(error.value) == (
-            "A pre-transform returned unsupported type object"
+            "Pre-transform result for dataset item 0 must be Data or "
+            "HeteroData; received object"
         )
         preprocessor.save.assert_not_called()
+        assert not any(tmp_path.rglob("data.pt"))
 
     @pytest.mark.parametrize(
         "data",
@@ -340,10 +362,50 @@ class TestPreProcessorProcessing:
             preprocessor.process()
 
         assert str(error.value) == (
-            "Pre-transforms must preserve Data versus HeteroData "
-            "representation"
+            "Pre-transform changed representation for dataset item 0: "
+            f"expected {type(data).__name__}, received "
+            f"{type(_opposite_data_family(data)).__name__}"
         )
         preprocessor.save.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("data_list", "expected_family", "received_family"),
+        [
+            (
+                [HeteroData(), Data()],
+                "HeteroData",
+                "Data",
+            ),
+            (
+                [Data(), HeteroData()],
+                "Data",
+                "HeteroData",
+            ),
+        ],
+        ids=["heterodata-then-data", "data-then-heterodata"],
+    )
+    def test_preprocessor_rejects_mixed_dataset_representations(
+        self,
+        data_list,
+        expected_family,
+        received_family,
+        tmp_path,
+    ):
+        """One persisted dataset cannot mix PyG representation families."""
+        preprocessor = _process_only_preprocessor(
+            MockTorchDataset(data_list),
+            tmp_path,
+        )
+
+        with pytest.raises(TypeError) as error:
+            preprocessor.process()
+
+        assert str(error.value) == (
+            "Dataset item 1 has mixed representation: "
+            f"expected {expected_family}, received {received_family}"
+        )
+        preprocessor.save.assert_not_called()
+        assert not any(tmp_path.rglob("data.pt"))
 
     def test_preprocessor_rejects_invalid_top_level_input(self, tmp_path):
         """The preprocessor reports unsupported input containers clearly."""
@@ -516,19 +578,121 @@ class TestPreProcessorLoad:
             "edge_index": torch.tensor([[0, 1], [1, 2]])
         }
         mock_slices = {"x": torch.tensor([0, 3])}
-        mock_data_cls = MagicMock()
-        mock_reconstructed_data = torch_geometric.data.Data()
-        mock_data_cls.from_dict.return_value = mock_reconstructed_data
-        mock_torch_load.return_value = (mock_data_dict, mock_slices, mock_data_cls)
+        mock_torch_load.return_value = (
+            mock_data_dict,
+            mock_slices,
+            Data,
+        )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
                 preprocessor = PreProcessor(None, tmpdir, None)
                 preprocessor.load("/fake/path")
 
-                mock_data_cls.from_dict.assert_called_once_with(mock_data_dict)
-                assert preprocessor._data == mock_reconstructed_data
+                assert isinstance(preprocessor._data, Data)
+                assert torch.equal(
+                    preprocessor._data.x,
+                    mock_data_dict["x"],
+                )
+                assert torch.equal(
+                    preprocessor._data.edge_index,
+                    mock_data_dict["edge_index"],
+                )
                 assert preprocessor.slices == mock_slices
+
+    @patch("topobench.data.preprocessor.preprocessor.fs.torch_load")
+    def test_load_legacy_two_element_dict_defaults_to_data(
+        self,
+        mock_torch_load,
+    ):
+        """A legacy dictionary payload without class metadata reconstructs Data."""
+        data_dict = {"x": torch.randn(3, 2)}
+        slices = {"x": torch.tensor([0, 3])}
+        mock_torch_load.return_value = (data_dict, slices)
+        preprocessor = object.__new__(PreProcessor)
+
+        preprocessor.load("/fake/path")
+
+        assert isinstance(preprocessor._data, Data)
+        assert torch.equal(preprocessor._data.x, data_dict["x"])
+        assert preprocessor.slices == slices
+
+    @patch("topobench.data.preprocessor.preprocessor.fs.torch_load")
+    def test_load_rejects_non_tuple_artifact(self, mock_torch_load):
+        """Corrupt cache containers raise an optimized-safe exception."""
+        mock_torch_load.return_value = ["data", {}]
+        preprocessor = object.__new__(PreProcessor)
+
+        with pytest.raises(TypeError) as error:
+            preprocessor.load("/fake/path")
+
+        assert str(error.value) == (
+            "Processed data artifact must be a tuple; received list"
+        )
+
+    @pytest.mark.parametrize("length", [1, 5])
+    @patch("topobench.data.preprocessor.preprocessor.fs.torch_load")
+    def test_load_rejects_unsupported_tuple_length(
+        self,
+        mock_torch_load,
+        length,
+    ):
+        """Only documented two-, three-, and four-element caches are valid."""
+        mock_torch_load.return_value = tuple(range(length))
+        preprocessor = object.__new__(PreProcessor)
+
+        with pytest.raises(ValueError) as error:
+            preprocessor.load("/fake/path")
+
+        assert str(error.value) == (
+            "Processed data artifact must contain 2, 3, or 4 elements; "
+            f"received {length}"
+        )
+
+    @patch("topobench.data.preprocessor.preprocessor.fs.torch_load")
+    def test_load_rejects_unsupported_data_payload(self, mock_torch_load):
+        """A tuple alone does not make an arbitrary payload a valid cache."""
+        mock_torch_load.return_value = (42, None)
+        preprocessor = object.__new__(PreProcessor)
+
+        with pytest.raises(TypeError) as error:
+            preprocessor.load("/fake/path")
+
+        assert str(error.value) == (
+            "Processed data payload must be Data, HeteroData, or a "
+            "dictionary; received int"
+        )
+
+    @patch("topobench.data.preprocessor.preprocessor.fs.torch_load")
+    def test_load_rejects_unsupported_slices_payload(self, mock_torch_load):
+        """Slice metadata must retain the structure expected by PyG."""
+        mock_torch_load.return_value = (Data(), [])
+        preprocessor = object.__new__(PreProcessor)
+
+        with pytest.raises(TypeError) as error:
+            preprocessor.load("/fake/path")
+
+        assert str(error.value) == (
+            "Processed data slices must be a dictionary or None; "
+            "received list"
+        )
+
+    @patch("topobench.data.preprocessor.preprocessor.fs.torch_load")
+    def test_load_rejects_invalid_data_class_for_dict(
+        self,
+        mock_torch_load,
+    ):
+        """Dictionary cache payloads require a supported reconstruction class."""
+        mock_torch_load.return_value = ({"x": torch.ones(1, 1)}, None, object)
+        preprocessor = object.__new__(PreProcessor)
+
+        with pytest.raises(TypeError) as error:
+            preprocessor.load("/fake/path")
+
+        assert str(error.value) == (
+            "Processed data class must be Data or HeteroData for a "
+            "dictionary payload; received object"
+        )
 
 
 class TestPreProcessorTransforms:
@@ -787,26 +951,19 @@ class TestPreProcessorTransforms:
 class TestPreProcessorEdgeCases:
     """Test edge cases and error handling."""
 
-    def test_process_with_empty_dataset(self):
+    def test_process_with_empty_dataset(self, tmp_path):
         """Test process method with an empty dataset."""
         mock_dataset = MockTorchDataset([])
+        preprocessor = _process_only_preprocessor(mock_dataset, tmp_path)
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
-                preprocessor = PreProcessor(None, tmpdir, None)
-                preprocessor.dataset = mock_dataset
-                preprocessor.pre_transform = None
-                # For empty list, collate should return a single empty Data object
-                preprocessor.collate = MagicMock(
-                    return_value=(torch_geometric.data.Data(), {})
-                )
-                preprocessor.save = MagicMock()
+        with pytest.raises(ValueError) as error:
+            preprocessor.process()
 
-                # Mock the processed_paths property
-                with patch.object(type(preprocessor), 'processed_paths', new_callable=lambda: property(lambda self: [f"{tmpdir}/data.pt"])):
-                    preprocessor.process()
-
-                    assert preprocessor.data_list == []
+        assert str(error.value) == (
+            "PreProcessor requires at least one Data or HeteroData item"
+        )
+        preprocessor.save.assert_not_called()
+        assert not any(tmp_path.rglob("data.pt"))
 
     def test_processed_dir_property(self):
         """Test the processed_dir property returns correct paths."""
