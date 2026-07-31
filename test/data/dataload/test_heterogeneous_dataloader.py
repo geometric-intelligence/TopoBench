@@ -659,6 +659,7 @@ def test_evaluation_settings_descriptor_is_stable_and_complete(
     settings = json.loads(descriptor)
 
     assert settings["phase"] == "val"
+    assert settings["mode"] == "neighbor"
     assert settings["evaluation_protocol"] == "sampled_neighbor_fixed"
     assert settings["evaluation_seed"] == 17
     assert settings["phase_seed"] == datamodule._phase_evaluation_seed("val")
@@ -690,6 +691,70 @@ def test_evaluation_settings_descriptor_is_stable_and_complete(
     assert datamodule.evaluation_settings_descriptor("val") == descriptor
     assert datamodule.evaluation_settings_descriptor("test") != descriptor
     assert not hasattr(datamodule, "evaluation_cache_descriptor")
+
+
+def test_full_graph_evaluation_descriptor_reports_actual_loader_contract(
+    heterogeneous_data: HeteroData,
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """Full-graph identity excludes inactive neighbor-sampling settings."""
+    datamodule = HeterogeneousNodeDataModule(
+        heterogeneous_data,
+        heterogeneous_spec,
+        mode="full_batch",
+        batch_size=17,
+        num_neighbors=[3, 2],
+        num_workers=2,
+        persistent_workers=True,
+        replace=True,
+        filter_per_worker=True,
+        evaluation_seed=71,
+    )
+
+    descriptor = datamodule.evaluation_settings_descriptor("test")
+    settings = json.loads(descriptor)
+    loader = datamodule.test_dataloader()
+
+    assert settings["phase"] == "test"
+    assert settings["mode"] == "full_batch"
+    assert settings["evaluation_protocol"] == "full_graph"
+    assert settings["batch_size"] == loader.batch_size == 1
+    assert settings["evaluation_num_workers"] == loader.num_workers == 2
+    assert settings["evaluation_persistent_workers"] is True
+    assert loader.persistent_workers is True
+    for sampled_field in (
+        "evaluation_seed",
+        "phase_seed",
+        "fanout",
+        "replace",
+        "subgraph_type",
+        "filter_per_worker",
+    ):
+        assert settings[sampled_field] is None
+    assert settings["versions"]["torch_geometric"]
+    assert settings["versions"]["pyg-lib"] is None
+    assert settings["versions"]["torch-sparse"] is None
+    assert datamodule.evaluation_settings_descriptor("test") == descriptor
+    assert datamodule.evaluation_settings_descriptor("val") != descriptor
+
+
+def test_evaluation_protocol_changes_settings_identity(
+    heterogeneous_data: HeteroData,
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """Full-graph and sampled-neighbor evaluation have distinct identities."""
+    full_graph = HeterogeneousNodeDataModule(
+        heterogeneous_data,
+        heterogeneous_spec,
+        mode="full_batch",
+    ).evaluation_settings_descriptor("val")
+    sampled_neighbor = HeterogeneousNodeDataModule(
+        heterogeneous_data,
+        heterogeneous_spec,
+        mode="neighbor",
+    ).evaluation_settings_descriptor("val")
+
+    assert full_graph != sampled_neighbor
 
 
 def test_evaluation_settings_descriptor_rejects_train(
@@ -966,10 +1031,13 @@ def test_full_graph_evaluation_does_not_create_sampled_loaders(
         evaluation_seed=43,
     )
 
-    first = _loader_signature(datamodule.val_dataloader())
-    second = _loader_signature(datamodule.val_dataloader())
+    first_loader = datamodule.val_dataloader()
+    second_loader = datamodule.val_dataloader()
+    first = _loader_signature(first_loader)
+    second = _loader_signature(second_loader)
 
     assert first == second
+    assert first_loader is not second_loader
     assert datamodule._evaluation_loaders == {}
 
 

@@ -128,7 +128,12 @@ def _distribution_version(distribution: str) -> str | None:
 
 
 class _FixedEvaluationNeighborLoader(NeighborLoader):
-    """Replay deterministic evaluation sampling without retaining its batches."""
+    """Replay deterministic evaluation sampling without retaining its batches.
+
+    RNG isolation snapshots process-global CPU PyTorch state and assumes
+    normal single-threaded Lightning traversal. Concurrent threaded iteration
+    of validation or test loaders is unsupported.
+    """
 
     def __init__(
         self,
@@ -220,10 +225,12 @@ class HeterogeneousNodeDataModule(LightningDataModule):
 
     The datamodule retains the validated graph reference and treats its graph
     and loader options as canonical for its lifetime. Callers must not mutate
-    the graph or public option attributes after construction. Sampled
-    validation and test loaders are memoized by phase, but every traversal
-    deterministically resamples and streams fresh batches without retaining
-    them. Evaluation workers are non-persistent and released per traversal.
+    the graph or public option attributes after construction. Full-graph
+    validation and test hooks construct a fresh loader per call.
+    Sampled validation and test loaders are memoized by phase, but every
+    traversal deterministically resamples and streams fresh batches without
+    retaining them. Sampled evaluation workers are non-persistent and released
+    per traversal.
     """
 
     def __init__(
@@ -451,16 +458,21 @@ class HeterogeneousNodeDataModule(LightningDataModule):
         """Return stable JSON for reproducible evaluation settings identity."""
         if phase not in {"val", "test"}:
             raise ValueError("Evaluation settings phase must be val or test")
-        if isinstance(self.num_neighbors, Mapping):
-            fanout: object = [
+        sampled_evaluation = (
+            self.evaluation_protocol == "sampled_neighbor_fixed"
+        )
+        if sampled_evaluation and isinstance(self.num_neighbors, Mapping):
+            fanout: object | None = [
                 {
                     "edge_type": list(edge_type),
                     "num_neighbors": list(self.num_neighbors[edge_type]),
                 }
                 for edge_type in self.spec.edge_types
             ]
-        else:
+        elif sampled_evaluation:
             fanout = list(self.num_neighbors)
+        else:
+            fanout = None
 
         mask = self.data[self.spec.target_node_type][f"{phase}_mask"]
         phase_seed_ids = (
@@ -480,7 +492,7 @@ class HeterogeneousNodeDataModule(LightningDataModule):
             )
 
         descriptor = {
-            "batch_size": self.batch_size,
+            "batch_size": self.batch_size if sampled_evaluation else 1,
             "edge_counts": [
                 int(self.data[edge_type].edge_index.size(1))
                 for edge_type in self.spec.edge_types
@@ -489,26 +501,47 @@ class HeterogeneousNodeDataModule(LightningDataModule):
                 list(edge_type) for edge_type in self.spec.edge_types
             ],
             "evaluation_num_workers": self.num_workers,
-            "evaluation_persistent_workers": False,
+            "evaluation_persistent_workers": (
+                False if sampled_evaluation else self.persistent_workers
+            ),
             "evaluation_protocol": self.evaluation_protocol,
-            "evaluation_seed": self.evaluation_seed,
+            "evaluation_seed": (
+                self.evaluation_seed if sampled_evaluation else None
+            ),
             "fanout": fanout,
-            "filter_per_worker": self.filter_per_worker,
+            "filter_per_worker": (
+                self.filter_per_worker if sampled_evaluation else None
+            ),
+            "mode": self.mode,
             "node_counts": {
                 node_type: int(self.data[node_type].num_nodes)
                 for node_type in self.spec.node_types
             },
             "node_types": list(self.spec.node_types),
             "phase": phase,
-            "phase_seed": self._phase_evaluation_seed(phase),
+            "phase_seed": (
+                self._phase_evaluation_seed(phase)
+                if sampled_evaluation
+                else None
+            ),
             "phase_seed_count": len(phase_seed_ids),
             "phase_seed_ids_sha256": phase_seed_digest.hexdigest(),
-            "replace": self.replace,
-            "subgraph_type": self.subgraph_type,
+            "replace": self.replace if sampled_evaluation else None,
+            "subgraph_type": (
+                self.subgraph_type if sampled_evaluation else None
+            ),
             "target_node_type": self.spec.target_node_type,
             "versions": {
-                "pyg-lib": _distribution_version("pyg-lib"),
-                "torch-sparse": _distribution_version("torch-sparse"),
+                "pyg-lib": (
+                    _distribution_version("pyg-lib")
+                    if sampled_evaluation
+                    else None
+                ),
+                "torch-sparse": (
+                    _distribution_version("torch-sparse")
+                    if sampled_evaluation
+                    else None
+                ),
                 "torch_geometric": torch_geometric.__version__,
             },
         }
@@ -525,11 +558,19 @@ class HeterogeneousNodeDataModule(LightningDataModule):
         return self._loader("train")
 
     def val_dataloader(self) -> DataLoader | NeighborLoader:
-        """Return a fresh validation loader."""
+        """Return a mode-specific validation loader.
+
+        Full-graph mode constructs a fresh loader per call; neighbor mode
+        returns its memoized deterministic sampler.
+        """
         return self._loader("val")
 
     def test_dataloader(self) -> DataLoader | NeighborLoader:
-        """Return a fresh test loader."""
+        """Return a mode-specific test loader.
+
+        Full-graph mode constructs a fresh loader per call; neighbor mode
+        returns its memoized deterministic sampler.
+        """
         return self._loader("test")
 
 
