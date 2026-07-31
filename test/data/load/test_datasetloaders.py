@@ -1,14 +1,16 @@
 """Comprehensive test suite for all dataset loaders."""
+
 import os
-import pytest
-import torch
-import hydra
 from pathlib import Path
-from typing import List, Tuple, Dict, Any
-from omegaconf import DictConfig
+from typing import Any
+
+import hydra
+import pytest
 from torch_geometric.data import HeteroData
-from topobench.data.preprocessor.preprocessor import PreProcessor
+
 from topobench.utils.config_resolvers import register_all_resolvers
+
+download_gated_datasets = frozenset({"DBLP.yaml", "OGB_MAG.yaml"})
 
 
 class TestLoaders:
@@ -23,10 +25,10 @@ class TestLoaders:
         base_dir = Path(__file__).resolve().parents[3]
         self.config_files = self._gather_config_files(base_dir)
         self.relative_config_dir = "../../../configs"
-        self.test_splits = ['train', 'val', 'test']
+        self.test_splits = ["train", "val", "test"]
 
     # Existing helper methods remain the same
-    def _gather_config_files(self, base_dir: Path) -> List[str]:
+    def _gather_config_files(self, base_dir: Path) -> list[str]:
         """Gather all relevant config files.
 
         Parameters
@@ -42,27 +44,42 @@ class TestLoaders:
         config_files = []
         config_base_dir = base_dir / "configs/dataset"
         # Below the datasets that have some default transforms manually overriten with no_transform,
-        exclude_datasets = {"karate_club.yaml",
-                            # Below the datasets that have some default transforms with we manually overriten with no_transform,
-                            # due to lack of default transform for domain2domain
-                            "REDDIT-BINARY.yaml", "IMDB-MULTI.yaml", "IMDB-BINARY.yaml", #"ZINC.yaml"
-                            "ogbg-molpcba.yaml", "manual_dataset.yaml", # "ogbg-molhiv.yaml"
-                            }
+        exclude_datasets = {
+            "karate_club.yaml",
+            # Below the datasets that have some default transforms with we manually overriten with no_transform,
+            # due to lack of default transform for domain2domain
+            "REDDIT-BINARY.yaml",
+            "IMDB-MULTI.yaml",
+            "IMDB-BINARY.yaml",  # "ZINC.yaml"
+            "ogbg-molpcba.yaml",
+            "manual_dataset.yaml",  # "ogbg-molhiv.yaml"
+        }
+        if os.environ.get("TOPOBENCH_ALLOW_DOWNLOADS") != "1":
+            exclude_datasets.update(download_gated_datasets)
 
         # Below the datasets that takes quite some time to load and process
-        self.long_running_datasets = {"mantra_name.yaml", "mantra_orientation.yaml", "mantra_genus.yaml", "mantra_betti_numbers.yaml"}
-
+        self.long_running_datasets = {
+            "mantra_name.yaml",
+            "mantra_orientation.yaml",
+            "mantra_genus.yaml",
+            "mantra_betti_numbers.yaml",
+        }
 
         for dir_path in config_base_dir.iterdir():
-            curr_dir = str(dir_path).split('/')[-1]
+            curr_dir = str(dir_path).split("/")[-1]
             if dir_path.is_dir():
-                config_files.extend([
-                    (curr_dir, f.name) for f in dir_path.glob("*.yaml")
-                    if f.name not in exclude_datasets
-                ])
+                config_files.extend(
+                    [
+                        (curr_dir, f.name)
+                        for f in dir_path.glob("*.yaml")
+                        if f.name not in exclude_datasets
+                    ]
+                )
         return config_files
 
-    def _load_dataset(self, data_domain: str, config_file: str) -> Tuple[Any, Dict]:
+    def _load_dataset(
+        self, data_domain: str, config_file: str
+    ) -> tuple[Any, dict]:
         """Load dataset with given config file.
 
         Parameters
@@ -80,9 +97,9 @@ class TestLoaders:
         with hydra.initialize(
             version_base="1.3",
             config_path=self.relative_config_dir,
-            job_name="run"
+            job_name="run",
         ):
-            print('Current config file: ', config_file)
+            print("Current config file: ", config_file)
             overrides = [
                 f"dataset={data_domain}/{config_file}",
                 "model=graph/gat",
@@ -126,9 +143,8 @@ class TestLoaders:
             #     assert dataset[0].y.size(0) > 0, "Empty labels"
 
             # Test node feature dimensions
-            if (
-                not isinstance(data, HeteroData)
-                and hasattr(dataset, 'num_node_features')
+            if not isinstance(data, HeteroData) and hasattr(
+                dataset, "num_node_features"
             ):
                 assert dataset.data.x.size(1) == dataset.num_node_features
 
@@ -138,3 +154,30 @@ class TestLoaders:
             #     assert torch.max(dataset.data.y) < dataset.num_classes
 
             repr(dataset)
+
+
+def test_download_gated_datasets_are_excluded_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Config enumeration cannot download DBLP or OGB-MAG by default."""
+    monkeypatch.delenv("TOPOBENCH_ALLOW_DOWNLOADS", raising=False)
+    gathered = TestLoaders()._gather_config_files(
+        Path(__file__).resolve().parents[3]
+    )
+    filenames = {filename for _, filename in gathered}
+
+    assert download_gated_datasets == {"DBLP.yaml", "OGB_MAG.yaml"}
+    assert filenames.isdisjoint(download_gated_datasets)
+
+
+def test_download_gated_datasets_are_enumerated_only_after_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The single environment gate enables configs that actually exist."""
+    monkeypatch.setenv("TOPOBENCH_ALLOW_DOWNLOADS", "1")
+    gathered = TestLoaders()._gather_config_files(
+        Path(__file__).resolve().parents[3]
+    )
+    filenames = {filename for _, filename in gathered}
+
+    assert "DBLP.yaml" in filenames

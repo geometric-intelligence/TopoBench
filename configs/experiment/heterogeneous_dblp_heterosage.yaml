@@ -1,0 +1,22 @@
+# @package _global_
+defaults:
+  - override /data_pipeline: heterogeneous_node
+  - override /dataset: heterogeneous/DBLP
+  - override /model: heterogeneous/heterosage
+  - override /logger: heterogeneous_wandb
+  - _self_
+
+seed: 0
+tags: [heterogeneous, DBLP, full_batch, heterosage]
+
+optimizer:
+  parameters:
+    lr: 0.005
+    weight_decay: 0.001
+
+trainer:
+  accelerator: auto
+  devices: 1
+  min_epochs: 1
+  max_epochs: 200
+  check_val_every_n_epoch: 1

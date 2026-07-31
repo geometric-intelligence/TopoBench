@@ -1,0 +1,25 @@
+loader:
+  _target_: topobench.data.loaders.DBLPDatasetLoader
+  parameters:
+    data_domain: heterogeneous
+    data_type: bibliographic
+    data_name: DBLP
+    data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+
+parameters:
+  task: classification
+  task_level: node
+  target_node_type: author
+  num_classes: 4
+  loss_type: cross_entropy
+  monitor_metric: accuracy
+
+split_params:
+  learning_setting: transductive
+  source: official_masks
+
+dataloader_params:
+  mode: full_batch
+  num_workers: 0
+  pin_memory: false
+  persistent_workers: false

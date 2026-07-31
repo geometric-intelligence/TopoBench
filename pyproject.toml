@@ -188,6 +188,10 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 addopts = "--capture=no"
 pythonpath = ["."]
+markers = [
+    "integration: exercises external datasets or complete training flows",
+    "download: may download data when explicitly enabled",
+]
 
 [tool.numpydoc_validation]
 checks = ["all", "GL01", "ES01", "EX01", "SA01"]

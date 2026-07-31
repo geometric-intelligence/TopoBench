@@ -1,0 +1,7 @@
+defaults:
+  - data_manipulations@conference_features: heterogeneous_constant_features
+
+conference_features:
+  node_types: conference
+  value: 1.0
+  cat: false
