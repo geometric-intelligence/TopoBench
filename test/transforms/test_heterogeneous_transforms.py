@@ -344,19 +344,53 @@ def test_to_undirected_requires_actual_bool_merge(
 
 
 @pytest.mark.parametrize(
-    "reduce",
-    ["add", "sum", "mean", "min", "max", "amin", "amax", "mul", "any"],
+    ("reduce", "expected_weight"),
+    [
+        pytest.param("add", 6.0, id="add"),
+        pytest.param("sum", 6.0, id="sum"),
+        pytest.param("mean", 2.0, id="mean"),
+        pytest.param("min", 2.0, id="min"),
+        pytest.param("max", 2.0, id="max"),
+        pytest.param("amin", 2.0, id="amin"),
+        pytest.param("amax", 2.0, id="amax"),
+        pytest.param("mul", 8.0, id="mul"),
+        pytest.param("any", 2.0, id="any"),
+    ],
 )
-def test_to_undirected_accepts_all_pyg_coalesce_reductions(
+def test_to_undirected_executes_all_pyg_coalesce_reductions(
     heterogeneous_transforms_module,
     reduce: str,
+    expected_weight: float,
 ) -> None:
-    """Every reduction and alias accepted by installed PyG remains valid."""
+    """Every accepted reduction executes PyG's duplicate-edge coalescing."""
+    edge_type = ("node", "links", "node")
+    data = HeteroData()
+    data["node"].x = torch.ones(2, 1)
+    data[edge_type].edge_index = torch.tensor(
+        [[0, 0, 1], [1, 1, 0]],
+    )
+    data[edge_type].edge_weight = torch.full((3,), 2.0)
+    original = data.clone()
     transform = heterogeneous_transforms_module.HeterogeneousToUndirected(
         reduce=reduce,
+        merge=True,
     )
 
-    assert transform.reduce == reduce
+    transformed = transform(data)
+
+    # Undirecting contributes the three weights to each orientation. Thus
+    # sum/add=6, mul=8, and every idempotent/mean reduction remains 2.
+    assert transformed is not data
+    assert transformed.edge_types == [edge_type]
+    assert torch.equal(
+        transformed[edge_type].edge_index,
+        torch.tensor([[0, 1], [1, 0]]),
+    )
+    torch.testing.assert_close(
+        transformed[edge_type].edge_weight,
+        torch.full((2,), expected_weight),
+    )
+    _assert_heterodata_equal(original, data)
 
 
 def test_to_undirected_rejects_unknown_reduction(
