@@ -1,0 +1,13 @@
+wandb:
+  _target_: lightning.pytorch.loggers.wandb.WandbLogger
+  save_dir: ${paths.output_dir}
+  offline: false
+  id: null
+  anonymous: null
+  project: topobench-heterogeneous
+  name: ${dataset.loader.parameters.data_name}-${model.model_name}-${dataset.dataloader_params.mode}-seed${seed}
+  group: ${dataset.loader.parameters.data_name}
+  tags: ${tags}
+  job_type: ${dataset.dataloader_params.mode}
+  log_model: false
+  prefix: ""

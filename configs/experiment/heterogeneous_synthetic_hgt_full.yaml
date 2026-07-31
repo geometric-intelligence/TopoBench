@@ -1,0 +1,28 @@
+# @package _global_
+defaults:
+  - override /data_pipeline: heterogeneous_node
+  - override /dataset: heterogeneous/SyntheticHeterogeneous
+  - override /model: heterogeneous/hgt
+  - override /logger: heterogeneous_wandb
+  - _self_
+
+seed: 0
+tags: [heterogeneous, synthetic, full_batch, hgt]
+train: true
+test: true
+
+dataset:
+  dataloader_params:
+    mode: full_batch
+
+optimizer:
+  parameters:
+    lr: 0.01
+    weight_decay: 0.0
+
+trainer:
+  accelerator: cpu
+  devices: 1
+  min_epochs: 1
+  max_epochs: 50
+  check_val_every_n_epoch: 1

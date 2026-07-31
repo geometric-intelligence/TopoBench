@@ -10,7 +10,7 @@ import numpy as np
 import rootutils
 import torch
 from lightning import Callback, LightningModule, Trainer
-from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
 from lightning.pytorch.loggers import Logger
 from lightning.pytorch.loggers.wandb import WandbLogger
 from omegaconf import DictConfig
@@ -124,6 +124,12 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
 
     log.info("Instantiating loggers...")
     logger: list[Logger] = instantiate_loggers(cfg.get("logger"))
+    if not logger:
+        callbacks = [
+            callback
+            for callback in callbacks
+            if not isinstance(callback, LearningRateMonitor)
+        ]
 
     # Log to wandb preprocessor time
     if logger:
