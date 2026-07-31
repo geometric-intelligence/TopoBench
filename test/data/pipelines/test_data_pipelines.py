@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
-import sys
 from collections.abc import Iterator
 from dataclasses import FrozenInstanceError
 from pathlib import Path
@@ -28,8 +26,6 @@ from topobench.data.pipelines import (
     DefaultDataPipeline,
 )
 from topobench.utils.config_resolvers import register_all_resolvers
-
-PROJECT_ROOT = Path(__file__).parents[3]
 
 
 @pytest.fixture(autouse=True)
@@ -756,24 +752,11 @@ def test_simplified_runner_consumes_pipeline_output(
     assert result["test_results"] == [{"test/loss": 0.5}]
 
 
-def test_pipeline_package_imports_cleanly_in_subprocess() -> None:
-    """Canonical package exports import without package-initialization cycles."""
-    code = (
-        "import topobench.data.pipelines as pipelines; "
-        "print(','.join(pipelines.__all__))"
-    )
+def test_pipeline_package_exposes_canonical_api() -> None:
+    """Canonical package exports remain stable after normal test imports."""
+    import topobench.data.pipelines as pipelines
 
-    completed = subprocess.run(
-        [sys.executable, "-c", code],
-        cwd=PROJECT_ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=20,
-    )
-
-    assert completed.returncode == 0, completed.stderr
-    assert completed.stdout.strip() == (
+    assert ",".join(pipelines.__all__) == (
         "AbstractDataPipeline,DataPipelineOutput,DefaultDataPipeline"
     )
     assert issubclass(DefaultDataPipeline, AbstractDataPipeline)

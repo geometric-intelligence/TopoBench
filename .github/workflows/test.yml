@@ -32,7 +32,13 @@ jobs:
           # This script handles the .venv creation and PyTorch/CUDA logic
           source uv_env_setup.sh
 
-      # 3. Run Tests
+      # 3. Verify imports before pytest initializes torch/OpenMP.
+      - name: Verify clean pipeline import
+        run: |
+          source .venv/bin/activate
+          python test/data/pipelines/verify_clean_import.py
+
+      # 4. Run Tests
       - name: Test with pytest
         run: |
           # We must activate the venv created by your script
