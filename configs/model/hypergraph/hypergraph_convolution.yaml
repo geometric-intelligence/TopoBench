@@ -16,7 +16,7 @@ feature_encoder:
 backbone:
   _target_: topobench.nn.backbones.hypergraph.hypergraph_convolution.HyperGraphConvolution
   a: ${model.feature_encoder.out_channels}
-  b: 8
+  b: ${model.feature_encoder.out_channels}
   reapproximate: False
   cuda: 0
   loss:
