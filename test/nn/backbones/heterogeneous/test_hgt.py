@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import io
+import pickle
 from collections.abc import Mapping
 
 import pytest
@@ -20,6 +22,34 @@ EDGE_TYPES = [
     ("paper", "published_in", "venue"),
     ("venue", "rev_published_in", "paper"),
 ]
+EXPECTED_REGISTERED_BACKBONES = {
+    "CCCN",
+    "CW",
+    "CellHGT",
+    "EDGNN",
+    "EquivSetConv",
+    "GPSEncoder",
+    "GraphMLP",
+    "HGTBackbone",
+    "HOPSE",
+    "HOPSELayer",
+    "IdentityGAT",
+    "IdentityGCN",
+    "IdentityGIN",
+    "IdentitySAGE",
+    "JumpLinkConv",
+    "MLP",
+    "MeanDegConv",
+    "Mlp",
+    "NSDEncoder",
+    "PlainMLP",
+    "RedrawProjection",
+    "SCCNNCustom",
+    "SCCNNLayer",
+    "TopoTune",
+    "TopoTune_OneHasse",
+    "customMLP",
+}
 
 
 def make_data() -> HeteroData:
@@ -60,9 +90,19 @@ def make_model(
 
 
 def test_top_level_registry_does_not_publish_metadata_infrastructure() -> None:
-    """Only the trainable backbone is auto-discovered as a model class."""
-    assert backbone_registry.HGTBackbone.__name__ == "HGTBackbone"
+    """Registry exports canonical, pickle-stable trainable classes only."""
+    assert (
+        set(backbone_registry.MODEL_CLASSES) == EXPECTED_REGISTERED_BACKBONES
+    )
+    assert backbone_registry.HGTBackbone is HGTBackbone
+    assert backbone_registry.MODEL_CLASSES["HGTBackbone"] is HGTBackbone
+    assert HGTBackbone.__module__ == (
+        "topobench.nn.backbones.heterogeneous.hgt"
+    )
     assert not hasattr(backbone_registry, "HeterogeneousMetadataAdapter")
+    model = make_model()
+    restored = pickle.loads(pickle.dumps(model))
+    assert restored.__class__ is HGTBackbone
 
 
 def test_forward_returns_exact_external_node_keys_and_hidden_shapes() -> None:
@@ -112,6 +152,22 @@ def test_every_hgt_layer_executes_and_receives_finite_gradients() -> None:
     assert all(torch.isfinite(gradient).all() for gradient in gradients)
 
 
+def test_checkpoint_is_relation_order_independent() -> None:
+    """Positional HGT relation weights use canonical metadata ordering."""
+    data = make_data()
+    reference = make_model().eval()
+    reversed_metadata = (NODE_TYPES, list(reversed(EDGE_TYPES)))
+    restored = make_model(metadata=reversed_metadata).eval()
+
+    restored.load_state_dict(reference.state_dict(), strict=True)
+    expected = reference(data.x_dict, data.edge_index_dict)
+    actual = restored(data.x_dict, data.edge_index_dict)
+
+    assert restored.internal_metadata == reference.internal_metadata
+    for node_type in NODE_TYPES:
+        torch.testing.assert_close(actual[node_type], expected[node_type])
+
+
 def test_known_relations_may_be_omitted_from_a_sample() -> None:
     """A sampled subgraph may omit configured relations locally."""
     data = make_data()
@@ -131,6 +187,24 @@ def test_sample_with_no_local_relations_carries_every_node_forward() -> None:
 
     for node_type in NODE_TYPES:
         torch.testing.assert_close(output[node_type], data[node_type].x)
+
+
+def test_present_empty_relation_runs_hgt_instead_of_carry() -> None:
+    """An explicit empty relation retains HGTConv's learned update semantics."""
+    metadata = (["source", "target"], [("source", "to", "target")])
+    x_dict = {
+        "source": torch.randn(3, HIDDEN_CHANNELS),
+        "target": torch.randn(2, HIDDEN_CHANNELS),
+    }
+    edge_type = metadata[1][0]
+    empty_relation = torch.empty((2, 0), dtype=torch.long)
+    model = make_model(metadata=metadata, num_layers=1).eval()
+
+    omitted = model(x_dict, {})
+    present = model(x_dict, {edge_type: empty_relation})
+
+    torch.testing.assert_close(omitted["target"], x_dict["target"])
+    assert not torch.equal(present["target"], omitted["target"])
 
 
 def test_node_without_incoming_relation_is_carried_forward() -> None:
@@ -411,3 +485,41 @@ def test_external_relation_may_equal_the_default_encoded_alias() -> None:
     output = make_model(metadata=metadata)(x_dict, edge_index_dict)
 
     assert set(output) == {"a", "b"}
+
+
+def test_lone_surrogate_metadata_forward_and_checkpoint_roundtrip() -> None:
+    """Alias encoding is total for arbitrary valid Python string metadata."""
+    surrogate_node = "\ud800.node"
+    surrogate_relation = "\udfff.rel"
+    metadata = (
+        [surrogate_node, "target"],
+        [
+            (surrogate_node, surrogate_relation, "target"),
+            ("target", "returns", surrogate_node),
+        ],
+    )
+    x_dict = {
+        surrogate_node: torch.randn(2, HIDDEN_CHANNELS),
+        "target": torch.randn(3, HIDDEN_CHANNELS),
+    }
+    edge_index_dict = {
+        metadata[1][0]: torch.tensor([[0, 1], [0, 1]]),
+        metadata[1][1]: torch.tensor([[0, 1], [0, 1]]),
+    }
+    model = make_model(metadata=metadata).eval()
+
+    expected = model(x_dict, edge_index_dict)
+    checkpoint = io.BytesIO()
+    torch.save(model.state_dict(), checkpoint)
+    checkpoint.seek(0)
+    restored = make_model(metadata=metadata).eval()
+    restored.load_state_dict(torch.load(checkpoint, weights_only=True))
+    actual = restored(x_dict, edge_index_dict)
+
+    assert set(actual) == set(metadata[0])
+    assert all(
+        surrogate_node not in key and surrogate_relation not in key
+        for key in model.state_dict()
+    )
+    for node_type in metadata[0]:
+        torch.testing.assert_close(actual[node_type], expected[node_type])

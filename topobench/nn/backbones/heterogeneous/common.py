@@ -208,9 +208,14 @@ def validate_forward_dictionaries(
             )
 
 
+def _utf8_bytes(value: str) -> bytes:
+    """Encode every Python string injectively, including lone surrogates."""
+    return value.encode("utf-8", errors="surrogatepass")
+
+
 def _encoded_node_type(node_type: str, *, prefix: str) -> str:
     """Return an injective, module-safe node alias."""
-    return f"{prefix}{node_type.encode('utf-8').hex()}"
+    return f"{prefix}{_utf8_bytes(node_type).hex()}"
 
 
 def _encoded_edge_type(edge_type: EdgeType, *, prefix: str) -> str:
@@ -218,7 +223,7 @@ def _encoded_edge_type(edge_type: EdgeType, *, prefix: str) -> str:
     payload = b"".join(
         len(encoded).to_bytes(8, "big") + encoded
         for part in edge_type
-        for encoded in (part.encode("utf-8"),)
+        for encoded in (_utf8_bytes(part),)
     )
     return f"{prefix}{payload.hex()}"
 
@@ -333,7 +338,7 @@ class _HeterogeneousMetadataAdapter:
             ],
             [
                 self._edge_to_internal[edge_type]
-                for edge_type in self.edge_types
+                for edge_type in sorted(self.edge_types)
             ],
         )
 

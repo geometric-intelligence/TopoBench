@@ -179,6 +179,10 @@ def test_state_dict_preserves_exact_historical_cell_hgt_keys():
         neighborhoods=NEIGHBORHOODS,
     )
 
+    assert model.internal_metadata == (
+        ["rank_0", "rank_1", "rank_2"],
+        sorted(model.edge_types),
+    )
     assert set(model.state_dict()) == {
         "convs.0.kqv_lin.lins.rank_0.weight",
         "convs.0.kqv_lin.lins.rank_0.bias",
@@ -208,6 +212,44 @@ def test_state_dict_preserves_exact_historical_cell_hgt_keys():
         "norms.0.rank_2.weight",
         "norms.0.rank_2.bias",
     }
+
+
+def test_all_present_empty_relations_match_legacy_cell_hgt_forward():
+    """Explicit empty CellHGT relations still execute the historical layer."""
+    batch = make_complex()
+    model = make_model().eval()
+    for neighborhood in NEIGHBORHOODS:
+        matrix = batch[neighborhood]
+        batch[neighborhood] = torch.sparse_coo_tensor(
+            torch.empty((2, 0), dtype=torch.long),
+            torch.empty(0),
+            size=matrix.size(),
+        ).coalesce()
+
+    x_dict, edge_index_dict = model.to_heterogeneous_inputs(batch)
+    legacy = dict(x_dict)
+    for conv, norms in zip(model.convs, model.norms, strict=True):
+        previous = legacy
+        messages = conv(previous, edge_index_dict)
+        legacy = {
+            node_type: (
+                old_features
+                if messages.get(node_type) is None
+                else model.dropout(
+                    model.activation(norms[node_type](messages[node_type]))
+                )
+            )
+            for node_type, old_features in previous.items()
+        }
+
+    output = model(batch)
+
+    for rank in range(model.max_rank + 1):
+        torch.testing.assert_close(output[rank], legacy[f"rank_{rank}"])
+    assert any(
+        not torch.equal(output[rank], batch[f"x_{rank}"])
+        for rank in range(model.max_rank + 1)
+    )
 
 
 def test_constructor_rejects_negative_route_rank():

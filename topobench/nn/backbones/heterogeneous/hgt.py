@@ -95,11 +95,8 @@ class HGTBackbone(torch.nn.Module):
         internal_edges = self.metadata_adapter.to_internal_edge_index_dict(
             edge_index_dict
         )
-        has_messages = any(
-            edge_index.size(1) > 0 for edge_index in internal_edges.values()
-        )
         for conv, norms in zip(self.convs, self.norms, strict=True):
-            updates = conv(current, internal_edges) if has_messages else {}
+            updates = conv(current, internal_edges) if internal_edges else {}
             current = {
                 node_type: (
                     features

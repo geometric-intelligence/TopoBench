@@ -1,7 +1,7 @@
 """Some models implemented for TopoBenchX with automated exports."""
 
+import importlib
 import inspect
-from importlib import util
 from pathlib import Path
 from typing import Any
 
@@ -46,26 +46,24 @@ class ModelExportsManager:
         models = {}
         package_dir = Path(package_path).parent
 
-        for subpackage in package_dir.iterdir():
+        for subpackage in sorted(package_dir.iterdir()):
             if subpackage.is_dir() and (subpackage / "__init__.py").exists():
-                for file_path in subpackage.glob("*.py"):
+                for file_path in sorted(subpackage.glob("*.py")):
                     if file_path.stem == "__init__":
                         continue
 
-                    module_name = f"{subpackage.stem}.{file_path.stem}"
-                    spec = util.spec_from_file_location(module_name, file_path)
-                    if spec and spec.loader:
-                        module = util.module_from_spec(spec)
-                        spec.loader.exec_module(module)
-
-                        new_models = {
-                            name: obj
-                            for name, obj in inspect.getmembers(module)
-                            if inspect.isclass(obj)
-                            and obj.__module__ == module.__name__
-                            and not name.startswith("_")
-                        }
-                        models.update(new_models)
+                    module_name = (
+                        f"{__package__}.{subpackage.stem}.{file_path.stem}"
+                    )
+                    module = importlib.import_module(module_name)
+                    new_models = {
+                        name: obj
+                        for name, obj in inspect.getmembers(module)
+                        if inspect.isclass(obj)
+                        and obj.__module__ == module.__name__
+                        and not name.startswith("_")
+                    }
+                    models.update(new_models)
         return models
 
 
