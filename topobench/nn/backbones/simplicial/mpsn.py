@@ -1,338 +1,463 @@
-"""Message Passing Simplicial Network (MPSN) backbone.
+"""Sparse boundary-plus-upper SIN/MPSN backbone.
 
-Native implementation of the boundary + upper-adjacency, GIN-style MPSN variant.
+This module implements the concrete Simplicial Isomorphism Network (SIN)
+update from Supplement Equation 35 of Bodnar et al. [1]_.  For each simplex,
+the boundary and upper-adjacency multisets are transformed independently.  An
+upper message receives the *paired* features of an upper neighbour and their
+shared coface before aggregation.
 
-Plain message-passing GNNs are bounded by the 1-Weisfeiler-Lehman (1-WL) test and
-cannot count triangles. MPSN lifts each triangle to a 2-simplex (clique lifting)
-and runs message passing over the resulting simplicial complex; its Simplicial-WL
-colour refinement is strictly more powerful than 1-WL and no less powerful than
-3-WL, so triangles become first-class cells the network can read and count [1].
+Routing is derived solely from the support of the two incidence matrices. It
+is therefore independent of incidence signs and orientations, and it never
+constructs a dense or square adjacency matrix. Sparse inputs must use canonical
+incidence storage without explicit zero values. For sparse input on a rank-two
+simplicial complex with ``I`` incidence entries and ``P`` ordered upper routes,
+construction takes ``O(I log I + P)`` time and ``O(I + P)`` memory. Dense CPU
+input is supported, but extracting its support necessarily scans the dense
+incidence storage. Accelerator incidence must be sparse.
 
-We implement the canonical efficient variant (matching CIN): for a simplex of rank
-r we use boundary and upper-adjacency messages only (co-boundary and lower-adjacency
-are dropped, which the paper proves retains full SWL power). With an injective,
-GIN-style update (Xu et al., 2019) and a learnable per-rank epsilon, one layer is
-
-    h_r^{t+1} = MLP_r( (1 + eps_r) h_r + m_boundary + m_upper ),
-
-where the boundary message sums the features of a simplex's (r-1)-faces and the
-upper message sums, over rank-r neighbours sharing a common (r+1)-coface, both the
-neighbour feature and the shared-coface feature.
-
-Routing uses only the unsigned clique-lifted incidence matrices B1 (node-to-edge)
-and B2 (edge-to-triangle); the boundary, upper-adjacency and shared-coface terms
-are all derived from these (no Hodge Laplacians). The lifting is unsigned, so no
-orientation/sign handling is needed and the MLP activation is a plain ReLU.
+The boundary, upper-adjacency, and generic message-passing definitions are
+given by main-paper Equations 2, 5, and 6, respectively.  Theorem 6 shows that
+boundary and upper messages suffice for the corresponding colour refinement.
+Theorem 10's expressivity conclusion is conditional on injective aggregation;
+this finite learned network does not claim guaranteed injectivity or automatic
+equivalence to the full SWL procedure.  The implementation was derived from
+the paper and checked against the authors' public ``SparseCINCochainConv`` and
+``SparseCINConv`` implementation.
 
 References
 ----------
-.. [1] Bodnar, Frasca, Wang, Otter, Montúfar, Liò, Bronstein.
-   Weisfeiler and Lehman Go Topological: Message Passing Simplicial Networks.
-   ICML 2021 (Spotlight). https://arxiv.org/abs/2103.03212
+.. [1] Bodnar, Frasca, Wang, Otter, Montufar, Lio, Bronstein. "Weisfeiler and
+   Lehman Go Topological: Message Passing Simplicial Networks." ICML 2021.
+   Supplement Eq. 35. https://proceedings.mlr.press/v139/bodnar21a.html
 """
+
+from dataclasses import dataclass
 
 import torch
 
 
-def _to_dense(matrix: torch.Tensor) -> torch.Tensor:
-    """Return a dense, unsigned (0/1) version of an incidence matrix.
+@dataclass(frozen=True)
+class _IncidenceRoutes:
+    """Stored support of one face-to-coface incidence matrix."""
 
-    The clique lifting emits sparse COO incidence matrices with ``signed=False``,
-    i.e. already 0/1. We densify (toy/complex-sized routing operators) and take
-    the absolute value so the support is used regardless of any sign convention.
+    face: torch.Tensor
+    coface: torch.Tensor
+
+
+@dataclass(frozen=True)
+class _RankRoutes:
+    """Sparse senders and receivers used to update one simplex rank."""
+
+    boundary_sender: torch.Tensor
+    boundary_receiver: torch.Tensor
+    upper_receiver: torch.Tensor
+    upper_neighbor: torch.Tensor
+    upper_coface: torch.Tensor
+
+
+@dataclass(frozen=True)
+class _SimplicialRoutes:
+    """Routing for all ranks, built once and reused by every MPSN layer."""
+
+    by_rank: tuple[_RankRoutes, _RankRoutes, _RankRoutes]
+
+
+def _incidence_routes(incidence: torch.Tensor) -> _IncidenceRoutes:
+    """Extract face/coface indices from dense or sparse incidence support.
+
+    Incidence values are intentionally ignored: signed and unsigned matrices
+    with the same stored pattern define the same topology. Sparse incidence
+    must not store explicit zeros. Dense incidence is supported on CPU only;
+    accelerators require a sparse tensor so extracting support cannot introduce
+    a device-to-host synchronization.
 
     Parameters
     ----------
-    matrix : torch.Tensor
-        Sparse or dense incidence matrix.
+    incidence : torch.Tensor
+        Rank-two face-to-coface incidence matrix. Dense CPU and sparse tensors
+        on any supported device are accepted. Sparse tensors must use canonical
+        storage without explicit zero values.
+
+    Returns
+    -------
+    _IncidenceRoutes
+        Row (face) and column (coface) indices of nonzero entries.
+
+    Raises
+    ------
+    ValueError
+        If a dense accelerator incidence tensor is supplied.
+    """
+    if incidence.layout == torch.strided:
+        if incidence.device.type != "cpu":
+            msg = (
+                "Dense accelerator incidence is unsupported; provide sparse "
+                "incidence for accelerator routing."
+            )
+            raise ValueError(msg)
+        indices = torch.nonzero(incidence, as_tuple=False).transpose(0, 1)
+    else:
+        coalesced = incidence.to_sparse_coo().coalesce()
+        indices = coalesced.indices()
+    return _IncidenceRoutes(face=indices[0], coface=indices[1])
+
+
+def _upper_routes(
+    incidence: _IncidenceRoutes,
+    faces_per_coface: int,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Expand grouped incidences into ordered upper-neighbour routes.
+
+    A valid simplicial incidence has exactly ``faces_per_coface`` entries per
+    column (two vertices per edge or three edges per triangle).  Grouping by
+    coface and applying a fixed-size off-diagonal expansion produces the two
+    ordered vertex routes per edge and six ordered edge routes per triangle.
+
+    Parameters
+    ----------
+    incidence : _IncidenceRoutes
+        Nonzero face/coface incidence indices grouped by this function.
+    faces_per_coface : int
+        Required number of faces in each coface: two for edges or three for
+        triangles.
+
+    Returns
+    -------
+    tuple of torch.Tensor
+        Receiver-simplex, neighbour-simplex, and shared-coface indices for
+        every ordered upper route.
+    """
+    order = torch.argsort(incidence.coface)
+    grouped_faces = incidence.face[order].reshape(-1, faces_per_coface)
+    grouped_cofaces = incidence.coface[order].reshape(-1, faces_per_coface)
+    off_diagonal = ~torch.eye(
+        faces_per_coface,
+        dtype=torch.bool,
+        device=incidence.face.device,
+    )
+
+    receiver = grouped_faces[:, :, None].expand(
+        -1, faces_per_coface, faces_per_coface
+    )[:, off_diagonal]
+    neighbor = grouped_faces[:, None, :].expand(
+        -1, faces_per_coface, faces_per_coface
+    )[:, off_diagonal]
+    route_count = faces_per_coface * (faces_per_coface - 1)
+    coface = grouped_cofaces[:, :1].expand(-1, route_count)
+    return receiver.reshape(-1), neighbor.reshape(-1), coface.reshape(-1)
+
+
+def _build_routes(
+    incidence_1: torch.Tensor,
+    incidence_2: torch.Tensor,
+) -> _SimplicialRoutes:
+    """Build sparse boundary and upper routes for ranks zero through two.
+
+    Parameters
+    ----------
+    incidence_1 : torch.Tensor
+        Vertex-to-edge incidence matrix.
+    incidence_2 : torch.Tensor
+        Edge-to-triangle incidence matrix.
+
+    Returns
+    -------
+    _SimplicialRoutes
+        Boundary and ordered upper routes for all three simplex ranks.
+    """
+    b1 = _incidence_routes(incidence_1)
+    b2 = _incidence_routes(incidence_2)
+    empty = b1.face.new_empty(0)
+
+    upper_0 = _upper_routes(b1, faces_per_coface=2)
+    upper_1 = _upper_routes(b2, faces_per_coface=3)
+    return _SimplicialRoutes(
+        by_rank=(
+            _RankRoutes(empty, empty, *upper_0),
+            _RankRoutes(b1.face, b1.coface, *upper_1),
+            _RankRoutes(b2.face, b2.coface, empty, empty, empty),
+        )
+    )
+
+
+def _scatter_sum(
+    messages: torch.Tensor,
+    receiver: torch.Tensor,
+    output_size: int,
+) -> torch.Tensor:
+    """Sum messages at receiver indices without materializing adjacency.
+
+    Parameters
+    ----------
+    messages : torch.Tensor
+        Route messages shaped ``[num_routes, hidden_dim]``.
+    receiver : torch.Tensor
+        Destination simplex index for every route.
+    output_size : int
+        Number of destination simplices.
 
     Returns
     -------
     torch.Tensor
-        Dense unsigned incidence matrix.
+        Summed messages shaped ``[output_size, hidden_dim]``.
     """
-    if matrix.is_sparse:
-        matrix = matrix.to_dense()
-    return matrix.abs()
+    output = messages.new_zeros((output_size, messages.shape[-1]))
+    return output.index_add_(0, receiver, messages)
 
 
-def _upper_adjacency(boundary_next: torch.Tensor) -> torch.Tensor:
-    """Build the rank-r upper-adjacency neighbour operator.
-
-    Two rank-r simplices are upper-adjacent when they share a common (r+1)-coface.
-    With ``boundary_next`` the unsigned rank-r to rank-(r+1) incidence B (shape
-    ``[N_r, N_{r+1}]``), the co-adjacency counts are the off-diagonal of
-    ``boundary_next @ boundary_next.T``; the diagonal (a simplex's own coface
-    count) is removed so a simplex is not its own neighbour.
+def _two_layer_mlp(input_dim: int, output_dim: int) -> torch.nn.Sequential:
+    """Return the two-layer ELU perceptron used by Eq. 35 branches.
 
     Parameters
     ----------
-    boundary_next : torch.Tensor
-        Dense unsigned incidence of shape ``[N_r, N_{r+1}]``.
+    input_dim : int
+        Input feature width.
+    output_dim : int
+        Hidden and output feature width.
 
     Returns
     -------
-    torch.Tensor
-        Dense ``[N_r, N_r]`` upper-adjacency operator (zero diagonal). Applying it
-        to rank-r features sums, for each simplex, its upper-adjacent neighbours.
+    torch.nn.Sequential
+        Two linear layers, each followed by ELU.
     """
-    adjacency = boundary_next @ boundary_next.transpose(0, 1)
-    adjacency = adjacency - torch.diag(torch.diagonal(adjacency))
-    return adjacency
+    return torch.nn.Sequential(
+        torch.nn.Linear(input_dim, output_dim),
+        torch.nn.ELU(),
+        torch.nn.Linear(output_dim, output_dim),
+        torch.nn.ELU(),
+    )
 
 
-class MPSNLayer(torch.nn.Module):
-    """One MPSN layer: boundary + upper-adjacency messages, GIN-style update.
+def _linear_elu(input_dim: int, output_dim: int) -> torch.nn.Sequential:
+    """Return the dense-layer-plus-ELU maps used by Eq. 35.
 
-    Applies, for every rank r in {0, 1, 2} simultaneously, the boundary + upper
-    update of Bodnar et al. (2021),
+    Parameters
+    ----------
+    input_dim : int
+        Input feature width.
+    output_dim : int
+        Output feature width.
 
-        h_r^{t+1} = MLP_r( (1 + eps_r) h_r + m_boundary + m_upper ).
+    Returns
+    -------
+    torch.nn.Sequential
+        One linear layer followed by ELU.
+    """
+    return torch.nn.Sequential(
+        torch.nn.Linear(input_dim, output_dim),
+        torch.nn.ELU(),
+    )
 
-    Each rank owns a distinct MLP and a learnable scalar epsilon (initialised to
-    0.0), matching the injective GIN-style aggregator of Xu et al. (2019). Ranks
-    whose boundary or upper neighbourhood is empty simply omit that term (rank 0
-    has no boundary; rank 2 has no upper-adjacency).
+
+class _SINRankUpdate(torch.nn.Module):
+    """Equation 35 update for one rank in one layer.
+
+    All applicable maps are private to this rank/layer; the top rank omits the
+    structurally unreachable pair-message map.  Both self coefficients are
+    fixed to ``1 + eps = 1`` as in the SIN experiment; they are not parameters.
+    Empty neighbourhoods contribute an all-zero aggregate while their branch
+    still transforms the simplex's own representation.
 
     Parameters
     ----------
     hidden_dim : int
-        Feature width shared by all ranks.
+        Feature width shared by all simplex ranks.
+    has_upper_messages : bool
+        Whether this rank can have higher-dimensional cofaces and therefore
+        needs the pair-message map.
+    """
+
+    def __init__(self, hidden_dim: int, has_upper_messages: bool) -> None:
+        super().__init__()
+        self.boundary_mlp = _two_layer_mlp(hidden_dim, hidden_dim)
+        self.upper_message_mlp = (
+            _linear_elu(2 * hidden_dim, hidden_dim)
+            if has_upper_messages
+            else None
+        )
+        self.upper_mlp = _two_layer_mlp(hidden_dim, hidden_dim)
+        self.combine_mlp = _linear_elu(2 * hidden_dim, hidden_dim)
+
+    def forward(
+        self,
+        x_self: torch.Tensor,
+        x_boundary: torch.Tensor | None,
+        x_coface: torch.Tensor | None,
+        routes: _RankRoutes,
+    ) -> torch.Tensor:
+        """Apply the separate boundary and upper branches for one rank.
+
+        Parameters
+        ----------
+        x_self : torch.Tensor
+            Features for the simplices being updated.
+        x_boundary : torch.Tensor or None
+            Features for their boundary faces, or ``None`` at rank zero.
+        x_coface : torch.Tensor or None
+            Features for their cofaces, or ``None`` at the top rank.
+        routes : _RankRoutes
+            Sparse boundary and ordered upper routes for this rank.
+
+        Returns
+        -------
+        torch.Tensor
+            Updated simplex features with the same shape as ``x_self``.
+        """
+        boundary_sum = x_self.new_zeros(x_self.shape)
+        if x_boundary is not None:
+            boundary_sum = _scatter_sum(
+                x_boundary[routes.boundary_sender],
+                routes.boundary_receiver,
+                x_self.shape[0],
+            )
+
+        upper_sum = x_self.new_zeros(x_self.shape)
+        if x_coface is not None:
+            if self.upper_message_mlp is None:
+                msg = "Upper cofaces require an upper-message map."
+                raise RuntimeError(msg)
+            upper_inputs = torch.cat(
+                (
+                    x_self[routes.upper_neighbor],
+                    x_coface[routes.upper_coface],
+                ),
+                dim=-1,
+            )
+            upper_sum = _scatter_sum(
+                self.upper_message_mlp(upper_inputs),
+                routes.upper_receiver,
+                x_self.shape[0],
+            )
+
+        boundary_branch = self.boundary_mlp(x_self + boundary_sum)
+        upper_branch = self.upper_mlp(x_self + upper_sum)
+        return self.combine_mlp(
+            torch.cat((boundary_branch, upper_branch), dim=-1)
+        )
+
+
+class _MPSNLayer(torch.nn.Module):
+    """One sparse boundary-plus-upper SIN layer for ranks zero to two.
+
+    Parameters
+    ----------
+    hidden_dim : int
+        Feature width shared by all simplex ranks.
     """
 
     def __init__(self, hidden_dim: int) -> None:
         super().__init__()
         self.hidden_dim = hidden_dim
+        self.rank_updates = torch.nn.ModuleList(
+            _SINRankUpdate(hidden_dim, has_upper_messages=rank < 2)
+            for rank in range(3)
+        )
 
-        # One distinct MLP per rank (0, 1, 2): Linear -> ReLU -> Linear, no norm.
-        for r in range(3):
-            mlp = torch.nn.Sequential(
-                torch.nn.Linear(hidden_dim, hidden_dim),
-                torch.nn.ReLU(),
-                torch.nn.Linear(hidden_dim, hidden_dim),
-            )
-            setattr(self, f"mlp_{r}", mlp)
-            # Learnable per-rank epsilon, init 0.0 (GIN-style injective update).
-            setattr(
-                self,
-                f"eps_{r}",
-                torch.nn.Parameter(torch.zeros(())),
-            )
-
-    def _boundary_message(
-        self, boundary: torch.Tensor, x_face: torch.Tensor
-    ) -> torch.Tensor:
-        """Boundary message: sum of the features of a simplex's (r-1)-faces.
-
-        With ``boundary`` the rank-(r-1) to rank-r incidence B (shape
-        ``[N_{r-1}, N_r]``), ``boundary.T @ x_face`` gathers, for each rank-r
-        simplex, the sum of its faces' features.
-
-        Parameters
-        ----------
-        boundary : torch.Tensor
-            Dense unsigned incidence of shape ``[N_{r-1}, N_r]``.
-        x_face : torch.Tensor
-            Features of the (r-1)-faces, shape ``[N_{r-1}, hidden]``.
-
-        Returns
-        -------
-        torch.Tensor
-            Boundary message per rank-r simplex, shape ``[N_r, hidden]``.
-        """
-        return boundary.transpose(0, 1) @ x_face
-
-    def _upper_message(
+    def forward(
         self,
-        upper_adjacency: torch.Tensor,
-        boundary_next: torch.Tensor,
-        x_self: torch.Tensor,
-        x_coface: torch.Tensor,
-        coface_multiplicity: float,
-    ) -> torch.Tensor:
-        """Upper-adjacency message for one rank.
-
-        Sums, over each rank-r simplex's upper-adjacent neighbours, both the
-        neighbour feature and the shared-coface feature. The neighbour term is the
-        upper-adjacency operator applied to the rank's own features. The
-        shared-coface term is computed exactly from the coface multiplicity: in a
-        simple-graph clique complex with ``complex_dim = 2`` two upper-adjacent
-        simplices share exactly one coface, so summing cofaces (via
-        ``boundary_next @ x_coface``) weighted by ``|faces_r(coface)| - 1`` gives
-        the shared-coface contribution -- multiplicity 1 for rank 0 (each edge has
-        2 nodes) and 2 for rank 1 (each triangle has 3 edges).
-
-        Parameters
-        ----------
-        upper_adjacency : torch.Tensor
-            Dense ``[N_r, N_r]`` upper-adjacency operator (zero diagonal).
-        boundary_next : torch.Tensor
-            Dense unsigned incidence of shape ``[N_r, N_{r+1}]``.
-        x_self : torch.Tensor
-            Features of the rank-r simplices, shape ``[N_r, hidden]``.
-        x_coface : torch.Tensor
-            Features of the rank-(r+1) cofaces, shape ``[N_{r+1}, hidden]``.
-        coface_multiplicity : float
-            ``|faces_r(coface)| - 1``: 1 for rank 0, 2 for rank 1.
-
-        Returns
-        -------
-        torch.Tensor
-            Upper message per rank-r simplex, shape ``[N_r, hidden]``.
-        """
-        neighbour_term = upper_adjacency @ x_self
-        coface_term = coface_multiplicity * (boundary_next @ x_coface)
-        return neighbour_term + coface_term
-
-    def _update(
-        self, rank: int, x_self: torch.Tensor, message: torch.Tensor
-    ) -> torch.Tensor:
-        """GIN-style injective update for one rank.
-
-        Returns ``MLP_r( (1 + eps_r) * x_self + message )``, where ``message`` is
-        the sum of the available boundary and upper messages for the rank.
-
-        Parameters
-        ----------
-        rank : int
-            Rank r in {0, 1, 2}.
-        x_self : torch.Tensor
-            Current features of the rank-r simplices.
-        message : torch.Tensor
-            Aggregated boundary + upper message for this rank.
-
-        Returns
-        -------
-        torch.Tensor
-            Updated rank-r features.
-        """
-        eps = getattr(self, f"eps_{rank}")
-        mlp = getattr(self, f"mlp_{rank}")
-        return mlp((1.0 + eps) * x_self + message)
-
-    def forward(self, x_all, incidence_all):
-        """Apply one MPSN layer to all three ranks.
+        x_all: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+        routes: _SimplicialRoutes,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Update all ranks from the same precomputed sparse routes.
 
         Parameters
         ----------
         x_all : tuple of torch.Tensor
-            Current features ``(x_0, x_1, x_2)``.
-        incidence_all : tuple of torch.Tensor
-            Dense unsigned operators ``(B1, B2, upper_adj_0, upper_adj_1)`` where
-            ``B1`` is the node-to-edge incidence, ``B2`` the edge-to-triangle
-            incidence, and ``upper_adj_0`` / ``upper_adj_1`` the precomputed rank-0
-            / rank-1 upper-adjacency operators.
+            Hidden features for vertices, edges, and triangles, each shaped
+            ``[num_simplices_at_rank, hidden_dim]``.
+        routes : _SimplicialRoutes
+            Boundary and ordered upper routes shared by all network layers.
 
         Returns
         -------
         tuple of torch.Tensor
-            Updated features ``(x_0, x_1, x_2)``.
+            Updated vertex, edge, and triangle features with the same shapes as
+            ``x_all``.
         """
         x_0, x_1, x_2 = x_all
-        b1, b2, upper_adj_0, upper_adj_1 = incidence_all
-
-        # ---- rank 0 (nodes): no boundary; upper-adjacency via shared edge ----
-        msg_0 = self._upper_message(
-            upper_adjacency=upper_adj_0,
-            boundary_next=b1,
-            x_self=x_0,
-            x_coface=x_1,
-            coface_multiplicity=1.0,  # each edge-coface has 2 nodes -> 2-1 = 1
+        return (
+            self.rank_updates[0](x_0, None, x_1, routes.by_rank[0]),
+            self.rank_updates[1](x_1, x_0, x_2, routes.by_rank[1]),
+            self.rank_updates[2](x_2, x_1, None, routes.by_rank[2]),
         )
-        new_x_0 = self._update(0, x_0, msg_0)
-
-        # ---- rank 1 (edges): boundary = 2 nodes; upper via shared triangle ----
-        msg_1 = self._boundary_message(b1, x_0)
-        if x_2.shape[0] > 0:
-            msg_1 = (
-                msg_1
-                + self._upper_message(
-                    upper_adjacency=upper_adj_1,
-                    boundary_next=b2,
-                    x_self=x_1,
-                    x_coface=x_2,
-                    coface_multiplicity=2.0,  # each tri-coface has 3 edges -> 3-1 = 2
-                )
-            )
-        new_x_1 = self._update(1, x_1, msg_1)
-
-        # ---- rank 2 (triangles): boundary = 3 edges; upper is empty ----
-        if x_2.shape[0] > 0:
-            msg_2 = self._boundary_message(b2, x_1)
-            new_x_2 = self._update(2, x_2, msg_2)
-        else:
-            new_x_2 = x_2
-
-        return new_x_0, new_x_1, new_x_2
 
 
 class MPSN(torch.nn.Module):
-    """Message Passing Simplicial Network (boundary + upper-adjacency variant).
+    """Boundary-plus-upper SIN instantiation of the MPSN framework.
 
-    Lifts node features to higher-rank cells with per-rank input projections, then
-    stacks ``n_layers`` :class:`MPSNLayer` blocks. Each layer performs the
-    injective, GIN-style simplicial update of Bodnar et al. (2021) (boundary +
-    upper-adjacency messages), whose SWL colour refinement is strictly more
-    powerful than 1-WL and no weaker than 3-WL, so the 2-cells (triangles) become
-    countable, first-class objects.
+    The public TopoBench seam is unchanged: input and output features are
+    tuples ordered by simplex rank, while topology is provided by node-edge
+    and edge-triangle incidence matrices.  The sparse routes are constructed
+    once per forward pass and reused by every layer.
+
+    This is the concrete update from Supplement Equation 35, adapted to
+    TopoBench's rank-zero-through-two interface.  The architecture uses the
+    boundary and upper neighbourhoods justified by Theorem 6.  It does not
+    assert the injective-aggregation premise required by Theorem 10.
 
     Parameters
     ----------
     in_channels_all : tuple of int
-        Input feature dimensions on ``(nodes, edges, triangles)``.
+        Input feature dimensions on nodes, edges, and triangles.
     hidden_dim : int
-        Hidden width shared across all ranks (default 64).
+        Hidden width shared by all ranks.
     n_layers : int
-        Number of stacked MPSN layers (default 3).
+        Number of stacked SIN layers.
     """
 
     def __init__(
-        self, in_channels_all, hidden_dim: int = 64, n_layers: int = 3
+        self,
+        in_channels_all: tuple[int, int, int],
+        hidden_dim: int = 64,
+        n_layers: int = 3,
     ) -> None:
         super().__init__()
         self.hidden_dim = hidden_dim
-
-        # Per-rank input projection to the shared hidden width.
         self.in_linear_0 = torch.nn.Linear(in_channels_all[0], hidden_dim)
         self.in_linear_1 = torch.nn.Linear(in_channels_all[1], hidden_dim)
         self.in_linear_2 = torch.nn.Linear(in_channels_all[2], hidden_dim)
-
         self.layers = torch.nn.ModuleList(
-            MPSNLayer(hidden_dim) for _ in range(n_layers)
+            _MPSNLayer(hidden_dim) for _ in range(n_layers)
         )
 
-    def forward(self, x_all, incidence_all):
-        """Forward pass over the simplicial complex.
+    def forward(
+        self,
+        x_all: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+        incidence_all: tuple[torch.Tensor, torch.Tensor],
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Project features, build routes once, then apply all SIN layers.
 
         Parameters
         ----------
         x_all : tuple of torch.Tensor
-            Input features ``(x_0, x_1, x_2)`` on nodes, edges, triangles.
+            Features ``(x_0, x_1, x_2)`` shaped ``[N_r, in_channels_r]`` for
+            vertices, edges, and triangles.
         incidence_all : tuple of torch.Tensor
-            ``(incidence_1, incidence_2)``: the unsigned clique-lifted incidence
-            matrices B1 (node-to-edge) and B2 (edge-to-triangle). May be sparse
-            COO; densified and ``.abs()``-ed internally. Used only for routing.
+            Face-to-coface matrices ``(B_1, B_2)`` with shapes ``[N_0, N_1]``
+            and ``[N_1, N_2]``. They may be signed or unsigned. Sparse tensors
+            are accepted on any device; dense tensors are CPU-only. Each valid
+            edge column of ``B_1`` must contain two nonzeros and each valid
+            triangle column of ``B_2`` must contain three nonzeros. Sparse
+            tensors must not contain explicitly stored zero values.
 
         Returns
         -------
         tuple of torch.Tensor
-            Final hidden states ``(x_0, x_1, x_2)``, each of width ``hidden_dim``.
+            Hidden features ``(h_0, h_1, h_2)``, with each tensor shaped
+            ``[N_r, hidden_dim]``.
+
+        Raises
+        ------
+        ValueError
+            If either incidence matrix is dense on an accelerator.
         """
+        routes = _build_routes(incidence_all[0], incidence_all[1])
         x_0, x_1, x_2 = x_all
-        b1 = _to_dense(incidence_all[0])
-        b2 = _to_dense(incidence_all[1])
-
-        # Precompute the rank-0 and rank-1 upper-adjacency operators once.
-        upper_adj_0 = _upper_adjacency(b1)
-        upper_adj_1 = _upper_adjacency(b2)
-
-        x_0 = self.in_linear_0(x_0)
-        x_1 = self.in_linear_1(x_1)
-        x_2 = self.in_linear_2(x_2)
-
-        packed_incidence = (b1, b2, upper_adj_0, upper_adj_1)
-        x_all = (x_0, x_1, x_2)
+        hidden_all = (
+            self.in_linear_0(x_0),
+            self.in_linear_1(x_1),
+            self.in_linear_2(x_2),
+        )
         for layer in self.layers:
-            x_all = layer(x_all, packed_incidence)
-
-        return x_all
+            hidden_all = layer(hidden_all, routes)
+        return hidden_all

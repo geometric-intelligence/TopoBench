@@ -111,7 +111,8 @@ def test_wrapper_also_handles_signed_fixture(sg1_clique_lifted):
     """The wrapper is robust to signed incidences (it uses the support only).
 
     The shared ``sg1_clique_lifted`` fixture lifts with ``signed=True``; the
-    backbone takes the absolute value, so the wrapper must still run end-to-end.
+    backbone extracts the nonzero support, so the wrapper must still run
+    end-to-end.
 
     Parameters
     ----------
