@@ -24,6 +24,7 @@ from topobench.data.pipelines import (
     AbstractDataPipeline,
     DataPipelineOutput,
     DefaultDataPipeline,
+    HeterogeneousNodeDataPipeline,
 )
 from topobench.utils.config_resolvers import register_all_resolvers
 
@@ -757,6 +758,274 @@ def test_pipeline_package_exposes_canonical_api() -> None:
     import topobench.data.pipelines as pipelines
 
     assert ",".join(pipelines.__all__) == (
-        "AbstractDataPipeline,DataPipelineOutput,DefaultDataPipeline"
+        "AbstractDataPipeline,DataPipelineOutput,DefaultDataPipeline,"
+        "HeterogeneousNodeDataPipeline"
     )
     assert issubclass(DefaultDataPipeline, AbstractDataPipeline)
+    assert issubclass(HeterogeneousNodeDataPipeline, AbstractDataPipeline)
+
+
+class _FakePreprocessor:
+    """Small sequence-shaped preprocessor spy for pipeline contract tests."""
+
+    def __init__(
+        self,
+        items: list[object],
+        *,
+        preprocessing_time: float = 1.75,
+    ) -> None:
+        self.items = items
+        self.preprocessing_time = preprocessing_time
+        self.load_dataset_splits = MagicMock(
+            side_effect=AssertionError(
+                "heterogeneous pipeline must not load homogeneous splits"
+            )
+        )
+
+    def __len__(self) -> int:
+        return len(self.items)
+
+    def __getitem__(self, index: int) -> object:
+        return self.items[index]
+
+
+def _heterogeneous_pipeline_cfg(
+    *,
+    dataloader_params: dict[str, object] | None = None,
+) -> DictConfig:
+    """Return the smallest heterogeneous pipeline configuration."""
+    return OmegaConf.create(
+        {
+            "dataset": {
+                "parameters": {
+                    "target_node_type": "author",
+                    "num_classes": 2,
+                },
+                "dataloader_params": dataloader_params
+                or {
+                    "mode": "neighbor",
+                    "batch_size": 4,
+                    "num_neighbors": [3, 2],
+                    "num_workers": 0,
+                    "pin_memory": False,
+                    "persistent_workers": False,
+                },
+            }
+        }
+    )
+
+
+def _fully_featured_heterogeneous_data() -> HeteroData:
+    """Return transformed native data satisfying the validation contract."""
+    from topobench.transforms.data_manipulations.heterogeneous import (
+        HeterogeneousConstantFeatures,
+        HeterogeneousToUndirected,
+    )
+
+    data = make_synthetic_heterogeneous_data(seed=7)
+    data = HeterogeneousConstantFeatures(node_types="venue")(data)
+    return HeterogeneousToUndirected(merge=False)(data)
+
+
+def test_heterogeneous_pipeline_validates_and_passes_exact_dataloader_params(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The native pipeline validates once and constructs the separate module."""
+    import topobench.data.pipelines.heterogeneous as module
+
+    data = _fully_featured_heterogeneous_data()
+    preprocessor = _FakePreprocessor([data])
+    cfg = _heterogeneous_pipeline_cfg()
+    datamodule = MutableDataModule()
+    constructor = MagicMock(return_value=datamodule)
+    monkeypatch.setattr(
+        HeterogeneousNodeDataPipeline,
+        "preprocess",
+        MagicMock(return_value=preprocessor),
+    )
+    monkeypatch.setattr(
+        module,
+        "HeterogeneousNodeDataModule",
+        constructor,
+    )
+
+    output = HeterogeneousNodeDataPipeline().build(cfg)
+
+    assert output.datamodule is datamodule
+    assert output.preprocessing_time == 1.75
+    assert output.data_spec is not None
+    assert output.data_spec.pyg_metadata() == data.metadata()
+    assert output.data_spec.target_node_type == "author"
+    assert output.data_spec.input_channels_dict == {
+        "author": 8,
+        "paper": 5,
+        "venue": 1,
+    }
+    constructor.assert_called_once_with(
+        data=data,
+        spec=output.data_spec,
+        mode="neighbor",
+        batch_size=4,
+        num_neighbors=[3, 2],
+        num_workers=0,
+        pin_memory=False,
+        persistent_workers=False,
+    )
+    preprocessor.load_dataset_splits.assert_not_called()
+    assert not hasattr(module, "TBDataloader")
+
+
+@pytest.mark.parametrize(
+    ("items", "error_type", "message"),
+    [
+        ([], ValueError, "requires exactly one processed graph; received 0"),
+        (
+            [HeteroData(), HeteroData()],
+            ValueError,
+            "requires exactly one processed graph; received 2",
+        ),
+        ([Data(x=torch.ones(2, 3))], TypeError, "requires native HeteroData"),
+    ],
+    ids=["zero-graphs", "multiple-graphs", "homogeneous-data"],
+)
+def test_heterogeneous_pipeline_rejects_invalid_processed_output(
+    monkeypatch: pytest.MonkeyPatch,
+    items: list[object],
+    error_type: type[Exception],
+    message: str,
+) -> None:
+    """Graph cardinality and native family fail before datamodule creation."""
+    import topobench.data.pipelines.heterogeneous as module
+
+    preprocessor = _FakePreprocessor(items)
+    constructor = MagicMock()
+    monkeypatch.setattr(
+        HeterogeneousNodeDataPipeline,
+        "preprocess",
+        MagicMock(return_value=preprocessor),
+    )
+    monkeypatch.setattr(
+        module,
+        "HeterogeneousNodeDataModule",
+        constructor,
+    )
+
+    with pytest.raises(error_type, match=message):
+        HeterogeneousNodeDataPipeline().build(_heterogeneous_pipeline_cfg())
+
+    constructor.assert_not_called()
+    preprocessor.load_dataset_splits.assert_not_called()
+
+
+def test_heterogeneous_pipeline_propagates_validation_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Schema validation remains the sole actionable contract boundary."""
+    import topobench.data.pipelines.heterogeneous as module
+
+    preprocessor = _FakePreprocessor([_fully_featured_heterogeneous_data()])
+    validator = MagicMock(
+        side_effect=ValueError("target train_mask must be non-empty")
+    )
+    constructor = MagicMock()
+    monkeypatch.setattr(
+        HeterogeneousNodeDataPipeline,
+        "preprocess",
+        MagicMock(return_value=preprocessor),
+    )
+    monkeypatch.setattr(
+        module,
+        "validate_heterogeneous_node_data",
+        validator,
+    )
+    monkeypatch.setattr(
+        module,
+        "HeterogeneousNodeDataModule",
+        constructor,
+    )
+
+    with pytest.raises(ValueError, match="train_mask must be non-empty"):
+        HeterogeneousNodeDataPipeline().build(_heterogeneous_pipeline_cfg())
+
+    validator.assert_called_once()
+    constructor.assert_not_called()
+    preprocessor.load_dataset_splits.assert_not_called()
+
+
+def test_real_synthetic_heterogeneous_pipeline_uses_shared_preprocessor(
+    tmp_path: Path,
+) -> None:
+    """Real loader and default transforms produce one validated full batch."""
+    register_all_resolvers()
+    hydra.initialize(version_base="1.3", config_path="../../../configs")
+    cfg = hydra.compose(
+        config_name="run.yaml",
+        overrides=[
+            "dataset=heterogeneous/SyntheticHeterogeneous",
+            "model=cell/hgt",
+            "data_pipeline=heterogeneous_node",
+            f"paths.data_dir={tmp_path}",
+            "train=false",
+            "test=false",
+        ],
+    )
+
+    output = HeterogeneousNodeDataPipeline().build(cfg)
+    batch = next(iter(output.datamodule.train_dataloader()))
+
+    assert isinstance(batch, HeteroData)
+    assert batch.num_graphs == 1
+    assert output.data_spec is not None
+    assert output.data_spec.pyg_metadata() == batch.metadata()
+    assert output.data_spec.target_node_type == "author"
+    assert "x" in batch["venue"]
+    assert ("paper", "rev_writes", "author") in batch.edge_types
+
+
+def test_heterogeneous_hydra_composition_resolves_pipeline_and_transforms() -> (
+    None
+):
+    """Synthetic native data composes the dedicated pipeline and transforms."""
+    register_all_resolvers()
+    hydra.initialize(version_base="1.3", config_path="../../../configs")
+    cfg = hydra.compose(
+        config_name="run.yaml",
+        overrides=[
+            "dataset=heterogeneous/SyntheticHeterogeneous",
+            "model=cell/hgt",
+            "data_pipeline=heterogeneous_node",
+            "train=false",
+            "test=false",
+        ],
+    )
+
+    assert cfg.data_pipeline._target_ == (
+        "topobench.data.pipelines.HeterogeneousNodeDataPipeline"
+    )
+    assert cfg.transforms.venue_features.transform_name == (
+        "HeterogeneousConstantFeatures"
+    )
+    assert cfg.transforms.reverse_relations.transform_name == (
+        "HeterogeneousToUndirected"
+    )
+
+
+def test_default_pipeline_contract_remains_unchanged_after_heterogeneous_api(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Adding the native pipeline does not redirect the established default."""
+    cfg = _pipeline_cfg(task_level="graph", transforms=None)
+    events, *_ = _install_pipeline_spies(monkeypatch, cfg)
+
+    output = DefaultDataPipeline().build(cfg)
+
+    assert output.data_spec is None
+    assert [
+        event if isinstance(event, str) else event[0] for event in events
+    ] == [
+        "instantiate_loader",
+        "load",
+        "preprocessor",
+        "load_splits",
+        "datamodule",
+    ]

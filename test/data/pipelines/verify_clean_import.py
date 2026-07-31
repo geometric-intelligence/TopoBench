@@ -9,7 +9,8 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parents[3]
 EXPECTED_EXPORTS = (
-    "AbstractDataPipeline,DataPipelineOutput,DefaultDataPipeline"
+    "AbstractDataPipeline,DataPipelineOutput,DefaultDataPipeline,"
+    "HeterogeneousNodeDataPipeline"
 )
 
 
