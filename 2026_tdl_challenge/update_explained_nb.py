@@ -29,7 +29,7 @@ cells[0] = md("""# SheafTSP: Spectral Sheaf Convolution for Cell Complexes
 This notebook is an equation-level, executable walkthrough of the SheafTSP
 architecture: a spectral sheaf convolutional network with orientation-equivariant
 learned transports, a transport-consistency kernel, PPR sheaf diffusion, and an
-exact, endogenous substructure-counting pathway. Every mechanism is demonstrated
+substructure-counting pathway that is exact under the clique lifting and derived from the complex itself. Every mechanism is demonstrated
 on a toy graph, including the property checks (orthogonality, equivariance,
 exact counting) that back the claims in `docs/sheaf_tsp_overview.html`.
 
@@ -68,7 +68,7 @@ Encoded features  x_1 in R^{N_1 x 64}
 Refined x_1 in R^{N_1 x 64}
    |  x_0 = B_1 @ x_1  +  x_0_enc  +  W_tri t_v      (NO LayerNorm here)
    |          diffusion    residual    exact count signal
-   |          t_v = |B_1||B_2|1  (endogenous, exact under the clique lifting)
+   |          t_v = |B_1||B_2|1  (exact under the clique lifting)
    v
 Node embeddings  x_0 in R^{N_0 x 64}
    |  readout; graph-level tasks sum-pool (sum preserves count linearity)
@@ -159,7 +159,7 @@ cells[5]["source"] = cells[5]["source"].splitlines(keepends=True)
 # Insert the counting-pathway section before old section 8 (find the wrapper cell)
 wrap_idx = next(i for i, c in enumerate(cells) if c["cell_type"] == "markdown" and "TopoBench Integration" in "".join(c["source"]))
 count_md = md("""---
-## 7.8 Exact, endogenous substructure counting
+## 7.8 Counting substructures exactly
 
 Message-passing GNNs provably cannot count triangles [4]; lifted models
 receive higher-order structure explicitly. SheafTSP derives a per-node count
