@@ -8,9 +8,9 @@ shared coface before aggregation.
 
 Routing is derived solely from the support of the two incidence matrices. It
 is therefore independent of incidence signs and orientations, and it never
-constructs a dense or square adjacency matrix. Sparse inputs must use canonical
-incidence storage without explicit zero values. For sparse input on a rank-two
-simplicial complex with ``I`` incidence entries and ``P`` ordered upper routes,
+constructs a dense or square adjacency matrix. Explicitly stored sparse zeros
+are excluded from the incidence support. For sparse input on a rank-two
+simplicial complex with ``I`` nonzero incidences and ``P`` ordered upper routes,
 construction takes ``O(I log I + P)`` time and ``O(I + P)`` memory. Dense CPU
 input is supported, but extracting its support necessarily scans the dense
 incidence storage. Accelerator incidence must be sparse.
@@ -65,18 +65,17 @@ class _SimplicialRoutes:
 def _incidence_routes(incidence: torch.Tensor) -> _IncidenceRoutes:
     """Extract face/coface indices from dense or sparse incidence support.
 
-    Incidence values are intentionally ignored: signed and unsigned matrices
-    with the same stored pattern define the same topology. Sparse incidence
-    must not store explicit zeros. Dense incidence is supported on CPU only;
-    accelerators require a sparse tensor so extracting support cannot introduce
-    a device-to-host synchronization.
+    Incidence signs and magnitudes are intentionally ignored: signed and
+    unsigned matrices with the same nonzero support define the same topology.
+    Explicitly stored sparse zeros are filtered from that support. Dense
+    incidence is supported on CPU only; accelerators require a sparse tensor so
+    extracting support cannot introduce a device-to-host synchronization.
 
     Parameters
     ----------
     incidence : torch.Tensor
         Rank-two face-to-coface incidence matrix. Dense CPU and sparse tensors
-        on any supported device are accepted. Sparse tensors must use canonical
-        storage without explicit zero values.
+        on any supported device are accepted.
 
     Returns
     -------
@@ -98,7 +97,7 @@ def _incidence_routes(incidence: torch.Tensor) -> _IncidenceRoutes:
         indices = torch.nonzero(incidence, as_tuple=False).transpose(0, 1)
     else:
         coalesced = incidence.to_sparse_coo().coalesce()
-        indices = coalesced.indices()
+        indices = coalesced.indices()[:, coalesced.values() != 0]
     return _IncidenceRoutes(face=indices[0], coface=indices[1])
 
 
@@ -437,8 +436,7 @@ class MPSN(torch.nn.Module):
             and ``[N_1, N_2]``. They may be signed or unsigned. Sparse tensors
             are accepted on any device; dense tensors are CPU-only. Each valid
             edge column of ``B_1`` must contain two nonzeros and each valid
-            triangle column of ``B_2`` must contain three nonzeros. Sparse
-            tensors must not contain explicitly stored zero values.
+            triangle column of ``B_2`` must contain three nonzeros.
 
         Returns
         -------

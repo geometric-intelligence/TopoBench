@@ -326,6 +326,30 @@ def test_incidence_signs_do_not_change_support_routing():
             )
 
 
+def test_explicit_sparse_zeros_do_not_create_topological_routes():
+    """Explicit sparse zeros are excluded from incidence support."""
+    model = _make_model(n_layers=2).eval()
+    features, dense_incidence = _triangle_complex()
+    expected = model(features, dense_incidence)
+
+    sparse_with_zero = []
+    for incidence in dense_incidence:
+        canonical = incidence.to_sparse_coo().coalesce()
+        indices = torch.cat(
+            (canonical.indices(), torch.tensor([[0], [0]])), dim=1
+        )
+        values = torch.cat((canonical.values(), torch.zeros(1)))
+        sparse_with_zero.append(
+            torch.sparse_coo_tensor(indices, values, incidence.shape)
+        )
+
+    actual = model(features, tuple(sparse_with_zero))
+    for expected_rank, actual_rank in zip(expected, actual, strict=True):
+        torch.testing.assert_close(
+            expected_rank, actual_rank, atol=1e-6, rtol=1e-6
+        )
+
+
 def test_simplex_permutation_equivariance():
     """Consistent independent rank permutations only permute the outputs."""
     model = _make_model(hidden_dim=4, n_layers=2).eval()
