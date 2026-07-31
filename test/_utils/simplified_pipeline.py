@@ -7,8 +7,6 @@ import hydra
 from lightning import seed_everything
 from omegaconf import DictConfig
 
-from topobench.data.preprocessor import PreProcessor
-from topobench.dataloader import TBDataloader
 from topobench.utils import instantiate_callbacks
 from topobench.utils.config_resolvers import register_all_resolvers
 
@@ -39,25 +37,9 @@ def run(cfg: DictConfig) -> PipelineRunResult:
     """
     seed_everything(cfg.seed, workers=True)
 
-    # Instantiate and load dataset
-    dataset_loader = hydra.utils.instantiate(cfg.dataset.loader)
-    dataset, dataset_dir = dataset_loader.load()
-    # Preprocess dataset and load the splits
-    transform_config = cfg.get("transforms", None)
-    preprocessor = PreProcessor(dataset, dataset_dir, transform_config)
-    dataset_train, dataset_val, dataset_test = (
-        preprocessor.load_dataset_splits(cfg.dataset.split_params)
-    )
-    # Prepare datamodule
-    if cfg.dataset.parameters.task_level in ["node", "graph"]:
-        datamodule = TBDataloader(
-            dataset_train=dataset_train,
-            dataset_val=dataset_val,
-            dataset_test=dataset_test,
-            **cfg.dataset.get("dataloader_params", {}),
-        )
-    else:
-        raise ValueError("Invalid task_level")
+    pipeline = hydra.utils.instantiate(cfg.data_pipeline)
+    pipeline_output = pipeline.build(cfg)
+    datamodule = pipeline_output.datamodule
 
     first_train_batch = next(iter(datamodule.train_dataloader()))
     observed_train_batch_size = int(first_train_batch.num_graphs)

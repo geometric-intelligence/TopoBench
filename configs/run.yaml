@@ -7,6 +7,7 @@ defaults:
   - dataset: simplicial/mantra_betti_numbers
   - model: simplicial/hopse_m
   - transforms: ${get_default_transform:${dataset},${model}} #no_transform
+  - data_pipeline: default
   - optimizer: default
   - loss: default
   - evaluator: default

@@ -15,8 +15,6 @@ from lightning.pytorch.loggers import Logger
 from lightning.pytorch.loggers.wandb import WandbLogger
 from omegaconf import DictConfig
 
-from topobench.data.preprocessor import PreProcessor
-from topobench.dataloader import TBDataloader
 from topobench.utils import (
     RankedLogger,
     extras,
@@ -108,32 +106,10 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
             "Enabled cudnn.deterministic and torch.use_deterministic_algorithms"
         )
 
-    # Instantiate and load dataset
-    log.info(f"Instantiating loader <{cfg.dataset.loader._target_}>")
-    dataset_loader = hydra.utils.instantiate(cfg.dataset.loader)
-    dataset, dataset_dir = dataset_loader.load()
-    # Preprocess dataset and load the splits
-    log.info("Instantiating preprocessor...")
-    transform_config = (
-        hydra.utils.instantiate(cfg.transforms)
-        if cfg.get("transforms", None) is not None
-        else None
-    )
-    preprocessor = PreProcessor(dataset, dataset_dir, transform_config)
-    dataset_train, dataset_val, dataset_test = (
-        preprocessor.load_dataset_splits(cfg.dataset.split_params)
-    )
-    # Prepare datamodule
-    log.info("Instantiating datamodule...")
-    if cfg.dataset.parameters.task_level in ["node", "graph"]:
-        datamodule = TBDataloader(
-            dataset_train=dataset_train,
-            dataset_val=dataset_val,
-            dataset_test=dataset_test,
-            **cfg.dataset.get("dataloader_params", {}),
-        )
-    else:
-        raise ValueError("Invalid task_level")
+    log.info(f"Instantiating data pipeline <{cfg.data_pipeline._target_}>")
+    pipeline = hydra.utils.instantiate(cfg.data_pipeline)
+    pipeline_output = pipeline.build(cfg)
+    datamodule = pipeline_output.datamodule
 
     # Model for us is Network + logic: inputs backbone, readout, losses
     log.info(f"Instantiating model <{cfg.model._target_}>")
@@ -156,7 +132,7 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
             if isinstance(log_temp, L.pytorch.loggers.wandb.WandbLogger):
                 log_temp.log_metrics(
                     {
-                        "preprocessor_time": preprocessor.preprocessing_time,
+                        "preprocessor_time": pipeline_output.preprocessing_time,
                     }
                 )
 
@@ -176,6 +152,7 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
         "callbacks": callbacks,
         "logger": logger,
         "trainer": trainer,
+        "data_spec": pipeline_output.data_spec,
     }
 
     if logger:

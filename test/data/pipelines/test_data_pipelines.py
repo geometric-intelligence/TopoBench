@@ -1,0 +1,461 @@
+"""Contracts for configuration-driven data pipelines."""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from dataclasses import FrozenInstanceError
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock, call
+
+import hydra
+import pytest
+import torch
+from lightning import LightningDataModule
+from omegaconf import DictConfig, OmegaConf
+
+from test._utils import simplified_pipeline
+from topobench import run as run_module
+from topobench.data.heterogeneous import HeterogeneousDataSpec
+from topobench.data.pipelines import (
+    AbstractDataPipeline,
+    DataPipelineOutput,
+    DefaultDataPipeline,
+)
+from topobench.utils.config_resolvers import register_all_resolvers
+
+PROJECT_ROOT = Path(__file__).parents[3]
+
+
+def _pipeline_cfg(
+    *,
+    task_level: str = "graph",
+    transforms: dict[str, str] | None = None,
+) -> DictConfig:
+    """Return the smallest configuration accepted by the default pipeline."""
+    return OmegaConf.create(
+        {
+            "dataset": {
+                "loader": {"_target_": "tests.Loader"},
+                "parameters": {"task_level": task_level},
+                "split_params": {
+                    "learning_setting": "inductive",
+                    "data_seed": 17,
+                },
+                "dataloader_params": {
+                    "batch_size": 8,
+                    "num_workers": 2,
+                },
+            },
+            "transforms": transforms,
+        }
+    )
+
+
+def _install_pipeline_spies(
+    monkeypatch: pytest.MonkeyPatch,
+    cfg: DictConfig,
+) -> tuple[
+    list[object],
+    object,
+    object,
+    tuple[object, object, object],
+    object,
+    object,
+    MagicMock,
+    MagicMock,
+]:
+    """Install faithful boundary spies around the moved orchestration."""
+    import topobench.data.pipelines.base as base_module
+    import topobench.data.pipelines.default as default_module
+
+    events: list[object] = []
+    dataset = object()
+    dataset_dir = object()
+    splits = (object(), object(), object())
+    transforms = object()
+    datamodule = MagicMock(spec=LightningDataModule)
+
+    loader = MagicMock()
+
+    def load() -> tuple[object, object]:
+        events.append("load")
+        return dataset, dataset_dir
+
+    loader.load.side_effect = load
+
+    def instantiate(config: DictConfig) -> object:
+        if config is cfg.dataset.loader:
+            events.append("instantiate_loader")
+            return loader
+        if config is cfg.transforms:
+            events.append("instantiate_transforms")
+            return transforms
+        raise AssertionError(f"Unexpected instantiate call: {config!r}")
+
+    instantiate_spy = MagicMock(side_effect=instantiate)
+    monkeypatch.setattr(
+        base_module.hydra.utils, "instantiate", instantiate_spy
+    )
+
+    preprocessor = MagicMock()
+    preprocessor.preprocessing_time = 1.25
+
+    def load_splits(split_params: DictConfig) -> tuple[object, object, object]:
+        events.append(("load_splits", split_params))
+        return splits
+
+    preprocessor.load_dataset_splits.side_effect = load_splits
+
+    def make_preprocessor(
+        received_dataset: object,
+        received_dir: object,
+        received_transforms: object | None,
+    ) -> MagicMock:
+        events.append(
+            (
+                "preprocessor",
+                received_dataset,
+                received_dir,
+                received_transforms,
+            )
+        )
+        return preprocessor
+
+    preprocessor_spy = MagicMock(side_effect=make_preprocessor)
+    monkeypatch.setattr(base_module, "PreProcessor", preprocessor_spy)
+
+    def make_datamodule(**kwargs: object) -> MagicMock:
+        events.append(("datamodule", kwargs))
+        return datamodule
+
+    datamodule_spy = MagicMock(side_effect=make_datamodule)
+    monkeypatch.setattr(default_module, "TBDataloader", datamodule_spy)
+
+    return (
+        events,
+        dataset,
+        dataset_dir,
+        splits,
+        transforms,
+        datamodule,
+        instantiate_spy,
+        preprocessor_spy,
+    )
+
+
+@pytest.mark.parametrize("task_level", ["node", "graph"])
+def test_default_pipeline_preserves_orchestration_and_output_contract(
+    monkeypatch: pytest.MonkeyPatch,
+    task_level: str,
+) -> None:
+    """The configurable boundary must be an exact move of the default path."""
+    cfg = _pipeline_cfg(
+        task_level=task_level,
+        transforms={"_target_": "tests.Transform"},
+    )
+    (
+        events,
+        dataset,
+        dataset_dir,
+        splits,
+        transforms,
+        datamodule,
+        instantiate_spy,
+        preprocessor_spy,
+    ) = _install_pipeline_spies(monkeypatch, cfg)
+
+    output = DefaultDataPipeline().build(cfg)
+
+    assert events == [
+        "instantiate_loader",
+        "load",
+        "instantiate_transforms",
+        ("preprocessor", dataset, dataset_dir, transforms),
+        ("load_splits", cfg.dataset.split_params),
+        (
+            "datamodule",
+            {
+                "dataset_train": splits[0],
+                "dataset_val": splits[1],
+                "dataset_test": splits[2],
+                "batch_size": 8,
+                "num_workers": 2,
+            },
+        ),
+    ]
+    assert instantiate_spy.call_args_list == [
+        call(cfg.dataset.loader),
+        call(cfg.transforms),
+    ]
+    preprocessor_spy.assert_called_once()
+    assert output.datamodule is datamodule
+    assert output.preprocessing_time == pytest.approx(1.25)
+    assert isinstance(output.preprocessing_time, float)
+    assert output.data_spec is None
+
+    with pytest.raises(FrozenInstanceError):
+        output.preprocessing_time = 2.5  # type: ignore[misc]
+
+
+def test_default_pipeline_does_not_instantiate_absent_transforms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No-transform runs pass ``None`` through without Hydra instantiation."""
+    cfg = _pipeline_cfg(transforms=None)
+    (
+        events,
+        dataset,
+        dataset_dir,
+        _,
+        _,
+        _,
+        instantiate_spy,
+        preprocessor_spy,
+    ) = _install_pipeline_spies(monkeypatch, cfg)
+
+    DefaultDataPipeline().build(cfg)
+
+    assert instantiate_spy.call_args_list == [call(cfg.dataset.loader)]
+    preprocessor_spy.assert_called_once_with(dataset, dataset_dir, None)
+    assert "instantiate_transforms" not in events
+
+
+def test_default_pipeline_retains_invalid_task_level_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The refactor must retain the existing invalid-task behavior and order."""
+    cfg = _pipeline_cfg(task_level="edge", transforms=None)
+    events, *_ = _install_pipeline_spies(monkeypatch, cfg)
+
+    with pytest.raises(ValueError, match=r"^Invalid task_level$"):
+        DefaultDataPipeline().build(cfg)
+
+    event_names = [
+        event if isinstance(event, str) else event[0] for event in events
+    ]
+    assert event_names == [
+        "instantiate_loader",
+        "load",
+        "preprocessor",
+        "load_splits",
+    ]
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        ["dataset=graph/MUTAG", "model=graph/gcn"],
+        ["experiment=cell_hgt_mutag_debug"],
+    ],
+    ids=["graph", "cell-experiment"],
+)
+def test_default_pipeline_is_composed_for_existing_experiments(
+    overrides: list[str],
+) -> None:
+    """Existing homogeneous runs select the default pipeline automatically."""
+    hydra.core.global_hydra.GlobalHydra.instance().clear()
+    register_all_resolvers()
+    with hydra.initialize(
+        version_base="1.3",
+        config_path="../../../configs",
+    ):
+        cfg = hydra.compose(config_name="run.yaml", overrides=overrides)
+
+    assert (
+        cfg.data_pipeline._target_
+        == "topobench.data.pipelines.DefaultDataPipeline"
+    )
+
+
+def test_production_run_consumes_pipeline_output(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The production entry point builds the configured pipeline exactly once."""
+
+    class FakeWandbLogger:
+        def __init__(self) -> None:
+            self.logged: list[dict[str, float]] = []
+
+        def log_metrics(self, metrics: dict[str, float]) -> None:
+            self.logged.append(metrics)
+
+    datamodule = MagicMock(spec=LightningDataModule)
+    data_spec = MagicMock(spec=HeterogeneousDataSpec)
+    pipeline_output = DataPipelineOutput(
+        datamodule=datamodule,
+        preprocessing_time=3.5,
+        data_spec=data_spec,
+    )
+    pipeline = MagicMock()
+    pipeline.build.return_value = pipeline_output
+    model = MagicMock()
+    trainer = MagicMock()
+    trainer.callback_metrics = {"train/loss": torch.tensor(1.0)}
+    wandb_logger = FakeWandbLogger()
+    callbacks = [object()]
+
+    cfg = OmegaConf.create(
+        {
+            "seed": 7,
+            "deterministic": False,
+            "data_pipeline": {"_target_": "tests.Pipeline"},
+            "model": {"_target_": "tests.Model"},
+            "evaluator": {},
+            "optimizer": {},
+            "loss": {},
+            "callbacks": {},
+            "logger": {},
+            "trainer": {"_target_": "tests.Trainer"},
+            "paths": {"output_dir": str(tmp_path)},
+            "train": False,
+            "test": False,
+        }
+    )
+
+    def instantiate(config: DictConfig, **kwargs: object) -> object:
+        del kwargs
+        if config is cfg.data_pipeline:
+            return pipeline
+        if config is cfg.model:
+            return model
+        if config is cfg.trainer:
+            return trainer
+        raise AssertionError(f"Unexpected instantiate call: {config!r}")
+
+    instantiate_spy = MagicMock(side_effect=instantiate)
+    monkeypatch.setattr(
+        run_module.hydra.utils,
+        "instantiate",
+        instantiate_spy,
+    )
+    monkeypatch.setattr(
+        run_module,
+        "instantiate_callbacks",
+        MagicMock(return_value=callbacks),
+    )
+    monkeypatch.setattr(
+        run_module,
+        "instantiate_loggers",
+        MagicMock(return_value=[wandb_logger]),
+    )
+    monkeypatch.setattr(
+        run_module.L.pytorch.loggers.wandb,
+        "WandbLogger",
+        FakeWandbLogger,
+    )
+    monkeypatch.setattr(run_module, "log_hyperparameters", MagicMock())
+
+    metrics, objects = run_module.run(cfg)
+
+    assert instantiate_spy.call_args_list[:2] == [
+        call(cfg.data_pipeline),
+        call(
+            cfg.model,
+            evaluator=cfg.evaluator,
+            optimizer=cfg.optimizer,
+            loss=cfg.loss,
+        ),
+    ]
+    pipeline.build.assert_called_once_with(cfg)
+    assert objects["datamodule"] is datamodule
+    assert objects["data_spec"] is data_spec
+    assert metrics == trainer.callback_metrics
+    assert wandb_logger.logged == [{"preprocessor_time": 3.5}]
+
+
+def test_simplified_runner_consumes_pipeline_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The test runner delegates data construction to the same boundary."""
+    first_batch = SimpleNamespace(num_graphs=6)
+    datamodule = MagicMock(spec=LightningDataModule)
+    datamodule.train_dataloader.return_value = iter([first_batch])
+    pipeline = MagicMock()
+    pipeline.build.return_value = DataPipelineOutput(
+        datamodule=datamodule,
+        preprocessing_time=0.5,
+    )
+    model = MagicMock()
+    trainer = MagicMock()
+    trainer.callback_metrics = {
+        "train/loss": torch.tensor(1.0),
+        "val/loss": torch.tensor(0.75),
+    }
+    trainer.current_epoch = 2
+    trainer.checkpoint_callback.best_model_path = "/tmp/best.ckpt"
+    trainer.test.return_value = [{"test/loss": 0.5}]
+
+    cfg = OmegaConf.create(
+        {
+            "seed": 11,
+            "data_pipeline": {"_target_": "tests.Pipeline"},
+            "model": {"_target_": "tests.Model"},
+            "evaluator": {},
+            "optimizer": {},
+            "loss": {},
+            "callbacks": {},
+            "trainer": {"_target_": "tests.Trainer"},
+            "ckpt_path": None,
+        }
+    )
+
+    def instantiate(config: DictConfig, **kwargs: object) -> object:
+        del kwargs
+        if config is cfg.data_pipeline:
+            return pipeline
+        if config is cfg.model:
+            return model
+        if config is cfg.trainer:
+            return trainer
+        raise AssertionError(f"Unexpected instantiate call: {config!r}")
+
+    instantiate_spy = MagicMock(side_effect=instantiate)
+    monkeypatch.setattr(
+        simplified_pipeline.hydra.utils,
+        "instantiate",
+        instantiate_spy,
+    )
+    monkeypatch.setattr(
+        simplified_pipeline,
+        "instantiate_callbacks",
+        MagicMock(return_value=[]),
+    )
+
+    result = simplified_pipeline.run(cfg)
+
+    assert instantiate_spy.call_args_list[0] == call(cfg.data_pipeline)
+    pipeline.build.assert_called_once_with(cfg)
+    datamodule.train_dataloader.assert_called_once_with()
+    assert result["observed_train_batch_size"] == 6
+    assert result["epochs_completed"] == 2
+    assert result["fit_metrics"] == {
+        "train/loss": 1.0,
+        "val/loss": 0.75,
+    }
+    assert result["test_results"] == [{"test/loss": 0.5}]
+
+
+def test_pipeline_package_imports_cleanly_in_subprocess() -> None:
+    """Canonical package exports import without package-initialization cycles."""
+    code = (
+        "import topobench.data.pipelines as pipelines; "
+        "print(','.join(pipelines.__all__))"
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=PROJECT_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == (
+        "AbstractDataPipeline,DataPipelineOutput,DefaultDataPipeline"
+    )
+    assert issubclass(DefaultDataPipeline, AbstractDataPipeline)
