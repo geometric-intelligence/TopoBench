@@ -3,10 +3,12 @@
 from pathlib import Path
 
 import hydra
+import torch
 from hydra.core.global_hydra import GlobalHydra
 from omegaconf import DictConfig, OmegaConf
 from torch_geometric.data import HeteroData
 
+from topobench.data.datasets import make_synthetic_heterogeneous_data
 from topobench.data.loaders import SyntheticHeterogeneousDatasetLoader
 from topobench.data.loaders.heterogeneous.synthetic import (
     SyntheticHeterogeneousDatasetLoader as ModuleSyntheticLoader,
@@ -36,7 +38,30 @@ def test_synthetic_loader_returns_one_native_heterogeneous_graph(
 
     assert len(dataset) == 1
     assert isinstance(dataset[0], HeteroData)
-    assert data_dir.endswith("SyntheticHeterogeneous")
+    assert Path(data_dir) == tmp_path / "SyntheticHeterogeneous"
+
+
+def test_synthetic_loader_forwards_seed_to_canonical_factory(
+    tmp_path: Path,
+) -> None:
+    """The configured seed controls fixture generation without replacement."""
+    configured_seed = 17
+    dataset, _ = SyntheticHeterogeneousDatasetLoader(
+        _parameters(tmp_path, seed=configured_seed)
+    ).load()
+    actual = dataset[0]
+    expected = make_synthetic_heterogeneous_data(seed=configured_seed)
+    default_seed = make_synthetic_heterogeneous_data(seed=0)
+
+    assert not torch.equal(
+        expected["author"].x,
+        default_seed["author"].x,
+    )
+    assert torch.equal(actual["author"].x, expected["author"].x)
+    assert torch.equal(
+        actual["author"].train_mask,
+        expected["author"].train_mask,
+    )
 
 
 def test_synthetic_loader_forwards_fixture_sizes(tmp_path: Path) -> None:
