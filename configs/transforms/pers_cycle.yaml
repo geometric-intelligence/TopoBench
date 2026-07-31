@@ -1,8 +1,0 @@
-# Persistence node features (GUDHI, degree filtration on 1-hop ego
-# clique complexes) followed by the cycle-based graph2cell lifting.
-# Adds PersistenceNodeFeatures.NUM_ADDED_FEATURES = 6 dims to data.x;
-# pair with dataset.parameters.num_features=<orig+6> since
-# check_pses_in_transforms only counts LapPE/RWSE.
-defaults:
-  - data_manipulations@persistence_node_features: persistence_node_features
-  - liftings/graph2cell@graph2cell_lifting: cycle
