@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
+from functools import partial
 from numbers import Integral
-from typing import Any
+from typing import Any, cast
 
 import hydra
 from lightning import LightningModule
-from omegaconf import DictConfig, ListConfig, flag_override, open_dict
-from omegaconf.nodes import AnyNode
+from omegaconf import DictConfig, ListConfig, OmegaConf
 
 from topobench.data import HeterogeneousDataSpec
 
@@ -46,7 +46,9 @@ def _required_child(
 ) -> Any:
     """Read one required configuration key with a path-rich error."""
     path = f"{parent_path}.{key}"
-    if key not in parent:
+    # DictConfig.__contains__ resolves interpolations; keys() is intentionally
+    # used so validation cannot execute a resolver.
+    if key not in parent.keys():  # noqa: SIM118
         raise ValueError(f"{path} is required")
     return parent[key]
 
@@ -82,10 +84,21 @@ def _require_runtime_placeholder(
         path=component_path,
     )
     field_path = f"{component_path}.{field_name}"
-    if field_name not in component:
+    # See _required_child: direct membership can execute the field resolver.
+    if field_name not in component.keys():  # noqa: SIM118
         raise ValueError(
             f"{field_path} must be explicitly declared null for "
             "runtime injection"
+        )
+    if OmegaConf.is_interpolation(component, field_name):
+        raise ValueError(
+            f"{field_path} must be a literal null for runtime injection; "
+            "interpolations are forbidden"
+        )
+    if OmegaConf.is_missing(component, field_name):
+        raise ValueError(
+            f"{field_path} must be a literal null for runtime injection; "
+            "missing values are forbidden"
         )
     value = component[field_name]
     if value is not None:
@@ -220,49 +233,151 @@ def _validate_sampling_depth(
         )
 
 
-def _inject_runtime_metadata(
-    model_cfg: DictConfig,
+def _resolved_model_mapping(model_cfg: DictConfig) -> dict[str, Any]:
+    """Resolve trusted static model config while it retains its copied root."""
+    resolved = OmegaConf.to_container(
+        model_cfg,
+        resolve=True,
+        throw_on_missing=True,
+    )
+    if not isinstance(resolved, dict):
+        raise TypeError("model must resolve to a mapping")
+    return cast(dict[str, Any], resolved)
+
+
+def _pop_component_config(
+    model_mapping: dict[str, Any],
+    *,
+    component_name: str,
+    runtime_fields: tuple[str, ...],
+) -> dict[str, Any]:
+    """Detach one trusted component config and remove runtime-only fields."""
+    component = model_mapping.pop(component_name, None)
+    path = f"model.{component_name}"
+    if not isinstance(component, dict):
+        raise TypeError(f"{path} must resolve to a mapping")
+    component = dict(component)
+    for field_name in runtime_fields:
+        field_path = f"{path}.{field_name}"
+        if field_name not in component:
+            raise ValueError(f"{field_path} is required")
+        del component[field_name]
+    component["_partial_"] = True
+    return component
+
+
+def _instantiate_factory(
+    factory_cfg: dict[str, Any],
+    *,
+    path: str,
+) -> Any:
+    """Instantiate a callable factory from trusted, data-free static config."""
+    factory = hydra.utils.instantiate(factory_cfg)
+    if not callable(factory):
+        raise TypeError(f"{path} must instantiate a callable factory")
+    return factory
+
+
+def _instantiate_static_dependency(
+    runtime_cfg: DictConfig,
+    *,
+    name: str,
+) -> object:
+    """Instantiate one trusted dependency with copied-root interpolation."""
+    dependency_cfg = _require_dict_config(
+        _required_child(runtime_cfg, name, parent_path="cfg"),
+        path=f"cfg.{name}",
+    )
+    return hydra.utils.instantiate(dependency_cfg)
+
+
+def _instantiate_heterogeneous_model(
+    runtime_cfg: DictConfig,
     *,
     data_spec: HeterogeneousDataSpec,
     mode: str,
-) -> None:
-    """Inject fresh validated values into the copied configuration root."""
-    with open_dict(model_cfg.feature_encoder):
-        model_cfg.feature_encoder.input_channels = (
-            data_spec.input_channels_dict
-        )
-    # OmegaConf normally normalizes relation tuples into lists, but PyG's
-    # public Metadata contract uses relation tuples. Store this validated
-    # runtime-only object atomically so Hydra passes the exact native shape.
-    with (
-        open_dict(model_cfg.backbone),
-        flag_override(model_cfg.backbone, "allow_objects", True),
-    ):
-        model_cfg.backbone.metadata = AnyNode(
-            value=data_spec.pyg_metadata(),
-            flags={"allow_objects": True},
-        )
-    with open_dict(model_cfg.backbone_wrapper):
-        model_cfg.backbone_wrapper.target_node_type = (
-            data_spec.target_node_type
-        )
-    with open_dict(model_cfg.readout):
-        model_cfg.readout.target_node_type = data_spec.target_node_type
-        model_cfg.readout.out_channels = data_spec.num_classes
-    with open_dict(model_cfg.supervision_adapter):
-        model_cfg.supervision_adapter.target_node_type = (
-            data_spec.target_node_type
-        )
-        model_cfg.supervision_adapter.mode = mode
+) -> LightningModule:
+    """Construct components without exposing runtime graph strings to Hydra."""
+    model_cfg = _require_dict_config(runtime_cfg.model, path="cfg.model")
+    model_mapping = _resolved_model_mapping(model_cfg)
 
+    encoder_factory = _instantiate_factory(
+        _pop_component_config(
+            model_mapping,
+            component_name="feature_encoder",
+            runtime_fields=("input_channels",),
+        ),
+        path="model.feature_encoder",
+    )
+    backbone_factory = _instantiate_factory(
+        _pop_component_config(
+            model_mapping,
+            component_name="backbone",
+            runtime_fields=("metadata",),
+        ),
+        path="model.backbone",
+    )
+    wrapper_factory = _instantiate_factory(
+        _pop_component_config(
+            model_mapping,
+            component_name="backbone_wrapper",
+            runtime_fields=("target_node_type",),
+        ),
+        path="model.backbone_wrapper",
+    )
+    readout_factory = _instantiate_factory(
+        _pop_component_config(
+            model_mapping,
+            component_name="readout",
+            runtime_fields=("target_node_type", "out_channels"),
+        ),
+        path="model.readout",
+    )
+    supervision_factory = _instantiate_factory(
+        _pop_component_config(
+            model_mapping,
+            component_name="supervision_adapter",
+            runtime_fields=("target_node_type", "mode"),
+        ),
+        path="model.supervision_adapter",
+    )
 
-def _instantiate_from_root(runtime_cfg: DictConfig) -> LightningModule:
-    """Instantiate a model while retaining copied-root interpolation context."""
-    model = hydra.utils.instantiate(
-        runtime_cfg.model,
-        evaluator=runtime_cfg.evaluator,
-        optimizer=runtime_cfg.optimizer,
-        loss=runtime_cfg.loss,
+    # All values below come from the validated processed graph. They are bound
+    # only through ordinary Python calls, never through OmegaConf or Hydra.
+    feature_encoder = encoder_factory(
+        input_channels=data_spec.input_channels_dict
+    )
+    backbone = backbone_factory(metadata=data_spec.pyg_metadata())
+    backbone_wrapper = partial(
+        wrapper_factory,
+        target_node_type=data_spec.target_node_type,
+    )
+    readout = readout_factory(
+        target_node_type=data_spec.target_node_type,
+        out_channels=data_spec.num_classes,
+    )
+    supervision_adapter = supervision_factory(
+        target_node_type=data_spec.target_node_type,
+        mode=mode,
+    )
+
+    model_mapping["_partial_"] = True
+    model_factory = _instantiate_factory(model_mapping, path="model")
+    model = model_factory(
+        feature_encoder=feature_encoder,
+        backbone=backbone,
+        backbone_wrapper=backbone_wrapper,
+        readout=readout,
+        supervision_adapter=supervision_adapter,
+        evaluator=_instantiate_static_dependency(
+            runtime_cfg,
+            name="evaluator",
+        ),
+        optimizer=_instantiate_static_dependency(
+            runtime_cfg,
+            name="optimizer",
+        ),
+        loss=_instantiate_static_dependency(runtime_cfg, name="loss"),
     )
     if not isinstance(model, LightningModule):
         raise TypeError("cfg.model must instantiate a LightningModule")
@@ -320,8 +435,11 @@ def instantiate_model(
             component_name=component_name,
             field_name=field_name,
         )
-    _inject_runtime_metadata(model_cfg, data_spec=data_spec, mode=mode)
-    return _instantiate_from_root(runtime_cfg)
+    return _instantiate_heterogeneous_model(
+        runtime_cfg,
+        data_spec=data_spec,
+        mode=mode,
+    )
 
 
 __all__ = ["instantiate_model"]

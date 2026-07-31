@@ -11,8 +11,10 @@ from unittest.mock import MagicMock
 
 import hydra
 import pytest
+import torch
 from lightning import LightningDataModule
 from omegaconf import DictConfig, OmegaConf, open_dict
+from torch_geometric.data import HeteroData
 
 from topobench.data import HeterogeneousDataSpec
 from topobench.model import (
@@ -360,6 +362,56 @@ def test_missing_runtime_placeholder_is_rejected_with_exact_path(
     assert _snapshot(cfg) == before
 
 
+@pytest.mark.parametrize("resolver_value", [None, "statically-wrong"])
+def test_runtime_placeholder_interpolation_is_rejected_without_resolution(
+    resolver_value: object,
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """Even null-resolving interpolation is not a literal null placeholder."""
+    resolver_name = "task14_placeholder_probe"
+    calls: list[object] = []
+    OmegaConf.register_new_resolver(
+        resolver_name,
+        lambda: calls.append(resolver_value) or resolver_value,
+        replace=True,
+    )
+    cfg = _compose("heterogeneous/hgt")
+    with open_dict(cfg.model.readout):
+        cfg.model.readout.out_channels = f"${{{resolver_name}:}}"
+    before = _snapshot(cfg)
+
+    try:
+        with pytest.raises(ValueError, match="model.readout.out_channels"):
+            instantiate_model(cfg, data_spec=heterogeneous_spec)
+    finally:
+        OmegaConf.clear_resolver(resolver_name)
+
+    assert calls == []
+    assert _snapshot(cfg) == before
+
+
+def test_missing_placeholder_and_environment_interpolation_do_not_leak(
+    heterogeneous_spec: HeterogeneousDataSpec,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing and environment-derived runtime fields fail before resolution."""
+    secret = "must-never-appear-in-errors"
+    monkeypatch.setenv("TOPOBENCH_TASK14_SECRET", secret)
+    values = ["???", "${oc.env:TOPOBENCH_TASK14_SECRET}"]
+    for value in values:
+        cfg = _compose("heterogeneous/hgt")
+        with open_dict(cfg.model.supervision_adapter):
+            cfg.model.supervision_adapter.mode = value
+        before = _snapshot(cfg)
+
+        with pytest.raises(ValueError) as error:
+            instantiate_model(cfg, data_spec=heterogeneous_spec)
+
+        assert "model.supervision_adapter.mode" in str(error.value)
+        assert secret not in str(error.value)
+        assert _snapshot(cfg) == before
+
+
 def test_instantiation_failure_does_not_mutate_source(
     heterogeneous_spec: HeterogeneousDataSpec,
 ) -> None:
@@ -379,6 +431,137 @@ def test_helper_requires_dictconfig_root() -> None:
     """Plain mappings cannot preserve Hydra interpolation parent context."""
     with pytest.raises(TypeError, match="cfg must be a DictConfig"):
         instantiate_model({}, data_spec=None)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    ["heterogeneous/hgt", "heterogeneous/heterosage"],
+)
+def test_readonly_structured_source_is_unchanged(
+    model_name: str,
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """Construction supports immutable composed roots without changing flags."""
+    cfg = _compose(model_name)
+    OmegaConf.set_struct(cfg, True)
+    OmegaConf.set_readonly(cfg, True)
+    before = _snapshot(cfg)
+
+    model = instantiate_model(cfg, data_spec=heterogeneous_spec)
+
+    assert isinstance(model, TBModel)
+    assert OmegaConf.is_struct(cfg) is True
+    assert OmegaConf.is_readonly(cfg) is True
+    assert _snapshot(cfg) == before
+
+
+def test_readonly_structured_source_flags_survive_error(
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """Validation errors cannot relax immutable source configuration flags."""
+    cfg = _compose("heterogeneous/hgt")
+    with open_dict(cfg.model.readout):
+        cfg.model.readout.out_channels = 3
+    OmegaConf.set_struct(cfg, True)
+    OmegaConf.set_readonly(cfg, True)
+    before = _snapshot(cfg)
+
+    with pytest.raises(ValueError, match="model.readout.out_channels"):
+        instantiate_model(cfg, data_spec=heterogeneous_spec)
+
+    assert OmegaConf.is_struct(cfg) is True
+    assert OmegaConf.is_readonly(cfg) is True
+    assert _snapshot(cfg) == before
+
+
+@pytest.mark.parametrize(
+    "literal",
+    [
+        "${model.model_name}",
+        "${oc.env:TOPOBENCH_TASK14_SECRET}",
+        "???",
+        r"back\\slash",
+        "节点",
+        "surrogate-\udcff",
+    ],
+)
+@pytest.mark.parametrize(
+    "model_name",
+    ["heterogeneous/hgt", "heterogeneous/heterosage"],
+)
+def test_data_derived_names_remain_literal_and_forward(
+    model_name: str,
+    literal: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Runtime graph strings never cross Hydra's interpolation parser."""
+    monkeypatch.setenv(
+        "TOPOBENCH_TASK14_SECRET",
+        "must-not-replace-literal-node-name",
+    )
+    other_type = "other"
+    reverse_relation = f"reverse::{literal}"
+    spec = HeterogeneousDataSpec(
+        node_types=(literal, other_type),
+        edge_types=(
+            (literal, literal, other_type),
+            (other_type, reverse_relation, literal),
+        ),
+        target_node_type=literal,
+        num_classes=3,
+        input_channels=((literal, 5), (other_type, 7)),
+    )
+    cfg = _compose(model_name)
+    model = instantiate_model(cfg, data_spec=spec)
+    data = HeteroData()
+    data[literal].x = torch.randn(4, 5)
+    data[literal].y = torch.tensor([0, 1, 2, 0])
+    data[other_type].x = torch.randn(3, 7)
+    data[literal, literal, other_type].edge_index = torch.tensor(
+        [[0, 1, 2, 3], [0, 1, 2, 0]],
+    )
+    data[other_type, reverse_relation, literal].edge_index = torch.tensor(
+        [[0, 1, 2, 0], [0, 1, 2, 3]],
+    )
+
+    result = model(data)
+
+    assert model.feature_encoder.input_channels == {literal: 5, other_type: 7}
+    assert model.backbone.target_node_type == literal
+    assert model.backbone.backbone.metadata == spec.pyg_metadata()
+    assert model.readout.target_node_type == literal
+    assert model.supervision_adapter.target_node_type == literal
+    assert result["logits"].shape == (4, 3)
+
+
+def test_data_derived_interpolation_syntax_never_invokes_resolver(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A resolver-shaped graph name remains opaque through construction."""
+    resolver_name = "task14_data_probe"
+    calls: list[str] = []
+    OmegaConf.register_new_resolver(
+        resolver_name,
+        lambda: calls.append("called") or "resolved",
+        replace=True,
+    )
+    literal = f"${{{resolver_name}:}}"
+    spec = HeterogeneousDataSpec(
+        node_types=(literal, "other"),
+        edge_types=((literal, literal, "other"),),
+        target_node_type=literal,
+        num_classes=2,
+        input_channels=((literal, 3), ("other", 4)),
+    )
+    cfg = _compose("heterogeneous/hgt")
+    try:
+        model = instantiate_model(cfg, data_spec=spec)
+    finally:
+        OmegaConf.clear_resolver(resolver_name)
+
+    assert calls == []
+    assert model.readout.target_node_type == literal
+    assert model.backbone.backbone.metadata == spec.pyg_metadata()
 
 
 def test_copy_isolation_preserves_absolute_interpolation_context(
