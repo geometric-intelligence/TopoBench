@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from collections.abc import Iterator
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,9 +15,12 @@ import pytest
 import torch
 from lightning import LightningDataModule
 from omegaconf import DictConfig, OmegaConf
+from torch_geometric.data import Batch, Data, HeteroData
+from torch_geometric.loader import NeighborLoader
 
 from test._utils import simplified_pipeline
 from topobench import run as run_module
+from topobench.data.datasets import make_synthetic_heterogeneous_data
 from topobench.data.heterogeneous import HeterogeneousDataSpec
 from topobench.data.pipelines import (
     AbstractDataPipeline,
@@ -26,6 +30,319 @@ from topobench.data.pipelines import (
 from topobench.utils.config_resolvers import register_all_resolvers
 
 PROJECT_ROOT = Path(__file__).parents[3]
+
+
+@pytest.fixture(autouse=True)
+def _isolate_global_hydra() -> Iterator[None]:
+    """Guarantee clean Hydra state before and after every pipeline test."""
+    global_hydra = hydra.core.global_hydra.GlobalHydra.instance()
+    global_hydra.clear()
+    assert not global_hydra.is_initialized()
+    try:
+        yield
+    finally:
+        global_hydra.clear()
+        assert not global_hydra.is_initialized()
+
+
+class MutableDataModule(LightningDataModule):
+    """Minimal real data module for runtime-boundary tests."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.marker = 0
+
+
+def _heterogeneous_spec() -> HeterogeneousDataSpec:
+    """Return a small valid heterogeneous runtime contract."""
+    return HeterogeneousDataSpec(
+        node_types=("author", "paper"),
+        edge_types=(("author", "writes", "paper"),),
+        target_node_type="author",
+        num_classes=2,
+        input_channels=(("author", 4), ("paper", 3)),
+    )
+
+
+def _native_heterogeneous_batch() -> HeteroData:
+    """Return a faithful native sampled-batch shape without external data."""
+    batch = HeteroData()
+    batch["author"].x = torch.zeros(5, 4)
+    batch["author"].n_id = torch.arange(5)
+    batch["author"].batch_size = 3
+    batch["paper"].x = torch.zeros(4, 3)
+    batch["paper"].n_id = torch.arange(4)
+    batch["author", "writes", "paper"].edge_index = torch.tensor(
+        [[0, 1, 2, 3], [0, 1, 2, 3]],
+        dtype=torch.long,
+    )
+    return batch
+
+
+def test_data_pipeline_output_normalizes_and_freezes_boundary_values() -> None:
+    """Valid outputs normalize time while retaining mutable runtime objects."""
+    datamodule = MutableDataModule()
+    data_spec = _heterogeneous_spec()
+
+    output = DataPipelineOutput(
+        datamodule=datamodule,
+        preprocessing_time=0,
+        data_spec=data_spec,
+    )
+
+    assert output.datamodule is datamodule
+    assert output.preprocessing_time == 0.0
+    assert type(output.preprocessing_time) is float
+    assert output.data_spec is data_spec
+
+    datamodule.marker = 1
+    assert output.datamodule.marker == 1
+    with pytest.raises(FrozenInstanceError):
+        output.data_spec = None  # type: ignore[misc]
+
+
+@pytest.mark.parametrize(
+    ("field_name", "value", "error_type", "message"),
+    [
+        (
+            "datamodule",
+            object(),
+            TypeError,
+            "datamodule must be a LightningDataModule",
+        ),
+        (
+            "data_spec",
+            object(),
+            TypeError,
+            "data_spec must be a HeterogeneousDataSpec or None",
+        ),
+        (
+            "preprocessing_time",
+            True,
+            TypeError,
+            "preprocessing_time must be a real numeric scalar",
+        ),
+        (
+            "preprocessing_time",
+            "1.0",
+            TypeError,
+            "preprocessing_time must be a real numeric scalar",
+        ),
+        (
+            "preprocessing_time",
+            torch.tensor(1.0),
+            TypeError,
+            "preprocessing_time must be a real numeric scalar",
+        ),
+        (
+            "preprocessing_time",
+            -0.1,
+            ValueError,
+            "preprocessing_time must be non-negative",
+        ),
+        (
+            "preprocessing_time",
+            float("nan"),
+            ValueError,
+            "preprocessing_time must be finite",
+        ),
+        (
+            "preprocessing_time",
+            float("inf"),
+            ValueError,
+            "preprocessing_time must be finite",
+        ),
+        (
+            "preprocessing_time",
+            float("-inf"),
+            ValueError,
+            "preprocessing_time must be finite",
+        ),
+    ],
+    ids=[
+        "datamodule",
+        "data-spec",
+        "bool-time",
+        "string-time",
+        "tensor-time",
+        "negative-time",
+        "nan-time",
+        "positive-infinity-time",
+        "negative-infinity-time",
+    ],
+)
+def test_data_pipeline_output_rejects_invalid_runtime_values(
+    field_name: str,
+    value: object,
+    error_type: type[Exception],
+    message: str,
+) -> None:
+    """Invalid runtime values fail at the pipeline boundary."""
+    kwargs: dict[str, object] = {
+        "datamodule": MutableDataModule(),
+        "preprocessing_time": 1.5,
+        "data_spec": _heterogeneous_spec(),
+    }
+    kwargs[field_name] = value
+
+    with pytest.raises(error_type, match=message):
+        DataPipelineOutput(**kwargs)  # type: ignore[arg-type]
+
+
+def test_observed_batch_size_uses_ordinary_pyg_graph_count() -> None:
+    """Ordinary homogeneous batches report their number of graphs."""
+    batch = Batch.from_data_list(
+        [
+            Data(x=torch.zeros(3, 2)),
+            Data(x=torch.zeros(4, 2)),
+        ]
+    )
+
+    observed = simplified_pipeline._infer_observed_train_batch_size(
+        batch,
+        data_spec=None,
+    )
+
+    assert observed == 2
+
+
+def test_observed_batch_size_prefers_heterogeneous_seed_count() -> None:
+    """Sampled heterogeneous batches report target seeds, not graph count."""
+    data = make_synthetic_heterogeneous_data(seed=7)
+    data["venue"].x = torch.ones(data["venue"].num_nodes, 1)
+    data_spec = HeterogeneousDataSpec(
+        node_types=tuple(data.node_types),
+        edge_types=tuple(data.edge_types),
+        target_node_type="author",
+        num_classes=2,
+        input_channels=(("author", 8), ("paper", 5), ("venue", 1)),
+    )
+    loader = NeighborLoader(
+        data,
+        num_neighbors=[2],
+        input_nodes=("author", data["author"].train_mask),
+        batch_size=4,
+        shuffle=False,
+    )
+    batch = next(iter(loader))
+
+    assert isinstance(batch, HeteroData)
+    assert batch["author"].batch_size == 4
+    assert "n_id" in batch["author"]
+    assert not hasattr(batch, "num_graphs")
+
+    observed = simplified_pipeline._infer_observed_train_batch_size(
+        batch,
+        data_spec=data_spec,
+    )
+
+    assert observed == 4
+
+
+def test_observed_batch_size_falls_back_for_full_batch_hetero() -> None:
+    """Full-batch heterogeneous data may use PyG's graph-count contract."""
+    data = _native_heterogeneous_batch()
+    del data["author"].batch_size
+    batch = Batch.from_data_list([data])
+
+    observed = simplified_pipeline._infer_observed_train_batch_size(
+        batch,
+        data_spec=_heterogeneous_spec(),
+    )
+
+    assert observed == 1
+
+
+@pytest.mark.parametrize(
+    ("value", "error_type", "message"),
+    [
+        (True, TypeError, "target seed batch_size.*positive integer"),
+        (1.5, TypeError, "target seed batch_size.*positive integer"),
+        (0, ValueError, "target seed batch_size.*greater than zero"),
+        (-2, ValueError, "target seed batch_size.*greater than zero"),
+    ],
+    ids=["bool", "non-integral", "zero", "negative"],
+)
+def test_observed_batch_size_rejects_invalid_heterogeneous_seed_counts(
+    value: object,
+    error_type: type[Exception],
+    message: str,
+) -> None:
+    """Malformed NeighborLoader seed metadata fails clearly."""
+    batch = _native_heterogeneous_batch()
+    batch["author"].batch_size = value
+
+    with pytest.raises(error_type, match=message):
+        simplified_pipeline._infer_observed_train_batch_size(
+            batch,
+            data_spec=_heterogeneous_spec(),
+        )
+
+
+@pytest.mark.parametrize(
+    ("value", "error_type", "message"),
+    [
+        (False, TypeError, "num_graphs.*positive integer"),
+        ("2", TypeError, "num_graphs.*positive integer"),
+        (0, ValueError, "num_graphs.*greater than zero"),
+        (-1, ValueError, "num_graphs.*greater than zero"),
+    ],
+    ids=["bool", "non-integral", "zero", "negative"],
+)
+def test_observed_batch_size_rejects_invalid_graph_counts(
+    value: object,
+    error_type: type[Exception],
+    message: str,
+) -> None:
+    """Malformed ordinary batch-size metadata fails clearly."""
+    batch = SimpleNamespace(num_graphs=value)
+
+    with pytest.raises(error_type, match=message):
+        simplified_pipeline._infer_observed_train_batch_size(
+            batch,
+            data_spec=None,
+        )
+
+
+def test_observed_batch_size_requires_native_target_store() -> None:
+    """A heterogeneous contract requires its declared target node store."""
+    batch = HeteroData()
+    batch["paper"].x = torch.zeros(2, 3)
+
+    with pytest.raises(
+        ValueError,
+        match="HeteroData.*missing target node store 'author'",
+    ):
+        simplified_pipeline._infer_observed_train_batch_size(
+            batch,
+            data_spec=_heterogeneous_spec(),
+        )
+
+
+def test_observed_batch_size_requires_native_heterogeneous_batch() -> None:
+    """A heterogeneous runtime contract rejects homogeneous PyG batches."""
+    batch = Batch.from_data_list([Data(x=torch.zeros(3, 2))])
+
+    with pytest.raises(
+        TypeError,
+        match="DataBatch.*requires native HeteroData",
+    ):
+        simplified_pipeline._infer_observed_train_batch_size(
+            batch,
+            data_spec=_heterogeneous_spec(),
+        )
+
+
+def test_observed_batch_size_names_unsupported_batch_contract() -> None:
+    """Unsupported objects identify their type and missing requirement."""
+    with pytest.raises(
+        TypeError,
+        match="object.*num_graphs",
+    ):
+        simplified_pipeline._infer_observed_train_batch_size(
+            object(),
+            data_spec=None,
+        )
 
 
 def _pipeline_cfg(
@@ -255,13 +572,14 @@ def test_default_pipeline_is_composed_for_existing_experiments(
     overrides: list[str],
 ) -> None:
     """Existing homogeneous runs select the default pipeline automatically."""
-    hydra.core.global_hydra.GlobalHydra.instance().clear()
+    global_hydra = hydra.core.global_hydra.GlobalHydra.instance()
+    assert not global_hydra.is_initialized()
     register_all_resolvers()
-    with hydra.initialize(
+    hydra.initialize(
         version_base="1.3",
         config_path="../../../configs",
-    ):
-        cfg = hydra.compose(config_name="run.yaml", overrides=overrides)
+    )
+    cfg = hydra.compose(config_name="run.yaml", overrides=overrides)
 
     assert (
         cfg.data_pipeline._target_
