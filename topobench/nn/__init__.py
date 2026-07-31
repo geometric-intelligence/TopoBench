@@ -1,1 +1,5 @@
-"""Empty file to make the directory a package."""
+"""Neural-network components shared by TopoBench models."""
+
+from topobench.nn.activation import make_activation
+
+__all__ = ["make_activation"]
