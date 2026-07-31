@@ -313,3 +313,146 @@ def test_chebyshev_filter_basis(cell_graph_input):
     # Invalid basis name must raise
     with pytest.raises(ValueError, match="filter_basis"):
         SheafConvLayer(C, C, stalk_dim=2, filter_basis="fourier")
+
+
+def test_exp_rotation_param():
+    """Exponential-map projection produces proper rotations."""
+    torch.manual_seed(0)
+    d = 2
+    E = 12
+    learner = RestrictionMapLearner(8, d, rotation_param="exp")
+    x = torch.randn(10, 8)
+    edge_index = torch.randint(0, 10, (2, E))
+
+    R = learner(x, edge_index)
+    RtR = torch.bmm(R.transpose(1, 2), R)
+    eye = torch.eye(d).unsqueeze(0).expand(E, -1, -1)
+    assert (RtR - eye).abs().max().item() < 1e-4
+    # Proper rotations: det = +1
+    dets = torch.linalg.det(R)
+    assert (dets - 1.0).abs().max().item() < 1e-4
+
+    with pytest.raises(ValueError, match="rotation_param"):
+        RestrictionMapLearner(8, d, rotation_param="householder")
+
+
+def test_trivial_stalk_dim_one():
+    """d = 1 stalks reduce restriction maps to identity scalars."""
+    torch.manual_seed(0)
+    learner = RestrictionMapLearner(8, 1)
+    x = torch.randn(6, 8)
+    edge_index = torch.tensor([[0, 1, 2], [1, 2, 3]])
+    R = learner(x, edge_index)
+    assert R.shape == (3, 1, 1)
+    assert torch.allclose(R, torch.ones(3, 1, 1))
+
+    layer = SheafConvLayer(8, 8, stalk_dim=1, filter_order=2)
+    y = layer(x, edge_index)
+    assert y.shape == (6, 8)
+
+
+def test_submission_configuration(cell_graph_input):
+    """The shipped configuration trains end to end.
+
+    PPR filter basis on the sheaf lazy walk, transport-consistency
+    kernel, alignment regularizer, and Cayley transports — the exact
+    combination in ``configs/model/cell/sheaf_tsp.yaml``.
+    """
+    x, Ld, Lu = cell_graph_input
+    N, C = x.shape
+    model = SheafTSP(
+        in_channels=C,
+        n_layers=3,
+        stalk_dim=2,
+        filter_order=10,
+        mlp_dropout=0.5,
+        filter_basis="ppr",
+        kernel_distance="transport",
+        reg_form="alignment",
+        rotation_param="cayley",
+    )
+    model.train()
+    y = model(x, Ld, Lu)
+    assert y.shape == (N, C)
+    assert torch.isfinite(y).all()
+
+    # Alignment reward is bounded per layer: -mean(exp(-rho^2/4t))
+    # lies in [-1, 0], and the backbone sums it over n_layers.
+    reg = model.dirichlet_energy
+    assert reg is not None and torch.isfinite(reg)
+    assert -3.0 - 1e-6 <= reg.item() <= 0.0
+
+    (y.sum() + reg).backward()
+    for name, param in model.named_parameters():
+        assert param.grad is not None, f"No gradient for {name}"
+        assert torch.isfinite(param.grad).all(), f"Bad gradient in {name}"
+
+
+def test_constructor_validation():
+    """Invalid layer options raise ValueError."""
+    with pytest.raises(ValueError, match="filter_order"):
+        SheafConvLayer(8, 8, stalk_dim=2, filter_order=0)
+    with pytest.raises(ValueError, match="kernel_distance"):
+        SheafConvLayer(8, 8, stalk_dim=2, kernel_distance="cosine")
+    with pytest.raises(ValueError, match="reg_form"):
+        SheafConvLayer(8, 8, stalk_dim=2, reg_form="ridge")
+
+
+def test_sparse_autoselect_path():
+    """Large complexes route through the sparse Laplacian assembly."""
+    torch.manual_seed(0)
+    N = 1200  # N * d = 2400 > 2000 → sparse path
+    C = 4
+    x = torch.randn(N, C)
+    edge_index = torch.stack([torch.arange(N - 1), torch.arange(1, N)])
+    layer = SheafConvLayer(C, C, stalk_dim=2, filter_order=2)
+    y = layer(x, edge_index)
+    assert y.shape == (N, C)
+    assert torch.isfinite(y).all()
+
+    # Sparse path with the ppr basis and dirichlet regularizer too
+    layer_ppr = SheafConvLayer(
+        C, C, stalk_dim=2, filter_order=3, filter_basis="ppr"
+    )
+    layer_ppr.train()
+    y = layer_ppr(x, edge_index)
+    assert torch.isfinite(y).all()
+    assert layer_ppr.last_dirichlet is not None
+
+
+def test_global_context(cell_graph_input):
+    """Zero-init global context is exact identity at initialization."""
+    x, Ld, Lu = cell_graph_input
+    C = x.shape[1]
+
+    model_ctx = SheafTSP(in_channels=C, n_layers=2, global_context=True)
+    model_plain = SheafTSP(in_channels=C, n_layers=2)
+    # Same weights on the shared modules; gctx stays zero-init
+    model_plain.load_state_dict(
+        {
+            k: v
+            for k, v in model_ctx.state_dict().items()
+            if k in model_plain.state_dict()
+        }
+    )
+
+    model_ctx.eval()
+    model_plain.eval()
+    with torch.no_grad():
+        diff = (
+            (model_ctx(x, Ld, Lu) - model_plain(x, Ld, Lu)).abs().max().item()
+        )
+    assert diff < 1e-6, f"Zero-init context changed the output: {diff}"
+
+    # A nonzero context weight must change the output
+    with torch.no_grad():
+        model_ctx.gctx[0].weight.fill_(0.1)
+        diff = (
+            (model_ctx(x, Ld, Lu) - model_plain(x, Ld, Lu)).abs().max().item()
+        )
+    assert diff > 1e-6, "Global context had no effect"
+
+
+def test_dirichlet_loss_repr():
+    """Loss module repr states the weight."""
+    assert "0.01" in repr(SheafDirichletLoss(loss_weight=0.01))
