@@ -17,7 +17,9 @@ from topobench.model import (
 def _model_out(num_nodes: int = 6) -> dict[str, object]:
     """Return deterministic classification outputs."""
     return {
-        "logits": torch.arange(num_nodes * 3).reshape(num_nodes, 3),
+        "logits": torch.arange(num_nodes * 3, dtype=torch.float32).reshape(
+            num_nodes, 3
+        ),
         "labels": torch.arange(num_nodes),
         "untouched": object(),
     }
@@ -105,33 +107,88 @@ class TestSupervisedBatch:
 
 
 class TestDefaultSupervisionAdapter:
-    """Freeze legacy graph and homogeneous-node selection semantics."""
+    """Enforce native homogeneous classification and regression contracts."""
 
-    @pytest.mark.parametrize("task_level", [None, 1, "", "   "])
+    @pytest.mark.parametrize("task_level", [None, 1, "", "   ", "edge"])
     def test_rejects_invalid_task_level(self, task_level):
-        """The legacy adapter requires a meaningful task-level string."""
+        """Only supported homogeneous task levels can select supervision."""
         with pytest.raises(
             (TypeError, ValueError),
-            match="task_level must be a non-empty string",
+            match="task_level",
         ):
             DefaultSupervisionAdapter(task_level)
 
-    @pytest.mark.parametrize("task_level", ["graph", "node_inductive"])
-    def test_non_transductive_output_is_byte_equivalent_and_weighted_as_one(
-        self, task_level
+    @pytest.mark.parametrize("batch_size", [4, 1])
+    def test_graph_classification_keeps_rank_one_targets_and_counts_graphs(
+        self, batch_size
     ):
-        """Graph and inductive-node outputs preserve historic semantics."""
-        model_out = _model_out()
-        original = dict(model_out)
+        """Graph classification reports one supervised example per graph."""
+        model_out = {
+            "logits": torch.randn(batch_size, 3),
+            "labels": torch.arange(batch_size, dtype=torch.long) % 3,
+        }
 
-        selected = DefaultSupervisionAdapter(task_level).select(
-            model_out, _homogeneous_batch(), "Training"
+        selected = DefaultSupervisionAdapter("graph").select(
+            model_out, Data(), "Training"
         )
 
-        assert selected.logits is original["logits"]
-        assert selected.targets is original["labels"]
-        assert selected.num_examples == 1
-        assert model_out == original
+        assert selected.logits is model_out["logits"]
+        assert selected.targets is model_out["labels"]
+        assert selected.targets.shape == (batch_size,)
+        assert selected.num_examples == batch_size
+
+    @pytest.mark.parametrize("batch_size", [4, 1])
+    @pytest.mark.parametrize("target_rank", [1, 2])
+    def test_graph_regression_normalizes_once_and_counts_graphs(
+        self, batch_size, target_rank
+    ):
+        """Scalar source labels become exactly [B, 1], including B=1."""
+        targets = torch.linspace(0.0, 1.0, batch_size)
+        if target_rank == 2:
+            targets = targets.unsqueeze(1)
+        model_out = {
+            "logits": torch.randn(batch_size, 1),
+            "labels": targets,
+        }
+
+        selected = DefaultSupervisionAdapter("graph").select(
+            model_out, Data(), "Training"
+        )
+
+        assert selected.logits.shape == (batch_size, 1)
+        assert selected.targets.shape == (batch_size, 1)
+        assert selected.num_examples == batch_size
+
+    @pytest.mark.parametrize(
+        ("logits", "labels", "message"),
+        [
+            (torch.randn(3, 4), torch.zeros(3, 1, dtype=torch.long), "classification"),
+            (torch.randn(3, 4), torch.zeros(3, 1, 1, dtype=torch.long), "classification"),
+            (torch.randn(3, 1), torch.zeros(3, 1, 1), "regression"),
+            (torch.randn(3, 1), torch.zeros(3, dtype=torch.long), "floating"),
+            (
+                torch.randn(3, 1),
+                torch.tensor([0.0, float("nan"), 1.0]),
+                "finite",
+            ),
+            (
+                torch.randn(3, 1),
+                torch.tensor([0.0, float("inf"), 1.0]),
+                "finite",
+            ),
+            (torch.randn(3), torch.zeros(3), "logits"),
+        ],
+    )
+    def test_rejects_broadcasting_or_invalid_targets(
+        self, logits, labels, message
+    ):
+        """Shape, dtype, and finite-value failures occur before loss."""
+        with pytest.raises((TypeError, ValueError), match=message):
+            DefaultSupervisionAdapter("graph").select(
+                {"logits": logits, "labels": labels},
+                Data(),
+                "Training",
+            )
 
     @pytest.mark.parametrize(
         ("phase", "mask_name"),
@@ -141,10 +198,10 @@ class TestDefaultSupervisionAdapter:
             ("Test", "test_mask"),
         ],
     )
-    def test_node_output_exactly_matches_legacy_phase_mask(
+    def test_node_classification_selects_rank_one_targets_and_mask_count(
         self, phase, mask_name
     ):
-        """Transductive node selection is tensor-equal to the old code."""
+        """Transductive node weighting is the selected node-label count."""
         batch = _homogeneous_batch()
         model_out = _model_out()
         original = dict(model_out)
@@ -156,11 +213,22 @@ class TestDefaultSupervisionAdapter:
 
         assert torch.equal(selected.logits, original["logits"][mask])
         assert torch.equal(selected.targets, original["labels"][mask])
+        assert selected.targets.ndim == 1
         assert selected.num_examples == int(mask.sum())
         assert model_out == original
 
+    def test_node_classification_rejects_rank_two_targets(self):
+        """A broadcast-compatible [N, 1] node target is never flattened."""
+        model_out = _model_out()
+        model_out["labels"] = model_out["labels"].unsqueeze(1)
+
+        with pytest.raises(ValueError, match="classification"):
+            DefaultSupervisionAdapter("node").select(
+                model_out, _homogeneous_batch(), "Training"
+            )
+
     def test_node_rejects_invalid_case_sensitive_phase(self):
-        """Phase names retain the exact case-sensitive legacy contract."""
+        """Phase names retain their exact case-sensitive contract."""
         with pytest.raises(ValueError, match="Invalid state_str: training"):
             DefaultSupervisionAdapter("node").select(
                 _model_out(), _homogeneous_batch(), "training"
@@ -210,7 +278,6 @@ class TestDefaultSupervisionAdapter:
                 Data(),
                 "Training",
             )
-
 
 class TestHeterogeneousNodeSupervisionAdapter:
     """Test target-store masks and strict seed-only neighbor semantics."""

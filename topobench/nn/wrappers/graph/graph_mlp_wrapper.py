@@ -1,32 +1,48 @@
-"""Wrapper for the GNN models."""
+"""Native homogeneous graph adapter for GraphMLP backbones."""
 
-from topobench.nn.wrappers.base import AbstractWrapper
+from __future__ import annotations
+
+from torch import Tensor, nn
+from torch_geometric.data import Data
+
+from .gnn_wrapper import (
+    EdgeMode,
+    _edge_kwargs,
+    _validate_edge_mode,
+    _validated_graph_fields,
+)
 
 
-class GraphMLPWrapper(AbstractWrapper):
-    r"""Wrapper for the GNN models.
+class GraphMLPWrapper(nn.Module):
+    """Translate native PyG features into a GraphMLP backbone call."""
 
-    This wrapper defines the forward pass of the model. The GNN models return
-    the embeddings of the cells of rank 0.
-    """
+    def __init__(
+        self,
+        backbone: nn.Module,
+        edge_attr_mode: EdgeMode,
+        edge_weight_mode: EdgeMode,
+    ) -> None:
+        super().__init__()
+        if not isinstance(backbone, nn.Module):
+            raise TypeError("backbone must be a torch.nn.Module")
+        self.backbone = backbone
+        self.edge_modes = {
+            "edge_attr": _validate_edge_mode("edge_attr", edge_attr_mode),
+            "edge_weight": _validate_edge_mode(
+                "edge_weight", edge_weight_mode
+            ),
+        }
 
-    def forward(self, batch):
-        r"""Forward pass for the GNN wrapper.
+    def forward(self, batch: Data) -> dict[str, Tensor | None]:
+        """Return only embeddings, labels, and native batch membership."""
+        x, _edge_index, labels, batch_index = _validated_graph_fields(batch)
+        output = self.backbone(x, **_edge_kwargs(batch, self.edge_modes))
+        embeddings = output[0] if isinstance(output, tuple) else output
+        if not isinstance(embeddings, Tensor):
+            raise TypeError(
+                "GraphMLP backbone must return a tensor or tensor-first tuple"
+            )
+        return {"x": embeddings, "labels": labels, "batch": batch_index}
 
-        Parameters
-        ----------
-        batch : torch_geometric.data.Data
-            Batch object containing the batched data.
 
-        Returns
-        -------
-        dict
-            Dictionary containing the updated model output.
-        """
-        x_0, x_dis = self.backbone(batch.x_0)
-
-        model_out = {"labels": batch.y, "batch_0": batch.batch_0}
-        model_out["x_0"] = x_0
-        model_out["x_dis"] = x_dis
-
-        return model_out
+__all__ = ["GraphMLPWrapper"]

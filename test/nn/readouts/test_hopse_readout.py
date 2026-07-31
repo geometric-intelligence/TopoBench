@@ -77,7 +77,7 @@ class TestHOPSEReadoutGraphLevel:
         assert out["logits"].shape[-1] == out_channels
 
     def test_rejects_invalid_pooling(self):
-        with pytest.raises(AssertionError):
+        with pytest.raises(ValueError):
             HOPSEReadout(
                 hidden_dim=4,
                 out_channels=2,

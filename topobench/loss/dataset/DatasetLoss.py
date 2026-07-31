@@ -68,6 +68,58 @@ class DatasetLoss(AbstractLoss):
 
         return self.forward_criterion(logits, target)
 
+    def _validate_target_contract(self, logits, target) -> None:
+        """Reject malformed targets before criterion broadcasting."""
+        if not isinstance(logits, torch.Tensor) or not isinstance(
+            target, torch.Tensor
+        ):
+            raise TypeError("logits and labels must be tensors")
+
+        if self.task == "classification":
+            if logits.ndim != 2:
+                raise ValueError(
+                    "classification logits must be a rank-2 tensor"
+                )
+            if target.ndim != 1:
+                raise ValueError(
+                    "classification targets must be a rank-1 tensor"
+                )
+            if logits.size(0) != target.size(0):
+                raise ValueError(
+                    "classification logits and targets must have equal counts"
+                )
+            if target.dtype is not torch.long:
+                raise TypeError(
+                    "classification targets must have dtype torch.long"
+                )
+            return
+
+        if self.task == "regression":
+            if (
+                logits.ndim != 2
+                or target.ndim != 2
+                or logits.size(1) != 1
+                or target.size(1) != 1
+                or logits.shape != target.shape
+            ):
+                raise ValueError(
+                    "Scalar regression logits and targets must have "
+                    "equal shape [B, 1]"
+                )
+            if not target.is_floating_point():
+                raise TypeError("Scalar regression targets must be floating")
+            if not torch.isfinite(target).all():
+                raise ValueError("Scalar regression targets must be finite")
+            return
+
+        if self.task in {
+            "multioutput classification",
+            "multilabel classification",
+        } and logits.shape != target.shape:
+            raise ValueError(
+                f"{self.task} logits and targets must have equal shape"
+            )
+
     def forward_criterion(self, logits, target):
         r"""Forward pass of the loss function.
 
@@ -83,8 +135,8 @@ class DatasetLoss(AbstractLoss):
         torch.Tensor
             Loss value.
         """
+        self._validate_target_contract(logits, target)
         if self.task == "regression":
-            target = target.unsqueeze(1)
             dataset_loss = self.criterion(logits, target)
 
         elif self.task == "multioutput classification":

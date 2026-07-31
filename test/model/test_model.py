@@ -4,9 +4,12 @@ from dataclasses import dataclass
 from typing import Any
 from unittest.mock import MagicMock
 
+from lightning import Trainer
 import pytest
 import torch
+from torch import nn
 from torch_geometric.data import Data, HeteroData
+from torch_geometric.loader import DataLoader
 
 from topobench.model import (
     DefaultSupervisionAdapter,
@@ -100,7 +103,7 @@ class TestProcessOutputs:
         return {
             "logits": torch.randn(n, 3),
             "labels": torch.randint(0, 3, (n,)),
-            "x_0": torch.randn(n, 8),
+            "x": torch.randn(n, 8),
         }
 
     # ------------------------------------------------------------------
@@ -121,7 +124,7 @@ class TestProcessOutputs:
         assert result["labels"].shape[0] == n_train
         assert result["num_supervised_examples"] == n_train
         # non-masked keys are untouched
-        assert result["x_0"].shape[0] == 10
+        assert result["x"].shape[0] == 10
 
     def test_node_validation_filters_by_val_mask(self):
         """process_outputs with task_level='node' and state 'Validation' filters by val_mask."""
@@ -177,7 +180,7 @@ class TestProcessOutputs:
 
         assert result["logits"].shape == original_logits.shape
         assert torch.equal(result["logits"], original_logits)
-        assert result["num_supervised_examples"] == 1
+        assert result["num_supervised_examples"] == 10
 
     def test_node_inductive_returns_unchanged(self):
         """process_outputs with task_level='node_inductive' returns model_out unchanged (inductive bug-fix path)."""
@@ -191,7 +194,7 @@ class TestProcessOutputs:
 
         assert result["logits"].shape == original_logits.shape
         assert torch.equal(result["logits"], original_logits)
-        assert result["num_supervised_examples"] == 1
+        assert result["num_supervised_examples"] == 10
 
 
 @dataclass
@@ -315,6 +318,72 @@ class TestAdapterIntegration:
         assert HeterogeneousNodeSupervisionAdapter is ModuleHeterogeneous
 
 
+class _GraphBatchBackbone(nn.Module):
+    """Emit native graph outputs with a trainable scalar dependency."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.weight = nn.Parameter(torch.tensor(0.0))
+
+    def forward(self, batch: Data) -> dict[str, torch.Tensor]:
+        graph_count = batch.y.size(0)
+        logits = self.weight.expand(graph_count, 2)
+        return {
+            "logits": logits,
+            "labels": batch.y,
+            "x": logits,
+            "batch": batch.batch,
+        }
+
+
+class _IdentityGraphReadout(nn.Module):
+    """Preserve logits already produced by the focused test backbone."""
+
+    task_level = "graph"
+
+    def forward(
+        self, model_out: dict[str, Any], batch: Data
+    ) -> dict[str, Any]:
+        del batch
+        return model_out
+
+
+class _TargetMeanLoss(nn.Module):
+    """Create deliberately different batch losses for reduction testing."""
+
+    def forward(
+        self, model_out: dict[str, Any], batch: Data
+    ) -> dict[str, Any]:
+        del batch
+        model_out["loss"] = (
+            model_out["labels"].float().mean()
+            + model_out["logits"].sum() * 0.0
+        )
+        return model_out
+
+
+class _NoOpEvaluator:
+    """Minimal evaluator satisfying TBModel's epoch hooks."""
+
+    def update(self, model_out: dict[str, Any]) -> None:
+        del model_out
+
+    def compute(self) -> dict[str, torch.Tensor]:
+        return {}
+
+    def reset(self) -> None:
+        return None
+
+
+class _ZeroRateOptimizer:
+    """Build an optimizer while keeping focused batch losses deterministic."""
+
+    def configure_optimizer(
+        self, parameters: list[nn.Parameter]
+    ) -> dict[str, torch.optim.Optimizer]:
+        return {"optimizer": torch.optim.SGD(parameters, lr=0.0)}
+
+
 class TestLossLoggingWeights:
     """Verify all three Lightning hooks use supervised-example counts."""
 
@@ -329,7 +398,7 @@ class TestLossLoggingWeights:
     @pytest.mark.parametrize(
         ("description", "num_examples"),
         [
-            ("legacy_graph", 1),
+            ("graph", 3),
             ("transductive_node", 4),
             ("heterogeneous_full", 3),
             ("heterogeneous_neighbor", 2),
@@ -369,6 +438,42 @@ class TestLossLoggingWeights:
             assert result is loss
         else:
             assert result is None
+
+    def test_epoch_loss_weights_full_and_smaller_final_graph_batches(self):
+        """Lightning reduces batch losses by supervised graph counts."""
+        dataset = [
+            Data(
+                x=torch.ones(2, 1),
+                edge_index=torch.empty((2, 0), dtype=torch.long),
+                y=torch.tensor([label]),
+            )
+            for label in (0, 0, 1)
+        ]
+        loader = DataLoader(dataset, batch_size=2, shuffle=False)
+        model = TBModel(
+            backbone=_GraphBatchBackbone(),
+            readout=_IdentityGraphReadout(),
+            loss=_TargetMeanLoss(),
+            evaluator=_NoOpEvaluator(),
+            optimizer=_ZeroRateOptimizer(),
+            compile=False,
+        )
+        trainer = Trainer(
+            accelerator="cpu",
+            devices=1,
+            max_epochs=1,
+            logger=False,
+            enable_checkpointing=False,
+            enable_model_summary=False,
+            enable_progress_bar=False,
+            num_sanity_val_steps=0,
+        )
+
+        trainer.fit(model, train_dataloaders=loader)
+
+        assert trainer.callback_metrics["train/loss"].item() == pytest.approx(
+            1 / 3
+        )
 
     def test_full_heterogeneous_process_outputs_reports_mask_count(self):
         """Full heterogeneous weighting comes from target-store masks."""

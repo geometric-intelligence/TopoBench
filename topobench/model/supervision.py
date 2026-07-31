@@ -78,6 +78,49 @@ def _model_tensors(
     return logits, labels
 
 
+def _homogeneous_targets(
+    logits: Tensor,
+    labels: Tensor,
+    task_level: str,
+) -> Tensor:
+    """Validate and normalize one native homogeneous target contract."""
+    if logits.ndim != 2 or logits.size(1) < 1:
+        raise ValueError(
+            "Homogeneous logits must have shape [examples, outputs]"
+        )
+
+    if logits.size(1) == 1:
+        if task_level != "graph":
+            raise ValueError(
+                "Homogeneous node tasks support classification only"
+            )
+        if not labels.is_floating_point():
+            raise TypeError("Scalar regression targets must be floating")
+        if not torch.isfinite(labels).all():
+            raise ValueError("Scalar regression targets must be finite")
+        if labels.ndim == 1:
+            targets = labels.unsqueeze(1)
+        elif labels.ndim == 2 and labels.size(1) == 1:
+            targets = labels
+        else:
+            raise ValueError(
+                "Scalar regression targets must have shape [B] or [B, 1]"
+            )
+        if logits.shape != targets.shape:
+            raise ValueError(
+                "Scalar regression logits and targets must have shape [B, 1]"
+            )
+        return targets
+
+    if labels.ndim != 1:
+        raise ValueError(
+            "classification targets must be a rank-1 tensor [B] or [N]"
+        )
+    if labels.dtype is not torch.long:
+        raise TypeError("classification targets must have dtype torch.long")
+    return labels
+
+
 def _mask_from_store(
     store: object,
     mask_name: str,
@@ -101,14 +144,18 @@ def _mask_from_store(
 
 
 class DefaultSupervisionAdapter:
-    """Preserve TopoBench's legacy homogeneous supervision semantics."""
+    """Select strictly shaped native homogeneous supervision."""
 
     def __init__(self, task_level: str) -> None:
-        """Create an adapter for a readout task level."""
+        """Create an adapter for one supported homogeneous task level."""
         if not isinstance(task_level, str):
-            raise TypeError("task_level must be a non-empty string")
-        if not task_level.strip():
-            raise ValueError("task_level must be a non-empty string")
+            raise TypeError(
+                "task_level must be graph, node, or node_inductive"
+            )
+        if task_level not in {"graph", "node", "node_inductive"}:
+            raise ValueError(
+                "task_level must be graph, node, or node_inductive"
+            )
         self.task_level = task_level
 
     def select(
@@ -117,24 +164,31 @@ class DefaultSupervisionAdapter:
         batch: Data | HeteroData,
         phase: str,
     ) -> SupervisedBatch:
-        """Select top-level masks for transductive node classification."""
-        logits, labels = _model_tensors(model_out)
+        """Validate targets and select transductive node masks."""
+        logits, source_labels = _model_tensors(model_out)
+        targets = _homogeneous_targets(
+            logits,
+            source_labels,
+            self.task_level,
+        )
         if self.task_level != "node":
-            # Preserve historical Lightning weighting for graph and
-            # node-inductive tasks.
-            return SupervisedBatch(logits, labels, num_examples=1)
+            return SupervisedBatch(
+                logits,
+                targets,
+                num_examples=targets.size(0),
+            )
 
         try:
             mask_name = _PHASE_MASK[phase]
         except KeyError as error:
             raise ValueError(f"Invalid state_str: {phase}") from error
-        mask = _mask_from_store(batch, mask_name, labels.size(0))
+        mask = _mask_from_store(batch, mask_name, targets.size(0))
         selected = int(mask.sum().item())
         if selected == 0:
             raise ValueError(f"No supervised examples for {phase}")
         return SupervisedBatch(
             logits=logits[mask],
-            targets=labels[mask],
+            targets=targets[mask],
             num_examples=selected,
         )
 

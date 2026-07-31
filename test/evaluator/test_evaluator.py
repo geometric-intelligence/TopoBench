@@ -52,7 +52,7 @@ class TestTBEvaluator:
         """Test the update and compute methods for regression."""
         # Create deterministic data
         logits = torch.tensor([[1.0], [2.0], [3.0]])
-        labels = torch.tensor([1.1, 2.1, 3.1])
+        labels = torch.tensor([[1.1], [2.1], [3.1]])
 
         self.evaluator_regression.update({"logits": logits, "labels": labels})
         out = self.evaluator_regression.compute()
@@ -68,7 +68,7 @@ class TestTBEvaluator:
         """Test regression with different tensor shapes."""
         # Test with 2D predictions (required shape for regression)
         logits = torch.randn(10, 1)
-        labels = torch.randn(10)
+        labels = torch.randn(10, 1)
 
         self.evaluator_regression.update({"logits": logits, "labels": labels})
         out = self.evaluator_regression.compute()
@@ -204,7 +204,7 @@ class TestTBEvaluator:
         # Update with some data
         self.evaluator_regression.update({
             "logits": torch.randn(10, 1),
-            "labels": torch.randn(10)
+            "labels": torch.randn(10, 1)
         })
         out_before = self.evaluator_regression.compute()
 
@@ -214,7 +214,7 @@ class TestTBEvaluator:
         # Update with new data
         self.evaluator_regression.update({
             "logits": torch.randn(10, 1),
-            "labels": torch.randn(10)
+            "labels": torch.randn(10, 1)
         })
         out_after = self.evaluator_regression.compute()
 
@@ -233,7 +233,7 @@ class TestTBEvaluator:
         # Create data where we know MSE and RMSE
         # If predictions = [1, 2, 3] and labels = [1, 2, 3], both should be 0
         logits = torch.tensor([[1.0], [2.0], [3.0]])
-        labels = torch.tensor([1.0, 2.0, 3.0])
+        labels = torch.tensor([[1.0], [2.0], [3.0]])
 
         evaluator.update({"logits": logits, "labels": labels})
         out = evaluator.compute()
@@ -245,7 +245,7 @@ class TestTBEvaluator:
         # For non-perfect predictions
         evaluator.reset()
         logits = torch.tensor([[1.0], [2.0]])
-        labels = torch.tensor([2.0, 3.0])  # Off by 1 each
+        labels = torch.tensor([[2.0], [3.0]])  # Off by 1 each
 
         evaluator.update({"logits": logits, "labels": labels})
         out = evaluator.compute()

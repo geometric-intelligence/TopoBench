@@ -1,179 +1,129 @@
-"""Tests for the NoReadOut layer."""
+"""Tests for the native homogeneous ``NoReadOut`` contract."""
 
 import pytest
 import torch
-import torch_geometric.data as tg_data
+from torch import nn
+from torch_geometric.data import Data
+from torch_geometric.utils import scatter
+
 from topobench.nn.readouts.base import AbstractZeroCellReadOut
 from topobench.nn.readouts.identical import NoReadOut
 
 
-class TestNoReadOut:
-    """Tests for the NoReadOut layer."""
-    @pytest.fixture
-    def base_kwargs(self):
-        """Fixture providing the required base parameters.
+@pytest.mark.parametrize("pooling", ["sum", "mean", "max"])
+def test_graph_readout_pools_model_output_batch(pooling: str) -> None:
+    """Graph logits pool native node embeddings with PyG scatter."""
+    x = torch.tensor(
+        [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0]]
+    )
+    batch_index = torch.tensor([0, 0, 1, 1])
+    model_out = {"x": x, "batch": batch_index, "labels": torch.tensor([0, 1])}
+    readout = NoReadOut(
+        hidden_dim=2,
+        out_channels=2,
+        task_level="graph",
+        pooling_type=pooling,
+        logits_linear_layer=False,
+    )
 
-        Returns
-        -------
-        dict
-            The base parameters for the NoReadOut layer.
-        """
-        return {
-            'hidden_dim': 64,
-            'out_channels': 32,
-            'task_level': 'graph'
-        }
+    result = readout(model_out, Data())
 
-    @pytest.fixture
-    def readout_layer(self, base_kwargs):
-        """Fixture to create a NoReadOut instance for testing.
+    assert result is model_out
+    assert torch.equal(
+        result["logits"], scatter(x, batch_index, dim=0, reduce=pooling)
+    )
+    assert isinstance(readout.linear, nn.Identity)
 
-        Parameters
-        ----------
-        base_kwargs : dict
-            A fixture providing the required base parameters.
 
-        Returns
-        -------
-        NoReadOut
-            A NoReadOut instance for testing.
-        """
-        return NoReadOut(**base_kwargs)
+def test_node_classification_does_not_pool() -> None:
+    """Node logits retain one output per native node even with batch indices."""
+    x = torch.randn(5, 4)
+    model_out = {
+        "x": x,
+        "batch": torch.tensor([0, 0, 1, 1, 1]),
+        "labels": torch.tensor([0, 1, 0, 1, 0]),
+    }
+    readout = NoReadOut(
+        hidden_dim=4,
+        out_channels=3,
+        task_level="node",
+    )
 
-    @pytest.fixture
-    def sample_model_output(self):
-        """Fixture to create a sample model output dictionary.
+    result = readout(model_out, Data())
 
-        Returns
-        -------
-        dict
-            A sample model output dictionary.
-        """
-        return {
-            'x_0': torch.randn(10, 64),  # Required key for model output
-            'edge_indices': torch.randint(0, 10, (2, 15)),
-            'other_data': torch.randn(10, 32)
-        }
+    assert result["logits"].shape == (5, 3)
+    assert result["x"] is x
 
-    @pytest.fixture
-    def sample_batch(self):
-        """Fixture to create a sample batch of graph data.
 
-        Returns
-        -------
-        torch_geometric.data.Data
-            A sample batch of graph data.
-        """
-        return tg_data.Data(
-            x=torch.randn(10, 32),
-            edge_index=torch.randint(0, 10, (2, 15)),
-            batch_0=torch.zeros(10, dtype=torch.long)  # Required key for batch data
-        )
+def test_readout_uses_model_output_batch_not_data_aliases() -> None:
+    """The runtime Data argument cannot supply a rank-indexed batch alias."""
+    model_out = {
+        "x": torch.randn(4, 2),
+        "batch": torch.tensor([0, 0, 1, 1]),
+    }
+    data = Data(batch_0=torch.zeros(4, dtype=torch.long))
+    readout = NoReadOut(
+        hidden_dim=2,
+        out_channels=2,
+        task_level="graph",
+        logits_linear_layer=False,
+    )
 
-    def test_initialization(self, base_kwargs):
-        """Test that NoReadOut initializes correctly with required parameters.
+    result = readout(model_out, data)
 
-        Parameters
-        ----------
-        base_kwargs : dict
-            A fixture providing the required base parameters.
-        """
-        readout = NoReadOut(**base_kwargs)
-        assert isinstance(readout, NoReadOut)
-        assert isinstance(readout, AbstractZeroCellReadOut)
+    assert result["logits"].shape == (2, 2)
 
-    def test_forward_pass_returns_unchanged_output(self, readout_layer, sample_model_output, sample_batch):
-        """Test that forward pass returns the model output without modifications.
 
-        Parameters
-        ----------
-        readout_layer : NoReadOut
-            A fixture to create a NoReadOut instance for testing.
-        sample_model_output : dict
-            A fixture to create a sample model output dictionary.
-        sample_batch : torch_geometric.data.Data
-            A fixture to create a sample batch of graph data.
-        """
-        original_output = sample_model_output.copy()
-        output = readout_layer(sample_model_output, sample_batch)
+def test_existing_logits_are_preserved() -> None:
+    """A specialized readout may provide logits before the base hook."""
+    logits = torch.randn(3, 2)
+    model_out = {
+        "x": torch.randn(3, 4),
+        "batch": None,
+        "logits": logits,
+    }
+    readout = NoReadOut(
+        hidden_dim=4,
+        out_channels=2,
+        task_level="node",
+    )
 
-        # The output should contain the original data plus the computed logits
-        for key in original_output:
-            assert key in output
-            assert torch.equal(output[key], original_output[key])
-        assert 'logits' in output
+    assert readout(model_out, Data())["logits"] is logits
 
-    def test_invalid_task_level(self, base_kwargs):
-        """Test that initialization fails with invalid task_level.
 
-        Parameters
-        ----------
-        base_kwargs : dict
-            A fixture providing the required base parameters.
-        """
-        invalid_kwargs = base_kwargs.copy()
-        invalid_kwargs['task_level'] = 'invalid_level'
-        with pytest.raises(AssertionError, match="Invalid task_level"):
-            NoReadOut(**invalid_kwargs)
+def test_public_name_and_base_class_remain_stable() -> None:
+    """Configuration keeps the public NoReadOut class name."""
+    readout = NoReadOut(hidden_dim=4, out_channels=2, task_level="node")
 
-    def test_repr(self, readout_layer):
-        """Test the string representation of the NoReadOut layer.
+    assert isinstance(readout, AbstractZeroCellReadOut)
+    assert repr(readout) == "NoReadOut()"
 
-        Parameters
-        ----------
-        readout_layer : NoReadOut
-            A fixture to create a NoReadOut instance for testing.
-        """
-        assert str(readout_layer) == "NoReadOut()"
-        assert repr(readout_layer) == "NoReadOut()"
 
-    def test_forward_pass_with_different_batch_sizes(self, readout_layer):
-        """Test that forward pass works with different batch sizes.
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"task_level": "invalid"}, "task_level"),
+        ({"pooling_type": "median"}, "pooling_type"),
+    ],
+)
+def test_invalid_readout_modes_fail_at_construction(
+    kwargs: dict[str, str], message: str
+) -> None:
+    """Readout task and pooling behavior cannot remain implicit."""
+    config = {"hidden_dim": 4, "out_channels": 2, "task_level": "graph"}
+    config.update(kwargs)
 
-        Parameters
-        ----------
-        readout_layer : NoReadOut
-            A fixture to create a NoReadOut instance for testing.
-        """
-        # Test with single graph
-        single_batch = tg_data.Data(
-            x=torch.randn(5, 32),
-            edge_index=torch.randint(0, 5, (2, 8)),
-            batch_0=torch.zeros(5, dtype=torch.long)
-        )
-        single_output = {
-            'x_0': torch.randn(5, 64),
-            'embeddings': torch.randn(5, 64)
-        }
-        result = readout_layer(single_output, single_batch)
-        assert 'logits' in result
+    with pytest.raises(ValueError, match=message):
+        NoReadOut(**config)
 
-        # Test with multiple graphs
-        multi_batch = tg_data.Data(
-            x=torch.randn(15, 32),
-            edge_index=torch.randint(0, 15, (2, 25)),
-            batch_0=torch.cat([torch.zeros(5), torch.ones(5), torch.ones(5) * 2]).long()
-        )
-        multi_output = {
-            'x_0': torch.randn(15, 64),
-            'embeddings': torch.randn(15, 64)
-        }
-        result = readout_layer(multi_output, multi_batch)
-        assert 'logits' in result
 
-    def test_kwargs_handling(self, base_kwargs):
-        """Test that the layer correctly handles both required and additional keyword arguments.
+def test_graph_readout_requires_native_batch_tensor() -> None:
+    """Graph pooling rejects a missing batch instead of consulting Data."""
+    readout = NoReadOut(
+        hidden_dim=4,
+        out_channels=2,
+        task_level="graph",
+    )
 
-        Parameters
-        ----------
-        base_kwargs : dict
-            A fixture providing the required base parameters.
-        """
-        additional_kwargs = {
-            'random_param': 42,
-            'another_param': 'test',
-            'pooling_type': 'mean'  # Valid additional parameter
-        }
-        kwargs = {**base_kwargs, **additional_kwargs}
-        readout = NoReadOut(**kwargs)
-        assert isinstance(readout, NoReadOut)
+    with pytest.raises(TypeError, match="model_out.*batch"):
+        readout({"x": torch.randn(3, 4), "batch": None}, Data())

@@ -1,29 +1,20 @@
-"""Abstract base class for readout layers."""
+"""Base class for native homogeneous node and graph readouts."""
 
 from abc import abstractmethod
+from typing import Any
 
 import torch
-import torch_geometric
+from torch import Tensor, nn
+from torch_geometric.data import Data
 from torch_geometric.utils import scatter
 
 
-class AbstractZeroCellReadOut(torch.nn.Module):
-    r"""Readout layer for GNNs that operates on the batch level.
+class AbstractZeroCellReadOut(nn.Module):
+    """Read node embeddings and optionally pool them to graph embeddings.
 
-    Parameters
-    ----------
-    hidden_dim : int
-        Hidden dimension of the GNN model.
-    out_channels : int
-        Number of output channels.
-    task_level : str
-        Task level for readout layer. Either "graph" or "node".
-    pooling_type : str
-        Pooling type for readout layer. Either "max", "sum" or "mean".
-    logits_linear_layer : bool
-        Whether to use a linear layer for getting the final logits.
-    **kwargs : dict
-        Additional arguments.
+    The historical class name remains public for configuration stability. Its
+    runtime contract is native PyG: embeddings are ``model_out["x"]`` and graph
+    membership is ``model_out["batch"]``.
     """
 
     def __init__(
@@ -33,81 +24,75 @@ class AbstractZeroCellReadOut(torch.nn.Module):
         task_level: str,
         pooling_type: str = "sum",
         logits_linear_layer: bool = True,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         super().__init__()
-
+        del kwargs
+        if task_level not in {"graph", "node", "node_inductive"}:
+            raise ValueError(
+                "task_level must be graph, node, or node_inductive"
+            )
+        if pooling_type not in {"max", "sum", "mean"}:
+            raise ValueError("pooling_type must be max, sum, or mean")
         self.linear = (
-            torch.nn.Linear(hidden_dim, out_channels)
+            nn.Linear(hidden_dim, out_channels)
             if hidden_dim != out_channels or logits_linear_layer
-            else torch.nn.Identity()
-        )
-        assert task_level in ["graph", "node", "node_inductive"], (
-            "Invalid task_level"
+            else nn.Identity()
         )
         self.task_level = task_level
         self.logits_linear_layer = logits_linear_layer
-
-        assert pooling_type in ["max", "sum", "mean"], "Invalid pooling_type"
         self.pooling_type = pooling_type
 
-    def __repr__(self):
-        return f"{self.__class__.__name__}(task_level={self.task_level}, pooling_type={self.pooling_type})"
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}(task_level={self.task_level}, "
+            f"pooling_type={self.pooling_type})"
+        )
 
     def __call__(
-        self, model_out: dict, batch: torch_geometric.data.Data
-    ) -> dict:
-        """Readout logic based on model_output.
-
-        Parameters
-        ----------
-        model_out : dict
-            Dictionary containing the model output.
-        batch : torch_geometric.data.Data
-            Batch object containing the batched domain data.
-
-        Returns
-        -------
-        dict
-            Dictionary containing the updated model output.
-        """
-        model_out = self.forward(model_out, batch)
-
-        if model_out.get("logits", None) is None:
+        self, model_out: dict[str, Any], batch: Data
+    ) -> dict[str, Any]:
+        """Run the specialized readout then provide logits when absent."""
+        model_out = super().__call__(model_out, batch)
+        if model_out.get("logits") is None:
             model_out["logits"] = self.compute_logits(
-                model_out["x_0"], batch["batch_0"]
+                model_out.get("x"), model_out.get("batch")
             )
-
         return model_out
 
-    def compute_logits(self, x, batch):
-        r"""Compute logits based on the readout layer.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            Node embeddings.
-        batch : torch.Tensor
-            Batch index tensor.
-
-        Returns
-        -------
-        torch.Tensor
-            Logits tensor.
-        """
+    def compute_logits(
+        self, x: object, batch_index: object
+    ) -> Tensor:
+        """Apply graph pooling when configured, then the output head."""
+        if not isinstance(x, Tensor) or x.ndim != 2:
+            raise TypeError("model_out['x'] must be a rank-2 tensor")
         if self.task_level == "graph":
-            x = scatter(x, batch, dim=0, reduce=self.pooling_type)
-
+            if not isinstance(batch_index, Tensor):
+                raise TypeError(
+                    "model_out['batch'] must be a tensor for graph readout"
+                )
+            if (
+                batch_index.ndim != 1
+                or batch_index.dtype is not torch.long
+                or batch_index.size(0) != x.size(0)
+            ):
+                raise ValueError(
+                    "model_out['batch'] must be a rank-1 long tensor "
+                    "matching model_out['x']"
+                )
+            x = scatter(
+                x,
+                batch_index,
+                dim=0,
+                reduce=self.pooling_type,
+            )
         return self.linear(x)
 
     @abstractmethod
-    def forward(self, model_out: dict, batch: torch_geometric.data.Data):
-        r"""Forward pass.
+    def forward(
+        self, model_out: dict[str, Any], batch: Data
+    ) -> dict[str, Any]:
+        """Apply readout-specific feature transformations."""
 
-        Parameters
-        ----------
-        model_out : dict
-            Dictionary containing the model output.
-        batch : torch_geometric.data.Data
-            Batch object containing the batched domain data.
-        """
+
+__all__ = ["AbstractZeroCellReadOut"]

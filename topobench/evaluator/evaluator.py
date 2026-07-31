@@ -1,5 +1,6 @@
 """This module contains the Evaluator class that is responsible for computing the metrics."""
 
+import torch
 from torchmetrics import MetricCollection
 
 from topobench.evaluator import METRICS, AbstractEvaluator
@@ -96,6 +97,59 @@ class TBEvaluator(AbstractEvaluator):
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(task={self.task}, metrics={self.metrics})"
 
+    def _validate_target_contract(self, preds, target) -> None:
+        """Reject malformed targets before torchmetrics can broadcast."""
+        if not isinstance(preds, torch.Tensor) or not isinstance(
+            target, torch.Tensor
+        ):
+            raise TypeError("logits and labels must be tensors")
+
+        if self.task == "classification":
+            if preds.ndim != 2:
+                raise ValueError(
+                    "classification logits must be a rank-2 tensor"
+                )
+            if target.ndim != 1:
+                raise ValueError(
+                    "classification targets must be a rank-1 tensor"
+                )
+            if preds.size(0) != target.size(0):
+                raise ValueError(
+                    "classification logits and targets must have equal counts"
+                )
+            if target.dtype is not torch.long:
+                raise TypeError(
+                    "classification targets must have dtype torch.long"
+                )
+            return
+
+        if self.task == "regression":
+            if (
+                preds.ndim != 2
+                or target.ndim != 2
+                or preds.size(1) != 1
+                or target.size(1) != 1
+                or preds.shape != target.shape
+            ):
+                raise ValueError(
+                    "Scalar regression predictions and targets must have "
+                    "equal shape [B, 1]"
+                )
+            if not target.is_floating_point():
+                raise TypeError("Scalar regression targets must be floating")
+            if not torch.isfinite(target).all():
+                raise ValueError("Scalar regression targets must be finite")
+            return
+
+        if (
+            self.task == "multilabel classification"
+            and preds.shape != target.shape
+        ):
+            raise ValueError(
+                "multilabel classification predictions and targets must "
+                "have equal shape"
+            )
+
     def update(self, model_out: dict):
         r"""Update the metrics with the model output.
 
@@ -115,11 +169,14 @@ class TBEvaluator(AbstractEvaluator):
         ValueError
             If the task is not valid.
         """
-        preds = model_out["logits"].cpu()
-        target = model_out["labels"].cpu()
+        preds = model_out["logits"]
+        target = model_out["labels"]
+        self._validate_target_contract(preds, target)
+        preds = preds.cpu()
+        target = target.cpu()
 
         if self.task == "regression":
-            self.metrics.update(preds, target.unsqueeze(1))
+            self.metrics.update(preds, target)
 
         elif self.task == "classification":
             self.metrics.update(preds, target)

@@ -33,11 +33,17 @@ class TestDatasetLoss:
         """ Test the forward method."""
         batch = torch_geometric.data.Data()
 
-        model_out = {"logits": torch.tensor([0.1, 0.2, 0.3]), "labels": torch.tensor([0.1, 0.2, 0.3])}
+        model_out = {
+            "logits": torch.tensor([[0.1, 0.2, 0.3]]),
+            "labels": torch.tensor([2]),
+        }
         out = self.dataset1.forward(model_out, batch)
         assert out.item() >= 0
 
-        model_out = {"logits": torch.tensor([0.1, 0.2, 0.3]), "labels": torch.tensor([0.1, 0.2, 0.3])}
+        model_out = {
+            "logits": torch.tensor([[0.1], [0.2], [0.3]]),
+            "labels": torch.tensor([[0.1], [0.2], [0.3]]),
+        }
         out = self.dataset3.forward(model_out, batch)
         assert out.item() >= 0
 
