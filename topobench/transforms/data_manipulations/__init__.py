@@ -84,3 +84,21 @@ __all__ = [*DATA_MANIPULATIONS.keys(), "DATA_MANIPULATIONS"]
 
 # For backwards compatibility, also create individual imports
 locals().update(DATA_MANIPULATIONS)
+
+# File-based discovery executes modules under a synthetic name. Keep these
+# serialization-facing wrappers bound to their canonical import path.
+from topobench.transforms.data_manipulations.heterogeneous import (  # noqa: E402
+    HeterogeneousConstantFeatures as HeterogeneousConstantFeatures,
+)
+from topobench.transforms.data_manipulations.heterogeneous import (  # noqa: E402
+    HeterogeneousToUndirected as HeterogeneousToUndirected,
+)
+
+for canonical_class in (
+    HeterogeneousConstantFeatures,
+    HeterogeneousToUndirected,
+):
+    DATA_MANIPULATIONS[canonical_class.__name__] = canonical_class
+    locals()[canonical_class.__name__] = canonical_class
+    if canonical_class.__name__ not in __all__:
+        __all__.append(canonical_class.__name__)

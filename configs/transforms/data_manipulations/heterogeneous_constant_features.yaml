@@ -1,0 +1,5 @@
+transform_name: HeterogeneousConstantFeatures
+transform_type: data manipulation
+node_types: null
+value: 1.0
+cat: false

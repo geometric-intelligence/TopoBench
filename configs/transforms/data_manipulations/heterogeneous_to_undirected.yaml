@@ -1,0 +1,4 @@
+transform_name: HeterogeneousToUndirected
+transform_type: data manipulation
+merge: false
+reduce: add

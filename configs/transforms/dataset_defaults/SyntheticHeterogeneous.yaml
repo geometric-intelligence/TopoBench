@@ -1,0 +1,12 @@
+defaults:
+  - data_manipulations@venue_features: heterogeneous_constant_features
+  - data_manipulations@reverse_relations: heterogeneous_to_undirected
+
+venue_features:
+  node_types: venue
+  value: 1.0
+  cat: false
+
+reverse_relations:
+  merge: false
+  reduce: add
