@@ -5,7 +5,7 @@ import torch_geometric
 import torch_geometric.data
 from torch_geometric.data import Data
 
-from topobench.data.utils import get_routes_from_neighborhoods
+from topobench.data.utils.utils import get_routes_from_neighborhoods
 from topobench.transforms.data_manipulations.all_encodings import (
     CombinedEncodings,
     SelectDestinationEncodings,

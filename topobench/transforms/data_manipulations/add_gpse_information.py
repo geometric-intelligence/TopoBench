@@ -6,7 +6,7 @@ import torch_geometric.data
 from torch_geometric.data import Data
 from torch_geometric.nn import GPSE
 
-from topobench.data.utils import get_routes_from_neighborhoods
+from topobench.data.utils.utils import get_routes_from_neighborhoods
 
 
 class AddGPSEInformation(torch_geometric.transforms.BaseTransform):

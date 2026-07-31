@@ -11,11 +11,10 @@ from torch_geometric.data import Data, HeteroData
 from torch_geometric.io import fs
 from tqdm import tqdm
 
-from topobench.data.utils import (
-    ensure_serializable,
+from topobench.data.utils.common import ensure_serializable, make_hash
+from topobench.data.utils.split_utils import (
     load_inductive_splits,
     load_transductive_splits,
-    make_hash,
 )
 from topobench.transforms.data_transform import DataTransform
 

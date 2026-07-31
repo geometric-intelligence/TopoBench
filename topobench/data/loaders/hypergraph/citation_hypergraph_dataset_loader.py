@@ -2,7 +2,10 @@
 
 from omegaconf import DictConfig
 
-from topobench.data.datasets import CitationHypergraphDataset
+from topobench.data import validate_hypergraph_structure
+from topobench.data.datasets.citation_hypergraph_dataset import (
+    CitationHypergraphDataset,
+)
 from topobench.data.loaders.base import AbstractLoader
 
 
@@ -36,6 +39,7 @@ class CitationHypergraphDatasetLoader(AbstractLoader):
         """
 
         dataset = self._initialize_dataset()
+        validate_hypergraph_structure(dataset[0])
         self.data_dir = self.get_data_dir()
         return dataset
 

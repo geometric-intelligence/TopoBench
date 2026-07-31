@@ -6,7 +6,7 @@ from typing import Any
 from omegaconf import DictConfig
 
 from topobench.data.loaders.base import AbstractLoader
-from topobench.data.utils import load_manual_graph
+from topobench.data.utils.utils import load_manual_graph
 from topobench.dataloader import DataloadDataset
 
 

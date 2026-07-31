@@ -10,10 +10,8 @@ from omegaconf import DictConfig, OmegaConf
 from torch_geometric.data import Data, InMemoryDataset, extract_gz
 from torch_geometric.io import fs
 
-from topobench.data.utils import (
-    download_file_from_link,
-    read_ndim_manifolds,
-)
+from topobench.data.utils.downloads import download_file_from_link
+from topobench.data.utils.io_utils import read_ndim_manifolds
 
 
 class MantraDataset(InMemoryDataset):

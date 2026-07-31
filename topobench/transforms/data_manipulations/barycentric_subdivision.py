@@ -5,8 +5,10 @@ import torch_geometric
 from topomodelx.utils.sparse import from_sparse
 from toponetx import SimplicialComplex
 
-from topobench.data.utils import data2simplicial
-from topobench.data.utils.utils import get_complex_connectivity
+from topobench.data.utils.utils import (
+    data2simplicial,
+    get_complex_connectivity,
+)
 
 
 class BarycentricSubdivisionTransform(

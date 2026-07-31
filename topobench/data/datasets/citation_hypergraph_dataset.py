@@ -3,16 +3,20 @@
 import os
 import os.path as osp
 import shutil
+import warnings
 from typing import ClassVar
 
 from omegaconf import DictConfig
-from torch_geometric.data import Data, InMemoryDataset, extract_zip
-from torch_geometric.io import fs
+from torch_geometric.data import InMemoryDataset, extract_zip
 
-from topobench.data.utils import (
-    download_file_from_drive,
-    load_hypergraph_pickle_dataset,
+from topobench.data import (
+    HYPERGRAPH_CACHE_FILENAME,
+    HYPERGRAPH_REPRESENTATION_VERSION,
+    HypergraphData,
+    validate_hypergraph_structure,
 )
+from topobench.data.utils.downloads import download_file_from_drive
+from topobench.data.utils.hypergraph_io import load_hypergraph_pickle_dataset
 
 
 class CitationHypergraphDataset(InMemoryDataset):
@@ -60,27 +64,31 @@ class CitationHypergraphDataset(InMemoryDataset):
     ) -> None:
         self.name = name
         self.parameters = parameters
-        # self.year = parameters.year
-        # self.task_variable = parameters.task_variable
-        super().__init__(
+        legacy_path = osp.join(root, name, "processed", "data.pt")
+        native_path = osp.join(
             root,
+            name,
+            "processed",
+            HYPERGRAPH_CACHE_FILENAME,
         )
-
-        out = fs.torch_load(self.processed_paths[0])
-        assert len(out) == 3 or len(out) == 4
-
-        if len(out) == 3:  # Backward compatibility.
-            data, self.slices, self.sizes = out
-            data_cls = Data
-        else:
-            data, self.slices, self.sizes, data_cls = out
-
-        if not isinstance(data, dict):  # Backward compatibility.
-            self.data = data
-        else:
-            self.data = data_cls.from_dict(data)
-
-        assert isinstance(self._data, Data)
+        if osp.isfile(legacy_path) and not osp.isfile(native_path):
+            warnings.warn(
+                "Ignoring legacy processed cache data.pt; regenerating native "
+                "hypergraph data.",
+                UserWarning,
+                stacklevel=2,
+            )
+        super().__init__(root)
+        self.load(self.processed_paths[0], data_cls=HypergraphData)
+        data = self.get(0)
+        if (
+            not isinstance(data, HypergraphData)
+            or "representation_version" not in data
+            or int(data["representation_version"])
+            != HYPERGRAPH_REPRESENTATION_VERSION
+        ):
+            raise ValueError("processed hypergraph cache has an invalid version")
+        validate_hypergraph_structure(data)
 
     def __repr__(self) -> str:
         return f"{self.name}(self.root={self.root}, self.name={self.name}, self.parameters={self.parameters}, self.force_reload={self.force_reload})"
@@ -128,7 +136,7 @@ class CitationHypergraphDataset(InMemoryDataset):
         str
             Processed file name.
         """
-        return "data.pt"
+        return HYPERGRAPH_CACHE_FILENAME
 
     def download(self) -> None:
         r"""Download the dataset from a URL and saves it to the raw directory.
@@ -163,18 +171,16 @@ class CitationHypergraphDataset(InMemoryDataset):
         shutil.rmtree(osp.join(folder, self.name))
 
     def process(self) -> None:
-        r"""Handle the data for the dataset.
-
-        This method loads the US county demographics data, applies any pre-
-        processing transformations if specified, and saves the processed data
-        to the appropriate location.
-        """
-        data, _ = load_hypergraph_pickle_dataset(self.name, self.raw_dir)
-
-        data_list = [data]
-        self.data, self.slices = self.collate(data_list)
-        self._data_list = None  # Reset cache.
-        fs.torch_save(
-            (self._data.to_dict(), self.slices, {}, self._data.__class__),
-            self.processed_paths[0],
+        """Parse raw pickle files and save one native v2 hypergraph."""
+        data, _ = load_hypergraph_pickle_dataset(
+            data_dir=self.raw_dir,
+            data_name=self.name,
         )
+        if (
+            "representation_version" not in data
+            or int(data["representation_version"])
+            != HYPERGRAPH_REPRESENTATION_VERSION
+        ):
+            raise ValueError("raw hypergraph parser returned an invalid version")
+        validate_hypergraph_structure(data)
+        self.save([data], self.processed_paths[0])

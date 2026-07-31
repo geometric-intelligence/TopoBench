@@ -5,7 +5,7 @@ from __future__ import annotations
 import torch
 from torch_geometric.data import Data
 
-from topobench.data.utils import get_routes_from_neighborhoods
+from topobench.data.utils.utils import get_routes_from_neighborhoods
 from topobench.nn.backbones.heterogeneous.hgt import HGTBackbone
 
 
