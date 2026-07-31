@@ -184,6 +184,17 @@ This approach allows you to create complex transform pipelines, including multip
 By mastering these configuration options, you can easily customize your experiments to suit your specific needs, from simple model and dataset selections to complex data transformation pipelines.
 ---
 
+### Native heterogeneous graphs
+
+TopoBench supports batched, native PyG `HeteroData` node classification with
+HGT and HeteroSAGE. It provides deterministic offline synthetic experiments,
+full-graph DBLP configurations, and neighbor-sampled OGB-MAG preflights while
+keeping typed data separate from the topological collation path.
+
+See the [native heterogeneous graph guide](docs/heterogeneous_graphs.md) for
+the data and model extension contracts, batching and evaluation semantics,
+network-free checks, download-gated real-data commands, and W&B naming.
+
 ### Additional Notes
 
 - **Automatic Lifting:** By default, our pipeline identifies the source and destination topological domains and applies a default lifting between them if required.  

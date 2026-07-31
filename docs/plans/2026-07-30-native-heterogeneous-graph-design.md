@@ -2,7 +2,12 @@
 
 ## Status
 
-Approved for implementation planning on 2026-07-30.
+Approved on 2026-07-30. Implementation is staged through synthetic support,
+DBLP integration, and OGB-MAG readiness configurations; real-data gates remain
+explicitly opt-in. The public configuration and extension contract is
+maintained in the
+[native heterogeneous graph guide](../heterogeneous_graphs.md); this document
+retains architectural rationale and scope decisions.
 
 ## Objective
 
