@@ -56,10 +56,48 @@ SYNTHETIC_EXAMPLES = (
     ),
 )
 
+OGB_MAG_BOUNDED_EXAMPLES = (
+    pytest.param(
+        "uv run python -m topobench.run \\\n"
+        "  experiment=heterogeneous_ogb_mag_hgt \\\n"
+        "  seed=0 \\\n"
+        "  trainer.min_epochs=1 \\\n"
+        "  trainer.max_epochs=1 \\\n"
+        "  trainer.limit_train_batches=10 \\\n"
+        "  trainer.limit_val_batches=5 \\\n"
+        "  trainer.limit_test_batches=5 \\\n"
+        "  logger=heterogeneous_wandb \\\n"
+        "  logger.wandb.name=ogb-mag-hgt-neighbor-bounded-seed0",
+        "hgt",
+        "ogb-mag-hgt-neighbor-bounded-seed0",
+        id="hgt",
+    ),
+    pytest.param(
+        "uv run python -m topobench.run \\\n"
+        "  experiment=heterogeneous_ogb_mag_heterosage \\\n"
+        "  seed=0 \\\n"
+        "  trainer.min_epochs=1 \\\n"
+        "  trainer.max_epochs=1 \\\n"
+        "  trainer.limit_train_batches=10 \\\n"
+        "  trainer.limit_val_batches=5 \\\n"
+        "  trainer.limit_test_batches=5 \\\n"
+        "  logger=heterogeneous_wandb \\\n"
+        "  logger.wandb.name=ogb-mag-heterosage-neighbor-bounded-seed0",
+        "heterosage",
+        "ogb-mag-heterosage-neighbor-bounded-seed0",
+        id="heterosage",
+    ),
+)
+
+
+def _shell_words(command: str) -> list[str]:
+    """Tokenize a documented shell command after joining continuations."""
+    return shlex.split(command.replace("\\\n", " "))
+
 
 def _compose_documented_command(command: str, tmp_path: Path) -> DictConfig:
     """Compose the exact documented overrides plus isolated test paths."""
-    words = shlex.split(command)
+    words = _shell_words(command)
     assert words[:5] == ["uv", "run", "python", "-m", "topobench"]
     overrides = [
         *words[5:],
@@ -77,6 +115,24 @@ def _compose_documented_command(command: str, tmp_path: Path) -> DictConfig:
             job_name="test_heterogeneous_documentation",
         ):
             return hydra.compose(config_name="run.yaml", overrides=overrides)
+    finally:
+        GlobalHydra.instance().clear()
+
+
+def _compose_without_data(command: str) -> DictConfig:
+    """Compose a documented command without constructing its dataset."""
+    words = _shell_words(command)
+    assert words[:5] == ["uv", "run", "python", "-m", "topobench.run"]
+
+    GlobalHydra.instance().clear()
+    register_all_resolvers()
+    try:
+        with hydra.initialize_config_dir(
+            version_base="1.3",
+            config_dir=str(_PROJECT_ROOT / "configs"),
+            job_name="test_heterogeneous_bounded_documentation",
+        ):
+            return hydra.compose(config_name="run.yaml", overrides=words[5:])
     finally:
         GlobalHydra.instance().clear()
 
@@ -129,3 +185,29 @@ def test_documented_synthetic_example_builds_and_forwards(
     assert output["num_supervised_examples"] == expected_examples
     assert output["logits"].size(0) == expected_examples
     assert output["labels"].size(0) == expected_examples
+
+
+@pytest.mark.parametrize(
+    ("command", "model_name", "run_name"),
+    OGB_MAG_BOUNDED_EXAMPLES,
+)
+def test_documented_bounded_ogb_command_composes_without_loading_data(
+    command: str,
+    model_name: str,
+    run_name: str,
+) -> None:
+    """Both bounded OGB-MAG commands remain strict-Hydra compatible."""
+    guide = _GUIDE.read_text(encoding="utf-8")
+    assert command in guide
+
+    cfg = _compose_without_data(command)
+    assert cfg.dataset.loader.parameters.data_name == "OGB_MAG"
+    assert cfg.dataset.dataloader_params.mode == "neighbor"
+    assert cfg.model.model_name == model_name
+    assert cfg.trainer.min_epochs == 1
+    assert cfg.trainer.max_epochs == 1
+    assert cfg.trainer.limit_train_batches == 10
+    assert cfg.trainer.limit_val_batches == 5
+    assert cfg.trainer.limit_test_batches == 5
+    assert cfg.logger.wandb.project == "topobench-heterogeneous"
+    assert cfg.logger.wandb.name == run_name

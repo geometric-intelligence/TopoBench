@@ -30,8 +30,8 @@ uv run python -m topobench experiment=heterogeneous_synthetic_hgt_neighbor train
 uv run python -m topobench experiment=heterogeneous_synthetic_heterosage_neighbor train=false test=false logger=[]
 ```
 
-The executable documentation test also builds each real data pipeline and runs
-one model step:
+The executable documentation test also builds each documented synthetic
+production pipeline and runs one model step:
 
 ```bash
 uv run pytest test/docs/test_heterogeneous_examples.py -q
@@ -58,8 +58,10 @@ processed graph must satisfy all of these invariants before model construction:
 - `dataset.parameters.target_node_type` names an existing node store. Only
   this store is supervised.
 - The target store has one-dimensional `torch.long` labels `y`, with one label
-  per target node and values in
-  `[0, dataset.parameters.num_classes - 1]`.
+  per target node. Only labels selected by the union of `train_mask`,
+  `val_mask`, and `test_mask` must be in
+  `[0, dataset.parameters.num_classes - 1]`. Unsupervised nodes may retain
+  sentinel or out-of-range labels; TopoBench ignores them.
 - The target store has non-empty, boolean `train_mask`, `val_mask`, and
   `test_mask` tensors. They have one entry per target node and are pairwise
   disjoint. They may leave some nodes unsupervised.
@@ -211,26 +213,110 @@ Its bounded real-data optimizer smoke test is:
 TOPOBENCH_ALLOW_DOWNLOADS=1 uv run pytest test/integration/test_dblp_heterogeneous.py -q
 ```
 
-OGB-MAG is large and sampled-only. Before a full run, execute the opt-in
-preflight, which fetches one train, validation, and test batch and takes one
-optimizer step for each model:
+OGB-MAG is large and sampled-only. Promote it in three stages. First, execute
+the opt-in preflight, which fetches one train, validation, and test batch and
+takes one optimizer step for each model:
 
 ```bash
-TOPOBENCH_ALLOW_DOWNLOADS=1 uv run pytest test/integration/test_ogb_mag_preflight.py -q -s
+TOPOBENCH_ALLOW_DOWNLOADS=1 uv run pytest \
+  test/integration/test_ogb_mag_preflight.py -q
 ```
 
-After the preflight fits the intended machine, start one configured model:
+The preflight may download and preprocess OGB-MAG. It must pass on the intended
+machine before any Lightning run.
+
+Second, run bounded Lightning smoke experiments. These exercise training,
+checkpointing, fixed sampled validation/test reruns, and the shared W&B project
+without traversing every seed.
+
+HGT:
 
 ```bash
-TOPOBENCH_ALLOW_DOWNLOADS=1 uv run python -m topobench experiment=heterogeneous_ogb_mag_hgt
-TOPOBENCH_ALLOW_DOWNLOADS=1 uv run python -m topobench experiment=heterogeneous_ogb_mag_heterosage
+uv run python -m topobench.run \
+  experiment=heterogeneous_ogb_mag_hgt \
+  seed=0 \
+  trainer.min_epochs=1 \
+  trainer.max_epochs=1 \
+  trainer.limit_train_batches=10 \
+  trainer.limit_val_batches=5 \
+  trainer.limit_test_batches=5 \
+  logger=heterogeneous_wandb \
+  logger.wandb.name=ogb-mag-hgt-neighbor-bounded-seed0
 ```
 
-The OGB-MAG experiment defaults are neighbor fan-outs `[15, 10]`, target seed
-batch size `128`, two message-passing layers, four loader workers, and fixed
-sampled evaluation. The preflight reports processed and sampled counts plus
-accelerator memory where the platform exposes it. A successful preflight is a
-memory/readiness gate, not a performance result.
+HeteroSAGE:
+
+```bash
+uv run python -m topobench.run \
+  experiment=heterogeneous_ogb_mag_heterosage \
+  seed=0 \
+  trainer.min_epochs=1 \
+  trainer.max_epochs=1 \
+  trainer.limit_train_batches=10 \
+  trainer.limit_val_batches=5 \
+  trainer.limit_test_batches=5 \
+  logger=heterogeneous_wandb \
+  logger.wandb.name=ogb-mag-heterosage-neighbor-bounded-seed0
+```
+
+Bounded metrics are diagnostics, not benchmark results. They cover only a
+prefix of the fixed sampled evaluation loaders.
+
+Third, only after a model's bounded run passes, remove all three batch-limit
+overrides and change `bounded` to `epoch1` in its W&B name. This performs one
+complete sampled train, validation, best-checkpoint validation rerun, and
+best-checkpoint test traversal.
+
+HGT:
+
+```bash
+uv run python -m topobench.run \
+  experiment=heterogeneous_ogb_mag_hgt \
+  seed=0 \
+  trainer.min_epochs=1 \
+  trainer.max_epochs=1 \
+  logger=heterogeneous_wandb \
+  logger.wandb.name=ogb-mag-hgt-neighbor-epoch1-seed0
+```
+
+HeteroSAGE:
+
+```bash
+uv run python -m topobench.run \
+  experiment=heterogeneous_ogb_mag_heterosage \
+  seed=0 \
+  trainer.min_epochs=1 \
+  trainer.max_epochs=1 \
+  logger=heterogeneous_wandb \
+  logger.wandb.name=ogb-mag-heterosage-neighbor-epoch1-seed0
+```
+
+Even a complete epoch uses fixed neighbor-sampled evaluation, not exact
+full-graph inference. Record that protocol with any reported metric.
+
+Only after the complete one-epoch traversal succeeds should the default
+50-epoch starting point be attempted:
+
+```bash
+uv run python -m topobench.run \
+  experiment=heterogeneous_ogb_mag_hgt \
+  seed=0 \
+  logger=heterogeneous_wandb \
+  logger.wandb.name=ogb-mag-hgt-neighbor-epoch50-seed0
+
+uv run python -m topobench.run \
+  experiment=heterogeneous_ogb_mag_heterosage \
+  seed=0 \
+  logger=heterogeneous_wandb \
+  logger.wandb.name=ogb-mag-heterosage-neighbor-epoch50-seed0
+```
+
+The defaults are neighbor fan-outs `[15, 10]`, target seed batch size `128`,
+two message-passing layers, four loader workers, and fixed sampled evaluation.
+The preflight reports processed and sampled counts plus accelerator memory
+where the platform exposes it. Passing it proves resource readiness, not model
+quality; the 50-epoch defaults are an operational baseline rather than tuned
+hyperparameters.
 
 ## W&B identity
 
