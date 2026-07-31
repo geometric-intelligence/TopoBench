@@ -129,7 +129,7 @@ class TestIncidenceToHyperedgeIndex:
         incidence = torch.tensor(
             [
                 [1.0, 0.0, 2.0],
-                [0.0, -1.0, 0.0],
+                [0.0, -1.0, 0.0], # -1 to verify that every nonzero entry counts as an incidence
             ]
         )
 
