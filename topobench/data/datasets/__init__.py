@@ -1,157 +1,67 @@
-"""Dataset module with automated exports."""
+"""Datasets exposed by the supported data domains."""
 
-import inspect
-from importlib import util
-from pathlib import Path
-from typing import ClassVar
+from .citation_hypergraph_dataset import CitationHypergraphDataset
+from .hypergraph_datasets import HypergraphDataset
+from .synthetic_heterogeneous_dataset import (
+    SyntheticHeterogeneousDataset,
+    make_synthetic_heterogeneous_data,
+)
+from .us_county_demos_dataset import USCountyDemosDataset
 
-from torch_geometric.data import InMemoryDataset
+PLANETOID_DATASETS = ["Cora", "citeseer", "PubMed"]
 
+TU_DATASETS = [
+    "MUTAG",
+    "ENZYMES",
+    "PROTEINS",
+    "COLLAB",
+    "IMDB-BINARY",
+    "IMDB-MULTI",
+    "REDDIT-BINARY",
+    "NCI1",
+    "NCI109",
+]
 
-class DatasetManager:
-    """Manages automatic discovery and registration of dataset classes."""
+FIXED_SPLITS_DATASETS = ["ZINC", "AQSOL"]
 
-    # Static dataset definitions
-    PLANETOID_DATASETS: ClassVar[list[str]] = [
-        "Cora",
-        "citeseer",
-        "PubMed",
-    ]
+HETEROPHILIC_DATASETS = [
+    "amazon_ratings",
+    "questions",
+    "minesweeper",
+    "roman_empire",
+    "tolokers",
+]
 
-    TU_DATASETS: ClassVar[list[str]] = [
-        "MUTAG",
-        "ENZYMES",
-        "PROTEINS",
-        "COLLAB",
-        "IMDB-BINARY",
-        "IMDB-MULTI",
-        "REDDIT-BINARY",
-        "NCI1",
-        "NCI109",
-    ]
+PYG_DATASETS = [
+    *PLANETOID_DATASETS,
+    *TU_DATASETS,
+    *FIXED_SPLITS_DATASETS,
+    *HETEROPHILIC_DATASETS,
+]
 
-    FIXED_SPLITS_DATASETS: ClassVar[list[str]] = ["ZINC", "AQSOL"]
+MANUAL_DATASETS = dict(
+    sorted(
+        {
+            dataset_class.__name__: dataset_class
+            for dataset_class in (
+                CitationHypergraphDataset,
+                HypergraphDataset,
+                SyntheticHeterogeneousDataset,
+                USCountyDemosDataset,
+            )
+        }.items()
+    )
+)
 
-    HETEROPHILIC_DATASETS: ClassVar[list[str]] = [
-        "amazon_ratings",
-        "questions",
-        "minesweeper",
-        "roman_empire",
-        "tolokers",
-    ]
+globals().update(MANUAL_DATASETS)
 
-    @classmethod
-    def discover_datasets(
-        cls, package_path: str
-    ) -> dict[str, type[InMemoryDataset]]:
-        """Dynamically discover all dataset classes in the package.
-
-        Parameters
-        ----------
-        package_path : str
-            Path to the package's __init__.py file.
-
-        Returns
-        -------
-        Dict[str, Type[InMemoryDataset]]
-            Dictionary mapping class names to their corresponding class objects.
-        """
-        datasets = {}
-
-        # Get the directory containing the dataset modules
-        package_dir = Path(package_path).parent
-
-        # Iterate through all .py files in the directory
-        for file_path in package_dir.glob("*.py"):
-            if file_path.stem == "__init__":
-                continue
-
-            # Import the module
-            module_name = f"{Path(package_path).stem}.{file_path.stem}"
-            spec = util.spec_from_file_location(module_name, file_path)
-            if spec and spec.loader:
-                module = util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-
-                # Find all dataset classes in the module
-                new_datasets = {
-                    name: obj
-                    for name, obj in inspect.getmembers(module)
-                    if (
-                        inspect.isclass(obj)
-                        and obj.__module__ == module.__name__
-                        and not name.startswith("_")
-                        and issubclass(obj, InMemoryDataset)
-                        and obj != InMemoryDataset
-                    )
-                }
-                datasets.update(new_datasets)
-        return datasets
-
-    @classmethod
-    def get_pyg_datasets(cls) -> list[str]:
-        """Get combined list of all PyG datasets.
-
-        Returns
-        -------
-        List[str]
-            List of all PyG datasets.
-        """
-        return (
-            cls.PLANETOID_DATASETS
-            + cls.TU_DATASETS
-            + cls.FIXED_SPLITS_DATASETS
-            + cls.HETEROPHILIC_DATASETS
-        )
-
-
-# Create the dataset manager
-manager = DatasetManager()
-
-# Automatically discover and populate datasets
-MANUAL_DATASETS = manager.discover_datasets(__file__)
-
-# Create other dataset collections
-PYG_DATASETS = manager.get_pyg_datasets()
-PLANETOID_DATASETS = manager.PLANETOID_DATASETS
-TU_DATASETS = manager.TU_DATASETS
-FIXED_SPLITS_DATASETS = manager.FIXED_SPLITS_DATASETS
-HETEROPHILIC_DATASETS = manager.HETEROPHILIC_DATASETS
-
-# Automatically generate __all__
 __all__ = [
-    # Dataset collections
     "PYG_DATASETS",
     "PLANETOID_DATASETS",
     "TU_DATASETS",
     "FIXED_SPLITS_DATASETS",
     "HETEROPHILIC_DATASETS",
+    *MANUAL_DATASETS,
     "MANUAL_DATASETS",
-    # Discovered dataset classes
-    *MANUAL_DATASETS.keys(),
-]
-
-# For backwards compatibility, create individual imports
-locals().update(**MANUAL_DATASETS)
-
-# Factories are not discovered by ``DatasetManager`` and explicit imports keep
-# the dataset class bound to its canonical module in clean Python processes.
-from topobench.data.datasets.synthetic_heterogeneous_dataset import (  # noqa: E402
-    SyntheticHeterogeneousDataset as SyntheticHeterogeneousDataset,
-)
-from topobench.data.datasets.synthetic_heterogeneous_dataset import (  # noqa: E402
-    make_synthetic_heterogeneous_data as make_synthetic_heterogeneous_data,
-)
-
-# Replace the class object created by file-based discovery with the canonical
-# import so registry construction and serialization use a stable module path.
-MANUAL_DATASETS["SyntheticHeterogeneousDataset"] = (
-    SyntheticHeterogeneousDataset
-)
-
-for public_name in (
-    "SyntheticHeterogeneousDataset",
     "make_synthetic_heterogeneous_data",
-):
-    if public_name not in __all__:
-        __all__.append(public_name)
+]

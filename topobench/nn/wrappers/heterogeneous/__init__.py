@@ -1,7 +1,11 @@
-"""Wrappers for native heterogeneous graph backbones."""
+"""Wrappers for the heterogeneous graph domain."""
 
-from topobench.nn.wrappers.heterogeneous.heterogeneous_wrapper import (
-    HeterogeneousWrapper,
+from .heterogeneous_wrapper import HeterogeneousWrapper
+
+WRAPPER_CLASSES = dict(
+    sorted({HeterogeneousWrapper.__name__: HeterogeneousWrapper}.items())
 )
 
-__all__ = ["HeterogeneousWrapper"]
+globals().update(WRAPPER_CLASSES)
+
+__all__ = [*WRAPPER_CLASSES, "WRAPPER_CLASSES"]

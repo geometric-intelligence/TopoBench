@@ -1,80 +1,19 @@
-"""Some models implemented for TopoBenchX with automated exports."""
+"""Backbones exposed by the supported data domains."""
 
-import importlib
-import inspect
-from pathlib import Path
-from typing import Any
+from .graph import BACKBONE_CLASSES as GRAPH_BACKBONES
+from .heterogeneous import BACKBONE_CLASSES as HETEROGENEOUS_BACKBONES
+from .hypergraph import BACKBONE_CLASSES as HYPERGRAPH_BACKBONES
 
+MODEL_CLASSES = dict(
+    sorted(
+        {
+            **GRAPH_BACKBONES,
+            **HETEROGENEOUS_BACKBONES,
+            **HYPERGRAPH_BACKBONES,
+        }.items()
+    )
+)
 
-class ModelExportsManager:
-    """Manages automatic discovery and registration of model classes."""
+globals().update(MODEL_CLASSES)
 
-    @staticmethod
-    def is_model_class(obj: Any) -> bool:
-        """Check if an object is a valid model class.
-
-        Parameters
-        ----------
-        obj : Any
-            The object to check if it's a valid model class.
-
-        Returns
-        -------
-        bool
-            True if the object is a valid model class (non-private class defined in __main__), False otherwise.
-        """
-        return (
-            inspect.isclass(obj)
-            and obj.__module__ == "__main__"
-            and not obj.__name__.startswith("_")
-        )
-
-    @classmethod
-    def discover_models(cls, package_path: str) -> dict[str, type]:
-        """Dynamically discover all model classes in the package.
-
-        Parameters
-        ----------
-        package_path : str
-            Path to the package's __init__.py file.
-
-        Returns
-        -------
-        dict[str, type]
-            Dictionary mapping class names to their corresponding class objects.
-        """
-        models = {}
-        package_dir = Path(package_path).parent
-
-        for subpackage in sorted(package_dir.iterdir()):
-            if subpackage.is_dir() and (subpackage / "__init__.py").exists():
-                for file_path in sorted(subpackage.glob("*.py")):
-                    if file_path.stem == "__init__":
-                        continue
-
-                    module_name = (
-                        f"{__package__}.{subpackage.stem}.{file_path.stem}"
-                    )
-                    module = importlib.import_module(module_name)
-                    new_models = {
-                        name: obj
-                        for name, obj in inspect.getmembers(module)
-                        if inspect.isclass(obj)
-                        and obj.__module__ == module.__name__
-                        and not name.startswith("_")
-                    }
-                    models.update(new_models)
-        return models
-
-
-# Create the exports manager
-manager = ModelExportsManager()
-
-# Automatically discover and populate MODEL_CLASSES
-MODEL_CLASSES = manager.discover_models(__file__)
-
-# Automatically generate __all__
-__all__ = [*MODEL_CLASSES.keys(), "MODEL_CLASSES"]
-
-# For backwards compatibility, also create individual imports
-locals().update(MODEL_CLASSES)
+__all__ = [*MODEL_CLASSES, "MODEL_CLASSES"]

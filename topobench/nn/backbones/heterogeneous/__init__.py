@@ -1,17 +1,17 @@
-"""Reusable backbones for native heterogeneous graphs."""
+"""Backbones for the heterogeneous graph domain."""
 
-from topobench.nn.backbones.heterogeneous.common import (
-    validate_backbone_arguments,
-    validate_forward_dictionaries,
-)
-from topobench.nn.backbones.heterogeneous.heterosage import (
-    HeteroSAGEBackbone,
-)
-from topobench.nn.backbones.heterogeneous.hgt import HGTBackbone
+from .heterosage import HeteroSAGEBackbone
+from .hgt import HGTBackbone
 
-__all__ = [
-    "HGTBackbone",
-    "HeteroSAGEBackbone",
-    "validate_backbone_arguments",
-    "validate_forward_dictionaries",
-]
+BACKBONE_CLASSES = dict(
+    sorted(
+        {
+            backbone_class.__name__: backbone_class
+            for backbone_class in (HGTBackbone, HeteroSAGEBackbone)
+        }.items()
+    )
+)
+
+globals().update(BACKBONE_CLASSES)
+
+__all__ = [*BACKBONE_CLASSES, "BACKBONE_CLASSES"]

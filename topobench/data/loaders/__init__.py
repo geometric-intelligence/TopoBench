@@ -1,22 +1,20 @@
-"""Init file for load module."""
+"""Dataset loaders exposed by the supported data domains."""
 
 from .base import AbstractLoader
-from .graph import *
-from .graph import __all__ as graph_all
-from .heterogeneous import *
-from .heterogeneous import __all__ as heterogeneous_all
-from .hypergraph import *
-from .hypergraph import __all__ as hypergraph_all
-from .pointcloud import *
-from .pointcloud import __all__ as pointcloud_all
-from .simplicial import *
-from .simplicial import __all__ as simplicial_all
+from .graph import GRAPH_LOADERS
+from .heterogeneous import HETEROGENEOUS_LOADERS
+from .hypergraph import HYPERGRAPH_LOADERS
 
-__all__ = [
-    "AbstractLoader",
-    *graph_all,
-    *heterogeneous_all,
-    *hypergraph_all,
-    *simplicial_all,
-    *pointcloud_all,
-]
+LOADER_CLASSES = dict(
+    sorted(
+        {
+            **GRAPH_LOADERS,
+            **HETEROGENEOUS_LOADERS,
+            **HYPERGRAPH_LOADERS,
+        }.items()
+    )
+)
+
+globals().update(LOADER_CLASSES)
+
+__all__ = ["AbstractLoader", *LOADER_CLASSES, "LOADER_CLASSES"]

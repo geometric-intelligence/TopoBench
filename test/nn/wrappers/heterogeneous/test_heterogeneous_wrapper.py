@@ -34,22 +34,11 @@ from topobench.transforms.data_manipulations.heterogeneous import (
 
 HIDDEN_CHANNELS = 8
 INPUT_CHANNELS = {"author": 8, "paper": 5, "venue": 1}
-EXISTING_WRAPPER_NAMES = {
-    "AbstractWrapper",
-    "CANWrapper",
-    "CCCNWrapper",
-    "CCXNWrapper",
-    "CWNWrapper",
+EXPECTED_REGISTERED_WRAPPERS = {
     "GNNWrapper",
     "GraphMLPWrapper",
-    "HOPSEWrapper",
+    "HeterogeneousWrapper",
     "HypergraphWrapper",
-    "PointcloudWrapper",
-    "SANWrapper",
-    "SCCNNWrapper",
-    "SCCNWrapper",
-    "SCNWrapper",
-    "TuneWrapper",
 }
 
 
@@ -417,8 +406,8 @@ def test_wrapper_rejects_incomplete_or_invalid_backbone_outputs_transactionally(
 
 
 def test_registry_exports_canonical_pickle_stable_classes() -> None:
-    """Existing exports and the new wrapper share canonical class identities."""
-    expected = EXISTING_WRAPPER_NAMES | {"HeterogeneousWrapper"}
+    """Reduced registry exports canonical, pickle-stable wrapper classes."""
+    expected = EXPECTED_REGISTERED_WRAPPERS
     assert set(wrapper_registry.WRAPPER_CLASSES) == expected
     assert list(wrapper_registry.WRAPPER_CLASSES) == sorted(expected)
     assert HeterogeneousWrapper is CanonicalWrapper

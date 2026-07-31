@@ -23,33 +23,12 @@ EDGE_TYPES = [
     ("venue", "rev_published_in", "paper"),
 ]
 EXPECTED_REGISTERED_BACKBONES = {
-    "CCCN",
-    "CW",
-    "CellHGT",
     "EDGNN",
-    "EquivSetConv",
     "GPSEncoder",
     "GraphMLP",
     "HGTBackbone",
     "HeteroSAGEBackbone",
-    "HOPSE",
-    "HOPSELayer",
-    "IdentityGAT",
-    "IdentityGCN",
-    "IdentityGIN",
-    "IdentitySAGE",
-    "JumpLinkConv",
-    "MLP",
-    "MeanDegConv",
-    "Mlp",
     "NSDEncoder",
-    "PlainMLP",
-    "RedrawProjection",
-    "SCCNNCustom",
-    "SCCNNLayer",
-    "TopoTune",
-    "TopoTune_OneHasse",
-    "customMLP",
 }
 
 
