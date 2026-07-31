@@ -21,6 +21,9 @@ from topobench.dataloader import DataloadDataset
 from topobench.transforms.data_transform import DataTransform
 
 SupportedData = Data | HeteroData
+PreProcessorInput = (
+    torch_geometric.data.Dataset | torch.utils.data.Dataset | SupportedData
+)
 
 
 def _data_family(
@@ -35,8 +38,12 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
 
     Parameters
     ----------
-    dataset : list
-        List of data objects.
+    dataset : torch_geometric.data.Dataset | torch.utils.data.Dataset | Data | HeteroData
+        Dataset of supported PyG objects, or one direct PyG data object. Plain
+        Python lists and other arbitrary containers are not supported. Direct
+        ``Data`` and ``HeteroData`` inputs use the persisted processing path
+        and therefore require ``transforms_config``; the no-transform fast
+        path expects a dataset with in-memory ``_data`` and ``slices``.
     data_dir : str
         Path to the directory containing the data.
     transforms_config : DictConfig, optional
@@ -45,7 +52,13 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         Optional additional arguments.
     """
 
-    def __init__(self, dataset, data_dir, transforms_config=None, **kwargs):
+    def __init__(
+        self,
+        dataset: PreProcessorInput,
+        data_dir,
+        transforms_config=None,
+        **kwargs,
+    ):
         self.dataset = dataset
         self.preprocessing_time = 0
         if transforms_config is not None:
