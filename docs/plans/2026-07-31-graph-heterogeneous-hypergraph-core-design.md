@@ -3,7 +3,7 @@
 ## Status
 
 Approved on 2026-07-31 for the `topobench_graph_hetero` branch and amended
-after the implementation-plan review on the same date.
+after two design/implementation-plan reviews on the same date.
 
 ## Objective
 
@@ -29,12 +29,13 @@ targets.
 ### Homogeneous graphs
 
 Homogeneous graph datasets remain native PyG `Data` objects and are batched as
-PyG `Batch` objects. The public field contract is:
+PyG `Batch` objects. The public structural field contract is:
 
 ```text
 x
 edge_index
-edge_attr              optional
+edge_attr              optional, with explicit dataset/model handling
+edge_weight            optional, with explicit dataset/model handling
 y
 batch                  for inductive mini-batches
 train_mask             for transductive node tasks
@@ -42,8 +43,23 @@ val_mask
 test_mask
 ```
 
-Both graph-level classification/regression and single-graph node
-classification remain supported.
+The supported homogeneous task set is closed: graph-level binary or multiclass
+classification, graph-level scalar regression, and single-graph transductive
+node classification. Node regression, inductive node prediction over multiple
+graphs, and multilabel graph classification are not supported in the first
+reduced release. Their selectors, including `graph/US-county-demos`,
+`graph/graphuniverse_inductive`, and `graph/ogbg-molpcba`, are removed rather
+than left composition-only. The legacy `graph/manual_dataset` selector and its
+custom input path are also removed from the focused product.
+
+Each graph-level example stores a rank-one, length-one `y`. Classification
+labels are integral; scalar-regression labels are floating point. PyG batching
+therefore produces rank-one `[B]` labels. The supervision adapter preserves
+classification targets as `[B]`, normalizes scalar-regression targets exactly
+once to `[B, 1]`, and requires regression logits to have the same `[B, 1]`
+shape. Node-classification labels are integral `[N]`. Other target ranks,
+dtypes, non-finite regression targets, or prediction/target broadcasting fail
+before loss or metric evaluation.
 
 Inductive splits are index-backed dataset views, not materialized
 `list[Data]` copies. Transductive `train_mask`, `val_mask`, and `test_mask`
@@ -53,8 +69,10 @@ the supervision adapter only validates and consumes them.
 Every retained dataset must satisfy an explicit input-feature policy before
 model execution: floating features pass through, categorical integer features
 are encoded, and featureless graphs receive deterministic constant or degree
-features. A dataset is not considered supported merely because its YAML
-composes.
+features. Each dataset declares `edge_attr` and `edge_weight` availability as
+absent, optional, or required; the selected model separately declares whether
+it consumes, explicitly ignores, or rejects each field. A dataset is not
+considered supported merely because its YAML composes.
 
 ### Heterogeneous graphs
 
@@ -127,14 +145,18 @@ loader
 ### Graph pipeline
 
 The graph pipeline uses PyG `DataLoader` directly. Inductive datasets batch
-multiple examples and use `batch` for graph-level pooling. Transductive node
-datasets expose the same graph to every phase and select supervision with the
-phase mask. The graph encoder consumes `data.x`; wrappers consume `x`,
-`edge_index`, optional edge features, and `batch`.
+multiple examples and use `batch` for graph-level pooling. Transductive mode
+is explicit rather than inferred from missing validation/test datasets: it
+requires exactly one source graph, `batch_size == 1`, and reuses that graph for
+every phase while selecting supervision with the phase mask. The graph encoder
+consumes `data.x`; wrappers consume `x`, `edge_index`, `batch`, and only the
+optional edge fields permitted by the selected model capability.
 
 Loss reductions are weighted by the number of supervised examples: graph
 batches use their label count, transductive node batches use the selected mask
-count, and heterogeneous sampled batches use the target seed count.
+count, and heterogeneous sampled batches use the target seed count. Loss and
+metric boundaries require exact prediction/target shapes and never rely on
+PyTorch broadcasting.
 
 ### Heterogeneous pipeline
 
@@ -156,15 +178,27 @@ and one real content/edges-format dataset.
 
 ## Capability Matrix
 
-Configuration composition and runtime support are separate claims. Every
-surviving dataset declares feature type, task level, split type, and required
-transform. Every surviving model declares supported task levels and batching
-modes.
+Configuration composition and runtime support are separate claims. An explicit
+surviving-dataset manifest is the product boundary. Every entry records the
+selector, loader family, feature policy, edge-feature policy, task kind, task
+level, split mode, required transform, compatible models, and named
+qualification evidence. Every surviving model declares task kinds, task
+levels, batching modes, and edge-field handling. Architecture tests require
+every surviving dataset to have at least one valid model pairing and reject
+selectors absent from the manifest.
 
 GCN, GAT, GIN, GPS, and NSD are target graph models. GraphMLP and GCN-DGM are
 conditional: they remain only if dedicated native-batching lifecycle tests
-prove their intended task modes. Otherwise their code and configs are removed
-rather than advertised as nominally supported.
+prove their intended task modes. Otherwise their source, configs, registry
+entries, capability rows, and tests are removed together.
+
+Every retained selector must pass a selector-specific config/metadata check and
+cite executable loader, feature, split, forward, loss, and metric evidence.
+Selectors may share a loader-family integration test only when a
+selector-specific assertion proves that they use the same parser and contract.
+Download-marked qualification may run outside ordinary CI, but it is a
+mandatory release gate; a skipped or unavailable result is not evidence of
+support.
 
 ## Explicit Registries
 
@@ -219,8 +253,10 @@ searches.
 ## Configuration and Product Surface
 
 The default `run.yaml` selects a small graph configuration rather than a
-simplicial dataset and model. Config groups for removed datasets, models,
-liftings, and experiments are deleted. Model/dataset default-transform
+simplicial dataset and model. Config groups for removed domains and unsupported
+task kinds are deleted. In particular, node-regression, inductive-node, and
+multilabel graph selectors are absent. An exact dataset manifest, not directory
+presence, defines the supported product. Model/dataset default-transform
 resolvers are simplified to the three supported domains.
 
 The README and documentation describe TopoBench on this branch as a focused
@@ -233,8 +269,10 @@ remain unchanged.
 
 Failures must occur at the narrowest boundary:
 
-- invalid graph batches fail with missing-field or shape errors in the graph
-  encoder/wrapper;
+- invalid graph batches fail before backbone, loss, or metric execution for
+  missing fields, unsupported task/split combinations, non-singleton
+  transductive datasets, incompatible edge-field handling, or target
+  dtype/shape mismatches;
 - invalid heterogeneous graphs continue to fail through
   `HeterogeneousDataSpec`;
 - invalid hypergraphs fail validation for malformed incidence pairs,
@@ -248,27 +286,41 @@ Failures must occur at the narrowest boundary:
 
 The migration is test-driven and proceeds from new contracts to deletion.
 
-1. Add architecture tests defining the allowed domains, package tree, config
-   tree, dependencies, and forbidden rank-based fields.
-2. Establish native synthetic graph and hypergraph fixtures.
+1. Add architecture tests defining the allowed domains, exact surviving
+   dataset manifest, package/config trees, dependencies, supported task kinds,
+   and forbidden rank-based fields.
+2. Establish native synthetic graph classification, scalar-regression,
+   transductive node-classification, and hypergraph fixtures.
 3. Migrate homogeneous preprocessing, splitting, batching, encoders,
-   wrappers, readouts, and supervision to `Data`/`Batch`.
-4. Migrate hypergraph data and both surviving models.
-5. Qualify conditional graph models against the capability matrix.
-6. Replace dynamic discovery with explicit registries.
-7. Delete unsupported neural, data, configuration, and documentation surfaces
-   in separate reviewable commits.
-8. Remove dependencies and regenerate the lock file while preserving the
-   heterogeneous sampling backend.
-9. Run graph, heterogeneous, and hypergraph lifecycle tests, compatibility
-   tests for surviving selector names, negative architecture tests, Ruff, and
-   the broad network-free regression suite.
+   wrappers, readouts, supervision, loss, and metrics to exact native
+   `Data`/`Batch` contracts.
+4. Prove that explicit transductive mode rejects multiple graphs and that
+   scalar-regression prediction/target shapes cannot broadcast.
+5. Migrate hypergraph data and both surviving models.
+6. Qualify target and conditional graph models against task, batching, and
+   edge-field capabilities.
+7. Qualify every retained dataset selector through its manifest evidence,
+   including one real scalar-regression lifecycle and each retained loader
+   family; delete selectors that fail or cannot be exercised.
+8. Replace dynamic discovery with explicit registries.
+9. Delete unsupported neural, data, configuration, and documentation surfaces
+   in separate reviewable commits. Remove the US County node-regression path
+   rather than migrating its train-only feature/target standardization.
+10. Remove dependencies and regenerate the lock file while preserving the
+    heterogeneous sampling backend.
+11. Run graph, heterogeneous, and hypergraph lifecycle tests, compatibility
+    tests for surviving selector names, negative architecture tests, Ruff, and
+    the broad network-free regression suite.
 
 The final audit must prove that `topobench`, its default configuration, and
-all surviving config groups import and compose in a clean process where
-TopoModelX, TopoNetX, GUDHI, and HyperNetX are unavailable.
-It must also prove heterogeneous neighbor batching after a clean dependency
-sync and exercise representative real hypergraph raw formats before release.
+every selector in the surviving manifest import, compose, load, preprocess,
+split, execute one compatible model batch, and produce finite loss/metrics in
+the appropriate network-free or mandatory download-marked gate. It must prove
+that unsupported task selectors are absent, scalar regression uses exact
+`[B, 1]` prediction/target tensors, heterogeneous neighbor batching works after
+a clean dependency sync, and representative real hypergraph raw formats work
+before release. It must also prove that TopoModelX, TopoNetX, GUDHI, and
+HyperNetX are unavailable to the clean process.
 
 ## Non-goals
 
