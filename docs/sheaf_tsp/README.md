@@ -1,7 +1,7 @@
 # SheafTSP — Sheaf-Topological Signal Processing
 
 **Track 2 (TNN) submission for the TDL Challenge 2026.**
-Team: SheafTSP.
+Team: Fernando Espinosa.
 
 ## Model
 
