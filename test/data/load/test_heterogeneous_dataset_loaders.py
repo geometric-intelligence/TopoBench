@@ -730,6 +730,9 @@ def test_ogb_mag_experiment_composes_conservative_sampled_contract(
     assert cfg.trainer.min_epochs == 1
     assert cfg.trainer.max_epochs == 50
     assert cfg.trainer.check_val_every_n_epoch == 1
+    assert cfg.trainer.limit_train_batches == pytest.approx(1.0)
+    assert cfg.trainer.limit_val_batches == pytest.approx(1.0)
+    assert cfg.trainer.limit_test_batches == pytest.approx(1.0)
     assert tuple(cfg.tags) == (
         "heterogeneous",
         "OGB_MAG",
@@ -737,3 +740,36 @@ def test_ogb_mag_experiment_composes_conservative_sampled_contract(
         model_name,
         "preflight",
     )
+
+
+@pytest.mark.parametrize(
+    ("experiment", "model_name"),
+    [
+        ("heterogeneous_ogb_mag_hgt", "hgt"),
+        ("heterogeneous_ogb_mag_heterosage", "heterosage"),
+    ],
+)
+def test_ogb_mag_bounded_command_uses_plain_trainer_overrides(
+    experiment: str,
+    model_name: str,
+) -> None:
+    """The documented bounded command composes without Hydra's ``+`` syntax."""
+    wandb_name = f"ogb-mag-{model_name}-neighbor-bounded-seed0"
+    cfg = _compose_ogb_mag_experiment(
+        experiment,
+        overrides=[
+            "seed=0",
+            "trainer.min_epochs=1",
+            "trainer.max_epochs=1",
+            "trainer.limit_train_batches=10",
+            "trainer.limit_val_batches=5",
+            "trainer.limit_test_batches=5",
+            "logger=heterogeneous_wandb",
+            f"logger.wandb.name={wandb_name}",
+        ],
+    )
+
+    assert cfg.trainer.limit_train_batches == 10
+    assert cfg.trainer.limit_val_batches == 5
+    assert cfg.trainer.limit_test_batches == 5
+    assert cfg.logger.wandb.name == wandb_name

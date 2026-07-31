@@ -20,3 +20,6 @@ trainer:
   min_epochs: 1
   max_epochs: 50
   check_val_every_n_epoch: 1
+  limit_train_batches: 1.0
+  limit_val_batches: 1.0
+  limit_test_batches: 1.0
