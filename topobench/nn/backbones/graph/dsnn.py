@@ -25,9 +25,18 @@ Hermitian and positive semidefinite (Thm 1), its normalization
 :math:`L_N = \tilde{D}^{-1/2} L^{\tilde{\mathcal{F}}} \tilde{D}^{-1/2}` has
 spectrum in :math:`[0, 2]` (Thm 2), and it specializes to several known
 operators: the real sheaf Laplacian when the graph is undirected or
-:math:`q = 0` (Thm 3), the Magnetic Laplacian for a trivial sheaf and, at
-:math:`q = 1/4`, the Sign-Magnetic Laplacian (Thm 4), which it factorizes as
-:math:`\hat{B}\hat{B}^{*}` (Thm 5).
+:math:`q = 0` (Thm 3), and for a trivial sheaf the Magnetic Laplacian, at
+:math:`q = 1/4` the Sign-Magnetic Laplacian (Thm 4). Theorem 5 factorizes it
+as :math:`\hat{B}\hat{B}^{*}`.
+
+The Thm 4 correspondence carries a scaling the paper states in App. C ("with a
+scaling factor of 2, when needed") and is worth being precise about, since the
+tests pin it: on a digon-free digraph this operator equals *twice* the
+Magnetic Laplacian, because Eq. 3 sums over :math:`\Gamma(u)` while MagNet
+gives a one-way arc :math:`A_{s,uv} = 1/2`. The factor disappears on an
+all-digon graph. On a graph mixing digons with one-way arcs neither holds, and
+the operator instead equals the Magnetic Laplacian built on the *binary*
+symmetrized adjacency.
 
 Features are diffused by Eq. 8 with the complex nonlinearity
 :math:`\sigma(z) = z` if :math:`\Re(z) \ge 0` and 0 otherwise, and read out as
@@ -73,6 +82,12 @@ Deliberate departures from the paper, each discussed where it is implemented:
   directionality, which is what this model contributes.
 * ``edge_weight`` is accepted and ignored: Definition 1 builds the phase from
   the binary adjacency.
+* The reference implementation additionally learns a scalar weight per arc for
+  the orthogonal family, scaling each restriction map by it and summing the
+  squares into the degree block. It is on by default there, but appears
+  nowhere in the paper, so ``bundle`` here keeps the plain
+  :math:`\deg(u) I_d` of Eq. 3. This is a different mechanism from the
+  ``edge_weight`` argument above.
 """
 
 from torch.nn import Module

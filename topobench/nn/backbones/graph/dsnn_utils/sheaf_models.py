@@ -115,7 +115,8 @@ class SheafLearner(nn.Module):
 class LocalConcatSheafLearner(SheafLearner):
     r"""Predict restriction maps from concatenated endpoint features.
 
-    Computes :math:`\Phi(x_u \Vert x_v)` with a single bias-free linear layer
+    Computes the :math:`\mathcal{F}^{0}_{u \lhd e} = \Phi(x_u \Vert x_v)` of
+    Sec. 3 ("Learnable Sheaf Laplacian") with a single bias-free linear layer
     followed by ``sheaf_act``. The concatenation is ordered, so
     :math:`\Phi(x_u \Vert x_v) \neq \Phi(x_v \Vert x_u)` and the two
     restriction maps of an edge differ, which is what makes the sheaf

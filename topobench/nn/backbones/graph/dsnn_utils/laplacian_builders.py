@@ -31,14 +31,14 @@ real. In other words the operator is the *real* sheaf Laplacian with each
 off-diagonal block multiplied by its edge's phase. Two practical consequences:
 
 * the real restriction-map algebra of Neural Sheaf Diffusion is reused
-  unchanged, and only two things differ -- the lower blocks are scaled by the
+  unchanged, and only two things differ: the lower blocks are scaled by the
   phase, and the upper blocks become the **conjugate** of the lower rather than
   a copy (:func:`~.laplace.flip_index` already supplies the transpose);
 * the phase commutes with Eq. 5, since :math:`\tilde{D}` is real and
   block diagonal, so normalization can run on the real blocks first.
 
 Setting :math:`q = 0`, or supplying an undirected graph, makes every phase 1
-and recovers the real sheaf Laplacian exactly -- Theorem 3.
+and recovers the real sheaf Laplacian exactly, which is Theorem 3.
 
 Notes
 -----
@@ -92,6 +92,9 @@ from topobench.nn.backbones.graph.dsnn_utils.orthogonal import (
 def block_inv_sqrt(blocks, eps: float = 1e-8):
     r"""Compute the symmetric inverse square root of each block.
 
+    This is the :math:`\tilde{D}^{-1/2}` of Eq. 5 for a family whose degree
+    blocks are full :math:`d \times d` matrices.
+
     Uses the Moore-Penrose convention: eigenvalues at or below ``eps`` are
     mapped to zero rather than inverted, so a singular block yields a
     pseudo-inverse instead of infinities.
@@ -101,6 +104,13 @@ def block_inv_sqrt(blocks, eps: float = 1e-8):
     Such blocks are therefore replaced by the identity before the
     decomposition and their result is zeroed afterwards, so the common
     degenerate case never reaches ``eigh``.
+
+    That special case covers the all-zero block, not every degenerate one: a
+    block with repeated non-zero eigenvalues (``2 * I``, say) still reaches
+    ``eigh``, whose backward pass would return ``NaN``. Following the
+    reference implementation, :meth:`~.DirectedLaplacianBuilder.normalise`
+    keeps that unreachable by detaching this result and by jittering the
+    diagonal during training.
 
     Parameters
     ----------
@@ -166,6 +176,13 @@ class DirectedLaplacianBuilder(nn.Module):
     eps : float, optional
         Threshold below which a degree entry is treated as zero. Default is
         ``1e-8``.
+    training : bool, optional
+        Whether the owning module is training, which enables the degree-block
+        jitter of :func:`block_inv_sqrt`. Default is False, so the operator is
+        deterministic unless a caller asks otherwise.
+    jitter : float, optional
+        Half-width of that jitter. Default is ``0.001``, the value used by the
+        reference implementation.
 
     Attributes
     ----------
@@ -192,6 +209,8 @@ class DirectedLaplacianBuilder(nn.Module):
         degree_shift: float = 0.0,
         block_norm: bool = True,
         eps: float = 1e-8,
+        training: bool = False,
+        jitter: float = 0.001,
     ) -> None:
         super().__init__()
         self.size = size
@@ -205,6 +224,8 @@ class DirectedLaplacianBuilder(nn.Module):
         self.degree_shift = degree_shift
         self.block_norm = block_norm
         self.eps = eps
+        self.training = training
+        self.jitter = jitter
         self.num_pairs = pair_index.size(1)
         self.deg = node_degree(edge_index, size)
 
@@ -299,7 +320,18 @@ class DirectedLaplacianBuilder(nn.Module):
 
         if diag.dim() == 3 and self.block_norm:
             shifted = diag + self.degree_shift * identity
-            inv = block_inv_sqrt(shifted, eps=self.eps)
+            if self.training:
+                # The reference jitters the degree blocks so that a block
+                # never carries exactly repeated eigenvalues: the backward
+                # pass of ``eigh`` divides by eigenvalue gaps and is not
+                # finite on a tie.
+                shifted = shifted + self.jitter * identity * torch.empty_like(
+                    shifted[..., 0, 0]
+                ).uniform_(-1.0, 1.0).view(-1, 1, 1)
+            # Detached for the same reason, and likewise following the
+            # reference: D^-1/2 is treated as a constant, so no gradient is
+            # routed through the eigendecomposition at all.
+            inv = block_inv_sqrt(shifted, eps=self.eps).detach()
             tril = inv[head] @ tril @ inv[tail]
             diag = inv @ diag @ inv
             return diag, tril

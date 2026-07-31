@@ -80,11 +80,13 @@ def lifted_value(real_value, imag_value):
 
 
 def stack_real(x):
-    """Lift a real feature matrix to a complex one with zero imaginary part.
+    r"""Lift a real feature matrix to a complex one with zero imaginary part.
 
     Input features are real, and the paper does not specify an imaginary part
     for :math:`X^{0}`; we use zeros so that the readout's real and imaginary
-    halves are not duplicates at the first layer.
+    halves are not duplicates at the first layer. The reference implementation
+    defaults to the opposite (``complex_copy_values``, which sets
+    :math:`\Im(X^{0}) = \Re(X^{0})`).
 
     Parameters
     ----------
@@ -158,7 +160,11 @@ def complex_dropout_split(x, size: int, p: float, training: bool):
     the surviving entries intact.
 
     Dropout is not part of Eq. 8; its placement follows the Neural Sheaf
-    Diffusion implementation the paper's hyperparameter names come from.
+    Diffusion implementation the paper's hyperparameter names come from. The
+    merged mask is our choice: that implementation is real-valued and so has
+    no such decision to make, and the reference implementation of this paper
+    defaults to dropping the two parts independently
+    (``complex_separate_dropout``), which does not preserve the argument.
 
     Parameters
     ----------

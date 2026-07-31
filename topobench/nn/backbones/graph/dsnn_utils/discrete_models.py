@@ -248,6 +248,7 @@ class DirectedSheafDiffusion(nn.Module):
             "normalised": self.normalised,
             "degree_shift": self.degree_shift,
             "block_norm": self.block_norm,
+            "training": self.training,
         }
         if self.sheaf_type == "bundle":
             kwargs["orth_map"] = self.orth
@@ -311,7 +312,18 @@ class DirectedSheafDiffusion(nn.Module):
         return x[: num_nodes * self.d].reshape(num_nodes, -1)
 
     def forward(self, x, edge_index):
-        """Run directed sheaf diffusion over a graph.
+        r"""Run directed sheaf diffusion over a graph.
+
+        Iterates the Eq. 8 update
+
+        .. math::
+
+            X^{(t+1)} = \mathrm{diag}(1 + \varepsilon) X^{(t)} - \sigma\!\Big(
+                L_N^{\tilde{\mathcal{F}}(t)}
+                \big(I_n \otimes W_1^{(t)}\big) X^{(t)} W_2^{(t)} \Big),
+
+        learning a fresh sheaf, and so a fresh Laplacian, at every step, then
+        reads out through ``unwind``.
 
         Parameters
         ----------

@@ -354,6 +354,42 @@ def test_jacobi_normalization_breaks_the_theorem_2_bound():
     assert torch.linalg.eigvalsh(jacobi).min() > -1e-9
 
 
+def test_block_normalization_survives_repeated_eigenvalues():
+    """Degenerate degree blocks must not produce non-finite gradients.
+
+    On a degree-regular graph every degree block is :math:`\\deg(u) I_d`, so
+    its eigenvalues are exactly repeated and the backward pass of ``eigh``
+    would divide by a zero gap. Following the reference implementation,
+    ``normalise`` detaches the inverse square root and jitters the blocks
+    while training, which keeps that unreachable.
+    """
+    torch.manual_seed(0)
+    model = (
+        encoder(sheaf_type="general", d=3, hidden_dim=12, input_dim=6)
+        .double()
+        .train()
+    )
+    out = model(torch.randn(3, 6, dtype=D), REGULAR)
+    out.sum().backward()
+    grads = [p.grad for p in model.parameters() if p.grad is not None]
+    assert grads
+    assert all(bool(g.isfinite().all()) for g in grads)
+
+
+def test_degree_block_jitter_is_training_only():
+    """The jitter perturbs the operator while training and never in eval."""
+    struct = structure(MIXED, MIXED_N, 0.31)
+    maps = make_maps("general", struct[0].size(1), 3)
+    _, first = build_dense("general", maps, MIXED_N, 3, struct, training=False)
+    _, again = build_dense("general", maps, MIXED_N, 3, struct, training=False)
+    assert torch.equal(first, again)
+
+    torch.manual_seed(0)
+    _, noisy = build_dense("general", maps, MIXED_N, 3, struct, training=True)
+    assert not torch.equal(first, noisy)
+    assert torch.allclose(first, noisy, atol=1e-2)
+
+
 @pytest.mark.parametrize("family", FAMILIES)
 def test_normalization_makes_diagonal_blocks_identity(family):
     """Eq. 5 sends every non-isolated node's degree block to the identity."""
@@ -1219,6 +1255,136 @@ def test_builders_reject_wrong_map_shapes(family, bad):
     )
     with pytest.raises(ValueError, match="maps"):
         builder.restriction_blocks(bad)
+
+
+# --------------------------------------------------------------------------- #
+# Eq. 8 -- the diffusion update rule
+# --------------------------------------------------------------------------- #
+def reference_equation_8(model, x, edge_index, unit_coeff=False):
+    r"""One layer of Eq. 8, in dense complex arithmetic.
+
+    Written against the equation rather than against the implementation: the
+    operator is materialized densely, the stalk mixing is an explicit
+    :math:`I_n \otimes W_1`, and every product is a complex matmul, so none of
+    the real lifting of Appendix D is reused. What comes back is
+
+    .. math::
+
+        X^{(1)} = \mathrm{diag}(1 + \varepsilon) X^{(0)}
+                  - \sigma\!\big(L^{\tilde{\mathcal{F}}}_N
+                    (I_n \otimes W_1) X^{(0)} W_2\big),
+
+    read out through :math:`(\Re \Vert \Im)`.
+
+    Parameters
+    ----------
+    model : DSNNEncoder
+        A one-layer encoder in evaluation mode and float64.
+    x : torch.Tensor
+        Node features of shape ``[num_nodes, input_dim]``.
+    edge_index : torch.Tensor
+        Raw arc indices of shape ``[2, num_edges]``.
+    unit_coeff : bool, optional
+        Force the residual coefficient to 1, giving the Eq. 7 update
+        :math:`X^{(1)} = X^{(0)} - \sigma(\cdot)`. Default is False.
+
+    Returns
+    -------
+    torch.Tensor
+        Node features of shape ``[num_nodes, output_dim]``.
+    """
+    stack = model.sheaf_model
+    num_nodes = x.size(0)
+    size = num_nodes * stack.d
+    builder, support = stack.build_builder(num_nodes, edge_index, x.dtype)
+
+    hidden = torch.nn.functional.elu(stack.lin1(x)).view(size, -1)
+    maps = stack.sheaf_learners[0](
+        stack.sheaf_input(complex_ops.stack_real(hidden), num_nodes), support
+    )
+    real_i, real_v, imag_i, imag_v, _ = builder.hermitian_parts(maps)
+    operator = complex_ops.hermitian_to_dense(
+        real_i, real_v, imag_i, imag_v, size
+    )
+
+    x0 = hidden.to(CD)
+    stalk_mix = torch.kron(
+        torch.eye(num_nodes, dtype=CD),
+        stack.lin_left_weights[0].weight.to(CD),
+    )
+    channel_mix = stack.lin_right_weights[0].weight.to(CD).T
+    diffused = operator @ (stalk_mix @ x0 @ channel_mix)
+    # sigma gates on the real part and zeroes both components (Sec. 3).
+    gated = torch.where(
+        diffused.real >= 0, diffused, torch.zeros_like(diffused)
+    )
+
+    coeff = (
+        torch.ones(size, 1, dtype=CD)
+        if unit_coeff
+        else (1 + torch.tanh(stack.epsilons[0])).to(CD).tile(num_nodes, 1)
+    )
+    x1 = coeff * x0 - gated
+    return stack.lin2(
+        torch.cat(
+            [
+                x1.real.reshape(num_nodes, -1),
+                x1.imag.reshape(num_nodes, -1),
+            ],
+            dim=1,
+        )
+    )
+
+
+@pytest.mark.parametrize("family", FAMILIES)
+@pytest.mark.parametrize("q", [0.0, 0.25])
+def test_equation_8_matches_a_dense_complex_reference(family, q):
+    """The lifted, sparse layer computes exactly the update of Eq. 8."""
+    torch.manual_seed(0)
+    model = encoder(sheaf_type=family, num_layers=1, q=q).double().eval()
+    with torch.no_grad():
+        # A non-zero epsilon, so the residual term is actually exercised.
+        model.sheaf_model.epsilons[0].uniform_(-0.5, 0.5)
+    features = torch.randn(MIXED_N + 1, 12, dtype=D)
+    assert torch.allclose(
+        model(features, MIXED),
+        reference_equation_8(model, features, MIXED),
+        atol=1e-11,
+    )
+
+
+def test_equation_8_recovers_equation_7_at_zero_epsilon():
+    """At ``epsilon = 0`` the residual collapses to the Eq. 7 update."""
+    torch.manual_seed(0)
+    model = encoder(num_layers=1).double().eval()
+    assert bool((model.sheaf_model.epsilons[0] == 0).all())
+    features = torch.randn(MIXED_N + 1, 12, dtype=D)
+    assert torch.allclose(
+        model(features, MIXED),
+        reference_equation_8(model, features, MIXED, unit_coeff=True),
+        atol=1e-11,
+    )
+
+
+@pytest.mark.parametrize("orientation", ["none", "degree"])
+def test_encoder_is_permutation_equivariant(orientation):
+    """Relabelling the nodes permutes the output and changes nothing else.
+
+    ``index`` is deliberately excluded: it breaks ties using node identity, so
+    it is documented as not equivariant.
+    """
+    torch.manual_seed(0)
+    model = encoder(orientation=orientation).double().eval()
+    features = torch.randn(HETEROGENEOUS_N, 12, dtype=D)
+    perm = torch.randperm(
+        HETEROGENEOUS_N, generator=torch.Generator().manual_seed(3)
+    )
+    inverse = torch.empty_like(perm)
+    inverse[perm] = torch.arange(HETEROGENEOUS_N)
+    relabelled = model(features[perm], inverse[HETEROGENEOUS])
+    assert torch.allclose(
+        model(features, HETEROGENEOUS)[perm], relabelled, atol=1e-11
+    )
 
 
 # --------------------------------------------------------------------------- #

@@ -34,10 +34,12 @@ real map on :math:`(\Re(X) \Vert \Im(X))` that can negate its second half. The
 two conventions are therefore conjugate, isospectral, and define the same
 function class. ``phase_sign`` exposes both; the default ``+1`` follows the
 printed formula and matches MagNet's
-:math:`H^{(q)} = A_s \odot \exp(i 2\pi q (A - A^{\top}))`. A consequence worth
-knowing when searching: :math:`q` and :math:`1 - q` are equivalent, so
-:math:`q \in [0, 1/2]` suffices, and :math:`q \in \{0, 1/2\}` give real
-operators.
+:math:`H^{(q)} = A_s \odot \exp(i 2\pi q (A - A^{\top}))`. Two consequences
+when searching: :math:`q` and :math:`1 - q` are equivalent, so
+:math:`q \in [0, 1/2]` suffices; and :math:`q = 0` gives an exactly real
+operator, while :math:`q = 1/2` gives one real only up to rounding, since
+:math:`\sin(\pm\pi)` evaluates to :math:`\mp 1.2 \times 10^{-16}` rather than
+to zero.
 
 **Induced orientations.**
 ``orientation`` other than ``"none"`` is **not part of the paper**, which
