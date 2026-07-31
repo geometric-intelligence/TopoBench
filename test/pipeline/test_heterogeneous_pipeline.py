@@ -53,7 +53,7 @@ NEIGHBOR_EXPERIMENTS = (
         id="heterosage-neighbor",
     ),
 )
-_LOSS_REDUCTION_ABS_TOLERANCE = 1e-8
+_DIRECT_LOSS_REDUCTION_ABS_TOLERANCE = 1e-8
 
 
 def _compose(
@@ -154,14 +154,7 @@ def _assert_repeated_rerun_metrics(
     for name in first:
         assert math.isfinite(first[name])
         assert math.isfinite(second[name])
-        if name == "loss":
-            assert second[name] == pytest.approx(
-                first[name],
-                abs=_LOSS_REDUCTION_ABS_TOLERANCE,
-                rel=0,
-            )
-        else:
-            assert second[name] == first[name]
+        assert second[name] == first[name]
 
 
 @pytest.mark.parametrize(("experiment", "model_name"), EXPERIMENTS)
@@ -403,7 +396,7 @@ def test_neighbor_training_validation_checkpoint_and_best_rerun(
             if name == "loss":
                 assert first_metrics[name] == pytest.approx(
                     direct_metrics[name],
-                    abs=_LOSS_REDUCTION_ABS_TOLERANCE,
+                    abs=_DIRECT_LOSS_REDUCTION_ABS_TOLERANCE,
                     rel=0,
                 )
             else:
