@@ -87,6 +87,9 @@ locals().update(DATA_MANIPULATIONS)
 
 # File-based discovery executes modules under a synthetic name. Keep these
 # serialization-facing wrappers bound to their canonical import path.
+from topobench.transforms.data_manipulations.constant_node_features import (  # noqa: E402
+    ConstantNodeFeatures as ConstantNodeFeatures,
+)
 from topobench.transforms.data_manipulations.heterogeneous import (  # noqa: E402
     HeterogeneousConstantFeatures as HeterogeneousConstantFeatures,
 )
@@ -95,6 +98,7 @@ from topobench.transforms.data_manipulations.heterogeneous import (  # noqa: E40
 )
 
 for canonical_class in (
+    ConstantNodeFeatures,
     HeterogeneousConstantFeatures,
     HeterogeneousToUndirected,
 ):

@@ -18,6 +18,7 @@ parameters:
   loss_type: mse
   monitor_metric: mae
   task_level: graph
+  feature_policy: categorical_one_hot
   degrees_fields: "x" # Additional parameter to run dataset.transforms.one_hot_node_degree_features.degrees_fields=x
 
 #splits

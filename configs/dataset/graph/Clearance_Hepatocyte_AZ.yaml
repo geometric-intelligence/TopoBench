@@ -17,6 +17,7 @@ parameters:
   loss_type: mse
   monitor_metric: mae
   task_level: graph
+  feature_policy: continuous
   max_dim_if_lifted: 3
   preserve_edge_attr_if_lifted: ${set_preserve_edge_attr:${model.model_name},True}
 

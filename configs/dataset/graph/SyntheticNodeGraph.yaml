@@ -17,6 +17,7 @@ parameters:
   loss_type: cross_entropy
   monitor_metric: accuracy
   task_level: node
+  feature_policy: continuous
 
 # Splits
 split_params:

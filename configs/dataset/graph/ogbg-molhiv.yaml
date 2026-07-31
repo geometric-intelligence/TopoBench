@@ -17,6 +17,7 @@ parameters:
   loss_type: cross_entropy
   monitor_metric: auroc
   task_level: graph
+  feature_policy: continuous
   preserve_edge_attr_if_lifted: True
 
 #splits

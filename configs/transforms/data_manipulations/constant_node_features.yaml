@@ -1,0 +1,4 @@
+transform_name: "ConstantNodeFeatures"
+transform_type: "data manipulation"
+
+num_features: ${dataset.parameters.num_features}

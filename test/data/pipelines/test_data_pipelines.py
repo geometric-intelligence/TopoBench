@@ -352,8 +352,15 @@ def _pipeline_cfg(
     return OmegaConf.create(
         {
             "dataset": {
-                "loader": {"_target_": "tests.Loader"},
-                "parameters": {"task_level": task_level},
+                "loader": {
+                    "_target_": "tests.Loader",
+                    "parameters": {"data_domain": "graph"},
+                },
+                "parameters": {
+                    "task_level": task_level,
+                    "feature_policy": "continuous",
+                    "num_features": 1,
+                },
                 "split_params": {
                     "learning_setting": "inductive",
                     "data_seed": 17,
@@ -441,6 +448,25 @@ def _install_pipeline_spies(
     preprocessor_spy = MagicMock(side_effect=make_preprocessor)
     monkeypatch.setattr(base_module, "PreProcessor", preprocessor_spy)
 
+    def prepare_features(
+        dataset_train: object,
+        dataset_val: object,
+        dataset_test: object,
+        **kwargs: object,
+    ) -> None:
+        assert (dataset_train, dataset_val, dataset_test) == splits
+        assert kwargs == {
+            "feature_policy": "continuous",
+            "num_features": 1,
+        }
+        events.append("prepare_graph_features")
+
+    monkeypatch.setattr(
+        default_module,
+        "prepare_graph_features",
+        prepare_features,
+    )
+
     def make_datamodule(**kwargs: object) -> MagicMock:
         events.append(("datamodule", kwargs))
         return datamodule
@@ -489,6 +515,7 @@ def test_default_pipeline_preserves_orchestration_and_output_contract(
         "instantiate_transforms",
         ("preprocessor", dataset, dataset_dir, transforms),
         ("load_splits", cfg.dataset.split_params),
+        "prepare_graph_features",
         (
             "datamodule",
             {
@@ -1074,6 +1101,7 @@ def test_default_pipeline_uses_native_graph_datamodule(
         "load",
         "preprocessor",
         "load_splits",
+        "prepare_graph_features",
         "datamodule",
     ]
 

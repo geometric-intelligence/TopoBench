@@ -16,6 +16,7 @@ parameters:
   loss_type: mse
   monitor_metric: mae
   task_level: graph
+  feature_policy: degree
 
 #splits
 split_params:

@@ -795,8 +795,9 @@ def infer_in_channels(dataset, transforms):
 
     Returns
     -------
-    list
-        List with dimensions of the input channels.
+    int | list[int]
+        Scalar node width for native graph and hypergraph inputs, otherwise
+        rank-wise dimensions for lifted or higher-order inputs.
     """
     num_features = dataset.parameters.num_features
     if isinstance(num_features, int) and transforms is not None:
@@ -925,30 +926,10 @@ def infer_in_channels(dataset, transforms):
 
     # Case when there is no lifting
     elif not there_is_complex_lifting:
-        # Check if dataset and model are from the same domain and data_domain is higher-order
-
-        # TODO: Does this if statement ever execute? model_domain == data_domain and data_domain in ["simplicial", "cell", "combinatorial", "hypergraph"]
-        # BUT get_default_transform() returns "no_transform" when model_domain == data_domain
-        if (
-            dataset.loader.parameters.get("model_domain", "graph")
-            == dataset.loader.parameters.data_domain
-            and dataset.loader.parameters.data_domain
-            in ["simplicial", "cell", "combinatorial", "hypergraph"]
-        ):
-            if isinstance(
-                num_features,
-                omegaconf.listconfig.ListConfig,
-            ):
-                return list(num_features)
-            else:
-                raise ValueError(
-                    "The dataset and model are from the same domain but the data_domain is not higher-order."
-                )
-
-        elif isinstance(num_features, int):
-            return [num_features]
-
-        else:
+        data_domain = dataset.loader.parameters.data_domain
+        if data_domain in {"graph", "hypergraph"}:
+            if isinstance(num_features, int):
+                return num_features
             pe_features = (
                 check_pses_in_transforms(transforms)
                 if transforms is not None
@@ -959,7 +940,37 @@ def infer_in_channels(dataset, transforms):
                 if transforms is not None
                 else 0
             )
-            return [num_features[0] + pe_features + fe_features]
+            return int(num_features[0] + pe_features + fe_features)
+
+        if (
+            dataset.loader.parameters.get("model_domain", "graph")
+            == data_domain
+            and data_domain in ["simplicial", "cell", "combinatorial"]
+        ):
+            if isinstance(
+                num_features,
+                omegaconf.listconfig.ListConfig,
+            ):
+                return list(num_features)
+            raise ValueError(
+                "The dataset and model are from the same domain but the "
+                "data_domain does not declare rank-wise features."
+            )
+
+        if isinstance(num_features, int):
+            return [num_features]
+
+        pe_features = (
+            check_pses_in_transforms(transforms)
+            if transforms is not None
+            else 0
+        )
+        fe_features = (
+            check_fes_in_transforms(transforms)
+            if transforms is not None
+            else 0
+        )
+        return [num_features[0] + pe_features + fe_features]
 
     # This else is never executed
     else:

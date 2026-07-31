@@ -153,10 +153,10 @@ class TestConfigResolvers:
     def test_infer_in_channels(self):
         """Test infer_in_channels."""
         in_channels = infer_in_channels(self.dataset_config_1, self.cliq_lift_transform)
-        assert in_channels == [7]
+        assert in_channels == 7
 
         in_channels = infer_in_channels(self.dataset_config_2, None)
-        assert in_channels == [1433]
+        assert in_channels == 1433
 
         cfg = hydra.compose(config_name="run.yaml", overrides=["model=simplicial/topotune", "dataset=graph/MUTAG"], return_hydra_config=True)
         in_channels = infer_in_channels(cfg.dataset, cfg.transforms)
@@ -192,7 +192,45 @@ class TestConfigResolvers:
 
         cfg = hydra.compose(config_name="run.yaml", overrides=["model=graph/gcn", "dataset=graph/MUTAG", "transforms=combined_fe"], return_hydra_config=True)
         in_channels = infer_in_channels(cfg.dataset, cfg.transforms)
-        assert in_channels == [48]
+        assert in_channels == 48
+
+    @pytest.mark.parametrize(
+        ("dataset_path", "transforms_path", "expected"),
+        [
+            ("configs/dataset/graph/cocitation_cora.yaml", None, 1433),
+            (
+                "configs/dataset/graph/ZINC.yaml",
+                "configs/transforms/dataset_defaults/ZINC.yaml",
+                21,
+            ),
+            (
+                "configs/dataset/graph/IMDB-BINARY.yaml",
+                "configs/transforms/dataset_defaults/IMDB-BINARY.yaml",
+                136,
+            ),
+            (
+                "configs/dataset/graph/REDDIT-BINARY.yaml",
+                "configs/transforms/dataset_defaults/REDDIT-BINARY.yaml",
+                10,
+            ),
+            ("configs/dataset/hypergraph/20newsgroup.yaml", None, 100),
+        ],
+    )
+    def test_no_lifting_returns_scalar_channels_for_native_features(
+        self,
+        dataset_path,
+        transforms_path,
+        expected,
+    ):
+        """Graph and hypergraph native features resolve to one scalar width."""
+        dataset = OmegaConf.load(dataset_path)
+        transforms = (
+            OmegaConf.load(transforms_path)
+            if transforms_path is not None
+            else None
+        )
+
+        assert infer_in_channels(dataset, transforms) == expected
 
     def test_infer_num_cell_dimensions(self):
         """Test infer_num_cell_dimensions."""
