@@ -194,10 +194,14 @@ is git-ignored (large, regenerable, not part of the reported results).
 
 ## Known risks
 
-- **`knn3` is *expected* to underperform.** GraphUniverse features are weak
-  by design (inter-class σ≈0.2 vs intra-class σ≈0.63); a feature-based
-  lifting on near-uninformative features is a finding, not a bug — it is not
-  "fixed" by tuning.
+- **`knn3` is *expected* to underperform, and it does — see Finding below.**
+  GraphUniverse features are weak by design (inter-class σ≈0.2 vs
+  intra-class σ≈0.63) and, unlike the two other axes, that noise level is
+  **not** varied per cell — `build_generation_parameters` only overrides
+  `homophily_range` / `avg_degree_range` / `power_law_exponent_range`, never
+  `center_variance` / `cluster_variance`. A feature-based lifting on
+  near-uninformative features is a finding, not a bug — it is not "fixed" by
+  tuning `k` (see Finding).
 - Cache collisions between arms would silently produce identical results;
   ruled out above.
 - A single run over ~15 minutes should be investigated before launching the
@@ -219,26 +223,88 @@ is git-ignored (large, regenerable, not part of the reported results).
 
 ## Figures
 
-- `figures/fig1_lifting_by_regime.png` — slope chart: one coloured line per
-  DPHGNN lifting arm across the four cells, GCN as a dashed grey reference
-  line, rank inversions annotated where the arm ordering changes between
-  consecutive cells.
-- `figures/fig2_rank_table.png` — 4x4 rank table (cells x arms incl. GCN),
-  rank 1 = best with accuracy in parentheses, colour-shaded by rank, with a
-  mean-rank summary row.
+![Slope chart: DPHGNN lifting arms and GCN across the four regime cells](figures/fig1_lifting_by_regime.png)
+
+`figures/fig1_lifting_by_regime.png` — slope chart: one coloured line per
+DPHGNN lifting arm across the four cells, GCN as a dashed grey reference
+line, rank inversions annotated where the arm ordering changes between
+consecutive cells. Shows `khop1`/`khop2`/`gcn` all jumping from ~0.27-0.30
+to ~0.54-0.64 between the low- and high-homophily cells, while `knn3`
+stays pinned at ~0.28 throughout.
+
+![Rank table: cells x arms, rank 1 = best](figures/fig2_rank_table.png)
+
+`figures/fig2_rank_table.png` — 4x4 rank table (cells x arms incl. GCN),
+rank 1 = best with accuracy in parentheses, colour-shaded by rank, with a
+mean-rank summary row. Shows `knn3` at rank 2 (2nd best) in both
+low-homophily cells and rank 4 (worst) in both high-homophily cells — the
+clearest rank inversion in the grid.
 
 ## Finding
 
-**Status: not yet run.** This folder ships the runner, the preflight checks,
-and the read-only analysis notebook, but no real training has happened yet
-— `lifting_ablation_results.json` does not exist in this commit (only the
-mechanics were validated, via `--smoke-test`, see Local testing). The plan
-is to run `python run_lifting_ablation.py` (and, time permitting,
-`--phase2`) on Kaggle GPU, then re-execute `01_lifting_ablation.ipynb` to
-populate `figures/` and this section with:
+**Status: Phase 2 complete (48/48 runs, seeds 42/43/44, all `status: "ok"`).**
 
-1. Whether H1 held (lifting-variance share vs. regime-variance share).
-2. Whether H2 held (did the best arm change across cells — see the rank
-   table and the annotated slope chart).
-3. A three-line summary of the finding, including a plainly stated null
-   result if that is what comes out.
+**Mean test accuracy** (community detection, averaged over 3 seeds):
+
+| Arm | h_lo/pl_lo | h_lo/pl_hi | h_hi/pl_lo | h_hi/pl_hi |
+|---|---|---|---|---|
+| `khop1` | 0.283 | 0.276 | 0.615 | 0.624 |
+| `khop2` | 0.302 | 0.295 | 0.630 | 0.636 |
+| `knn3`  | 0.286 | 0.287 | 0.282 | 0.283 |
+| `gcn`   | 0.273 | 0.266 | 0.543 | 0.549 |
+
+**Rank per cell (1 = best) and mean rank across the 4 cells:**
+
+| Arm | h_lo/pl_lo | h_lo/pl_hi | h_hi/pl_lo | h_hi/pl_hi | Mean rank |
+|---|---|---|---|---|---|
+| `khop2` | 1 | 1 | 1 | 1 | **1.00** |
+| `khop1` | 3 | 3 | 2 | 2 | 2.50 |
+| `knn3`  | 2 | 2 | 4 | 4 | 3.00 |
+| `gcn`   | 4 | 4 | 3 | 3 | 3.50 |
+
+**Two-way ANOVA** (`arm` x `cell`, response = test accuracy, via
+`statsmodels`): every term is significant at p < 1e-30 — seed-to-seed noise
+is negligible here (residual sum of squares is 0.03% of the total), so
+partial η² saturates near 1.000 for all three terms and isn't the useful
+number to quote. The informative split is each term's **share of total sum
+of squares**: `cell` (structural regime) = **48.7%**, `arm` (lifting
+choice) = **26.1%**, `arm:cell` interaction = **25.2%**, residual ≈ 0.03%.
+
+**Bootstrap 95% CI on test accuracy, pooled across all 4 cells:**
+
+| Arm | Mean | 95% CI |
+|---|---|---|
+| `khop2` | 0.466 | [0.380, 0.550] |
+| `khop1` | 0.450 | [0.363, 0.536] |
+| `gcn`   | 0.408 | [0.337, 0.478] |
+| `knn3`  | 0.284 | [0.283, 0.286] |
+
+**1. H1 (lifting variance ≳ regime variance): supported once the
+interaction is counted.** Lifting choice's main effect alone (26.1%) is
+*smaller* than structural regime's main effect alone (48.7%) — taken in
+isolation, H1 does not hold. But lifting's effect on accuracy is itself
+regime-dependent (that's exactly what the interaction term measures), so
+its *total* footprint is main effect + interaction = 26.1% + 25.2% =
+**51.3%**, which does edge out regime's 48.7%. Either way, "lifting choice"
+is not a rounding error next to "structural regime": it is the same order
+of magnitude, confounding the comparison exactly as hypothesised.
+
+**2. H2 (rank inversion): supported, and sharply.** `knn3` is the
+**2nd-best** arm under low homophily and the **worst** arm under high
+homophily — a plain GCN baseline overtakes it the moment homophily rises.
+`khop2` never loses the top spot. The mechanism is structural, not noise:
+`HypergraphKNNLifting` builds hyperedges from node **features** only, and
+GraphUniverse's feature noise (`center_variance`/`cluster_variance`) is
+held fixed across every cell — only the **edges** get more informative as
+homophily rises. `khop1`/`khop2`/`gcn` all consume those edges and benefit;
+`knn3` structurally cannot. More neighbours (`k=5`, `k=10`) would not fix
+this — it would still be built from the same uninformative features, so
+this was deliberately not swept further; the fix would be a different
+lifting that consumes the edges, not a bigger `k`.
+
+**3. Three-line summary:** The lifting alone shifts DPHGNN from
+*best-in-grid* (`khop2`, beats GCN everywhere) to *worst-in-grid*
+(`knn3`, loses to GCN once homophily is high) with zero architecture
+change. Any Track-2 "TNN beats GNN" claim is therefore meaningless unless
+the lifting is named and controlled — exactly the confound this experiment
+set out to expose. Not a null result: both H1 and H2 held.
