@@ -25,7 +25,7 @@ def _normalize_positive_integer(value: object, *, name: str) -> int:
 
 def _normalize_input_channels(
     input_channels: object,
-) -> dict[str, int]:
+) -> tuple[tuple[str, int], ...]:
     """Copy and validate ordered per-node-type input widths."""
     if not isinstance(input_channels, Mapping):
         raise TypeError("input_channels must be a mapping")
@@ -44,7 +44,19 @@ def _normalize_input_channels(
             width,
             name=f"input_channels width for {node_type!r}",
         )
-    return normalized
+    return tuple(normalized.items())
+
+
+def _projection_module_key(node_type: str) -> str:
+    """Encode an external node type as a safe, stable PyTorch module key.
+
+    PyG accepts arbitrary non-empty strings as node types, while PyTorch child
+    modules reject dots and names colliding with attributes such as
+    ``training`` or ``forward``. UTF-8 hex encoding is injective and depends
+    only on the semantic node type, so checkpoint keys remain stable when
+    equivalent metadata is supplied in another insertion order.
+    """
+    return f"node_type_{node_type.encode('utf-8').hex()}"
 
 
 def _normalize_dropout(dropout: object) -> float:
@@ -66,6 +78,10 @@ class HeterogeneousNodeFeatureEncoder(AbstractFeatureEncoder):
     optimizer created before the first batch sees the complete parameter set.
     Forward validation and computation finish before any feature store is
     updated, making mutations transactional on failure.
+
+    Encoding replaces feature tensors in place. A preprocessed batch is
+    therefore a single-pass input; use a fresh batch object for another model
+    call.
 
     Parameters
     ----------
@@ -95,25 +111,66 @@ class HeterogeneousNodeFeatureEncoder(AbstractFeatureEncoder):
         )
         normalized_dropout = _normalize_dropout(dropout)
 
-        self.input_channels = normalized_channels
+        self._input_channels = normalized_channels
         self.hidden_channels = normalized_hidden_channels
         self.activation_name = activation
         self.dropout_probability = normalized_dropout
-        self.projections = torch.nn.ModuleDict(
+        self._projections = torch.nn.ModuleDict(
             {
-                node_type: torch.nn.Linear(
+                _projection_module_key(node_type): torch.nn.Linear(
                     width,
                     normalized_hidden_channels,
                 )
-                for node_type, width in normalized_channels.items()
+                for node_type, width in normalized_channels
             }
         )
         self.activation = make_activation(activation)
         self.dropout = torch.nn.Dropout(normalized_dropout)
 
+    @property
+    def input_channels(self) -> dict[str, int]:
+        """Return a defensive copy of ordered input-channel metadata."""
+        return dict(self._input_channels)
+
+    @property
+    def projections(self) -> dict[str, torch.nn.Linear]:
+        """Return a fresh semantic view of the registered projections."""
+        return {
+            node_type: self.projection_for(node_type)
+            for node_type, _ in self._input_channels
+        }
+
+    def projection_for(self, node_type: str) -> torch.nn.Linear:
+        """Return the registered projection for an external PyG node type.
+
+        Parameters
+        ----------
+        node_type : str
+            Semantic node type from the input metadata.
+
+        Returns
+        -------
+        torch.nn.Linear
+            Eagerly registered projection for ``node_type``.
+
+        Raises
+        ------
+        KeyError
+            If the node type was not present in the validated constructor
+            metadata.
+        """
+        if node_type not in dict(self._input_channels):
+            raise KeyError(f"Unknown node type: {node_type!r}")
+        projection = self._projections[_projection_module_key(node_type)]
+        if not isinstance(projection, torch.nn.Linear):
+            raise TypeError(
+                f"Projection for node type {node_type!r} is not Linear"
+            )
+        return projection
+
     def _validate_store_keys(self, data: HeteroData) -> None:
         """Require node stores and feature stores to match metadata exactly."""
-        expected = set(self.input_channels)
+        expected = {node_type for node_type, _ in self._input_channels}
         actual_nodes = set(data.node_types)
         actual_features = set(data.x_dict)
         missing = expected - actual_nodes
@@ -140,7 +197,7 @@ class HeterogeneousNodeFeatureEncoder(AbstractFeatureEncoder):
     ) -> dict[str, torch.Tensor]:
         """Preflight every feature tensor without mutating the graph."""
         features_by_type: dict[str, torch.Tensor] = {}
-        for node_type, expected_width in self.input_channels.items():
+        for node_type, expected_width in self._input_channels:
             features = data[node_type].x
             if not isinstance(features, torch.Tensor):
                 raise TypeError(
@@ -172,7 +229,7 @@ class HeterogeneousNodeFeatureEncoder(AbstractFeatureEncoder):
         return features_by_type
 
     def forward(self, data: HeteroData) -> HeteroData:
-        """Encode all node features and return the same native graph object."""
+        """Encode one fresh batch in place and return that same graph object."""
         if not isinstance(data, HeteroData):
             raise TypeError(
                 "Heterogeneous node feature encoder requires HeteroData"
@@ -183,10 +240,10 @@ class HeterogeneousNodeFeatureEncoder(AbstractFeatureEncoder):
         encoded_by_type = {
             node_type: self.dropout(
                 self.activation(
-                    self.projections[node_type](features_by_type[node_type])
+                    self.projection_for(node_type)(features_by_type[node_type])
                 )
             )
-            for node_type in self.input_channels
+            for node_type, _ in self._input_channels
         }
         for node_type, encoded_features in encoded_by_type.items():
             data[node_type].x = encoded_features

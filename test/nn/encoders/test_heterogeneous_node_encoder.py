@@ -29,6 +29,15 @@ from topobench.transforms.data_manipulations.heterogeneous import (
 
 INPUT_CHANNELS = OrderedDict((("author", 8), ("paper", 5), ("venue", 1)))
 NODE_COUNTS = {"author": 36, "paper": 24, "venue": 6}
+PYTORCH_RESERVED_NODE_TYPES = OrderedDict(
+    (
+        ("paper.type", 2),
+        ("training", 3),
+        ("items", 4),
+        ("forward", 5),
+        ("state_dict", 6),
+    )
+)
 
 
 def make_data() -> HeteroData:
@@ -51,6 +60,17 @@ def make_encoder(
         activation=activation,
         dropout=dropout,
     )
+
+
+def make_reserved_name_data() -> HeteroData:
+    """Return feature stores whose valid PyG names are unsafe module keys."""
+    data = HeteroData()
+    for index, (node_type, width) in enumerate(
+        PYTORCH_RESERVED_NODE_TYPES.items(),
+        start=1,
+    ):
+        data[node_type].x = torch.randn(index + 1, width)
+    return data
 
 
 @pytest.mark.parametrize(
@@ -192,6 +212,116 @@ def test_constructor_copies_and_normalizes_ordered_metadata() -> None:
         node_type: (projection.in_features, projection.out_features)
         for node_type, projection in encoder.projections.items()
     } == {"paper": (5, 12), "author": (8, 12)}
+
+
+def test_input_channel_property_is_a_defensive_metadata_copy() -> None:
+    """Public mapping mutation cannot alter immutable internal metadata."""
+    encoder = make_encoder()
+    first = encoder.input_channels
+    second = encoder.input_channels
+    first["author"] = 999
+    first["unexpected"] = 4
+
+    assert first is not second
+    assert second == dict(INPUT_CHANNELS)
+    assert encoder.input_channels == dict(INPUT_CHANNELS)
+    assert encoder.projection_for("author").in_features == 8
+
+
+def test_valid_pyg_node_names_unsafe_for_moduledict_are_supported() -> None:
+    """External node names never become raw PyTorch child-module names."""
+    data = make_reserved_name_data()
+    original_features = {}
+    for node_type in data.node_types:
+        data[node_type].x.requires_grad_(True)
+        original_features[node_type] = data[node_type].x
+    encoder = HeterogeneousNodeFeatureEncoder(
+        input_channels=PYTORCH_RESERVED_NODE_TYPES,
+        hidden_channels=7,
+        activation="elu",
+    )
+    names_before = tuple(encoder.named_parameters())
+    optimizer = torch.optim.SGD(encoder.parameters(), lr=0.1)
+
+    result = encoder(data)
+    sum(
+        features.square().sum() for features in result.x_dict.values()
+    ).backward()
+
+    assert result is data
+    assert tuple(result.x_dict) == tuple(PYTORCH_RESERVED_NODE_TYPES)
+    assert {
+        node_type: tuple(features.shape)
+        for node_type, features in result.x_dict.items()
+    } == {
+        node_type: (index + 1, 7)
+        for index, node_type in enumerate(
+            PYTORCH_RESERVED_NODE_TYPES,
+            start=1,
+        )
+    }
+    optimizer_parameters = {
+        id(parameter)
+        for group in optimizer.param_groups
+        for parameter in group["params"]
+    }
+    assert optimizer_parameters == {
+        id(parameter) for _, parameter in names_before
+    }
+    assert tuple(encoder.named_parameters()) == names_before
+    for node_type in PYTORCH_RESERVED_NODE_TYPES:
+        projection = encoder.projection_for(node_type)
+        assert projection.weight.grad is not None
+        assert projection.bias.grad is not None
+        assert original_features[node_type].grad is not None
+
+
+def test_state_dict_uses_collision_free_name_derived_module_keys() -> None:
+    """Checkpoint keys safely and deterministically encode semantic names."""
+    encoder = HeterogeneousNodeFeatureEncoder(
+        input_channels=PYTORCH_RESERVED_NODE_TYPES,
+        hidden_channels=7,
+    )
+
+    assert set(encoder.state_dict()) == {
+        f"_projections.node_type_{node_type.encode('utf-8').hex()}.{suffix}"
+        for node_type in PYTORCH_RESERVED_NODE_TYPES
+        for suffix in ("weight", "bias")
+    }
+
+
+def test_state_dict_strictly_loads_across_equivalent_metadata_order() -> None:
+    """Checkpoint parameter names are independent of metadata insertion order."""
+    first = HeterogeneousNodeFeatureEncoder(
+        input_channels=PYTORCH_RESERVED_NODE_TYPES,
+        hidden_channels=7,
+    )
+    reversed_channels = OrderedDict(
+        reversed(tuple(PYTORCH_RESERVED_NODE_TYPES.items()))
+    )
+    second = HeterogeneousNodeFeatureEncoder(
+        input_channels=reversed_channels,
+        hidden_channels=7,
+    )
+
+    load_result = second.load_state_dict(first.state_dict(), strict=True)
+
+    assert load_result.missing_keys == []
+    assert load_result.unexpected_keys == []
+    for node_type in PYTORCH_RESERVED_NODE_TYPES:
+        first_projection = first.projection_for(node_type)
+        second_projection = second.projection_for(node_type)
+        assert torch.equal(
+            first_projection.weight,
+            second_projection.weight,
+        )
+        assert torch.equal(first_projection.bias, second_projection.bias)
+
+
+def test_projection_lookup_reports_unknown_external_node_type() -> None:
+    """Semantic projection lookup retains external names in diagnostics."""
+    with pytest.raises(KeyError, match="Unknown node type.*institution"):
+        make_encoder().projection_for("institution")
 
 
 def test_forward_encodes_all_node_types_to_common_width_in_place() -> None:
