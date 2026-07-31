@@ -11,9 +11,11 @@ from . import (
     transforms,
     utils,
 )
+from .domains import SUPPORTED_DOMAINS, require_supported_domain
 from .run import initialize_hydra
 
 __all__ = [
+    "SUPPORTED_DOMAINS",
     "data",
     "dataloader",
     "evaluator",
@@ -21,6 +23,7 @@ __all__ = [
     "loss",
     "model",
     "nn",
+    "require_supported_domain",
     "transforms",
     "utils",
 ]
