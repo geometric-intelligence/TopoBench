@@ -170,6 +170,46 @@ def test_constructor_rejects_nonpositive_hidden_channels():
             )
 
 
+def test_state_dict_preserves_exact_historical_cell_hgt_keys():
+    """Extraction keeps existing one-layer CellHGT checkpoint names."""
+    model = CellHGT(
+        hidden_channels=8,
+        num_layers=1,
+        heads=2,
+        neighborhoods=NEIGHBORHOODS,
+    )
+
+    assert set(model.state_dict()) == {
+        "convs.0.kqv_lin.lins.rank_0.weight",
+        "convs.0.kqv_lin.lins.rank_0.bias",
+        "convs.0.kqv_lin.lins.rank_1.weight",
+        "convs.0.kqv_lin.lins.rank_1.bias",
+        "convs.0.kqv_lin.lins.rank_2.weight",
+        "convs.0.kqv_lin.lins.rank_2.bias",
+        "convs.0.out_lin.lins.rank_0.weight",
+        "convs.0.out_lin.lins.rank_0.bias",
+        "convs.0.out_lin.lins.rank_1.weight",
+        "convs.0.out_lin.lins.rank_1.bias",
+        "convs.0.out_lin.lins.rank_2.weight",
+        "convs.0.out_lin.lins.rank_2.bias",
+        "convs.0.k_rel.weight",
+        "convs.0.v_rel.weight",
+        "convs.0.skip.rank_0",
+        "convs.0.skip.rank_1",
+        "convs.0.skip.rank_2",
+        "convs.0.p_rel.rank_0__up_incidence-0__rank_1",
+        "convs.0.p_rel.rank_1__down_incidence-1__rank_0",
+        "convs.0.p_rel.rank_1__up_incidence-1__rank_2",
+        "convs.0.p_rel.rank_2__down_incidence-2__rank_1",
+        "norms.0.rank_0.weight",
+        "norms.0.rank_0.bias",
+        "norms.0.rank_1.weight",
+        "norms.0.rank_1.bias",
+        "norms.0.rank_2.weight",
+        "norms.0.rank_2.bias",
+    }
+
+
 def test_constructor_rejects_negative_route_rank():
     with pytest.raises(ValueError, match="between 0 and max_rank"):
         CellHGT(

@@ -4,41 +4,12 @@ from __future__ import annotations
 
 import torch
 from torch_geometric.data import Data
-from torch_geometric.nn import HGTConv
 
 from topobench.data.utils import get_routes_from_neighborhoods
+from topobench.nn.backbones.heterogeneous.hgt import HGTBackbone
 
 
-def _activation(name: str) -> torch.nn.Module:
-    """Build an activation supported by the HGT configuration.
-
-    Parameters
-    ----------
-    name : str
-        Activation name.
-
-    Returns
-    -------
-    torch.nn.Module
-        Instantiated activation module.
-
-    Raises
-    ------
-    ValueError
-        If ``name`` is not a supported activation.
-    """
-    activations = {
-        "relu": torch.nn.ReLU,
-        "elu": torch.nn.ELU,
-        "tanh": torch.nn.Tanh,
-        "id": torch.nn.Identity,
-    }
-    if name not in activations:
-        raise ValueError(f"Unsupported activation: {name}")
-    return activations[name]()
-
-
-class CellHGT(torch.nn.Module):
+class CellHGT(HGTBackbone):
     """Apply heterogeneous attention across cell ranks and incidence relations.
 
     Parameters
@@ -70,25 +41,7 @@ class CellHGT(torch.nn.Module):
         dropout: float = 0.0,
         activation: str = "relu",
     ) -> None:
-        super().__init__()
-        if heads < 1:
-            raise ValueError("heads must be a positive integer")
-        if hidden_channels < 1:
-            raise ValueError("hidden_channels must be a positive integer")
-        if hidden_channels % heads != 0:
-            raise ValueError(
-                "hidden_channels must be divisible by the number of heads"
-            )
-        if num_layers < 1:
-            raise ValueError("num_layers must be at least 1")
-
-        self.hidden_channels = hidden_channels
-        self.out_channels = hidden_channels
-        self.num_layers = num_layers
-        self.heads = heads
         self.max_rank = max_rank
-        self.dropout_probability = dropout
-        self.activation_name = activation
         self.neighborhoods = list(neighborhoods)
 
         if not self.neighborhoods:
@@ -126,31 +79,14 @@ class CellHGT(torch.nn.Module):
                 self.neighborhoods, self.routes, strict=True
             )
         ]
-        self.metadata = (self.node_types, self.edge_types)
-        self.convs = torch.nn.ModuleList(
-            [
-                HGTConv(
-                    in_channels=hidden_channels,
-                    out_channels=hidden_channels,
-                    metadata=self.metadata,
-                    heads=heads,
-                )
-                for _ in range(num_layers)
-            ]
+        super().__init__(
+            metadata=(self.node_types, self.edge_types),
+            hidden_channels=hidden_channels,
+            num_layers=num_layers,
+            heads=heads,
+            dropout=dropout,
+            activation=activation,
         )
-        self.norms = torch.nn.ModuleList(
-            [
-                torch.nn.ModuleDict(
-                    {
-                        node_type: torch.nn.LayerNorm(hidden_channels)
-                        for node_type in self.node_types
-                    }
-                )
-                for _ in range(num_layers)
-            ]
-        )
-        self.activation = _activation(activation)
-        self.dropout = torch.nn.Dropout(dropout)
 
     @staticmethod
     def node_type(rank: int) -> str:
@@ -207,7 +143,10 @@ class CellHGT(torch.nn.Module):
             )
         return x_dict, edge_index_dict
 
-    def forward(self, batch: Data) -> dict[int, torch.Tensor]:
+    def forward(  # type: ignore[override]
+        self,
+        batch: Data,
+    ) -> dict[int, torch.Tensor]:
         """Apply all HGT layers to one disjoint-union mini-batch.
 
         Parameters
@@ -221,21 +160,8 @@ class CellHGT(torch.nn.Module):
             Updated feature tensor for every represented cell rank.
         """
         x_dict, edge_index_dict = self.to_heterogeneous_inputs(batch)
-
-        for conv, norms in zip(self.convs, self.norms, strict=True):
-            previous = x_dict
-            messages = conv(previous, edge_index_dict)
-            x_dict = {}
-            for node_type, old_features in previous.items():
-                updated = messages.get(node_type)
-                if updated is None:
-                    x_dict[node_type] = old_features
-                    continue
-                x_dict[node_type] = self.dropout(
-                    self.activation(norms[node_type](updated))
-                )
-
+        output = super().forward(x_dict, edge_index_dict)
         return {
-            rank: x_dict[self.node_type(rank)]
+            rank: output[self.node_type(rank)]
             for rank in range(self.max_rank + 1)
         }
