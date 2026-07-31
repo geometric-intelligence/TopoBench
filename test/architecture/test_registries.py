@@ -23,6 +23,7 @@ from topobench.nn.wrappers import hypergraph as hypergraph_wrappers
 EXPECTED_DATASETS = {
     "CitationHypergraphDataset",
     "HypergraphDataset",
+    "SyntheticGraphDataset",
     "SyntheticHeterogeneousDataset",
     "USCountyDemosDataset",
 }
@@ -34,6 +35,7 @@ EXPECTED_GRAPH_LOADERS = {
     "MoleculeDatasetLoader",
     "OGBGDatasetLoader",
     "PlanetoidDatasetLoader",
+    "SyntheticGraphDatasetLoader",
     "TUDatasetLoader",
     "USCountyDemosDatasetLoader",
 }

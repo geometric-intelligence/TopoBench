@@ -26,6 +26,7 @@ from topobench.data.pipelines import (
     DefaultDataPipeline,
     HeterogeneousNodeDataPipeline,
 )
+from topobench.dataloader import GraphDataModule
 from topobench.utils.config_resolvers import register_all_resolvers
 
 
@@ -445,7 +446,7 @@ def _install_pipeline_spies(
         return datamodule
 
     datamodule_spy = MagicMock(side_effect=make_datamodule)
-    monkeypatch.setattr(default_module, "TBDataloader", datamodule_spy)
+    monkeypatch.setattr(default_module, "GraphDataModule", datamodule_spy)
 
     return (
         events,
@@ -494,6 +495,7 @@ def test_default_pipeline_preserves_orchestration_and_output_contract(
                 "dataset_train": splits[0],
                 "dataset_val": splits[1],
                 "dataset_test": splits[2],
+                "learning_setting": "inductive",
                 "batch_size": 8,
                 "num_workers": 2,
             },
@@ -582,6 +584,39 @@ def test_default_pipeline_is_composed_for_existing_experiments(
         cfg.data_pipeline._target_
         == "topobench.data.pipelines.DefaultDataPipeline"
     )
+
+
+def test_composed_minesweeper_params_construct_native_graph_datamodule() -> None:
+    """Minesweeper's composed loader parameters satisfy the native contract."""
+    register_all_resolvers()
+    hydra.initialize(
+        version_base="1.3",
+        config_path="../../../configs",
+    )
+    cfg = hydra.compose(
+        config_name="run.yaml",
+        overrides=["dataset=graph/minesweeper"],
+    )
+    dataloader_params = OmegaConf.to_container(
+        cfg.dataset.dataloader_params,
+        resolve=True,
+    )
+    assert isinstance(dataloader_params, dict)
+
+    datamodule = GraphDataModule(
+        dataset_train=[Data()],
+        learning_setting=cfg.dataset.split_params.learning_setting,
+        **dataloader_params,
+    )
+
+    assert datamodule.batch_size == 1
+    assert datamodule.loader_kwargs == {
+        "num_workers": 0,
+        "pin_memory": False,
+        "persistent_workers": False,
+    }
+    assert datamodule.dataset_train is datamodule.dataset_val
+    assert datamodule.dataset_train is datamodule.dataset_test
 
 
 def test_production_run_consumes_pipeline_output(
@@ -1022,10 +1057,10 @@ def test_heterogeneous_hydra_composition_resolves_pipeline_and_transforms() -> (
     )
 
 
-def test_default_pipeline_contract_remains_unchanged_after_heterogeneous_api(
+def test_default_pipeline_uses_native_graph_datamodule(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Adding the native pipeline does not redirect the established default."""
+    """The default pipeline keeps homogeneous PyG data native through batching."""
     cfg = _pipeline_cfg(task_level="graph", transforms=None)
     events, *_ = _install_pipeline_spies(monkeypatch, cfg)
 

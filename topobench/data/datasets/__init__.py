@@ -2,6 +2,7 @@
 
 from .citation_hypergraph_dataset import CitationHypergraphDataset
 from .hypergraph_datasets import HypergraphDataset
+from .synthetic_graph_dataset import SyntheticGraphDataset
 from .synthetic_heterogeneous_dataset import (
     SyntheticHeterogeneousDataset,
     make_synthetic_heterogeneous_data,
@@ -46,6 +47,7 @@ MANUAL_DATASETS = dict(
             for dataset_class in (
                 CitationHypergraphDataset,
                 HypergraphDataset,
+                SyntheticGraphDataset,
                 SyntheticHeterogeneousDataset,
                 USCountyDemosDataset,
             )

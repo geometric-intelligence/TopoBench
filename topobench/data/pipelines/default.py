@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from omegaconf import DictConfig
 
-from topobench.dataloader import TBDataloader
+from topobench.dataloader import GraphDataModule
 
 from .base import AbstractDataPipeline, DataPipelineOutput
 
@@ -22,10 +22,11 @@ class DefaultDataPipeline(AbstractDataPipeline):
         if cfg.dataset.parameters.task_level not in ["node", "graph"]:
             raise ValueError("Invalid task_level")
 
-        datamodule = TBDataloader(
+        datamodule = GraphDataModule(
             dataset_train=train,
             dataset_val=val,
             dataset_test=test,
+            learning_setting=cfg.dataset.split_params.learning_setting,
             **cfg.dataset.get("dataloader_params", {}),
         )
         return DataPipelineOutput(

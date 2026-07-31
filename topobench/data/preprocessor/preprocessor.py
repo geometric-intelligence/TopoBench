@@ -17,7 +17,6 @@ from topobench.data.utils import (
     load_transductive_splits,
     make_hash,
 )
-from topobench.dataloader import DataloadDataset
 from topobench.transforms.data_transform import DataTransform
 
 SupportedData = Data | HeteroData
@@ -380,7 +379,9 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
     def load_dataset_splits(
         self, split_params
     ) -> tuple[
-        DataloadDataset, DataloadDataset | None, DataloadDataset | None
+        torch.utils.data.Dataset[Data],
+        torch.utils.data.Dataset[Data] | None,
+        torch.utils.data.Dataset[Data] | None,
     ]:
         """Load the dataset splits.
 

@@ -7,17 +7,26 @@ import pytest
 import numpy as np
 import torch
 from unittest.mock import MagicMock, patch
+
 from omegaconf import DictConfig
+from torch.utils.data import Subset
+from torch_geometric.data import Data
+
+from topobench.data.splits import (
+    apply_transductive_split,
+    indices_to_mask,
+    inductive_split_views,
+    validate_transductive_masks,
+)
 
 from topobench.data.utils.split_utils import (
     k_fold_split,
-    random_splitting,
-    stratified_splitting,
     k_fold_split_fixed,
+    load_coauthorship_hypergraph_splits,
     load_inductive_splits,
     load_transductive_splits,
-    load_coauthorship_hypergraph_splits,
-    assign_train_val_test_mask_to_graphs,
+    random_splitting,
+    stratified_splitting,
 )
 
 
@@ -263,8 +272,8 @@ class TestLoadInductiveSplits:
         with pytest.raises(NotImplementedError, match="not valid"):
             load_inductive_splits(mock_dataset, parameters)
 
-    def test_single_graph_raises_assertion(self):
-        """Test that single graph dataset raises assertion error."""
+    def test_single_graph_raises_value_error(self):
+        """An inductive source must contain multiple graphs."""
         n_graphs = 1
         label_shapes = [()]
         mock_dataset = self.create_mock_dataset(n_graphs, label_shapes)
@@ -276,7 +285,7 @@ class TestLoadInductiveSplits:
             "data_split_dir": os.path.join(self.test_dir, "data_splits")
         })
 
-        with pytest.raises(AssertionError, match="more than one graph"):
+        with pytest.raises(ValueError, match="more than one graph"):
             load_inductive_splits(mock_dataset, parameters)
 
     def test_without_get_data_dir(self):
@@ -299,42 +308,32 @@ class TestLoadInductiveSplits:
         assert len(val_ds) > 0
         assert len(test_ds) > 0
 
-    def test_masks_are_assigned_correctly(self):
-        """Test that train/val/test masks are assigned correctly to graphs."""
+    def test_splits_are_index_backed_without_graph_masks(self):
+        """Inductive phases remain lazy views over the original dataset."""
         n_graphs = 10
         label_shapes = [()] * n_graphs
         mock_dataset = self.create_mock_dataset(n_graphs, label_shapes)
+        mock_dataset.split_idx = {
+            "train": np.arange(6),
+            "valid": np.arange(6, 8),
+            "test": np.arange(8, 10),
+        }
 
-        parameters = DictConfig({
-            "split_type": "random",
-            "data_seed": 0,
-            "train_prop": 0.6,
-            "data_split_dir": os.path.join(self.test_dir, "data_splits")
-        })
+        train_ds, val_ds, test_ds = load_inductive_splits(
+            mock_dataset,
+            DictConfig({"split_type": "fixed"}),
+        )
 
-        train_ds, val_ds, test_ds = load_inductive_splits(mock_dataset, parameters)
-
-        # Check that masks are properly assigned to the data_lst items
-        for i in range(len(train_ds.data_lst)):
-            graph = train_ds.data_lst[i]
-            assert hasattr(graph, 'train_mask')
-            assert hasattr(graph, 'val_mask')
-            assert hasattr(graph, 'test_mask')
-            assert graph.train_mask.item() == 1
-            assert graph.val_mask.item() == 0
-            assert graph.test_mask.item() == 0
-
-        for i in range(len(val_ds.data_lst)):
-            graph = val_ds.data_lst[i]
-            assert graph.train_mask.item() == 0
-            assert graph.val_mask.item() == 1
-            assert graph.test_mask.item() == 0
-
-        for i in range(len(test_ds.data_lst)):
-            graph = test_ds.data_lst[i]
-            assert graph.train_mask.item() == 0
-            assert graph.val_mask.item() == 0
-            assert graph.test_mask.item() == 1
+        assert all(
+            isinstance(dataset, Subset)
+            for dataset in (train_ds, val_ds, test_ds)
+        )
+        assert train_ds.dataset is mock_dataset
+        assert val_ds.dataset is mock_dataset
+        assert test_ds.dataset is mock_dataset
+        assert list(train_ds.indices) == list(range(6))
+        assert list(val_ds.indices) == [6, 7]
+        assert list(test_ds.indices) == [8, 9]
 
     def test_different_data_seeds_produce_different_splits(self):
         """Test that different data seeds produce different splits."""
@@ -567,7 +566,7 @@ class TestKFoldSplitFixed:
 
 
 class TestLoadTransductiveSplits:
-    """Test load_transductive_splits function."""
+    """Test native transductive splitting and canonical masks."""
 
     def setup_method(self):
         """Setup method for each test."""
@@ -578,115 +577,170 @@ class TestLoadTransductiveSplits:
         if os.path.exists(self.test_dir):
             shutil.rmtree(self.test_dir)
 
-    def test_transductive_random_split(self):
-        """Test transductive random split."""
-        mock_dataset = MagicMock()
-        mock_dataset.__len__ = MagicMock(return_value=1)
-        mock_dataset.dataset.get_data_dir.return_value = self.test_dir
+    @staticmethod
+    def dataset(labels: torch.Tensor) -> list[Data]:
+        """Build one native graph dataset."""
+        return [Data(x=torch.randn(labels.numel(), 4), y=labels)]
 
-        mock_data = MagicMock()
-        mock_data.y = torch.tensor([0, 1, 0, 1, 0, 1], dtype=torch.float)
-        mock_data.x = torch.randn(6, 10)
-        mock_data.train_mask = None
-        mock_dataset.data_list = [mock_data]
+    def test_transductive_indices_become_boolean_masks(self):
+        """Index arrays become disjoint, complete, full-length masks."""
+        data = self.dataset(torch.tensor([0, 1, 0, 1]))[0]
 
-        parameters = DictConfig({
-            "split_type": "random",
+        apply_transductive_split(
+            data,
+            train=[0, 2],
+            val=[1],
+            test=[3],
+        )
+
+        assert data.train_mask.dtype is torch.bool
+        assert data.train_mask.tolist() == [True, False, True, False]
+        assert not torch.any(data.train_mask & data.val_mask)
+        assert torch.all(
+            data.train_mask | data.val_mask | data.test_mask
+        )
+
+    @pytest.mark.parametrize(
+        ("train", "val", "test", "message"),
+        [
+            ([0], [], [1, 2], "split masks must be non-empty"),
+            ([0, 1], [1], [2], "split masks must be disjoint"),
+            ([0], [1], [2], "split masks must cover all labeled nodes"),
+        ],
+    )
+    def test_transductive_split_invariants(
+        self,
+        train,
+        val,
+        test,
+        message,
+    ):
+        """Invalid split masks fail at the representation boundary."""
+        data = self.dataset(torch.tensor([0, 1, 0, 1]))[0]
+
+        with pytest.raises(ValueError, match=f"^{message}$"):
+            apply_transductive_split(
+                data,
+                train=train,
+                val=val,
+                test=test,
+            )
+
+    def test_mask_validation_rejects_shape_and_dtype(self):
+        """Canonical masks are one-dimensional, boolean, and full-length."""
+        data = self.dataset(torch.tensor([0, 1, 0]))[0]
+        data.train_mask = torch.tensor([[True, False, False]])
+        data.val_mask = torch.tensor([False, True, False])
+        data.test_mask = torch.tensor([False, False, True])
+
+        with pytest.raises(
+            ValueError,
+            match="^train_mask must be a rank-1 boolean mask$",
+        ):
+            validate_transductive_masks(data)
+
+        data.train_mask = torch.tensor([1, 0, 0])
+        with pytest.raises(
+            ValueError,
+            match="^train_mask must be a rank-1 boolean mask$",
+        ):
+            validate_transductive_masks(data)
+
+    def test_indices_to_mask_validates_index_contract(self):
+        """Index conversion rejects non-integral, repeated, and out-of-range indices."""
+        assert indices_to_mask([0, 2], 3).tolist() == [True, False, True]
+        with pytest.raises(TypeError, match="^indices must contain integers$"):
+            indices_to_mask([0.5], 3)
+        with pytest.raises(ValueError, match="^indices must be unique$"):
+            indices_to_mask([0, 0], 3)
+        with pytest.raises(ValueError, match="^indices must be in \\[0, 3\\)$"):
+            indices_to_mask([3], 3)
+
+    @pytest.mark.parametrize("split_type", ["random", "stratified", "k-fold"])
+    def test_generated_transductive_splits_are_canonical(self, split_type):
+        """All supported index algorithms feed the same mask boundary."""
+        labels = torch.tensor([0, 0, 0, 1, 1, 1])
+        parameters = {
+            "split_type": split_type,
             "data_seed": 0,
-            "train_prop": 0.5,
-            "data_split_dir": os.path.join(self.test_dir, "data_splits")
-        })
+            "data_split_dir": self.test_dir,
+        }
+        if split_type == "random":
+            parameters["train_prop"] = 0.5
+        elif split_type == "stratified":
+            parameters["train_prop"] = 0.5
+        else:
+            parameters["k"] = 3
 
-        dataset, _, _ = load_transductive_splits(mock_dataset, parameters)
+        dataset, val, test = load_transductive_splits(
+            self.dataset(labels),
+            DictConfig(parameters),
+        )
 
+        assert val is None
+        assert test is None
+        assert isinstance(dataset, list)
         assert len(dataset) == 1
-        data = dataset.data_lst[0]
-        assert hasattr(data, "train_mask")
-        assert data.train_mask.sum() > 0
+        validate_transductive_masks(dataset[0])
 
-    def test_transductive_stratified_split(self):
-        """Test transductive stratified split."""
-        mock_dataset = MagicMock()
-        mock_dataset.__len__ = MagicMock(return_value=1)
-        mock_dataset.dataset.get_data_dir.return_value = self.test_dir
+    def test_fixed_transductive_split_validates_existing_masks(self):
+        """A packaged fixed node split follows the same canonical contract."""
+        data = self.dataset(torch.tensor([0, 1, 0]))[0]
+        apply_transductive_split(data, train=[0], val=[1], test=[2])
 
-        mock_data = MagicMock()
-        mock_data.y = torch.tensor([0, 0, 0, 1, 1, 1], dtype=torch.float)
-        mock_data.x = torch.randn(6, 10)
-        mock_dataset.data_list = [mock_data]
+        dataset, val, test = load_transductive_splits(
+            [data],
+            DictConfig({"split_type": "fixed"}),
+        )
 
-        parameters = DictConfig({
-            "split_type": "stratified",
-            "data_seed": 0,
-            "train_prop": 0.5,
-            "data_split_dir": os.path.join(self.test_dir, "data_splits")
-        })
+        assert dataset == [data]
+        assert val is None
+        assert test is None
 
-        dataset, _, _ = load_transductive_splits(mock_dataset, parameters)
-        assert len(dataset) == 1
+    def test_fixed_index_masks_are_canonicalized(self):
+        """Legacy fixed index fields are converted at the split boundary."""
+        data = self.dataset(torch.tensor([0, 1, 0, 1]))[0]
+        data.train_mask = torch.tensor([0, 2])
+        data.val_mask = torch.tensor([1])
+        data.test_mask = torch.tensor([3])
 
-    def test_transductive_kfold_split(self):
-        """Test transductive k-fold split."""
-        mock_dataset = MagicMock()
-        mock_dataset.__len__ = MagicMock(return_value=1)
-        mock_dataset.dataset.get_data_dir.return_value = self.test_dir
+        dataset, _, _ = load_transductive_splits(
+            [data],
+            DictConfig({"split_type": "fixed"}),
+        )
 
-        mock_data = MagicMock()
-        mock_data.y = torch.tensor([0, 0, 0, 1, 1, 1], dtype=torch.float)
-        mock_data.x = torch.randn(6, 10)
-        mock_dataset.data_list = [mock_data]
+        assert dataset[0].train_mask.dtype is torch.bool
+        assert dataset[0].train_mask.tolist() == [True, False, True, False]
 
-        parameters = DictConfig({
-            "split_type": "k-fold",
-            "k": 3,
-            "data_seed": 0,
-            "data_split_dir": os.path.join(self.test_dir, "data_splits")
-        })
 
-        dataset, _, _ = load_transductive_splits(mock_dataset, parameters)
-        assert len(dataset) == 1
 
     def test_transductive_standardize(self):
-        """Test transductive split with standardization."""
-        mock_dataset = MagicMock()
-        mock_dataset.__len__ = MagicMock(return_value=1)
-        mock_dataset.dataset.get_data_dir.return_value = self.test_dir
+        """Standardization indexes features and labels with boolean masks."""
+        data = self.dataset(
+            torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        )[0]
+        dataset, _, _ = load_transductive_splits(
+            [data],
+            DictConfig(
+                {
+                    "split_type": "random",
+                    "data_seed": 0,
+                    "train_prop": 0.5,
+                    "standardize": True,
+                    "data_split_dir": self.test_dir,
+                }
+            ),
+        )
 
-        mock_data = MagicMock()
-        # Use float labels for standardization test
-        mock_data.y = torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], dtype=torch.float)
-        mock_data.x = torch.randn(6, 10)
-        mock_dataset.data_list = [mock_data]
-
-        parameters = DictConfig({
-            "split_type": "random",
-            "data_seed": 0,
-            "train_prop": 0.5,
-            "standardize": True,
-            "data_split_dir": os.path.join(self.test_dir, "data_splits")
-        })
-
-        dataset, _, _ = load_transductive_splits(mock_dataset, parameters)
-        assert len(dataset) == 1
-        data = dataset.data_lst[0]
-        # Features and labels should be modified
-        assert hasattr(data, "x")
-        assert hasattr(data, "y")
+        assert torch.isfinite(dataset[0].x).all()
 
     def test_invalid_split_type_raises_error(self):
         """Test that invalid split type raises error."""
-        mock_dataset = MagicMock()
-        mock_dataset.__len__ = MagicMock(return_value=1)
-        mock_data = MagicMock()
-        mock_data.y = torch.tensor([0, 1], dtype=torch.float)
-        mock_dataset.data_list = [mock_data]
-
-        parameters = DictConfig({
-            "split_type": "invalid",
-        })
-
         with pytest.raises(NotImplementedError):
-            load_transductive_splits(mock_dataset, parameters)
+            load_transductive_splits(
+                self.dataset(torch.tensor([0, 1])),
+                DictConfig({"split_type": "invalid"}),
+            )
 
 
 class TestLoadCoauthorshipHypergraphSplits:
@@ -730,30 +784,40 @@ class TestLoadCoauthorshipHypergraphSplits:
         assert torch.equal(data.train_mask, torch.from_numpy(split_idx["train"]))
 
 
-class TestAssignMasks:
-    """Test assign_train_val_test_mask_to_graphs function."""
+class TestInductiveSubsetViews:
+    """Test the narrow inductive representation boundary."""
 
-    def test_assign_masks(self):
-        """Test mask assignment to graphs."""
-        # Create mock graphs
-        mock_graphs = []
-        for i in range(10):
-            graph = MagicMock()
-            mock_graphs.append(graph)
+    def test_complete_fixed_split_views_share_source_without_item_access(self):
+        """Complete fixed phases create lazy views over one source dataset."""
 
-        mock_dataset = MagicMock()
-        mock_dataset.__getitem__ = lambda self, idx: mock_graphs[idx]
+        class ItemAccessTrackingDataset:
+            def __init__(self, size):
+                self.size = size
+                self.item_accesses = 0
 
-        split_idx = {
-            "train": np.array([0, 1, 2, 3, 4]),
-            "valid": np.array([5, 6, 7]),
-            "test": np.array([8, 9])
-        }
+            def __len__(self):
+                return self.size
 
-        train_ds, val_ds, test_ds = assign_train_val_test_mask_to_graphs(
-            mock_dataset, split_idx
+            def __getitem__(self, index):
+                self.item_accesses += 1
+                raise AssertionError(
+                    f"split construction retrieved graph item {index}"
+                )
+
+        source = ItemAccessTrackingDataset(10)
+        train_ds, val_ds, test_ds = inductive_split_views(
+            source,
+            {
+                "train": [0, 1, 2, 3, 4],
+                "valid": [5, 6, 7],
+                "test": [8, 9],
+            },
         )
 
-        assert len(train_ds) == 5
-        assert len(val_ds) == 3
-        assert len(test_ds) == 2
+        assert isinstance(train_ds, Subset)
+        assert isinstance(val_ds, Subset)
+        assert isinstance(test_ds, Subset)
+        assert train_ds.dataset is val_ds.dataset is test_ds.dataset is source
+        assert source.item_accesses == 0
+
+

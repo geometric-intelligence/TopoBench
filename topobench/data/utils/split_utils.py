@@ -6,6 +6,11 @@ import numpy as np
 import torch
 from sklearn.model_selection import StratifiedKFold, train_test_split
 
+from topobench.data.splits import (
+    apply_transductive_split,
+    inductive_split_views,
+    validate_transductive_masks,
+)
 from topobench.dataloader import DataloadDataset
 
 
@@ -355,110 +360,95 @@ def stratified_splitting(labels, parameters, global_data_seed=42):
     return split_idx
 
 
-def assign_train_val_test_mask_to_graphs(dataset, split_idx):
-    """Split the graph dataset into train, validation, and test datasets.
-
-    Parameters
-    ----------
-    dataset : torch_geometric.data.Dataset
-        Considered dataset.
-    split_idx : dict
-        Dictionary containing the train, validation, and test indices.
-
-    Returns
-    -------
-    tuple:
-        Tuple containing the train, validation, and test datasets.
-    """
-
-    data_train_lst, data_val_lst, data_test_lst = [], [], []
-
-    # Assign masks directly by iterating over pre-split indices
-    for i in split_idx["train"]:
-        graph = dataset[i]
-        graph.train_mask = torch.tensor([1], dtype=torch.long)
-        graph.val_mask = torch.tensor([0], dtype=torch.long)
-        graph.test_mask = torch.tensor([0], dtype=torch.long)
-        data_train_lst.append(graph)
-
-    for i in split_idx["valid"]:
-        graph = dataset[i]
-        graph.train_mask = torch.tensor([0], dtype=torch.long)
-        graph.val_mask = torch.tensor([1], dtype=torch.long)
-        graph.test_mask = torch.tensor([0], dtype=torch.long)
-        data_val_lst.append(graph)
-
-    for i in split_idx["test"]:
-        graph = dataset[i]
-        graph.train_mask = torch.tensor([0], dtype=torch.long)
-        graph.val_mask = torch.tensor([0], dtype=torch.long)
-        graph.test_mask = torch.tensor([1], dtype=torch.long)
-        data_test_lst.append(graph)
-
-    return (
-        DataloadDataset(data_train_lst),
-        DataloadDataset(data_val_lst),
-        DataloadDataset(data_test_lst),
-    )
 
 
 def load_transductive_splits(dataset, parameters):
-    r"""Load the graph dataset with the specified split.
+    r"""Load one graph with canonical transductive masks.
+
+    Split algorithms continue to return indices. This boundary converts those
+    indices once to full-length boolean masks, validates the node partition,
+    and returns one native source graph without materialized phase copies.
 
     Parameters
     ----------
-    dataset : torch_geometric.data.Dataset
-        Graph dataset.
+    dataset : torch_geometric.data.Dataset | torch.utils.data.Dataset
+        Dataset containing exactly one homogeneous graph.
     parameters : DictConfig
-        Configuration parameters.
+        Split configuration.
 
     Returns
     -------
-    list:
-        List containing the train, validation, and test splits.
+    tuple[list, None, None]
+        Native singleton source dataset and absent phase-specific datasets.
     """
-    # Extract labels from dataset object
-    assert len(dataset) == 1, (
-        "Dataset should have only one graph in a transductive setting."
-    )
+    if len(dataset) != 1:
+        raise ValueError(
+            "transductive splitting requires exactly one source graph"
+        )
 
-    data = dataset.data_list[0]
-    labels = data.y.numpy()
+    data = dataset[0]
+    labels = data.y.detach().cpu().numpy()
+    if labels.ndim != 1:
+        raise ValueError("Labels should be one dimensional array")
 
-    # Ensure labels are one dimensional array
-    assert len(labels.shape) == 1, "Labels should be one dimensional array"
-
-    root = (
-        dataset.dataset.get_data_dir()
-        if hasattr(dataset.dataset, "get_data_dir")
-        else None
-    )
+    wrapped_dataset = getattr(dataset, "dataset", None)
+    get_data_dir = getattr(wrapped_dataset, "get_data_dir", None)
+    root = get_data_dir() if callable(get_data_dir) else None
 
     if parameters.split_type == "random":
         splits = random_splitting(labels, parameters, root=root)
-
+        apply_transductive_split(
+            data,
+            train=splits["train"],
+            val=splits["valid"],
+            test=splits["test"],
+        )
     elif parameters.split_type == "stratified":
         splits = stratified_splitting(labels, parameters)
-
+        apply_transductive_split(
+            data,
+            train=splits["train"],
+            val=splits["valid"],
+            test=splits["test"],
+        )
     elif parameters.split_type == "k-fold":
         splits = k_fold_split(labels, parameters, root=root)
-
+        holdout = np.asarray(splits["valid"])
+        split_point = (len(holdout) + 1) // 2
+        apply_transductive_split(
+            data,
+            train=splits["train"],
+            val=holdout[:split_point],
+            test=holdout[split_point:],
+        )
+    elif parameters.split_type == "fixed":
+        fixed_masks = (
+            data.train_mask,
+            data.val_mask,
+            data.test_mask,
+        )
+        if all(
+            isinstance(mask, torch.Tensor) and mask.dtype == torch.bool
+            for mask in fixed_masks
+        ):
+            validate_transductive_masks(data)
+        else:
+            apply_transductive_split(
+                data,
+                train=fixed_masks[0],
+                val=fixed_masks[1],
+                test=fixed_masks[2],
+            )
     else:
         raise NotImplementedError(
-            f"split_type {parameters.split_type} not valid. Choose either 'random' or 'k-fold'"
+            f"split_type {parameters.split_type} not valid. Choose either "
+            "'random', 'stratified', 'k-fold', or 'fixed'"
         )
 
-    # Assign train val test masks to the graph
-    data.train_mask = torch.from_numpy(splits["train"])
-    data.val_mask = torch.from_numpy(splits["valid"])
-    data.test_mask = torch.from_numpy(splits["test"])
-
-    assert data.x.shape[0] > 0
-    assert data.x[data.train_mask].shape[0] > 0
-    assert data.y.shape[0] > 0
+    if data.x.shape[0] == 0 or not torch.any(data.train_mask):
+        raise ValueError("transductive training data must not be empty")
 
     if parameters.get("standardize", False):
-        # Standardize the node features respecting train mask
         data.x = (data.x - data.x[data.train_mask].mean(0)) / data.x[
             data.train_mask
         ].std(0)
@@ -466,75 +456,73 @@ def load_transductive_splits(dataset, parameters):
             data.train_mask
         ].std(0)
 
-    return DataloadDataset([data]), None, None
+    return [data], None, None
 
 
 def load_inductive_splits(dataset, parameters):
-    r"""Load multiple-graph datasets with the specified split.
+    r"""Load multiple-graph splits as lazy views over one source dataset.
+
+    Fixed splits do not read graph items at split construction time. Split
+    algorithms that derive indices from labels inspect labels as required, but
+    the returned phases always remain index-backed ``Subset`` views and never
+    add redundant graph-level masks.
 
     Parameters
     ----------
-    dataset : torch_geometric.data.Dataset
-        Graph dataset.
+    dataset : torch_geometric.data.Dataset | torch.utils.data.Dataset
+        Source graph dataset.
     parameters : DictConfig
-        Configuration parameters.
+        Split configuration.
 
     Returns
     -------
-    list:
-        List containing the train, validation, and test splits.
+    tuple[torch.utils.data.Subset, torch.utils.data.Subset, torch.utils.data.Subset]
+        Non-empty train, validation, and test views over ``dataset``.
     """
-    # Extract labels from dataset object
-    assert len(dataset) > 1, (
-        "Datasets should have more than one graph in an inductive setting."
-    )
-    # Check if labels are ragged (different sizes across graphs)
+    if len(dataset) <= 1:
+        raise ValueError(
+            "inductive splitting requires more than one graph"
+        )
+
+    if parameters.split_type == "fixed" and hasattr(dataset, "split_idx"):
+        return inductive_split_views(dataset, dataset.split_idx)
+
     label_list = [data.y.squeeze(0).numpy() for data in dataset]
     label_shapes = [label.shape for label in label_list]
-    # Use dtype=object only if labels have different shapes (ragged)
     labels = (
         np.array(label_list, dtype=object)
         if len(set(label_shapes)) > 1
         else np.array(label_list)
     )
 
-    root = (
-        dataset.dataset.get_data_dir()
-        if hasattr(dataset.dataset, "get_data_dir")
-        else None
-    )
+    wrapped_dataset = getattr(dataset, "dataset", None)
+    get_data_dir = getattr(wrapped_dataset, "get_data_dir", None)
+    root = get_data_dir() if callable(get_data_dir) else None
 
     if parameters.split_type == "random":
         split_idx = random_splitting(labels, parameters, root=root)
-
     elif parameters.split_type == "stratified":
         split_idx = stratified_splitting(labels, parameters)
-
     elif parameters.split_type == "k-fold":
-        assert type(labels) is not object, (
-            "K-Fold splitting not supported for ragged labels."
-        )
+        if labels.dtype == object:
+            raise ValueError(
+                "K-Fold splitting not supported for ragged labels."
+            )
         split_idx = k_fold_split(labels, parameters, root=root)
-
-    elif parameters.split_type == "fixed" and hasattr(dataset, "split_idx"):
-        split_idx = dataset.split_idx
-
     elif parameters.split_type == "k-fold-fixed":
         split_idx = k_fold_split_fixed(
-            labels, parameters, dataset.split_idx_list
+            labels,
+            parameters,
+            dataset.split_idx_list,
         )
-
     else:
         raise NotImplementedError(
-            f"split_type {parameters.split_type} not valid. Choose either 'random', 'k-fold' or 'fixed'.\
-            If 'fixed' is chosen, the dataset should have the attribute split_idx"
+            f"split_type {parameters.split_type} not valid. Choose either "
+            "'random', 'stratified', 'k-fold' or 'fixed'. If 'fixed' is "
+            "chosen, the dataset should have the attribute split_idx"
         )
 
-    train_dataset, val_dataset, test_dataset = (
-        assign_train_val_test_mask_to_graphs(dataset, split_idx)
-    )
-
-    return train_dataset, val_dataset, test_dataset
+    return inductive_split_views(dataset, split_idx)
 
 
 def load_coauthorship_hypergraph_splits(data, parameters, train_prop=0.5):

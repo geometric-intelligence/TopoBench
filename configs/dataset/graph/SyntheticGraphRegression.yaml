@@ -1,0 +1,29 @@
+# Dataset loader config
+loader:
+  _target_: topobench.data.loaders.SyntheticGraphDatasetLoader
+  parameters:
+    data_domain: graph
+    data_type: synthetic
+    data_name: SyntheticGraphRegression
+    data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+    seed: ${seed}
+
+# Dataset parameters
+parameters:
+  num_features: 4
+  num_classes: 1
+  task: regression
+  loss_type: mse
+  monitor_metric: mae
+  task_level: graph
+
+# Splits
+split_params:
+  learning_setting: inductive
+  split_type: fixed
+
+# Dataloader parameters
+dataloader_params:
+  batch_size: 4
+  num_workers: 0
+  pin_memory: False
