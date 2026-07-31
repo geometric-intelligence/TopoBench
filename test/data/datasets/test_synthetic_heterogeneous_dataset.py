@@ -18,6 +18,46 @@ from topobench.data.datasets.synthetic_heterogeneous_dataset import (
 )
 
 
+def _assert_valid_size_contract(data: HeteroData) -> None:
+    """Assert invariants that must hold for every accepted fixture size."""
+    labels = data["author"].y
+    masks = [
+        data["author"].train_mask,
+        data["author"].val_mask,
+        data["author"].test_mask,
+    ]
+    for mask in masks:
+        assert mask.dtype == torch.bool
+        assert torch.any(mask)
+    assert not torch.any(masks[0] & masks[1])
+    assert not torch.any(masks[0] & masks[2])
+    assert not torch.any(masks[1] & masks[2])
+    assert torch.all(masks[0] | masks[1] | masks[2])
+    assert torch.equal(
+        labels[masks[0]].unique(sorted=True),
+        labels.unique(sorted=True),
+    )
+
+    writes = data["author", "writes", "paper"].edge_index
+    published_in = data["paper", "published_in", "venue"].edge_index
+    for edge_index, source_type, target_type in (
+        (writes, "author", "paper"),
+        (published_in, "paper", "venue"),
+    ):
+        assert int(edge_index.min()) >= 0
+        assert int(edge_index[0].max()) < data[source_type].num_nodes
+        assert int(edge_index[1].max()) < data[target_type].num_nodes
+        assert edge_index[0].unique().numel() == data[source_type].num_nodes
+        assert edge_index[1].unique().numel() == data[target_type].num_nodes
+
+    author_ids, paper_ids = writes
+    assert torch.equal(data["author"].x[:, :2].argmax(dim=-1), labels)
+    assert torch.equal(
+        data["paper"].x[paper_ids, :2].argmax(dim=-1),
+        labels[author_ids],
+    )
+
+
 def test_synthetic_heterogeneous_schema_is_native_and_deterministic() -> None:
     """The factory should return the same native schema for a fixed seed."""
     first = make_synthetic_heterogeneous_data(seed=7)
@@ -103,6 +143,30 @@ def test_synthetic_heterogeneous_supervision_and_signal_contract() -> None:
     assert writes[1].unique().numel() == data["paper"].num_nodes
     assert published_in[0].unique().numel() == data["paper"].num_nodes
     assert published_in[1].unique().numel() == data["venue"].num_nodes
+
+
+@pytest.mark.parametrize(
+    ("num_authors", "num_papers", "num_venues"),
+    [
+        (12, 4, 2),
+        (14, 4, 3),
+        (12, 100, 7),
+    ],
+)
+def test_synthetic_heterogeneous_valid_size_contract(
+    num_authors: int,
+    num_papers: int,
+    num_venues: int,
+) -> None:
+    """Every documented valid size should preserve graph invariants."""
+    data = make_synthetic_heterogeneous_data(
+        seed=17,
+        num_authors=num_authors,
+        num_papers=num_papers,
+        num_venues=num_venues,
+    )
+
+    _assert_valid_size_contract(data)
 
 
 def test_synthetic_heterogeneous_factory_preserves_global_rng_state() -> None:
@@ -218,6 +282,7 @@ assert torch.equal(restored[0]["author"].x, dataset[0]["author"].x)
         check=False,
         capture_output=True,
         text=True,
+        timeout=30,
     )
 
     assert result.returncode == 0, result.stderr

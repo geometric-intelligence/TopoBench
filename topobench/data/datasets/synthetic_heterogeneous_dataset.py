@@ -114,6 +114,14 @@ def make_synthetic_heterogeneous_data(
     write_slot = torch.arange(2).repeat(num_authors)
     paper_ids = (2 * author_ids + write_slot) % num_papers
 
+    covered_papers = torch.zeros(num_papers, dtype=torch.bool)
+    covered_papers[paper_ids] = True
+    uncovered_paper_ids = (~covered_papers).nonzero(as_tuple=False).view(-1)
+    if uncovered_paper_ids.numel():
+        coverage_author_ids = paper_signal[uncovered_paper_ids]
+        author_ids = torch.cat([author_ids, coverage_author_ids])
+        paper_ids = torch.cat([paper_ids, uncovered_paper_ids])
+
     data = HeteroData()
     data["author"].x = author_x
     data["author"].y = labels
