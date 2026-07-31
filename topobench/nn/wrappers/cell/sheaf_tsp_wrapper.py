@@ -167,7 +167,6 @@ class SheafTSPWrapper(AbstractWrapper):
         # 1-cell embeddings from backbone
         model_out["x_1"] = x_1
 
-
         # Propagate to 0-cells via boundary map: x_0 = B_1 @ x_1,
         # plus a residual with the encoded 0-cell features so the
         # original node-level signal is preserved.

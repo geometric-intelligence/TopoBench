@@ -36,8 +36,10 @@ def cell_graph_input():
     # Synthetic Laplacians as sparse tensors (symmetric, sparse)
     # Down Laplacian: some connectivity pattern
     edges_d = torch.tensor(
-        [[0, 1, 2, 3, 1, 2, 3, 4, 5, 6, 7, 8],
-         [1, 2, 3, 4, 0, 1, 2, 3, 6, 7, 8, 9]],
+        [
+            [0, 1, 2, 3, 1, 2, 3, 4, 5, 6, 7, 8],
+            [1, 2, 3, 4, 0, 1, 2, 3, 6, 7, 8, 9],
+        ],
         dtype=torch.long,
     )
     vals_d = torch.ones(edges_d.shape[1])
@@ -45,8 +47,10 @@ def cell_graph_input():
 
     # Up Laplacian
     edges_u = torch.tensor(
-        [[0, 2, 4, 6, 8, 10, 12, 14, 2, 4, 6, 8, 10, 12, 14, 16],
-         [2, 4, 6, 8, 10, 12, 14, 16, 0, 2, 4, 6, 8, 10, 12, 14]],
+        [
+            [0, 2, 4, 6, 8, 10, 12, 14, 2, 4, 6, 8, 10, 12, 14, 16],
+            [2, 4, 6, 8, 10, 12, 14, 16, 0, 2, 4, 6, 8, 10, 12, 14],
+        ],
         dtype=torch.long,
     )
     vals_u = torch.ones(edges_u.shape[1])
@@ -192,9 +196,7 @@ def test_weighted_laplacian_sparse_matches_dense():
     R = learner(x, edge_index)
     k = torch.rand(E) + 0.1  # positive kernel weights
 
-    L_dense = build_sheaf_laplacian_torch(
-        N, edge_index, R, d, edge_weights=k
-    )
+    L_dense = build_sheaf_laplacian_torch(N, edge_index, R, d, edge_weights=k)
     L_sparse = build_sheaf_laplacian_sparse(
         N, edge_index, R, d, edge_weights=k
     ).to_dense()
@@ -219,8 +221,7 @@ def test_edge_dedup_ignores_self_loops(cell_graph_input):
     diag = torch.arange(N)
     diag_idx = torch.stack([diag, diag])
     Ld_diag = (
-        Ld
-        + torch.sparse_coo_tensor(diag_idx, torch.full((N,), 2.0), (N, N))
+        Ld + torch.sparse_coo_tensor(diag_idx, torch.full((N,), 2.0), (N, N))
     ).coalesce()
 
     model = SheafTSP(in_channels=x.shape[1], n_layers=2, stalk_dim=2)
