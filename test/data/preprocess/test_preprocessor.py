@@ -7,12 +7,15 @@ including initialization, data transformations, split loading, and edge cases.
 import json
 import os
 import tempfile
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, patch, mock_open
 import torch
 import torch_geometric.data
 from omegaconf import DictConfig
+from torch_geometric.data import Data, HeteroData
 
+from topobench.data.datasets import SyntheticHeterogeneousDataset
 from topobench.data.preprocessor.preprocessor import PreProcessor
 
 
@@ -51,6 +54,26 @@ class MockTorchDataset(torch.utils.data.Dataset):
             The data at the given index.
         """
         return self.data[idx]
+
+
+def _process_only_preprocessor(
+    dataset,
+    tmp_path,
+    *,
+    pre_transform=None,
+) -> PreProcessor:
+    """Build a preprocessor whose process output cannot be persisted."""
+    preprocessor = object.__new__(PreProcessor)
+    preprocessor.dataset = dataset
+    preprocessor.pre_transform = pre_transform
+    preprocessor.root = str(tmp_path)
+    preprocessor.save = MagicMock()
+    return preprocessor
+
+
+def _opposite_data_family(data):
+    """Return the opposite supported PyG representation."""
+    return HeteroData() if isinstance(data, Data) else Data()
 
 
 class TestPreProcessorBasic:
@@ -204,6 +227,136 @@ class TestPreProcessorBasic:
 
 class TestPreProcessorProcessing:
     """Test PreProcessor data processing methods."""
+
+    def test_preprocessor_preserves_heterodata_on_process_and_reload(
+        self,
+        tmp_path,
+    ):
+        """A processed native heterogeneous graph reloads without flattening."""
+        dataset = SyntheticHeterogeneousDataset(seed=7)
+        identity = DictConfig({"transform_name": "Identity"})
+
+        first = PreProcessor(dataset, tmp_path, transforms_config=identity)
+        reloaded = PreProcessor(dataset, tmp_path, transforms_config=identity)
+
+        assert isinstance(first[0], HeteroData)
+        assert isinstance(reloaded[0], HeteroData)
+        assert first[0].metadata() == reloaded[0].metadata()
+        assert torch.equal(
+            first[0]["author"].train_mask,
+            reloaded[0]["author"].train_mask,
+        )
+
+    def test_preprocessor_preserves_data_on_process_and_reload(self, tmp_path):
+        """A processed homogeneous graph remains homogeneous after reload."""
+        data = Data(
+            x=torch.randn(3, 4),
+            edge_index=torch.tensor([[0, 1], [1, 2]]),
+        )
+        identity = DictConfig({"transform_name": "Identity"})
+
+        first = PreProcessor(data, tmp_path, transforms_config=identity)
+        reloaded = PreProcessor(data, tmp_path, transforms_config=identity)
+
+        assert isinstance(first[0], Data)
+        assert not isinstance(first[0], HeteroData)
+        assert isinstance(reloaded[0], Data)
+        assert not isinstance(reloaded[0], HeteroData)
+        assert torch.equal(first[0].x, reloaded[0].x)
+
+    def test_preprocessor_persists_direct_heterodata_input(self, tmp_path):
+        """Direct HeteroData input follows the same persisted path as datasets."""
+        data = SyntheticHeterogeneousDataset(seed=11)[0]
+        identity = DictConfig({"transform_name": "Identity"})
+
+        first = PreProcessor(data, tmp_path, transforms_config=identity)
+        reloaded = PreProcessor(data, tmp_path, transforms_config=identity)
+
+        assert isinstance(first[0], HeteroData)
+        assert isinstance(reloaded[0], HeteroData)
+        assert torch.equal(
+            first[0]["author"].test_mask,
+            reloaded[0]["author"].test_mask,
+        )
+
+    def test_preprocessor_rejects_non_pyg_dataset_item(
+        self,
+        tmp_path,
+    ):
+        """Every dataset item must use a supported PyG representation."""
+        preprocessor = _process_only_preprocessor(
+            MockTorchDataset([object()]),
+            tmp_path,
+        )
+
+        with pytest.raises(TypeError) as error:
+            preprocessor.process()
+
+        assert str(error.value) == (
+            "Dataset item must be Data or HeteroData; received object"
+        )
+        preprocessor.save.assert_not_called()
+
+    def test_preprocessor_rejects_unsupported_transform_result(
+        self,
+        tmp_path,
+    ):
+        """Transforms may not replace PyG data with an arbitrary object."""
+        preprocessor = _process_only_preprocessor(
+            Data(x=torch.ones(2, 1)),
+            tmp_path,
+            pre_transform=lambda _: object(),
+        )
+
+        with pytest.raises(TypeError) as error:
+            preprocessor.process()
+
+        assert str(error.value) == (
+            "A pre-transform returned unsupported type object"
+        )
+        preprocessor.save.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "data",
+        [
+            Data(x=torch.ones(2, 1)),
+            HeteroData({"author": {"x": torch.ones(2, 1)}}),
+        ],
+        ids=["data-to-heterodata", "heterodata-to-data"],
+    )
+    def test_preprocessor_rejects_data_heterodata_representation_change(
+        self,
+        data,
+        tmp_path,
+    ):
+        """Transforms must preserve the homogeneous/heterogeneous family."""
+        preprocessor = _process_only_preprocessor(
+            data,
+            tmp_path,
+            pre_transform=_opposite_data_family,
+        )
+
+        with pytest.raises(TypeError) as error:
+            preprocessor.process()
+
+        assert str(error.value) == (
+            "Pre-transforms must preserve Data versus HeteroData "
+            "representation"
+        )
+        preprocessor.save.assert_not_called()
+
+    def test_preprocessor_rejects_invalid_top_level_input(self, tmp_path):
+        """The preprocessor reports unsupported input containers clearly."""
+        preprocessor = _process_only_preprocessor(object(), tmp_path)
+
+        with pytest.raises(TypeError) as error:
+            preprocessor.process()
+
+        assert str(error.value) == (
+            "PreProcessor expects a PyG/PyTorch dataset, Data, or HeteroData; "
+            "received object"
+        )
+        preprocessor.save.assert_not_called()
 
     def test_process_with_torch_utils_dataset(self):
         """Test process method with torch.utils.data.Dataset."""

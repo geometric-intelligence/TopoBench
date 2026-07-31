@@ -7,6 +7,7 @@ import time
 import torch
 import torch_geometric
 from filelock import FileLock
+from torch_geometric.data import Data, HeteroData
 from torch_geometric.io import fs
 from tqdm import tqdm
 
@@ -18,6 +19,15 @@ from topobench.data.utils import (
 )
 from topobench.dataloader import DataloadDataset
 from topobench.transforms.data_transform import DataTransform
+
+SupportedData = Data | HeteroData
+
+
+def _data_family(
+    data: SupportedData,
+) -> type[Data] | type[HeteroData]:
+    """Return the concrete homogeneous or heterogeneous data family."""
+    return HeteroData if isinstance(data, HeteroData) else Data
 
 
 class PreProcessor(torch_geometric.data.InMemoryDataset):
@@ -229,26 +239,49 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             self.dataset,
             (torch_geometric.data.Dataset, torch.utils.data.Dataset),
         ):
-            data_list = [data for data in self.dataset]
-        elif isinstance(self.dataset, torch_geometric.data.Data):
+            data_list = list(self.dataset)
+        elif isinstance(self.dataset, (Data, HeteroData)):
             data_list = [self.dataset]
+        else:
+            raise TypeError(
+                "PreProcessor expects a PyG/PyTorch dataset, Data, or "
+                f"HeteroData; received {type(self.dataset).__name__}"
+            )
 
         if self.pre_transform is not None:
             print(f"\nApplying transforms to {len(data_list)} graphs...")
-            self.data_list = [
-                self.pre_transform(d)
-                for d in tqdm(
-                    data_list, desc="Processing graphs", unit="graph"
+        processed: list[SupportedData] = []
+        for original in tqdm(
+            data_list,
+            desc="Processing graphs",
+            unit="graph",
+        ):
+            if not isinstance(original, (Data, HeteroData)):
+                raise TypeError(
+                    "Dataset item must be Data or HeteroData; "
+                    f"received {type(original).__name__}"
                 )
-            ]
-        else:
-            self.data_list = data_list
+            transformed = (
+                self.pre_transform(original)
+                if self.pre_transform is not None
+                else original
+            )
+            if not isinstance(transformed, (Data, HeteroData)):
+                raise TypeError(
+                    "A pre-transform returned unsupported type "
+                    f"{type(transformed).__name__}"
+                )
+            if _data_family(original) is not _data_family(transformed):
+                raise TypeError(
+                    "Pre-transforms must preserve Data versus HeteroData "
+                    "representation"
+                )
+            processed.append(transformed)
 
-        self._data, self.slices = self.collate(self.data_list)
+        self.data_list = processed
+        self._data, self.slices = self.collate(processed)
         self._data_list = None  # Reset cache.
-
-        assert isinstance(self._data, torch_geometric.data.Data)
-        self.save(self.data_list, self.processed_paths[0])
+        self.save(processed, self.processed_paths[0])
 
     def load(self, path: str) -> None:
         r"""Load the dataset from the file path `path`.
