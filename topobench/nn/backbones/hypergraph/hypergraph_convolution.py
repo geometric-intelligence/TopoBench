@@ -113,8 +113,8 @@ class HyperGraphConvolution(Module):
 
         Returns
         -------
-        torch.Tensor
-            The updated node features.
+        tuple
+            A tuple containing the updated node features and None.
         """
         W, b = self.W, self.bias
         HW = torch.mm(H, W)
@@ -129,7 +129,7 @@ class HyperGraphConvolution(Module):
         A = Variable(A)
 
         AHW = SparseMM.apply(A, HW)
-        return AHW + b
+        return AHW + b, None
 
     def __repr__(self):
         """Return the string representation of the module.
