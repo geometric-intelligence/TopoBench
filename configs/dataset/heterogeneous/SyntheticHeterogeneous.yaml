@@ -25,4 +25,5 @@ dataloader_params:
   evaluation_seed: ${seed}
   num_workers: 0
   pin_memory: false
+  # Applies to training/full loaders; fixed neighbor evaluation forces false.
   persistent_workers: false

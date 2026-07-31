@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+import gc
 import hashlib
+import io
+import multiprocessing
+from contextlib import redirect_stdout
 
 import torch
 
-from topobench.data.datasets import make_synthetic_heterogeneous_data
-from topobench.data.heterogeneous import validate_heterogeneous_node_data
-from topobench.dataloader.heterogeneous import HeterogeneousNodeDataModule
-from topobench.transforms.data_manipulations.heterogeneous import (
-    HeterogeneousConstantFeatures,
-    HeterogeneousToUndirected,
-)
+with redirect_stdout(io.StringIO()):
+    from topobench.data.datasets import make_synthetic_heterogeneous_data
+    from topobench.data.heterogeneous import validate_heterogeneous_node_data
+    from topobench.dataloader.heterogeneous import HeterogeneousNodeDataModule
+    from topobench.transforms.data_manipulations.heterogeneous import (
+        HeterogeneousConstantFeatures,
+        HeterogeneousToUndirected,
+    )
 
 
 def _digest(loader: object) -> str:
@@ -37,7 +42,7 @@ def _digest(loader: object) -> str:
 
 
 def main() -> None:
-    """Execute and compare same-loader and fresh-loader worker traversals."""
+    """Compare worker traversals and prove nonpersistent worker release."""
     data = make_synthetic_heterogeneous_data(seed=7)
     data = HeterogeneousConstantFeatures(node_types="venue")(data)
     data = HeterogeneousToUndirected(merge=False)(data)
@@ -57,11 +62,30 @@ def main() -> None:
         evaluation_seed=59,
     )
     loader = datamodule.val_dataloader()
+    if loader.persistent_workers:
+        raise SystemExit("fixed evaluation must force nonpersistent workers")
+    train_loader = datamodule.train_dataloader()
+    if not train_loader.persistent_workers:
+        raise SystemExit("training must retain configured persistent workers")
     first = _digest(loader)
-    replay = _digest(loader)
-    fresh_loader_replay = _digest(datamodule.val_dataloader())
-    if first != replay or first != fresh_loader_replay:
+    gc.collect()
+    if multiprocessing.active_children():
+        raise SystemExit("evaluation workers remained after first exhaustion")
+    retrieved_loader = datamodule.val_dataloader()
+    if retrieved_loader is not loader:
+        raise SystemExit("validation loader was reconstructed")
+    replay = _digest(retrieved_loader)
+    gc.collect()
+    if multiprocessing.active_children():
+        raise SystemExit("evaluation workers remained after replay exhaustion")
+    if first != replay:
         raise SystemExit("fixed sampled evaluation worker replay diverged")
+    early_iterator = iter(loader)
+    next(early_iterator)
+    early_iterator.close()  # type: ignore[attr-defined]
+    gc.collect()
+    if multiprocessing.active_children():
+        raise SystemExit("evaluation workers remained after early close")
     print("worker-replay-ok")
 
 

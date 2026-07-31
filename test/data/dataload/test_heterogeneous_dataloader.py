@@ -295,9 +295,9 @@ def test_neighbor_loader_forwards_exact_phase_and_sampling_contract(
             "filter_per_worker": True,
             "num_workers": 2,
             "pin_memory": True,
-            "persistent_workers": True,
-            "evaluation_owner": datamodule,
+            "persistent_workers": False,
             "evaluation_phase": phase,
+            "evaluation_phase_seed": datamodule._phase_evaluation_seed(phase),
         }
 
 
@@ -638,11 +638,11 @@ def test_evaluation_seed_normalizes_integral_subclasses(
     assert type(datamodule.evaluation_seed) is int
 
 
-def test_evaluation_cache_descriptor_is_stable_explicit_json(
+def test_evaluation_settings_descriptor_is_stable_and_complete(
     heterogeneous_data: HeteroData,
     heterogeneous_spec: HeterogeneousDataSpec,
 ) -> None:
-    """Cache identity has no dependency on randomized Python hashing."""
+    """Settings identity is stable, explicit, and not a batch-content claim."""
     datamodule = HeterogeneousNodeDataModule(
         heterogeneous_data,
         heterogeneous_spec,
@@ -655,23 +655,103 @@ def test_evaluation_cache_descriptor_is_stable_explicit_json(
         subgraph_type="directional",
     )
 
-    descriptor = datamodule.evaluation_cache_descriptor("val")
+    descriptor = datamodule.evaluation_settings_descriptor("val")
+    settings = json.loads(descriptor)
 
-    assert descriptor == json.dumps(
-        {
-            "batch_size": 4,
-            "evaluation_protocol": "sampled_neighbor_fixed",
-            "evaluation_seed": 17,
-            "fanout": [1, 1],
-            "phase": "val",
-            "replace": False,
-            "subgraph_type": "directional",
-        },
-        sort_keys=True,
-        separators=(",", ":"),
+    assert settings["phase"] == "val"
+    assert settings["evaluation_protocol"] == "sampled_neighbor_fixed"
+    assert settings["evaluation_seed"] == 17
+    assert settings["phase_seed"] == datamodule._phase_evaluation_seed("val")
+    assert settings["target_node_type"] == "author"
+    assert settings["node_types"] == ["author", "paper", "venue"]
+    assert settings["edge_types"] == [
+        list(edge_type) for edge_type in heterogeneous_spec.edge_types
+    ]
+    assert settings["node_counts"] == {
+        "author": 36,
+        "paper": 24,
+        "venue": 6,
+    }
+    assert settings["edge_counts"] == [72, 24, 72, 24]
+    assert settings["phase_seed_count"] == int(
+        heterogeneous_data["author"].val_mask.sum()
     )
-    assert datamodule.evaluation_cache_descriptor("val") == descriptor
-    assert datamodule.evaluation_cache_descriptor("test") != descriptor
+    assert len(settings["phase_seed_ids_sha256"]) == 64
+    assert settings["batch_size"] == 4
+    assert settings["fanout"] == [1, 1]
+    assert settings["replace"] is False
+    assert settings["subgraph_type"] == "directional"
+    assert settings["filter_per_worker"] is False
+    assert settings["evaluation_num_workers"] == 0
+    assert settings["evaluation_persistent_workers"] is False
+    assert "torch_geometric" in settings["versions"]
+    assert "pyg-lib" in settings["versions"]
+    assert "torch-sparse" in settings["versions"]
+    assert datamodule.evaluation_settings_descriptor("val") == descriptor
+    assert datamodule.evaluation_settings_descriptor("test") != descriptor
+    assert not hasattr(datamodule, "evaluation_cache_descriptor")
+
+
+def test_evaluation_settings_descriptor_rejects_train(
+    heterogeneous_data: HeteroData,
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """Training has no fixed-evaluation settings identity."""
+    datamodule = HeterogeneousNodeDataModule(
+        heterogeneous_data,
+        heterogeneous_spec,
+        mode="neighbor",
+    )
+
+    with pytest.raises(ValueError, match="val or test"):
+        datamodule.evaluation_settings_descriptor("train")  # type: ignore[arg-type]
+
+
+def test_evaluation_settings_descriptor_changes_with_runtime_identity(
+    heterogeneous_data: HeteroData,
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """Graph, split, seed, worker, and fanout changes alter settings identity."""
+
+    def descriptor(
+        data: HeteroData,
+        *,
+        seed: int = 17,
+        workers: int = 0,
+        fanout: list[int] | None = None,
+    ) -> str:
+        return HeterogeneousNodeDataModule(
+            data,
+            heterogeneous_spec,
+            mode="neighbor",
+            evaluation_seed=seed,
+            num_workers=workers,
+            num_neighbors=[1, 1] if fanout is None else fanout,
+        ).evaluation_settings_descriptor("val")
+
+    baseline = descriptor(heterogeneous_data)
+    graph_changed = heterogeneous_data.clone()
+    relation = ("author", "writes", "paper")
+    graph_changed[relation].edge_index = torch.cat(
+        [
+            graph_changed[relation].edge_index,
+            torch.tensor([[0], [0]], dtype=torch.long),
+        ],
+        dim=1,
+    )
+    split_changed = heterogeneous_data.clone()
+    val_ids = split_changed["author"].val_mask.nonzero().view(-1)
+    test_ids = split_changed["author"].test_mask.nonzero().view(-1)
+    split_changed["author"].val_mask[val_ids[0]] = False
+    split_changed["author"].test_mask[val_ids[0]] = True
+    split_changed["author"].test_mask[test_ids[0]] = False
+    split_changed["author"].val_mask[test_ids[0]] = True
+
+    assert descriptor(graph_changed) != baseline
+    assert descriptor(split_changed) != baseline
+    assert descriptor(heterogeneous_data, seed=18) != baseline
+    assert descriptor(heterogeneous_data, workers=2) != baseline
+    assert descriptor(heterogeneous_data, fanout=[2, 1]) != baseline
 
 
 @pytest.mark.parametrize("phase", ["val", "test"])
@@ -680,7 +760,7 @@ def test_sampled_evaluation_replays_identical_batches_across_all_traversals(
     heterogeneous_data: HeteroData,
     heterogeneous_spec: HeterogeneousDataSpec,
 ) -> None:
-    """One materialization is replayed byte-identically by all phase loaders."""
+    """Each seeded streaming traversal is byte-identical without batch caching."""
     datamodule = HeterogeneousNodeDataModule(
         heterogeneous_data,
         heterogeneous_spec,
@@ -694,12 +774,19 @@ def test_sampled_evaluation_replays_identical_batches_across_all_traversals(
 
     first = _loader_signature(loader)
     same_loader_replay = _loader_signature(loader)
-    fresh_loader_replay = _loader_signature(loader_method())
+    retrieved_loader = loader_method()
+    retrieved_loader_replay = _loader_signature(retrieved_loader)
 
     assert first
     assert same_loader_replay == first
-    assert fresh_loader_replay == first
-    assert len(datamodule._evaluation_batch_cache[phase]) == len(first)
+    assert retrieved_loader_replay == first
+    assert retrieved_loader is loader
+    assert not hasattr(datamodule, "_evaluation_batch_cache")
+    assert not any(
+        isinstance(value, (list, tuple))
+        and any(isinstance(item, HeteroData) for item in value)
+        for value in vars(datamodule).values()
+    )
 
 
 def test_sampled_evaluation_seed_controls_context_without_cross_run_drift(
@@ -726,11 +813,11 @@ def test_sampled_evaluation_seed_controls_context_without_cross_run_drift(
     assert first != different
 
 
-def test_cached_evaluation_yields_fresh_cpu_clones(
+def test_resampled_evaluation_isolated_from_consumer_mutation(
     heterogeneous_data: HeteroData,
     heterogeneous_spec: HeterogeneousDataSpec,
 ) -> None:
-    """Consumer mutation or transfer cannot corrupt cached evaluation data."""
+    """Consumer mutation or transfer cannot alter data or later resampling."""
     datamodule = HeterogeneousNodeDataModule(
         heterogeneous_data,
         heterogeneous_spec,
@@ -740,6 +827,7 @@ def test_cached_evaluation_yields_fresh_cpu_clones(
         evaluation_seed=31,
     )
     loader = datamodule.val_dataloader()
+    canonical_before = _batch_tensor_signature(heterogeneous_data)
     first_batches = list(loader)
     expected = tuple(_batch_tensor_signature(batch) for batch in first_batches)
 
@@ -757,21 +845,14 @@ def test_cached_evaluation_yields_fresh_cpu_clones(
     assert (
         tuple(_batch_tensor_signature(batch) for batch in replay) == expected
     )
-    assert all(
-        replayed is not cached
-        for replayed, cached in zip(
-            replay,
-            datamodule._evaluation_batch_cache["val"],
-            strict=True,
-        )
-    )
+    assert _batch_tensor_signature(heterogeneous_data) == canonical_before
 
 
 def test_sampled_evaluation_does_not_perturb_global_torch_rng(
     heterogeneous_data: HeteroData,
     heterogeneous_spec: HeterogeneousDataSpec,
 ) -> None:
-    """First sampling and later cache replay preserve the caller RNG state."""
+    """Every streaming traversal preserves the caller RNG state."""
     datamodule = HeterogeneousNodeDataModule(
         heterogeneous_data,
         heterogeneous_spec,
@@ -782,17 +863,68 @@ def test_sampled_evaluation_does_not_perturb_global_torch_rng(
     )
     loader = datamodule.val_dataloader()
 
-    state_before_materialization = torch.random.get_rng_state().clone()
+    state_before_traversal = torch.random.get_rng_state().clone()
     list(loader)
-    state_after_materialization = torch.random.get_rng_state().clone()
+    state_after_first_traversal = torch.random.get_rng_state().clone()
     list(loader)
-    state_after_replay = torch.random.get_rng_state().clone()
+    state_after_second_traversal = torch.random.get_rng_state().clone()
 
     assert torch.equal(
-        state_after_materialization,
-        state_before_materialization,
+        state_after_first_traversal,
+        state_before_traversal,
     )
-    assert torch.equal(state_after_replay, state_before_materialization)
+    assert torch.equal(state_after_second_traversal, state_before_traversal)
+
+
+def test_sampled_evaluation_restores_rng_after_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    heterogeneous_data: HeteroData,
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """A failed sampling stream restores caller RNG before propagating."""
+    import topobench.dataloader.heterogeneous as module
+
+    datamodule = HeterogeneousNodeDataModule(
+        heterogeneous_data,
+        heterogeneous_spec,
+        mode="neighbor",
+        num_neighbors=[1, 1],
+        evaluation_seed=39,
+    )
+    loader = datamodule.val_dataloader()
+    monkeypatch.setattr(
+        module._FixedEvaluationNeighborLoader,
+        "_base_iterator",
+        MagicMock(side_effect=ImportError("missing backend")),
+    )
+    state_before = torch.random.get_rng_state().clone()
+
+    with pytest.raises(RuntimeError, match=r"pyg-lib.*torch-sparse"):
+        list(loader)
+
+    assert torch.equal(torch.random.get_rng_state(), state_before)
+
+
+def test_sampled_evaluation_restores_rng_when_iterator_closed_early(
+    heterogeneous_data: HeteroData,
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """Explicit early close releases the stream and restores caller RNG."""
+    datamodule = HeterogeneousNodeDataModule(
+        heterogeneous_data,
+        heterogeneous_spec,
+        mode="neighbor",
+        num_neighbors=[1, 1],
+        batch_size=2,
+        evaluation_seed=40,
+    )
+    state_before = torch.random.get_rng_state().clone()
+    iterator = iter(datamodule.val_dataloader())
+
+    next(iterator)
+    iterator.close()  # type: ignore[attr-defined]
+
+    assert torch.equal(torch.random.get_rng_state(), state_before)
 
 
 def test_train_neighbor_loading_stays_uncached_and_stochastic_capable(
@@ -818,14 +950,14 @@ def test_train_neighbor_loading_stays_uncached_and_stochastic_capable(
     assert type(first_loader) is NeighborLoader
     assert type(second_loader) is NeighborLoader
     assert first_loader is not second_loader
-    assert datamodule._evaluation_batch_cache == {}
+    assert datamodule._evaluation_loaders == {}
 
 
-def test_full_graph_evaluation_does_not_use_sampled_cache(
+def test_full_graph_evaluation_does_not_create_sampled_loaders(
     heterogeneous_data: HeteroData,
     heterogeneous_spec: HeterogeneousDataSpec,
 ) -> None:
-    """Full-graph protocol remains deterministic without sampling materialization."""
+    """Full-graph protocol stays deterministic without sampled loaders."""
     datamodule = HeterogeneousNodeDataModule(
         heterogeneous_data,
         heterogeneous_spec,
@@ -838,7 +970,7 @@ def test_full_graph_evaluation_does_not_use_sampled_cache(
     second = _loader_signature(datamodule.val_dataloader())
 
     assert first == second
-    assert datamodule._evaluation_batch_cache == {}
+    assert datamodule._evaluation_loaders == {}
 
 
 def test_directional_sampling_retains_required_reverse_relations(
@@ -887,7 +1019,7 @@ def test_sampling_backend_failure_has_precise_diagnostic(
     loader = datamodule.val_dataloader()
     monkeypatch.setattr(
         module._FixedEvaluationNeighborLoader,
-        "_uncached_iterator",
+        "_base_iterator",
         MagicMock(side_effect=ImportError("missing sampling operator")),
     )
 
@@ -898,8 +1030,8 @@ def test_sampling_backend_failure_has_precise_diagnostic(
         list(loader)
 
 
-def test_fixed_evaluation_replays_with_real_persistent_workers() -> None:
-    """A bounded clean process executes deterministic two-worker replay."""
+def test_fixed_evaluation_streams_with_workers_and_releases_them() -> None:
+    """A bounded clean process verifies replay and worker release."""
     verifier = Path(__file__).with_name(
         "verify_fixed_heterogeneous_neighbor_workers.py"
     )
@@ -910,7 +1042,97 @@ def test_fixed_evaluation_replays_with_real_persistent_workers() -> None:
         check=True,
         capture_output=True,
         text=True,
-        timeout=45,
+        # macOS spawn imports PyTorch/PyG separately in both workers.
+        timeout=90,
     )
 
     assert completed.stdout.strip() == "worker-replay-ok"
+
+
+def test_neighbor_evaluation_memoizes_loaders_and_forces_nonpersistent_workers(
+    heterogeneous_data: HeteroData,
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """One sampler exists per eval phase and workers restart every traversal."""
+    datamodule = HeterogeneousNodeDataModule(
+        heterogeneous_data,
+        heterogeneous_spec,
+        mode="neighbor",
+        num_neighbors=[1, 1],
+        batch_size=4,
+        num_workers=2,
+        persistent_workers=True,
+        evaluation_seed=61,
+    )
+
+    train = datamodule.train_dataloader()
+    first_val = datamodule.val_dataloader()
+    second_val = datamodule.val_dataloader()
+    first_test = datamodule.test_dataloader()
+    second_test = datamodule.test_dataloader()
+
+    assert train.persistent_workers is True
+    assert first_val is second_val
+    assert first_test is second_test
+    assert first_val is not first_test
+    assert first_val.persistent_workers is False
+    assert first_test.persistent_workers is False
+    assert datamodule._evaluation_loaders == {
+        "val": first_val,
+        "test": first_test,
+    }
+
+
+def test_large_many_batch_evaluation_streams_before_sampler_exhaustion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """First yield is lazy and neither module nor loader retains batch lists."""
+    data = make_synthetic_heterogeneous_data(
+        seed=7,
+        num_authors=360,
+        num_papers=240,
+        num_venues=12,
+    )
+    data = HeterogeneousConstantFeatures(node_types="venue")(data)
+    data = HeterogeneousToUndirected(merge=False)(data)
+    spec = validate_heterogeneous_node_data(
+        data,
+        target_node_type="author",
+        num_classes=2,
+    )
+    datamodule = HeterogeneousNodeDataModule(
+        data,
+        spec,
+        mode="neighbor",
+        num_neighbors=[1, 1],
+        batch_size=2,
+        evaluation_seed=67,
+    )
+    loader = datamodule.val_dataloader()
+    original_base_iterator = loader._base_iterator
+    yielded = 0
+    exhausted = False
+
+    def instrumented_iterator():
+        nonlocal yielded, exhausted
+        for batch in original_base_iterator():
+            yielded += 1
+            yield batch
+        exhausted = True
+
+    monkeypatch.setattr(loader, "_base_iterator", instrumented_iterator)
+    iterator = iter(loader)
+
+    first_batch = next(iterator)
+
+    assert isinstance(first_batch, HeteroData)
+    assert yielded == 1
+    assert not exhausted
+    assert len(loader) > 20
+    for owner in (datamodule, loader):
+        assert not any(
+            isinstance(value, (list, tuple))
+            and any(isinstance(item, HeteroData) for item in value)
+            for value in vars(owner).values()
+        )
+    iterator.close()

@@ -5,10 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Iterator, Mapping, Sequence
+from importlib import metadata
 from numbers import Integral
 from typing import Literal
 
 import torch
+import torch_geometric
 from lightning import LightningDataModule
 from torch_geometric.data import HeteroData
 from torch_geometric.loader import DataLoader, NeighborLoader
@@ -117,31 +119,100 @@ def _require_bool(value: object, *, field_name: str) -> bool:
     return value
 
 
+def _distribution_version(distribution: str) -> str | None:
+    """Return an installed sampling-backend version, if available."""
+    try:
+        return metadata.version(distribution)
+    except metadata.PackageNotFoundError:
+        return None
+
+
 class _FixedEvaluationNeighborLoader(NeighborLoader):
-    """NeighborLoader that materializes once and replays owner-held clones."""
+    """Replay deterministic evaluation sampling without retaining its batches."""
 
     def __init__(
         self,
         *args: object,
-        evaluation_owner: HeterogeneousNodeDataModule,
         evaluation_phase: Literal["val", "test"],
+        evaluation_phase_seed: int,
         **kwargs: object,
     ) -> None:
-        """Bind one evaluation phase to its datamodule-owned replay cache."""
-        self._evaluation_owner = evaluation_owner
+        """Bind a phase-specific seed to a non-persistent PyG loader."""
         self._evaluation_phase = evaluation_phase
+        self._evaluation_phase_seed = evaluation_phase_seed
         super().__init__(*args, **kwargs)
 
-    def _uncached_iterator(self) -> Iterator[HeteroData]:
-        """Return the underlying PyG sampling iterator exactly once."""
+    def _base_iterator(self) -> Iterator[HeteroData]:
+        """Create one ordinary PyG iterator for a streaming traversal."""
         return super().__iter__()
 
-    def __iter__(self) -> Iterator[HeteroData]:
-        """Replay fresh clones of the datamodule-owned evaluation cache."""
-        return self._evaluation_owner._fixed_evaluation_iterator(
-            self._evaluation_phase,
-            self,
+    @staticmethod
+    def _release_base_iterator(iterator: Iterator[HeteroData]) -> None:
+        """Release multiprocessing workers on exhaustion, failure, or close."""
+        worker_iterator = getattr(iterator, "iterator", iterator)
+        shutdown_workers = getattr(worker_iterator, "_shutdown_workers", None)
+        if callable(shutdown_workers):
+            shutdown_workers()
+        close = getattr(iterator, "close", None)
+        if callable(close):
+            close()
+
+    def _sampling_error(self) -> RuntimeError:
+        """Describe the optional PyG backend required by neighbor sampling."""
+        return RuntimeError(
+            "Fixed heterogeneous sampling requires pyg-lib or torch-sparse; "
+            f"cannot stream the {self._evaluation_phase} phase"
         )
+
+    def _seeded_iterator(self) -> Iterator[HeteroData]:
+        """Stream one deterministic traversal while preserving caller RNG."""
+        source: Iterator[HeteroData] | None = None
+        sampling_state: torch.Tensor | None = None
+        yielded_batch = False
+        try:
+            with torch.random.fork_rng(devices=[]):
+                torch.manual_seed(self._evaluation_phase_seed)
+                source = self._base_iterator()
+                sampling_state = torch.random.get_rng_state().clone()
+
+            while True:
+                try:
+                    with torch.random.fork_rng(devices=[]):
+                        if sampling_state is None:
+                            raise RuntimeError(
+                                "Fixed evaluation RNG was not initialized"
+                            )
+                        torch.random.set_rng_state(sampling_state)
+                        try:
+                            batch = next(source)
+                        finally:
+                            sampling_state = (
+                                torch.random.get_rng_state().clone()
+                            )
+                except StopIteration:
+                    break
+                yielded_batch = True
+                yield batch
+
+            if not yielded_batch:
+                raise RuntimeError(
+                    f"Fixed heterogeneous {self._evaluation_phase} sampling "
+                    "produced no batches"
+                )
+        except ImportError as error:
+            raise self._sampling_error() from error
+        except RuntimeError as error:
+            message = str(error).lower()
+            if "pyg-lib" not in message and "torch-sparse" not in message:
+                raise
+            raise self._sampling_error() from error
+        finally:
+            if source is not None:
+                self._release_base_iterator(source)
+
+    def __iter__(self) -> Iterator[HeteroData]:
+        """Return a fresh, deterministic, bounded-memory sampling stream."""
+        return self._seeded_iterator()
 
 
 class HeterogeneousNodeDataModule(LightningDataModule):
@@ -150,9 +221,9 @@ class HeterogeneousNodeDataModule(LightningDataModule):
     The datamodule retains the validated graph reference and treats its graph
     and loader options as canonical for its lifetime. Callers must not mutate
     the graph or public option attributes after construction. Sampled
-    validation and test batches are materialized once on CPU, then replayed as
-    fresh clones so trainer device transfer and consumer mutation cannot alter
-    the canonical evaluation context.
+    validation and test loaders are memoized by phase, but every traversal
+    deterministically resamples and streams fresh batches without retaining
+    them. Evaluation workers are non-persistent and released per traversal.
     """
 
     def __init__(
@@ -291,9 +362,9 @@ class HeterogeneousNodeDataModule(LightningDataModule):
         self.filter_per_worker = normalized_filter_per_worker
         self.evaluation_protocol = normalized_evaluation_protocol
         self.evaluation_seed = normalized_evaluation_seed
-        self._evaluation_batch_cache: dict[
-            str,
-            tuple[HeteroData, ...],
+        self._evaluation_loaders: dict[
+            Literal["val", "test"],
+            _FixedEvaluationNeighborLoader,
         ] = {}
 
         # Deliberately omit ``save_hyperparameters``: relation-keyed fanout is
@@ -318,7 +389,7 @@ class HeterogeneousNodeDataModule(LightningDataModule):
         )
 
     def _neighbor_loader(self, phase: Phase) -> NeighborLoader:
-        """Construct a fresh target-mask-seeded PyG neighbor loader."""
+        """Construct training or retrieve a fixed evaluation neighbor loader."""
         mask = self.data[self.spec.target_node_type][f"{phase}_mask"]
         if phase == "train":
             return NeighborLoader(
@@ -335,19 +406,27 @@ class HeterogeneousNodeDataModule(LightningDataModule):
         evaluation_phase: Literal["val", "test"] = (
             "val" if phase == "val" else "test"
         )
-        return _FixedEvaluationNeighborLoader(
-            self.data,
-            input_nodes=(self.spec.target_node_type, mask),
-            num_neighbors=self.num_neighbors,
-            batch_size=self.batch_size,
-            shuffle=False,
-            replace=self.replace,
-            subgraph_type=self.subgraph_type,
-            filter_per_worker=self.filter_per_worker,
-            **self._common_kwargs(),
-            evaluation_owner=self,
-            evaluation_phase=evaluation_phase,
-        )
+        loader = self._evaluation_loaders.get(evaluation_phase)
+        if loader is None:
+            loader = _FixedEvaluationNeighborLoader(
+                self.data,
+                input_nodes=(self.spec.target_node_type, mask),
+                num_neighbors=self.num_neighbors,
+                batch_size=self.batch_size,
+                shuffle=False,
+                replace=self.replace,
+                subgraph_type=self.subgraph_type,
+                filter_per_worker=self.filter_per_worker,
+                num_workers=self.num_workers,
+                pin_memory=self.pin_memory,
+                persistent_workers=False,
+                evaluation_phase=evaluation_phase,
+                evaluation_phase_seed=self._phase_evaluation_seed(
+                    evaluation_phase
+                ),
+            )
+            self._evaluation_loaders[evaluation_phase] = loader
+        return loader
 
     def _phase_evaluation_seed(
         self,
@@ -365,54 +444,13 @@ class HeterogeneousNodeDataModule(LightningDataModule):
             & _MAX_EVALUATION_SEED
         )
 
-    def _materialize_fixed_evaluation(
+    def evaluation_settings_descriptor(
         self,
         phase: Literal["val", "test"],
-        loader: _FixedEvaluationNeighborLoader,
-    ) -> tuple[HeteroData, ...]:
-        """Sample one phase under isolated RNG state and cache CPU clones."""
-        with torch.random.fork_rng(devices=[]):
-            torch.manual_seed(self._phase_evaluation_seed(phase))
-            try:
-                batches = tuple(
-                    batch.clone().cpu()
-                    for batch in loader._uncached_iterator()
-                )
-            except ImportError as error:
-                raise RuntimeError(
-                    "Fixed heterogeneous sampling requires pyg-lib or "
-                    f"torch-sparse; cannot materialize the {phase} phase"
-                ) from error
-            except RuntimeError as error:
-                message = str(error).lower()
-                if "pyg-lib" not in message and "torch-sparse" not in message:
-                    raise
-                raise RuntimeError(
-                    "Fixed heterogeneous sampling requires pyg-lib or "
-                    f"torch-sparse; cannot materialize the {phase} phase"
-                ) from error
-        if not batches:
-            raise RuntimeError(
-                f"Fixed heterogeneous {phase} sampling produced no batches"
-            )
-        self._evaluation_batch_cache[phase] = batches
-        return batches
-
-    def _fixed_evaluation_iterator(
-        self,
-        phase: Literal["val", "test"],
-        loader: _FixedEvaluationNeighborLoader,
-    ) -> Iterator[HeteroData]:
-        """Yield fresh clones from the shared phase cache."""
-        batches = self._evaluation_batch_cache.get(phase)
-        if batches is None:
-            batches = self._materialize_fixed_evaluation(phase, loader)
-        return (batch.clone() for batch in batches)
-
-    def evaluation_cache_descriptor(self, phase: Phase) -> str:
-        """Return stable JSON describing one phase's evaluation identity."""
-        if phase not in {"train", "val", "test"}:
-            raise ValueError(f"Unsupported phase for cache identity: {phase}")
+    ) -> str:
+        """Return stable JSON for reproducible evaluation settings identity."""
+        if phase not in {"val", "test"}:
+            raise ValueError("Evaluation settings phase must be val or test")
         if isinstance(self.num_neighbors, Mapping):
             fanout: object = [
                 {
@@ -423,14 +461,56 @@ class HeterogeneousNodeDataModule(LightningDataModule):
             ]
         else:
             fanout = list(self.num_neighbors)
+
+        mask = self.data[self.spec.target_node_type][f"{phase}_mask"]
+        phase_seed_ids = (
+            mask.nonzero(as_tuple=False)
+            .reshape(-1)
+            .detach()
+            .cpu()
+            .to(torch.int64)
+        )
+        phase_seed_digest = hashlib.sha256()
+        phase_seed_digest.update(
+            len(phase_seed_ids).to_bytes(8, byteorder="big")
+        )
+        for seed_id in phase_seed_ids:
+            phase_seed_digest.update(
+                int(seed_id).to_bytes(8, byteorder="big", signed=True)
+            )
+
         descriptor = {
             "batch_size": self.batch_size,
+            "edge_counts": [
+                int(self.data[edge_type].edge_index.size(1))
+                for edge_type in self.spec.edge_types
+            ],
+            "edge_types": [
+                list(edge_type) for edge_type in self.spec.edge_types
+            ],
+            "evaluation_num_workers": self.num_workers,
+            "evaluation_persistent_workers": False,
             "evaluation_protocol": self.evaluation_protocol,
             "evaluation_seed": self.evaluation_seed,
             "fanout": fanout,
+            "filter_per_worker": self.filter_per_worker,
+            "node_counts": {
+                node_type: int(self.data[node_type].num_nodes)
+                for node_type in self.spec.node_types
+            },
+            "node_types": list(self.spec.node_types),
             "phase": phase,
+            "phase_seed": self._phase_evaluation_seed(phase),
+            "phase_seed_count": len(phase_seed_ids),
+            "phase_seed_ids_sha256": phase_seed_digest.hexdigest(),
             "replace": self.replace,
             "subgraph_type": self.subgraph_type,
+            "target_node_type": self.spec.target_node_type,
+            "versions": {
+                "pyg-lib": _distribution_version("pyg-lib"),
+                "torch-sparse": _distribution_version("torch-sparse"),
+                "torch_geometric": torch_geometric.__version__,
+            },
         }
         return json.dumps(descriptor, sort_keys=True, separators=(",", ":"))
 
