@@ -101,19 +101,25 @@ def validate_backbone_arguments(
     -------
     Metadata
         Defensive, canonical copies of the node and edge type sequences.
+
+    Notes
+    -----
+    ``heads=None`` selects the shared non-attention contract and therefore
+    skips only head-count and divisibility validation.
     """
     metadata = _normalize_metadata(node_types, edge_types)
     normalized_hidden_channels = _positive_integer(
         hidden_channels,
         name="hidden_channels",
     )
-    normalized_heads = _positive_integer(heads, name="heads")
     _positive_integer(num_layers, name="num_layers")
     _dropout_probability(dropout)
-    if normalized_hidden_channels % normalized_heads != 0:
-        raise ValueError(
-            "hidden_channels must be divisible by the number of heads"
-        )
+    if heads is not None:
+        normalized_heads = _positive_integer(heads, name="heads")
+        if normalized_hidden_channels % normalized_heads != 0:
+            raise ValueError(
+                "hidden_channels must be divisible by the number of heads"
+            )
     return metadata
 
 
@@ -229,8 +235,8 @@ def _encoded_edge_type(edge_type: EdgeType, *, prefix: str) -> str:
 
 
 def _is_safe_node_module_key(node_type: str) -> bool:
-    """Check all PyTorch registries used by :class:`HGTConv`."""
-    if "." in node_type or "__" in node_type:
+    """Check PyTorch and PyG registries used by heterogeneous backbones."""
+    if "." in node_type or "#" in node_type or "__" in node_type:
         return False
     module_dict = torch.nn.ModuleDict()
     parameter_dict = torch.nn.ParameterDict()
@@ -240,9 +246,13 @@ def _is_safe_node_module_key(node_type: str) -> bool:
 
 
 def _is_safe_joined_edge_key(edge_type: EdgeType) -> bool:
-    """Check the ``HGTConv`` parameter key derived from one edge tuple."""
+    """Check HGT and PyG ``ModuleDict`` keys derived from one edge tuple."""
     joined = "__".join(edge_type)
-    return "." not in joined and not hasattr(torch.nn.ParameterDict(), joined)
+    return (
+        "." not in joined
+        and "#" not in joined
+        and not hasattr(torch.nn.ParameterDict(), joined)
+    )
 
 
 class _HeterogeneousMetadataAdapter:

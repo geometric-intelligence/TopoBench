@@ -1,12 +1,13 @@
-"""Metadata-driven Heterogeneous Graph Transformer backbone."""
+"""Metadata-driven heterogeneous GraphSAGE backbone."""
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Mapping
 
 import torch
 from torch import Tensor
-from torch_geometric.nn import HGTConv
+from torch_geometric.nn import HeteroConv, SAGEConv
 from torch_geometric.typing import EdgeType, Metadata
 
 from topobench.nn.activation import make_activation
@@ -17,35 +18,30 @@ from topobench.nn.backbones.heterogeneous.common import (
 )
 
 
-class HGTBackbone(torch.nn.Module):
-    """Apply stacked HGT message passing to typed feature dictionaries."""
+class HeteroSAGEBackbone(torch.nn.Module):
+    """Apply stacked relation-specific GraphSAGE message passing."""
 
     def __init__(
         self,
         metadata: Metadata,
         hidden_channels: int,
         num_layers: int,
-        heads: int,
-        dropout: float,
-        activation: str,
-        *,
-        _canonicalize_relations: bool = True,
+        dropout: float = 0.0,
+        activation: str = "relu",
     ) -> None:
         super().__init__()
         node_types, edge_types = metadata
-        if heads is None:
-            raise TypeError("heads must be an integer")
         normalized_metadata = validate_backbone_arguments(
             node_types=node_types,
             edge_types=edge_types,
             hidden_channels=hidden_channels,
             num_layers=num_layers,
-            heads=heads,
+            heads=None,
             dropout=dropout,
         )
         self.metadata_adapter = _HeterogeneousMetadataAdapter(
             normalized_metadata,
-            canonicalize_relations=_canonicalize_relations,
+            canonicalize_relations=True,
         )
         self.node_types = list(self.metadata_adapter.node_types)
         self.edge_types = list(self.metadata_adapter.edge_types)
@@ -54,27 +50,41 @@ class HGTBackbone(torch.nn.Module):
         self.hidden_channels = int(hidden_channels)
         self.out_channels = self.hidden_channels
         self.num_layers = int(num_layers)
-        self.heads = int(heads)
         self.dropout_probability = float(dropout)
         self.activation_name = activation
-        self.convs = torch.nn.ModuleList(
-            [
-                HGTConv(
-                    in_channels=self.hidden_channels,
-                    out_channels=self.hidden_channels,
-                    metadata=self.internal_metadata,
-                    heads=self.heads,
-                )
-                for _ in range(self.num_layers)
-            ]
-        )
-        internal_node_types = self.internal_metadata[0]
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=(
+                    r"There exist node types .*representations do not get "
+                    r"updated during message passing.*"
+                ),
+                category=UserWarning,
+            )
+            self.convs = torch.nn.ModuleList(
+                [
+                    HeteroConv(
+                        {
+                            edge_type: SAGEConv(
+                                (
+                                    self.hidden_channels,
+                                    self.hidden_channels,
+                                ),
+                                self.hidden_channels,
+                            )
+                            for edge_type in self.internal_metadata[1]
+                        },
+                        aggr="sum",
+                    )
+                    for _ in range(self.num_layers)
+                ]
+            )
         self.norms = torch.nn.ModuleList(
             [
                 torch.nn.ModuleDict(
                     {
                         node_type: torch.nn.LayerNorm(self.hidden_channels)
-                        for node_type in internal_node_types
+                        for node_type in self.internal_metadata[0]
                     }
                 )
                 for _ in range(self.num_layers)
@@ -88,7 +98,7 @@ class HGTBackbone(torch.nn.Module):
         x_dict: Mapping[str, Tensor],
         edge_index_dict: Mapping[EdgeType, Tensor],
     ) -> dict[str, Tensor]:
-        """Apply all HGT layers and return externally named features."""
+        """Apply all SAGE layers and return externally named features."""
         validate_forward_dictionaries(
             x_dict=x_dict,
             edge_index_dict=edge_index_dict,
@@ -115,4 +125,4 @@ class HGTBackbone(torch.nn.Module):
         return self.metadata_adapter.to_external_x_dict(current)
 
 
-__all__ = ["HGTBackbone"]
+__all__ = ["HeteroSAGEBackbone"]

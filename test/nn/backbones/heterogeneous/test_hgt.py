@@ -31,6 +31,7 @@ EXPECTED_REGISTERED_BACKBONES = {
     "GPSEncoder",
     "GraphMLP",
     "HGTBackbone",
+    "HeteroSAGEBackbone",
     "HOPSE",
     "HOPSELayer",
     "IdentityGAT",
@@ -324,6 +325,7 @@ def test_constructor_rejects_invalid_metadata(
         ({"hidden_channels": 0}, ValueError, "hidden_channels.*positive"),
         ({"num_layers": 0}, ValueError, "num_layers.*at least 1"),
         ({"heads": 0}, ValueError, "heads.*positive"),
+        ({"heads": None}, TypeError, "heads.*integer"),
         (
             {"hidden_channels": 10, "heads": 4},
             ValueError,
