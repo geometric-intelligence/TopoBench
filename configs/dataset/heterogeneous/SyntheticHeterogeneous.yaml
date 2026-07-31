@@ -21,6 +21,8 @@ split_params:
 
 dataloader_params:
   mode: full_batch
+  evaluation_protocol: full_graph
+  evaluation_seed: ${seed}
   num_workers: 0
   pin_memory: false
   persistent_workers: false

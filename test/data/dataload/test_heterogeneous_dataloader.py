@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
 from enum import IntEnum
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -63,6 +67,34 @@ def _assert_store_equal(expected: object, actual: object) -> None:
             assert torch.equal(actual_value, expected_value)
         else:
             assert actual_value == expected_value
+
+
+def _batch_tensor_signature(batch: HeteroData) -> tuple[object, ...]:
+    """Return an ordered byte-level signature of every sampled tensor."""
+    signature: list[object] = [batch.metadata()]
+    for store_type in (*batch.node_types, *batch.edge_types):
+        store = batch[store_type]
+        signature.append(store_type)
+        for key in sorted(store.keys()):
+            value = store[key]
+            if torch.is_tensor(value):
+                cpu_value = value.detach().cpu().contiguous()
+                signature.append(
+                    (
+                        key,
+                        str(cpu_value.dtype),
+                        tuple(cpu_value.shape),
+                        cpu_value.numpy().tobytes(),
+                    )
+                )
+            else:
+                signature.append((key, value))
+    return tuple(signature)
+
+
+def _loader_signature(loader: object) -> tuple[tuple[object, ...], ...]:
+    """Materialize one loader traversal into ordered batch signatures."""
+    return tuple(_batch_tensor_signature(batch) for batch in loader)
 
 
 @pytest.mark.parametrize(
@@ -150,7 +182,7 @@ def test_neighbor_loaders_execute_real_seed_isolated_batches(
         ("val", datamodule.val_dataloader()),
         ("test", datamodule.test_dataloader()),
     ):
-        assert type(loader) is NeighborLoader
+        assert isinstance(loader, NeighborLoader)
         try:
             batches = list(loader)
         except ImportError as error:
@@ -192,9 +224,16 @@ def test_neighbor_loader_forwards_exact_phase_and_sampling_contract(
     """Constructor spying fixes masks, shuffle policy, and sampler kwargs."""
     import topobench.dataloader.heterogeneous as module
 
-    sentinels = [object(), object(), object()]
+    sentinels = [object()]
     constructor = MagicMock(side_effect=sentinels)
+    evaluation_sentinels = [object(), object()]
+    evaluation_constructor = MagicMock(side_effect=evaluation_sentinels)
     monkeypatch.setattr(module, "NeighborLoader", constructor)
+    monkeypatch.setattr(
+        module,
+        "_FixedEvaluationNeighborLoader",
+        evaluation_constructor,
+    )
     datamodule = HeterogeneousNodeDataModule(
         heterogeneous_data,
         heterogeneous_spec,
@@ -216,11 +255,29 @@ def test_neighbor_loader_forwards_exact_phase_and_sampling_contract(
         datamodule.test_dataloader(),
     ]
 
-    assert actual == sentinels
-    assert constructor.call_count == 3
+    assert actual == [*sentinels, *evaluation_sentinels]
+    constructor.assert_called_once()
+    train_args, train_kwargs = constructor.call_args
+    assert train_args == (heterogeneous_data,)
+    assert train_kwargs == {
+        "input_nodes": (
+            "author",
+            heterogeneous_data["author"].train_mask,
+        ),
+        "num_neighbors": [3, 2],
+        "batch_size": 4,
+        "shuffle": True,
+        "replace": True,
+        "subgraph_type": "directional",
+        "filter_per_worker": True,
+        "num_workers": 2,
+        "pin_memory": True,
+        "persistent_workers": True,
+    }
+    assert evaluation_constructor.call_count == 2
     for phase, call_args in zip(
-        ("train", "val", "test"),
-        constructor.call_args_list,
+        ("val", "test"),
+        evaluation_constructor.call_args_list,
         strict=True,
     ):
         args, kwargs = call_args
@@ -239,6 +296,8 @@ def test_neighbor_loader_forwards_exact_phase_and_sampling_contract(
             "num_workers": 2,
             "pin_memory": True,
             "persistent_workers": True,
+            "evaluation_owner": datamodule,
+            "evaluation_phase": phase,
         }
 
 
@@ -473,3 +532,385 @@ def test_datamodule_hparams_never_serialize_graph_or_spec(
 
     assert "data" not in datamodule.hparams
     assert "spec" not in datamodule.hparams
+
+
+@pytest.mark.parametrize(
+    ("mode", "protocol"),
+    [
+        ("full_batch", "full_graph"),
+        ("neighbor", "sampled_neighbor_fixed"),
+    ],
+)
+def test_evaluation_protocol_is_derived_or_validated(
+    mode: str,
+    protocol: str,
+    heterogeneous_data: HeteroData,
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """The protocol is explicit at runtime and canonical for its loader mode."""
+    derived = HeterogeneousNodeDataModule(
+        heterogeneous_data,
+        heterogeneous_spec,
+        mode=mode,  # type: ignore[arg-type]
+    )
+    explicit = HeterogeneousNodeDataModule(
+        heterogeneous_data,
+        heterogeneous_spec,
+        mode=mode,  # type: ignore[arg-type]
+        evaluation_protocol=protocol,
+    )
+
+    assert derived.evaluation_protocol == protocol
+    assert explicit.evaluation_protocol == protocol
+    assert derived.data is heterogeneous_data
+
+
+@pytest.mark.parametrize(
+    ("mode", "protocol"),
+    [
+        ("full_batch", "sampled_neighbor_fixed"),
+        ("neighbor", "full_graph"),
+        ("neighbor", "sampled_neighbor"),
+    ],
+)
+def test_evaluation_protocol_rejects_mode_mismatch(
+    mode: str,
+    protocol: str,
+    heterogeneous_data: HeteroData,
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """Mislabelled evaluation semantics fail before any loader is built."""
+    with pytest.raises(
+        ValueError,
+        match=r"evaluation_protocol.*mode",
+    ):
+        HeterogeneousNodeDataModule(
+            heterogeneous_data,
+            heterogeneous_spec,
+            mode=mode,  # type: ignore[arg-type]
+            evaluation_protocol=protocol,
+        )
+
+
+@pytest.mark.parametrize(
+    ("seed", "error_type", "message"),
+    [
+        (True, TypeError, "evaluation_seed must be an integer"),
+        (1.5, TypeError, "evaluation_seed must be an integer"),
+        (-1, ValueError, "evaluation_seed must be non-negative"),
+        (
+            2**63,
+            ValueError,
+            "evaluation_seed must be no greater than",
+        ),
+    ],
+)
+def test_evaluation_seed_rejects_invalid_values(
+    seed: object,
+    error_type: type[Exception],
+    message: str,
+    heterogeneous_data: HeteroData,
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """Fixed evaluation seeds use an explicit torch-compatible range."""
+    with pytest.raises(error_type, match=message):
+        HeterogeneousNodeDataModule(
+            heterogeneous_data,
+            heterogeneous_spec,
+            mode="neighbor",
+            evaluation_seed=seed,  # type: ignore[arg-type]
+        )
+
+
+def test_evaluation_seed_normalizes_integral_subclasses(
+    heterogeneous_data: HeteroData,
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """Integral seed subclasses become built-in non-negative integers."""
+    datamodule = HeterogeneousNodeDataModule(
+        heterogeneous_data,
+        heterogeneous_spec,
+        mode="neighbor",
+        evaluation_seed=IntegralValue.THREE,
+    )
+
+    assert datamodule.evaluation_seed == 3
+    assert type(datamodule.evaluation_seed) is int
+
+
+def test_evaluation_cache_descriptor_is_stable_explicit_json(
+    heterogeneous_data: HeteroData,
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """Cache identity has no dependency on randomized Python hashing."""
+    datamodule = HeterogeneousNodeDataModule(
+        heterogeneous_data,
+        heterogeneous_spec,
+        mode="neighbor",
+        batch_size=4,
+        num_neighbors=[1, 1],
+        evaluation_protocol="sampled_neighbor_fixed",
+        evaluation_seed=17,
+        replace=False,
+        subgraph_type="directional",
+    )
+
+    descriptor = datamodule.evaluation_cache_descriptor("val")
+
+    assert descriptor == json.dumps(
+        {
+            "batch_size": 4,
+            "evaluation_protocol": "sampled_neighbor_fixed",
+            "evaluation_seed": 17,
+            "fanout": [1, 1],
+            "phase": "val",
+            "replace": False,
+            "subgraph_type": "directional",
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    assert datamodule.evaluation_cache_descriptor("val") == descriptor
+    assert datamodule.evaluation_cache_descriptor("test") != descriptor
+
+
+@pytest.mark.parametrize("phase", ["val", "test"])
+def test_sampled_evaluation_replays_identical_batches_across_all_traversals(
+    phase: str,
+    heterogeneous_data: HeteroData,
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """One materialization is replayed byte-identically by all phase loaders."""
+    datamodule = HeterogeneousNodeDataModule(
+        heterogeneous_data,
+        heterogeneous_spec,
+        mode="neighbor",
+        num_neighbors=[1, 1],
+        batch_size=4,
+        evaluation_seed=23,
+    )
+    loader_method = getattr(datamodule, f"{phase}_dataloader")
+    loader = loader_method()
+
+    first = _loader_signature(loader)
+    same_loader_replay = _loader_signature(loader)
+    fresh_loader_replay = _loader_signature(loader_method())
+
+    assert first
+    assert same_loader_replay == first
+    assert fresh_loader_replay == first
+    assert len(datamodule._evaluation_batch_cache[phase]) == len(first)
+
+
+def test_sampled_evaluation_seed_controls_context_without_cross_run_drift(
+    heterogeneous_data: HeteroData,
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """Equal seeds match exactly while a distinct seed changes sampled hops."""
+
+    def make_datamodule(seed: int) -> HeterogeneousNodeDataModule:
+        return HeterogeneousNodeDataModule(
+            heterogeneous_data,
+            heterogeneous_spec,
+            mode="neighbor",
+            num_neighbors=[1, 1],
+            batch_size=4,
+            evaluation_seed=seed,
+        )
+
+    first = _loader_signature(make_datamodule(101).val_dataloader())
+    same = _loader_signature(make_datamodule(101).val_dataloader())
+    different = _loader_signature(make_datamodule(202).val_dataloader())
+
+    assert first == same
+    assert first != different
+
+
+def test_cached_evaluation_yields_fresh_cpu_clones(
+    heterogeneous_data: HeteroData,
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """Consumer mutation or transfer cannot corrupt cached evaluation data."""
+    datamodule = HeterogeneousNodeDataModule(
+        heterogeneous_data,
+        heterogeneous_spec,
+        mode="neighbor",
+        num_neighbors=[1, 1],
+        batch_size=4,
+        evaluation_seed=31,
+    )
+    loader = datamodule.val_dataloader()
+    first_batches = list(loader)
+    expected = tuple(_batch_tensor_signature(batch) for batch in first_batches)
+
+    first_batches[0]["author"].x.zero_()
+    first_batches[-1].to("meta")
+    replay = list(loader)
+
+    assert all(
+        tensor.device.type == "cpu"
+        for batch in replay
+        for store_type in (*batch.node_types, *batch.edge_types)
+        for tensor in batch[store_type].values()
+        if torch.is_tensor(tensor)
+    )
+    assert (
+        tuple(_batch_tensor_signature(batch) for batch in replay) == expected
+    )
+    assert all(
+        replayed is not cached
+        for replayed, cached in zip(
+            replay,
+            datamodule._evaluation_batch_cache["val"],
+            strict=True,
+        )
+    )
+
+
+def test_sampled_evaluation_does_not_perturb_global_torch_rng(
+    heterogeneous_data: HeteroData,
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """First sampling and later cache replay preserve the caller RNG state."""
+    datamodule = HeterogeneousNodeDataModule(
+        heterogeneous_data,
+        heterogeneous_spec,
+        mode="neighbor",
+        num_neighbors=[1, 1],
+        batch_size=4,
+        evaluation_seed=37,
+    )
+    loader = datamodule.val_dataloader()
+
+    state_before_materialization = torch.random.get_rng_state().clone()
+    list(loader)
+    state_after_materialization = torch.random.get_rng_state().clone()
+    list(loader)
+    state_after_replay = torch.random.get_rng_state().clone()
+
+    assert torch.equal(
+        state_after_materialization,
+        state_before_materialization,
+    )
+    assert torch.equal(state_after_replay, state_before_materialization)
+
+
+def test_train_neighbor_loading_stays_uncached_and_stochastic_capable(
+    heterogeneous_data: HeteroData,
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """Training keeps the ordinary fresh shuffled NeighborLoader path."""
+    datamodule = HeterogeneousNodeDataModule(
+        heterogeneous_data,
+        heterogeneous_spec,
+        mode="neighbor",
+        num_neighbors=[1, 1],
+        batch_size=4,
+        train_shuffle=True,
+        evaluation_seed=41,
+    )
+
+    first_loader = datamodule.train_dataloader()
+    second_loader = datamodule.train_dataloader()
+    list(first_loader)
+    list(second_loader)
+
+    assert type(first_loader) is NeighborLoader
+    assert type(second_loader) is NeighborLoader
+    assert first_loader is not second_loader
+    assert datamodule._evaluation_batch_cache == {}
+
+
+def test_full_graph_evaluation_does_not_use_sampled_cache(
+    heterogeneous_data: HeteroData,
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """Full-graph protocol remains deterministic without sampling materialization."""
+    datamodule = HeterogeneousNodeDataModule(
+        heterogeneous_data,
+        heterogeneous_spec,
+        mode="full_batch",
+        evaluation_protocol="full_graph",
+        evaluation_seed=43,
+    )
+
+    first = _loader_signature(datamodule.val_dataloader())
+    second = _loader_signature(datamodule.val_dataloader())
+
+    assert first == second
+    assert datamodule._evaluation_batch_cache == {}
+
+
+def test_directional_sampling_retains_required_reverse_relations(
+    heterogeneous_data: HeteroData,
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """Reverse relations produced by preprocessing remain available for hops."""
+    datamodule = HeterogeneousNodeDataModule(
+        heterogeneous_data,
+        heterogeneous_spec,
+        mode="neighbor",
+        num_neighbors=[1, 1],
+        batch_size=4,
+        evaluation_seed=47,
+    )
+
+    batches = list(datamodule.val_dataloader())
+
+    reverse_relations = {
+        ("paper", "rev_writes", "author"),
+        ("venue", "rev_published_in", "paper"),
+    }
+    assert reverse_relations <= set(heterogeneous_spec.edge_types)
+    assert all(reverse_relations <= set(batch.edge_types) for batch in batches)
+    assert any(
+        batch["paper", "rev_writes", "author"].edge_index.numel() > 0
+        for batch in batches
+    )
+
+
+def test_sampling_backend_failure_has_precise_diagnostic(
+    monkeypatch: pytest.MonkeyPatch,
+    heterogeneous_data: HeteroData,
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """Backend import/runtime failures name the required PyG capabilities."""
+    import topobench.dataloader.heterogeneous as module
+
+    datamodule = HeterogeneousNodeDataModule(
+        heterogeneous_data,
+        heterogeneous_spec,
+        mode="neighbor",
+        num_neighbors=[1, 1],
+        evaluation_seed=53,
+    )
+    loader = datamodule.val_dataloader()
+    monkeypatch.setattr(
+        module._FixedEvaluationNeighborLoader,
+        "_uncached_iterator",
+        MagicMock(side_effect=ImportError("missing sampling operator")),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"pyg-lib.*torch-sparse.*val",
+    ):
+        list(loader)
+
+
+def test_fixed_evaluation_replays_with_real_persistent_workers() -> None:
+    """A bounded clean process executes deterministic two-worker replay."""
+    verifier = Path(__file__).with_name(
+        "verify_fixed_heterogeneous_neighbor_workers.py"
+    )
+
+    completed = subprocess.run(
+        [sys.executable, str(verifier)],
+        cwd=Path(__file__).parents[3],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert completed.stdout.strip() == "worker-replay-ok"

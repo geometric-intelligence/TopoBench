@@ -128,6 +128,8 @@ def test_synthetic_heterogeneous_config_composes_exact_contract() -> None:
     assert cfg.dataset.split_params.learning_setting == "transductive"
     assert cfg.dataset.split_params.source == "official_masks"
     assert cfg.dataset.dataloader_params.mode == "full_batch"
+    assert cfg.dataset.dataloader_params.evaluation_protocol == "full_graph"
+    assert cfg.dataset.dataloader_params.evaluation_seed == cfg.seed
     assert cfg.dataset.dataloader_params.num_workers == 0
     assert cfg.dataset.dataloader_params.pin_memory is False
     assert cfg.dataset.dataloader_params.persistent_workers is False

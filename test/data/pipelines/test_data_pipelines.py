@@ -806,6 +806,8 @@ def _heterogeneous_pipeline_cfg(
                     "mode": "neighbor",
                     "batch_size": 4,
                     "num_neighbors": [3, 2],
+                    "evaluation_protocol": "sampled_neighbor_fixed",
+                    "evaluation_seed": 17,
                     "num_workers": 0,
                     "pin_memory": False,
                     "persistent_workers": False,
@@ -867,6 +869,8 @@ def test_heterogeneous_pipeline_validates_and_passes_exact_dataloader_params(
         mode="neighbor",
         batch_size=4,
         num_neighbors=[3, 2],
+        evaluation_protocol="sampled_neighbor_fixed",
+        evaluation_seed=17,
         num_workers=0,
         pin_memory=False,
         persistent_workers=False,
@@ -1002,6 +1006,8 @@ def test_heterogeneous_hydra_composition_resolves_pipeline_and_transforms() -> (
     assert cfg.data_pipeline._target_ == (
         "topobench.data.pipelines.HeterogeneousNodeDataPipeline"
     )
+    assert cfg.dataset.dataloader_params.evaluation_protocol == "full_graph"
+    assert cfg.dataset.dataloader_params.evaluation_seed == cfg.seed
     assert cfg.transforms.venue_features.transform_name == (
         "HeterogeneousConstantFeatures"
     )
@@ -1029,3 +1035,30 @@ def test_default_pipeline_contract_remains_unchanged_after_heterogeneous_api(
         "load_splits",
         "datamodule",
     ]
+
+
+def test_neighbor_mode_override_requires_explicit_protocol_override(
+    tmp_path: Path,
+) -> None:
+    """Changing only mode cannot silently mislabel evaluation semantics."""
+    register_all_resolvers()
+    hydra.initialize(version_base="1.3", config_path="../../../configs")
+    cfg = hydra.compose(
+        config_name="run.yaml",
+        overrides=[
+            "dataset=heterogeneous/SyntheticHeterogeneous",
+            "model=cell/hgt",
+            "data_pipeline=heterogeneous_node",
+            "dataset.dataloader_params.mode=neighbor",
+            f"paths.data_dir={tmp_path}",
+            "train=false",
+            "test=false",
+        ],
+    )
+
+    assert cfg.dataset.dataloader_params.evaluation_protocol == "full_graph"
+    with pytest.raises(
+        ValueError,
+        match=r"evaluation_protocol.*mode",
+    ):
+        HeterogeneousNodeDataPipeline().build(cfg)
