@@ -24,8 +24,9 @@ Specifically, this module implements:
     the lifted signal, exposed via ``SheafDirichletLoss`` so TopoBench's
     TBLoss adds lambda * E(s) to the task loss (lambda = 0.01 in the
     paper's experiments, Appendix F).
-  - Appendix E: orthogonal transport maps via the Cayley transform
-    (a variant of the Householder-product parameterization).
+  - Appendix E: orthogonal transport classes. Tandon et al. use
+    Householder products; this implementation projects via the Cayley
+    transform (exponential map available as an option).
 
 The Sheaf Laplacian L_F = delta^T K delta replaces the standard Hodge
 Laplacian. This avoids oversmoothing because L_F penalizes deviations
@@ -62,9 +63,11 @@ class RestrictionMapLearner(nn.Module):
     """Learn restriction maps F_{v<e} : F_v → F_e for each edge.
 
     For stalk_dim d, each map is a d×d rotation obtained from a
-    skew-symmetric generator — following the Bundle Neural Network
-    (BuNN) parameterization [Deng et al., 2024] and the orthogonal
-    transport classes of Tandon et al., Appendix E. Two projections
+    skew-symmetric generator — learned orthogonal maps on graphs in
+    the spirit of BuNN [Bamberger et al., 2024, who use Householder
+    reflections] and the orthogonal transport classes of Tandon et
+    al., Appendix E; the Cayley projection follows the orthogonal-RNN
+    lineage (Helfrich et al., ICML 2018). Two projections
     onto SO(d) are available. ``"cayley"``: R = (I-S)(I+S)^{-1}, whose
     image is the dense subset of SO(d) excluding rotations with a -1
     eigenvalue; reaching near-antipodal maps requires generator norms
@@ -681,9 +684,10 @@ class SheafTSP(nn.Module):
     .. [2] Bodnar et al. "Neural Sheaf Diffusion" (2022),
        arXiv:2202.04579, Sec. 3: Sheaf Diffusion as a generalization
        of graph diffusion
-    .. [3] Deng et al. "Bundle Neural Networks" (2024),
-       arXiv:2405.15540, Sec. 4: Cayley parameterization of orthogonal
-       restriction maps
+    .. [3] Bamberger et al. "Bundle Neural Networks for message
+       diffusion on graphs" (2024), arXiv:2405.15540: learned
+       orthogonal bundle maps on graphs (Householder reflections;
+       direct SO(2) parameterization at d = 2)
     """
 
     def __init__(

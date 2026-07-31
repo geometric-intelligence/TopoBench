@@ -41,7 +41,7 @@ accuracy **0.4735**, triangle-count MSE/triangle **0.0108**
 
 1. Tandon et al. "Consistent Geometric Deep Learning via Hilbert Bundles and Cellular Sheaves" (2026), [arXiv:2605.06395](https://arxiv.org/abs/2605.06395)
 2. Bodnar et al. "Neural Sheaf Diffusion" (2022), [arXiv:2202.04579](https://arxiv.org/abs/2202.04579)
-3. Deng et al. "Bundle Neural Networks (BuNN)" (2024), [arXiv:2405.15540](https://arxiv.org/abs/2405.15540)
+3. Bamberger et al. "Bundle Neural Networks (BuNN)" (2024), [arXiv:2405.15540](https://arxiv.org/abs/2405.15540)
 4. Chen, Chen, Villar & Bruna, "Can Graph Neural Networks Count Substructures?" (NeurIPS 2020), [arXiv:2002.04025](https://arxiv.org/abs/2002.04025)
 5. Zhang et al. "MagNet: A Neural Network for Directed Graphs" (NeurIPS 2021), [arXiv:2102.11391](https://arxiv.org/abs/2102.11391)
 """)
