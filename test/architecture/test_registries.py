@@ -39,6 +39,10 @@ EXPECTED_GRAPH_LOADERS = {
     "TUDatasetLoader",
     "USCountyDemosDatasetLoader",
 }
+ORPHAN_GRAPH_LOADERS = {
+    "ManualGraphDatasetLoader",
+    "USCountyDemosDatasetLoader",
+}
 EXPECTED_HETEROGENEOUS_LOADERS = {
     "DBLPDatasetLoader",
     "OGBMAGDatasetLoader",
@@ -93,8 +97,8 @@ def test_surviving_yaml_loader_targets_resolve_through_explicit_registries() -> 
         if (document := yaml.safe_load(config_path.read_text(encoding="utf-8")))
     }
 
-    assert {target.rsplit(".", 1)[1] for target in targets} == set(
-        loaders.LOADER_CLASSES
+    assert {target.rsplit(".", 1)[1] for target in targets} == (
+        set(loaders.LOADER_CLASSES) - ORPHAN_GRAPH_LOADERS
     )
     for target in targets:
         module_name, class_name = target.rsplit(".", 1)
@@ -105,7 +109,7 @@ def test_surviving_yaml_loader_targets_resolve_through_explicit_registries() -> 
 def test_backbone_registry_has_only_surviving_local_models() -> None:
     _assert_explicit_registry(
         graph_backbones.BACKBONE_CLASSES,
-        {"GPSEncoder", "GraphMLP", "NSDEncoder"},
+        {"GCNDGM", "GPSEncoder", "GraphMLP", "NSDEncoder"},
     )
     _assert_explicit_registry(
         heterogeneous_backbones.BACKBONE_CLASSES,
@@ -115,6 +119,7 @@ def test_backbone_registry_has_only_surviving_local_models() -> None:
     _assert_explicit_registry(
         backbones.MODEL_CLASSES,
         {
+            "GCNDGM",
             "EDGNN",
             "GPSEncoder",
             "GraphMLP",

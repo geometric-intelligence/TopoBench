@@ -1,96 +1,148 @@
-"""Graph MLP loss function."""
+"""Per-graph contrastive loss for the native GraphMLP candidate."""
+
+from __future__ import annotations
+
+from numbers import Integral
 
 import torch
-import torch_geometric
+import torch.nn.functional as functional
+from torch import Tensor
+from torch_geometric.data import Data
+from torch_geometric.utils import remove_self_loops, to_dense_adj
 
 from topobench.loss.base import AbstractLoss
 
 
 class GraphMLPLoss(AbstractLoss):
-    r"""Graph MLP loss function.
+    """Compute GraphMLP contrastive terms without cross-graph pairs."""
 
-    Parameters
-    ----------
-    r_adj_power : int, optional
-        Power of the adjacency matrix (default: 2).
-    tau : float, optional
-        Temperature parameter (default: 1).
-    loss_weight : float, optional
-        Loss weight (default: 0.5).
-    """
-
-    def __init__(self, r_adj_power=2, tau=1.0, loss_weight=0.5):
+    def __init__(
+        self,
+        r_adj_power: int = 2,
+        tau: float = 1.0,
+        loss_weight: float = 0.5,
+    ) -> None:
         super().__init__()
-        self.r_adj_power = r_adj_power
-        self.tau = tau
-        self.loss_weight = loss_weight
+        if (
+            isinstance(r_adj_power, bool)
+            or not isinstance(r_adj_power, Integral)
+            or r_adj_power < 1
+        ):
+            raise ValueError("r_adj_power must be a positive integer")
+        self.r_adj_power = int(r_adj_power)
+        self.tau = float(tau)
+        self.loss_weight = float(loss_weight)
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(r_adj_power={self.r_adj_power}, tau={self.tau}, loss_weight={self.loss_weight})"
-
-    def get_power_adj(self, edge_index):
-        r"""Get the power of the adjacency matrix.
-
-        Parameters
-        ----------
-        edge_index : torch.Tensor
-            Edge index tensor.
-
-        Returns
-        -------
-        torch.Tensor
-            Power of the adjacency matrix.
-        """
-        edge_index, _ = torch_geometric.utils.remove_self_loops(edge_index)
-        adj = torch_geometric.utils.to_dense_adj(edge_index)
-        adj_power = adj.clone()
-        for _ in range(self.r_adj_power - 1):
-            adj_power = torch.matmul(adj_power, adj)
-        return adj_power
-
-    def graph_mlp_contrast_loss(self, x_dis, adj_label):
-        """Graph MLP contrastive loss.
-
-        Parameters
-        ----------
-        x_dis : torch.Tensor
-            Distance matrix.
-        adj_label : torch.Tensor
-            Adjacency matrix.
-
-        Returns
-        -------
-        torch.Tensor
-            Contrastive loss.
-        """
-        x_dis = torch.exp(self.tau * x_dis)
-        x_dis_sum = torch.sum(x_dis, 1)
-        x_dis_sum_pos = torch.sum(x_dis * adj_label, 1)
-        loss = -torch.log(x_dis_sum_pos * (x_dis_sum ** (-1)) + 1e-8).mean()
-        return loss
-
-    def forward(
-        self, model_out: dict, batch: torch_geometric.data.Data
-    ) -> torch.Tensor:
-        r"""Forward pass of the loss function.
-
-        Parameters
-        ----------
-        model_out : dict
-            Dictionary containing the model output.
-        batch : torch_geometric.data.Data
-            Batch object containing the batched domain data.
-
-        Returns
-        -------
-        dict
-            Dictionary containing the model output with the loss.
-        """
-        x_dis = model_out["x_dis"]
-        if x_dis is None:  # Validation and test
-            return torch.tensor(0.0).to(batch.x.device)
-        adj_label = self.get_power_adj(batch.edge_index)
-        graph_mlp_loss = self.loss_weight * self.graph_mlp_contrast_loss(
-            x_dis, adj_label
+        return (
+            f"{self.__class__.__name__}("
+            f"r_adj_power={self.r_adj_power}, tau={self.tau}, "
+            f"loss_weight={self.loss_weight})"
         )
-        return graph_mlp_loss
+
+    def get_power_adj(
+        self,
+        edge_index: Tensor,
+        *,
+        num_nodes: int,
+    ) -> Tensor:
+        """Return a dense powered adjacency for one graph only."""
+        edge_index, _ = remove_self_loops(edge_index)
+        adjacency = to_dense_adj(
+            edge_index,
+            max_num_nodes=num_nodes,
+        ).squeeze(0)
+        adjacency_power = adjacency
+        for _ in range(self.r_adj_power - 1):
+            adjacency_power = adjacency_power @ adjacency
+        return adjacency_power
+
+    def graph_mlp_contrast_loss(
+        self,
+        similarity: Tensor,
+        adjacency: Tensor,
+    ) -> Tensor:
+        """Return the mean node contrastive loss for one graph."""
+        exponentiated = torch.exp(self.tau * similarity)
+        denominator = exponentiated.sum(dim=1)
+        positive = (exponentiated * adjacency).sum(dim=1)
+        return -torch.log(positive / denominator + 1e-8).mean()
+
+    def forward(self, model_out: dict, batch: Data) -> Tensor:
+        """Compute isolated per-graph terms from native ``x`` and ``batch``."""
+        embeddings = model_out.get("x")
+        if not isinstance(embeddings, Tensor) or embeddings.ndim != 2:
+            raise TypeError("model_out['x'] must be a rank-2 tensor")
+        edge_index = batch.get("edge_index")
+        if (
+            not isinstance(edge_index, Tensor)
+            or edge_index.ndim != 2
+            or edge_index.size(0) != 2
+        ):
+            raise ValueError("batch.edge_index must have shape [2, E]")
+        batch_index = model_out.get("batch", batch.get("batch"))
+        if (
+            not isinstance(batch_index, Tensor)
+            or batch_index.ndim != 1
+            or batch_index.dtype is not torch.long
+            or batch_index.numel() != embeddings.size(0)
+        ):
+            raise ValueError(
+                "model_out['batch'] must be a rank-1 long tensor "
+                "matching model_out['x']"
+            )
+        if batch_index.numel() == 0:
+            raise ValueError("model_out['batch'] must not be empty")
+        graph_count = int(batch_index.max()) + 1
+        if int(batch_index.min()) < 0 or not torch.equal(
+            torch.unique(batch_index),
+            torch.arange(graph_count, device=batch_index.device),
+        ):
+            raise ValueError(
+                "model_out['batch'] must be contiguous from zero"
+            )
+        if edge_index.numel() and not torch.equal(
+            batch_index[edge_index[0]],
+            batch_index[edge_index[1]],
+        ):
+            raise ValueError("batch.edge_index crosses graph boundaries")
+
+        local_positions = torch.empty_like(batch_index)
+        node_indices: list[Tensor] = []
+        for graph_id in range(graph_count):
+            indices = torch.nonzero(
+                batch_index == graph_id,
+                as_tuple=False,
+            ).flatten()
+            if indices.numel() == 0:
+                raise ValueError("model_out['batch'] contains an empty graph")
+            local_positions[indices] = torch.arange(
+                indices.numel(),
+                device=indices.device,
+            )
+            node_indices.append(indices)
+
+        weighted_loss = embeddings.new_zeros(())
+        normalized = functional.normalize(embeddings, p=2, dim=-1)
+        for graph_id, indices in enumerate(node_indices):
+            edge_mask = batch_index[edge_index[0]] == graph_id
+            local_edges = local_positions[edge_index[:, edge_mask]]
+            adjacency = self.get_power_adj(
+                local_edges,
+                num_nodes=int(indices.numel()),
+            )
+            similarity = normalized[indices] @ normalized[indices].T
+            similarity = similarity.masked_fill(
+                torch.eye(
+                    indices.numel(),
+                    dtype=torch.bool,
+                    device=indices.device,
+                ),
+                0,
+            )
+            graph_loss = self.graph_mlp_contrast_loss(
+                similarity,
+                adjacency,
+            )
+            weighted_loss = weighted_loss + indices.numel() * graph_loss
+        return self.loss_weight * weighted_loss / embeddings.size(0)

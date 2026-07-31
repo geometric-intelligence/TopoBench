@@ -23,6 +23,7 @@ EDGE_TYPES = [
     ("venue", "rev_published_in", "paper"),
 ]
 EXPECTED_REGISTERED_BACKBONES = {
+    "GCNDGM",
     "EDGNN",
     "GPSEncoder",
     "GraphMLP",

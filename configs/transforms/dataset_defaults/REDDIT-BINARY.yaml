@@ -1,3 +1,2 @@
 defaults:
   - data_manipulations@constant_node_features: constant_node_features
-  - liftings@_here_: ${get_required_lifting:${dataset},${model}}

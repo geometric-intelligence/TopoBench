@@ -9,9 +9,6 @@ from topobench.utils.config_resolvers import (
     register_all_resolvers,
     define_task_level,
     infer_in_channels,
-    infer_num_cell_dimensions,
-    infer_in_khop_feature_dim,
-    infer_topotune_num_cell_dimensions,
     get_default_metrics,
     get_default_trainer,
     get_default_transform,
@@ -19,7 +16,6 @@ from topobench.utils.config_resolvers import (
     get_non_relational_out_channels,
     get_monitor_metric,
     get_monitor_mode,
-    get_required_lifting,
     set_preserve_edge_attr,
     check_pses_in_transforms,
     check_fes_in_transforms,
@@ -30,7 +26,6 @@ from topobench.utils.config_resolvers import (
     infer_list_length,
     infer_list_length_plus_one,
     get_list_element,
-    infer_in_hasse_graph_agg_dim,
 )
 
 class TestConfigResolvers:
@@ -81,24 +76,30 @@ class TestConfigResolvers:
             get_default_metrics("some_task", 2)
 
     def test_get_default_transform(self):
-        """Test get_default_transform."""
-        out = get_default_transform("graph/MUTAG", "graph/gat")
-        assert out == "no_transform"
-
-        out = get_default_transform("graph/MUTAG", "non_relational/mlp")
-        assert out == "no_transform"
-
-        out = get_default_transform("graph/MUTAG", "cell/can")
-        assert out == "liftings/graph2cell_default"
-
-        out = get_default_transform("graph/ZINC", "cell/can")
-        assert out == "dataset_defaults/ZINC"
-
-        out = get_default_transform("graph/MUTAG", "graph/gps")
-        assert out == "model_defaults/gps"
-
-        out = get_default_transform("graph/ZINC", "graph/gps")
-        assert out == "model_dataset_defaults/gps_ZINC"
+        """Choose only same-domain dataset/model defaults."""
+        assert get_default_transform("graph/MUTAG", "graph/gat") == "no_transform"
+        assert (
+            get_default_transform("graph/ZINC", "graph/gcn")
+            == "dataset_defaults/ZINC"
+        )
+        assert (
+            get_default_transform("graph/MUTAG", "graph/gps")
+            == "model_defaults/gps"
+        )
+        assert (
+            get_default_transform("graph/ZINC", "graph/gps")
+            == "model_dataset_defaults/gps_ZINC"
+        )
+        with pytest.raises(
+            ValueError,
+            match="Cross-domain lifting is unsupported",
+        ):
+            get_default_transform("graph/MUTAG", "cell/can")
+        with pytest.raises(
+            ValueError,
+            match="Cross-domain lifting is unsupported",
+        ):
+            get_default_transform("graph/MUTAG", "non_relational/mlp")
 
 
     def test_get_flattened_channels(self):
@@ -117,13 +118,6 @@ class TestConfigResolvers:
         with pytest.raises(ValueError, match="Invalid task level") as e:
             get_non_relational_out_channels(10, 5, "some_task")
 
-    def test_get_required_lifting(self):
-        """Test get_required_lifting."""
-        out = get_required_lifting("graph", "graph/gat")
-        assert out == "no_lifting"
-
-        out = get_required_lifting("graph", "cell/can")
-        assert out == "graph2cell_default"
 
     def test_get_monitor_metric(self):
         """Test get_monitor_metric."""
@@ -232,27 +226,7 @@ class TestConfigResolvers:
 
         assert infer_in_channels(dataset, transforms) == expected
 
-    def test_infer_num_cell_dimensions(self):
-        """Test infer_num_cell_dimensions."""
-        out = infer_num_cell_dimensions(None, [7, 7, 7])
-        assert out == 3
 
-        out = infer_num_cell_dimensions([1, 2, 3], [7, 7])
-        assert out == 3
-
-    def test_infer_topotune_num_cell_dimensions(self):
-        """Test infer_topotune_num_cell_dimensions."""
-        neighborhoods = ["up_adjacency-1"]
-        out = infer_topotune_num_cell_dimensions(neighborhoods)
-        assert out == 2
-
-        neighborhoods = ["up_incidence-0"]
-        out = infer_topotune_num_cell_dimensions(neighborhoods)
-        assert out == 2
-
-        neighborhoods = ["down_incidence-2"]
-        out = infer_topotune_num_cell_dimensions(neighborhoods)
-        assert out == 3
 
     def test_get_default_metrics_with_params(self):
         """Test get_default_metrics with explicit metrics."""
@@ -278,26 +252,7 @@ class TestConfigResolvers:
         out = set_preserve_edge_attr(model_name="san", default=default)
         assert out == True
 
-    def test_infer_in_khop_feature_dim(self):
-        """Test infer_in_khop_feature_dim."""
-        dataset_in_channels = [7, 7, 7]
-        max_hop = 3
-        out = infer_in_khop_feature_dim(dataset_in_channels, max_hop)
-        assert out == [[7, 14, 42, 133], [7, 28, 91, 294], [7, 21, 70, 231]]
 
-    def test_infer_in_khop_feature_dim_with_complex_dim(self):
-        """Test infer_in_khop_feature_dim with complex_dim truncation."""
-        # dataset_in_channels has 4 elements (from lifting complex_dim=3)
-        # but transform only processes 3 ranks (complex_dim=3)
-        dataset_in_channels = [7, 7, 7, 7]
-        max_hop = 2
-        # Without truncation: rank 2 hop 1 = 28 (wrong, includes rank 3 neighbor)
-        out_no_trunc = infer_in_khop_feature_dim(dataset_in_channels, max_hop)
-        assert out_no_trunc[2][1] == 28
-        # With truncation: rank 2 hop 1 = 21 (correct, no rank 3 neighbor)
-        out_trunc = infer_in_khop_feature_dim(dataset_in_channels, max_hop, complex_dim=3)
-        assert out_trunc[2][1] == 21
-        assert len(out_trunc) == 3
 
     def test_check_pses_in_transforms_empty(self):
         """Test check_pses_in_transforms with no encodings."""
@@ -1133,56 +1088,3 @@ class TestNewHopseResolvers:
         assert get_list_element([10, 20, 30], -1) == 30
         with pytest.raises(IndexError):
             get_list_element([1], 5)
-
-    # ---- infer_in_hasse_graph_agg_dim ----
-
-    def test_infer_in_hasse_graph_agg_dim_copy_initial_scalar_dim_in(self):
-        out = infer_in_hasse_graph_agg_dim(
-            neighborhoods=["up_adjacency-0", "up_incidence-0"],
-            dim_pses=[5, 7],
-            complex_dim=2,
-            max_hop=3,
-            dim_in=4,
-            dim_hidden_graph=16,
-            dim_hidden_node=8,
-            copy_initial=True,
-            use_edge_attr=False,
-        )
-        assert isinstance(out, list)
-        assert len(out) == 3  # complex_dim + 1
-        assert all(len(row) == 3 for row in out)  # max_hop
-        # Hop 0 should be the input dim (since copy_initial=True).
-        assert out[0][0] == 4
-        assert out[1][0] == 4
-
-    def test_infer_in_hasse_graph_agg_dim_with_edge_attr(self):
-        out = infer_in_hasse_graph_agg_dim(
-            neighborhoods=["up_adjacency-0"],
-            dim_pses=[5],
-            complex_dim=1,
-            max_hop=2,
-            dim_in=[3, 9],
-            dim_hidden_graph=16,
-            dim_hidden_node=8,
-            copy_initial=True,
-            use_edge_attr=True,
-        )
-        # Hop 0 for dim 0 is dim_in[0]; for dim 1 is dim_in[1] (edge attr).
-        assert out[0][0] == 3
-        assert out[1][0] == 9
-
-    def test_infer_in_hasse_graph_agg_dim_no_copy_initial(self):
-        out = infer_in_hasse_graph_agg_dim(
-            neighborhoods=["up_adjacency-0"],
-            dim_pses=[5],
-            complex_dim=1,
-            max_hop=2,
-            dim_in=4,
-            dim_hidden_graph=16,
-            dim_hidden_node=8,
-            copy_initial=False,
-            use_edge_attr=False,
-        )
-        # All initial entries == dim_hidden_graph + dim_hidden_node.
-        assert out[0][0] == 24
-        assert out[1][0] == 24

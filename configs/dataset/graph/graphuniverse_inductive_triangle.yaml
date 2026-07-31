@@ -1,6 +1,6 @@
 # GraphUniverse inductive: triangle counting (graph-level regression).
-# Same loader / splits / dataloader defaults as ``graphuniverse_inductive.yaml``;
-# generation task and dataset head differ. Use with ``dataset=graph/graphuniverse_inductive_triangle``.
+# Uses the shared GraphUniverse loader with graph-level regression splits.
+# The generation task and dataset head are selector-specific.
 
 loader:
   _target_: topobench.data.loaders.GraphUniverseDatasetLoader

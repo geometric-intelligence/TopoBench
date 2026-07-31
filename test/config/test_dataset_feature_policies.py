@@ -6,12 +6,6 @@ from omegaconf import DictConfig, OmegaConf
 
 GRAPH_CONFIG_DIR = Path("configs/dataset/graph")
 DEFAULT_TRANSFORM_DIR = Path("configs/transforms/dataset_defaults")
-EXCLUDED_SELECTORS = {
-    "US-county-demos",
-    "graphuniverse_inductive",
-    "ogbg-molpcba",
-    "manual_dataset",
-}
 ALLOWED_POLICIES = {
     "continuous",
     "categorical_one_hot",
@@ -47,9 +41,6 @@ def _default_transform_names(config: DictConfig) -> set[str]:
 def test_every_retained_graph_dataset_has_a_valid_feature_policy() -> None:
     for path in GRAPH_CONFIG_DIR.glob("*.yaml"):
         config = OmegaConf.load(path)
-        if path.stem in EXCLUDED_SELECTORS:
-            assert "feature_policy" not in config.parameters
-            continue
 
         policy = config.parameters.get("feature_policy")
         assert policy in ALLOWED_POLICIES, f"{path.stem}: {policy!r}"

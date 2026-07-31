@@ -6,49 +6,23 @@ from torch.nn import Dropout, LayerNorm, Linear
 
 
 class GraphMLP(nn.Module):
-    """ "Graph MLP backbone.
-
-    Parameters
-    ----------
-    in_channels : int
-        Number of input features.
-    hidden_channels : int
-        Number of hidden units.
-    order : int, optional
-        To compute order-th power of adj matrix (default: 1).
-    dropout : float, optional
-        Dropout rate (default: 0.0).
-    **kwargs
-        Additional arguments.
-    """
+    """Apply a feature-only MLP independently to every native graph node."""
 
     def __init__(
-        self, in_channels, hidden_channels, order=1, dropout=0.0, **kwargs
-    ):
+        self,
+        in_channels: int,
+        hidden_channels: int,
+        dropout: float = 0.0,
+        loss: nn.Module | None = None,
+    ) -> None:
         super().__init__()
         self.out_channels = hidden_channels
-        self.order = order
-        self.mlp = Mlp(in_channels, self.out_channels, dropout)
+        self.mlp = Mlp(in_channels, hidden_channels, dropout)
+        self.loss = loss
 
-    def forward(self, x):
-        """Forward pass.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            Input tensor.
-
-        Returns
-        -------
-        torch.Tensor
-            Output tensor.
-        """
-        x = self.mlp(x)
-        Z = x
-
-        x_dis = get_feature_dis(Z) if self.training else None
-
-        return x, x_dis
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Return node embeddings without allocating a global pair matrix."""
+        return self.mlp(x)
 
 
 class Mlp(nn.Module):
@@ -100,26 +74,3 @@ class Mlp(nn.Module):
         x = self.dropout(x)
         x = self.fc2(x)
         return x
-
-
-def get_feature_dis(x):
-    """Get feature distance matrix.
-
-    Parameters
-    ----------
-    x : torch.Tensor
-        Input tensor.
-
-    Returns
-    -------
-    torch.Tensor
-        Feature distance matrix.
-    """
-    x_dis = x @ x.T
-    mask = torch.eye(x_dis.shape[0]).to(x_dis.device)
-    x_sum = torch.sum(x**2, 1).reshape(-1, 1)
-    x_sum = torch.sqrt(x_sum).reshape(-1, 1)
-    x_sum = x_sum @ x_sum.T
-    x_dis = x_dis * (x_sum ** (-1))
-    x_dis = (1 - mask) * x_dis
-    return x_dis

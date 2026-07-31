@@ -13,6 +13,7 @@ from lightning import LightningModule
 from omegaconf import DictConfig, ListConfig, OmegaConf
 
 from topobench.data import HeterogeneousDataSpec
+from topobench.nn.capabilities import validate_graph_composition
 
 _HETEROGENEOUS_DOMAIN = "heterogeneous"
 _SAMPLING_MODES = {"full_batch", "neighbor"}
@@ -404,6 +405,13 @@ def instantiate_model(
         raise TypeError("data_spec must be a HeterogeneousDataSpec or None")
 
     model_domain = _model_domain(cfg)
+    if model_domain == "graph":
+        dataset_cfg = _require_dict_config(
+            _required_child(cfg, "dataset", parent_path="cfg"),
+            path="cfg.dataset",
+        )
+        model_cfg = _require_dict_config(cfg.model, path="cfg.model")
+        validate_graph_composition(dataset_cfg, model_cfg)
     if data_spec is None:
         if model_domain == _HETEROGENEOUS_DOMAIN:
             raise ValueError(

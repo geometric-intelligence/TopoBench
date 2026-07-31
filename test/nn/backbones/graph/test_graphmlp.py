@@ -1,35 +1,52 @@
-"""Unit tests for GraphMLP."""
+"""Native GraphMLP backbone and auxiliary-loss gates."""
 
 import torch
-import torch_geometric
+import pytest
+from torch_geometric.data import Data
+
+from topobench.loss.model import GraphMLPLoss
 from topobench.nn.backbones.graph import GraphMLP
 from topobench.nn.wrappers.graph import GraphMLPWrapper
-from topobench.loss.model import GraphMLPLoss
 
-def testGraphMLP(random_graph_input):
-    """ Unit test for GraphMLP.
 
-    Parameters
-    ----------
-    random_graph_input : Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor]]
-        A tuple of input tensors for testing EDGNN.
-    """
-    x, x_1, x_2, edges_1, edges_2 = random_graph_input
-    batch = torch_geometric.data.Data(x_0=x, y=x, x=x, edge_index=edges_1, batch_0=torch.zeros(x.shape[0], dtype=torch.long))
-    model = GraphMLP(x.shape[1], x.shape[1])
-    wrapper = GraphMLPWrapper(model, **{"out_channels": x.shape[1], "num_cell_dimensions": 1})
-    loss_fn = GraphMLPLoss()
+def test_graph_mlp_returns_only_embeddings_without_global_distance_matrix() -> None:
+    model = GraphMLP(in_channels=4, hidden_channels=8)
+    model.train()
 
-    _ = wrapper.__repr__()
-    _ = loss_fn.__repr__()
+    output = model(torch.randn(7, 4))
 
-    model_out = wrapper(batch)
-    assert model_out["x_0"].shape == x.shape
-    assert list(model_out["x_dis"].shape) == [8,8]
+    assert isinstance(output, torch.Tensor)
+    assert output.shape == (7, 8)
 
-    loss = loss_fn(model_out, batch)
-    assert loss.item() >= 0
 
-    model_out["x_dis"] = None
-    loss = loss_fn(model_out, batch)
-    assert loss == torch.tensor(0.0)
+def test_graph_mlp_wrapper_preserves_exact_native_output_contract() -> None:
+    data = Data(
+        x=torch.randn(7, 4),
+        y=torch.arange(7, dtype=torch.long) % 2,
+        edge_index=torch.tensor(
+            [[0, 1, 2, 3, 4, 5, 6], [1, 2, 0, 4, 5, 6, 3]],
+            dtype=torch.long,
+        ),
+        batch=torch.zeros(7, dtype=torch.long),
+    )
+    wrapper = GraphMLPWrapper(
+        GraphMLP(in_channels=4, hidden_channels=8),
+        edge_attr_mode="reject",
+        edge_weight_mode="reject",
+    )
+
+    output = wrapper(data)
+
+    assert set(output) == {"x", "labels", "batch"}
+    assert output["x"].shape == (7, 8)
+
+
+def test_graph_mlp_loss_rejects_cross_graph_edges() -> None:
+    data = Data(
+        x=torch.randn(4, 8),
+        edge_index=torch.tensor([[0, 1], [2, 3]], dtype=torch.long),
+        batch=torch.tensor([0, 0, 1, 1], dtype=torch.long),
+    )
+
+    with pytest.raises(ValueError, match="crosses graph boundaries"):
+        GraphMLPLoss()({"x": data.x}, data)

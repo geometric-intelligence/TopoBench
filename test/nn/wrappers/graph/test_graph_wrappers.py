@@ -42,15 +42,15 @@ class RecordingGNN(nn.Module):
 
 
 class RecordingMLP(nn.Module):
-    """Record the translated feature-only call and mimic GraphMLP's tuple."""
+    """Record the translated feature-only GraphMLP call."""
 
     def __init__(self) -> None:
         super().__init__()
         self.calls: list[tuple[Tensor, dict[str, object]]] = []
 
-    def forward(self, x: Tensor, **kwargs: object) -> tuple[Tensor, Tensor]:
+    def forward(self, x: Tensor, **kwargs: object) -> Tensor:
         self.calls.append((x, kwargs))
-        return x + 1, x @ x.T
+        return x + 1
 
 
 WrapperFactory = Callable[[nn.Module, str, str], nn.Module]
@@ -340,8 +340,8 @@ def test_gnn_translates_native_structural_arguments() -> None:
     assert kwargs == {"batch": data.batch}
 
 
-def test_graph_mlp_discards_auxiliary_tuple_without_rank_aliases() -> None:
-    """GraphMLP's auxiliary distance output cannot leak into model_out."""
+def test_graph_mlp_requires_exact_tensor_backbone_output() -> None:
+    """GraphMLP returns only the native wrapper contract."""
     data = _node_graph()
     backbone = RecordingMLP()
 
@@ -355,3 +355,18 @@ def test_graph_mlp_discards_auxiliary_tuple_without_rank_aliases() -> None:
     called_x, kwargs = backbone.calls[0]
     assert called_x is data.x
     assert kwargs == {}
+
+
+def test_graph_mlp_rejects_legacy_auxiliary_tuple() -> None:
+    """The removed global distance side channel has no compatibility path."""
+
+    class TupleBackbone(nn.Module):
+        def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
+            return x, x @ x.T
+
+    with pytest.raises(TypeError, match="must return a tensor"):
+        GraphMLPWrapper(
+            TupleBackbone(),
+            edge_attr_mode="ignore",
+            edge_weight_mode="ignore",
+        )(_node_graph())

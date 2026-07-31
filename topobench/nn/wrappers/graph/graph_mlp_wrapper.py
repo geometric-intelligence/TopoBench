@@ -37,12 +37,9 @@ class GraphMLPWrapper(nn.Module):
         """Return only embeddings, labels, and native batch membership."""
         x, _edge_index, labels, batch_index = _validated_graph_fields(batch)
         output = self.backbone(x, **_edge_kwargs(batch, self.edge_modes))
-        embeddings = output[0] if isinstance(output, tuple) else output
-        if not isinstance(embeddings, Tensor):
-            raise TypeError(
-                "GraphMLP backbone must return a tensor or tensor-first tuple"
-            )
-        return {"x": embeddings, "labels": labels, "batch": batch_index}
+        if not isinstance(output, Tensor):
+            raise TypeError("GraphMLP backbone must return a tensor")
+        return {"x": output, "labels": labels, "batch": batch_index}
 
 
 __all__ = ["GraphMLPWrapper"]
