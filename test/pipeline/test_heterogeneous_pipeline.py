@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+from collections import Counter
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
@@ -14,14 +15,16 @@ import pytest
 import torch
 from hydra.core.global_hydra import GlobalHydra
 from lightning import seed_everything
-from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
+from lightning.pytorch.loggers import CSVLogger
 from lightning.pytorch.loggers.wandb import WandbLogger
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from torch_geometric.data import Data, HeteroData
 
 from topobench.dataloader.heterogeneous import HeterogeneousNodeDataModule
 from topobench.model import TBModel
 from topobench.run import rerun_best_model_checkpoint, run
+from topobench.utils import instantiate_callbacks
 from topobench.utils.config_resolvers import register_all_resolvers
 from topobench.utils.model_instantiation import instantiate_model
 
@@ -44,6 +47,7 @@ def _compose(
     *,
     tmp_path: Path | None = None,
     max_epochs: int = 2,
+    logger_override: str = "[]",
     extra_overrides: tuple[str, ...] = (),
 ) -> DictConfig:
     """Compose one production experiment with bounded test-only overrides."""
@@ -56,9 +60,10 @@ def _compose(
             [
                 # Hydra 1.3 represents a null config-group choice as an empty
                 # override list; the resulting root has no logger config.
-                "logger=[]",
+                f"logger={logger_override}",
                 "paths=test",
                 f"paths.output_dir={output_dir}",
+                f"paths.work_dir={output_dir}",
                 f"trainer.default_root_dir={output_dir}",
                 (
                     "callbacks.model_checkpoint.dirpath="
@@ -75,7 +80,6 @@ def _compose(
         return hydra.compose(
             config_name="run.yaml",
             overrides=overrides,
-            return_hydra_config=True,
         )
 
 
@@ -216,14 +220,31 @@ def test_full_batch_best_rerun_logs_prefixed_finite_metrics(
         logger=[sink],
     )
 
-    logged_calls = [call.args[0] for call in sink.log_metrics.call_args_list]
-    logged = {
-        name: value
-        for metrics in logged_calls
-        for name, value in metrics.items()
+    expected_suffixes = {
+        "loss",
+        "accuracy",
+        "auroc",
+        "f1",
+        "precision",
+        "recall",
     }
-    _assert_finite_metrics(logged, prefix="val_best_rerun/")
-    _assert_finite_metrics(logged, prefix="test_best_rerun/")
+    assert sink.log_metrics.call_count == 2
+    assert all(
+        len(call.args) == 1 and not call.kwargs
+        for call in sink.log_metrics.call_args_list
+    )
+    logged_calls = [call.args[0] for call in sink.log_metrics.call_args_list]
+    assert set(logged_calls[0]) == {
+        f"val_best_rerun/{suffix}" for suffix in expected_suffixes
+    }
+    assert set(logged_calls[1]) == {
+        f"test_best_rerun/{suffix}" for suffix in expected_suffixes
+    }
+    assert all(
+        math.isfinite(float(value))
+        for metrics in logged_calls
+        for value in metrics.values()
+    )
 
     checkpoint_state = torch.load(
         best_path,
@@ -247,6 +268,20 @@ def _direct_model_loss(
     output = model.model_step(batch)
     model.evaluator.reset()
     return output["loss"]
+
+
+def _assert_expected_module_gradients(model: TBModel) -> None:
+    """Require fresh, finite, nonzero gradients through every model stage."""
+    for stage_name in ("feature_encoder", "backbone", "readout"):
+        stage = getattr(model, stage_name)
+        gradients = [
+            parameter.grad
+            for parameter in stage.parameters()
+            if parameter.requires_grad and parameter.grad is not None
+        ]
+        assert gradients, f"{stage_name} produced no parameter gradients"
+        assert all(torch.isfinite(gradient).all() for gradient in gradients)
+        assert any(torch.count_nonzero(gradient) > 0 for gradient in gradients)
 
 
 @pytest.mark.parametrize(("experiment", "_model_name"), EXPERIMENTS)
@@ -297,6 +332,7 @@ def test_full_batch_model_has_an_overfit_signal(
             batch,
         )
         loss.backward()
+        _assert_expected_module_gradients(model)
         optimizer.step()
         previous_batch = batch
 
@@ -312,3 +348,52 @@ def test_full_batch_model_has_an_overfit_signal(
     assert math.isfinite(initial_loss)
     assert math.isfinite(final_loss)
     assert final_loss < initial_loss
+
+
+@pytest.mark.parametrize(
+    ("logger_override", "expect_learning_rate_monitor"),
+    [
+        pytest.param("[]", False, id="no-logger"),
+        pytest.param("csv", True, id="csv-logger"),
+    ],
+)
+def test_run_filters_learning_rate_monitor_only_without_a_logger(
+    logger_override: str,
+    expect_learning_rate_monitor: bool,
+    tmp_path: Path,
+) -> None:
+    """Logger-free runs remove only the callback requiring a logger."""
+    cfg = _compose(
+        "heterogeneous_synthetic_hgt_full",
+        tmp_path=tmp_path,
+        logger_override=logger_override,
+        extra_overrides=("train=false", "test=false"),
+    )
+    before = OmegaConf.to_container(cfg, resolve=False)
+    configured_callbacks = instantiate_callbacks(cfg.callbacks)
+
+    _, objects = run(cfg)
+
+    assert OmegaConf.to_container(cfg, resolve=False) == before
+    actual_callbacks = objects["callbacks"]
+    actual_types = Counter(type(callback) for callback in actual_callbacks)
+    expected_types = Counter(
+        type(callback)
+        for callback in configured_callbacks
+        if expect_learning_rate_monitor
+        or not isinstance(callback, LearningRateMonitor)
+    )
+    assert actual_types == expected_types
+    assert (
+        any(
+            isinstance(callback, LearningRateMonitor)
+            for callback in actual_callbacks
+        )
+        is expect_learning_rate_monitor
+    )
+
+    if expect_learning_rate_monitor:
+        assert len(objects["logger"]) == 1
+        assert isinstance(objects["logger"][0], CSVLogger)
+    else:
+        assert objects["logger"] == []
