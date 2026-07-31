@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,13 +18,18 @@ from torch_geometric.loader import NeighborLoader
 
 from test._utils import simplified_pipeline
 from topobench import run as run_module
+from topobench.data import HypergraphData
 from topobench.data.datasets import make_synthetic_heterogeneous_data
+from topobench.data.datasets.synthetic_hypergraph_dataset import (
+    make_synthetic_hypergraph_data,
+)
 from topobench.data.heterogeneous import HeterogeneousDataSpec
 from topobench.data.pipelines import (
     AbstractDataPipeline,
     DataPipelineOutput,
     DefaultDataPipeline,
     HeterogeneousNodeDataPipeline,
+    HypergraphNodeDataPipeline,
 )
 from topobench.dataloader import GraphDataModule
 from topobench.utils.config_resolvers import register_all_resolvers
@@ -827,10 +832,11 @@ def test_pipeline_package_exposes_canonical_api() -> None:
 
     assert ",".join(pipelines.__all__) == (
         "AbstractDataPipeline,DataPipelineOutput,DefaultDataPipeline,"
-        "HeterogeneousNodeDataPipeline"
+        "HeterogeneousNodeDataPipeline,HypergraphNodeDataPipeline"
     )
     assert issubclass(DefaultDataPipeline, AbstractDataPipeline)
     assert issubclass(HeterogeneousNodeDataPipeline, AbstractDataPipeline)
+    assert issubclass(HypergraphNodeDataPipeline, AbstractDataPipeline)
 
 
 class _FakePreprocessor:
@@ -1131,3 +1137,315 @@ def test_neighbor_mode_override_requires_explicit_protocol_override(
         match=r"evaluation_protocol.*mode",
     ):
         HeterogeneousNodeDataPipeline().build(cfg)
+
+
+def _hypergraph_pipeline_cfg(
+    tmp_path: Path,
+    *,
+    learning_setting: str = "transductive",
+    split_type: str = "random",
+    batch_size: int = 1,
+) -> DictConfig:
+    """Return the smallest explicit hypergraph pipeline configuration."""
+    return OmegaConf.create(
+        {
+            "dataset": {
+                "split_params": {
+                    "learning_setting": learning_setting,
+                    "split_type": split_type,
+                    "data_seed": 0,
+                    "train_prop": 0.5,
+                    "data_split_dir": str(tmp_path),
+                },
+                "dataloader_params": {
+                    "batch_size": batch_size,
+                    "num_workers": 0,
+                    "pin_memory": False,
+                },
+            }
+        }
+    )
+
+
+def _hypergraph_snapshot(data: HypergraphData) -> dict[str, object]:
+    """Copy stored values so failed pipeline mutation is observable."""
+    return {
+        key: value.clone() if isinstance(value, torch.Tensor) else value
+        for key, value in data.to_dict().items()
+    }
+
+
+def _assert_hypergraph_snapshot(
+    data: HypergraphData,
+    expected: dict[str, object],
+) -> None:
+    """Assert that a failed pipeline build left its source object untouched."""
+    assert data.to_dict().keys() == expected.keys()
+    for key, expected_value in expected.items():
+        actual = data[key]
+        if isinstance(expected_value, torch.Tensor):
+            assert isinstance(actual, torch.Tensor)
+            assert torch.equal(actual, expected_value)
+        else:
+            assert actual == expected_value
+
+
+def test_hypergraph_pipeline_splits_a_runtime_clone_and_batches_every_phase(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Masks are canonical on the runtime graph and absent from the source."""
+    source = make_synthetic_hypergraph_data(seed=7)
+    for mask_name in ("train_mask", "val_mask", "test_mask"):
+        del source[mask_name]
+    preprocessor = _FakePreprocessor([source], preprocessing_time=2.25)
+    monkeypatch.setattr(
+        HypergraphNodeDataPipeline,
+        "preprocess",
+        MagicMock(return_value=preprocessor),
+    )
+
+    output = HypergraphNodeDataPipeline().build(
+        _hypergraph_pipeline_cfg(tmp_path)
+    )
+
+    assert output.data_spec is None
+    assert output.preprocessing_time == 2.25
+    assert isinstance(output.datamodule, GraphDataModule)
+    assert (
+        output.datamodule.dataset_train
+        is output.datamodule.dataset_val
+        is output.datamodule.dataset_test
+    )
+    runtime_data = output.datamodule.dataset_train[0]
+    assert isinstance(runtime_data, HypergraphData)
+    assert runtime_data is not source
+    assert all(
+        mask_name not in source
+        for mask_name in ("train_mask", "val_mask", "test_mask")
+    )
+
+    masks = tuple(
+        runtime_data[mask_name]
+        for mask_name in ("train_mask", "val_mask", "test_mask")
+    )
+    assert all(
+        mask.dtype == torch.bool and mask.shape == (runtime_data.num_nodes,)
+        for mask in masks
+    )
+    assert torch.equal(masks[0] | masks[1] | masks[2], torch.ones_like(masks[0]))
+
+    for loader in (
+        output.datamodule.train_dataloader(),
+        output.datamodule.val_dataloader(),
+        output.datamodule.test_dataloader(),
+    ):
+        batch = next(iter(loader))
+        assert isinstance(batch, Batch)
+        assert isinstance(batch, HypergraphData)
+        assert batch.num_graphs == 1
+        assert torch.equal(batch.hyperedge_index, runtime_data.hyperedge_index)
+        for mask_name in ("train_mask", "val_mask", "test_mask"):
+            assert torch.equal(batch[mask_name], runtime_data[mask_name])
+
+
+@pytest.mark.parametrize(
+    ("items", "error_type", "message"),
+    [
+        ([], ValueError, "requires exactly one processed graph; received 0"),
+        (
+            [
+                make_synthetic_hypergraph_data(seed=1),
+                make_synthetic_hypergraph_data(seed=2),
+            ],
+            ValueError,
+            "requires exactly one processed graph; received 2",
+        ),
+        (
+            [Data(x=torch.ones(3, 2), y=torch.arange(3))],
+            TypeError,
+            "requires native HypergraphData",
+        ),
+    ],
+    ids=["zero-graphs", "multiple-graphs", "plain-data"],
+)
+def test_hypergraph_pipeline_rejects_invalid_processed_output(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    items: list[object],
+    error_type: type[Exception],
+    message: str,
+) -> None:
+    """Cardinality and representation family fail before split generation."""
+    import topobench.data.pipelines.hypergraph as module
+
+    split_loader = MagicMock()
+    monkeypatch.setattr(
+        HypergraphNodeDataPipeline,
+        "preprocess",
+        MagicMock(return_value=_FakePreprocessor(items)),
+    )
+    monkeypatch.setattr(module, "load_transductive_splits", split_loader)
+
+    with pytest.raises(error_type, match=message):
+        HypergraphNodeDataPipeline().build(
+            _hypergraph_pipeline_cfg(tmp_path)
+        )
+
+    split_loader.assert_not_called()
+
+
+def test_hypergraph_pipeline_validates_structure_before_split_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Malformed incidence fails before split machinery can attach masks."""
+    import topobench.data.pipelines.hypergraph as module
+
+    source = make_synthetic_hypergraph_data(seed=7)
+    for mask_name in ("train_mask", "val_mask", "test_mask"):
+        del source[mask_name]
+    source.hyperedge_index[0, 0] = source.num_nodes
+    before = _hypergraph_snapshot(source)
+    split_loader = MagicMock()
+    monkeypatch.setattr(
+        HypergraphNodeDataPipeline,
+        "preprocess",
+        MagicMock(return_value=_FakePreprocessor([source])),
+    )
+    monkeypatch.setattr(module, "load_transductive_splits", split_loader)
+
+    with pytest.raises(ValueError, match="node indices.*num_nodes"):
+        HypergraphNodeDataPipeline().build(
+            _hypergraph_pipeline_cfg(tmp_path)
+        )
+
+    split_loader.assert_not_called()
+    _assert_hypergraph_snapshot(source, before)
+
+
+def test_hypergraph_pipeline_rejects_non_transductive_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Hypergraph node classification does not accept inductive phases."""
+    import topobench.data.pipelines.hypergraph as module
+
+    split_loader = MagicMock()
+    monkeypatch.setattr(
+        HypergraphNodeDataPipeline,
+        "preprocess",
+        MagicMock(
+            return_value=_FakePreprocessor(
+                [make_synthetic_hypergraph_data()]
+            )
+        ),
+    )
+    monkeypatch.setattr(module, "load_transductive_splits", split_loader)
+
+    with pytest.raises(ValueError, match="requires transductive"):
+        HypergraphNodeDataPipeline().build(
+            _hypergraph_pipeline_cfg(
+                tmp_path,
+                learning_setting="inductive",
+            )
+        )
+
+    split_loader.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda data: data.__delattr__("train_mask"),
+        lambda data: setattr(data, "val_mask", data.val_mask.long()),
+        lambda data: setattr(data, "test_mask", data.train_mask.clone()),
+    ],
+    ids=["missing", "non-boolean", "overlapping"],
+)
+def test_hypergraph_pipeline_rejects_invalid_fixed_masks_atomically(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    mutate: Callable[[HypergraphData], None],
+) -> None:
+    """Invalid fixed masks never modify the cached/source hypergraph."""
+    source = make_synthetic_hypergraph_data(seed=7)
+    mutate(source)
+    before = _hypergraph_snapshot(source)
+    monkeypatch.setattr(
+        HypergraphNodeDataPipeline,
+        "preprocess",
+        MagicMock(return_value=_FakePreprocessor([source])),
+    )
+
+    with pytest.raises(ValueError, match="mask|split"):
+        HypergraphNodeDataPipeline().build(
+            _hypergraph_pipeline_cfg(tmp_path, split_type="fixed")
+        )
+
+    _assert_hypergraph_snapshot(source, before)
+
+
+def test_hypergraph_pipeline_rejects_invalid_split_parameters_atomically(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """An unsupported split never writes masks onto the source hypergraph."""
+    source = make_synthetic_hypergraph_data(seed=7)
+    for mask_name in ("train_mask", "val_mask", "test_mask"):
+        del source[mask_name]
+    before = _hypergraph_snapshot(source)
+    monkeypatch.setattr(
+        HypergraphNodeDataPipeline,
+        "preprocess",
+        MagicMock(return_value=_FakePreprocessor([source])),
+    )
+
+    with pytest.raises(NotImplementedError, match="split_type unsupported"):
+        HypergraphNodeDataPipeline().build(
+            _hypergraph_pipeline_cfg(tmp_path, split_type="unsupported")
+        )
+
+    _assert_hypergraph_snapshot(source, before)
+
+
+@pytest.mark.parametrize(
+    "dataset_name",
+    [
+        "20newsgroup",
+        "ModelNet40",
+        "Mushroom",
+        "NTU2012",
+        "SyntheticHypergraph",
+        "coauthorship_cora",
+        "coauthorship_dblp",
+        "cocitation_citeseer",
+        "cocitation_cora",
+        "cocitation_pubmed",
+        "zoo",
+    ],
+)
+def test_hypergraph_dataset_configs_compose_with_explicit_pipeline(
+    dataset_name: str,
+) -> None:
+    """Every surviving hypergraph dataset has legal one-graph loader settings."""
+    register_all_resolvers()
+    hydra.initialize(version_base="1.3", config_path="../../../configs")
+
+    cfg = hydra.compose(
+        config_name="run.yaml",
+        overrides=[
+            f"dataset=hypergraph/{dataset_name}",
+            "model=hypergraph/unignn2",
+            "data_pipeline=hypergraph_node",
+            "train=false",
+            "test=false",
+        ],
+    )
+
+    assert cfg.data_pipeline._target_ == (
+        "topobench.data.pipelines.HypergraphNodeDataPipeline"
+    )
+    assert cfg.dataset.loader.parameters.data_domain == "hypergraph"
+    assert cfg.dataset.split_params.learning_setting == "transductive"
+    assert cfg.dataset.dataloader_params.batch_size == 1
