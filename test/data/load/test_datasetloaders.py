@@ -28,7 +28,10 @@ class TestLoaders:
         self.test_splits = ["train", "val", "test"]
 
     # Existing helper methods remain the same
-    def _gather_config_files(self, base_dir: Path) -> list[str]:
+    def _gather_config_files(
+        self,
+        base_dir: Path,
+    ) -> list[tuple[str, str]]:
         """Gather all relevant config files.
 
         Parameters
@@ -38,8 +41,8 @@ class TestLoaders:
 
         Returns
         -------
-        List[str]
-          List of config file paths.
+        list[tuple[str, str]]
+          Dataset-domain and configuration-filename pairs.
         """
         config_files = []
         config_base_dir = base_dir / "configs/dataset"
@@ -66,7 +69,7 @@ class TestLoaders:
         }
 
         for dir_path in config_base_dir.iterdir():
-            curr_dir = str(dir_path).split("/")[-1]
+            curr_dir = dir_path.name
             if dir_path.is_dir():
                 config_files.extend(
                     [
@@ -79,7 +82,7 @@ class TestLoaders:
 
     def _load_dataset(
         self, data_domain: str, config_file: str
-    ) -> tuple[Any, dict]:
+    ) -> tuple[Any, str]:
         """Load dataset with given config file.
 
         Parameters
@@ -91,8 +94,8 @@ class TestLoaders:
 
         Returns
         -------
-        Tuple[Any, Dict]
-          Tuple containing the dataset and dataset directory.
+        tuple[Any, str]
+          Dataset and canonical dataset directory.
         """
         with hydra.initialize(
             version_base="1.3",

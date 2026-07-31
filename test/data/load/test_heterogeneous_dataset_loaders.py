@@ -80,8 +80,8 @@ def _offline_dblp_graph() -> HeteroData:
     data["author", "to", "paper"].edge_index = author_to_paper
     data["paper", "to", "author"].edge_index = author_to_paper.flip(0)
     data["paper", "to", "term"].edge_index = paper_to_term
-    data["term", "to", "paper"].edge_index = paper_to_term.flip(0)
     data["paper", "to", "conference"].edge_index = paper_to_conference
+    data["term", "to", "paper"].edge_index = paper_to_term.flip(0)
     data["conference", "to", "paper"].edge_index = paper_to_conference.flip(0)
     return data
 
@@ -242,6 +242,14 @@ def test_dblp_loader_uses_canonical_root_and_preserves_native_graph(
     actual = dataset[0]
     expected = _offline_dblp_graph()
     assert actual.metadata() == expected.metadata()
+    assert actual.edge_types == [
+        ("author", "to", "paper"),
+        ("paper", "to", "author"),
+        ("paper", "to", "term"),
+        ("paper", "to", "conference"),
+        ("term", "to", "paper"),
+        ("conference", "to", "paper"),
+    ]
     assert actual.provenance == expected.provenance
     assert actual["author"].y.dtype == torch.long
     for mask_name in ("train_mask", "val_mask", "test_mask"):
@@ -311,8 +319,14 @@ def test_dblp_loader_preprocessor_contract_preserves_official_supervision(
         "term": 1,
         "conference": 1,
     }
-    assert processed.edge_types == original.edge_types
-    assert len(processed.edge_types) == 6
+    assert processed.edge_types == [
+        ("author", "to", "paper"),
+        ("paper", "to", "author"),
+        ("paper", "to", "term"),
+        ("paper", "to", "conference"),
+        ("term", "to", "paper"),
+        ("conference", "to", "paper"),
+    ]
     assert processed.provenance == original.provenance
     assert torch.equal(processed["author"].x, original["author"].x)
     assert torch.equal(processed["paper"].x, original["paper"].x)
