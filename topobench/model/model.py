@@ -4,8 +4,13 @@ from typing import Any
 
 import torch
 from lightning import LightningModule
-from torch_geometric.data import Data
+from torch_geometric.data import Data, HeteroData
 from torchmetrics import MeanMetric
+
+from topobench.model.supervision import (
+    DefaultSupervisionAdapter,
+    SupervisionAdapter,
+)
 
 
 class TBModel(LightningModule):
@@ -27,6 +32,9 @@ class TBModel(LightningModule):
         The evaluator class (default: None).
     optimizer : Any, optional
         The optimizer class (default: None).
+    supervision_adapter : SupervisionAdapter, optional
+        Strategy selecting the predictions and labels supervised by each
+        phase. Defaults to the legacy task-level behavior.
     **kwargs : Any
         Additional keyword arguments.
     """
@@ -40,6 +48,7 @@ class TBModel(LightningModule):
         feature_encoder: torch.nn.Module | None = None,
         evaluator: Any = None,
         optimizer: Any = None,
+        supervision_adapter: SupervisionAdapter | None = None,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -47,7 +56,13 @@ class TBModel(LightningModule):
         # This line allows accessing init params with 'self.hparams' attribute
         # also ensures init params will be stored in ckpt
         self.save_hyperparameters(
-            logger=False, ignore=["backbone", "readout", "feature_encoder"]
+            logger=False,
+            ignore=[
+                "backbone",
+                "readout",
+                "feature_encoder",
+                "supervision_adapter",
+            ],
         )
 
         self.feature_encoder = (
@@ -71,6 +86,11 @@ class TBModel(LightningModule):
         # Loss function
         self.loss = loss
         self.task_level = self.readout.task_level
+        self.supervision_adapter = (
+            DefaultSupervisionAdapter(self.task_level)
+            if supervision_adapter is None
+            else supervision_adapter
+        )
 
         # Tracking best so far validation accuracy
         self.val_acc_best = MeanMetric()
@@ -81,13 +101,13 @@ class TBModel(LightningModule):
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(backbone={self.backbone}, readout={self.readout}, loss={self.loss}, feature_encoder={self.feature_encoder})"
 
-    def forward(self, batch: Data) -> dict:
+    def forward(self, batch: Data | HeteroData) -> dict[str, Any]:
         r"""Perform a forward pass through the model.
 
         Parameters
         ----------
-        batch : torch_geometric.data.Data
-            Batch object containing the batched data.
+        batch : torch_geometric.data.Data or torch_geometric.data.HeteroData
+            Homogeneous or heterogeneous batch containing the model inputs.
 
         Returns
         -------
@@ -105,13 +125,13 @@ class TBModel(LightningModule):
 
         return model_out
 
-    def model_step(self, batch: Data) -> dict:
+    def model_step(self, batch: Data | HeteroData) -> dict[str, Any]:
         r"""Perform a single model step on a batch of data.
 
         Parameters
         ----------
-        batch : torch_geometric.data.Data
-            Batch object containing the batched data.
+        batch : torch_geometric.data.Data or torch_geometric.data.HeteroData
+            Homogeneous or heterogeneous batch containing the model inputs.
 
         Returns
         -------
@@ -137,13 +157,15 @@ class TBModel(LightningModule):
 
         return model_out
 
-    def training_step(self, batch: Data, batch_idx: int) -> torch.Tensor:
+    def training_step(
+        self, batch: Data | HeteroData, batch_idx: int
+    ) -> torch.Tensor:
         r"""Perform a single training step on a batch of data.
 
         Parameters
         ----------
-        batch : torch_geometric.data.Data
-            Batch object containing the batched data.
+        batch : torch_geometric.data.Data or torch_geometric.data.HeteroData
+            Homogeneous or heterogeneous batch containing the model inputs.
         batch_idx : int
             The index of the current batch.
 
@@ -163,19 +185,21 @@ class TBModel(LightningModule):
             on_step=False,
             on_epoch=True,
             prog_bar=True,
-            batch_size=1,
+            batch_size=model_out["num_supervised_examples"],
         )
 
         # Return loss for backpropagation step
         return model_out["loss"]
 
-    def validation_step(self, batch: Data, batch_idx: int) -> None:
+    def validation_step(
+        self, batch: Data | HeteroData, batch_idx: int
+    ) -> None:
         r"""Perform a single validation step on a batch of data.
 
         Parameters
         ----------
-        batch : torch_geometric.data.Data
-            Batch object containing the batched data.
+        batch : torch_geometric.data.Data or torch_geometric.data.HeteroData
+            Homogeneous or heterogeneous batch containing the model inputs.
         batch_idx : int
             The index of the current batch.
         """
@@ -190,16 +214,16 @@ class TBModel(LightningModule):
             on_step=False,
             on_epoch=True,
             prog_bar=True,
-            batch_size=1,
+            batch_size=model_out["num_supervised_examples"],
         )
 
-    def test_step(self, batch: Data, batch_idx: int) -> None:
+    def test_step(self, batch: Data | HeteroData, batch_idx: int) -> None:
         r"""Perform a single test step on a batch of data.
 
         Parameters
         ----------
-        batch : torch_geometric.data.Data
-            Batch object containing the batched data.
+        batch : torch_geometric.data.Data or torch_geometric.data.HeteroData
+            Homogeneous or heterogeneous batch containing the model inputs.
         batch_idx : int
             The index of the current batch.
         """
@@ -214,40 +238,36 @@ class TBModel(LightningModule):
             on_step=False,
             on_epoch=True,
             prog_bar=True,
-            batch_size=1,
+            batch_size=model_out["num_supervised_examples"],
         )
 
-    def process_outputs(self, model_out: dict, batch: Data) -> dict:
+    def process_outputs(
+        self,
+        model_out: dict[str, Any],
+        batch: Data | HeteroData,
+    ) -> dict[str, Any]:
         r"""Handle model outputs.
 
         Parameters
         ----------
         model_out : dict
             Dictionary containing the model output.
-        batch : torch_geometric.data.Data
-            Batch object containing the batched data.
+        batch : torch_geometric.data.Data or torch_geometric.data.HeteroData
+            Homogeneous or heterogeneous batch containing phase supervision.
 
         Returns
         -------
         dict
             Dictionary containing the updated model output.
         """
-        if self.task_level == "node":
-            # Get the correct mask
-            if self.state_str == "Training":
-                mask = batch.train_mask
-            elif self.state_str == "Validation":
-                mask = batch.val_mask
-            elif self.state_str == "Test":
-                mask = batch.test_mask
-            else:
-                raise ValueError("Invalid state_str")
-
-            # Keep only train data points
-            for key, val in model_out.items():
-                if key in ["logits", "labels"]:
-                    model_out[key] = val[mask]
-
+        supervised = self.supervision_adapter.select(
+            model_out=model_out,
+            batch=batch,
+            phase=self.state_str,
+        )
+        model_out["logits"] = supervised.logits
+        model_out["labels"] = supervised.targets
+        model_out["num_supervised_examples"] = supervised.num_examples
         return model_out
 
     def log_metrics(self, mode=None):
