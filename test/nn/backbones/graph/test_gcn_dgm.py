@@ -29,6 +29,50 @@ def test_gcn_dgm_returns_only_tensor_embeddings_and_isolated_edges() -> None:
     assert torch.equal(batch[source], batch[target])
 
 
+def test_gcn_dgm_large_graph_is_invariant_to_singleton_cobatch() -> None:
+    torch.manual_seed(7)
+    model = GCNDGM(
+        in_channels=4,
+        hidden_channels=8,
+        num_layers=2,
+        k=3,
+    )
+    large_x = torch.randn(5, 4)
+
+    large_output = model(
+        large_x,
+        torch.empty((2, 0), dtype=torch.long),
+    )
+    assert model.last_auxiliary_edge_index is not None
+    assert model.last_auxiliary_logprobs is not None
+    large_edges = model.last_auxiliary_edge_index.clone()
+    large_logprobs = model.last_auxiliary_logprobs.clone()
+
+    batched_output = model(
+        torch.cat((large_x, torch.randn(1, 4))),
+        torch.empty((2, 0), dtype=torch.long),
+        batch=torch.tensor([0, 0, 0, 0, 0, 1]),
+    )
+
+    assert model.last_auxiliary_edge_index is not None
+    assert model.last_auxiliary_logprobs is not None
+    assert model.last_auxiliary_logprobs.ndim == 1
+    assert model.last_auxiliary_logprobs.numel() == 16
+    torch.testing.assert_close(
+        model.last_auxiliary_edge_index[:, :15],
+        large_edges,
+    )
+    torch.testing.assert_close(
+        model.last_auxiliary_logprobs[:15],
+        large_logprobs,
+    )
+    torch.testing.assert_close(batched_output[:5], large_output)
+    assert torch.equal(
+        model.last_auxiliary_edge_index[:, -1],
+        torch.tensor([5, 5]),
+    )
+
+
 def test_gcn_dgm_structure_parameters_receive_supervised_gradient() -> None:
     torch.manual_seed(9)
     model = GCNDGM(

@@ -73,6 +73,16 @@ class GraphMLPLoss(AbstractLoss):
         embeddings = model_out.get("x")
         if not isinstance(embeddings, Tensor) or embeddings.ndim != 2:
             raise TypeError("model_out['x'] must be a rank-2 tensor")
+        model_state = batch.get("model_state")
+        valid_model_states = ("Training", "Validation", "Test")
+        if not isinstance(model_state, str) or model_state not in valid_model_states:
+            raise ValueError(
+                "batch['model_state'] must be one of "
+                "'Training', 'Validation', or 'Test'; "
+                f"got {model_state!r}"
+            )
+        if model_state != "Training":
+            return embeddings.new_zeros(())
         edge_index = batch.get("edge_index")
         if (
             not isinstance(edge_index, Tensor)

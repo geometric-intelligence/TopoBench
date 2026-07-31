@@ -190,6 +190,36 @@ def _cycle_edges(node_count: int, offset: int = 0) -> torch.Tensor:
     ) + offset
 
 
+@pytest.mark.parametrize("model_state", ("Validation", "Test"))
+def test_graph_mlp_auxiliary_loss_is_zero_outside_training(
+    model_state: str,
+) -> None:
+    embeddings = torch.randn(3, 5, dtype=torch.float64)
+    loss = GraphMLPLoss()(
+        {"x": embeddings},
+        Data(model_state=model_state),
+    )
+
+    assert loss.shape == torch.Size([])
+    assert loss.dtype == embeddings.dtype
+    assert loss.device == embeddings.device
+    assert loss.item() == 0.0
+
+
+@pytest.mark.parametrize(
+    "batch",
+    (Data(), Data(model_state="training")),
+)
+def test_graph_mlp_auxiliary_loss_requires_valid_model_state(
+    batch: Data,
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match=r"batch\['model_state'\] must be one of",
+    ):
+        GraphMLPLoss()({"x": torch.randn(3, 5)}, batch)
+
+
 def test_graph_mlp_contrastive_loss_isolates_disjoint_graphs() -> None:
     torch.manual_seed(7)
     first_x = torch.randn(3, 5)
@@ -198,16 +228,19 @@ def test_graph_mlp_contrastive_loss_isolates_disjoint_graphs() -> None:
         x=first_x,
         edge_index=_cycle_edges(3),
         batch=torch.zeros(3, dtype=torch.long),
+        model_state="Training",
     )
     second = Data(
         x=second_x,
         edge_index=_cycle_edges(4),
         batch=torch.zeros(4, dtype=torch.long),
+        model_state="Training",
     )
     combined = Data(
         x=torch.cat((first_x, second_x)),
         edge_index=torch.cat((_cycle_edges(3), _cycle_edges(4, 3)), dim=1),
         batch=torch.tensor([0, 0, 0, 1, 1, 1, 1]),
+        model_state="Training",
     )
     loss = GraphMLPLoss(r_adj_power=2)
 
@@ -242,7 +275,8 @@ def test_gcn_dgm_auxiliary_edges_masks_and_gradients_are_batch_isolated() -> Non
     assert output.shape == (7, 8)
     assert auxiliary_edges is not None
     assert auxiliary_logprobs is not None
-    assert auxiliary_logprobs.size(0) == batch_index.numel()
+    assert auxiliary_logprobs.ndim == 1
+    assert auxiliary_logprobs.numel() == auxiliary_edges.size(1)
     assert torch.equal(
         batch_index[auxiliary_edges[0]],
         batch_index[auxiliary_edges[1]],

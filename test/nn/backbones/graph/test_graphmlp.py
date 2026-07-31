@@ -46,6 +46,7 @@ def test_graph_mlp_loss_rejects_cross_graph_edges() -> None:
         x=torch.randn(4, 8),
         edge_index=torch.tensor([[0, 1], [2, 3]], dtype=torch.long),
         batch=torch.tensor([0, 0, 1, 1], dtype=torch.long),
+        model_state="Training",
     )
 
     with pytest.raises(ValueError, match="crosses graph boundaries"):

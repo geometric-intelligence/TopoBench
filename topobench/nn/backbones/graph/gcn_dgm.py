@@ -100,17 +100,17 @@ class GCNDGM(nn.Module):
             torch.nonzero(batch == graph_id, as_tuple=False).flatten()
             for graph_id in range(graph_count)
         ]
-        effective_k = min(
-            self.k,
-            min(max(int(nodes.numel()) - 1, 1) for nodes in graph_nodes),
-        )
         edges: list[Tensor] = []
         edge_weights: list[Tensor] = []
-        logprobs = structure.new_empty((structure.size(0), effective_k))
+        logprobs: list[Tensor] = []
         temperature = self.log_temperature.exp().clamp_min(1e-6)
 
         for nodes in graph_nodes:
             local_structure = structure[nodes]
+            effective_k = min(
+                self.k,
+                max(int(nodes.numel()) - 1, 1),
+            )
             if nodes.numel() == 1:
                 local_targets = torch.zeros(
                     (1, effective_k),
@@ -154,11 +154,11 @@ class GCNDGM(nn.Module):
                 )
             )
             edge_weights.append(local_logprobs.exp().reshape(-1))
-            logprobs[nodes] = local_logprobs
+            logprobs.append(local_logprobs.reshape(-1))
 
         edge_index = torch.cat(edges, dim=1)
         weights = torch.cat(edge_weights)
-        return edge_index, weights, logprobs
+        return edge_index, weights, torch.cat(logprobs)
 
     def forward(
         self,
