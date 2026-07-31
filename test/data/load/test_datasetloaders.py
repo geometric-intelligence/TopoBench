@@ -183,4 +183,4 @@ def test_download_gated_datasets_are_enumerated_only_after_opt_in(
     )
     filenames = {filename for _, filename in gathered}
 
-    assert "DBLP.yaml" in filenames
+    assert download_gated_datasets.issubset(filenames)

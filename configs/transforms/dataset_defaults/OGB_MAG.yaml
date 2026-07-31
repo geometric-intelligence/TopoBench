@@ -1,0 +1,6 @@
+defaults:
+  - data_manipulations@reverse_relations: heterogeneous_to_undirected
+
+reverse_relations:
+  merge: false
+  reduce: add

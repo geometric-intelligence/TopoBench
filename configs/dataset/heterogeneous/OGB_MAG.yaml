@@ -1,0 +1,34 @@
+loader:
+  _target_: topobench.data.loaders.OGBMAGDatasetLoader
+  parameters:
+    data_domain: heterogeneous
+    data_type: academic
+    data_name: OGB_MAG
+    data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+    preprocess: metapath2vec
+
+parameters:
+  task: classification
+  task_level: node
+  target_node_type: paper
+  num_classes: 349
+  loss_type: cross_entropy
+  monitor_metric: accuracy
+
+split_params:
+  learning_setting: transductive
+  source: official_masks
+
+dataloader_params:
+  mode: neighbor
+  batch_size: 128
+  num_neighbors: [15, 10]
+  num_workers: 4
+  pin_memory: true
+  persistent_workers: true
+  train_shuffle: true
+  replace: false
+  subgraph_type: directional
+  filter_per_worker: false
+  evaluation_protocol: sampled_neighbor_fixed
+  evaluation_seed: ${seed}
