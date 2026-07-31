@@ -22,8 +22,7 @@ backbone:
   dropout: 0.0
   # Surgical regularization: dropout on the restriction-map learner
   # input only (learned transports), leaving the signal path clean —
-  # signal-path dropout corrupts the rank-2 count pathway (see
-  # docs/BATTLE_PLAN.md experiment log).
+  # measured: signal-path dropout corrupts the rank-2 count pathway.
   mlp_dropout: 0.5
   # Spectral filter basis: "monomial" (raw powers of the normalized
   # Sheaf Laplacian), "chebyshev" (T_k(L^ - I), better conditioned)
