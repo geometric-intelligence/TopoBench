@@ -71,33 +71,57 @@ class SlicedWassersteinPooling(nn.Module):
             )
             return self.signature_to_features(signature)
 
-        projected = x @ self.projections.to(dtype=x.dtype).T
-        signatures = x.new_zeros(
-            num_groups,
-            self.num_projections,
-            self.num_reference_points,
+        projected = x @ self.projections.to(device=x.device, dtype=x.dtype).T
+        counts = torch.bincount(group_index, minlength=num_groups)
+        max_count = int(counts.max().item())
+
+        if max_count == 0:
+            signature = x.new_zeros(
+                num_groups,
+                self.num_projections * self.num_reference_points,
+            )
+            return self.signature_to_features(signature)
+
+        perm = torch.argsort(group_index, stable=True)
+        sorted_group_index = group_index[perm]
+        sorted_projected = projected[perm]
+
+        starts = torch.zeros(num_groups + 1, dtype=torch.long, device=x.device)
+        torch.cumsum(counts, dim=0, out=starts[1:])
+        item_starts = starts[sorted_group_index]
+        intra_index = torch.arange(x.shape[0], device=x.device) - item_starts
+
+        padded = torch.full(
+            (num_groups, max_count, self.num_projections),
+            fill_value=float("inf"),
+            device=x.device,
+            dtype=x.dtype,
         )
+        padded[sorted_group_index, intra_index] = sorted_projected
 
-        for group in range(num_groups):
-            values = projected[group_index == group]
-            if values.numel() == 0:
-                continue
+        sorted_padded, _ = padded.sort(dim=1)
 
-            values, _ = values.sort(dim=0)
-            if values.shape[0] == 1:
-                signatures[group] = values.expand(
-                    self.num_reference_points,
-                    self.num_projections,
-                ).T
-                continue
+        r_grid = self.reference_positions.to(device=x.device, dtype=x.dtype)
+        n_minus_1 = (counts - 1).clamp(min=0).to(dtype=x.dtype)
+        positions = n_minus_1.unsqueeze(1) * r_grid.unsqueeze(0)
+        lower = positions.floor().long().clamp(max=max_count - 1)
+        upper = positions.ceil().long().clamp(max=max_count - 1)
+        weight = (positions - lower.to(dtype=x.dtype)).unsqueeze(-1)
 
-            positions = self.reference_positions.to(values.device)
-            positions = positions * (values.shape[0] - 1)
-            lower = positions.floor().long()
-            upper = positions.ceil().long()
-            weight = (positions - lower).to(dtype=values.dtype).unsqueeze(-1)
-            sampled = values[lower] * (1 - weight) + values[upper] * weight
-            signatures[group] = sampled.T
+        P = self.num_projections
+        R = self.num_reference_points
+        lower_expanded = lower.unsqueeze(-1).expand(num_groups, R, P)
+        upper_expanded = upper.unsqueeze(-1).expand(num_groups, R, P)
+
+        val_lower = torch.gather(sorted_padded, dim=1, index=lower_expanded)
+        val_upper = torch.gather(sorted_padded, dim=1, index=upper_expanded)
+        sampled = val_lower * (1.0 - weight) + val_upper * weight
+
+        signatures = sampled.transpose(1, 2)
+        mask = (counts > 0).unsqueeze(-1).unsqueeze(-1)
+        signatures = torch.where(
+            mask, signatures, torch.zeros_like(signatures)
+        )
 
         signatures = signatures.flatten(start_dim=1)
         return self.signature_to_features(signatures)
