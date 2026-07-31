@@ -258,6 +258,25 @@ class TestHeterogeneousNodeSupervisionAdapter:
         assert selected.num_examples == int(mask.sum())
         assert model_out == original
 
+    def test_full_batch_mask_preserves_gradient_connection(self):
+        """Boolean-mask selection remains connected to the original logits."""
+        batch = _heterogeneous_batch()
+        logits = torch.arange(12, dtype=torch.float32).reshape(6, 2)
+        logits.requires_grad_()
+
+        selected = HeterogeneousNodeSupervisionAdapter(
+            "paper", "full_batch"
+        ).select(
+            {"logits": logits, "labels": torch.arange(6)},
+            batch,
+            "Training",
+        )
+        selected.logits.sum().backward()
+
+        expected_gradient = torch.zeros_like(logits)
+        expected_gradient[batch["paper"].train_mask] = 1
+        assert torch.equal(logits.grad, expected_gradient)
+
     @pytest.mark.parametrize("phase", ["Training", "Validation", "Test"])
     def test_neighbor_selects_only_leading_target_seeds_for_every_phase(
         self, phase
@@ -288,6 +307,26 @@ class TestHeterogeneousNodeSupervisionAdapter:
 
         assert selected.num_examples == 2
         assert type(selected.num_examples) is int
+
+    def test_neighbor_slice_preserves_gradient_connection(self):
+        """Leading-seed slicing remains connected to the original logits."""
+        batch = _heterogeneous_batch()
+        batch["paper"].batch_size = 2
+        logits = torch.arange(12, dtype=torch.float32).reshape(6, 2)
+        logits.requires_grad_()
+
+        selected = HeterogeneousNodeSupervisionAdapter(
+            "paper", "neighbor"
+        ).select(
+            {"logits": logits, "labels": torch.arange(6)},
+            batch,
+            "Validation",
+        )
+        selected.logits.sum().backward()
+
+        expected_gradient = torch.zeros_like(logits)
+        expected_gradient[:2] = 1
+        assert torch.equal(logits.grad, expected_gradient)
 
     def test_rejects_non_heterogeneous_batch(self):
         """Heterogeneous supervision cannot silently accept homogeneous data."""

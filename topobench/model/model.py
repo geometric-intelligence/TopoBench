@@ -34,9 +34,19 @@ class TBModel(LightningModule):
         The optimizer class (default: None).
     supervision_adapter : SupervisionAdapter, optional
         Strategy selecting the predictions and labels supervised by each
-        phase. Defaults to the legacy task-level behavior.
+        phase. Defaults to the legacy task-level behavior. The adapter is a
+        runtime strategy and is intentionally excluded from checkpoint
+        hyperparameters; checkpoint reruns must reconstruct it from the Hydra
+        or run configuration.
     **kwargs : Any
         Additional keyword arguments.
+
+    Notes
+    -----
+    Loss logging weights each epoch reduction by the number of supervised
+    examples on the current process. Heterogeneous v1 does not claim globally
+    weighted distributed aggregation, and ``sync_dist`` intentionally retains
+    Lightning's default value of ``False``.
     """
 
     def __init__(
@@ -179,6 +189,8 @@ class TBModel(LightningModule):
 
         # Update and log metrics
         loss_value = model_out["loss"].item()
+        # This reduction weight is local to the current process; see the class
+        # note for the intentionally unsupported globally weighted DDP case.
         self.log(
             "train/loss",
             loss_value,

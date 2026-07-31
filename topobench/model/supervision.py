@@ -27,7 +27,13 @@ _PHASE_MASK = {
 
 @dataclass(frozen=True)
 class SupervisedBatch:
-    """Predictions, targets, and reduction weight owned by one model step."""
+    """Frozen field container for one model step's supervised tensors.
+
+    Freezing prevents field reassignment; it does not make tensor contents
+    deeply immutable. Logits and targets are intentionally returned without
+    cloning or detaching. They therefore either alias the input tensors or
+    remain autograd-connected masked/sliced selections.
+    """
 
     logits: Tensor
     targets: Tensor
