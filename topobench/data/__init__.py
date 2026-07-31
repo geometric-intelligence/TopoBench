@@ -10,6 +10,13 @@ from .heterogeneous import (
     HeterogeneousDataSpec,
     validate_heterogeneous_node_data,
 )
+from .hypergraph import (
+    HYPERGRAPH_CACHE_FILENAME,
+    HYPERGRAPH_REPRESENTATION_VERSION,
+    HypergraphData,
+    validate_hypergraph_node_data,
+    validate_hypergraph_structure,
+)
 
 __all__ = [
     "GRAPH_DATASET_MANIFEST",
@@ -18,4 +25,9 @@ __all__ = [
     "qualify_graph_dataset",
     "HeterogeneousDataSpec",
     "validate_heterogeneous_node_data",
+    "HYPERGRAPH_CACHE_FILENAME",
+    "HYPERGRAPH_REPRESENTATION_VERSION",
+    "HypergraphData",
+    "validate_hypergraph_node_data",
+    "validate_hypergraph_structure",
 ]

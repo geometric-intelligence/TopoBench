@@ -17,6 +17,10 @@ if "PROJECT_ROOT" not in os.environ:
 import pytest
 import torch
 import torch_geometric
+from topobench.data import HypergraphData
+from topobench.data.datasets.synthetic_hypergraph_dataset import (
+    make_synthetic_hypergraph_data,
+)
 from topobench.transforms.liftings.graph2simplicial import (
     SimplicialCliqueLifting
 )
@@ -43,6 +47,12 @@ def mocker_fixture(mocker):
         A pytest mocker.
     """
     return mocker
+
+
+@pytest.fixture
+def synthetic_hypergraph() -> HypergraphData:
+    """Return a fresh clone of the deterministic production hypergraph."""
+    return make_synthetic_hypergraph_data().clone()
 
 
 @pytest.fixture

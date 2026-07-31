@@ -4,6 +4,7 @@ from .citation_hypergraph_dataset_loader import (
     CitationHypergraphDatasetLoader,
 )
 from .hypergraph_dataset_loader import HypergraphDatasetLoader
+from .synthetic import SyntheticHypergraphDatasetLoader
 
 HYPERGRAPH_LOADERS = dict(
     sorted(
@@ -12,6 +13,7 @@ HYPERGRAPH_LOADERS = dict(
             for loader_class in (
                 CitationHypergraphDatasetLoader,
                 HypergraphDatasetLoader,
+                SyntheticHypergraphDatasetLoader,
             )
         }.items()
     )

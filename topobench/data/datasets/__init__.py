@@ -7,6 +7,10 @@ from .synthetic_heterogeneous_dataset import (
     SyntheticHeterogeneousDataset,
     make_synthetic_heterogeneous_data,
 )
+from .synthetic_hypergraph_dataset import (
+    SyntheticHypergraphDataset,
+    make_synthetic_hypergraph_data,
+)
 from .us_county_demos_dataset import USCountyDemosDataset
 
 PLANETOID_DATASETS = ["Cora", "citeseer", "PubMed"]
@@ -49,6 +53,7 @@ MANUAL_DATASETS = dict(
                 HypergraphDataset,
                 SyntheticGraphDataset,
                 SyntheticHeterogeneousDataset,
+                SyntheticHypergraphDataset,
                 USCountyDemosDataset,
             )
         }.items()
@@ -66,4 +71,5 @@ __all__ = [
     *MANUAL_DATASETS,
     "MANUAL_DATASETS",
     "make_synthetic_heterogeneous_data",
+    "make_synthetic_hypergraph_data",
 ]

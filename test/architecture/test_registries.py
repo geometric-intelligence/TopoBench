@@ -25,6 +25,7 @@ EXPECTED_DATASETS = {
     "HypergraphDataset",
     "SyntheticGraphDataset",
     "SyntheticHeterogeneousDataset",
+    "SyntheticHypergraphDataset",
     "USCountyDemosDataset",
 }
 EXPECTED_GRAPH_LOADERS = {
@@ -51,6 +52,7 @@ EXPECTED_HETEROGENEOUS_LOADERS = {
 EXPECTED_HYPERGRAPH_LOADERS = {
     "CitationHypergraphDatasetLoader",
     "HypergraphDatasetLoader",
+    "SyntheticHypergraphDatasetLoader",
 }
 
 
@@ -261,4 +263,5 @@ def test_registry_modules_have_narrow_public_exports() -> None:
         *datasets.MANUAL_DATASETS,
         "MANUAL_DATASETS",
         "make_synthetic_heterogeneous_data",
+        "make_synthetic_hypergraph_data",
     ]

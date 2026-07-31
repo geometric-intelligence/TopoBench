@@ -1,0 +1,33 @@
+# Dataset loader config
+loader:
+  _target_: topobench.data.loaders.hypergraph.synthetic.SyntheticHypergraphDatasetLoader
+  parameters:
+    data_domain: hypergraph
+    data_type: synthetic
+    data_name: SyntheticHypergraph
+    data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
+    seed: ${seed}
+    num_nodes: 12
+    num_hyperedges: 5
+
+# Dataset parameters
+parameters:
+  num_features: 4
+  num_classes: 2
+  num_nodes: 12
+  task: classification
+  loss_type: cross_entropy
+  monitor_metric: accuracy
+  task_level: node
+  feature_policy: continuous
+
+# Splits
+split_params:
+  learning_setting: transductive
+  split_type: fixed
+
+# Dataloader parameters
+dataloader_params:
+  batch_size: 1
+  num_workers: 0
+  pin_memory: False
