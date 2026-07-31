@@ -1471,28 +1471,38 @@ def test_encoder_ignores_edge_attributes_and_weights():
 def test_encoder_treats_a_batch_as_a_disjoint_union(family, orientation):
     """A batched graph gives each component the same output as on its own.
 
-    The operator is block diagonal across components, so this must hold
-    exactly. It also guards against any structural computation -- degrees or
-    the induced orientation -- leaking across graphs in a batch.
+    The operator is block diagonal across components, so this holds exactly in
+    exact arithmetic. It also guards against any structural computation --
+    degrees or the induced orientation -- leaking across graphs in a batch.
+
+    Run in float64. The claim is about block structure, not about a float32
+    error budget, and the ``general`` family reaches ``block_inv_sqrt``, whose
+    ``eigh`` returns an arbitrary basis on a degenerate degree block. The
+    reassembled matrix function is basis independent, but the route to it is
+    not, so the residual is LAPACK dependent: ~1e-6 locally against ~1e-5 on
+    CI, either side of a float32 tolerance. In float64 it drops to ~1e-13 for
+    every family, which tests the structure rather than the arithmetic.
     """
     torch.manual_seed(2)
     first = torch.tensor([[0, 1, 0, 2, 1, 2], [1, 0, 2, 0, 2, 1]])
     second = torch.tensor([[0, 1, 1, 2], [1, 0, 2, 1]])
     n_first, n_second = 3, 4
-    x_first = torch.randn(n_first, 12)
-    x_second = torch.randn(n_second, 12)
-    model = encoder(
-        sheaf_type=family, d=2, orientation=orientation
-    ).eval()
+    x_first = torch.randn(n_first, 12, dtype=torch.float64)
+    x_second = torch.randn(n_second, 12, dtype=torch.float64)
+    model = (
+        encoder(sheaf_type=family, d=2, orientation=orientation)
+        .double()
+        .eval()
+    )
     joint = model(
         torch.cat([x_first, x_second]),
         torch.cat([first, second + n_first], dim=1),
     )
     assert torch.allclose(
-        joint[:n_first], model(x_first, first), atol=1e-5
+        joint[:n_first], model(x_first, first), atol=1e-9
     )
     assert torch.allclose(
-        joint[n_first:], model(x_second, second), atol=1e-5
+        joint[n_first:], model(x_second, second), atol=1e-9
     )
 
 
