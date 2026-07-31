@@ -21,6 +21,7 @@ from topobench.utils import (
     get_metric_value,
     instantiate_callbacks,
     instantiate_loggers,
+    instantiate_model,
     log_hyperparameters,
     task_wrapper,
 )
@@ -113,11 +114,9 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
 
     # Model for us is Network + logic: inputs backbone, readout, losses
     log.info(f"Instantiating model <{cfg.model._target_}>")
-    model: LightningModule = hydra.utils.instantiate(
-        cfg.model,
-        evaluator=cfg.evaluator,
-        optimizer=cfg.optimizer,
-        loss=cfg.loss,
+    model: LightningModule = instantiate_model(
+        cfg,
+        data_spec=pipeline_output.data_spec,
     )
 
     log.info("Instantiating callbacks...")

@@ -1,0 +1,37 @@
+_target_: topobench.model.TBModel
+
+model_name: heterosage
+model_domain: heterogeneous
+
+feature_encoder:
+  _target_: topobench.nn.encoders.HeterogeneousNodeFeatureEncoder
+  input_channels: null
+  hidden_channels: 64
+  activation: relu
+  dropout: 0.0
+
+backbone:
+  _target_: topobench.nn.backbones.heterogeneous.HeteroSAGEBackbone
+  metadata: null
+  hidden_channels: ${model.feature_encoder.hidden_channels}
+  num_layers: 2
+  dropout: 0.1
+  activation: relu
+
+backbone_wrapper:
+  _target_: topobench.nn.wrappers.heterogeneous.HeterogeneousWrapper
+  _partial_: true
+  target_node_type: null
+
+readout:
+  _target_: topobench.nn.readouts.HeterogeneousNodeReadout
+  target_node_type: null
+  hidden_channels: ${model.feature_encoder.hidden_channels}
+  out_channels: null
+
+supervision_adapter:
+  _target_: topobench.model.HeterogeneousNodeSupervisionAdapter
+  target_node_type: null
+  mode: null
+
+compile: false

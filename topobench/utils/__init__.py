@@ -6,6 +6,7 @@ from topobench.utils.instantiators import (
 from topobench.utils.logging_utils import (
     log_hyperparameters,
 )
+from topobench.utils.model_instantiation import instantiate_model
 from topobench.utils.pylogger import RankedLogger
 from topobench.utils.rich_utils import (
     enforce_tags,
@@ -24,6 +25,7 @@ __all__ = [
     "get_metric_value",
     "instantiate_callbacks",
     "instantiate_loggers",
+    "instantiate_model",
     "log_hyperparameters",
     "print_config_tree",
     "task_wrapper",

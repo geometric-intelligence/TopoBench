@@ -634,17 +634,21 @@ def test_production_run_consumes_pipeline_output(
         del kwargs
         if config is cfg.data_pipeline:
             return pipeline
-        if config is cfg.model:
-            return model
         if config is cfg.trainer:
             return trainer
         raise AssertionError(f"Unexpected instantiate call: {config!r}")
 
     instantiate_spy = MagicMock(side_effect=instantiate)
+    instantiate_model_spy = MagicMock(return_value=model)
     monkeypatch.setattr(
         run_module.hydra.utils,
         "instantiate",
         instantiate_spy,
+    )
+    monkeypatch.setattr(
+        run_module,
+        "instantiate_model",
+        instantiate_model_spy,
     )
     monkeypatch.setattr(
         run_module,
@@ -668,12 +672,14 @@ def test_production_run_consumes_pipeline_output(
     assert instantiate_spy.call_args_list[:2] == [
         call(cfg.data_pipeline),
         call(
-            cfg.model,
-            evaluator=cfg.evaluator,
-            optimizer=cfg.optimizer,
-            loss=cfg.loss,
+            cfg.trainer,
+            callbacks=callbacks,
+            logger=[wandb_logger],
+            num_sanity_val_steps=0,
+            log_every_n_steps=1,
         ),
     ]
+    instantiate_model_spy.assert_called_once_with(cfg, data_spec=data_spec)
     pipeline.build.assert_called_once_with(cfg)
     assert objects["datamodule"] is datamodule
     assert objects["data_spec"] is data_spec
