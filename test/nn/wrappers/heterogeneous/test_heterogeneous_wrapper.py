@@ -22,6 +22,7 @@ from topobench.nn.backbones.heterogeneous import (
     HGTBackbone,
 )
 from topobench.nn.encoders import HeterogeneousNodeFeatureEncoder
+from topobench.nn.readouts import HeterogeneousNodeReadout
 from topobench.nn.wrappers.heterogeneous import HeterogeneousWrapper
 from topobench.nn.wrappers.heterogeneous.heterogeneous_wrapper import (
     HeterogeneousWrapper as CanonicalWrapper,
@@ -234,6 +235,66 @@ def test_wrapper_preserves_autograd_from_every_typed_output() -> None:
     sum(features.sum() for features in result["x_dict"].values()).backward()
 
     assert all(features.grad is not None for features in data.x_dict.values())
+
+
+@pytest.mark.parametrize("backbone_type", [HGTBackbone, HeteroSAGEBackbone])
+def test_surrogate_metadata_runs_complete_trainable_model_path(
+    backbone_type: type[HGTBackbone] | type[HeteroSAGEBackbone],
+) -> None:
+    """External names survive encoder, backbone, wrapper, and readout."""
+    surrogate_target = "target\ud800.type"
+    context_type = "context\udfff.type"
+    data = HeteroData()
+    target_features = torch.randn(4, 3, requires_grad=True)
+    context_features = torch.randn(3, 2, requires_grad=True)
+    data[surrogate_target].x = target_features
+    data[surrogate_target].y = torch.tensor([0, 1, 0, 1])
+    data[context_type].x = context_features
+    data[
+        surrogate_target, "links\ud800.to", context_type
+    ].edge_index = torch.tensor([[0, 1, 2, 3], [0, 1, 2, 0]])
+    data[
+        context_type, "returns\udfff.to", surrogate_target
+    ].edge_index = torch.tensor([[0, 1, 2, 0], [0, 1, 2, 3]])
+    metadata = data.metadata()
+    encoder = HeterogeneousNodeFeatureEncoder(
+        input_channels={surrogate_target: 3, context_type: 2},
+        hidden_channels=HIDDEN_CHANNELS,
+        activation="relu",
+        dropout=0.0,
+    )
+    backbone = make_backbone(backbone_type, data)
+    wrapper = HeterogeneousWrapper(backbone, surrogate_target)
+    readout = HeterogeneousNodeReadout(
+        surrogate_target,
+        HIDDEN_CHANNELS,
+        2,
+    )
+
+    encoded = encoder(data)
+    model_out = wrapper(encoded)
+    result = readout(model_out=model_out, batch=data)
+    result["logits"].square().mean().backward()
+
+    assert data.metadata() == metadata
+    assert tuple(data.node_types) == (surrogate_target, context_type)
+    assert tuple(model_out["x_dict"]) == (surrogate_target, context_type)
+    assert model_out["labels"] is data[surrogate_target].y
+    assert result["logits"].shape == (4, 2)
+    assert target_features.grad is not None
+    assert context_features.grad is not None
+    for component in (encoder, backbone, readout):
+        gradients = [
+            parameter.grad
+            for parameter in component.parameters()
+            if parameter.requires_grad
+        ]
+        assert gradients
+        assert any(gradient is not None for gradient in gradients)
+        assert all(
+            gradient is None or torch.isfinite(gradient).all()
+            for gradient in gradients
+        )
 
 
 @pytest.mark.parametrize(

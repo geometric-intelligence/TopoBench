@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import io
 import math
 import pickle
 import subprocess
@@ -316,6 +317,61 @@ def test_state_dict_strictly_loads_across_equivalent_metadata_order() -> None:
             second_projection.weight,
         )
         assert torch.equal(first_projection.bias, second_projection.bias)
+
+
+def test_lone_surrogate_node_type_forward_and_checkpoint_roundtrip() -> None:
+    """Projection aliases cover every Python string accepted by PyG."""
+    surrogate_node = "unsafe\ud800.node"
+    input_channels = OrderedDict(((surrogate_node, 3), ("target", 2)))
+
+    def make_surrogate_data() -> HeteroData:
+        generator = torch.Generator().manual_seed(29)
+        data = HeteroData()
+        data[surrogate_node].x = torch.randn(4, 3, generator=generator)
+        data["target"].x = torch.randn(2, 2, generator=generator)
+        return data
+
+    encoder = HeterogeneousNodeFeatureEncoder(
+        input_channels=input_channels,
+        hidden_channels=5,
+        activation="id",
+        dropout=0.0,
+    ).eval()
+    expected = encoder(make_surrogate_data())
+    expected_key = (
+        "_projections.node_type_"
+        f"{surrogate_node.encode('utf-8', errors='surrogatepass').hex()}"
+    )
+    checkpoint = io.BytesIO()
+    torch.save(encoder.state_dict(), checkpoint)
+    checkpoint.seek(0)
+    restored = HeterogeneousNodeFeatureEncoder(
+        input_channels=input_channels,
+        hidden_channels=5,
+        activation="id",
+        dropout=0.0,
+    ).eval()
+    load_result = restored.load_state_dict(
+        torch.load(checkpoint, weights_only=True),
+        strict=True,
+    )
+    actual = restored(make_surrogate_data())
+
+    assert load_result.missing_keys == []
+    assert load_result.unexpected_keys == []
+    assert set(encoder.state_dict()) == {
+        f"{expected_key}.weight",
+        f"{expected_key}.bias",
+        "_projections.node_type_746172676574.weight",
+        "_projections.node_type_746172676574.bias",
+    }
+    assert tuple(actual.node_types) == (surrogate_node, "target")
+    assert tuple(actual.x_dict) == (surrogate_node, "target")
+    for node_type in input_channels:
+        torch.testing.assert_close(
+            actual[node_type].x,
+            expected[node_type].x,
+        )
 
 
 def test_projection_lookup_reports_unknown_external_node_type() -> None:

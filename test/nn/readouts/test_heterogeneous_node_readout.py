@@ -10,7 +10,6 @@ import sys
 import numpy as np
 import pytest
 import torch
-from torch import Tensor
 from torch_geometric.data import Data, HeteroData
 from torch_geometric.loader import NeighborLoader
 

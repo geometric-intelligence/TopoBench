@@ -56,7 +56,8 @@ def _projection_module_key(node_type: str) -> str:
     only on the semantic node type, so checkpoint keys remain stable when
     equivalent metadata is supplied in another insertion order.
     """
-    return f"node_type_{node_type.encode('utf-8').hex()}"
+    encoded = node_type.encode("utf-8", errors="surrogatepass")
+    return f"node_type_{encoded.hex()}"
 
 
 def _normalize_dropout(dropout: object) -> float:
