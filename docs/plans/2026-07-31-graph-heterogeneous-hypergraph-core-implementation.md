@@ -33,7 +33,11 @@ uv run pytest \
   test/pipeline/test_heterogeneous_pipeline.py -q
 ```
 
-Expected: all selected tests pass; tests that require optional sampler extensions may skip with their existing reason.
+Expected during Tasks 1-14: all selected tests pass; tests that require an
+optional sampler extension may retain their existing skip while unrelated
+code is being migrated. At the Task 15 dependency gate and Task 18 release
+gate, the real `NeighborLoader` consumption test is mandatory and must not
+skip.
 
 ## Target runtime contracts
 
@@ -59,6 +63,82 @@ train_mask, val_mask, test_mask, batch
 ```
 
 No surviving production module or configuration may use `x_0`, `batch_0`, `x_1`, `incidence_hyperedges`, `num_cell_dimensions`, or a lifting selector.
+
+## Reviewed implementation decisions
+
+The following decisions close gaps found during the critical plan review and
+override any legacy behavior encountered during implementation:
+
+- Inductive graph splits are index-backed `Subset`/dataset views. They are not
+  materialized as `list[Data]` and are not copied again by the data module.
+- Transductive node splits are represented as full-length, mutually disjoint
+  boolean masks. Raw index arrays never cross the split boundary under a
+  `*_mask` name.
+- Epoch loss reductions are weighted by the number of supervised labels:
+  graph labels for inductive graph tasks, selected nodes for transductive node
+  tasks, and target seeds for sampled heterogeneous tasks.
+- Hypergraph split generation occurs before hypergraph validation. Existing
+  raw loaders are not expected to provide phase masks.
+- Native hypergraph caches use a new schema/versioned filename. Old rank-based
+  `data.pt` artifacts are rejected or bypassed, never silently reused.
+- `torch-sparse` remains a required dependency until a separately tested
+  `pyg-lib` migration replaces it; heterogeneous `NeighborLoader` batching is
+  a release gate.
+- Empty hyperedges are unsupported in v1. Batched hypergraph models infer the
+  total hyperedge count from contiguous `hyperedge_index` or explicitly sum
+  validated per-example counts.
+- GCN, GAT, GIN, GPS, and NSD are target graph models. GraphMLP and GCN-DGM are
+  conditional and remain only if their dedicated native-batching lifecycle
+  tests pass.
+
+### Dataset feature policy
+
+Every retained dataset must be assigned exactly one pre-model feature policy:
+
+| Input feature condition | Required policy |
+| --- | --- |
+| Rank-2 floating `x` | Validate and project |
+| Integer categorical `x` | Deterministic one-hot encoding or a model-owned embedding |
+| Missing `x` | Deterministic constant or degree features |
+| Sparse `x` | Explicitly densify with a size guard, or reject with a documented reason |
+| Edge attributes | Pass only to models declaring support; otherwise document that they are ignored |
+
+The retained dataset/config audit records the policy, task level, split type,
+and one representative lifecycle test. Configuration composition alone is not
+evidence that a dataset is supported.
+
+### Initial graph-model capability matrix
+
+| Model selector | Graph-level inductive | Node transductive | Native batching decision |
+| --- | --- | --- | --- |
+| `graph/gcn` | required | required | retain |
+| `graph/gat` | required | required | retain |
+| `graph/gin` | required | required | retain |
+| `graph/gps` | required | required | retain after focused smoke |
+| `graph/nsd` | required | required | retain after focused smoke |
+| `graph/graph_mlp` | conditional | required | retain only after disjoint-batch loss test |
+| `graph/gcn_dgm` | conditional | required | retain only after mask/batch isolation test |
+
+If a conditional model fails its gate, remove its source/config/tests in the
+model-pruning stage. Do not weaken the gate or publish configuration-only
+support.
+
+### Stop/go gates and known risks
+
+| Risk | Required evidence | Decision if evidence fails |
+| --- | --- | --- |
+| Shared trainer changes regress heterogeneous learning | Full/full-batch and neighbor-sampled heterogeneous lifecycle sentinels | Stop the current task and repair before committing |
+| Graph config composes but model is incompatible with the task or batching mode | Capability-matrix lifecycle test using two graphs or the synthetic node graph | Do not advertise the pair; remove a conditional model if its required gate fails |
+| Featureless/categorical datasets silently change semantics | Dataset-policy audit plus deterministic repeat test | Reject the dataset/config until an explicit policy exists |
+| Hypergraph batching offsets only work for equal-size examples | Unequal-node/unequal-hyperedge batch test with reconstruction of both examples | Stop before model migration |
+| Old rank-based cache is loaded as native data | Cache-version test with an old `data.pt` sentinel | Bypass/regenerate; never add a compatibility guess |
+| A parser passes synthetic fixtures but fails actual archives | One pickle and one content/edges real-format smoke | Release is blocked; local parser unit tests are insufficient |
+| Dependency pruning leaves `NeighborLoader` importable but unusable | Consume a target-seed mini-batch after a fresh `uv sync` | Keep `torch-sparse` or install a separately qualified backend |
+| Mass deletion hides an accidental public-surface loss | Separate neural, data, config, and docs commits with sentinel suites between them | Revert only the offending deletion commit and narrow its scope |
+
+These are implementation gates, not aspirational checks. A failed required
+model gate changes the published capability matrix; a failed shared-runtime,
+batching, dependency, or real-format gate blocks completion.
 
 ### Task 1: Establish the reduced-domain architecture contract
 
@@ -145,7 +225,7 @@ git commit -m "test: define reduced domain contract"
 
 **Step 1: Write failing registry tests**
 
-Assert that registries are ordinary explicit dictionaries, are deterministically ordered, and expose only classes from the three target domains. Include the current surviving classes first; add `HypergraphConvBackbone` only in Task 9.
+Assert that registries are ordinary explicit dictionaries, are deterministically ordered, and expose only intentional public classes from the three target domains. Include the current surviving classes first; add `HypergraphConvBackbone` in the hypergraph-model task.
 
 ```python
 from topobench.nn import backbones
@@ -155,8 +235,8 @@ from topobench.nn import wrappers
 def test_backbone_registry_has_only_surviving_local_models() -> None:
     assert tuple(backbones.MODEL_CLASSES) == tuple(sorted(backbones.MODEL_CLASSES))
     assert set(backbones.MODEL_CLASSES) == {
-        "EDGNN", "GPS", "GraphMLP", "HGTBackbone",
-        "HeteroSAGEBackbone", "IdentityGNN", "NSD",
+        "EDGNN", "GPSEncoder", "GraphMLP", "HGTBackbone",
+        "HeteroSAGEBackbone", "NSDEncoder",
     }
 
 
@@ -179,13 +259,13 @@ Expected: FAIL because removed-domain classes are discovered.
 Use this pattern in each registry:
 
 ```python
-from .graph import GPS, GraphMLP, IdentityGNN, NSD
+from .graph import GPSEncoder, GraphMLP, NSDEncoder
 from .heterogeneous import HGTBackbone, HeteroSAGEBackbone
 from .hypergraph import EDGNN
 
 MODEL_CLASSES = dict(sorted({
     cls.__name__: cls
-    for cls in (GPS, GraphMLP, IdentityGNN, NSD, HGTBackbone, HeteroSAGEBackbone, EDGNN)
+    for cls in (GPSEncoder, GraphMLP, NSDEncoder, HGTBackbone, HeteroSAGEBackbone, EDGNN)
 }.items()))
 
 __all__ = [*MODEL_CLASSES, "MODEL_CLASSES"]
@@ -193,6 +273,11 @@ globals().update(MODEL_CLASSES)
 ```
 
 For loaders and datasets, import every class referenced by a surviving YAML `_target_`; do not construct targets by scanning filenames. Preserve public selector class names used by surviving configs.
+
+Do not register helpers (`RedrawProjection`, EDGNN convolution internals, or
+private metadata adapters). The four identity graph classes are removed unless
+a surviving config or lifecycle test establishes a concrete use; there is no
+generic `IdentityGNN` class in the current source.
 
 **Step 4: Run focused and heterogeneous registry tests**
 
@@ -221,6 +306,8 @@ git commit -m "refactor: make domain registries explicit"
 - Create: `topobench/data/datasets/synthetic_graph_dataset.py`
 - Create: `topobench/data/loaders/graph/synthetic.py`
 - Create: `configs/dataset/graph/SyntheticGraph.yaml`
+- Create: `configs/dataset/graph/SyntheticNodeGraph.yaml`
+- Create: `topobench/data/splits.py`
 - Modify: `topobench/dataloader/__init__.py`
 - Modify: `topobench/data/utils/split_utils.py`
 - Modify: `topobench/data/preprocessor/preprocessor.py`
@@ -233,14 +320,17 @@ git commit -m "refactor: make domain registries explicit"
 
 **Step 1: Write failing inductive batching tests**
 
-Construct two small `Data` graphs, pass lists into `GraphDataModule`, and assert the loader returns a PyG `Batch` with native fields:
+Construct two small `Data` graphs, pass an index-backed dataset view into
+`GraphDataModule`, and assert the loader returns a PyG `Batch` with native
+fields:
 
 ```python
 def test_graph_datamodule_uses_native_pyg_batching() -> None:
+    source = TinyGraphDataset([graph_a, graph_b, graph_c])
     module = GraphDataModule(
-        dataset_train=[graph_a, graph_b],
-        dataset_val=[graph_a],
-        dataset_test=[graph_b],
+        dataset_train=Subset(source, [0, 1]),
+        dataset_val=Subset(source, [2]),
+        dataset_test=Subset(source, [2]),
         batch_size=2,
         num_workers=0,
     )
@@ -251,7 +341,23 @@ def test_graph_datamodule_uses_native_pyg_batching() -> None:
     assert "x_0" not in batch and "batch_0" not in batch
 ```
 
-Add a transductive test proving one graph is reused for all phases and `batch_size != 1` is rejected. Add split tests proving inductive helpers return `list[Data]`, not `DataloadDataset`.
+Add a transductive test proving one graph is reused for all phases and
+`batch_size != 1` is rejected. Add split tests proving inductive helpers return
+index-backed `Subset` views over the same source dataset, not `list[Data]` or
+`DataloadDataset`. Assert that requesting an item remains lazy until the
+loader iterates it.
+
+Add transductive split tests that begin with index arrays and require
+full-length boolean masks:
+
+```python
+def test_transductive_indices_become_boolean_masks() -> None:
+    apply_transductive_split(data, train=[0, 2], val=[1], test=[3])
+    assert data.train_mask.dtype is torch.bool
+    assert data.train_mask.tolist() == [True, False, True, False]
+    assert not torch.any(data.train_mask & data.val_mask)
+    assert torch.all(data.train_mask | data.val_mask | data.test_mask)
+```
 
 **Step 2: Verify failure**
 
@@ -270,26 +376,26 @@ Expected: FAIL because `GraphDataModule` is absent and splits return `DataloadDa
 Core skeleton:
 
 ```python
-from collections.abc import Sequence
 from lightning import LightningDataModule
+from torch.utils.data import Dataset
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
 
 
 class GraphDataModule(LightningDataModule):
-    def __init__(self, dataset_train: Sequence[Data], dataset_val=None,
+    def __init__(self, dataset_train: Dataset[Data], dataset_val=None,
                  dataset_test=None, batch_size: int = 1, num_workers: int = 0,
                  pin_memory: bool = False, persistent_workers: bool = False) -> None:
         super().__init__()
-        if not dataset_train:
+        if len(dataset_train) == 0:
             raise ValueError("dataset_train must not be empty")
         if (dataset_val is None) != (dataset_test is None):
             raise ValueError("dataset_val and dataset_test must either both be set or both be None")
         if dataset_val is None and batch_size != 1:
             raise ValueError("transductive graph loading requires batch_size=1")
-        self.dataset_train = list(dataset_train)
-        self.dataset_val = self.dataset_train if dataset_val is None else list(dataset_val)
-        self.dataset_test = self.dataset_train if dataset_test is None else list(dataset_test)
+        self.dataset_train = dataset_train
+        self.dataset_val = dataset_train if dataset_val is None else dataset_val
+        self.dataset_test = dataset_train if dataset_test is None else dataset_test
         self.batch_size = batch_size
         self.loader_kwargs = dict(num_workers=num_workers, pin_memory=pin_memory,
                                   persistent_workers=persistent_workers and num_workers > 0)
@@ -301,23 +407,34 @@ class GraphDataModule(LightningDataModule):
 
 Implement validation for positive integral `batch_size` and non-negative integral `num_workers`. Validation and test loaders use `shuffle=False`.
 
-**Step 4: Return native sequences from split helpers**
+**Step 4: Return index-backed views and canonical masks from split helpers**
 
-- `assign_train_val_test_mask_to_graphs()` returns three lists.
+- Replace `assign_train_val_test_mask_to_graphs()` with a helper that returns
+  three `torch.utils.data.Subset` views over the same source dataset.
 - `load_transductive_splits()` returns `([data], None, None)`.
-- `load_inductive_splits()` returns three lists.
-- Preserve fixed/random/stratified/k-fold behavior and existing masks.
-- Change `PreProcessor.load_dataset_splits()` annotations to sequences of `Data`.
+- `load_inductive_splits()` returns three index-backed views and does not
+  mutate each graph with redundant phase masks.
+- Preserve fixed/random/stratified/k-fold index selection, but replace legacy
+  index-valued transductive masks with full-length boolean masks through one
+  `indices_to_mask()` helper in `topobench/data/splits.py`. Keep random/fixed
+  index-generation algorithms in `split_utils.py`; keep representation and
+  validation at the new narrow split boundary.
+- Validate that masks are rank-1, disjoint, non-empty, and cover all labeled
+  nodes expected by the split policy.
+- Change `PreProcessor.load_dataset_splits()` annotations to dataset views.
 - Change `DefaultDataPipeline` to instantiate `GraphDataModule`.
 
-Add a deterministic, packaged `SyntheticGraphDataset` as a tiny native PyG
-`InMemoryDataset`. It must contain several graph-classification examples so
-the default CLI exercises real inductive batching without a download. Its
-loader must return the dataset directly, and `SyntheticGraph.yaml` must use a
-fixed train/validation/test split plus `batch_size: 4`. Do not construct this
-dataset through `DataloadDataset` or any transform.
+Add a deterministic packaged synthetic loader with two native PyG fixtures:
+several graph-classification examples for `SyntheticGraph.yaml`, and one
+node-classification graph for `SyntheticNodeGraph.yaml`. The former exercises
+real inductive batching with a fixed split and `batch_size: 4`; the latter
+exercises full-length boolean transductive masks. The loader returns native
+PyG datasets directly. Do not construct either fixture through
+`DataloadDataset` or a topology transform. Attach explicit `split_idx` arrays
+to the graph-classification dataset so its fixed split uses the same
+production path as ZINC/OGB fixed splits.
 
-Do not delete the legacy dataloader files until Task 12; this keeps the diff reviewable while all callers migrate.
+Do not delete the legacy dataloader files until Task 13; this keeps the diff reviewable while all callers migrate.
 
 **Step 5: Run focused and pipeline-boundary tests**
 
@@ -337,9 +454,15 @@ Expected: PASS.
 
 ```bash
 git add topobench/dataloader topobench/data/utils/split_utils.py \
+  topobench/data/splits.py \
   topobench/data/preprocessor/preprocessor.py topobench/data/pipelines/default.py \
+  topobench/data/datasets/synthetic_graph_dataset.py \
+  topobench/data/loaders/graph/synthetic.py \
+  configs/dataset/graph/SyntheticGraph.yaml \
+  configs/dataset/graph/SyntheticNodeGraph.yaml \
   test/data/dataload test/data/utils/test_split_utils.py \
-  test/data/pipelines/test_data_pipelines.py
+  test/data/pipelines/test_data_pipelines.py \
+  test/data/datasets/test_synthetic_graph_dataset.py
 git commit -m "refactor: use native PyG graph batching"
 ```
 
@@ -347,14 +470,23 @@ git commit -m "refactor: use native PyG graph batching"
 
 **Files:**
 - Create: `topobench/nn/encoders/graph_node_encoder.py`
+- Create: `topobench/data/features.py`
+- Create: `topobench/transforms/data_manipulations/constant_node_features.py`
 - Modify: `topobench/nn/encoders/__init__.py`
+- Modify: `topobench/data/pipelines/default.py`
+- Modify: all files under `configs/dataset/graph/`
+- Modify: `configs/transforms/dataset_defaults/REDDIT-BINARY.yaml`
 - Create: `test/nn/encoders/test_graph_node_encoder.py`
+- Create: `test/data/test_graph_feature_contract.py`
+- Create: `test/config/test_dataset_feature_policies.py`
 - Modify: `test/nn/encoders/test_dgm.py`
 - Modify: `topobench/nn/encoders/dgm_encoder.py`
 
 **Step 1: Write failing encoder contract tests**
 
-Test eager parameter creation, graph-aware normalization, shape validation, missing `batch` fallback for a single graph, and in-place `data.x` replacement. Explicitly assert no `x_0` is created.
+Test eager parameter creation, graph-aware normalization, floating rank-2
+feature validation, missing `batch` fallback for a single graph, and in-place
+`data.x` replacement. Explicitly assert no `x_0` is created.
 
 ```python
 def test_graph_node_encoder_replaces_native_features() -> None:
@@ -399,22 +531,46 @@ class GraphNodeFeatureEncoder(AbstractFeatureEncoder):
 
 Adapt `DGMStructureFeatureEncoder` only where required by `gcn_dgm.yaml`, changing its graph feature access from `x_0`/`batch_0` to `x`/`batch`. Do not preserve general rank support.
 
-**Step 4: Run encoder tests**
+**Step 4: Make dataset feature preparation explicit**
+
+Add a required `parameters.feature_policy` to every retained graph dataset
+config. Accepted initial values are `continuous`, `categorical_one_hot`,
+`degree`, and `constant`. The graph pipeline validates the post-transform
+result against this contract before constructing loaders.
+
+Implement `ConstantNodeFeatures` as a deterministic PyG transform for
+featureless graphs and replace REDDIT-BINARY's random
+`EqualGausFeatures` default. Keep ZINC's deterministic categorical encoding
+and IMDB's degree encoding. Add a config audit that fails if any graph dataset
+has no policy or if a policy lacks its required default transform.
+
+Simplify `infer_in_channels()` so the no-lifting graph/hypergraph path returns
+a scalar integer, not the legacy one-element rank list. Add resolver tests for
+continuous, one-hot, degree, constant, and positional-encoding cases.
+
+**Step 5: Run encoder and feature-policy tests**
 
 Run:
 
 ```bash
 uv run pytest test/nn/encoders/test_graph_node_encoder.py \
   test/nn/encoders/test_dgm.py \
-  test/nn/encoders/test_heterogeneous_node_encoder.py -q
+  test/nn/encoders/test_heterogeneous_node_encoder.py \
+  test/data/test_graph_feature_contract.py \
+  test/config/test_dataset_feature_policies.py -q
 ```
 
 Expected: PASS.
 
-**Step 5: Commit**
+**Step 6: Commit**
 
 ```bash
-git add topobench/nn/encoders test/nn/encoders
+git add topobench/nn/encoders topobench/data/features.py \
+  topobench/data/pipelines/default.py \
+  topobench/transforms/data_manipulations/constant_node_features.py \
+  configs/dataset/graph configs/transforms/dataset_defaults/REDDIT-BINARY.yaml \
+  test/nn/encoders test/data/test_graph_feature_contract.py \
+  test/config/test_dataset_feature_policies.py
 git commit -m "refactor: encode native graph features"
 ```
 
@@ -429,8 +585,10 @@ git commit -m "refactor: encode native graph features"
 - Modify: `topobench/nn/readouts/identical.py`
 - Modify: `topobench/nn/readouts/mlp_readout.py`
 - Modify: `topobench/nn/readouts/__init__.py`
+- Modify: `topobench/model/supervision.py`
 - Modify: `test/nn/readouts/test_identical.py`
 - Modify: `test/nn/readouts/test_mlp_readout.py`
+- Modify: `test/model/test_supervision.py`
 
 **Step 1: Write failing node- and graph-level adapter tests**
 
@@ -489,7 +647,15 @@ Refactor `MLPReadout` to own its `torch.nn.Sequential` layers instead of
 importing `topobench.nn.backbones.non_relational.MLP`; this makes deletion of
 the non-relational domain in Task 12 safe.
 
-**Step 5: Run focused, model, and supervision tests**
+**Step 5: Correct homogeneous batch weighting**
+
+Change `DefaultSupervisionAdapter` so graph-level and node-inductive batches
+report `num_examples=labels.size(0)` instead of the legacy constant `1`.
+Transductive node tasks continue to report `mask.sum()`. Add a regression test
+with a full batch and a smaller final batch and assert Lightning's epoch loss
+uses supervised-example weighting.
+
+**Step 6: Run focused, model, and supervision tests**
 
 Run:
 
@@ -500,10 +666,11 @@ uv run pytest test/nn/wrappers/graph test/nn/readouts \
 
 Expected: PASS after updating graph-only fixtures; heterogeneous readout tests remain green.
 
-**Step 6: Commit**
+**Step 7: Commit**
 
 ```bash
 git add topobench/nn/wrappers/graph topobench/nn/readouts \
+  topobench/model/supervision.py \
   test/nn/wrappers/graph test/nn/readouts test/model
 git commit -m "refactor: use native graph model outputs"
 ```
@@ -520,12 +687,16 @@ git commit -m "refactor: use native graph model outputs"
 - Modify: `configs/model/graph/nsd.yaml`
 - Modify: `topobench/utils/config_resolvers.py`
 - Modify: `topobench/utils/model_instantiation.py`
+- Create: `topobench/nn/capabilities.py`
 - Create: `test/config/test_surviving_graph_configs.py`
+- Create: `test/pipeline/test_graph_model_capabilities.py`
 - Modify: `test/pipeline/test_pipeline.py`
 
 **Step 1: Write failing composition and instantiation tests**
 
-Parametrize over the seven surviving graph configs. Compose each with `graph/MUTAG`, resolve the config, and assert:
+Parametrize over the seven candidate graph configs. Compose each only with the
+synthetic dataset/task modes declared in the capability matrix, resolve the
+config, and assert:
 
 - `model.model_domain == "graph"`;
 - feature encoder is `GraphNodeFeatureEncoder`;
@@ -533,6 +704,11 @@ Parametrize over the seven surviving graph configs. Compose each with `graph/MUT
 - model instantiation succeeds without a runtime `data_spec`.
 
 Use `OmegaConf.to_container(cfg, resolve=True)` and a recursive key/string walker; do not rely on YAML text grep alone.
+
+Represent the reviewed matrix in `topobench/nn/capabilities.py` as immutable
+data used by config validation and tests. Same-domain composition is necessary
+but not sufficient: reject a model/dataset task pairing absent from the
+matrix with a path-rich error before model construction.
 
 **Step 2: Verify failure**
 
@@ -579,7 +755,23 @@ return dataset_or_model_specific_default_if_present_else_no_transform
 
 Do not allow graph-to-hypergraph or hypergraph-to-graph model composition in this branch.
 
-**Step 5: Make the small native graph pipeline the broad graph sentinel**
+**Step 5: Prove the model capability matrix**
+
+Add focused one-epoch CPU lifecycle tests:
+
+- GCN, GAT, and GIN on both `SyntheticGraph` (inductive, batch size greater
+  than one) and `SyntheticNodeGraph` (transductive boolean masks).
+- GPS and NSD on both task modes with model-specific forward assertions.
+- GraphMLP on transductive nodes plus an explicit disjoint-batch contrastive
+  loss test that proves whether cross-graph pairs are handled intentionally.
+- GCN-DGM on transductive nodes plus a batch-isolation test proving learned
+  auxiliary edges and masks never mix examples.
+
+If GraphMLP or GCN-DGM fails its gate, remove its config/source/special loss
+and update the capability matrix in the same task. Do not postpone the
+decision to final verification.
+
+**Step 6: Make the small native graph pipeline the broad graph sentinel**
 
 Change `test/pipeline/test_pipeline.py` to cover `graph/gcn` on
 `graph/SyntheticGraph` only, two epochs, CPU, a real batch size greater than
@@ -587,21 +779,23 @@ one, and final test. Keep a separate optional/download-marked MUTAG smoke test
 for real-loader coverage. Add separate model-config unit coverage instead of
 looping large/downloaded models in the lifecycle test.
 
-**Step 6: Run configuration and graph model tests**
+**Step 7: Run configuration and graph model tests**
 
 Run:
 
 ```bash
 uv run pytest test/config/test_surviving_graph_configs.py \
-  test/nn/backbones/graph test/pipeline/test_pipeline.py -q
+  test/nn/backbones/graph test/pipeline/test_graph_model_capabilities.py \
+  test/pipeline/test_pipeline.py -q
 ```
 
 Expected: PASS; the lifecycle test reports an observed training batch size greater than one.
 
-**Step 7: Commit**
+**Step 8: Commit**
 
 ```bash
-git add configs/model/graph topobench/utils test/config \
+git add configs/model/graph topobench/utils topobench/nn/capabilities.py \
+  test/config test/pipeline/test_graph_model_capabilities.py \
   test/pipeline/test_pipeline.py test/nn/backbones/graph
 git commit -m "refactor: migrate graph configs to native PyG"
 ```
@@ -630,7 +824,11 @@ def test_hypergraph_batch_offsets_nodes_and_hyperedges_independently() -> None:
     assert torch.equal(second_incidence[1], second.hyperedge_index[1] + first.num_hyperedges)
 ```
 
-Add validation failures for wrong shape/dtype, negative indices, out-of-bounds nodes, missing/invalid `num_hyperedges`, non-contiguous hyperedge IDs, label count mismatch, overlapping or incomplete masks, and empty supervised splits.
+Add validation failures for wrong shape/dtype, negative indices, out-of-bounds
+nodes, missing/invalid `num_hyperedges`, non-contiguous hyperedge IDs, empty
+hyperedges, label count mismatch, overlapping or incomplete masks, and empty
+supervised splits. Test that batching stores per-example hyperedge counts and
+that callers must not interpret the collated tensor as a scalar total.
 
 **Step 2: Verify failure**
 
@@ -642,6 +840,8 @@ Expected: FAIL because `HypergraphData` does not exist.
 
 ```python
 class HypergraphData(Data):
+    representation_version = 2
+
     def __inc__(self, key: str, value: Tensor, *args, **kwargs):
         if key == "hyperedge_index":
             if self.num_nodes is None or self.num_hyperedges is None:
@@ -653,6 +853,12 @@ class HypergraphData(Data):
 **Step 4: Implement transactional validation**
 
 `validate_hypergraph_node_data(data)` returns the same object only after all checks pass. It must not mutate or renumber malformed input. Require a rank-2 floating `x`, long `hyperedge_index` of shape `[2, M]`, contiguous hyperedge IDs `0..num_hyperedges-1`, rank-1 node labels, and rank-1 boolean masks whose length equals `num_nodes` and which partition labeled nodes.
+
+Require every hyperedge identifier in `0..num_hyperedges-1` to occur at least
+once; empty hyperedges are unsupported in v1. Validate each individual graph
+before batching. Define a shared native cache filename such as
+`hypergraph_data_v2.pt` and a representation-version constant for dataset
+loaders to use in Task 8.
 
 Add a small deterministic `synthetic_hypergraph` fixture in `test/conftest.py`; do not import any lifting or topological library to construct it.
 
@@ -694,12 +900,17 @@ git commit -m "feat: add native hypergraph data contract"
 - Modify: `topobench/data/loaders/hypergraph/hypergraph_dataset_loader.py`
 - Modify: `test/data/utils/test_io_utils.py`
 - Create: `test/data/load/test_hypergraph_dataset_loaders.py`
+- Create: `test/integration/test_real_hypergraph_formats.py`
 
 **Step 1: Write failing parser tests using local temporary raw fixtures**
 
 Cover both content-style and pickle-style hypergraph inputs without downloading. Require each parser to return `HypergraphData` with canonical, sorted, duplicate-free `hyperedge_index`, contiguous hyperedge IDs, and explicit `num_hyperedges`.
 
 Include a regression test where raw hyperedge identifiers are sparse strings or integers; the parser must remap them deterministically while leaving node indices aligned with features and labels.
+
+Test isolated-node behavior explicitly. Preserve the pickle loader's existing
+singleton-hyperedge policy or document and test a deliberate replacement; do
+not silently drop isolated nodes during canonicalization.
 
 **Step 2: Verify failure**
 
@@ -739,9 +950,22 @@ def incidence_pairs(hyperedges: Mapping[Hashable, Iterable[int]], num_nodes: int
     return index if pairs else torch.empty((2, 0), dtype=torch.long), len(ordered_ids)
 ```
 
-Make dataset `process()` methods save the canonical class through PyG's normal `InMemoryDataset.save()`/`load()` path. Remove backward handling for rank-based processed artifacts; users must regenerate processed hypergraph caches on this branch.
+Make dataset `process()` methods save the canonical class through PyG's normal
+`InMemoryDataset.save()`/`load()` path. Set their processed filename to the
+versioned native name from Task 7 and persist `representation_version=2`.
+Remove backward handling for rank-based processed artifacts. If an old
+`data.pt` is present, bypass it and emit one concise regeneration notice; never
+load it as native data.
 
-**Step 5: Run parser and loader tests**
+**Step 5: Add gated real-format integration smokes**
+
+Add `download` and `integration` marked tests for one small pickle-format
+dataset (for example cocitation Cora) and one content/edges-format dataset
+(Zoo or Mushroom). Verify archive extraction, feature width, class range,
+contiguous incidence IDs, and the declared cache version. These tests are
+excluded from normal CI but are mandatory before release.
+
+**Step 6: Run parser and loader tests**
 
 Run:
 
@@ -753,11 +977,21 @@ uv run pytest test/data/utils/test_io_utils.py \
 
 Expected: PASS, with no network access.
 
-**Step 6: Commit**
+When network access is explicitly available, run:
+
+```bash
+uv run pytest test/integration/test_real_hypergraph_formats.py \
+  -m "download and integration" -q
+```
+
+Expected: both raw-format smokes PASS.
+
+**Step 7: Commit**
 
 ```bash
 git add topobench/data/utils topobench/data/datasets \
-  topobench/data/loaders/hypergraph test/data
+  topobench/data/loaders/hypergraph test/data \
+  test/integration/test_real_hypergraph_formats.py
 git commit -m "refactor: load native hypergraph incidence data"
 ```
 
@@ -775,7 +1009,11 @@ git commit -m "refactor: load native hypergraph incidence data"
 
 **Step 1: Write failing pipeline tests**
 
-Mock the loader with one `HypergraphData`, verify the pipeline validates it, and require train/validation/test loaders to return native `Batch` objects. Verify phase masks remain on the batch and `batch_size=1` is enforced for this transductive v1.
+Mock the loader with one structural `HypergraphData` that has no phase masks.
+Verify the pipeline creates masks from `cfg.dataset.split_params` before full
+validation, then require train/validation/test loaders to return native
+`Batch` objects. Verify phase masks remain boolean on the batch and
+`batch_size=1` is enforced for this transductive v1.
 
 **Step 2: Verify failure**
 
@@ -794,9 +1032,17 @@ Expected: FAIL because no hypergraph-specific pipeline exists.
 
 1. preprocess exactly one graph;
 2. require `HypergraphData` rather than generic `Data`;
-3. call `validate_hypergraph_node_data`;
-4. build the hypergraph data module;
-5. return `DataPipelineOutput` with no heterogeneous `data_spec`.
+3. validate representation-only invariants that do not require phase masks;
+4. generate or load split indices with the shared split algorithms;
+5. apply full-length boolean masks through
+   `topobench.data.splits.apply_transductive_split`;
+6. call `validate_hypergraph_node_data` on the completed object;
+7. build the hypergraph data module;
+8. return `DataPipelineOutput` with no heterogeneous `data_spec`.
+
+Add a failure-atomicity test: invalid split parameters or invalid masks must
+not partially mutate the cached/source hypergraph. Apply masks to a cloned
+runtime object after all split indices validate.
 
 Normalize every hypergraph dataset's `dataloader_params.batch_size` to `1`
 (replace current `-1`). Dataset YAML remains scoped under `dataset`; it must
@@ -844,7 +1090,12 @@ git commit -m "feat: add native hypergraph data pipeline"
 
 **Step 1: Write failing model and wrapper tests**
 
-Require both backbones to accept `(x, hyperedge_index)` and return node embeddings of shape `[num_nodes, hidden_channels]`. Require `HypergraphWrapper` to emit the same `{"x", "labels", "batch"}` contract as graph wrappers. Add invalid incidence and output-shape tests.
+Require both backbones to accept `(x, hyperedge_index)` and return node
+embeddings of shape `[num_nodes, hidden_channels]`. Require
+`HypergraphWrapper` to emit the same `{"x", "labels", "batch"}` contract as
+graph wrappers. Add invalid incidence and output-shape tests. Batch two
+hypergraphs and prove the backbone does not pass the collated per-example
+`num_hyperedges` tensor as a scalar `num_edges` argument.
 
 **Step 2: Verify failure**
 
@@ -887,7 +1138,10 @@ class HypergraphConvBackbone(torch.nn.Module):
         return x
 ```
 
-Pass `num_edges=num_hyperedges` only if required by the pinned PyG signature; confirm against the installed 2.8.0 API during implementation.
+The pinned PyG 2.8 signature accepts optional `num_edges`. Prefer omitting it
+and allow inference from the validated contiguous incidence IDs. If an
+explicit value is needed, compute the sum of validated per-example counts;
+never use `batch.num_hyperedges` as though it were already a scalar total.
 
 **Step 5: Rewrite hypergraph configs**
 
@@ -941,16 +1195,25 @@ git commit -m "feat: add native hypergraph models"
 Keep these native operations, subject to their existing focused tests:
 
 ```text
-AllEncodings, CombinedFEs, CombinedPSEs,
+CombinedEncodings, SelectDestinationEncodings,
+CombinedFEs, SelectDestinationFEs, CombinedPSEs,
+ConstantNodeFeatures,
 ElectrostaticPE, HeterogeneousConstantFeatures, HeterogeneousToUndirected,
-HKFE, HKdiagSE, Identity, InfereKNNConnectivity, InfereRadiusConnectivity,
+HKFE, HKdiagSE, IdentityTransform,
+InfereKNNConnectivity, InfereRadiusConnectivity,
 KeepOnlyConnectedComponent, KeepSelectedDataFields,
 KeepSelectedTargetIndices, KHopFE, LapPE, NodeDegrees,
 NodeFeaturesToFloat, OneHotDegreeFeatures, PPRFE, RWSE,
 RenameFields, SheafConnLapPE
 ```
 
-Use the exact current registered class names discovered from the modules; correct the list in the test to those spellings before implementation. Explicitly reject every lifting and: barycentric subdivision, simplicial curvature, HOPSE preprocessing, SANN feature generators, rank feature duplication/concatenation, and hypergraph incidence homophily transforms that still expect `incidence_hyperedges`.
+Treat this as the exact public allowlist after adding
+`ConstantNodeFeatures`; helpers imported from PyG and module-private classes do
+not become registry entries. Explicitly reject every lifting and: barycentric
+subdivision, simplicial curvature, HOPSE preprocessing, SANN feature
+generators, random Gaussian replacement features, rank feature
+duplication/concatenation, and hypergraph incidence homophily transforms that
+still expect `incidence_hyperedges`.
 
 **Step 2: Verify failure**
 
@@ -968,6 +1231,12 @@ rank-based HOPSE contract, not a native graph transform.
 **Step 4: Delete transforms and configs outside the allowlist**
 
 Use `git rm` for the two entire topological transform trees and their tests. Remove corresponding Hydra configs plus `combined_fe.yaml`, `combined_pe.yaml`, `sheaf_pe.yaml`, or `custom_example.yaml` only when their contained transform has been rejected. Preserve dataset/model defaults required by GPS/NSD and all three heterogeneous defaults.
+
+Rewrite surviving dataset/model defaults to remove every
+`get_required_lifting` interpolation and `liftings@_here_` entry. Verify the
+REDDIT-BINARY constant-feature default, ZINC categorical encoding, IMDB degree
+encoding, and GPS positional encodings still compose and produce the scalar
+width expected by the graph encoder.
 
 **Step 5: Run surviving transform tests and config composition**
 
@@ -991,7 +1260,69 @@ git add -A topobench/transforms configs/transforms test/transforms \
 git commit -m "refactor: limit transforms to native graph data"
 ```
 
-### Task 12: Delete unsupported source, models, configs, and tests
+### Task 12: Prune unsupported neural and model surfaces
+
+**Files:**
+- Delete: `topobench/nn/backbones/cell/`
+- Delete: `topobench/nn/backbones/combinatorial/`
+- Delete: `topobench/nn/backbones/non_relational/`
+- Delete: `topobench/nn/backbones/simplicial/`
+- Delete: `topobench/nn/wrappers/cell/`
+- Delete: `topobench/nn/wrappers/combinatorial/`
+- Delete: `topobench/nn/wrappers/pointcloud/`
+- Delete: `topobench/nn/wrappers/simplicial/`
+- Delete: `topobench/nn/encoders/all_cell_encoder.py`
+- Delete: `topobench/nn/encoders/flat_encoder.py`
+- Delete: `topobench/nn/encoders/hopse_encoder.py`
+- Delete: `topobench/nn/encoders/kdgm.py` if GCN-DGM failed its gate
+- Delete: `topobench/nn/readouts/hopse.py`
+- Delete: `topobench/nn/readouts/propagate_signal_down.py`
+- Delete corresponding removed-model tests under: `test/nn/`
+- Modify: all surviving `topobench/nn/**/__init__.py`
+- Modify: `test/architecture/test_domain_contract.py`
+
+**Step 1: Write the failing neural-surface architecture test**
+
+Assert that backbone and wrapper domain directories are exactly `graph`,
+`heterogeneous`, and `hypergraph`, and that surviving encoders/readouts import
+no rank-based base class. Assert the registry equals the public classes proven
+by Tasks 2, 6, and 10.
+
+**Step 2: Verify failure**
+
+Run: `uv run pytest test/architecture/test_domain_contract.py -q`
+
+Expected: FAIL on unsupported neural directories and rank components.
+
+**Step 3: Delete neural code and its tests**
+
+Use explicit `git rm` targets above. Also remove GraphMLP or GCN-DGM
+source/config-specific losses only if Task 6 recorded a failed capability
+gate. Never delete a test for GCN/GAT/GIN/GPS/NSD, heterogeneous models,
+EDGNN, HypergraphConv, shared model lifecycle, loss, or evaluator behavior.
+
+**Step 4: Run surviving neural suites**
+
+Run:
+
+```bash
+uv run pytest test/architecture/test_domain_contract.py \
+  test/nn test/model test/loss test/evaluator -q
+```
+
+Then run the heterogeneous sentinel suite.
+
+Expected: PASS.
+
+**Step 5: Commit**
+
+```bash
+git add -A topobench/nn topobench/loss test/nn test/model test/loss \
+  test/evaluator test/architecture/test_domain_contract.py
+git commit -m "refactor: remove unsupported neural domains"
+```
+
+### Task 13: Prune unsupported data and legacy batching surfaces
 
 **Files:**
 - Delete: `topobench/data/loaders/pointcloud/`
@@ -1001,19 +1332,57 @@ git commit -m "refactor: limit transforms to native graph data"
 - Delete: `topobench/data/datasets/mantra_dataset.py`
 - Delete: `topobench/data/utils/utils.py`
 - Delete: `topobench/data/utils/io_utils.py`
-- Delete: `topobench/nn/backbones/cell/`
-- Delete: `topobench/nn/backbones/combinatorial/`
-- Delete: `topobench/nn/backbones/non_relational/`
-- Delete: `topobench/nn/backbones/simplicial/`
-- Delete: `topobench/nn/wrappers/cell/`
-- Delete: `topobench/nn/wrappers/combinatorial/`
-- Delete: `topobench/nn/wrappers/pointcloud/`
-- Delete: `topobench/nn/wrappers/simplicial/`
-- Delete obsolete files under: `topobench/nn/encoders/`
-- Delete obsolete files under: `topobench/nn/readouts/`
 - Delete: `topobench/dataloader/dataload_dataset.py`
 - Delete: `topobench/dataloader/dataloader.py`
 - Delete: `topobench/dataloader/utils.py`
+- Delete corresponding removed-data tests under: `test/data/`
+- Modify: `topobench/data/loaders/__init__.py`
+- Modify: `topobench/data/datasets/__init__.py`
+- Modify: `topobench/data/utils/__init__.py`
+- Modify: `topobench/dataloader/__init__.py`
+
+**Step 1: Write a failing data-surface test**
+
+Assert loaders expose only graph, heterogeneous, and hypergraph packages;
+assert no import/export references `DataloadDataset`, `TBDataloader`,
+`DomainData`, or `collate_fn`; and assert the dependency-free narrow utility
+modules own every surviving import.
+
+**Step 2: Verify failure**
+
+Run: `uv run pytest test/architecture test/data -q`
+
+Expected: FAIL on legacy data packages and batching symbols.
+
+**Step 3: Delete the explicit data paths and clean exports**
+
+Use `git rm` only for the named paths. Confirm US County, graph downloads, and
+both hypergraph raw formats import from `downloads.py`, `graph_io.py`, or
+`hypergraph_io.py` before removing mixed `io_utils.py`.
+
+**Step 4: Run data and lifecycle sentinels**
+
+Run:
+
+```bash
+uv run pytest test/architecture test/data test/pipeline/test_pipeline.py \
+  test/pipeline/test_heterogeneous_pipeline.py \
+  test/pipeline/test_hypergraph_pipeline.py -q
+```
+
+Expected: PASS without network access.
+
+**Step 5: Commit**
+
+```bash
+git add -A topobench/data topobench/dataloader test/data test/architecture \
+  test/pipeline
+git commit -m "refactor: remove legacy data domains and batching"
+```
+
+### Task 14: Prune unsupported configuration and test surfaces
+
+**Files:**
 - Delete: `configs/dataset/pointcloud/`
 - Delete: `configs/dataset/simplicial/`
 - Delete: `configs/dataset/graph/manual_dataset.yaml`
@@ -1030,12 +1399,13 @@ git commit -m "refactor: limit transforms to native graph data"
 - Delete: `configs/model/hypergraph/unignn.yaml`
 - Delete: `configs/model/hypergraph/unignn2.yaml`
 - Delete topological experiment configs under: `configs/experiment/`
-- Delete corresponding removed-domain tests under: `test/`
+- Delete corresponding pipeline/script tests under: `test/`
 - Modify: `test/architecture/test_domain_contract.py`
 
-**Step 1: Extend the architecture test before deletion**
+**Step 1: Extend the architecture test before configuration deletion**
 
-Assert exact allowed first-level domain directories for loaders, backbones, wrappers, dataset configs, and model configs. Walk production Python and surviving YAML text and reject:
+Assert exact allowed config directories and walk production Python plus
+surviving YAML for forbidden tokens:
 
 ```python
 FORBIDDEN_TOKENS = (
@@ -1044,49 +1414,45 @@ FORBIDDEN_TOKENS = (
 )
 ```
 
-Allow those words only in historical `docs/plans/`, not production, configs, current docs, tests, or scripts.
+Historical `docs/plans/` are the only exemption.
 
 **Step 2: Verify failure**
 
 Run: `uv run pytest test/architecture/test_domain_contract.py -q`
 
-Expected: FAIL and list the still-present unsupported paths/tokens.
+Expected: FAIL and list unsupported config/test references.
 
-**Step 3: Remove unsupported code in one auditable deletion**
+**Step 3: Delete unsupported configs and tests**
 
-Use explicit `git rm` paths from the file list. In encoders remove `all_cell_encoder.py`, `flat_encoder.py`, `hopse_encoder.py`, and `kdgm.py` if no surviving graph config imports them. In readouts remove `hopse.py` and `propagate_signal_down.py`; remove any non-relational backbone import after confirming `GraphMLP` has its own required implementation.
+Delete tests only when the corresponding production behavior was intentionally
+removed. Preserve shared trainer, callback, final-evaluation, graph,
+heterogeneous, and hypergraph tests.
 
-Delete tests only when the corresponding production behavior was intentionally removed. Never delete a failing test for a surviving graph, heterogeneous, hypergraph, shared trainer, callback, loss, evaluator, optimizer, or logger behavior.
-
-**Step 4: Clean all `__init__.py` and imports**
-
-Run `rg` for each removed module name and update remaining exports. Ensure `topobench.data.loaders`, `topobench.nn.backbones`, and `topobench.nn.wrappers` import from the three domains only.
-
-**Step 5: Run architecture and surviving unit suites**
+**Step 4: Compose every surviving selector and run architecture tests**
 
 Run:
 
 ```bash
-uv run pytest test/architecture -q
-uv run pytest test/data test/nn test/model test/loss test/evaluator test/optimizer -q
+uv run pytest test/architecture test/config test/pipeline -q
 ```
 
-Expected: PASS, excluding only explicitly marked download/integration tests.
+Expected: PASS.
 
-**Step 6: Commit**
+**Step 5: Commit**
 
 ```bash
-git add -A topobench configs test
-git commit -m "refactor: remove unsupported topological domains"
+git add -A configs test
+git commit -m "refactor: remove unsupported configuration surfaces"
 ```
 
-### Task 13: Remove topological dependencies and regenerate the lock
+### Task 15: Remove topological dependencies and regenerate the lock
 
 **Files:**
 - Modify: `pyproject.toml`
 - Modify: `uv.lock`
 - Create: `test/dependencies/test_reduced_dependencies.py`
 - Modify: `test/dependencies/test_torch_geometric_dependency.py`
+- Create: `test/dependencies/test_neighbor_sampler_backend.py`
 - Modify: `.github/workflows/test.yml`
 - Modify: `.github/workflows/lint.yml`
 
@@ -1110,6 +1476,13 @@ topobench.nn.wrappers
 topobench.run
 ```
 
+Add a separate runtime probe that constructs the packaged synthetic
+`HeteroData`, instantiates PyG `NeighborLoader`, and consumes one mini-batch.
+The probe must assert that the target node store exposes both `batch_size` and
+`n_id`, and that the seed batch has more than one node. This is a dependency
+test, not merely a heterogeneous-pipeline unit test: it proves a supported
+sampling backend is actually installed.
+
 **Step 2: Verify failure**
 
 Run: `uv run pytest test/dependencies -q`
@@ -1118,7 +1491,18 @@ Expected: FAIL because forbidden direct dependencies remain.
 
 **Step 3: Audit every remaining dependency before editing**
 
-For each candidate run `rg -n` over `topobench`, scripts, and current tests. Remove the six forbidden dependencies unconditionally after source pruning. Also remove `networkx`, `matplotlib`, `decorator`, `yacs`, `einops`, `tabulate`, `pandas`, `torch-cluster`, or `torch-sparse` only if no surviving production path uses them. Keep `torch-scatter`/`torch-sparse` if NSD or EDGNN still imports them.
+For each candidate run `rg -n` over `topobench`, scripts, and current tests.
+Remove the six forbidden dependencies unconditionally after source pruning.
+Also remove `networkx`, `matplotlib`, `decorator`, `yacs`, `einops`,
+`tabulate`, `pandas`, or `torch-cluster` only if no surviving production path
+uses them. Keep `torch-scatter` when NSD or EDGNN still imports it.
+
+Keep `torch-sparse` as an explicit runtime dependency even if static source
+search finds no direct import: PyG `NeighborLoader` delegates sampling to an
+optional compiled backend. Removing it is allowed only in a later, separately
+scoped migration that adds `pyg-lib`, repeats the clean-sync probe, and proves
+full behavior parity. Do not treat the absence of a direct Python import as
+evidence that the backend is unused.
 
 Move Jupyter applications (`ipykernel`, `notebook`, `jupyterlab`) out of core dependencies into `doc` or `dev`. Do not broaden dependency cleanup into unrelated version upgrades.
 
@@ -1138,10 +1522,12 @@ Run:
 
 ```bash
 uv sync --extra test
-uv run pytest test/dependencies test/architecture -q
+uv run pytest test/dependencies test/architecture \
+  test/pipeline/test_heterogeneous_pipeline.py -q
 ```
 
-Expected: PASS.
+Expected: PASS, including consumption of a real neighbor-sampled mini-batch
+after the fresh sync.
 
 **Step 6: Update CI caches/commands only as required**
 
@@ -1154,7 +1540,7 @@ git add pyproject.toml uv.lock test/dependencies .github/workflows
 git commit -m "build: remove topological dependencies"
 ```
 
-### Task 14: Make configs and the CLI a coherent three-domain product
+### Task 16: Make configs and the CLI a coherent three-domain product
 
 **Files:**
 - Modify: `configs/run.yaml`
@@ -1178,7 +1564,13 @@ configs/model/{graph,heterogeneous,hypergraph}
 configs/experiment
 ```
 
-Compose valid same-domain dataset/model pairs, resolve interpolation, and instantiate components that do not require downloads. Assert every experiment refers only to an existing selector. Assert cross-domain pairs fail with the clear resolver error from Task 6.
+Compose only pairs declared valid by the immutable capability matrix from
+Task 6, resolve interpolation, and instantiate components that do not require
+downloads. Domain equality alone is insufficient: task level, batching mode,
+feature contract, and model capabilities must all agree. Assert every
+experiment refers only to an existing selector. Assert undeclared same-domain
+pairs and every cross-domain pair fail with the clear resolver error from
+Task 6.
 
 **Step 2: Verify failure**
 
@@ -1226,7 +1618,7 @@ git add -A configs topobench/run.py test/config test/pipeline \
 git commit -m "refactor: focus CLI on native graph domains"
 ```
 
-### Task 15: Rewrite current documentation and remove obsolete examples
+### Task 17: Rewrite current documentation and remove obsolete examples
 
 **Files:**
 - Modify: `README.md`
@@ -1292,7 +1684,7 @@ git add -A README.md docs tutorials scripts test/docs \
 git commit -m "docs: document native graph benchmark core"
 ```
 
-### Task 16: Final clean-environment and lifecycle verification
+### Task 18: Final clean-environment and lifecycle verification
 
 **Files:**
 - Modify only if a genuine defect is found: relevant surviving source/test file
@@ -1303,10 +1695,10 @@ git commit -m "docs: document native graph benchmark core"
 Run:
 
 ```bash
-rg -n "x_0|batch_0|incidence_hyperedges|num_cell_dimensions" \
+rg -n "x_0|x_1|batch_0|incidence_hyperedges|num_cell_dimensions|liftings@_here_|get_required_lifting" \
   topobench configs test scripts docs \
   -g '!docs/plans/**'
-rg -n "topomodelx|toponetx|gudhi|hypernetx" \
+rg -n "topomodelx|toponetx|gudhi|hypernetx|trimesh|spharapy" \
   topobench configs test scripts docs pyproject.toml uv.lock \
   -g '!docs/plans/**'
 ```
@@ -1335,7 +1727,33 @@ uv run pytest -m "not download and not integration" -q
 
 Expected: PASS with only documented optional-extension skips.
 
-**Step 4: Run three end-to-end smoke tests**
+Also run the contract-focused suites without marker exclusions:
+
+```bash
+uv run pytest test/architecture test/dependencies test/config \
+  test/data/test_graph_feature_contract.py \
+  test/config/test_dataset_feature_policies.py \
+  test/data/test_hypergraph_data.py \
+  test/model/test_supervision.py -q
+```
+
+Expected: PASS with no skipped dependency, feature-policy, mask, supervision,
+or batching contract test.
+
+**Step 4: Run mandatory real hypergraph format tests**
+
+With network access enabled, run:
+
+```bash
+uv run pytest test/integration/test_real_hypergraph_formats.py \
+  -m "download and integration" -q
+```
+
+Expected: exactly the selected pickle-format and content/edges-format smokes
+PASS against fresh raw/processed directories. A network outage may postpone
+this release step, but a skip or postponed result is not a passing release.
+
+**Step 5: Run three end-to-end smoke tests**
 
 Run the small graph, synthetic heterogeneous neighbor-batched, and synthetic hypergraph experiments on CPU with W&B disabled:
 
@@ -1354,7 +1772,7 @@ WANDB_MODE=disabled uv run python -m topobench.run \
 
 Expected for each: training completes, a best checkpoint is selected, and both `val_best_rerun/` and `test_best_rerun/` metrics are produced. The heterogeneous neighbor run must report a target seed batch size greater than one.
 
-**Step 5: Verify clean forbidden imports in a subprocess**
+**Step 6: Verify clean forbidden imports in a subprocess**
 
 `test/architecture/verify_forbidden_imports.py` installs a meta-path finder that raises for the four removed module roots, imports every public TopoBench package, composes the default plus one config per domain, and exits zero. Run:
 
@@ -1364,7 +1782,7 @@ uv run python test/architecture/verify_forbidden_imports.py
 
 Expected: exit 0 with a concise `clean import verified` message.
 
-**Step 6: Inspect repository state and commit final fixes**
+**Step 7: Inspect repository state and commit final fixes**
 
 Run:
 
@@ -1388,10 +1806,25 @@ If the tree is already clean, do not create an empty commit.
 Implementation is complete only when all of the following are true:
 
 - homogeneous inductive training uses real PyG mini-batches and native `x`/`batch`;
-- heterogeneous neighbor sampling and full-batch modes retain their current tests and lifecycle behavior;
-- hypergraphs batch correctly with independent node/hyperedge offsets and run both EDGNN and HypergraphConv;
+- inductive splits are lazy index-backed views, while transductive splits are
+  full-length, disjoint boolean masks;
+- every retained graph dataset has an explicit deterministic feature policy,
+  and every advertised dataset/model pair is present in the tested capability
+  matrix;
+- heterogeneous neighbor sampling and full-batch modes retain their lifecycle
+  behavior, and a real `NeighborLoader` mini-batch is consumed after a clean
+  dependency sync without a skip;
+- hypergraphs batch correctly with independent node/hyperedge offsets, reject
+  unsupported empty hyperedges, and run both EDGNN and HypergraphConv;
+- native hypergraph caches are versioned and cannot silently reuse legacy
+  rank-based `data.pt` artifacts;
+- both real hypergraph format gates (pickle and content/edges) pass;
 - only graph, heterogeneous, and hypergraph source/config groups remain;
 - no surviving runtime uses a rank-indexed field or a lifting;
-- TopoModelX, TopoNetX, GUDHI, and HyperNetX are absent from source, direct dependencies, and lockfile;
+- TopoModelX, TopoNetX, GUDHI, HyperNetX, trimesh, and spharapy are absent from
+  source, direct dependencies, and lockfile, while the qualified heterogeneous
+  sampler backend remains installed;
+- epoch losses are weighted by supervised examples for inductive, transductive,
+  and sampled heterogeneous tasks;
 - the default CLI is network-free and executes final best-checkpoint evaluation;
 - the complete network-free suite, Ruff, clean-import probe, and all three end-to-end smokes pass.
