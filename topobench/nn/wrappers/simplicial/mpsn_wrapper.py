@@ -11,11 +11,11 @@ class MPSNWrapper(AbstractWrapper):
     r"""Wrapper for the MPSN model.
 
     Unpacks the lifted batch and drives the MPSN backbone. Only the per-rank
-    features (``x_0/x_1/x_2``) and the **unsigned** clique-lifted incidence
-    matrices (``incidence_1``, ``incidence_2``) are passed to the backbone; the
-    incidences are used solely for routing the boundary + upper-adjacency
-    messages (no Hodge Laplacians). The backbone returns the embeddings of the
-    cells of rank 0, 1 and 2, which the readout consumes.
+    features (``x_0/x_1/x_2``) and the signed or unsigned clique-lifted
+    incidence matrices (``incidence_1``, ``incidence_2``) are passed to the
+    backbone. Their nonzero support is used solely for routing the boundary and
+    upper-adjacency messages (no Hodge Laplacians). The backbone returns the
+    embeddings of the cells of rank 0, 1 and 2, which the readout consumes.
     """
 
     def forward(self, batch):
