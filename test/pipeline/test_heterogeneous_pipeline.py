@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import math
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock
@@ -38,6 +38,19 @@ EXPERIMENTS = (
         "heterogeneous_synthetic_heterosage_full",
         "heterosage",
         id="heterosage-full-batch",
+    ),
+)
+
+NEIGHBOR_EXPERIMENTS = (
+    pytest.param(
+        "heterogeneous_synthetic_hgt_neighbor",
+        "hgt",
+        id="hgt-neighbor",
+    ),
+    pytest.param(
+        "heterogeneous_synthetic_heterosage_neighbor",
+        "heterosage",
+        id="heterosage-neighbor",
     ),
 )
 
@@ -152,6 +165,53 @@ def test_full_batch_experiment_contract(
     ]
 
 
+@pytest.mark.parametrize(
+    ("experiment", "model_name"),
+    NEIGHBOR_EXPERIMENTS,
+)
+def test_neighbor_experiment_contract(
+    experiment: str,
+    model_name: str,
+) -> None:
+    """Sampled production configs expose one explicit, reproducible contract."""
+    cfg = _compose(experiment)
+
+    assert (
+        cfg.data_pipeline._target_
+        == "topobench.data.pipelines.HeterogeneousNodeDataPipeline"
+    )
+    assert cfg.dataset.loader.parameters.data_name == "SyntheticHeterogeneous"
+    dataloader = cfg.dataset.dataloader_params
+    assert dataloader.mode == "neighbor"
+    assert dataloader.batch_size == 4
+    assert list(dataloader.num_neighbors) == [3, 2]
+    assert dataloader.num_workers == 0
+    assert dataloader.persistent_workers is False
+    assert dataloader.train_shuffle is True
+    assert dataloader.replace is False
+    assert dataloader.subgraph_type == "directional"
+    assert dataloader.filter_per_worker is False
+    assert dataloader.evaluation_protocol == "sampled_neighbor_fixed"
+    assert dataloader.evaluation_seed == 0
+    assert cfg.model.model_domain == "heterogeneous"
+    assert cfg.model.model_name == model_name
+    assert cfg.model.backbone.num_layers == len(dataloader.num_neighbors)
+
+    wandb = cfg.logger.wandb
+    assert wandb.project == "topobench-heterogeneous"
+    assert wandb.name == (
+        f"SyntheticHeterogeneous-{model_name}-neighbor-seed0"
+    )
+    assert wandb.group == "SyntheticHeterogeneous"
+    assert wandb.job_type == "neighbor"
+    assert list(wandb.tags) == [
+        "heterogeneous",
+        "synthetic",
+        "neighbor",
+        model_name,
+    ]
+
+
 @pytest.mark.parametrize(("experiment", "_model_name"), EXPERIMENTS)
 def test_full_batch_training_validation_checkpoint_and_best_rerun(
     experiment: str,
@@ -195,6 +255,168 @@ def test_full_batch_training_validation_checkpoint_and_best_rerun(
         HeterogeneousNodeDataModule,
     )
     assert objects["datamodule"].mode == "full_batch"
+
+
+@pytest.mark.parametrize(
+    ("experiment", "_model_name"),
+    NEIGHBOR_EXPERIMENTS,
+)
+def test_neighbor_training_validation_checkpoint_and_best_rerun(
+    experiment: str,
+    _model_name: str,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Run a real sampled lifecycle through both best-checkpoint reruns."""
+    cfg = _compose(
+        experiment,
+        tmp_path=tmp_path,
+        max_epochs=1,
+    )
+    caplog.set_level(logging.INFO, logger="topobench.run")
+
+    fit_metrics, objects = run(cfg)
+
+    _assert_finite_metrics(fit_metrics, prefix="train/")
+    _assert_finite_metrics(fit_metrics, prefix="val/")
+    fit_trainer = objects["trainer"]
+    assert fit_trainer.current_epoch == 1
+    assert fit_trainer.global_step > 1
+
+    checkpoint = _checkpoint_callback(objects["callbacks"])
+    best_path = Path(checkpoint.best_model_path)
+    assert checkpoint.best_model_path
+    assert best_path.is_file()
+    assert best_path.stat().st_size > 0
+
+    rerun_messages = [record.getMessage() for record in caplog.records]
+    assert any("val_best_rerun/" in message for message in rerun_messages)
+    assert any("test_best_rerun/" in message for message in rerun_messages)
+
+    rerun_model = objects["model"]
+    rerun_trainer = rerun_model.trainer
+    assert rerun_trainer is not fit_trainer
+    _assert_finite_metrics(rerun_trainer.callback_metrics, prefix="test/")
+    assert rerun_model.state_str == "Test"
+
+    datamodule = objects["datamodule"]
+    assert isinstance(datamodule, HeterogeneousNodeDataModule)
+    assert datamodule.mode == "neighbor"
+    assert datamodule.evaluation_protocol == "sampled_neighbor_fixed"
+    assert datamodule.val_dataloader() is datamodule.val_dataloader()
+    assert datamodule.test_dataloader() is datamodule.test_dataloader()
+    assert not hasattr(datamodule.val_dataloader(), "_cached_batches")
+    assert not hasattr(datamodule.test_dataloader(), "_cached_batches")
+
+
+@pytest.mark.parametrize(
+    ("experiment", "_model_name"),
+    NEIGHBOR_EXPERIMENTS,
+)
+def test_neighbor_process_outputs_accounts_for_every_seed_once(
+    experiment: str,
+    _model_name: str,
+    tmp_path: Path,
+) -> None:
+    """Every real sampled loss supervises target seeds and no context nodes."""
+    seed_everything(0, workers=True)
+    cfg = _compose(
+        experiment,
+        tmp_path=tmp_path,
+        extra_overrides=(
+            "dataset.dataloader_params.train_shuffle=false",
+            "model.backbone.dropout=0.0",
+        ),
+    )
+    datamodule, model = _build_heterogeneous_runtime(cfg)
+    target_type = datamodule.spec.target_node_type
+    observed_context = False
+
+    for phase in ("train", "val", "test"):
+        expected_ids = (
+            datamodule.data[target_type][f"{phase}_mask"]
+            .nonzero(as_tuple=False)
+            .view(-1)
+        )
+        observed_ids: list[torch.Tensor] = []
+        supervised_total = 0
+        model.state_str = _phase_state(phase)
+
+        for batch in _phase_loader(datamodule, phase):
+            target_store = batch[target_type]
+            seed_count = int(target_store.batch_size)
+            target_count = int(target_store.num_nodes)
+            observed_context |= target_count > seed_count
+            seed_ids = target_store.n_id[:seed_count]
+            assert bool(torch.isin(seed_ids, expected_ids).all())
+            observed_ids.append(seed_ids.detach().cpu())
+
+            model.zero_grad(set_to_none=True)
+            unfiltered = model.forward(batch)
+            raw_logits = cast(torch.Tensor, unfiltered["logits"])
+            raw_labels = cast(torch.Tensor, unfiltered["labels"])
+            raw_logits.retain_grad()
+            assert raw_logits.size(0) == target_count
+
+            processed = model.process_outputs(unfiltered, batch)
+            assert processed["num_supervised_examples"] == seed_count
+            assert torch.equal(processed["logits"], raw_logits[:seed_count])
+            assert torch.equal(processed["labels"], raw_labels[:seed_count])
+            supervised_total += int(processed["num_supervised_examples"])
+
+            output = model.loss(model_out=processed, batch=batch)
+            loss = cast(torch.Tensor, output["loss"])
+            assert torch.isfinite(loss)
+            loss.backward()
+            assert raw_logits.grad is not None
+            assert torch.count_nonzero(raw_logits.grad[:seed_count]) > 0
+            assert torch.count_nonzero(raw_logits.grad[seed_count:]) == 0
+            _assert_expected_module_gradients(model)
+
+        all_ids = torch.cat(observed_ids)
+        assert supervised_total == int(expected_ids.numel())
+        assert all_ids.numel() == all_ids.unique().numel()
+        assert torch.equal(all_ids, expected_ids)
+
+    assert observed_context
+
+
+@pytest.mark.parametrize(
+    ("experiment", "_model_name"),
+    NEIGHBOR_EXPERIMENTS,
+)
+def test_neighbor_fixed_evaluation_repeats_batches_and_metrics(
+    experiment: str,
+    _model_name: str,
+    tmp_path: Path,
+) -> None:
+    """Fixed validation/test sampling reproduces seed batches and real metrics."""
+    seed_everything(0, workers=True)
+    cfg = _compose(
+        experiment,
+        tmp_path=tmp_path,
+        extra_overrides=("model.backbone.dropout=0.0",),
+    )
+    datamodule, model = _build_heterogeneous_runtime(cfg)
+    assert datamodule.evaluation_protocol == "sampled_neighbor_fixed"
+
+    for phase in ("val", "test"):
+        first_batches, first_metrics = _fixed_evaluation_signature(
+            model,
+            datamodule,
+            phase,
+        )
+        second_batches, second_metrics = _fixed_evaluation_signature(
+            model,
+            datamodule,
+            phase,
+        )
+
+        assert len(first_batches) > 1
+        assert second_batches == first_batches
+        assert second_metrics.keys() == first_metrics.keys()
+        assert all(math.isfinite(value) for value in first_metrics.values())
+        assert second_metrics == pytest.approx(first_metrics, abs=0.0, rel=0.0)
 
 
 def test_full_batch_best_rerun_logs_prefixed_finite_metrics(
@@ -284,6 +506,77 @@ def _assert_expected_module_gradients(model: TBModel) -> None:
         assert any(torch.count_nonzero(gradient) > 0 for gradient in gradients)
 
 
+def _build_heterogeneous_runtime(
+    cfg: DictConfig,
+) -> tuple[HeterogeneousNodeDataModule, TBModel]:
+    """Build the real heterogeneous datamodule and model from one config."""
+    pipeline = hydra.utils.instantiate(cfg.data_pipeline)
+    pipeline_output = pipeline.build(cfg)
+    lightning_model = instantiate_model(
+        cfg,
+        data_spec=pipeline_output.data_spec,
+    )
+    assert isinstance(pipeline_output.datamodule, HeterogeneousNodeDataModule)
+    assert isinstance(lightning_model, TBModel)
+    return pipeline_output.datamodule, lightning_model
+
+
+def _phase_loader(
+    datamodule: HeterogeneousNodeDataModule,
+    phase: str,
+) -> Iterable[HeteroData]:
+    """Return the real loader corresponding to one canonical phase."""
+    return {
+        "train": datamodule.train_dataloader,
+        "val": datamodule.val_dataloader,
+        "test": datamodule.test_dataloader,
+    }[phase]()
+
+
+def _phase_state(phase: str) -> str:
+    """Translate canonical loader phases into the model state contract."""
+    return {
+        "train": "Training",
+        "val": "Validation",
+        "test": "Test",
+    }[phase]
+
+
+def _fixed_evaluation_signature(
+    model: TBModel,
+    datamodule: HeterogeneousNodeDataModule,
+    phase: str,
+) -> tuple[tuple[tuple[int, ...], ...], dict[str, float]]:
+    """Evaluate one complete sampled phase and retain its seed/metric identity."""
+    model.eval()
+    model.state_str = _phase_state(phase)
+    model.evaluator.reset()
+    seed_batches: list[tuple[int, ...]] = []
+    weighted_loss = 0.0
+    total_examples = 0
+    with torch.no_grad():
+        for batch in _phase_loader(datamodule, phase):
+            target_store = batch[datamodule.spec.target_node_type]
+            seed_count = int(target_store.batch_size)
+            seed_batches.append(
+                tuple(
+                    int(node_id)
+                    for node_id in target_store.n_id[:seed_count].tolist()
+                )
+            )
+            output = model.model_step(batch)
+            assert output["num_supervised_examples"] == seed_count
+            weighted_loss += float(output["loss"]) * seed_count
+            total_examples += seed_count
+    assert total_examples > 0
+    metrics = {
+        name: float(value) for name, value in model.evaluator.compute().items()
+    }
+    model.evaluator.reset()
+    metrics["loss"] = weighted_loss / total_examples
+    return tuple(seed_batches), metrics
+
+
 @pytest.mark.parametrize(("experiment", "_model_name"), EXPERIMENTS)
 def test_full_batch_model_has_an_overfit_signal(
     experiment: str,
@@ -305,11 +598,8 @@ def test_full_batch_model_has_an_overfit_signal(
         data_spec=pipeline_output.data_spec,
     )
     assert isinstance(lightning_model, TBModel)
-    model = cast(TBModel, lightning_model)
-    optimizer_config = cast(
-        dict[str, Any],
-        model.configure_optimizers(),
-    )
+    model = lightning_model
+    optimizer_config = model.configure_optimizers()
     optimizer = cast(torch.optim.Optimizer, optimizer_config["optimizer"])
 
     model.eval()

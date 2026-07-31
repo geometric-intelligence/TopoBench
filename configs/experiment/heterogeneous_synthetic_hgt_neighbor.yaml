@@ -1,0 +1,39 @@
+# @package _global_
+defaults:
+  - override /data_pipeline: heterogeneous_node
+  - override /dataset: heterogeneous/SyntheticHeterogeneous
+  - override /model: heterogeneous/hgt
+  - override /logger: heterogeneous_wandb
+  - _self_
+
+seed: 0
+tags: [heterogeneous, synthetic, neighbor, hgt]
+train: true
+test: true
+
+dataset:
+  dataloader_params:
+    mode: neighbor
+    batch_size: 4
+    num_neighbors: [3, 2]
+    num_workers: 0
+    pin_memory: false
+    persistent_workers: false
+    train_shuffle: true
+    replace: false
+    subgraph_type: directional
+    filter_per_worker: false
+    evaluation_protocol: sampled_neighbor_fixed
+    evaluation_seed: ${seed}
+
+optimizer:
+  parameters:
+    lr: 0.01
+    weight_decay: 0.0
+
+trainer:
+  accelerator: cpu
+  devices: 1
+  min_epochs: 1
+  max_epochs: 50
+  check_val_every_n_epoch: 1
