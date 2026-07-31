@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import pickle
 from dataclasses import FrozenInstanceError
 
@@ -45,6 +46,65 @@ def _validate(
     )
 
 
+def _assert_nested_state_equal(
+    expected: object,
+    actual: object,
+    *,
+    path: str,
+) -> None:
+    """Compare a complete nested PyG store snapshot with diagnostics."""
+    if isinstance(expected, torch.Tensor):
+        assert isinstance(actual, torch.Tensor), path
+        assert actual.dtype == expected.dtype, path
+        assert actual.shape == expected.shape, path
+        assert actual.device == expected.device, path
+        assert actual.layout == expected.layout, path
+        assert actual.requires_grad == expected.requires_grad, path
+        assert torch.equal(actual, expected), path
+        return
+
+    if isinstance(expected, dict):
+        assert isinstance(actual, dict), path
+        assert tuple(actual) == tuple(expected), path
+        for key, expected_value in expected.items():
+            _assert_nested_state_equal(
+                expected_value,
+                actual[key],
+                path=f"{path}[{key!r}]",
+            )
+        return
+
+    if isinstance(expected, (list, tuple)):
+        assert type(actual) is type(expected), path
+        assert len(actual) == len(expected), path
+        for index, (expected_value, actual_value) in enumerate(
+            zip(expected, actual, strict=True)
+        ):
+            _assert_nested_state_equal(
+                expected_value,
+                actual_value,
+                path=f"{path}[{index}]",
+            )
+        return
+
+    assert type(actual) is type(expected), path
+    assert actual == expected, path
+
+
+def _assert_complete_heterodata_state_equal(
+    expected: HeteroData,
+    actual: HeteroData,
+) -> None:
+    """Compare ordered stores and all global, node, and edge attributes."""
+    assert actual.node_types == expected.node_types
+    assert actual.edge_types == expected.edge_types
+    _assert_nested_state_equal(
+        expected.to_dict(),
+        actual.to_dict(),
+        path="heterodata",
+    )
+
+
 def test_valid_data_produces_exact_ordered_spec(
     transformed_data: HeteroData,
 ) -> None:
@@ -63,6 +123,22 @@ def test_valid_data_produces_exact_ordered_spec(
         num_classes=2,
         input_channels=(("author", 8), ("paper", 5), ("venue", 1)),
     )
+
+
+def test_validation_does_not_mutate_any_heterogeneous_data_state(
+    transformed_data: HeteroData,
+) -> None:
+    """Validation preserves every ordered store and nested attribute."""
+    transformed_data.validation_marker = {
+        "fold": 0,
+        "tags": ("synthetic", "fully-transformed"),
+        "tensor": torch.tensor([1.0, 2.0]),
+    }
+    snapshot = copy.deepcopy(transformed_data)
+
+    _validate(transformed_data)
+
+    _assert_complete_heterodata_state_equal(snapshot, transformed_data)
 
 
 def test_spec_is_frozen_hashable_pickleable_and_has_fresh_views(
