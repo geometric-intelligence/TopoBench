@@ -24,6 +24,24 @@ from topobench.transforms.data_transform import DataTransform
 from topobench.utils.config_resolvers import register_all_resolvers
 
 
+def _assert_heterodata_equal(
+    expected: HeteroData,
+    actual: HeteroData,
+) -> None:
+    """Assert exact metadata and store attributes for two small graphs."""
+    assert actual.metadata() == expected.metadata()
+    for store_type in (*expected.node_types, *expected.edge_types):
+        expected_store = expected[store_type]
+        actual_store = actual[store_type]
+        assert set(actual_store.keys()) == set(expected_store.keys())
+        for key, expected_value in expected_store.items():
+            actual_value = actual_store[key]
+            if torch.is_tensor(expected_value):
+                assert torch.equal(actual_value, expected_value)
+            else:
+                assert actual_value == expected_value
+
+
 @pytest.fixture
 def heterogeneous_transforms_module():
     """Import the heterogeneous wrappers after test collection."""
@@ -131,6 +149,226 @@ def test_to_undirected_adds_reverse_typed_relations_without_merging(
         )
 
 
+def test_to_undirected_handles_same_node_type_relation(
+    heterogeneous_transforms_module,
+    synthetic_data: HeteroData,
+) -> None:
+    """Merge-disabled PyG semantics create a typed reverse self relation."""
+    relation = ("author", "collaborates", "author")
+    reverse_relation = ("author", "rev_collaborates", "author")
+    synthetic_data[relation].edge_index = torch.tensor(
+        [[0, 1, 2], [1, 2, 0]],
+    )
+    original = synthetic_data.clone()
+
+    transformed = heterogeneous_transforms_module.HeterogeneousToUndirected(
+        merge=False,
+    )(synthetic_data)
+
+    assert torch.equal(
+        transformed[reverse_relation].edge_index,
+        original[relation].edge_index.flip(0),
+    )
+
+
+def test_to_undirected_rejects_collision_before_any_mutation(
+    heterogeneous_transforms_module,
+    synthetic_data: HeteroData,
+) -> None:
+    """A pre-existing reverse store is never overwritten or partly updated."""
+    source_type = ("author", "writes", "paper")
+    collision_type = ("paper", "rev_writes", "author")
+    synthetic_data[collision_type].edge_index = torch.tensor([[0], [0]])
+    synthetic_data[collision_type].stale_edge_attr = torch.tensor([17.0])
+    original = synthetic_data.clone()
+    transform = heterogeneous_transforms_module.HeterogeneousToUndirected(
+        merge=False,
+    )
+
+    with pytest.raises(ValueError) as error:
+        transform.forward(synthetic_data)
+
+    message = str(error.value)
+    assert repr(source_type) in message
+    assert repr(collision_type) in message
+    _assert_heterodata_equal(original, synthetic_data)
+
+
+def test_to_undirected_rejects_repeated_application_without_mutation(
+    heterogeneous_transforms_module,
+    synthetic_data: HeteroData,
+) -> None:
+    """A second application errors instead of creating nested reverse stores."""
+    transform = heterogeneous_transforms_module.HeterogeneousToUndirected(
+        merge=False,
+    )
+    transformed = transform(synthetic_data)
+    original = transformed.clone()
+
+    with pytest.raises(ValueError, match="already exists"):
+        transform.forward(transformed)
+
+    assert not any(
+        relation.startswith("rev_rev_")
+        for _, relation, _ in transformed.edge_types
+    )
+    _assert_heterodata_equal(original, transformed)
+
+
+@pytest.mark.parametrize(
+    ("wrapper_name", "kwargs"),
+    [
+        ("HeterogeneousConstantFeatures", {"node_types": None}),
+        ("HeterogeneousToUndirected", {}),
+    ],
+)
+def test_heterogeneous_wrappers_reject_homogeneous_data(
+    heterogeneous_transforms_module,
+    wrapper_name: str,
+    kwargs: dict[str, object],
+) -> None:
+    """Direct wrapper calls enforce their native HeteroData contract."""
+    wrapper = getattr(heterogeneous_transforms_module, wrapper_name)(**kwargs)
+
+    with pytest.raises(
+        TypeError,
+        match=rf"{wrapper_name}.*HeteroData.*Data",
+    ):
+        wrapper.forward(Data(x=torch.ones(2, 1)))
+
+
+def test_constant_features_none_selects_all_node_stores(
+    heterogeneous_transforms_module,
+    synthetic_data: HeteroData,
+) -> None:
+    """The reusable null selection retains PyG's all-node-store semantics."""
+    transform = heterogeneous_transforms_module.HeterogeneousConstantFeatures(
+        node_types=None,
+        value=4.0,
+        cat=False,
+    )
+
+    transformed = transform(synthetic_data)
+
+    assert transform.node_types is None
+    for node_type in transformed.node_types:
+        assert torch.equal(
+            transformed[node_type].x,
+            torch.full((transformed[node_type].num_nodes, 1), 4.0),
+        )
+
+
+@pytest.mark.parametrize(
+    ("node_types", "error_type", "match"),
+    [
+        ("", ValueError, "non-empty"),
+        ([], ValueError, "at least one"),
+        (["venue", ""], ValueError, "non-empty"),
+        (["venue", 1], TypeError, "strings"),
+    ],
+)
+def test_constant_features_rejects_invalid_node_type_selection(
+    heterogeneous_transforms_module,
+    node_types,
+    error_type: type[Exception],
+    match: str,
+) -> None:
+    """Selected node types are normalized only after structural validation."""
+    with pytest.raises(error_type, match=match):
+        heterogeneous_transforms_module.HeterogeneousConstantFeatures(
+            node_types=node_types,
+        )
+
+
+def test_constant_features_rejects_unknown_node_type_before_mutation(
+    heterogeneous_transforms_module,
+    synthetic_data: HeteroData,
+) -> None:
+    """An unknown selected store raises with available types and no mutation."""
+    original = synthetic_data.clone()
+    transform = heterogeneous_transforms_module.HeterogeneousConstantFeatures(
+        node_types=["venue", "institution"],
+    )
+    assert transform.node_types == ("venue", "institution")
+
+    with pytest.raises(ValueError) as error:
+        transform.forward(synthetic_data)
+
+    message = str(error.value)
+    assert "institution" in message
+    for node_type in synthetic_data.node_types:
+        assert node_type in message
+    _assert_heterodata_equal(original, synthetic_data)
+
+
+def test_wrapper_constructor_rejects_unknown_keyword() -> None:
+    """Registry construction does not silently discard misspelled options."""
+    with pytest.raises(TypeError, match="vaule"):
+        DataTransform(
+            transform_name="HeterogeneousConstantFeatures",
+            transform_type="data manipulation",
+            node_types="venue",
+            vaule=2.0,
+        )
+    with pytest.raises(TypeError, match="merg"):
+        DataTransform(
+            transform_name="HeterogeneousToUndirected",
+            transform_type="data manipulation",
+            merg=False,
+        )
+
+
+@pytest.mark.parametrize("cat", [0, 1, "false", None])
+def test_constant_features_requires_actual_bool_cat(
+    heterogeneous_transforms_module,
+    cat,
+) -> None:
+    """The cat option rejects bool-like integers, strings, and null."""
+    with pytest.raises(TypeError, match="cat must be bool"):
+        heterogeneous_transforms_module.HeterogeneousConstantFeatures(
+            node_types="venue",
+            cat=cat,
+        )
+
+
+@pytest.mark.parametrize("merge", [0, 1, "false", None])
+def test_to_undirected_requires_actual_bool_merge(
+    heterogeneous_transforms_module,
+    merge,
+) -> None:
+    """The merge option rejects bool-like integers, strings, and null."""
+    with pytest.raises(TypeError, match="merge must be bool"):
+        heterogeneous_transforms_module.HeterogeneousToUndirected(
+            merge=merge,
+        )
+
+
+@pytest.mark.parametrize(
+    "reduce",
+    ["add", "sum", "mean", "min", "max", "amin", "amax", "mul", "any"],
+)
+def test_to_undirected_accepts_all_pyg_coalesce_reductions(
+    heterogeneous_transforms_module,
+    reduce: str,
+) -> None:
+    """Every reduction and alias accepted by installed PyG remains valid."""
+    transform = heterogeneous_transforms_module.HeterogeneousToUndirected(
+        reduce=reduce,
+    )
+
+    assert transform.reduce == reduce
+
+
+def test_to_undirected_rejects_unknown_reduction(
+    heterogeneous_transforms_module,
+) -> None:
+    """Invalid reductions fail at construction with the supported values."""
+    with pytest.raises(ValueError, match=r"median.*add.*sum.*mean"):
+        heterogeneous_transforms_module.HeterogeneousToUndirected(
+            reduce="median",
+        )
+
+
 def test_heterogeneous_transforms_compose_in_declared_order(
     synthetic_transform_config: DictConfig,
     synthetic_data: HeteroData,
@@ -207,12 +445,14 @@ def test_data_transform_rejects_unmarked_transform_for_heterodata(
         assert repr(edge_type) in message
 
 
+@pytest.mark.parametrize("transform_name", [None, "Identity"])
 @pytest.mark.parametrize("data", [Data(x=torch.ones(2, 1)), HeteroData()])
-def test_data_transform_without_name_is_identity(
+def test_data_transform_disabled_spelling_is_identity(
     data: Data | HeteroData,
+    transform_name: str | None,
 ) -> None:
-    """A disabled transform is an identity for either PyG representation."""
-    transform = DataTransform(transform_name=None)
+    """Both disabled spellings are identities for either representation."""
+    transform = DataTransform(transform_name=transform_name)
 
     assert transform.forward(data) is data
     transformed = transform(data)
