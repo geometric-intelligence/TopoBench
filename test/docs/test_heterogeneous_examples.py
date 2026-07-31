@@ -211,3 +211,12 @@ def test_documented_bounded_ogb_command_composes_without_loading_data(
     assert cfg.trainer.limit_test_batches == 5
     assert cfg.logger.wandb.project == "topobench-heterogeneous"
     assert cfg.logger.wandb.name == run_name
+
+
+def test_documented_ogb_preflight_displays_diagnostics() -> None:
+    """The operator-facing preflight must not capture its resource report."""
+    guide = _GUIDE.read_text(encoding="utf-8")
+    assert (
+        "TOPOBENCH_ALLOW_DOWNLOADS=1 uv run pytest \\\n"
+        "  test/integration/test_ogb_mag_preflight.py -q -s"
+    ) in guide

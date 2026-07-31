@@ -219,11 +219,13 @@ takes one optimizer step for each model:
 
 ```bash
 TOPOBENCH_ALLOW_DOWNLOADS=1 uv run pytest \
-  test/integration/test_ogb_mag_preflight.py -q
+  test/integration/test_ogb_mag_preflight.py -q -s
 ```
 
 The preflight may download and preprocess OGB-MAG. It must pass on the intended
-machine before any Lightning run.
+machine before any Lightning run. The `-s` flag leaves output capture disabled
+so the processed counts, sampled counts, and accelerator-memory report remain
+visible.
 
 Second, run bounded Lightning smoke experiments. These exercise training,
 checkpointing, fixed sampled validation/test reruns, and the shared W&B project
