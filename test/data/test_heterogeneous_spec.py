@@ -6,6 +6,7 @@ import copy
 import pickle
 from dataclasses import FrozenInstanceError
 
+import numpy as np
 import pytest
 import torch
 from torch_geometric.data import Data, HeteroData
@@ -36,7 +37,7 @@ def transformed_data() -> HeteroData:
 def _validate(
     data: object,
     *,
-    num_classes: int = NUM_CLASSES,
+    num_classes: object = NUM_CLASSES,
 ) -> HeterogeneousDataSpec:
     """Validate with the canonical node-classification settings."""
     return validate_heterogeneous_node_data(
@@ -180,6 +181,126 @@ def test_spec_is_frozen_hashable_pickleable_and_has_fresh_views(
     assert spec.pyg_metadata()[1] is not spec.pyg_metadata()[1]
 
 
+def test_direct_spec_construction_normalizes_nested_sequences_deeply() -> None:
+    """Direct construction copies mutable inputs into canonical tuple state."""
+    node_types = ["author", "paper"]
+    relation = ["author", "writes", "paper"]
+    edge_types = [relation]
+    author_channels = ["author", np.int64(8)]
+    input_channels = [author_channels, ["paper", 5]]
+
+    spec = HeterogeneousDataSpec(
+        node_types=node_types,
+        edge_types=edge_types,
+        target_node_type="author",
+        num_classes=np.int64(2),
+        input_channels=input_channels,
+    )
+    node_types[0] = "mutated"
+    relation[0] = "mutated"
+    edge_types.clear()
+    author_channels[1] = 999
+    input_channels.clear()
+
+    assert spec.node_types == ("author", "paper")
+    assert spec.edge_types == (("author", "writes", "paper"),)
+    assert spec.input_channels == (("author", 8), ("paper", 5))
+    assert type(spec.num_classes) is int
+    assert type(spec.input_channels[0][1]) is int
+    assert pickle.loads(pickle.dumps(spec)) == spec
+    assert isinstance(hash(spec), int)
+    with pytest.raises(TypeError):
+        spec.edge_types[0][0] = "mutated"
+    with pytest.raises(TypeError):
+        spec.input_channels[0][1] = 999
+
+
+@pytest.mark.parametrize(
+    ("overrides", "error_type", "message"),
+    [
+        ({"node_types": "author"}, TypeError, "node_types.*sequence"),
+        ({"node_types": ["author", 1]}, TypeError, "node_types.*strings"),
+        (
+            {"node_types": ["author", "author"]},
+            ValueError,
+            "node_types.*duplicate",
+        ),
+        ({"edge_types": ["writes"]}, TypeError, "edge_types.*triple"),
+        (
+            {"edge_types": [["author", "writes"]]},
+            ValueError,
+            "edge_types.*three",
+        ),
+        (
+            {"edge_types": [["author", 1, "paper"]]},
+            TypeError,
+            "edge_types.*strings",
+        ),
+        (
+            {"edge_types": [["unknown", "writes", "paper"]]},
+            ValueError,
+            "unknown node type",
+        ),
+        ({"target_node_type": 1}, TypeError, "target_node_type.*str"),
+        (
+            {"target_node_type": "unknown"},
+            ValueError,
+            "target_node_type.*node_types",
+        ),
+        ({"num_classes": True}, TypeError, "num_classes.*integer"),
+        ({"num_classes": 2.0}, TypeError, "num_classes.*integer"),
+        ({"num_classes": 1}, ValueError, "num_classes.*at least 2"),
+        (
+            {"input_channels": "author"},
+            TypeError,
+            "input_channels.*sequence",
+        ),
+        (
+            {"input_channels": [["author", 8, 9], ["paper", 5]]},
+            ValueError,
+            "input_channels.*two",
+        ),
+        (
+            {"input_channels": [[1, 8], ["paper", 5]]},
+            TypeError,
+            "input_channels.*node type.*str",
+        ),
+        (
+            {"input_channels": [["author", True], ["paper", 5]]},
+            TypeError,
+            "input_channels.*width.*integer",
+        ),
+        (
+            {"input_channels": [["author", 0], ["paper", 5]]},
+            ValueError,
+            "input_channels.*positive",
+        ),
+        (
+            {"input_channels": [["paper", 5], ["author", 8]]},
+            ValueError,
+            "input_channels.*node_types.*order",
+        ),
+    ],
+)
+def test_direct_spec_construction_rejects_invalid_state(
+    overrides: dict[str, object],
+    error_type: type[Exception],
+    message: str,
+) -> None:
+    """The public frozen value object rejects malformed direct state."""
+    kwargs = {
+        "node_types": ["author", "paper"],
+        "edge_types": [["author", "writes", "paper"]],
+        "target_node_type": "author",
+        "num_classes": 2,
+        "input_channels": [["author", 8], ["paper", 5]],
+    }
+    kwargs.update(overrides)
+
+    with pytest.raises(error_type, match=message):
+        HeterogeneousDataSpec(**kwargs)
+
+
 def test_rejects_non_heterogeneous_top_level_data() -> None:
     """The public contract accepts native HeteroData only."""
     with pytest.raises(
@@ -187,6 +308,45 @@ def test_rejects_non_heterogeneous_top_level_data() -> None:
         match="Expected native torch_geometric.data.HeteroData",
     ):
         _validate(Data(x=torch.ones(2, 1)))
+
+
+@pytest.mark.parametrize(
+    "num_classes",
+    [True, 2.0, 2.5, "2", torch.tensor(2)],
+)
+def test_rejects_non_integral_num_classes(
+    transformed_data: HeteroData,
+    num_classes: object,
+) -> None:
+    """Invalid scalar types fail at the public boundary without comparison."""
+    with pytest.raises(TypeError, match="num_classes must be an integer"):
+        _validate(transformed_data, num_classes=num_classes)
+
+
+@pytest.mark.parametrize("num_classes", [2, np.int64(2)])
+def test_normalizes_integral_num_classes_to_builtin_int(
+    transformed_data: HeteroData,
+    num_classes: object,
+) -> None:
+    """Integral subclasses are accepted but never retained in the spec."""
+    spec = _validate(transformed_data, num_classes=num_classes)
+
+    assert spec.num_classes == 2
+    assert type(spec.num_classes) is int
+
+
+@pytest.mark.parametrize("target_node_type", [None, 1, ("author",)])
+def test_rejects_non_string_target_node_type_early(
+    transformed_data: HeteroData,
+    target_node_type: object,
+) -> None:
+    """The public validator rejects misleading target selector types."""
+    with pytest.raises(TypeError, match="target_node_type must be str"):
+        validate_heterogeneous_node_data(
+            transformed_data,
+            target_node_type=target_node_type,
+            num_classes=NUM_CLASSES,
+        )
 
 
 @pytest.mark.parametrize("num_classes", [-1, 0, 1])
@@ -449,3 +609,46 @@ def test_rejects_out_of_bounds_typed_edges(
 
     assert repr(WRITES) in str(error.value)
     assert message in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "edge_index",
+    [
+        [[0], [0]],
+        torch.tensor([[0.0], [0.0]]),
+        torch.tensor([[False], [True]]),
+        torch.tensor([[0], [0]], dtype=torch.int32),
+    ],
+)
+def test_rejects_non_long_typed_edge_indices_without_mutation(
+    transformed_data: HeteroData,
+    edge_index: object,
+) -> None:
+    """Every present typed edge index is a real long tensor."""
+    transformed_data[WRITES].edge_index = edge_index
+    snapshot = copy.deepcopy(transformed_data)
+
+    with pytest.raises(TypeError) as error:
+        _validate(transformed_data)
+
+    assert repr(WRITES) in str(error.value)
+    if isinstance(edge_index, torch.Tensor):
+        assert "torch.long" in str(error.value)
+    else:
+        assert "torch.Tensor" in str(error.value)
+    _assert_complete_heterodata_state_equal(snapshot, transformed_data)
+
+
+def test_accepts_valid_empty_long_typed_relation(
+    transformed_data: HeteroData,
+) -> None:
+    """An empty relation remains valid when its shape and dtype are explicit."""
+    empty_relation = ("paper", "cites", "paper")
+    transformed_data[empty_relation].edge_index = torch.empty(
+        (2, 0),
+        dtype=torch.long,
+    )
+
+    spec = _validate(transformed_data)
+
+    assert spec.edge_types[-1] == empty_relation
