@@ -1,7 +1,7 @@
-"""This module contains the readout classes that are used by the library with automated exports."""
+"""Readout classes used by the library with canonical automated exports."""
 
+import importlib
 import inspect
-from importlib import util
 from pathlib import Path
 from typing import Any
 
@@ -43,28 +43,24 @@ class ReadoutExportsManager:
         dict[str, type]
             Dictionary mapping class names to their corresponding class objects.
         """
-        readouts = {}
+        readouts: dict[str, type] = {}
         package_dir = Path(package_path).parent
 
-        for file_path in package_dir.glob("*.py"):
+        for file_path in sorted(package_dir.glob("*.py")):
             if file_path.stem == "__init__":
                 continue
 
-            module_name = f"{Path(package_path).stem}.{file_path.stem}"
-            spec = util.spec_from_file_location(module_name, file_path)
-            if spec and spec.loader:
-                module = util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-
-                new_readouts = {
-                    name: obj
-                    for name, obj in inspect.getmembers(module)
-                    if inspect.isclass(obj)
-                    and obj.__module__ == module.__name__
-                    and not name.startswith("_")
-                }
-                readouts.update(new_readouts)
-        return readouts
+            module_name = f"{__package__}.{file_path.stem}"
+            module = importlib.import_module(module_name)
+            new_readouts = {
+                name: obj
+                for name, obj in inspect.getmembers(module)
+                if inspect.isclass(obj)
+                and obj.__module__ == module.__name__
+                and not name.startswith("_")
+            }
+            readouts.update(new_readouts)
+        return dict(sorted(readouts.items()))
 
 
 # Create the exports manager

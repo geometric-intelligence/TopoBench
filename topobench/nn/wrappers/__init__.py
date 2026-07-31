@@ -1,7 +1,7 @@
-"""Wrappers implemented for TopoBench with automated exports."""
+"""Wrappers implemented for TopoBench with canonical automated exports."""
 
+import importlib
 import inspect
-from importlib import util
 from pathlib import Path
 from typing import Any
 
@@ -43,52 +43,46 @@ class WrapperExportsManager:
         dict[str, type]
             Dictionary mapping class names to their corresponding class objects.
         """
-        wrappers = {}
+        wrappers: dict[str, type] = {}
         package_dir = Path(package_path).parent
 
         # Discover wrappers in subdirectories (subpackages)
-        for subpackage in package_dir.iterdir():
+        for subpackage in sorted(package_dir.iterdir()):
             if subpackage.is_dir() and (subpackage / "__init__.py").exists():
-                for file_path in subpackage.glob("*.py"):
+                for file_path in sorted(subpackage.glob("*.py")):
                     if file_path.stem == "__init__":
                         continue
 
-                    module_name = f"{subpackage.stem}.{file_path.stem}"
-                    spec = util.spec_from_file_location(module_name, file_path)
-                    if spec and spec.loader:
-                        module = util.module_from_spec(spec)
-                        spec.loader.exec_module(module)
-
-                        new_wrappers = {
-                            name: obj
-                            for name, obj in inspect.getmembers(module)
-                            if inspect.isclass(obj)
-                            and obj.__module__ == module.__name__
-                            and not name.startswith("_")
-                        }
-                        wrappers.update(new_wrappers)
+                    module_name = (
+                        f"{__package__}.{subpackage.stem}.{file_path.stem}"
+                    )
+                    module = importlib.import_module(module_name)
+                    new_wrappers = {
+                        name: obj
+                        for name, obj in inspect.getmembers(module)
+                        if inspect.isclass(obj)
+                        and obj.__module__ == module.__name__
+                        and not name.startswith("_")
+                    }
+                    wrappers.update(new_wrappers)
 
         # Discover wrappers in standalone .py files (e.g., base.py) at the root level
-        for file_path in package_dir.glob("*.py"):
+        for file_path in sorted(package_dir.glob("*.py")):
             if file_path.stem == "__init__":
                 continue
 
-            module_name = file_path.stem
-            spec = util.spec_from_file_location(module_name, file_path)
-            if spec and spec.loader:
-                module = util.module_from_spec(spec)
-                spec.loader.exec_module(module)
+            module_name = f"{__package__}.{file_path.stem}"
+            module = importlib.import_module(module_name)
+            new_wrappers = {
+                name: obj
+                for name, obj in inspect.getmembers(module)
+                if inspect.isclass(obj)
+                and obj.__module__ == module.__name__
+                and not name.startswith("_")
+            }
+            wrappers.update(new_wrappers)
 
-                new_wrappers = {
-                    name: obj
-                    for name, obj in inspect.getmembers(module)
-                    if inspect.isclass(obj)
-                    and obj.__module__ == module.__name__
-                    and not name.startswith("_")
-                }
-                wrappers.update(new_wrappers)
-
-        return wrappers
+        return dict(sorted(wrappers.items()))
 
 
 # Create the exports manager
