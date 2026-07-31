@@ -39,7 +39,7 @@ def make_activation(name: str) -> torch.nn.Module:
     try:
         activation_type = _ACTIVATIONS[name]
     except KeyError as error:
-        raise ValueError(f"Unsupported activation: {name!r}") from error
+        raise ValueError(f"Unsupported activation: {name}") from error
     return activation_type()
 
 

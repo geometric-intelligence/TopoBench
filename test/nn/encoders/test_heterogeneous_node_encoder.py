@@ -85,9 +85,10 @@ def test_make_activation_rejects_non_strings(name: object) -> None:
 
 @pytest.mark.parametrize("name", ["ReLU", "identity", "", "swish"])
 def test_make_activation_rejects_unknown_names(name: str) -> None:
-    """Unsupported activation names are reported verbatim."""
-    with pytest.raises(ValueError, match=rf"Unsupported activation.*{name!r}"):
+    """Unsupported names retain CellHGT's exact legacy error text."""
+    with pytest.raises(ValueError) as error:
         make_activation(name)
+    assert str(error.value) == f"Unsupported activation: {name}"
 
 
 def test_identity_activation_preserves_values() -> None:
