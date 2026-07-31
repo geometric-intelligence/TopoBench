@@ -93,7 +93,7 @@ class SheafTSPWrapper(AbstractWrapper):
 
     @staticmethod
     def _petal_edges(batch, n_nodes):
-        """Edges of the triangle co-membership graph.
+        """Compute the edges of the triangle co-membership graph.
 
         Two nodes are petal-adjacent when they are graph-adjacent and
         share at least one common neighbor, i.e. their edge lies in a

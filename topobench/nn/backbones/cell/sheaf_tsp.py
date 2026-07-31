@@ -353,6 +353,15 @@ class SheafConvLayer(nn.Module):
         Dropout rate on the input of the restriction-map learner —
         regularizes the learned transports without corrupting the
         filtered signal (surgical regularization).
+    filter_basis : str
+        Polynomial basis for the spectral filter: ``"monomial"``
+        (default; raw powers L̂^k as in Eq. 10) or ``"chebyshev"``
+        (Chebyshev T_k(L̂ - I) via the three-term recurrence). The
+        degree-normalized spectrum lies in [0, 2], so L̂ - I maps it
+        to [-1, 1] where the Chebyshev basis is orthogonal — a
+        better-conditioned realization of the paper's Spectral Sheaf
+        Filtering (frequency-aware filtering in the sheaf eigenbasis)
+        with identical cost and parameter count.
     kernel_distance : str
         ``"feature"`` (raw ‖x_i − x_j‖²) or ``"transport"``
         (‖s_i − R_e s_j‖² under the learned maps) inside the
@@ -365,15 +374,9 @@ class SheafConvLayer(nn.Module):
         (negative mean kernel alignment
         $-\\overline{\\exp(-\\lVert s_i - R_e s_j\rVert^2/4t)}$,
         Tandon et al. App. D — bounded per edge).
-    filter_basis : str
-        Polynomial basis for the spectral filter: ``"monomial"``
-        (default; raw powers L̂^k as in Eq. 10) or ``"chebyshev"``
-        (Chebyshev T_k(L̂ - I) via the three-term recurrence). The
-        degree-normalized spectrum lies in [0, 2], so L̂ - I maps it
-        to [-1, 1] where the Chebyshev basis is orthogonal — a
-        better-conditioned realization of the paper's Spectral Sheaf
-        Filtering (frequency-aware filtering in the sheaf eigenbasis)
-        with identical cost and parameter count.
+    rotation_param : str
+        Projection onto SO(d) for the restriction maps: ``"cayley"``
+        or ``"exp"`` (surjective exponential map).
     """
 
     def __init__(
@@ -558,6 +561,18 @@ class SheafConvLayer(nn.Module):
 
         # Polynomial filter with per-order weights (Eq. 10)
         def Lmm(v: torch.Tensor) -> torch.Tensor:
+            """Apply the assembled Laplacian to a stalk signal.
+
+            Parameters
+            ----------
+            v : torch.Tensor
+                Stalk signal of shape (N*d, C).
+
+            Returns
+            -------
+            torch.Tensor
+                The product L v, same shape as ``v``.
+            """
             return torch.sparse.mm(L, v) if use_sparse else L @ v
 
         if self.filter_basis == "ppr":
@@ -664,6 +679,10 @@ class SheafTSP(nn.Module):
         Transport regularizer form: ``"dirichlet"`` (Eq. 15) or
         ``"alignment"`` (bounded kernel-alignment reward, Tandon
         et al. App. D). Default: ``"dirichlet"``.
+    rotation_param : str, optional
+        Projection onto SO(d) for the restriction maps: ``"cayley"``
+        or ``"exp"`` (surjective exponential map). Default:
+        ``"cayley"``.
     global_context : bool, optional
         Add a zero-initialized per-layer global mean-context term
         ``x += W_g mean(x)`` (default: False).
