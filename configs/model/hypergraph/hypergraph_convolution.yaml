@@ -17,10 +17,15 @@ backbone:
   _target_: topobench.nn.backbones.hypergraph.hypergraph_convolution.HyperGraphConvolution
   a: ${model.feature_encoder.out_channels}
   b: ${model.feature_encoder.out_channels}
+  # False -> propagate with the raw incidence matrix (works only because the khop
+  #          lifting produces a square [N, N] incidence).
+  # True  -> build the actual HyperGCN Laplacian from the hyperedges each forward.
   reapproximate: False
   cuda: 0
-  loss:
-    _target_: torch.nn.CrossEntropyLoss
+  # NOTE: do NOT add a `loss:` key here. configs/loss/default.yaml pulls
+  # `model.backbone.loss` into TBLoss.modules_losses and calls it as
+  # loss(model_out: dict, batch), so only AbstractLoss subclasses belong here.
+  # The task loss (cross-entropy / MSE) comes from dataset.parameters.loss_type.
 
 backbone_wrapper:
   _target_: topobench.nn.wrappers.HypergraphWrapper
@@ -28,9 +33,12 @@ backbone_wrapper:
   wrapper_name: HypergraphWrapper
   out_channels: ${model.feature_encoder.out_channels}
   num_cell_dimensions: 1
+
 readout:
   _target_: topobench.nn.readouts.${model.readout.readout_name}
   readout_name: PropagateSignalDown
+  # Must stay 1: PropagateSignalDown would otherwise look for model_out["x_1"]
+  # and batch["incidence_1"], neither of which exists for the hypergraph domain.
   num_cell_dimensions: 1
   hidden_dim: ${model.feature_encoder.out_channels}
   out_channels: ${dataset.parameters.num_classes}
