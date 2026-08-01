@@ -181,7 +181,7 @@ class HyperGraphConvolution(Module):
         else:
             A = structure
 
-        A = A.to(self.device)
+        A = A.to(H.device)      # was: A.to(self.device)
 
         AHW = SparseMM.apply(A, HW)
 
