@@ -25,6 +25,7 @@ EDGE_TYPES = [
 EXPECTED_REGISTERED_BACKBONES = {
     "GCNDGM",
     "EDGNN",
+    "HypergraphConvBackbone",
     "GPSEncoder",
     "GraphMLP",
     "HGTBackbone",

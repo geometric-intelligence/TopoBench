@@ -4,8 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch_geometric
-import torch_scatter
+from torch_geometric.utils import scatter
 
 
 class EDGNN(nn.Module):
@@ -113,33 +112,56 @@ class EDGNN(nn.Module):
         r"""Reset parameters."""
         self.conv.reset_parameters()
 
-    def forward(self, x, edge_index):
-        r"""Forward pass.
+    def forward(self, x, hyperedge_index):
+        r"""Return node embeddings from native dense hypergraph incidence."""
+        if not isinstance(x, torch.Tensor):
+            raise TypeError("x must be a torch.Tensor")
+        if x.ndim != 2 or not x.is_floating_point():
+            raise ValueError("x must be a rank-2 floating tensor")
+        if x.size(1) != self.in_channels:
+            raise ValueError(
+                f"x must have {self.in_channels} features; received {x.size(1)}"
+            )
+        if not isinstance(hyperedge_index, torch.Tensor):
+            raise TypeError("hyperedge_index must be a torch.Tensor")
+        if hyperedge_index.layout != torch.strided:
+            raise TypeError("hyperedge_index must be a dense tensor")
+        if (
+            hyperedge_index.ndim != 2
+            or hyperedge_index.size(0) != 2
+        ):
+            raise ValueError("hyperedge_index must have shape [2, M]")
+        if hyperedge_index.dtype is not torch.long:
+            raise TypeError("hyperedge_index must use torch.long")
+        if hyperedge_index.device != x.device:
+            raise ValueError("x and hyperedge_index must use the same device")
+        if hyperedge_index.numel():
+            vertex, edges = hyperedge_index
+            if int(vertex.min()) < 0 or int(vertex.max()) >= x.size(0):
+                raise ValueError(
+                    "hyperedge_index contains an invalid node index"
+                )
+            if int(edges.min()) < 0:
+                raise ValueError(
+                    "hyperedge_index contains a negative hyperedge ID"
+                )
+            expected = torch.arange(
+                int(edges.max()) + 1,
+                device=edges.device,
+            )
+            if not torch.equal(torch.unique(edges), expected):
+                raise ValueError(
+                    "hyperedge_index hyperedge IDs must be contiguous from zero"
+                )
+        else:
+            vertex, edges = hyperedge_index
 
-        Parameters
-        ----------
-        x : Tensor
-            Input features.
-        edge_index : LongTensor
-            Edge index.
-
-        Returns
-        -------
-        Tensor
-            Output features.
-        None
-            None object needed for compatibility.
-        """
-        if edge_index.layout == torch.sparse_coo:
-            edge_index, _ = torch_geometric.utils.to_edge_index(edge_index)
-        V, E = edge_index[0], edge_index[1]
         x0 = x
         for _ in range(self.nlayer):
             x = self.dropout(x)
-            x = self.conv(x, V, E, x0)
+            x = self.conv(x, vertex, edges, x0)
             x = self.act(x)
-        x = self.dropout(x)
-        return x, None
+        return self.dropout(x)
 
 
 class customMLP(nn.Module):
@@ -450,7 +472,7 @@ class EquivSetConv(nn.Module):
             )
         else:
             self.W = nn.Identity()
-        self.aggr = aggr
+        self.aggr = "sum" if aggr == "add" else aggr
         self.alpha = alpha
         self.dropout = dropout
 
@@ -485,13 +507,13 @@ class EquivSetConv(nn.Module):
         N = X.shape[-2]
 
         Xve = self.W1(X)[..., vertex, :]  # [nnz, C]
-        Xe = torch_scatter.scatter(
+        Xe = scatter(
             Xve, edges, dim=-2, reduce=self.aggr
         )  # [E, C], reduce is 'mean' here as default
 
         Xev = Xe[..., edges, :]  # [nnz, C]
         Xev = self.W2(torch.cat([X[..., vertex, :], Xev], -1))
-        Xv = torch_scatter.scatter(
+        Xv = scatter(
             Xev, vertex, dim=-2, reduce=self.aggr, dim_size=N
         )  # [N, C]
 
@@ -534,7 +556,7 @@ class JumpLinkConv(nn.Module):
             InputNorm=False,
         )
 
-        self.aggr = aggr
+        self.aggr = "sum" if aggr == "add" else aggr
         self.alpha = alpha
 
     def reset_parameters(self):
@@ -565,12 +587,12 @@ class JumpLinkConv(nn.Module):
         N = X.shape[-2]
 
         Xve = X[..., vertex, :]  # [nnz, C]
-        Xe = torch_scatter.scatter(
+        Xe = scatter(
             Xve, edges, dim=-2, reduce=self.aggr
         )  # [E, C], reduce is 'mean' here as default
 
         Xev = Xe[..., edges, :]  # [nnz, C]
-        Xv = torch_scatter.scatter(
+        Xv = scatter(
             Xev, vertex, dim=-2, reduce=self.aggr, dim_size=N
         )  # [N, C]
 
@@ -669,11 +691,11 @@ class MeanDegConv(nn.Module):
         N = X.shape[-2]
 
         Xve = self.W1(X[..., vertex, :])  # [nnz, C]
-        Xe = torch_scatter.scatter(
+        Xe = scatter(
             Xve, edges, dim=-2, reduce="mean"
         )  # [E, C], reduce is 'mean' here as default
 
-        deg_e = torch_scatter.scatter(
+        deg_e = scatter(
             torch.ones(Xve.shape[0], device=Xve.device),
             edges,
             dim=-2,
@@ -683,11 +705,11 @@ class MeanDegConv(nn.Module):
 
         Xev = Xe[..., edges, :]  # [nnz, C]
         Xev = self.W2(torch.cat([X[..., vertex, :], Xev], -1))
-        Xv = torch_scatter.scatter(
+        Xv = scatter(
             Xev, vertex, dim=-2, reduce="mean", dim_size=N
         )  # [N, C]
 
-        deg_v = torch_scatter.scatter(
+        deg_v = scatter(
             torch.ones(Xev.shape[0], device=Xev.device),
             vertex,
             dim=-2,

@@ -19,7 +19,6 @@ from topobench.nn.wrappers import graph as graph_wrappers
 from topobench.nn.wrappers import heterogeneous as heterogeneous_wrappers
 from topobench.nn.wrappers import hypergraph as hypergraph_wrappers
 
-
 EXPECTED_DATASETS = {
     "CitationHypergraphDataset",
     "HypergraphDataset",
@@ -117,12 +116,16 @@ def test_backbone_registry_has_only_surviving_local_models() -> None:
         heterogeneous_backbones.BACKBONE_CLASSES,
         {"HGTBackbone", "HeteroSAGEBackbone"},
     )
-    _assert_explicit_registry(hypergraph_backbones.BACKBONE_CLASSES, {"EDGNN"})
+    _assert_explicit_registry(
+        hypergraph_backbones.BACKBONE_CLASSES,
+        {"EDGNN", "HypergraphConvBackbone"},
+    )
     _assert_explicit_registry(
         backbones.MODEL_CLASSES,
         {
             "GCNDGM",
             "EDGNN",
+            "HypergraphConvBackbone",
             "GPSEncoder",
             "GraphMLP",
             "HGTBackbone",
@@ -157,7 +160,7 @@ def test_wrapper_registry_has_only_surviving_adapters() -> None:
 
 
 def test_registry_imports_do_not_use_dynamic_discovery() -> None:
-    script = r'''
+    script = r"""
 import importlib
 import importlib.util
 from pathlib import Path
@@ -220,7 +223,7 @@ importlib.util.spec_from_file_location = guarded_spec_from_file_location
 import topobench.data.loaders
 import topobench.nn.backbones
 import topobench.nn.wrappers
-'''
+"""
     result = subprocess.run(
         [sys.executable, "-c", script],
         check=False,
