@@ -3,7 +3,6 @@
 import math
 
 import torch
-from torch.autograd import Variable
 from torch.nn.modules.module import Module
 from torch.nn.parameter import Parameter
 
@@ -64,6 +63,47 @@ class SparseMM(torch.autograd.Function):
         return g1, g2
 
 
+def incidence_to_hyperedges(incidence, min_size=2):
+    """Convert a sparse node-hyperedge incidence matrix to a hyperedge dict.
+
+    ``Laplacian`` expects hyperedges as a mapping from hyperedge id to the list
+    of node ids it contains, whereas ``HypergraphWrapper`` hands the backbone
+    the sparse ``[num_nodes, num_hyperedges]`` incidence matrix.
+
+    Hyperedges with fewer than ``min_size`` nodes are dropped: for a singleton
+    the supremum and the infimum coincide and the normalisation constant
+    ``2 * len(e) - 3`` becomes negative, which would inject negative weights
+    into the adjacency and break the symmetric normalisation. Singletons do
+    occur here, since the k-hop lifting gives every isolated node a hyperedge
+    containing only itself.
+
+    Parameters
+    ----------
+    incidence : torch.Tensor
+        Sparse incidence matrix of shape ``[num_nodes, num_hyperedges]``.
+    min_size : int, optional
+        Minimum number of nodes for a hyperedge to be kept, by default 2.
+
+    Returns
+    -------
+    dict
+        Mapping from hyperedge index to the list of its node indices.
+    """
+    indices = incidence.coalesce().indices().cpu()
+    nodes = indices[0].tolist()
+    edges = indices[1].tolist()
+
+    hyperedges = {}
+    for node, edge in zip(nodes, edges, strict=True):
+        hyperedges.setdefault(edge, []).append(node)
+
+    return {
+        edge: members
+        for edge, members in hyperedges.items()
+        if len(members) >= min_size
+    }
+
+
 class HyperGraphConvolution(Module):
     """Define a simple GCN layer.
 
@@ -106,8 +146,9 @@ class HyperGraphConvolution(Module):
         ----------
         H : torch.Tensor
             The hidden node features.
-        structure : torch.Tensor or dict
-            The structural matrix or hyperedge dictionary.
+        structure : torch.Tensor
+            The sparse node-hyperedge incidence matrix, of shape
+            ``[num_nodes, num_hyperedges]``.
         m : bool, optional
             Whether to use mediators, by default True.
 
@@ -119,19 +160,32 @@ class HyperGraphConvolution(Module):
         W, b = self.W, self.bias
         HW = torch.mm(H, W)
 
+        n = H.shape[0]
+        num_hyperedges = structure.shape[1]
+
         if self.reapproximate:
-            n, X = H.shape[0], HW.cpu().detach().numpy()
-            A = Laplacian(n, structure, X, m)
+            X = HW.cpu().detach().numpy()
+            hyperedges = incidence_to_hyperedges(structure)
+
+            if len(hyperedges) > 0:
+                A = Laplacian(n, hyperedges, X, m)
+            else:
+                # Every hyperedge was a singleton: fall back to the identity,
+                # i.e. self-loops only, which is what the normalised Laplacian
+                # would reduce to anyway.
+                A = torch.sparse_coo_tensor(
+                    torch.arange(n).repeat(2, 1),
+                    torch.ones(n),
+                    (n, n),
+                )
         else:
             A = structure
 
         A = A.to(self.device)
-        A = Variable(A)
 
         AHW = SparseMM.apply(A, HW)
-        x_1 = torch.zeros(
-            (structure.shape[1], self.W.shape[1]), device=H.device
-        )
+
+        x_1 = torch.zeros((num_hyperedges, self.b), device=H.device)
         return AHW + b, x_1
 
     def __repr__(self):
