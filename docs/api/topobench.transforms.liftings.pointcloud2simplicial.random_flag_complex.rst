@@ -1,7 +1,0 @@
-topobench.transforms.liftings.pointcloud2simplicial.random\_flag\_complex module
-================================================================================
-
-.. automodule:: topobench.transforms.liftings.pointcloud2simplicial.random_flag_complex
-   :members:
-   :undoc-members:
-   :show-inheritance:

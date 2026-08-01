@@ -13,9 +13,8 @@ Subpackages
    :maxdepth: 4
 
    topobench.data.loaders.graph
+   topobench.data.loaders.heterogeneous
    topobench.data.loaders.hypergraph
-   topobench.data.loaders.pointcloud
-   topobench.data.loaders.simplicial
 
 Submodules
 ----------

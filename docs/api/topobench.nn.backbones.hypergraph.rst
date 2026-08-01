@@ -13,3 +13,4 @@ Submodules
    :maxdepth: 4
 
    topobench.nn.backbones.hypergraph.edgnn
+   topobench.nn.backbones.hypergraph.hypergraph_conv

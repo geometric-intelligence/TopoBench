@@ -1,7 +1,0 @@
-topobench.nn.wrappers.simplicial.sccnn\_wrapper module
-======================================================
-
-.. automodule:: topobench.nn.wrappers.simplicial.sccnn_wrapper
-   :members:
-   :undoc-members:
-   :show-inheritance:

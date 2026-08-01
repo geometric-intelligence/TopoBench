@@ -1,7 +1,0 @@
-topobench.data.datasets.us\_county\_demos\_dataset module
-=========================================================
-
-.. automodule:: topobench.data.datasets.us_county_demos_dataset
-   :members:
-   :undoc-members:
-   :show-inheritance:

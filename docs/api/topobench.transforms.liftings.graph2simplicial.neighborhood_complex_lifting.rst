@@ -1,7 +1,0 @@
-topobench.transforms.liftings.graph2simplicial.neighborhood\_complex\_lifting module
-====================================================================================
-
-.. automodule:: topobench.transforms.liftings.graph2simplicial.neighborhood_complex_lifting
-   :members:
-   :undoc-members:
-   :show-inheritance:

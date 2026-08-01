@@ -14,3 +14,4 @@ Submodules
 
    topobench.data.loaders.hypergraph.citation_hypergraph_dataset_loader
    topobench.data.loaders.hypergraph.hypergraph_dataset_loader
+   topobench.data.loaders.hypergraph.synthetic

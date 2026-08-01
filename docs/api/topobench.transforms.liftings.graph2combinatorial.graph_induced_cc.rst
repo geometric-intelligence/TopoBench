@@ -1,7 +1,0 @@
-topobench.transforms.liftings.graph2combinatorial.graph\_induced\_cc module
-===========================================================================
-
-.. automodule:: topobench.transforms.liftings.graph2combinatorial.graph_induced_cc
-   :members:
-   :undoc-members:
-   :show-inheritance:

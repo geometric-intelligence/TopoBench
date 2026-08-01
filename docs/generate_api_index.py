@@ -60,7 +60,7 @@ def organize_by_package_structure(modules):
         },
         "topobench.transforms": {
             "title": "Transformations",
-            "description": "Data transformations and topological lifting operations",
+            "description": "Data transformations and feature preprocessing",
             "modules": [],
         },
         "topobench.utils": {

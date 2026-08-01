@@ -16,3 +16,12 @@ Subpackages
    topobench.nn.encoders
    topobench.nn.readouts
    topobench.nn.wrappers
+
+Submodules
+----------
+
+.. toctree::
+   :maxdepth: 4
+
+   topobench.nn.activation
+   topobench.nn.capabilities

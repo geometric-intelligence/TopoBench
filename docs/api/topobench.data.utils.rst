@@ -12,6 +12,7 @@ Submodules
 .. toctree::
    :maxdepth: 4
 
-   topobench.data.utils.io_utils
+   topobench.data.utils.common
+   topobench.data.utils.downloads
+   topobench.data.utils.hypergraph_io
    topobench.data.utils.split_utils
-   topobench.data.utils.utils

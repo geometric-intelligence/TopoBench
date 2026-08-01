@@ -1,72 +1,35 @@
 # Native heterogeneous graphs
 
-TopoBench supports native PyTorch Geometric `HeteroData` for a deliberately
-narrow first use case: node classification on one heterogeneous graph. HGT and
-HeteroSAGE share the same preprocessing, batching, supervision, evaluation,
-checkpoint, and logging path.
+TopoBench uses PyTorch Geometric `HeteroData` directly for node classification on one typed graph. A heterogeneous graph has named node stores and canonical relation triples such as `("author", "writes", "paper")`. Each node type keeps its own feature matrix, and each relation keeps its own `edge_index`.
 
-Here, **heterogeneous** means that a graph has named node types and typed
-relations, such as `("author", "writes", "paper")`, with a separate feature
-matrix for each node type. This is different from a **heterophilous
-homogeneous** graph: the datasets loaded by
-`HeterophilousGraphDatasetLoader` are ordinary PyG `Data` objects whose
-connected nodes often have different labels. They do not use this pipeline.
+HGT and HeteroSAGE share the same validation, preprocessing, loader, target supervision, evaluator, checkpoint, and logging contracts. The main operating choice is whether a phase sees the full graph or a sampled neighborhood around target seeds.
 
-The architectural rationale and staged promotion gates are recorded in the
-[approved design](plans/2026-07-30-native-heterogeneous-graph-design.md). This
-guide is the public configuration and extension contract.
+## Run the four offline experiments
 
-## Offline synthetic checks
-
-The deterministic synthetic graph is the quickest way to validate a setup. It
-uses no downloaded data. These commands compose the production configuration,
-build the data and model objects, and intentionally skip training, testing, and
-external logging:
+The deterministic synthetic graph requires no download. The following four commands are the quickest complete checks of both models and both loader modes:
 
 ```bash
-uv run python -m topobench experiment=heterogeneous_synthetic_hgt_full train=false test=false logger=[]
-uv run python -m topobench experiment=heterogeneous_synthetic_heterosage_full train=false test=false logger=[]
-uv run python -m topobench experiment=heterogeneous_synthetic_hgt_neighbor train=false test=false logger=[]
-uv run python -m topobench experiment=heterogeneous_synthetic_heterosage_neighbor train=false test=false logger=[]
-```
-
-The executable documentation test also builds each documented synthetic
-production pipeline and runs one model step:
-
-```bash
-uv run pytest test/docs/test_heterogeneous_examples.py -q
-```
-
-Remove `train=false test=false logger=[]` to run a configured experiment with
-training, best-checkpoint validation/test reruns, and W&B logging. For example:
-
-```bash
+uv run python -m topobench experiment=heterogeneous_synthetic_hgt_full
+uv run python -m topobench experiment=heterogeneous_synthetic_heterosage_full
 uv run python -m topobench experiment=heterogeneous_synthetic_hgt_neighbor
+uv run python -m topobench experiment=heterogeneous_synthetic_heterosage_neighbor
 ```
 
-## Version 1 data contract
+Use the full variants to check typed message passing without a sampling backend. The neighbor variants additionally require a PyG-supported sampling package such as `pyg-lib` or `torch-sparse`.
 
-The heterogeneous-node pipeline accepts exactly one processed `HeteroData`
-object. Multiple graphs, graph-level labels, and link targets are rejected. The
-processed graph must satisfy all of these invariants before model construction:
+## Data contract
 
-- `data.node_types` is non-empty and every node store has a floating-point,
-  rank-two `x` tensor with one row per node.
-- Each edge type is a canonical `(source, relation, destination)` triple. An
-  `edge_index`, when present, is a `torch.long` tensor with shape `[2, E]` and
-  indices within the source and destination stores.
-- `dataset.parameters.target_node_type` names an existing node store. Only
-  this store is supervised.
-- The target store has one-dimensional `torch.long` labels `y`, with one label
-  per target node. Only labels selected by the union of `train_mask`,
-  `val_mask`, and `test_mask` must be in
-  `[0, dataset.parameters.num_classes - 1]`. Unsupervised nodes may retain
-  sentinel or out-of-range labels; TopoBench ignores them.
-- The target store has non-empty, boolean `train_mask`, `val_mask`, and
-  `test_mask` tensors. They have one entry per target node and are pairwise
-  disjoint. They may leave some nodes unsupervised.
+A heterogeneous dataset contains exactly one processed `HeteroData` object. Only one configured target node type contributes labels, loss, and metrics. The object must satisfy these invariants before model construction:
 
-Set the target type in the dataset configuration, not in the model:
+- `data.node_types` is non-empty.
+- Every node store has a floating `x` matrix with shape `[N_type, F_type]`, one feature row per node, and finite values.
+- Every edge type is a `(source, relation, destination)` triple. Its `edge_index` has shape `[2, E]`, uses `torch.long`, and contains IDs within the source and destination stores.
+- `dataset.parameters.target_node_type` names an existing node store.
+- The target store has one-dimensional `torch.long` labels `y`, one per target node.
+- The target store has boolean `train_mask`, `val_mask`, and `test_mask` vectors, each with one entry per target node. The masks are non-empty and pairwise disjoint. Nodes outside their union are context only.
+- Supervised labels are within `[0, num_classes - 1]`. Unsupervised target nodes may retain a sentinel label because they are never selected.
+
+The dataset configuration owns the target declaration:
 
 ```yaml
 parameters:
@@ -76,270 +39,104 @@ parameters:
   num_classes: 4
 ```
 
-The pipeline derives ordered metadata and per-type input widths after
-preprocessing. It injects that validated runtime specification into model
-fields declared as literal `null`; relation names and feature widths are not
-hard-coded in a backbone.
+After preprocessing, the pipeline derives ordered PyG metadata and each node type's feature width. Model config fields for metadata, target type, input widths, and output width remain `null` until that validated runtime specification is available.
 
-### Official masks
+## Preserve official masks
 
-DBLP and OGB-MAG retain the train, validation, and test masks supplied by PyG.
-TopoBench neither regenerates nor repartitions them. In full-batch mode, each
-phase sees the same transductive graph and its corresponding target-store mask
-selects supervised nodes. In neighbor mode, each phase constructs its input
-seeds from that same official mask.
+DBLP and OGB-MAG keep the train, validation, and test masks provided by PyG. TopoBench does not repartition them.
 
-### Transforms and featureless node types
+In full mode, all three phases reuse the same transductive graph, and the corresponding target-store mask selects supervised nodes. In neighbor mode, the same masks define the phase-specific target seed IDs. This makes the split independent of the sampling traversal.
 
-Heterogeneous data reuses the ordinary TopoBench `PreProcessor`, transform
-registry, cache, locking, and PyG serialization. A transform may run on
-`HeteroData` only when its implementation declares
-`supports_heterodata = True`; incompatible graph liftings and data
-manipulations fail early instead of flattening typed stores.
+## Preprocessing typed stores
 
-Every node type must have features after preprocessing. Use the shared
-`HeterogeneousConstantFeatures` transform to create or append a constant
-channel for selected featureless stores. Synthetic data uses it for `venue`;
-DBLP uses it for `conference`. OGB-MAG is loaded with
-`preprocess: metapath2vec`, which supplies structural features for all node
-types. Learned embeddings for featureless stores are not part of version 1.
+Heterogeneous data uses the shared preprocessor, transform registry, cache, locking, and PyG serialization. A transform may receive `HeteroData` only when it declares `supports_heterodata = True`; an incompatible transform fails before it can flatten or discard typed stores.
 
-Directionality is explicit. `HeterogeneousToUndirected` adds typed reverse
-relations and defaults to `merge: false`. Synthetic data and OGB-MAG request
-this transform; DBLP already supplies both directions and must not receive it
-again.
+Every node type must have features after preprocessing. `HeterogeneousConstantFeatures` creates or appends a constant channel for selected featureless stores. Synthetic data uses it for `venue`, and DBLP uses it for `conference`. OGB-MAG requests its configured structural preprocessing so every store reaches the model with features.
 
-## Full-graph and neighbor batching
+Relation direction is explicit. `HeterogeneousToUndirected` adds typed reverse relations and defaults to `merge: false`. Synthetic data and OGB-MAG request it. DBLP already provides both directions and does not request it again.
 
-`dataset.dataloader_params.mode` is part of the experiment protocol.
+## Full-graph mode
 
-`full_batch` uses PyG `DataLoader` with the one native graph. The phase mask on
-the target store determines the loss and metrics. This is the synthetic
-full-batch and DBLP protocol.
+`dataset.dataloader_params.mode: full_batch` uses a PyG `DataLoader` containing the one validated graph. Its operating invariants are:
 
-`neighbor` uses a separate generic PyG `NeighborLoader` for train, validation,
-and test. It is intentionally separate from TopoBench's topological collation
-path. Sampling is directional, and every relation fan-out list must have
-exactly `model.backbone.num_layers` entries. HGT and HeteroSAGE use identical
-loader settings.
+- loader batch size is one graph;
+- train, validation, and test reuse the same typed structure;
+- the phase mask on the target store selects loss and metric rows;
+- every non-target store and every unselected target node remains available as message-passing context;
+- no target-seed metadata is needed because the mask is the supervision boundary.
 
-PyG places target seed nodes first in a sampled target store. TopoBench uses
+Synthetic full experiments and both DBLP experiments use this mode.
+
+## Neighbor mode
+
+`dataset.dataloader_params.mode: neighbor` creates a separate `NeighborLoader` for train, validation, and test. It does not use homogeneous or hypergraph collation.
+
+Every relation fan-out list must contain one entry per backbone message-passing layer. HGT and HeteroSAGE use the same loader settings. PyG places target seed nodes first in the sampled target store and records their count in `batch[target_node_type].batch_size`. TopoBench validates that metadata, then applies the equivalent of:
 
 ```python
 seed_count = int(batch[target_node_type].batch_size)
 supervised_logits = logits[:seed_count]
-supervised_labels = labels[:seed_count]
+supervised_labels = batch[target_node_type].y[:seed_count]
 ```
 
-before computing loss or metrics. The remaining target nodes and all other
-node types are message-passing context and never contribute directly to
-supervision.
+Only those leading seed rows contribute directly to loss and metrics. Other sampled target nodes and all non-target stores are context. Missing, non-integer, zero, or oversized target `batch_size` metadata is an error rather than a reason to supervise the complete sampled store.
 
-Validation and test use the configured `evaluation_seed` and
-`evaluation_protocol: sampled_neighbor_fixed`, so repeated runs reproduce the
-same sampled traversal. This is still sampled evaluation, not exact full-graph
-inference. Report it as such; do not compare it to exact results without
-recording the protocol. A supported `pyg-lib` or `torch-sparse` sampling
-backend is required.
+Validation and test use the configured `evaluation_seed` and `sampled_neighbor_fixed` protocol. Each fresh traversal reproduces the same sampled sequence without retaining all sampled batches in memory. This protocol is sampled evaluation, not exact full-graph inference, and should be recorded with reported results.
 
-## Adding a dataset
+## Run DBLP in full mode
 
-Keep the extension small and metadata-driven:
-
-1. Add an `AbstractLoader` under
-   `topobench/data/loaders/heterogeneous/`. It must return a PyG dataset of
-   length one whose item is native `HeteroData`; do not convert it to
-   `DomainData`.
-2. Export the loader from the heterogeneous loader package.
-3. Add `configs/dataset/heterogeneous/<Dataset>.yaml` with
-   `target_node_type`, `num_classes`, `source: official_masks`, and an explicit
-   `dataloader_params.mode`.
-4. Add a dataset-default transform config only for necessary, declared
-   `HeteroData` operations: feature creation and/or explicit reverse
-   relations.
-5. Test the loader without network by substituting a schema-accurate PyG
-   dataset. Assert native store order, labels, masks, feature handling, and
-   relation directions. Put any real download test behind
-   `TOPOBENCH_ALLOW_DOWNLOADS=1`.
-6. Promote from a full-batch smoke test to neighbor sampling only when graph
-   size requires it. For neighbor mode, align fan-out depth with model depth
-   and record the evaluation protocol.
-
-Do not create new random splits for a dataset that provides official masks.
-
-## Adding a model
-
-A native heterogeneous model must consume runtime metadata rather than dataset
-names:
-
-1. Add an eager backbone under `topobench/nn/backbones/heterogeneous/`.
-   Construct every trainable per-type and per-relation module in `__init__`;
-   `forward()` must not create parameters.
-2. Accept the ordered PyG metadata plus `x_dict` and `edge_index_dict`, and
-   return a representation for every node type. Define how node types with no
-   incoming relation are carried forward.
-3. Reuse `HeterogeneousNodeFeatureEncoder`,
-   `HeterogeneousWrapper`, `HeterogeneousNodeReadout`, and
-   `HeterogeneousNodeSupervisionAdapter`.
-4. Add `configs/model/heterogeneous/<model>.yaml`. Leave
-   `feature_encoder.input_channels`, `backbone.metadata`, target-type fields,
-   classifier output width, and supervision mode as literal `null` runtime
-   placeholders.
-5. Test arbitrary safe and unsafe type names, metadata order, finite
-   gradients, serialization, no parameter creation during forward, full-batch
-   supervision, and seed-only neighbor supervision.
-
-If the backbone has message-passing depth `L`, every neighbor fan-out list must
-also have length `L`; TopoBench validates this before training.
-
-## DBLP and OGB-MAG
-
-The following commands may download real datasets. The
-`TOPOBENCH_ALLOW_DOWNLOADS=1` prefix is an explicit operator opt-in and is
-required by the integration tests; the dataset loader itself follows PyG and
-may download whenever files are absent. Review the target data directory and
-available storage before running them.
-
-DBLP uses full-graph training with `author` labels and official masks:
+These commands may download DBLP. The environment variable is an explicit operator opt-in used by the project's integration workflow:
 
 ```bash
 TOPOBENCH_ALLOW_DOWNLOADS=1 uv run python -m topobench experiment=heterogeneous_dblp_hgt
 TOPOBENCH_ALLOW_DOWNLOADS=1 uv run python -m topobench experiment=heterogeneous_dblp_heterosage
 ```
 
-Its bounded real-data optimizer smoke test is:
+Both experiments supervise `author` nodes through official masks and use the complete graph for each phase.
+
+## Preflight OGB-MAG in neighbor mode
+
+OGB-MAG is large and sampled-only. Start with bounded one-epoch runs before removing the batch limits. They exercise training, checkpoint selection, and fixed sampled validation and test reruns without traversing every seed:
 
 ```bash
-TOPOBENCH_ALLOW_DOWNLOADS=1 uv run pytest test/integration/test_dblp_heterogeneous.py -q
+uv run python -m topobench experiment=heterogeneous_ogb_mag_hgt seed=0 trainer.min_epochs=1 trainer.max_epochs=1 trainer.limit_train_batches=10 trainer.limit_val_batches=5 trainer.limit_test_batches=5 logger=heterogeneous_wandb logger.wandb.name=ogb-mag-hgt-neighbor-bounded-seed0
+uv run python -m topobench experiment=heterogeneous_ogb_mag_heterosage seed=0 trainer.min_epochs=1 trainer.max_epochs=1 trainer.limit_train_batches=10 trainer.limit_val_batches=5 trainer.limit_test_batches=5 logger=heterogeneous_wandb logger.wandb.name=ogb-mag-heterosage-neighbor-bounded-seed0
 ```
 
-OGB-MAG is large and sampled-only. Promote it in three stages. First, execute
-the opt-in preflight, which fetches one train, validation, and test batch and
-takes one optimizer step for each model:
+A bounded metric describes only the configured prefix of a fixed sampled loader and is not a benchmark result. After the bounded run succeeds on the intended machine, remove the three `limit_*_batches` overrides to traverse every configured seed. Keep the sampled evaluation protocol attached to any reported metric.
 
-```bash
-TOPOBENCH_ALLOW_DOWNLOADS=1 uv run pytest \
-  test/integration/test_ogb_mag_preflight.py -q -s
-```
+## Checkpoint and W&B identity
 
-The preflight may download and preprocess OGB-MAG. It must pass on the intended
-machine before any Lightning run. The `-s` flag leaves output capture disabled
-so the processed counts, sampled counts, and accelerator-memory report remain
-visible.
+Best-checkpoint validation and test reruns use `val_best_rerun/<metric>` and `test_best_rerun/<metric>`. These are distinct from the last epoch's phase metrics.
 
-Second, run bounded Lightning smoke experiments. These exercise training,
-checkpointing, fixed sampled validation/test reruns, and the shared W&B project
-without traversing every seed.
-
-HGT:
-
-```bash
-uv run python -m topobench.run \
-  experiment=heterogeneous_ogb_mag_hgt \
-  seed=0 \
-  trainer.min_epochs=1 \
-  trainer.max_epochs=1 \
-  trainer.limit_train_batches=10 \
-  trainer.limit_val_batches=5 \
-  trainer.limit_test_batches=5 \
-  logger=heterogeneous_wandb \
-  logger.wandb.name=ogb-mag-hgt-neighbor-bounded-seed0
-```
-
-HeteroSAGE:
-
-```bash
-uv run python -m topobench.run \
-  experiment=heterogeneous_ogb_mag_heterosage \
-  seed=0 \
-  trainer.min_epochs=1 \
-  trainer.max_epochs=1 \
-  trainer.limit_train_batches=10 \
-  trainer.limit_val_batches=5 \
-  trainer.limit_test_batches=5 \
-  logger=heterogeneous_wandb \
-  logger.wandb.name=ogb-mag-heterosage-neighbor-bounded-seed0
-```
-
-Bounded metrics are diagnostics, not benchmark results. They cover only a
-prefix of the fixed sampled evaluation loaders.
-
-Third, only after a model's bounded run passes, remove all three batch-limit
-overrides and change `bounded` to `epoch1` in its W&B name. This performs one
-complete sampled train, validation, best-checkpoint validation rerun, and
-best-checkpoint test traversal.
-
-HGT:
-
-```bash
-uv run python -m topobench.run \
-  experiment=heterogeneous_ogb_mag_hgt \
-  seed=0 \
-  trainer.min_epochs=1 \
-  trainer.max_epochs=1 \
-  logger=heterogeneous_wandb \
-  logger.wandb.name=ogb-mag-hgt-neighbor-epoch1-seed0
-```
-
-HeteroSAGE:
-
-```bash
-uv run python -m topobench.run \
-  experiment=heterogeneous_ogb_mag_heterosage \
-  seed=0 \
-  trainer.min_epochs=1 \
-  trainer.max_epochs=1 \
-  logger=heterogeneous_wandb \
-  logger.wandb.name=ogb-mag-heterosage-neighbor-epoch1-seed0
-```
-
-Even a complete epoch uses fixed neighbor-sampled evaluation, not exact
-full-graph inference. Record that protocol with any reported metric.
-
-Only after the complete one-epoch traversal succeeds should the default
-50-epoch starting point be attempted:
-
-```bash
-uv run python -m topobench.run \
-  experiment=heterogeneous_ogb_mag_hgt \
-  seed=0 \
-  logger=heterogeneous_wandb \
-  logger.wandb.name=ogb-mag-hgt-neighbor-epoch50-seed0
-
-uv run python -m topobench.run \
-  experiment=heterogeneous_ogb_mag_heterosage \
-  seed=0 \
-  logger=heterogeneous_wandb \
-  logger.wandb.name=ogb-mag-heterosage-neighbor-epoch50-seed0
-```
-
-The defaults are neighbor fan-outs `[15, 10]`, target seed batch size `128`,
-two message-passing layers, four loader workers, and fixed sampled evaluation.
-The preflight reports processed and sampled counts plus accelerator memory
-where the platform exposes it. Passing it proves resource readiness, not model
-quality; the 50-epoch defaults are an operational baseline rather than tuned
-hyperparameters.
-
-## W&B identity
-
-Heterogeneous experiments use the shared W&B project
-`topobench-heterogeneous`. The configured run identity is deterministic:
+Heterogeneous W&B runs use project `topobench-heterogeneous` and the deterministic identity:
 
 ```text
 {dataset_name}-{model_name}-{mode}-seed{seed}
 ```
 
-For example, `DBLP-hgt-full_batch-seed0` and
-`OGB_MAG-heterosage-neighbor-seed0` are grouped by dataset, tagged with
-dataset/model/mode, and use the mode as W&B `job_type`. Change `seed=<n>` one
-run at a time; keep the project and naming scheme unchanged when comparing
-models. Use `logger=[]` for checks that must not contact W&B.
+Dataset, model, and mode tags remain stable across seed comparisons. Use `logger=csv` for local runs that must not contact W&B.
 
-## Current non-goals
+## Add a heterogeneous dataset
 
-Version 1 does not support heterogeneous link prediction, heterogeneous graph
-classification, multiple heterogeneous examples, distributed sampling,
-`HGTLoader`, exact layer-wise sampled inference, automatic conversion of
-existing liftings, learned featureless-node embeddings, or flattening
-`HeteroData` into the topological data path. The existing cell-complex HGT is a
-separate rank-to-type adapter and remains supported.
+1. Implement an `AbstractLoader` under `topobench/data/loaders/heterogeneous/`. It must return a PyG dataset of length one whose item is native `HeteroData`.
+2. Export the class from that package and include it in `HETEROGENEOUS_LOADERS`. The top-level `LOADER_CLASSES` registry then exposes the class under `topobench.data.loaders`.
+3. Add `configs/dataset/heterogeneous/<Dataset>.yaml` with `target_node_type`, `num_classes`, split source, and an explicit loader mode.
+4. Add only necessary transforms that declare typed-data support.
+5. Preserve official masks. Promote to neighbor mode only when size requires it, align every fan-out depth with model depth, and declare the sampled evaluation protocol.
+
+## Add a heterogeneous model
+
+1. Implement an eager backbone under `topobench/nn/backbones/heterogeneous/`. Construct trainable modules in `__init__`; `forward()` must not create parameters.
+2. Accept ordered PyG metadata, `x_dict`, and `edge_index_dict`, and return a representation for every node type. Define how stores with no incoming relation retain a representation.
+3. Export the backbone from its domain package, then add its public name to `topobench.nn.backbones.MODEL_CLASSES`.
+4. Reuse `HeterogeneousNodeFeatureEncoder`, `HeterogeneousWrapper`, `HeterogeneousNodeReadout`, and `HeterogeneousNodeSupervisionAdapter` when their contracts fit.
+5. Add `configs/model/heterogeneous/<model>.yaml`, leaving dataset-derived metadata, dimensions, target type, output width, and supervision mode as runtime values.
+
+The model must behave identically under full and neighbor supervision except for how supervised rows are selected.
+
+## Related documentation
+
+- [Graph data and batching](graph_data.md) explains homogeneous `Data` collation and split contracts.
+- [Native hypergraphs](hypergraphs.md) explains incidence batching and node masks.
+- [API reference](api/index.rst) lists the public loader, data-module, backbone, wrapper, and supervision classes.

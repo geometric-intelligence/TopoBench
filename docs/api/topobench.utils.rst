@@ -15,6 +15,7 @@ Submodules
    topobench.utils.config_resolvers
    topobench.utils.instantiators
    topobench.utils.logging_utils
+   topobench.utils.model_instantiation
    topobench.utils.pylogger
    topobench.utils.rich_utils
    topobench.utils.utils

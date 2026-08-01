@@ -1,7 +1,0 @@
-topobench.data.loaders.graph.us\_county\_demos\_dataset\_loader module
-======================================================================
-
-.. automodule:: topobench.data.loaders.graph.us_county_demos_dataset_loader
-   :members:
-   :undoc-members:
-   :show-inheritance:

@@ -13,3 +13,4 @@ Submodules
    :maxdepth: 4
 
    topobench.model.model
+   topobench.model.supervision

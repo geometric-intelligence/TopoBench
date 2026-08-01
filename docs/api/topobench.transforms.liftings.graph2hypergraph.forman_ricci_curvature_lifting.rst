@@ -1,7 +1,0 @@
-topobench.transforms.liftings.graph2hypergraph.forman\_ricci\_curvature\_lifting module
-=======================================================================================
-
-.. automodule:: topobench.transforms.liftings.graph2hypergraph.forman_ricci_curvature_lifting
-   :members:
-   :undoc-members:
-   :show-inheritance:

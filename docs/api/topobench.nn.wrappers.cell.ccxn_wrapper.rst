@@ -1,7 +1,0 @@
-topobench.nn.wrappers.cell.ccxn\_wrapper module
-===============================================
-
-.. automodule:: topobench.nn.wrappers.cell.ccxn_wrapper
-   :members:
-   :undoc-members:
-   :show-inheritance:

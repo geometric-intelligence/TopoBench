@@ -12,6 +12,5 @@ Submodules
 .. toctree::
    :maxdepth: 4
 
-   topobench.dataloader.dataload_dataset
-   topobench.dataloader.dataloader
-   topobench.dataloader.utils
+   topobench.dataloader.graph
+   topobench.dataloader.heterogeneous

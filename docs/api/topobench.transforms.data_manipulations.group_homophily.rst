@@ -1,7 +1,0 @@
-topobench.transforms.data\_manipulations.group\_homophily module
-================================================================
-
-.. automodule:: topobench.transforms.data_manipulations.group_homophily
-   :members:
-   :undoc-members:
-   :show-inheritance:

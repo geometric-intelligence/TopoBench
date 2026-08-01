@@ -13,7 +13,7 @@ Package Overview
 
 :doc:`topobench` - **Core Package**
     Main TopoBench package and entry points
-    (1 submodules)
+    (2 submodules)
 
 :doc:`topobench.callbacks` - **Callbacks**
     Training callbacks for monitoring and control
@@ -21,11 +21,11 @@ Package Overview
 
 :doc:`topobench.data` - **Data**
     Dataset loading, preprocessing, and utilities
-    (31 submodules)
+    (43 submodules)
 
 :doc:`topobench.dataloader` - **Data Loaders**
     Data loading utilities and batch processing
-    (3 submodules)
+    (2 submodules)
 
 :doc:`topobench.evaluator` - **Evaluators**
     Model evaluation metrics and tools
@@ -37,23 +37,23 @@ Package Overview
 
 :doc:`topobench.model` - **Models**
     Model definitions and architectures
-    (1 submodules)
+    (2 submodules)
 
 :doc:`topobench.nn` - **Neural Networks**
     Neural network components: backbones, encoders, readouts, and wrappers
-    (60 submodules)
+    (42 submodules)
 
 :doc:`topobench.optimizer` - **Optimizers**
     Optimization algorithms and schedulers
     (2 submodules)
 
 :doc:`topobench.transforms` - **Transformations**
-    Data transformations and topological lifting operations
-    (85 submodules)
+    Data transformations and feature preprocessing
+    (25 submodules)
 
 :doc:`topobench.utils` - **Utilities**
     Helper functions and utility modules
-    (6 submodules)
+    (7 submodules)
 
 
 Detailed Documentation
@@ -152,7 +152,7 @@ Optimization algorithms and schedulers
 Transformations
 ^^^^^^^^^^^^^^^
 
-Data transformations and topological lifting operations
+Data transformations and feature preprocessing
 
 .. toctree::
    :maxdepth: 2

@@ -1,7 +1,0 @@
-topobench.transforms.data\_manipulations.equal\_gaus\_features module
-=====================================================================
-
-.. automodule:: topobench.transforms.data_manipulations.equal_gaus_features
-   :members:
-   :undoc-members:
-   :show-inheritance:

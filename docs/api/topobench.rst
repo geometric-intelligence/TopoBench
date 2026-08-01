@@ -29,4 +29,5 @@ Submodules
 .. toctree::
    :maxdepth: 4
 
+   topobench.domains
    topobench.run

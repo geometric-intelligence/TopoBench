@@ -1,7 +1,0 @@
-topobench.transforms.liftings.simplicial2combinatorial.coface\_cc\_lifting module
-=================================================================================
-
-.. automodule:: topobench.transforms.liftings.simplicial2combinatorial.coface_cc_lifting
-   :members:
-   :undoc-members:
-   :show-inheritance:

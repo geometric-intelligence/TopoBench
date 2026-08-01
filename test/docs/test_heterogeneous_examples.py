@@ -24,65 +24,77 @@ _GUIDE = _PROJECT_ROOT / "docs" / "heterogeneous_graphs.md"
 SYNTHETIC_EXAMPLES = (
     pytest.param(
         "uv run python -m topobench "
-        "experiment=heterogeneous_synthetic_hgt_full "
-        "train=false test=false logger=[]",
+        "experiment=heterogeneous_synthetic_hgt_full",
         "hgt",
         "full_batch",
         id="hgt-full-batch",
     ),
     pytest.param(
         "uv run python -m topobench "
-        "experiment=heterogeneous_synthetic_heterosage_full "
-        "train=false test=false logger=[]",
+        "experiment=heterogeneous_synthetic_heterosage_full",
         "heterosage",
         "full_batch",
         id="heterosage-full-batch",
     ),
     pytest.param(
         "uv run python -m topobench "
-        "experiment=heterogeneous_synthetic_hgt_neighbor "
-        "train=false test=false logger=[]",
+        "experiment=heterogeneous_synthetic_hgt_neighbor",
         "hgt",
         "neighbor",
         id="hgt-neighbor",
     ),
     pytest.param(
         "uv run python -m topobench "
-        "experiment=heterogeneous_synthetic_heterosage_neighbor "
-        "train=false test=false logger=[]",
+        "experiment=heterogeneous_synthetic_heterosage_neighbor",
         "heterosage",
         "neighbor",
         id="heterosage-neighbor",
     ),
 )
 
+DBLP_EXAMPLES = (
+    pytest.param(
+        "TOPOBENCH_ALLOW_DOWNLOADS=1 uv run python -m topobench "
+        "experiment=heterogeneous_dblp_hgt",
+        "hgt",
+        id="hgt",
+    ),
+    pytest.param(
+        "TOPOBENCH_ALLOW_DOWNLOADS=1 uv run python -m topobench "
+        "experiment=heterogeneous_dblp_heterosage",
+        "heterosage",
+        id="heterosage",
+    ),
+)
+
+
 OGB_MAG_BOUNDED_EXAMPLES = (
     pytest.param(
-        "uv run python -m topobench.run \\\n"
-        "  experiment=heterogeneous_ogb_mag_hgt \\\n"
-        "  seed=0 \\\n"
-        "  trainer.min_epochs=1 \\\n"
-        "  trainer.max_epochs=1 \\\n"
-        "  trainer.limit_train_batches=10 \\\n"
-        "  trainer.limit_val_batches=5 \\\n"
-        "  trainer.limit_test_batches=5 \\\n"
-        "  logger=heterogeneous_wandb \\\n"
-        "  logger.wandb.name=ogb-mag-hgt-neighbor-bounded-seed0",
+        "uv run python -m topobench "
+        "experiment=heterogeneous_ogb_mag_hgt "
+        "seed=0 "
+        "trainer.min_epochs=1 "
+        "trainer.max_epochs=1 "
+        "trainer.limit_train_batches=10 "
+        "trainer.limit_val_batches=5 "
+        "trainer.limit_test_batches=5 "
+        "logger=heterogeneous_wandb "
+        "logger.wandb.name=ogb-mag-hgt-neighbor-bounded-seed0",
         "hgt",
         "ogb-mag-hgt-neighbor-bounded-seed0",
         id="hgt",
     ),
     pytest.param(
-        "uv run python -m topobench.run \\\n"
-        "  experiment=heterogeneous_ogb_mag_heterosage \\\n"
-        "  seed=0 \\\n"
-        "  trainer.min_epochs=1 \\\n"
-        "  trainer.max_epochs=1 \\\n"
-        "  trainer.limit_train_batches=10 \\\n"
-        "  trainer.limit_val_batches=5 \\\n"
-        "  trainer.limit_test_batches=5 \\\n"
-        "  logger=heterogeneous_wandb \\\n"
-        "  logger.wandb.name=ogb-mag-heterosage-neighbor-bounded-seed0",
+        "uv run python -m topobench "
+        "experiment=heterogeneous_ogb_mag_heterosage "
+        "seed=0 "
+        "trainer.min_epochs=1 "
+        "trainer.max_epochs=1 "
+        "trainer.limit_train_batches=10 "
+        "trainer.limit_val_batches=5 "
+        "trainer.limit_test_batches=5 "
+        "logger=heterogeneous_wandb "
+        "logger.wandb.name=ogb-mag-heterosage-neighbor-bounded-seed0",
         "heterosage",
         "ogb-mag-heterosage-neighbor-bounded-seed0",
         id="heterosage",
@@ -122,7 +134,7 @@ def _compose_documented_command(command: str, tmp_path: Path) -> DictConfig:
 def _compose_without_data(command: str) -> DictConfig:
     """Compose a documented command without constructing its dataset."""
     words = _shell_words(command)
-    assert words[:5] == ["uv", "run", "python", "-m", "topobench.run"]
+    assert words[:5] == ["uv", "run", "python", "-m", "topobench"]
 
     GlobalHydra.instance().clear()
     register_all_resolvers()
@@ -152,10 +164,8 @@ def test_documented_synthetic_example_builds_and_forwards(
     assert command in guide
 
     cfg = _compose_documented_command(command, tmp_path)
-    assert cfg.train is False
-    assert cfg.test is False
-    assert "logger" not in cfg
     assert cfg.model.model_name == model_name
+    assert cfg.model.model_domain == "heterogeneous"
     assert cfg.dataset.dataloader_params.mode == mode
 
     pipeline = hydra.utils.instantiate(cfg.data_pipeline)
@@ -188,6 +198,27 @@ def test_documented_synthetic_example_builds_and_forwards(
 
 
 @pytest.mark.parametrize(
+    ("command", "model_name"),
+    DBLP_EXAMPLES,
+)
+def test_documented_dblp_commands_compose_without_loading_data(
+    command: str,
+    model_name: str,
+) -> None:
+    """Both DBLP commands retain full-batch target-node semantics."""
+    guide = _GUIDE.read_text(encoding="utf-8")
+    assert command in guide
+
+    command_without_environment = command.split(maxsplit=1)[1]
+    cfg = _compose_without_data(command_without_environment)
+    assert cfg.dataset.loader.parameters.data_name == "DBLP"
+    assert cfg.dataset.parameters.target_node_type == "author"
+    assert cfg.dataset.dataloader_params.mode == "full_batch"
+    assert cfg.model.model_name == model_name
+    assert cfg.model.model_domain == "heterogeneous"
+
+
+@pytest.mark.parametrize(
     ("command", "model_name", "run_name"),
     OGB_MAG_BOUNDED_EXAMPLES,
 )
@@ -204,6 +235,7 @@ def test_documented_bounded_ogb_command_composes_without_loading_data(
     assert cfg.dataset.loader.parameters.data_name == "OGB_MAG"
     assert cfg.dataset.dataloader_params.mode == "neighbor"
     assert cfg.model.model_name == model_name
+    assert cfg.model.model_domain == "heterogeneous"
     assert cfg.trainer.min_epochs == 1
     assert cfg.trainer.max_epochs == 1
     assert cfg.trainer.limit_train_batches == 10
@@ -211,12 +243,3 @@ def test_documented_bounded_ogb_command_composes_without_loading_data(
     assert cfg.trainer.limit_test_batches == 5
     assert cfg.logger.wandb.project == "topobench-heterogeneous"
     assert cfg.logger.wandb.name == run_name
-
-
-def test_documented_ogb_preflight_displays_diagnostics() -> None:
-    """The operator-facing preflight must not capture its resource report."""
-    guide = _GUIDE.read_text(encoding="utf-8")
-    assert (
-        "TOPOBENCH_ALLOW_DOWNLOADS=1 uv run pytest \\\n"
-        "  test/integration/test_ogb_mag_preflight.py -q -s"
-    ) in guide

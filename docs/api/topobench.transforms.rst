@@ -13,8 +13,6 @@ Subpackages
    :maxdepth: 4
 
    topobench.transforms.data_manipulations
-   topobench.transforms.feature_liftings
-   topobench.transforms.liftings
 
 Submodules
 ----------

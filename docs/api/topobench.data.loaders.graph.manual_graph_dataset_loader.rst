@@ -1,7 +1,0 @@
-topobench.data.loaders.graph.manual\_graph\_dataset\_loader module
-==================================================================
-
-.. automodule:: topobench.data.loaders.graph.manual_graph_dataset_loader
-   :members:
-   :undoc-members:
-   :show-inheritance:
