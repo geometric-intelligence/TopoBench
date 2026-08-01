@@ -3,15 +3,13 @@
 from .heterosage import HeteroSAGEBackbone
 from .hgt import HGTBackbone
 
-BACKBONE_CLASSES = dict(
-    sorted(
-        {
-            backbone_class.__name__: backbone_class
-            for backbone_class in (HGTBackbone, HeteroSAGEBackbone)
-        }.items()
-    )
-)
+BACKBONE_CLASSES = {
+    "HGTBackbone": HGTBackbone,
+    "HeteroSAGEBackbone": HeteroSAGEBackbone,
+}
 
-globals().update(BACKBONE_CLASSES)
-
-__all__ = [*BACKBONE_CLASSES, "BACKBONE_CLASSES"]
+__all__ = [
+    "HGTBackbone",
+    "HeteroSAGEBackbone",
+    "BACKBONE_CLASSES",
+]

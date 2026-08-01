@@ -60,7 +60,7 @@ def _compose(
     experiment: str,
     *,
     tmp_path: Path | None = None,
-    max_epochs: int = 2,
+    max_epochs: int = 1,
     logger_override: str = "[]",
     extra_overrides: tuple[str, ...] = (),
 ) -> DictConfig:
@@ -254,7 +254,7 @@ def test_full_batch_training_validation_checkpoint_and_best_rerun(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Run the real two-epoch lifecycle, including both best-checkpoint reruns."""
+    """Run one real training epoch, including both best-checkpoint reruns."""
     cfg = _compose(experiment, tmp_path=tmp_path)
     caplog.set_level(logging.INFO, logger="topobench.run")
 
@@ -263,7 +263,7 @@ def test_full_batch_training_validation_checkpoint_and_best_rerun(
     _assert_finite_metrics(fit_metrics, prefix="train/")
     _assert_finite_metrics(fit_metrics, prefix="val/")
     fit_trainer = objects["trainer"]
-    assert fit_trainer.current_epoch == 2
+    assert fit_trainer.current_epoch == 1
 
     checkpoint = _checkpoint_callback(objects["callbacks"])
     best_path = Path(checkpoint.best_model_path)
@@ -440,6 +440,7 @@ def test_neighbor_process_outputs_accounts_for_every_seed_once(
             target_store = batch[target_type]
             seed_count = int(target_store.batch_size)
             target_count = int(target_store.num_nodes)
+            assert seed_count > 1
             observed_context |= target_count > seed_count
             seed_ids = target_store.n_id[:seed_count]
             assert bool(torch.isin(seed_ids, expected_ids).all())

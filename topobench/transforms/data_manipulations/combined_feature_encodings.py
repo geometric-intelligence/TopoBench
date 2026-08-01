@@ -1,7 +1,13 @@
 """Combined Feature Encodings Transform."""
 
+import torch
 from torch_geometric.data import Data
 from torch_geometric.transforms import BaseTransform
+
+from .hk_feature_encodings import HKFE
+from .khop_feature_encodings import KHopFE
+from .ppr_feature_encodings import PPRFE
+from .sheaf_connlap_encodings import SheafConnLapPE
 
 # Supported Feature Encodings
 FE_ENCODINGS = {"HKFE", "KHopFE", "SheafConnLapPE", "PPRFE"}
@@ -56,14 +62,6 @@ class CombinedFEs(BaseTransform):
         torch_geometric.data.Data
             The transformed data with added feature encodings.
         """
-        import torch
-
-        from topobench.transforms.data_manipulations import (
-            HKFE,
-            PPRFE,
-            KHopFE,
-            SheafConnLapPE,
-        )
 
         encoding_classes = {
             "HKFE": HKFE,

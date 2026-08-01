@@ -1,7 +1,0 @@
-transform_type: 'lifting'
-transform_name: "PointNetLifting"
-sampling_ratio: 0.25
-cluster_radius: 10
-feature_lifting: ProjectionSum
-preserve_edge_attr: False
-complex_dim: 1

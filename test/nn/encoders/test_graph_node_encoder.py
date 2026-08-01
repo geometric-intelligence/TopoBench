@@ -116,4 +116,3 @@ def test_graph_node_encoder_replaces_native_features() -> None:
     assert result is data
     assert result.x.shape == (graph_a.num_nodes + graph_b.num_nodes, 8)
     assert result.x is not original_x
-    assert "x_0" not in result

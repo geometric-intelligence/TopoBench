@@ -10,7 +10,20 @@ from torch_geometric.data import HeteroData
 
 from topobench.utils.config_resolvers import register_all_resolvers
 
-download_gated_datasets = frozenset({"DBLP.yaml", "OGB_MAG.yaml"})
+NETWORK_FREE_DATASET_SELECTORS = frozenset(
+    {
+        ("graph", "SyntheticGraph"),
+        ("graph", "SyntheticGraphRegression"),
+        ("graph", "SyntheticNodeGraph"),
+        ("heterogeneous", "SyntheticHeterogeneous"),
+        ("hypergraph", "SyntheticHypergraph"),
+    }
+)
+MODEL_SELECTOR_BY_DOMAIN = {
+    "graph": "graph/gat",
+    "heterogeneous": "heterogeneous/hgt",
+    "hypergraph": "hypergraph/hypergraph_conv",
+}
 
 
 class TestLoaders:
@@ -19,20 +32,18 @@ class TestLoaders:
     @pytest.fixture(autouse=True)
     def setup(self):
         """Setup test environment before each test method."""
-        # Existing setup code remains the same
         hydra.core.global_hydra.GlobalHydra.instance().clear()
         register_all_resolvers()
         base_dir = Path(__file__).resolve().parents[3]
-        self.config_files = self._gather_config_files(base_dir)
+        self.config_selectors = self._gather_config_selectors(base_dir)
         self.relative_config_dir = "../../../configs"
         self.test_splits = ["train", "val", "test"]
 
-    # Existing helper methods remain the same
-    def _gather_config_files(
+    def _gather_config_selectors(
         self,
         base_dir: Path,
     ) -> list[tuple[str, str]]:
-        """Gather all relevant config files.
+        """Gather every surviving dataset selector exercised by this test.
 
         Parameters
         ----------
@@ -42,55 +53,33 @@ class TestLoaders:
         Returns
         -------
         list[tuple[str, str]]
-          Dataset-domain and configuration-filename pairs.
+          Dataset-domain and configuration-selector pairs.
         """
-        config_files = []
         config_base_dir = base_dir / "configs/dataset"
-        # Below the datasets that have some default transforms manually overriten with no_transform,
-        exclude_datasets = {
-            "karate_club.yaml",
-            # Below the datasets that have some default transforms with we manually overriten with no_transform,
-            # due to lack of default transform for domain2domain
-            "REDDIT-BINARY.yaml",
-            "IMDB-MULTI.yaml",
-            "IMDB-BINARY.yaml",  # "ZINC.yaml"
-            "ogbg-molpcba.yaml",
-            "manual_dataset.yaml",  # "ogbg-molhiv.yaml"
-        }
-        if os.environ.get("TOPOBENCH_ALLOW_DOWNLOADS") != "1":
-            exclude_datasets.update(download_gated_datasets)
-
-        # Below the datasets that takes quite some time to load and process
-        self.long_running_datasets = {
-            "mantra_name.yaml",
-            "mantra_orientation.yaml",
-            "mantra_genus.yaml",
-            "mantra_betti_numbers.yaml",
-        }
-
-        for dir_path in config_base_dir.iterdir():
-            curr_dir = dir_path.name
-            if dir_path.is_dir():
-                config_files.extend(
-                    [
-                        (curr_dir, f.name)
-                        for f in dir_path.glob("*.yaml")
-                        if f.name not in exclude_datasets
-                    ]
-                )
-        return config_files
+        config_selectors = [
+            (domain, config_file.stem)
+            for domain in ("graph", "heterogeneous", "hypergraph")
+            for config_file in (config_base_dir / domain).glob("*.yaml")
+        ]
+        if os.environ.get("TOPOBENCH_ALLOW_DOWNLOADS") == "1":
+            return config_selectors
+        return [
+            selector
+            for selector in config_selectors
+            if selector in NETWORK_FREE_DATASET_SELECTORS
+        ]
 
     def _load_dataset(
-        self, data_domain: str, config_file: str
+        self, data_domain: str, data_selector: str
     ) -> tuple[Any, str]:
-        """Load dataset with given config file.
+        """Load the dataset selected by its domain-qualified Hydra config.
 
         Parameters
         ----------
         data_domain : str
             Name of the data domain.
-        config_file : str
-          Name of the config file.
+        data_selector : str
+          Name of the dataset config selector.
 
         Returns
         -------
@@ -102,10 +91,10 @@ class TestLoaders:
             config_path=self.relative_config_dir,
             job_name="run",
         ):
-            print("Current config file: ", config_file)
+            print("Current dataset selector: ", data_selector)
             overrides = [
-                f"dataset={data_domain}/{config_file}",
-                "model=graph/gat",
+                f"dataset={data_domain}/{data_selector}",
+                f"model={MODEL_SELECTOR_BY_DOMAIN[data_domain]}",
             ]
             if data_domain == "heterogeneous":
                 overrides.append("transforms=no_transform")
@@ -117,17 +106,13 @@ class TestLoaders:
             dataset_loader = hydra.utils.instantiate(parameters.dataset.loader)
             print(repr(dataset_loader))
 
-            if config_file in self.long_running_datasets:
-                dataset, data_dir = dataset_loader.load(slice=100)
-            else:
-                dataset, data_dir = dataset_loader.load()
+            dataset, data_dir = dataset_loader.load()
             return dataset, data_dir
 
     def test_dataset_loading_states(self):
         """Test different states and scenarios during dataset loading."""
-        for config_data in self.config_files:
-            data_domain, config_file = config_data
-            dataset, _ = self._load_dataset(data_domain, config_file)
+        for data_domain, data_selector in self.config_selectors:
+            dataset, _ = self._load_dataset(data_domain, data_selector)
 
             # Test dataset size and dimensions
             data = dataset[0]
@@ -140,10 +125,6 @@ class TestLoaders:
                 assert data.x.size(0) > 0, "Empty node features"
                 assert data.y.size(0) > 0, "Empty labels"
 
-            # Below brakes with manual dataset
-            # else:
-            #     assert dataset[0].x.size(0) > 0, "Empty node features"
-            #     assert dataset[0].y.size(0) > 0, "Empty labels"
 
             # Test node feature dimensions
             if not isinstance(data, HeteroData) and hasattr(
@@ -151,36 +132,32 @@ class TestLoaders:
             ):
                 assert dataset.data.x.size(1) == dataset.num_node_features
 
-            # Below brakes with manual dataset
-            # # Test label dimensions
-            # if hasattr(dataset, 'num_classes'):
-            #     assert torch.max(dataset.data.y) < dataset.num_classes
 
             repr(dataset)
 
 
-def test_download_gated_datasets_are_excluded_by_default(
+def test_only_packaged_datasets_are_enumerated_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Config enumeration cannot download DBLP or OGB-MAG by default."""
+    """The ordinary suite loads only deterministic packaged datasets."""
     monkeypatch.delenv("TOPOBENCH_ALLOW_DOWNLOADS", raising=False)
-    gathered = TestLoaders()._gather_config_files(
+    gathered = TestLoaders()._gather_config_selectors(
         Path(__file__).resolve().parents[3]
     )
-    filenames = {filename for _, filename in gathered}
 
-    assert download_gated_datasets == {"DBLP.yaml", "OGB_MAG.yaml"}
-    assert filenames.isdisjoint(download_gated_datasets)
+    assert set(gathered) == NETWORK_FREE_DATASET_SELECTORS
 
 
-def test_download_gated_datasets_are_enumerated_only_after_opt_in(
+def test_download_datasets_are_enumerated_only_after_opt_in(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The single environment gate enables configs that actually exist."""
+    """The explicit environment gate enables every surviving selector."""
     monkeypatch.setenv("TOPOBENCH_ALLOW_DOWNLOADS", "1")
-    gathered = TestLoaders()._gather_config_files(
+    gathered = TestLoaders()._gather_config_selectors(
         Path(__file__).resolve().parents[3]
     )
-    filenames = {filename for _, filename in gathered}
+    selectors = set(gathered)
 
-    assert download_gated_datasets.issubset(filenames)
+    assert NETWORK_FREE_DATASET_SELECTORS < selectors
+    assert ("heterogeneous", "DBLP") in selectors
+    assert ("heterogeneous", "OGB_MAG") in selectors

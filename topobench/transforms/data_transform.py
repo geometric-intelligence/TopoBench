@@ -12,8 +12,7 @@ class DataTransform(torch_geometric.transforms.BaseTransform):
     Parameters
     ----------
     transform_name : str | None
-        Registered transform name. ``None`` and the legacy ``"Identity"``
-        spelling disable transformation.
+        Exact registered transform name. ``None`` disables transformation.
     **kwargs : object
         Additional arguments passed to the registered transform.
     """
@@ -28,13 +27,9 @@ class DataTransform(torch_geometric.transforms.BaseTransform):
         kwargs["transform_name"] = transform_name
         self.parameters = kwargs
 
-        # ``Identity`` is the legacy configured spelling of a disabled
-        # transform. Normalize it to the same path as ``None`` so it remains
-        # representation-agnostic without opting an existing transform class
-        # into heterogeneous support.
         self.transform = (
             None
-            if transform_name in (None, "Identity")
+            if transform_name is None
             else TRANSFORMS[transform_name](**kwargs)
         )
 
@@ -55,9 +50,14 @@ class DataTransform(torch_geometric.transforms.BaseTransform):
         Raises
         ------
         TypeError
-            If a transform has not declared heterogeneous-data support or
-            returns an unsupported representation.
+            If the input is unsupported, a transform has not declared
+            heterogeneous-data support, or the result is unsupported.
         """
+        if not isinstance(data, (Data, HeteroData)):
+            raise TypeError(
+                "DataTransform requires Data or HeteroData, received "
+                f"{type(data).__name__}"
+            )
         if self.transform is None:
             return data
         if isinstance(data, HeteroData) and not getattr(

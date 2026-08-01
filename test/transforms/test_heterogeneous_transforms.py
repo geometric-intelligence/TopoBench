@@ -66,7 +66,8 @@ def synthetic_transform_config() -> Iterator[DictConfig]:
             config_name="run.yaml",
             overrides=[
                 "dataset=heterogeneous/SyntheticHeterogeneous",
-                "model=cell/hgt",
+                "model=heterogeneous/hgt",
+                "transforms=dataset_defaults/SyntheticHeterogeneous",
                 "train=false",
                 "test=false",
             ],
@@ -479,14 +480,12 @@ def test_data_transform_rejects_unmarked_transform_for_heterodata(
         assert repr(edge_type) in message
 
 
-@pytest.mark.parametrize("transform_name", [None, "Identity"])
 @pytest.mark.parametrize("data", [Data(x=torch.ones(2, 1)), HeteroData()])
-def test_data_transform_disabled_spelling_is_identity(
+def test_data_transform_none_is_identity(
     data: Data | HeteroData,
-    transform_name: str | None,
 ) -> None:
-    """Both disabled spellings are identities for either representation."""
-    transform = DataTransform(transform_name=transform_name)
+    """An omitted transform is an identity for either representation."""
+    transform = DataTransform(transform_name=None)
 
     assert transform.forward(data) is data
     transformed = transform(data)

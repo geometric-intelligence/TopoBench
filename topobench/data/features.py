@@ -42,9 +42,7 @@ def _node_feature_channels(num_features: object) -> int:
 
 def _validate_one_hot(x: Tensor, policy: str) -> None:
     """Validate an exact one-hot post-transform representation."""
-    if not torch.all((x == 0) | (x == 1)) or not torch.all(
-        x.sum(dim=-1) == 1
-    ):
+    if not torch.all((x == 0) | (x == 1)) or not torch.all(x.sum(dim=-1) == 1):
         raise ValueError(f"{policy} policy requires one-hot data.x")
 
 
@@ -62,7 +60,9 @@ def validate_graph_features(
     if not isinstance(data, Data) or isinstance(data, HeteroData):
         raise TypeError("graph feature validation requires homogeneous Data")
     if feature_policy not in _FEATURE_POLICIES:
-        raise ValueError(f"unsupported graph feature policy: {feature_policy!r}")
+        raise ValueError(
+            f"unsupported graph feature policy: {feature_policy!r}"
+        )
 
     x = data.get("x")
     if not isinstance(x, Tensor):
@@ -70,7 +70,9 @@ def validate_graph_features(
     if x.ndim != 2:
         raise ValueError("data.x must be rank-2 after graph transforms")
     if not x.is_floating_point():
-        raise TypeError("data.x must have a floating dtype after graph transforms")
+        raise TypeError(
+            "data.x must have a floating dtype after graph transforms"
+        )
 
     expected_channels = _node_feature_channels(num_features)
     if x.shape[1] != expected_channels:

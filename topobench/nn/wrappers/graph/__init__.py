@@ -8,4 +8,8 @@ WRAPPER_CLASSES = {
     "GraphMLPWrapper": GraphMLPWrapper,
 }
 
-__all__ = [*WRAPPER_CLASSES, "WRAPPER_CLASSES"]
+__all__ = [
+    "GNNWrapper",
+    "GraphMLPWrapper",
+    "WRAPPER_CLASSES",
+]

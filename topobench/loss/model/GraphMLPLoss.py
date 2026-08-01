@@ -75,7 +75,10 @@ class GraphMLPLoss(AbstractLoss):
             raise TypeError("model_out['x'] must be a rank-2 tensor")
         model_state = batch.get("model_state")
         valid_model_states = ("Training", "Validation", "Test")
-        if not isinstance(model_state, str) or model_state not in valid_model_states:
+        if (
+            not isinstance(model_state, str)
+            or model_state not in valid_model_states
+        ):
             raise ValueError(
                 "batch['model_state'] must be one of "
                 "'Training', 'Validation', or 'Test'; "
@@ -108,9 +111,7 @@ class GraphMLPLoss(AbstractLoss):
             torch.unique(batch_index),
             torch.arange(graph_count, device=batch_index.device),
         ):
-            raise ValueError(
-                "model_out['batch'] must be contiguous from zero"
-            )
+            raise ValueError("model_out['batch'] must be contiguous from zero")
         if edge_index.numel() and not torch.equal(
             batch_index[edge_index[0]],
             batch_index[edge_index[1]],

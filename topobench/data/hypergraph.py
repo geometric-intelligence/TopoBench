@@ -68,9 +68,8 @@ def _validate_features(data: HypergraphData) -> tuple[Tensor, int]:
     num_nodes = int(x.size(0))
     if "num_nodes" in data:
         stored_num_nodes = data["num_nodes"]
-        if (
-            isinstance(stored_num_nodes, bool)
-            or not isinstance(stored_num_nodes, Integral)
+        if isinstance(stored_num_nodes, bool) or not isinstance(
+            stored_num_nodes, Integral
         ):
             raise TypeError("num_nodes must be an integer when explicitly set")
         if int(stored_num_nodes) != num_nodes:
@@ -163,7 +162,9 @@ def _validate_labels(data: HypergraphData, *, num_nodes: int) -> Tensor:
     """Validate and return one label per native node."""
     labels = _require_tensor(data, "y")
     if labels.ndim != 1:
-        raise ValueError(f"y must be rank-1; received shape {tuple(labels.shape)}")
+        raise ValueError(
+            f"y must be rank-1; received shape {tuple(labels.shape)}"
+        )
     if labels.size(0) != num_nodes:
         raise ValueError(
             f"y must contain one label per num_nodes={num_nodes}; "

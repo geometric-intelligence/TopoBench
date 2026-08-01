@@ -6,8 +6,9 @@ from typing import Literal
 
 import numpy as np
 import torch
-from topobench.data.splits import apply_transductive_split
 from torch_geometric.data import Data, InMemoryDataset
+
+from topobench.data.splits import apply_transductive_split
 
 SyntheticGraphTask = Literal[
     "graph_classification",

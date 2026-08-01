@@ -1,4 +1,0 @@
-transform_name: "MessagePassingHomophily"
-transform_type: "data manipulation"
-num_steps: 10
-incidence_field: "incidence_hyperedges" # incidence_hyperedges for hypergraphs, incidence_1,..,incidence_k for other domains

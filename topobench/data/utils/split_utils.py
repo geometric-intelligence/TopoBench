@@ -11,7 +11,6 @@ from topobench.data.splits import (
     inductive_split_views,
     validate_transductive_masks,
 )
-from topobench.dataloader import DataloadDataset
 
 
 def k_fold_split_fixed(labels, parameters, split_idx_list):
@@ -360,8 +359,6 @@ def stratified_splitting(labels, parameters, global_data_seed=42):
     return split_idx
 
 
-
-
 def load_transductive_splits(dataset, parameters):
     r"""Load one graph with canonical transductive masks.
 
@@ -448,14 +445,6 @@ def load_transductive_splits(dataset, parameters):
     if data.x.shape[0] == 0 or not torch.any(data.train_mask):
         raise ValueError("transductive training data must not be empty")
 
-    if parameters.get("standardize", False):
-        data.x = (data.x - data.x[data.train_mask].mean(0)) / data.x[
-            data.train_mask
-        ].std(0)
-        data.y = (data.y - data.y[data.train_mask].mean(0)) / data.y[
-            data.train_mask
-        ].std(0)
-
     return [data], None, None
 
 
@@ -480,9 +469,7 @@ def load_inductive_splits(dataset, parameters):
         Non-empty train, validation, and test views over ``dataset``.
     """
     if len(dataset) <= 1:
-        raise ValueError(
-            "inductive splitting requires more than one graph"
-        )
+        raise ValueError("inductive splitting requires more than one graph")
 
     if parameters.split_type == "fixed" and hasattr(dataset, "split_idx"):
         return inductive_split_views(dataset, dataset.split_idx)
@@ -561,4 +548,4 @@ def load_coauthorship_hypergraph_splits(data, parameters, train_prop=0.5):
         ).shape[0]
         == data.num_nodes
     ), "Not all nodes within splits"
-    return DataloadDataset([data]), None, None
+    return [data], None, None

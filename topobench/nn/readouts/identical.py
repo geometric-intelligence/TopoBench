@@ -4,10 +4,10 @@ from typing import Any
 
 from torch_geometric.data import Data
 
-from topobench.nn.readouts.base import AbstractZeroCellReadOut
+from topobench.nn.readouts.base import AbstractReadout
 
 
-class NoReadOut(AbstractZeroCellReadOut):
+class NoReadOut(AbstractReadout):
     """Compute logits directly from native node embeddings."""
 
     def forward(

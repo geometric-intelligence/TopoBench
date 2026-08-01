@@ -1,4 +1,0 @@
-transform_type: 'lifting'
-transform_name: "CofaceCCLifting"
-feature_lifting: ProjectionSum
-keep_features: False

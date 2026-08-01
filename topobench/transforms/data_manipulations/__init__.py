@@ -1,108 +1,66 @@
-"""Data manipulations module with automated exports."""
+"""Explicit exports for the supported native data manipulations."""
 
-import inspect
-from importlib import util
-from pathlib import Path
-from typing import Any
-
-
-class ModuleExportsManager:
-    """Manages automatic discovery and registration of data manipulation classes."""
-
-    @staticmethod
-    def is_manipulation_class(obj: Any) -> bool:
-        """Check if an object is a valid manipulation class.
-
-        Parameters
-        ----------
-        obj : Any
-            The object to check if it's a valid manipulation class.
-
-        Returns
-        -------
-        bool
-            True if the object is a valid manipulation class (non-private class
-            defined in __main__), False otherwise.
-        """
-        return (
-            inspect.isclass(obj)
-            and obj.__module__ == "__main__"
-            and not obj.__name__.startswith("_")
-        )
-
-    @classmethod
-    def discover_manipulations(cls, package_path: str) -> dict[str, type]:
-        """Dynamically discover all manipulation classes in the package.
-
-        Parameters
-        ----------
-        package_path : str
-            Path to the package's __init__.py file.
-
-        Returns
-        -------
-        dict[str, type]
-            Dictionary mapping class names to their corresponding class objects.
-        """
-        manipulations = {}
-
-        # Get the directory containing the manipulation modules
-        package_dir = Path(package_path).parent
-
-        # Iterate through all .py files in the directory
-        for file_path in package_dir.glob("*.py"):
-            if file_path.stem == "__init__":
-                continue
-
-            # Import the module
-            module_name = f"{Path(package_path).stem}.{file_path.stem}"
-            spec = util.spec_from_file_location(module_name, file_path)
-            if spec and spec.loader:
-                module = util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-
-                # Find all manipulation classes in the module
-                new_manipulations = {
-                    name: obj
-                    for name, obj in inspect.getmembers(module)
-                    if inspect.isclass(obj)
-                    and obj.__module__ == module.__name__
-                    and not name.startswith("_")
-                }
-                manipulations.update(new_manipulations)
-        return manipulations
-
-
-# Create the exports manager
-manager = ModuleExportsManager()
-
-# Automatically discover and populate DATA_MANIPULATIONS
-DATA_MANIPULATIONS = manager.discover_manipulations(__file__)
-
-# Automatically generate __all__
-__all__ = [*DATA_MANIPULATIONS.keys(), "DATA_MANIPULATIONS"]
-
-# For backwards compatibility, also create individual imports
-locals().update(DATA_MANIPULATIONS)
-
-# File-based discovery executes modules under a synthetic name. Keep these
-# serialization-facing wrappers bound to their canonical import path.
-from topobench.transforms.data_manipulations.constant_node_features import (  # noqa: E402
-    ConstantNodeFeatures as ConstantNodeFeatures,
-)
-from topobench.transforms.data_manipulations.heterogeneous import (  # noqa: E402
-    HeterogeneousConstantFeatures as HeterogeneousConstantFeatures,
-)
-from topobench.transforms.data_manipulations.heterogeneous import (  # noqa: E402
-    HeterogeneousToUndirected as HeterogeneousToUndirected,
-)
-
-for canonical_class in (
-    ConstantNodeFeatures,
+from .all_encodings import CombinedEncodings, SelectDestinationEncodings
+from .combined_feature_encodings import CombinedFEs, SelectDestinationFEs
+from .combined_positional_and_structural_encodings import CombinedPSEs
+from .constant_node_features import ConstantNodeFeatures
+from .electrostatic_encodings import ElectrostaticPE
+from .heterogeneous import (
     HeterogeneousConstantFeatures,
     HeterogeneousToUndirected,
-):
-    DATA_MANIPULATIONS[canonical_class.__name__] = canonical_class
-    locals()[canonical_class.__name__] = canonical_class
-    if canonical_class.__name__ not in __all__:
-        __all__.append(canonical_class.__name__)
+)
+from .hk_feature_encodings import HKFE
+from .hkdiag_encodings import HKdiagSE
+from .identity_transform import IdentityTransform
+from .infere_knn_connectivity import InfereKNNConnectivity
+from .infere_radius_connectivity import InfereRadiusConnectivity
+from .keep_only_connected_component import KeepOnlyConnectedComponent
+from .keep_selected_data_fields import KeepSelectedDataFields
+from .keep_selected_target_indices import KeepSelectedTargetIndices
+from .khop_feature_encodings import KHopFE
+from .laplacian_encodings import LapPE
+from .node_degrees import NodeDegrees
+from .node_features_to_float import NodeFeaturesToFloat
+from .one_hot_degree_features import OneHotDegreeFeatures
+from .ppr_feature_encodings import PPRFE
+from .random_walk_encodings import RWSE
+from .rename_fields import RenameFields
+from .sheaf_connlap_encodings import SheafConnLapPE
+
+DATA_MANIPULATIONS = dict(
+    sorted(
+        {
+            transform_class.__name__: transform_class
+            for transform_class in (
+                CombinedEncodings,
+                CombinedFEs,
+                CombinedPSEs,
+                ConstantNodeFeatures,
+                ElectrostaticPE,
+                HeterogeneousConstantFeatures,
+                HeterogeneousToUndirected,
+                HKFE,
+                HKdiagSE,
+                IdentityTransform,
+                InfereKNNConnectivity,
+                InfereRadiusConnectivity,
+                KeepOnlyConnectedComponent,
+                KeepSelectedDataFields,
+                KeepSelectedTargetIndices,
+                KHopFE,
+                LapPE,
+                NodeDegrees,
+                NodeFeaturesToFloat,
+                OneHotDegreeFeatures,
+                PPRFE,
+                RWSE,
+                RenameFields,
+                SelectDestinationEncodings,
+                SelectDestinationFEs,
+                SheafConnLapPE,
+            )
+        }.items()
+    )
+)
+
+__all__ = [*DATA_MANIPULATIONS]

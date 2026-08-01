@@ -87,7 +87,9 @@ class HypergraphDataset(InMemoryDataset):
             or int(data["representation_version"])
             != HYPERGRAPH_REPRESENTATION_VERSION
         ):
-            raise ValueError("processed hypergraph cache has an invalid version")
+            raise ValueError(
+                "processed hypergraph cache has an invalid version"
+            )
         validate_hypergraph_structure(data)
 
     def __repr__(self) -> str:
@@ -181,6 +183,8 @@ class HypergraphDataset(InMemoryDataset):
             or int(data["representation_version"])
             != HYPERGRAPH_REPRESENTATION_VERSION
         ):
-            raise ValueError("raw hypergraph parser returned an invalid version")
+            raise ValueError(
+                "raw hypergraph parser returned an invalid version"
+            )
         validate_hypergraph_structure(data)
         self.save([data], self.processed_paths[0])

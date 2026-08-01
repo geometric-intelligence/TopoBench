@@ -112,10 +112,14 @@ class DatasetLoss(AbstractLoss):
                 raise ValueError("Scalar regression targets must be finite")
             return
 
-        if self.task in {
-            "multioutput classification",
-            "multilabel classification",
-        } and logits.shape != target.shape:
+        if (
+            self.task
+            in {
+                "multioutput classification",
+                "multilabel classification",
+            }
+            and logits.shape != target.shape
+        ):
             raise ValueError(
                 f"{self.task} logits and targets must have equal shape"
             )

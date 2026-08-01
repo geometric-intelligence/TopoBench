@@ -25,23 +25,16 @@ EXPECTED_DATASETS = {
     "SyntheticGraphDataset",
     "SyntheticHeterogeneousDataset",
     "SyntheticHypergraphDataset",
-    "USCountyDemosDataset",
 }
 EXPECTED_GRAPH_LOADERS = {
     "ADMEDatasetLoader",
     "GraphUniverseDatasetLoader",
     "HeterophilousGraphDatasetLoader",
-    "ManualGraphDatasetLoader",
     "MoleculeDatasetLoader",
     "OGBGDatasetLoader",
     "PlanetoidDatasetLoader",
     "SyntheticGraphDatasetLoader",
     "TUDatasetLoader",
-    "USCountyDemosDatasetLoader",
-}
-ORPHAN_GRAPH_LOADERS = {
-    "ManualGraphDatasetLoader",
-    "USCountyDemosDatasetLoader",
 }
 EXPECTED_HETEROGENEOUS_LOADERS = {
     "DBLPDatasetLoader",
@@ -67,8 +60,16 @@ def _assert_explicit_registry(
     )
 
 
-def test_dataset_registry_has_only_surviving_dataset_classes() -> None:
-    _assert_explicit_registry(datasets.MANUAL_DATASETS, EXPECTED_DATASETS)
+def test_dataset_exports_have_only_surviving_dataset_classes() -> None:
+    exported_datasets = {
+        name for name in datasets.__all__ if name.endswith("Dataset")
+    }
+
+    assert exported_datasets == EXPECTED_DATASETS
+    assert all(
+        getattr(datasets, name).__name__ == name for name in EXPECTED_DATASETS
+    )
+    assert not hasattr(datasets, "MANUAL_DATASETS")
 
 
 def test_loader_registries_have_only_surviving_loader_classes() -> None:
@@ -98,8 +99,8 @@ def test_surviving_yaml_loader_targets_resolve_through_explicit_registries() -> 
         if (document := yaml.safe_load(config_path.read_text(encoding="utf-8")))
     }
 
-    assert {target.rsplit(".", 1)[1] for target in targets} == (
-        set(loaders.LOADER_CLASSES) - ORPHAN_GRAPH_LOADERS
+    assert {target.rsplit(".", 1)[1] for target in targets} == set(
+        loaders.LOADER_CLASSES
     )
     for target in targets:
         module_name, class_name = target.rsplit(".", 1)
@@ -258,13 +259,16 @@ def test_registry_modules_have_narrow_public_exports() -> None:
         "LOADER_CLASSES",
     ]
     assert datasets.__all__ == [
-        "PYG_DATASETS",
-        "PLANETOID_DATASETS",
-        "TU_DATASETS",
+        "CitationHypergraphDataset",
         "FIXED_SPLITS_DATASETS",
         "HETEROPHILIC_DATASETS",
-        *datasets.MANUAL_DATASETS,
-        "MANUAL_DATASETS",
+        "HypergraphDataset",
+        "PLANETOID_DATASETS",
+        "PYG_DATASETS",
+        "SyntheticGraphDataset",
+        "SyntheticHeterogeneousDataset",
+        "SyntheticHypergraphDataset",
+        "TU_DATASETS",
         "make_synthetic_heterogeneous_data",
         "make_synthetic_hypergraph_data",
     ]

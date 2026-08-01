@@ -11,7 +11,6 @@ from .synthetic_hypergraph_dataset import (
     SyntheticHypergraphDataset,
     make_synthetic_hypergraph_data,
 )
-from .us_county_demos_dataset import USCountyDemosDataset
 
 PLANETOID_DATASETS = ["Cora", "citeseer", "PubMed"]
 
@@ -44,32 +43,18 @@ PYG_DATASETS = [
     *HETEROPHILIC_DATASETS,
 ]
 
-MANUAL_DATASETS = dict(
-    sorted(
-        {
-            dataset_class.__name__: dataset_class
-            for dataset_class in (
-                CitationHypergraphDataset,
-                HypergraphDataset,
-                SyntheticGraphDataset,
-                SyntheticHeterogeneousDataset,
-                SyntheticHypergraphDataset,
-                USCountyDemosDataset,
-            )
-        }.items()
-    )
-)
-
-globals().update(MANUAL_DATASETS)
 
 __all__ = [
-    "PYG_DATASETS",
-    "PLANETOID_DATASETS",
-    "TU_DATASETS",
+    "CitationHypergraphDataset",
     "FIXED_SPLITS_DATASETS",
     "HETEROPHILIC_DATASETS",
-    *MANUAL_DATASETS,
-    "MANUAL_DATASETS",
+    "HypergraphDataset",
+    "PLANETOID_DATASETS",
+    "PYG_DATASETS",
+    "SyntheticGraphDataset",
+    "SyntheticHeterogeneousDataset",
+    "SyntheticHypergraphDataset",
+    "TU_DATASETS",
     "make_synthetic_heterogeneous_data",
     "make_synthetic_hypergraph_data",
 ]

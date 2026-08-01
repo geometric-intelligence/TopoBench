@@ -9,13 +9,8 @@ from torch_geometric.data import Data
 from torch_geometric.utils import scatter
 
 
-class AbstractZeroCellReadOut(nn.Module):
-    """Read node embeddings and optionally pool them to graph embeddings.
-
-    The historical class name remains public for configuration stability. Its
-    runtime contract is native PyG: embeddings are ``model_out["x"]`` and graph
-    membership is ``model_out["batch"]``.
-    """
+class AbstractReadout(nn.Module):
+    """Read native node embeddings and optionally pool graph embeddings."""
 
     def __init__(
         self,
@@ -60,9 +55,7 @@ class AbstractZeroCellReadOut(nn.Module):
             )
         return model_out
 
-    def compute_logits(
-        self, x: object, batch_index: object
-    ) -> Tensor:
+    def compute_logits(self, x: object, batch_index: object) -> Tensor:
         """Apply graph pooling when configured, then the output head."""
         if not isinstance(x, Tensor) or x.ndim != 2:
             raise TypeError("model_out['x'] must be a rank-2 tensor")
@@ -95,4 +88,4 @@ class AbstractZeroCellReadOut(nn.Module):
         """Apply readout-specific feature transformations."""
 
 
-__all__ = ["AbstractZeroCellReadOut"]
+__all__ = ["AbstractReadout"]

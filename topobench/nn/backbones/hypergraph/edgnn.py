@@ -126,10 +126,7 @@ class EDGNN(nn.Module):
             raise TypeError("hyperedge_index must be a torch.Tensor")
         if hyperedge_index.layout != torch.strided:
             raise TypeError("hyperedge_index must be a dense tensor")
-        if (
-            hyperedge_index.ndim != 2
-            or hyperedge_index.size(0) != 2
-        ):
+        if hyperedge_index.ndim != 2 or hyperedge_index.size(0) != 2:
             raise ValueError("hyperedge_index must have shape [2, M]")
         if hyperedge_index.dtype is not torch.long:
             raise TypeError("hyperedge_index must use torch.long")
@@ -705,9 +702,7 @@ class MeanDegConv(nn.Module):
 
         Xev = Xe[..., edges, :]  # [nnz, C]
         Xev = self.W2(torch.cat([X[..., vertex, :], Xev], -1))
-        Xv = scatter(
-            Xev, vertex, dim=-2, reduce="mean", dim_size=N
-        )  # [N, C]
+        Xv = scatter(Xev, vertex, dim=-2, reduce="mean", dim_size=N)  # [N, C]
 
         deg_v = scatter(
             torch.ones(Xev.shape[0], device=Xev.device),

@@ -37,11 +37,9 @@ def test_forward_pass_replaces_native_features(sample_data: Data) -> None:
 
     assert output_data is sample_data
     assert output_data.x.shape == (10, 64)
-    assert output_data.x_aux_0.shape == (10, 64)
-    assert "edges_index" in output_data
-    assert "logprobs_0" in output_data
-    assert "x_0" not in output_data
-    assert "batch_0" not in output_data
+    assert output_data.dgm_aux.shape == (10, 64)
+    assert "dgm_edge_index" in output_data
+    assert "dgm_logprobs" in output_data
 
 
 def test_dropout_configuration() -> None:

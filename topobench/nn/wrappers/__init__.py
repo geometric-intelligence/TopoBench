@@ -1,19 +1,20 @@
 """Wrappers exposed by the supported data domains."""
 
-from .graph import WRAPPER_CLASSES as GRAPH_WRAPPERS
-from .heterogeneous import WRAPPER_CLASSES as HETEROGENEOUS_WRAPPERS
-from .hypergraph import WRAPPER_CLASSES as HYPERGRAPH_WRAPPERS
+from .graph import GNNWrapper, GraphMLPWrapper
+from .heterogeneous import HeterogeneousWrapper
+from .hypergraph import HypergraphWrapper
 
-WRAPPER_CLASSES = dict(
-    sorted(
-        {
-            **GRAPH_WRAPPERS,
-            **HETEROGENEOUS_WRAPPERS,
-            **HYPERGRAPH_WRAPPERS,
-        }.items()
-    )
-)
+WRAPPER_CLASSES = {
+    "GNNWrapper": GNNWrapper,
+    "GraphMLPWrapper": GraphMLPWrapper,
+    "HeterogeneousWrapper": HeterogeneousWrapper,
+    "HypergraphWrapper": HypergraphWrapper,
+}
 
-globals().update(WRAPPER_CLASSES)
-
-__all__ = [*WRAPPER_CLASSES, "WRAPPER_CLASSES"]
+__all__ = [
+    "GNNWrapper",
+    "GraphMLPWrapper",
+    "HeterogeneousWrapper",
+    "HypergraphWrapper",
+    "WRAPPER_CLASSES",
+]

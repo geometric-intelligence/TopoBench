@@ -1,100 +1,18 @@
-"""Init file for encoder module with automated encoder discovery."""
+"""Explicit public feature-encoder registry."""
 
-import importlib
-import inspect
-from pathlib import Path
-from typing import Any
+from .dgm_encoder import DGMStructureFeatureEncoder
+from .graph_node_encoder import GraphNodeFeatureEncoder
+from .heterogeneous_node_encoder import HeterogeneousNodeFeatureEncoder
 
+FEATURE_ENCODERS = {
+    "DGMStructureFeatureEncoder": DGMStructureFeatureEncoder,
+    "GraphNodeFeatureEncoder": GraphNodeFeatureEncoder,
+    "HeterogeneousNodeFeatureEncoder": HeterogeneousNodeFeatureEncoder,
+}
 
-class LoadManager:
-    """Manages automatic discovery and registration of encoder classes."""
-
-    @staticmethod
-    def is_encoder_class(obj: Any) -> bool:
-        """Check if an object is a valid encoder class.
-
-        Parameters
-        ----------
-        obj : Any
-            The object to check if it's a valid encoder class.
-
-        Returns
-        -------
-        bool
-            True if the object is a valid encoder class (non-private class
-            with 'FeatureEncoder' in name), False otherwise.
-        """
-        try:
-            from .base import AbstractFeatureEncoder
-
-            return (
-                inspect.isclass(obj)
-                and not obj.__name__.startswith("_")
-                and issubclass(obj, AbstractFeatureEncoder)
-                and obj is not AbstractFeatureEncoder
-            )
-        except ImportError:
-            return False
-
-    @classmethod
-    def discover_encoders(cls, package_path: str) -> dict[str, type]:
-        """Dynamically discover all encoder classes in the package.
-
-        Parameters
-        ----------
-        package_path : str
-            Path to the package's __init__.py file.
-
-        Returns
-        -------
-        Dict[str, Type]
-            Dictionary mapping encoder class names to their corresponding class objects.
-        """
-        encoders = {}
-        package_dir = Path(package_path).parent
-
-        # Iterate through all .py files in the directory
-        for file_path in package_dir.glob("*.py"):
-            if file_path.stem == "__init__":
-                continue
-
-            try:
-                # Import through the canonical package path so registry,
-                # public exports, and pickle all share one class identity.
-                module_name = f"{__package__}.{file_path.stem}"
-                module = importlib.import_module(module_name)
-
-                # Find all encoder classes in the module
-                new_encoders = {
-                    name: obj
-                    for name, obj in inspect.getmembers(module)
-                    if (
-                        cls.is_encoder_class(obj)
-                        and obj.__module__ == module.__name__
-                    )
-                }
-                encoders.update(new_encoders)
-            except ImportError as e:
-                print(f"Could not import module {module_name}: {e}")
-
-        return encoders
-
-
-# Dynamically create the encoder manager and discover encoders
-manager = LoadManager()
-FEATURE_ENCODERS = manager.discover_encoders(__file__)
-FEATURE_ENCODERS_list = list(FEATURE_ENCODERS.keys())
-
-
-# Combine manual and discovered encoders
-all_encoders = {**FEATURE_ENCODERS}
-
-# Generate __all__
 __all__ = [
+    "DGMStructureFeatureEncoder",
+    "GraphNodeFeatureEncoder",
+    "HeterogeneousNodeFeatureEncoder",
     "FEATURE_ENCODERS",
-    "FEATURE_ENCODERS_list",
-    *list(all_encoders.keys()),
 ]
-
-# Update locals for direct import
-locals().update(all_encoders)

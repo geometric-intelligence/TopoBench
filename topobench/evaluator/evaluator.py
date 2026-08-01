@@ -175,10 +175,7 @@ class TBEvaluator(AbstractEvaluator):
         preds = preds.cpu()
         target = target.cpu()
 
-        if self.task == "regression":
-            self.metrics.update(preds, target)
-
-        elif self.task == "classification":
+        if self.task == "regression" or self.task == "classification":
             self.metrics.update(preds, target)
 
         elif self.task == "multioutput classification":

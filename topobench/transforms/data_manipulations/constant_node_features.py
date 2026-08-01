@@ -30,9 +30,8 @@ class ConstantNodeFeatures(BaseTransform):
         transform_type: str | None = None,
     ) -> None:
         super().__init__()
-        if (
-            isinstance(num_features, bool)
-            or not isinstance(num_features, Integral)
+        if isinstance(num_features, bool) or not isinstance(
+            num_features, Integral
         ):
             raise TypeError("num_features must be an integer")
         if num_features <= 0:
@@ -47,7 +46,9 @@ class ConstantNodeFeatures(BaseTransform):
             raise TypeError("ConstantNodeFeatures requires homogeneous Data")
         num_nodes = data.num_nodes
         if num_nodes is None:
-            raise ValueError("data.num_nodes is required for constant features")
+            raise ValueError(
+                "data.num_nodes is required for constant features"
+            )
 
         x = data.get("x")
         edge_index = data.get("edge_index")

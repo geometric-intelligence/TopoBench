@@ -2,10 +2,11 @@
 
 from .hypergraph_wrapper import HypergraphWrapper
 
-WRAPPER_CLASSES = dict(
-    sorted({HypergraphWrapper.__name__: HypergraphWrapper}.items())
-)
+WRAPPER_CLASSES = {
+    "HypergraphWrapper": HypergraphWrapper,
+}
 
-globals().update(WRAPPER_CLASSES)
-
-__all__ = [*WRAPPER_CLASSES, "WRAPPER_CLASSES"]
+__all__ = [
+    "HypergraphWrapper",
+    "WRAPPER_CLASSES",
+]

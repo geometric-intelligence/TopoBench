@@ -95,7 +95,9 @@ def load_hypergraph_pickle_dataset(
     with (resolved_dir / "features.pickle").open("rb") as stream:
         features = _as_feature_tensor(pickle.load(stream))
     with (resolved_dir / "labels.pickle").open("rb") as stream:
-        labels = torch.as_tensor(np.asarray(pickle.load(stream)), dtype=torch.long)
+        labels = torch.as_tensor(
+            np.asarray(pickle.load(stream)), dtype=torch.long
+        )
     with (resolved_dir / "hypergraph.pickle").open("rb") as stream:
         raw_hypergraph = pickle.load(stream)
 
@@ -104,11 +106,15 @@ def load_hypergraph_pickle_dataset(
     labels = labels.reshape(-1)
     num_nodes = int(features.size(0))
     if labels.numel() != num_nodes:
-        raise ValueError("pickled labels must contain one entry per feature row")
+        raise ValueError(
+            "pickled labels must contain one entry per feature row"
+        )
     if not isinstance(raw_hypergraph, Mapping):
         raise TypeError("pickled hypergraph must be a mapping")
 
-    hypergraph = {raw_id: tuple(nodes) for raw_id, nodes in raw_hypergraph.items()}
+    hypergraph = {
+        raw_id: tuple(nodes) for raw_id, nodes in raw_hypergraph.items()
+    }
     initial_index, _ = incidence_pairs(hypergraph, num_nodes)
     occupied_nodes = set(initial_index[0].tolist())
     for node in range(num_nodes):
@@ -177,13 +183,19 @@ def load_hypergraph_content_dataset(
         for node, hyperedge in edges
     ]
     raw_hyperedge_ids = {hyperedge for _, hyperedge in raw_edges}
+    raw_node_ids = {node for node, _ in raw_edges}
+    content_payload = content[:, 1:].astype(np.float64)
     if any(node in raw_hyperedge_ids for node, _ in raw_edges):
         raise ValueError("raw node and hyperedge IDs must be disjoint")
 
     node_rows = [
         row_index
         for row_index, raw_id in enumerate(content_ids)
-        if raw_id not in raw_hyperedge_ids
+        if raw_id in raw_node_ids
+        or (
+            raw_id not in raw_hyperedge_ids
+            and np.any(content_payload[row_index] != 0)
+        )
     ]
     node_id = {content_ids[row]: index for index, row in enumerate(node_rows)}
     missing_nodes = sorted(
@@ -192,8 +204,7 @@ def load_hypergraph_content_dataset(
     )
     if missing_nodes:
         raise ValueError(
-            "edges reference node IDs without feature rows: "
-            f"{missing_nodes!r}"
+            f"edges reference node IDs without feature rows: {missing_nodes!r}"
         )
 
     features = torch.as_tensor(

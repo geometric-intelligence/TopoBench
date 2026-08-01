@@ -33,7 +33,11 @@ def _index_tensor(indices: Any, num_nodes: int) -> torch.Tensor:
         raise ValueError("indices must be rank-1")
     if tensor.numel() == 0:
         return torch.empty(0, dtype=torch.long)
-    if tensor.dtype == torch.bool or tensor.is_floating_point() or tensor.is_complex():
+    if (
+        tensor.dtype == torch.bool
+        or tensor.is_floating_point()
+        or tensor.is_complex()
+    ):
         raise TypeError("indices must contain integers")
     tensor = tensor.to(dtype=torch.long, device="cpu")
     if torch.unique(tensor).numel() != tensor.numel():
@@ -94,9 +98,11 @@ def _validate_masks(
             raise ValueError("split masks must be non-empty")
 
     train_mask, val_mask, test_mask = masks
-    if torch.any(train_mask & val_mask) or torch.any(
-        train_mask & test_mask
-    ) or torch.any(val_mask & test_mask):
+    if (
+        torch.any(train_mask & val_mask)
+        or torch.any(train_mask & test_mask)
+        or torch.any(val_mask & test_mask)
+    ):
         raise ValueError("split masks must be disjoint")
     if not torch.equal(
         train_mask | val_mask | test_mask,

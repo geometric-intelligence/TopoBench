@@ -145,9 +145,6 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         """
         from torch_geometric.transforms import ToDevice
 
-        if transforms_config.keys() == {"liftings"}:
-            transforms_config = transforms_config.liftings
-
         if "transform_name" in transforms_config:
             config_items = [
                 (transforms_config.transform_name, transforms_config)

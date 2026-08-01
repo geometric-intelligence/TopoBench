@@ -714,25 +714,6 @@ class TestLoadTransductiveSplits:
 
 
 
-    def test_transductive_standardize(self):
-        """Standardization indexes features and labels with boolean masks."""
-        data = self.dataset(
-            torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
-        )[0]
-        dataset, _, _ = load_transductive_splits(
-            [data],
-            DictConfig(
-                {
-                    "split_type": "random",
-                    "data_seed": 0,
-                    "train_prop": 0.5,
-                    "standardize": True,
-                    "data_split_dir": self.test_dir,
-                }
-            ),
-        )
-
-        assert torch.isfinite(dataset[0].x).all()
 
     def test_invalid_split_type_raises_error(self):
         """Test that invalid split type raises error."""

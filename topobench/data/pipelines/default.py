@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from omegaconf import DictConfig
 
-from topobench.dataloader import GraphDataModule
 from topobench.data.features import prepare_graph_features
+from topobench.dataloader import GraphDataModule
 from topobench.utils.config_resolvers import infer_in_channels
 
 from .base import AbstractDataPipeline, DataPipelineOutput

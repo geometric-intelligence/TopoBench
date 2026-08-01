@@ -1,8 +1,5 @@
 transform_name: "KeepSelectedDataFields"
 transform_type: "data manipulation"
-# Fields that must be for pipeline
-base_fields: ["x", "y", "val_mask", "test_mask", "train_mask", "edge_index", "shape"]
-
-# Fields that optional for the pipeline
-preserved_fields: ["0_cell_curvature", "1_cell_curvature", "2_cell_curvature"]
-#["x_0", "x_1", "x_2", "x_3","incidence_1", "incidence_2", "incidence_3", "hodge_laplacian_0", "hodge_laplacian_1", "hodge_laplacian_2"]
+# Native graph fields kept by the transform.
+base_fields: ["x", "edge_index", "edge_attr", "pos", "y", "batch", "train_mask", "val_mask", "test_mask"]
+preserved_fields: []

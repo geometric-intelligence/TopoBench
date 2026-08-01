@@ -27,11 +27,8 @@ HIDDEN_CHANNELS = 8
 OUT_CHANNELS = 2
 NUM_AUTHORS = 36
 EXISTING_READOUT_NAMES = {
-    "AbstractZeroCellReadOut",
-    "HOPSEReadout",
     "MLPReadout",
     "NoReadOut",
-    "PropagateSignalDown",
 }
 
 
@@ -374,7 +371,7 @@ def test_readout_reports_clear_boundary_errors_transactionally(
 
 
 def test_registry_exports_canonical_pickle_stable_classes() -> None:
-    """The readout registry retains old names and adds one canonical class."""
+    """The readout registry exposes only native concrete classes."""
     expected = EXISTING_READOUT_NAMES | {"HeterogeneousNodeReadout"}
     assert set(readout_registry.READOUT_CLASSES) == expected
     assert list(readout_registry.READOUT_CLASSES) == sorted(expected)
@@ -394,7 +391,7 @@ def test_registry_exports_canonical_pickle_stable_classes() -> None:
 def test_clean_process_readout_registry_is_canonical_and_pickle_stable() -> (
     None
 ):
-    """All discovered readout classes remain importable in a fresh process."""
+    """All registered readout classes remain importable in a fresh process."""
     script = """
 import importlib
 import pickle

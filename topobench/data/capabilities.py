@@ -48,7 +48,9 @@ class GraphDatasetCapability:
         if len(paths) != len(set(paths)):
             raise ValueError("qualification paths must be unique")
         if not self.edge_fields <= {"edge_attr", "edge_weight"}:
-            raise ValueError("edge_fields contains an unsupported native field")
+            raise ValueError(
+                "edge_fields contains an unsupported native field"
+            )
 
     @property
     def task_contract(self) -> GraphTaskContract:
@@ -341,7 +343,10 @@ _ROWS = (
         learning_setting="inductive",
         feature_policy="continuous",
         extra_evidence=(
-            ("loader.parameters.generation_parameters.task", "triangle_counting"),
+            (
+                "loader.parameters.generation_parameters.task",
+                "triangle_counting",
+            ),
         ),
     ),
     _capability(
@@ -352,7 +357,10 @@ _ROWS = (
         learning_setting="transductive",
         feature_policy="continuous",
         extra_evidence=(
-            ("loader.parameters.generation_parameters.task", "community_detection"),
+            (
+                "loader.parameters.generation_parameters.task",
+                "community_detection",
+            ),
         ),
     ),
     _capability(
@@ -397,8 +405,8 @@ _ROWS = (
         feature_policy="continuous",
     ),
 )
-GRAPH_DATASET_MANIFEST: Mapping[str, GraphDatasetCapability] = MappingProxyType(
-    {row.selector: row for row in _ROWS}
+GRAPH_DATASET_MANIFEST: Mapping[str, GraphDatasetCapability] = (
+    MappingProxyType({row.selector: row for row in _ROWS})
 )
 
 
@@ -452,8 +460,7 @@ def qualify_graph_dataset(
         )
     selectors = ", ".join(sorted(row.selector for row in matches))
     raise ValueError(
-        "dataset qualification is ambiguous for "
-        f"[{selectors}]: {observed}"
+        f"dataset qualification is ambiguous for [{selectors}]: {observed}"
     )
 
 

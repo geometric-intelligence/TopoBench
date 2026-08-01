@@ -1,7 +1,0 @@
-transform_type: 'lifting'
-transform_name: "CombinatorialRingCloseAtomsLifting"
-max_cell_length: null
-preserve_edge_attr: True
-feature_lifting: ProjectionSum
-
-threshold_distance: 1.5

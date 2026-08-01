@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from copy import deepcopy
 from dataclasses import FrozenInstanceError
 from pathlib import Path
-from typing import Any
 
 import hydra
 import pytest
 from hydra.core.hydra_config import HydraConfig
 from hydra.errors import MissingConfigException
-from omegaconf import DictConfig, OmegaConf, open_dict
+from omegaconf import DictConfig, open_dict
 
 from topobench.data.capabilities import GRAPH_DATASET_MANIFEST
 from topobench.nn.capabilities import (
@@ -29,11 +26,6 @@ REMOVED_DATASETS = (
     "graphuniverse_inductive",
     "ogbg-molpcba",
     "manual_dataset",
-)
-FORBIDDEN_TOKENS = (
-    "num_cell_dimensions",
-    "AllCellFeatureEncoder",
-    "x_0",
 )
 VALID_PAIRS = tuple(
     (dataset.selector, model.selector)
@@ -64,19 +56,6 @@ def _compose(dataset: str, model: str) -> DictConfig:
         return cfg
 
 
-def _walk(value: Any, path: str = "cfg") -> Iterator[tuple[str, Any]]:
-    if isinstance(value, dict):
-        for key, child in value.items():
-            key_path = f"{path}.{key}"
-            yield key_path, key
-            yield from _walk(child, key_path)
-    elif isinstance(value, list):
-        for index, child in enumerate(value):
-            yield from _walk(child, f"{path}[{index}]")
-    else:
-        yield path, value
-
-
 @pytest.mark.parametrize(
     ("dataset_selector", "model_selector"),
     VALID_PAIRS,
@@ -87,9 +66,6 @@ def test_every_declared_graph_pair_resolves_and_instantiates_without_data_spec(
     model_selector: str,
 ) -> None:
     cfg = _compose(dataset_selector, model_selector)
-    application_cfg = deepcopy(cfg)
-    del application_cfg.hydra
-    resolved = OmegaConf.to_container(application_cfg, resolve=True)
 
     assert cfg.model.model_domain == "graph"
     assert (
@@ -112,17 +88,6 @@ def test_every_declared_graph_pair_resolves_and_instantiates_without_data_spec(
         "reject",
     }
 
-    for path, item in _walk(resolved):
-        if not isinstance(item, str):
-            continue
-        assert not any(token in item for token in FORBIDDEN_TOKENS), (
-            f"{path}: forbidden graph compatibility token {item!r}"
-        )
-        assert "topobench.transforms.liftings" not in item, (
-            f"{path}: lifting target {item!r}"
-        )
-        assert not item.startswith("liftings/"), f"{path}: {item!r}"
-
     model = instantiate_model(cfg, data_spec=None)
     assert model.backbone.edge_modes == {
         "edge_attr": GRAPH_MODEL_CAPABILITIES[model_selector].edge_attr_mode,
@@ -142,7 +107,9 @@ def test_model_capability_matrix_and_entries_are_immutable() -> None:
 
 
 @pytest.mark.parametrize("selector", REMOVED_DATASETS)
-def test_removed_graph_dataset_selectors_are_not_composable(selector: str) -> None:
+def test_removed_graph_dataset_selectors_are_not_composable(
+    selector: str,
+) -> None:
     assert not (
         PROJECT_ROOT / "configs" / "dataset" / "graph" / f"{selector}.yaml"
     ).exists()
@@ -176,7 +143,9 @@ def test_unsupported_feature_policy_fails_with_dataset_path() -> None:
     with open_dict(cfg.dataset.parameters):
         cfg.dataset.parameters.feature_policy = "categorical_one_hot"
 
-    with pytest.raises(ValueError, match=r"dataset\.parameters\.feature_policy"):
+    with pytest.raises(
+        ValueError, match=r"dataset\.parameters\.feature_policy"
+    ):
         validate_graph_composition(cfg.dataset, cfg.model)
 
 
@@ -204,5 +173,7 @@ def test_cross_domain_default_transform_is_rejected() -> None:
     with open_dict(cfg.model):
         cfg.model.model_domain = "hypergraph"
 
-    with pytest.raises(ValueError, match="Cross-domain lifting is unsupported"):
+    with pytest.raises(
+        ValueError, match="Cross-domain lifting is unsupported"
+    ):
         validate_graph_composition(cfg.dataset, cfg.model)

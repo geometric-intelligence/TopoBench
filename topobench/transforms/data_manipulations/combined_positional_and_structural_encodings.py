@@ -4,6 +4,11 @@ import torch
 from torch_geometric.data import Data
 from torch_geometric.transforms import BaseTransform
 
+from .electrostatic_encodings import ElectrostaticPE
+from .hkdiag_encodings import HKdiagSE
+from .laplacian_encodings import LapPE
+from .random_walk_encodings import RWSE
+
 # Supported Positional and Structural Encodings
 PSE_ENCODINGS = {"LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE"}
 
@@ -55,12 +60,6 @@ class CombinedPSEs(BaseTransform):
         torch_geometric.data.Data
             The transformed data with added structural encodings.
         """
-        from topobench.transforms.data_manipulations import (
-            RWSE,
-            ElectrostaticPE,
-            HKdiagSE,
-            LapPE,
-        )
 
         encoding_classes = {
             "LapPE": LapPE,

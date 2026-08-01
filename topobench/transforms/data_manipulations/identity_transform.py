@@ -12,6 +12,8 @@ class IdentityTransform(torch_geometric.transforms.BaseTransform):
         Parameters for the base transform.
     """
 
+    supports_heterodata = True
+
     def __init__(self, **kwargs):
         super().__init__()
         self.type = "domain2domain"
@@ -20,17 +22,20 @@ class IdentityTransform(torch_geometric.transforms.BaseTransform):
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(type={self.type!r}, parameters={self.parameters!r})"
 
-    def forward(self, data: torch_geometric.data.Data):
+    def forward(
+        self,
+        data: torch_geometric.data.Data | torch_geometric.data.HeteroData,
+    ) -> torch_geometric.data.Data | torch_geometric.data.HeteroData:
         r"""Apply the transform to the input data.
 
         Parameters
         ----------
-        data : torch_geometric.data.Data
+        data : torch_geometric.data.Data | torch_geometric.data.HeteroData
             The input data.
 
         Returns
         -------
-        torch_geometric.data.Data
+        torch_geometric.data.Data | torch_geometric.data.HeteroData
             The same data.
         """
         return data

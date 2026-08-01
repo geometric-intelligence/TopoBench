@@ -1,11 +1,11 @@
 """Loader for the deterministic native synthetic hypergraph dataset."""
 
 from omegaconf import DictConfig
+from torch_geometric.data import Dataset
+
 from topobench.data.datasets.synthetic_hypergraph_dataset import (
     SyntheticHypergraphDataset,
 )
-from torch_geometric.data import Dataset
-
 from topobench.data.loaders.base import AbstractLoader
 
 

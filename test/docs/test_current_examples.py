@@ -11,6 +11,7 @@ import pytest
 from hydra.core.global_hydra import GlobalHydra
 from hydra.errors import HydraException
 
+from test.architecture.test_domain_contract import FORBIDDEN_TOKENS
 from topobench.utils.config_resolvers import register_all_resolvers
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -27,26 +28,11 @@ _SHELL_BLOCK = re.compile(
     flags=re.IGNORECASE | re.DOTALL,
 )
 _FORBIDDEN_CURRENT_SURFACES = (
-    "x_0",
-    "x_1",
-    "x_2",
-    "batch_0",
-    "batch_1",
-    "batch_2",
-    "incidence_1",
-    "incidence_2",
-    "incidence_hyperedges",
-    "num_cell_dimensions",
+    *FORBIDDEN_TOKENS,
     "cell",
     "simplicial",
     "combinatorial",
     "lifting",
-    "topomodelx",
-    "toponetx",
-    "gudhi",
-    "hypernetx",
-    "trimesh",
-    "spharapy",
 )
 
 

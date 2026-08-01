@@ -1,6 +1,0 @@
-transform_type: 'lifting'
-transform_name: "SimplicialGraphInducedLifting"
-complex_dim: 3
-preserve_edge_attr: False
-signed: True
-feature_lifting: ProjectionSum

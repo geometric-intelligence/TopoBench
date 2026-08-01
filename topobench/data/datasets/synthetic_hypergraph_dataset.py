@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import torch
+from torch_geometric.data import InMemoryDataset
+
 from topobench.data.hypergraph import (
     HypergraphData,
     validate_hypergraph_node_data,
 )
-from torch_geometric.data import InMemoryDataset
 
 
 def make_synthetic_hypergraph_data(

@@ -281,7 +281,7 @@ def test_synthetic_heterogeneous_config_composes_exact_contract() -> None:
                 config_name="run.yaml",
                 overrides=[
                     "dataset=heterogeneous/SyntheticHeterogeneous",
-                    "model=cell/hgt",
+                    "model=heterogeneous/hgt",
                     "transforms=no_transform",
                     "train=false",
                     "test=false",

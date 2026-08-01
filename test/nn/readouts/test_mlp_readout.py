@@ -69,13 +69,13 @@ def test_graph_readout_pools_using_model_output_batch(
     assert result["logits"] is result["x"]
 
 
-def test_graph_readout_ignores_rank_indexed_data_batch() -> None:
+def test_graph_readout_uses_model_output_batch_over_data_batch() -> None:
     """Only model_out['batch'] drives graph pooling."""
     model_out = {
         "x": torch.randn(6, 4),
         "batch": torch.tensor([0, 0, 1, 1, 2, 2]),
     }
-    data = Data(batch_0=torch.zeros(6, dtype=torch.long))
+    data = Data(batch=torch.zeros(6, dtype=torch.long))
 
     result = _readout("graph")(model_out, data)
 

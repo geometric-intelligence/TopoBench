@@ -141,10 +141,14 @@ class GCNDGM(nn.Module):
                 -selected_distances / temperature,
                 dim=1,
             )
-            local_sources = torch.arange(
-                nodes.numel(),
-                device=nodes.device,
-            ).unsqueeze(1).expand(-1, effective_k)
+            local_sources = (
+                torch.arange(
+                    nodes.numel(),
+                    device=nodes.device,
+                )
+                .unsqueeze(1)
+                .expand(-1, effective_k)
+            )
             edges.append(
                 torch.stack(
                     (

@@ -6,16 +6,14 @@ from torch import nn
 from torch_geometric.data import Data
 from torch_geometric.utils import scatter
 
-from topobench.nn.readouts.base import AbstractZeroCellReadOut
+from topobench.nn.readouts.base import AbstractReadout
 from topobench.nn.readouts.identical import NoReadOut
 
 
 @pytest.mark.parametrize("pooling", ["sum", "mean", "max"])
 def test_graph_readout_pools_model_output_batch(pooling: str) -> None:
     """Graph logits pool native node embeddings with PyG scatter."""
-    x = torch.tensor(
-        [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0]]
-    )
+    x = torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0], [7.0, 8.0]])
     batch_index = torch.tensor([0, 0, 1, 1])
     model_out = {"x": x, "batch": batch_index, "labels": torch.tensor([0, 1])}
     readout = NoReadOut(
@@ -55,13 +53,13 @@ def test_node_classification_does_not_pool() -> None:
     assert result["x"] is x
 
 
-def test_readout_uses_model_output_batch_not_data_aliases() -> None:
-    """The runtime Data argument cannot supply a rank-indexed batch alias."""
+def test_readout_uses_model_output_batch_over_data_batch() -> None:
+    """The model output owns graph assignment when input data disagrees."""
     model_out = {
         "x": torch.randn(4, 2),
         "batch": torch.tensor([0, 0, 1, 1]),
     }
-    data = Data(batch_0=torch.zeros(4, dtype=torch.long))
+    data = Data(batch=torch.zeros(4, dtype=torch.long))
     readout = NoReadOut(
         hidden_dim=2,
         out_channels=2,
@@ -91,11 +89,11 @@ def test_existing_logits_are_preserved() -> None:
     assert readout(model_out, Data())["logits"] is logits
 
 
-def test_public_name_and_base_class_remain_stable() -> None:
-    """Configuration keeps the public NoReadOut class name."""
+def test_public_name_and_native_base_class_are_stable() -> None:
+    """NoReadOut uses the native graph readout base."""
     readout = NoReadOut(hidden_dim=4, out_channels=2, task_level="node")
 
-    assert isinstance(readout, AbstractZeroCellReadOut)
+    assert isinstance(readout, AbstractReadout)
     assert repr(readout) == "NoReadOut()"
 
 

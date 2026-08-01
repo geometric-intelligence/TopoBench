@@ -3,13 +3,11 @@
 from .adme_datasets import ADMEDatasetLoader
 from .graph_universe_loader import GraphUniverseDatasetLoader
 from .hetero_datasets import HeterophilousGraphDatasetLoader
-from .manual_graph_dataset_loader import ManualGraphDatasetLoader
 from .molecule_datasets import MoleculeDatasetLoader
 from .ogbg_datasets import OGBGDatasetLoader
 from .planetoid_datasets import PlanetoidDatasetLoader
 from .synthetic import SyntheticGraphDatasetLoader
 from .tu_datasets import TUDatasetLoader
-from .us_county_demos_dataset_loader import USCountyDemosDatasetLoader
 
 GRAPH_LOADERS = dict(
     sorted(
@@ -19,13 +17,11 @@ GRAPH_LOADERS = dict(
                 ADMEDatasetLoader,
                 GraphUniverseDatasetLoader,
                 HeterophilousGraphDatasetLoader,
-                ManualGraphDatasetLoader,
                 MoleculeDatasetLoader,
                 OGBGDatasetLoader,
                 PlanetoidDatasetLoader,
                 SyntheticGraphDatasetLoader,
                 TUDatasetLoader,
-                USCountyDemosDatasetLoader,
             )
         }.items()
     )

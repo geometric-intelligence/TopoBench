@@ -1,11 +1,11 @@
 """Configuration resolvers for the topobench package."""
 
 import os
-from collections import defaultdict
 
 import omegaconf
 import torch
 from omegaconf import OmegaConf
+
 from topobench.nn.capabilities import (
     validated_edge_attr_mode,
     validated_edge_weight_mode,
@@ -201,8 +201,6 @@ def get_default_transform(dataset, model):
         if os.path.isfile(config_path):
             return f"{group}/{selector}"
     return "no_transform"
-
-
 
 
 def get_monitor_metric(task, metric):
@@ -628,201 +626,26 @@ def check_fes_in_transforms(transforms):
 
 
 def infer_in_channels(dataset, transforms):
-    r"""Infer the number of input channels for a given dataset.
-
-    Parameters
-    ----------
-    dataset : DictConfig
-        Configuration parameters for the dataset.
-    transforms : DictConfig
-        Configuration parameters for the transforms.
-
-    Returns
-    -------
-    int | list[int]
-        Scalar node width for native graph and hypergraph inputs, otherwise
-        rank-wise dimensions for lifted or higher-order inputs.
-    """
+    """Infer one native node-feature width for a graph or hypergraph."""
     num_features = dataset.parameters.num_features
-    if isinstance(num_features, int) and transforms is not None:
-        num_features = (
-            num_features
-            + check_pses_in_transforms(transforms)
-            + check_fes_in_transforms(transforms)
-        )
+    added_features = 0
+    if transforms is not None:
+        added_features = check_pses_in_transforms(
+            transforms
+        ) + check_fes_in_transforms(transforms)
 
-    # Make it possible to pass lifting configuration as file path
-    if transforms is not None and transforms.keys() == {"liftings"}:
-        transforms = transforms.liftings
-
-    def find_complex_lifting(transforms):
-        r"""Find if there is a complex lifting in the complex_transforms.
-
-        Parameters
-        ----------
-        transforms : List[str]
-            List of transforms.
-
-        Returns
-        -------
-        bool
-            True if there is a complex lifting, False otherwise.
-        str
-            Name of the complex lifting, if it exists.
-        """
-
-        if transforms is None:
-            return False, None
-        complex_transforms = [
-            # Default liftig configurations
-            "graph2cell_lifting",
-            "graph2simplicial_lifting",
-            "graph2combinatorial_lifting",
-            "graph2hypergraph_lifting",
-            "pointcloud2graph_lifting",
-            "pointcloud2simplicial_lifting",
-            "pointcloud2combinatorial_lifting",
-            "pointcloud2hypergraph_lifting",
-            "pointcloud2cell_lifting",
-            "hypergraph2combinatorial_lifting",
-            # Make it possible to run directly from the folder
-            "graph2cell",
-            "graph2simplicial",
-            "graph2combinatorial",
-            "graph2hypergraph",
-            "pointcloud2graph",
-            "pointcloud2simplicial",
-            "pointcloud2combinatorial",
-            "pointcloud2hypergraph",
-            "pointcloud2cell",
-            "hypergraph2combinatorial",
-        ]
-        for t in complex_transforms:
-            if t in transforms:
-                return True, t
-        return False, None
-
-    def check_for_type_feature_lifting(transforms, lifting):
-        r"""Check the type of feature lifting in the dataset.
-
-        Parameters
-        ----------
-        transforms : DictConfig
-            Configuration parameters for the transforms.
-        lifting : str
-            Name of the complex lifting.
-
-        Returns
-        -------
-        str
-            Type of feature lifting.
-        """
-        lifting_params_keys = transforms[lifting].keys()
-        if "feature_lifting" in lifting_params_keys:
-            feature_lifting = transforms[lifting]["feature_lifting"]
-        else:
-            feature_lifting = "ProjectionSum"
-
-        return feature_lifting
-
-    there_is_complex_lifting, lifting = find_complex_lifting(transforms)
-    if there_is_complex_lifting:
-        # Get type of feature lifting
-        feature_lifting = check_for_type_feature_lifting(transforms, lifting)
-
-        # Check if the num_features defines a single value or a list
-        if isinstance(num_features, int):
-            # Case when the dataset has no edge attributes
-            if feature_lifting == "Concatenation":
-                return_value = [num_features]
-                for i in range(2, transforms[lifting].complex_dim + 2):
-                    return_value += [int(return_value[-1]) * i]
-
-                return return_value
-
-            else:
-                # ProjectionSum feature lifting by default
-                return [num_features] * (transforms[lifting].complex_dim + 1)
-        # Case when the dataset has edge attributes (cells attributes)
-        else:
-            assert type(num_features) is omegaconf.listconfig.ListConfig, (
-                f"num_features should be a list of integers, not {type(num_features)}"
-            )
-            # If preserve_edge_attr == False
-            if not transforms[lifting].preserve_edge_attr:
-                if feature_lifting == "Concatenation":
-                    return_value = [num_features[0]]
-                    for i in range(2, transforms[lifting].complex_dim + 2):
-                        return_value += [int(return_value[-1]) * i]
-
-                    return return_value
-
-                else:
-                    # ProjectionSum feature lifting by default
-                    return [num_features[0]] * (
-                        transforms[lifting].complex_dim + 1
-                    )
-            # If preserve_edge_attr == True
-            else:
-                return list(num_features) + [num_features[1]] * (
-                    transforms[lifting].complex_dim + 1 - len(num_features)
-                )
-
-    # Case when there is no lifting
-    elif not there_is_complex_lifting:
-        data_domain = dataset.loader.parameters.data_domain
-        if data_domain in {"graph", "hypergraph"}:
-            if isinstance(num_features, int):
-                return num_features
-            pe_features = (
-                check_pses_in_transforms(transforms)
-                if transforms is not None
-                else 0
-            )
-            fe_features = (
-                check_fes_in_transforms(transforms)
-                if transforms is not None
-                else 0
-            )
-            return int(num_features[0] + pe_features + fe_features)
-
-        if (
-            dataset.loader.parameters.get("model_domain", "graph")
-            == data_domain
-            and data_domain in ["simplicial", "cell", "combinatorial"]
-        ):
-            if isinstance(
-                num_features,
-                omegaconf.listconfig.ListConfig,
-            ):
-                return list(num_features)
-            raise ValueError(
-                "The dataset and model are from the same domain but the "
-                "data_domain does not declare rank-wise features."
-            )
-
-        if isinstance(num_features, int):
-            return [num_features]
-
-        pe_features = (
-            check_pses_in_transforms(transforms)
-            if transforms is not None
-            else 0
-        )
-        fe_features = (
-            check_fes_in_transforms(transforms)
-            if transforms is not None
-            else 0
-        )
-        return [num_features[0] + pe_features + fe_features]
-
-    # This else is never executed
-    else:
-        raise ValueError(
-            "There is a problem with the complex lifting. Please check the configuration file."
-        )
-
-
+    if isinstance(num_features, int):
+        return int(num_features + added_features)
+    if isinstance(
+        num_features,
+        (list, tuple, omegaconf.listconfig.ListConfig),
+    ):
+        if not num_features:
+            raise ValueError("dataset.parameters.num_features cannot be empty")
+        return int(num_features[0] + added_features)
+    raise TypeError(
+        "dataset.parameters.num_features must be an integer or sequence"
+    )
 
 
 def infer_list_length(list):
@@ -855,8 +678,6 @@ def infer_list_length_plus_one(list):
         Length of the input list plus one.
     """
     return len(list) + 1
-
-
 
 
 def get_default_metrics(task, num_classes, metrics=None):
@@ -915,10 +736,6 @@ def get_list_element(list, index):
         Element of the list.
     """
     return list[index]
-
-
-
-
 
 
 def set_preserve_edge_attr(model_name, default=True):

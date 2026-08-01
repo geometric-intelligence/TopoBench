@@ -11,7 +11,6 @@ loader:
 parameters:
   num_features: 10
   max_node_degree: 3062
-  # max_x_1_degree: 3062
   num_classes: 2
   task: classification
   loss_type: cross_entropy

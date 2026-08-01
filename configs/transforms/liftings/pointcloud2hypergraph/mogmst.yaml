@@ -1,7 +1,0 @@
-transform_type: 'lifting'
-transform_name: "MoGMSTLifting"
-min_components: null
-max_components: null
-random_state: null
-preserve_edge_attr: False
-complex_dim: 1

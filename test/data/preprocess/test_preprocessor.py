@@ -255,7 +255,7 @@ class TestPreProcessorProcessing:
     ):
         """A processed native heterogeneous graph reloads without flattening."""
         dataset = SyntheticHeterogeneousDataset(seed=7)
-        identity = DictConfig({"transform_name": "Identity"})
+        identity = DictConfig({"transform_name": "IdentityTransform"})
 
         original = dataset[0]
         first = PreProcessor(dataset, tmp_path, transforms_config=identity)
@@ -272,7 +272,7 @@ class TestPreProcessorProcessing:
             x=torch.randn(3, 4),
             edge_index=torch.tensor([[0, 1], [1, 2]]),
         )
-        identity = DictConfig({"transform_name": "Identity"})
+        identity = DictConfig({"transform_name": "IdentityTransform"})
 
         first = PreProcessor(data, tmp_path, transforms_config=identity)
         reloaded = PreProcessor(data, tmp_path, transforms_config=identity)
@@ -286,7 +286,7 @@ class TestPreProcessorProcessing:
     def test_preprocessor_persists_direct_heterodata_input(self, tmp_path):
         """Direct HeteroData input follows the same persisted path as datasets."""
         data = SyntheticHeterogeneousDataset(seed=11)[0]
-        identity = DictConfig({"transform_name": "Identity"})
+        identity = DictConfig({"transform_name": "IdentityTransform"})
 
         first = PreProcessor(data, tmp_path, transforms_config=identity)
         reloaded = PreProcessor(data, tmp_path, transforms_config=identity)

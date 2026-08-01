@@ -67,6 +67,7 @@ def _write_content_fixture(raw_dir: Path, name: str) -> None:
                 "30 3.0 3.5 4",
                 "700 0.0 0.0 0",
                 "900 0.0 0.0 0",
+                "1000 0.0 0.0 0",
             ]
         )
         + "\n",

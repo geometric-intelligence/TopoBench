@@ -1,7 +1,0 @@
-transform_type: 'lifting'
-transform_name: "RandomFlagComplexLifting"
-complex_dim: 3
-alpha: 1.5
-steps: 10
-signed: True
-feature_lifting: ProjectionSum

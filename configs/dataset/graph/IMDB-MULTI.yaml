@@ -11,7 +11,6 @@ loader:
 parameters:
   num_features: 89 # In IMDB-MULTI dataset, num_features is equal to maximum node degree among all graphs +1
   max_node_degree: 88
-  max_x_1_degree: 88
   num_classes: 3
   task: classification
   loss_type: cross_entropy

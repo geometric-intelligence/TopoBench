@@ -258,7 +258,6 @@ def test_synthetic_heterogeneous_exports_work_in_clean_process() -> None:
 import pickle
 import torch
 from topobench.data.datasets import (
-    MANUAL_DATASETS,
     SyntheticHeterogeneousDataset,
     make_synthetic_heterogeneous_data,
 )
@@ -266,9 +265,7 @@ from topobench.data.datasets.synthetic_heterogeneous_dataset import (
     SyntheticHeterogeneousDataset as DirectDataset,
 )
 assert SyntheticHeterogeneousDataset is DirectDataset
-assert "SyntheticHeterogeneousDataset" in MANUAL_DATASETS
-assert MANUAL_DATASETS["SyntheticHeterogeneousDataset"] is DirectDataset
-dataset = MANUAL_DATASETS["SyntheticHeterogeneousDataset"](seed=3)
+dataset = SyntheticHeterogeneousDataset(seed=3)
 assert isinstance(dataset[0], type(
     make_synthetic_heterogeneous_data(seed=3)
 ))

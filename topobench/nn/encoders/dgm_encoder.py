@@ -4,13 +4,34 @@ from __future__ import annotations
 
 from numbers import Integral
 
-from torch import Tensor
+from torch import Tensor, nn
 from torch_geometric.data import Data, HeteroData
+from torch_geometric.nn.norm import GraphNorm
 
-from topobench.nn.encoders.all_cell_encoder import BaseEncoder
 from topobench.nn.encoders.base import AbstractFeatureEncoder
 
 from .kdgm import DGM_d
+
+
+class _DGMProjection(nn.Module):
+    """Normalize and project native graph node features for DGM."""
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        dropout: float,
+    ) -> None:
+        super().__init__()
+        self.norm = GraphNorm(in_channels)
+        self.linear = nn.Linear(in_channels, out_channels)
+        self.activation = nn.ReLU()
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x: Tensor, batch: Tensor) -> Tensor:
+        """Project one native homogeneous node-feature matrix."""
+        x = self.norm(x, batch=batch) if batch.numel() else self.norm(x)
+        return self.dropout(self.activation(self.linear(x)))
 
 
 class DGMStructureFeatureEncoder(AbstractFeatureEncoder):
@@ -40,12 +61,12 @@ class DGMStructureFeatureEncoder(AbstractFeatureEncoder):
         self.in_channels = int(in_channels)
         self.out_channels = out_channels
         self.encoder = DGM_d(
-            base_enc=BaseEncoder(
+            base_enc=_DGMProjection(
                 self.in_channels,
                 self.out_channels,
                 dropout=proj_dropout,
             ),
-            embed_f=BaseEncoder(
+            embed_f=_DGMProjection(
                 self.in_channels,
                 self.out_channels,
                 dropout=proj_dropout,
@@ -73,7 +94,7 @@ class DGMStructureFeatureEncoder(AbstractFeatureEncoder):
 
         x, x_aux, edges_dgm, logprobs = self.encoder(x, batch)
         data.x = x
-        data.x_aux_0 = x_aux
-        data.edges_index = edges_dgm
-        data.logprobs_0 = logprobs
+        data.dgm_aux = x_aux
+        data.dgm_edge_index = edges_dgm
+        data.dgm_logprobs = logprobs
         return data

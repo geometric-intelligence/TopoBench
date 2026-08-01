@@ -66,13 +66,9 @@ def _validated_graph_fields(
                 isinstance(num_graphs, int) and num_graphs > 1
             )
         if has_multiple_boundaries:
-            raise ValueError(
-                "batch.batch is required for graph-level targets"
-            )
+            raise ValueError("batch.batch is required for graph-level targets")
         if labels.size(0) != x.size(0):
-            raise ValueError(
-                "batch.batch is required for graph-level targets"
-            )
+            raise ValueError("batch.batch is required for graph-level targets")
         return x, edge_index, labels, None
     if not isinstance(batch_index, Tensor):
         raise TypeError("batch.batch must be a tensor")

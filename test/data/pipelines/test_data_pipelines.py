@@ -591,18 +591,8 @@ def test_default_pipeline_retains_invalid_task_level_error(
     ]
 
 
-@pytest.mark.parametrize(
-    "overrides",
-    [
-        ["dataset=graph/MUTAG", "model=graph/gcn"],
-        ["experiment=cell_hgt_mutag_debug"],
-    ],
-    ids=["graph", "cell-experiment"],
-)
-def test_default_pipeline_is_composed_for_existing_experiments(
-    overrides: list[str],
-) -> None:
-    """Existing homogeneous runs select the default pipeline automatically."""
+def test_default_pipeline_is_composed_for_surviving_graph_config() -> None:
+    """A surviving homogeneous graph run selects the default pipeline."""
     global_hydra = hydra.core.global_hydra.GlobalHydra.instance()
     assert not global_hydra.is_initialized()
     register_all_resolvers()
@@ -610,7 +600,10 @@ def test_default_pipeline_is_composed_for_existing_experiments(
         version_base="1.3",
         config_path="../../../configs",
     )
-    cfg = hydra.compose(config_name="run.yaml", overrides=overrides)
+    cfg = hydra.compose(
+        config_name="run.yaml",
+        overrides=["dataset=graph/MUTAG", "model=graph/gcn"],
+    )
 
     assert (
         cfg.data_pipeline._target_
@@ -1040,7 +1033,8 @@ def test_real_synthetic_heterogeneous_pipeline_uses_shared_preprocessor(
         config_name="run.yaml",
         overrides=[
             "dataset=heterogeneous/SyntheticHeterogeneous",
-            "model=cell/hgt",
+            "model=heterogeneous/hgt",
+            "transforms=dataset_defaults/SyntheticHeterogeneous",
             "data_pipeline=heterogeneous_node",
             f"paths.data_dir={tmp_path}",
             "train=false",
@@ -1070,7 +1064,8 @@ def test_heterogeneous_hydra_composition_resolves_pipeline_and_transforms() -> (
         config_name="run.yaml",
         overrides=[
             "dataset=heterogeneous/SyntheticHeterogeneous",
-            "model=cell/hgt",
+            "model=heterogeneous/hgt",
+            "transforms=dataset_defaults/SyntheticHeterogeneous",
             "data_pipeline=heterogeneous_node",
             "train=false",
             "test=false",
@@ -1122,7 +1117,8 @@ def test_neighbor_mode_override_requires_explicit_protocol_override(
         config_name="run.yaml",
         overrides=[
             "dataset=heterogeneous/SyntheticHeterogeneous",
-            "model=cell/hgt",
+            "model=heterogeneous/hgt",
+            "transforms=dataset_defaults/SyntheticHeterogeneous",
             "data_pipeline=heterogeneous_node",
             "dataset.dataloader_params.mode=neighbor",
             f"paths.data_dir={tmp_path}",
@@ -1436,7 +1432,7 @@ def test_hypergraph_dataset_configs_compose_with_explicit_pipeline(
         config_name="run.yaml",
         overrides=[
             f"dataset=hypergraph/{dataset_name}",
-            "model=hypergraph/unignn2",
+            "model=hypergraph/hypergraph_conv",
             "data_pipeline=hypergraph_node",
             "train=false",
             "test=false",

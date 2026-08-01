@@ -3,8 +3,6 @@
 import pytest
 from omegaconf import OmegaConf
 import hydra
-import torch
-import os
 from topobench.utils.config_resolvers import (
     register_all_resolvers,
     define_task_level,
@@ -12,8 +10,6 @@ from topobench.utils.config_resolvers import (
     get_default_metrics,
     get_default_trainer,
     get_default_transform,
-    get_flattened_channels,
-    get_non_relational_out_channels,
     get_monitor_metric,
     get_monitor_mode,
     set_preserve_edge_attr,
@@ -21,11 +17,6 @@ from topobench.utils.config_resolvers import (
     check_fes_in_transforms,
     get_fes_dimensions,
     get_all_encoding_dimensions,
-    get_pse_dimensions,
-    get_routes_from_neighborhoods,
-    infer_list_length,
-    infer_list_length_plus_one,
-    get_list_element,
 )
 
 class TestConfigResolvers:
@@ -37,8 +28,6 @@ class TestConfigResolvers:
         register_all_resolvers()
         self.dataset_config_1 = OmegaConf.load("configs/dataset/graph/MUTAG.yaml")
         self.dataset_config_2 = OmegaConf.load("configs/dataset/graph/cocitation_cora.yaml")
-        self.cliq_lift_transform = OmegaConf.load("configs/transforms/liftings/graph2simplicial/clique.yaml")
-        self.feature_lift_transform = OmegaConf.load("configs/transforms/feature_liftings/concatenate.yaml")
         hydra.initialize(version_base="1.3", config_path="../../configs", job_name="job")
 
     def test_define_task_level(self):
@@ -94,29 +83,15 @@ class TestConfigResolvers:
             ValueError,
             match="Cross-domain lifting is unsupported",
         ):
-            get_default_transform("graph/MUTAG", "cell/can")
+            get_default_transform("graph/MUTAG", "hypergraph/edgnn")
         with pytest.raises(
             ValueError,
             match="Cross-domain lifting is unsupported",
         ):
-            get_default_transform("graph/MUTAG", "non_relational/mlp")
+            get_default_transform("hypergraph/SyntheticHypergraph", "graph/gcn")
 
 
-    def test_get_flattened_channels(self):
-        """Test get_flattened_channels."""
-        out = get_flattened_channels(10, 5)
-        assert out == 50
 
-    def test_non_relational_out_channels(self):
-        """Test get_non_relational_out_channels."""
-        out = get_non_relational_out_channels(10, 5, "node")
-        assert out == 50
-
-        out = get_non_relational_out_channels(10, 5, "graph")
-        assert out == 5
-
-        with pytest.raises(ValueError, match="Invalid task level") as e:
-            get_non_relational_out_channels(10, 5, "some_task")
 
 
     def test_get_monitor_metric(self):
@@ -146,43 +121,12 @@ class TestConfigResolvers:
 
     def test_infer_in_channels(self):
         """Test infer_in_channels."""
-        in_channels = infer_in_channels(self.dataset_config_1, self.cliq_lift_transform)
+        in_channels = infer_in_channels(self.dataset_config_1, None)
         assert in_channels == 7
 
         in_channels = infer_in_channels(self.dataset_config_2, None)
         assert in_channels == 1433
 
-        cfg = hydra.compose(config_name="run.yaml", overrides=["model=simplicial/topotune", "dataset=graph/MUTAG"], return_hydra_config=True)
-        in_channels = infer_in_channels(cfg.dataset, cfg.transforms)
-        assert in_channels == [7,4,4,4]
-
-        cfg = hydra.compose(config_name="run.yaml", overrides=["model=simplicial/topotune", "dataset=graph/MUTAG", "dataset.parameters.preserve_edge_attr_if_lifted=False"], return_hydra_config=True)
-        in_channels = infer_in_channels(cfg.dataset, cfg.transforms)
-        assert in_channels == [7,7,7,7]
-
-        cfg = hydra.compose(config_name="run.yaml", overrides=["model=simplicial/topotune", "dataset=graph/MUTAG", "dataset.parameters.preserve_edge_attr_if_lifted=False", "transforms.graph2simplicial_lifting.feature_lifting=Concatenation"], return_hydra_config=True)
-        in_channels = infer_in_channels(cfg.dataset, cfg.transforms)
-        assert in_channels == [7,14,42,168]
-
-        cfg = hydra.compose(config_name="run.yaml", overrides=["model=simplicial/topotune", "dataset=graph/MUTAG", "transforms.graph2simplicial_lifting.feature_lifting=Concatenation"], return_hydra_config=True)
-        in_channels = infer_in_channels(cfg.dataset, cfg.transforms)
-        assert in_channels == [7,4,4,4]
-
-        cfg = hydra.compose(config_name="run.yaml", overrides=["model=simplicial/topotune", "dataset=graph/cocitation_cora", "transforms.graph2simplicial_lifting.feature_lifting=Concatenation", "transforms.graph2simplicial_lifting.complex_dim=3"], return_hydra_config=True)
-        in_channels = infer_in_channels(cfg.dataset, cfg.transforms)
-        assert in_channels == [1433,2866,8598,34392]
-
-        cfg = hydra.compose(config_name="run.yaml", overrides=["model=simplicial/topotune", "dataset=graph/cocitation_cora", "transforms.graph2simplicial_lifting.complex_dim=3"], return_hydra_config=True)
-        in_channels = infer_in_channels(cfg.dataset, cfg.transforms)
-        assert in_channels == [1433,1433,1433,1433]
-
-        cfg = hydra.compose(config_name="run.yaml", overrides=["model=graph/gcn", "dataset=simplicial/mantra_orientation"], return_hydra_config=True)
-        in_channels = infer_in_channels(cfg.dataset, cfg.transforms)
-        assert in_channels == [1]
-
-        cfg = hydra.compose(config_name="run.yaml", overrides=["model=simplicial/scn", "dataset=graph/cocitation_cora", "transforms.graph2simplicial_lifting.complex_dim=3"], return_hydra_config=True)
-        in_channels = infer_in_channels(cfg.dataset, cfg.transforms)
-        assert in_channels == [1433,1433,1433,1433]
 
         cfg = hydra.compose(config_name="run.yaml", overrides=["model=graph/gcn", "dataset=graph/MUTAG", "transforms=combined_fe"], return_hydra_config=True)
         in_channels = infer_in_channels(cfg.dataset, cfg.transforms)
@@ -243,14 +187,9 @@ class TestConfigResolvers:
             get_default_metrics("some_task", 2)
 
     def test_set_preserve_edge_attr(self):
-        """Test set_preserve_edge_attr."""
-        default = True
-
-        out = set_preserve_edge_attr(model_name="sann", default=default)
-        assert out == False
-
-        out = set_preserve_edge_attr(model_name="san", default=default)
-        assert out == True
+        """Surviving graph models retain the dataset's declared default."""
+        assert set_preserve_edge_attr(model_name="gcn", default=True) is True
+        assert set_preserve_edge_attr(model_name="gcn", default=False) is False
 
 
 
@@ -1014,77 +953,3 @@ class TestConfigResolvers:
         parameters["LapPE"]["include_eigenvalues"] = False
         expected = [8, 4, 7, 10, 12, 2, 15, 5]
         assert get_all_encoding_dimensions(encodings, parameters) == expected
-
-
-class TestNewHopseResolvers:
-    """Targeted tests for the HOPSE-era resolvers added in this branch."""
-
-    def setup_method(self):
-        """Setup method."""
-        hydra.core.global_hydra.GlobalHydra.instance().clear()
-
-    # ---- get_routes_from_neighborhoods ----
-
-    def test_get_routes_from_neighborhoods_basic(self):
-        nbhds = [
-            "up_adjacency-0",
-            "up_incidence-0",
-            "down_incidence-1",
-            "2-up_incidence-0",
-        ]
-        routes = get_routes_from_neighborhoods(nbhds)
-        assert routes == [[0, 0], [0, 1], [1, 0], [0, 2]]
-
-    def test_get_routes_from_neighborhoods_rejects_unknown(self):
-        with pytest.raises(Exception, match="Invalid neighborhood"):
-            get_routes_from_neighborhoods(["something_weird-0"])
-
-    # ---- get_pse_dimensions ----
-
-    @pytest.mark.parametrize(
-        "encodings, parameters, expected",
-        [
-            (
-                ["LapPE"],
-                {"LapPE": {"max_pe_dim": 4, "include_eigenvalues": False}},
-                [4],
-            ),
-            (
-                ["LapPE"],
-                {"LapPE": {"max_pe_dim": 4, "include_eigenvalues": True}},
-                [8],
-            ),
-            (["RWSE"], {"RWSE": {"max_pe_dim": 6}}, [6]),
-            (["ElectrostaticPE"], {}, [7]),
-            (
-                ["HKdiagSE"],
-                {"HKdiagSE": {"kernel_param_HKdiagSE": [1, 5]}},
-                [4],
-            ),
-            (
-                ["HKdiagSE"],
-                {"HKdiagSE": {"kernel_param_HKdiagSE": 3}},
-                [3],
-            ),
-        ],
-    )
-    def test_get_pse_dimensions_parametrized(
-        self, encodings, parameters, expected
-    ):
-        assert get_pse_dimensions(encodings, parameters) == expected
-
-    # ---- infer_list_length / +1 / get_list_element ----
-
-    def test_infer_list_length(self):
-        assert infer_list_length([]) == 0
-        assert infer_list_length([1, 2, 3]) == 3
-
-    def test_infer_list_length_plus_one(self):
-        assert infer_list_length_plus_one([]) == 1
-        assert infer_list_length_plus_one([10, 20]) == 3
-
-    def test_get_list_element(self):
-        assert get_list_element([10, 20, 30], 0) == 10
-        assert get_list_element([10, 20, 30], -1) == 30
-        with pytest.raises(IndexError):
-            get_list_element([1], 5)

@@ -42,7 +42,9 @@ class GraphModelCapability:
         if not self.feature_policies:
             raise ValueError("feature_policies must not be empty")
         if self.edge_attr_mode not in _EDGE_MODES:
-            raise ValueError("edge_attr_mode must be consume, ignore, or reject")
+            raise ValueError(
+                "edge_attr_mode must be consume, ignore, or reject"
+            )
         if self.edge_weight_mode not in _EDGE_MODES:
             raise ValueError(
                 "edge_weight_mode must be consume, ignore, or reject"
@@ -155,8 +157,8 @@ _ROWS = (
         readout_target=_NO_READOUT,
     ),
 )
-GRAPH_MODEL_CAPABILITIES: Mapping[str, GraphModelCapability] = MappingProxyType(
-    {row.selector: row for row in _ROWS}
+GRAPH_MODEL_CAPABILITIES: Mapping[str, GraphModelCapability] = (
+    MappingProxyType({row.selector: row for row in _ROWS})
 )
 
 
@@ -216,7 +218,10 @@ def _qualified_capability(
             f"{contract.learning_setting!r}) for "
             f"model.model_name={model_selector!r}"
         )
-    if dataset_capability.feature_policy not in model_capability.feature_policies:
+    if (
+        dataset_capability.feature_policy
+        not in model_capability.feature_policies
+    ):
         raise ValueError(
             "dataset.parameters.feature_policy="
             f"{dataset_capability.feature_policy!r} is unsupported by "
@@ -305,7 +310,7 @@ def _validated_pair(
             f"{model_capability.wrapper_target!r}, got {wrapper_target!r}"
         )
     for mode_field in ("edge_attr_mode", "edge_weight_mode"):
-        if mode_field not in wrapper.keys():
+        if mode_field not in wrapper:
             raise ValueError(
                 f"model.backbone_wrapper.{mode_field} is required"
             )
@@ -328,10 +333,14 @@ def validate_graph_composition(
     wrapper = _required_mapping(model, "backbone_wrapper", path="model")
     for field in ("edge_attr", "edge_weight"):
         path = f"model.backbone_wrapper.{field}_mode"
-        actual = _required_value(wrapper, f"{field}_mode", path="model.backbone_wrapper")
+        actual = _required_value(
+            wrapper, f"{field}_mode", path="model.backbone_wrapper"
+        )
         expected = getattr(model_capability, f"{field}_mode")
         if actual != expected:
-            raise ValueError(f"{path} must resolve to {expected!r}, got {actual!r}")
+            raise ValueError(
+                f"{path} must resolve to {expected!r}, got {actual!r}"
+            )
     return dataset_capability, model_capability
 
 

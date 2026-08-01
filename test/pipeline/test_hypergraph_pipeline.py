@@ -61,13 +61,13 @@ def test_synthetic_hypergraph_composes_to_finite_node_logits(
 
 
 @pytest.mark.parametrize("model_selector", ("edgnn", "hypergraph_conv"))
-def test_synthetic_hypergraph_runs_full_lifecycle(
+def test_synthetic_hypergraph_runs_one_epoch_and_final_test(
     model_selector: str,
 ) -> None:
-    """Both native models train, checkpoint, and test without downloads."""
+    """Both native models complete one bounded epoch and final test."""
     result = run(_compose(model_selector))
 
-    assert result["epochs_completed"] >= 1
+    assert result["epochs_completed"] == 1
     assert result["observed_train_batch_size"] == 1
     assert {"train/loss", "val/loss"} <= result["fit_metrics"].keys()
     assert all(
@@ -75,6 +75,8 @@ def test_synthetic_hypergraph_runs_full_lifecycle(
         for value in result["fit_metrics"].values()
     )
     assert result["test_results"]
-    assert torch.isfinite(
-        torch.tensor(result["test_results"][0]["test/loss"])
+    assert all(
+        torch.isfinite(torch.tensor(value))
+        for result_row in result["test_results"]
+        for value in result_row.values()
     )

@@ -5,15 +5,17 @@ from .gps import GPSEncoder
 from .graph_mlp import GraphMLP
 from .nsd import NSDEncoder
 
-BACKBONE_CLASSES = dict(
-    sorted(
-        {
-            backbone_class.__name__: backbone_class
-            for backbone_class in (GCNDGM, GPSEncoder, GraphMLP, NSDEncoder)
-        }.items()
-    )
-)
+BACKBONE_CLASSES = {
+    "GCNDGM": GCNDGM,
+    "GPSEncoder": GPSEncoder,
+    "GraphMLP": GraphMLP,
+    "NSDEncoder": NSDEncoder,
+}
 
-globals().update(BACKBONE_CLASSES)
-
-__all__ = [*BACKBONE_CLASSES, "BACKBONE_CLASSES"]
+__all__ = [
+    "GCNDGM",
+    "GPSEncoder",
+    "GraphMLP",
+    "NSDEncoder",
+    "BACKBONE_CLASSES",
+]
