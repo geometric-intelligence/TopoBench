@@ -4,9 +4,9 @@
 
 **Goal:** Reduce TopoBench to a high-quality native PyG core for homogeneous graphs, heterogeneous node classification, and lightweight hypergraph node classification, with no TopoModelX/TopoNetX dependency or rank-indexed runtime contract.
 
-**Architecture:** Homogeneous graphs use PyG `Data`/`Batch` and `DataLoader`; heterogeneous graphs retain the existing `HeteroData` plus full-batch/`NeighborLoader` path; hypergraphs use a small `HypergraphData` subclass whose two incidence rows batch with independent node and hyperedge offsets. Each domain has an explicit data pipeline, model adapter, and validation boundary, while shared training, evaluation, callbacks, checkpoint reruns, and logging remain in `TBModel` and `topobench.run`.
+**Architecture:** Homogeneous graphs use native PyG `Data`/`Batch`; ordinary datasets use `DataLoader`, while the approved large single-graph transductive path converts either a native source or chunked node/edge Parquet into a versioned global CSR store, applies deterministic streaming graph partitioning, samples exact induced cluster unions, and overlaps worker reads, pinned-host staging, bounded CUDA prefetch, and model compute. Heterogeneous graphs retain the existing `HeteroData` plus full-batch/`NeighborLoader` path; hypergraphs use a small `HypergraphData` subclass whose two incidence rows batch with independent node and hyperedge offsets. Each domain has an explicit data pipeline, model adapter, and validation boundary, while shared training, evaluation, callbacks, checkpoint reruns, provenance, and logging remain in `TBModel` and `topobench.run`.
 
-**Tech Stack:** Python 3.11, PyTorch 2.3, PyTorch Geometric, Lightning 2.4, Hydra/OmegaConf, pytest, Ruff, uv.
+**Tech Stack:** Python 3.11, PyTorch 2.3, PyTorch Geometric, Lightning 2.4, Hydra/OmegaConf, DuckDB/PyArrow in the explicit Parquet extra, NumPy memory maps, pytest, Ruff, uv.
 
 ---
 
@@ -45,7 +45,8 @@ Homogeneous `Data`/`Batch`:
 
 ```text
 x, edge_index, edge_attr?, edge_weight?, y,
-batch (inductive batches), train_mask/val_mask/test_mask (transductive)
+batch (inductive batches), train_mask/val_mask/test_mask (transductive),
+global_nid (disk-sampled transductive batches only)
 ```
 
 Each graph-level example stores rank-one, length-one `y`. Classification uses
@@ -77,19 +78,32 @@ The following decisions close gaps found during the critical plan review and
 override any legacy behavior encountered during implementation:
 
 - The supported homogeneous task set is graph-level binary/multiclass
-  classification, graph-level scalar regression, and single-graph
-  transductive node classification. Node regression, multi-graph inductive
-  node prediction, and multilabel graph classification are removed from the
-  first reduced release.
+  classification, graph-level scalar regression, single-graph transductive
+  node classification, and inductive node classification over explicit
+  training, validation, and test graph datasets. Node regression and
+  multilabel graph classification remain unsupported.
 - `graph/US-county-demos`, `graph/graphuniverse_inductive`, and
-  `graph/ogbg-molpcba` are removed. US County train-only feature/target
-  standardization is deleted with node regression rather than migrated into
-  an unsupported task path.
-- Inductive graph splits are index-backed `Subset`/dataset views. They are not
-  materialized as `list[Data]` and are not copied again by the data module.
-- Transductive mode is explicit. It requires exactly one source graph,
-  `batch_size == 1`, no separate validation/test datasets, and full-length,
-  mutually disjoint boolean masks. Raw index arrays never cross the split
+  `graph/ogbg-molpcba` remain removed. The new phase-dataset contract does not
+  qualify a deleted legacy selector without its own manifest evidence.
+- Every graph loader returns one of `UnsplitDataset`, `IndexedDataset`, or
+  `PhaseDatasets`. One normalization boundary produces the datasets consumed
+  by the graph data module.
+- Generated splits are ordinary disjoint train/validation/test splits. They
+  require explicit positive `train_prop`, `val_prop`, and `test_prop` values
+  summing to one and use only local RNG state. K-fold and k-fold-fixed are not
+  qualified split modes.
+- Fixed indices remain in memory unless an approved adapter persists them.
+  They select nodes for one node-task graph and examples for a multi-graph
+  dataset. The boundary validates type, shape, bounds, uniqueness,
+  non-emptiness, pairwise disjointness, and complete coverage.
+- Generated and fixed multi-graph splits are index-backed `Subset` views and
+  are never materialized as `list[Data]`. Already separated phase datasets
+  remain separate and may contain one or more graphs per phase.
+- Transductive mode requires exactly one source graph, no separate
+  validation/test datasets, and full-length, mutually disjoint boolean masks.
+  `full_graph` additionally requires graph `batch_size == 1`; `cluster_disk`
+  samples cluster IDs from a versioned partition and does not reinterpret that
+  count as graph-example batch size. Raw index arrays never cross the split
   boundary under a `*_mask` name.
 - Graph classification targets remain `[B]`; scalar-regression targets and
   logits are exactly `[B, 1]`; node-classification targets are `[N]`.
@@ -113,6 +127,39 @@ override any legacy behavior encountered during implementation:
 - GCN, GAT, GIN, GPS, and NSD are target graph models. GraphMLP and GCN-DGM are
   conditional and remain only if their dedicated native-batching lifecycle
   tests pass.
+
+
+### Approved disk-streaming follow-on
+
+The native graph contract in Task 3 is the prerequisite, not the final
+large-graph implementation. After the current implementation candidate exists,
+execute Tasks 1–5 of
+`docs/plans/2026-07-31-research-production-remediation.md`, then execute
+`docs/plans/2026-07-31-parquet-graph-ingestion-streaming-implementation.md`
+completely before resuming remediation Task 9. The companion plan is the
+authoritative implementation of remediation Tasks 6–8 and the approved design
+is `docs/plans/2026-07-31-parquet-graph-ingestion-streaming-design.md`.
+
+The follow-on ports only the global-CSR, partition, and selected-read ideas
+from `dleko11:on_disk_transductive`. It rejects that branch's rank-indexed
+compatibility fields, higher-order lifting collator, per-cluster SQLite copies,
+parent-open memmaps, device transfer in `collate_fn`, and permuted-row IDs
+mislabeled as global IDs.
+
+Native in-memory sources may materialize their one graph before conversion.
+Chunked node/edge Parquet sources are strictly out of core: YAML maps semantic
+roles; arbitrary supported external IDs are joined through a disk-backed
+index; embeddings, supervision, edges, CSR, partitioning, and final rewrite
+stay within declared memory and temporary-disk bounds. Runtime
+`batch_transform` remains deterministic graph-to-graph CPU work applied once
+after identity/mask attachment and before pinning/device transfer.
+
+The qualified large-graph profile uses bounded host prefetch and a configurable
+ordered CUDA ring that defaults to three batches ahead. Issued and committed
+sampler cursors make resume exact despite queued work. Every step measures
+input wait, assembly, H2D, compute, and queue state asynchronously. Packaged
+runs warn on persistent starvation; release qualification fails above 5%
+steady-state input stall.
 
 ### Dataset and edge-feature policy
 
@@ -143,15 +190,15 @@ Configuration composition alone is not evidence that a dataset is supported.
 
 ### Initial graph-model capability matrix
 
-| Model selector | Graph classification | Scalar regression | Transductive node classification | Native batching decision |
-| --- | --- | --- | --- | --- |
-| `graph/gcn` | required | required | required | retain |
-| `graph/gat` | required | required | required | retain |
-| `graph/gin` | required | required | required | retain |
-| `graph/gps` | required | required | required | retain after focused smoke |
-| `graph/nsd` | required | required | required | retain after focused smoke |
-| `graph/graph_mlp` | conditional | conditional | required | retain only after disjoint-batch loss test |
-| `graph/gcn_dgm` | conditional | conditional | required | retain only after mask/batch isolation test |
+| Model selector | Graph classification | Scalar regression | Transductive node classification | Phase-separated inductive node classification | Native batching decision |
+| --- | --- | --- | --- | --- | --- |
+| `graph/gcn` | required | required | required | required | retain |
+| `graph/gat` | required | required | required | required | retain |
+| `graph/gin` | required | required | required | required | retain |
+| `graph/gps` | required | required | required | required | retain after focused smoke |
+| `graph/nsd` | required | required | required | required | retain after focused smoke |
+| `graph/graph_mlp` | conditional | conditional | required | required | retain only after disjoint-batch loss test |
+| `graph/gcn_dgm` | conditional | conditional | required | required | retain only after mask/batch isolation test |
 
 Task 6 must replace every model's initially unknown edge-field behavior with
 tested `consume`, `ignore`, or `reject` values; no capability entry may remain
@@ -165,10 +212,14 @@ the same task. Do not weaken the gate or publish configuration-only support.
 | --- | --- | --- |
 | Shared trainer changes regress heterogeneous learning | Full/full-batch and neighbor-sampled heterogeneous lifecycle sentinels | Stop the current task and repair before committing |
 | A surviving dataset has no valid model or executable evidence | Exact manifest/config equality plus selector-specific qualification record | Delete the selector and orphaned loader/docs before release |
-| Unsupported node-regression, inductive-node, or multilabel selectors remain | Negative architecture test for the three removed selectors and supported task set | Stop configuration pruning and remove the residue |
+| Unsupported node-regression or multilabel selectors remain | Negative architecture test for the removed selectors and supported task set | Stop configuration pruning and remove the residue |
 | Graph config composes but model is incompatible with task, batching, or edge fields | Capability-matrix lifecycle and edge-field forwarding/rejection tests | Reject the pair; remove a conditional model if its required gate fails |
 | Regression targets broadcast silently | Exact `[B, 1]` logits/targets through supervision, loss, and metrics, including a smaller final batch | Stop graph migration and fix the target boundary |
 | A transductive data module accepts more than one graph | Explicit-mode negative test with a two-item dataset | Stop graph migration and enforce singleton cardinality |
+| A disk-streamed transductive path retains or reads the full source graph at runtime | Selected-read instrumentation, weak-reference/full-source absence check, and multi-worker lazy-open test | Stop scale qualification and repair the storage boundary |
+| A sampled cluster union loses edges or node identity | Exact directed multi-cluster reconstruction oracle with `perm_to_global` IDs | Stop graph qualification and repair CSR filtering/remapping |
+| A runtime transform runs twice or changes supervision identity | Output-sensitive exactly-once test plus negative node/label/mask/global-ID mutations | Reject the transform or repair the pre-model boundary |
+| Split input modes disagree about ownership or permit leakage | Lifecycle tests for generated indices, supplied node/example indices, and independent phase datasets | Stop graph migration and repair the normalization boundary |
 | Featureless/categorical datasets silently change semantics | Dataset-policy audit plus deterministic repeat test | Reject the dataset/config until an explicit policy exists |
 | Hypergraph batching offsets only work for equal-size examples | Unequal-node/unequal-hyperedge batch test with reconstruction of both examples | Stop before model migration |
 | Old rank-based cache is loaded as native data | Cache-version test with an old `data.pt` sentinel | Bypass/regenerate; never add a compatibility guess |
@@ -340,177 +391,225 @@ git add topobench/data/datasets/__init__.py topobench/data/loaders \
 git commit -m "refactor: make domain registries explicit"
 ```
 
-### Task 3: Introduce native homogeneous graph splitting and batching
+### Task 3: Introduce explicit homogeneous split inputs and native batching
 
 **Files:**
-- Create: `topobench/dataloader/graph.py`
-- Create: `topobench/data/datasets/synthetic_graph_dataset.py`
-- Create: `topobench/data/loaders/graph/synthetic.py`
-- Create: `configs/dataset/graph/SyntheticGraph.yaml`
-- Create: `configs/dataset/graph/SyntheticNodeGraph.yaml`
-- Create: `configs/dataset/graph/SyntheticGraphRegression.yaml`
-- Create: `topobench/data/splits.py`
-- Modify: `topobench/dataloader/__init__.py`
+- Modify: `topobench/data/loaders/base.py`
+- Modify: `topobench/data/splits.py`
 - Modify: `topobench/data/utils/split_utils.py`
 - Modify: `topobench/data/preprocessor/preprocessor.py`
+- Modify: `topobench/data/pipelines/base.py`
 - Modify: `topobench/data/pipelines/default.py`
+- Modify: `topobench/dataloader/graph.py`
+- Modify: retained homogeneous loaders under `topobench/data/loaders/graph/`
+- Modify: `topobench/data/datasets/synthetic_graph_dataset.py`
+- Create: `configs/dataset/graph/SyntheticInductiveNodeGraph.yaml`
+- Create: `configs/experiment/graph_synthetic_inductive_node.yaml`
+- Modify: `configs/dataset/graph/SyntheticGraph.yaml`
+- Modify: `configs/dataset/graph/SyntheticNodeGraph.yaml`
+- Modify: `configs/dataset/graph/SyntheticGraphRegression.yaml`
+- Modify: `topobench/dataloader/__init__.py`
 - Replace tests in: `test/data/dataload/test_Dataloaders.py`
 - Replace tests in: `test/data/dataload/test_dataload_dataset.py`
 - Modify: `test/data/utils/test_split_utils.py`
 - Modify: `test/data/pipelines/test_data_pipelines.py`
-- Create: `test/data/datasets/test_synthetic_graph_dataset.py`
+- Modify: `test/model/test_supervision.py`
+- Modify: `test/data/datasets/test_synthetic_graph_dataset.py`
 
-**Step 1: Write failing inductive batching tests**
+All committed test data in this task must be independently invented. Do not
+sample, perturb, anonymize, summarize, or otherwise derive fixtures from a
+confidential dataset.
 
-Construct two small `Data` graphs, pass an index-backed dataset view into
-`GraphDataModule`, and assert the loader returns a PyG `Batch` with native
-fields:
+**Step 1: Write failing split-input contract tests**
 
-```python
-def test_graph_datamodule_uses_native_pyg_batching() -> None:
-    source = TinyGraphDataset([graph_a, graph_b, graph_c])
-    module = GraphDataModule(
-        dataset_train=Subset(source, [0, 1]),
-        dataset_val=Subset(source, [2]),
-        dataset_test=Subset(source, [2]),
-        batch_size=2,
-        num_workers=0,
-    )
-    batch = next(iter(module.train_dataloader()))
-    assert isinstance(batch, Batch)
-    assert batch.num_graphs == 2
-    assert batch.batch.tolist() == [0] * graph_a.num_nodes + [1] * graph_b.num_nodes
-    assert "x_0" not in batch and "batch_0" not in batch
-```
-
-Add transductive tests that pass `learning_setting="transductive"` explicitly,
-prove the same singleton graph is reused for all phases, and reject
-`batch_size != 1`, a source dataset with two graphs, or separate
-validation/test datasets. Add inductive tests that pass
-`learning_setting="inductive"` and require non-empty, index-backed train,
-validation, and test views. Assert that requesting an item remains lazy until
-the loader iterates it.
-
-Add transductive split tests that begin with index arrays and require
-full-length boolean masks:
+Define tests around three mutually exclusive loader results:
 
 ```python
-def test_transductive_indices_become_boolean_masks() -> None:
-    apply_transductive_split(data, train=[0, 2], val=[1], test=[3])
-    assert data.train_mask.dtype is torch.bool
-    assert data.train_mask.tolist() == [True, False, True, False]
-    assert not torch.any(data.train_mask & data.val_mask)
-    assert torch.all(data.train_mask | data.val_mask | data.test_mask)
+@dataclass(frozen=True)
+class SplitIndices:
+    train: IndexLike
+    valid: IndexLike
+    test: IndexLike
+
+
+@dataclass(frozen=True)
+class UnsplitDataset:
+    dataset: Dataset[Data]
+
+
+@dataclass(frozen=True)
+class IndexedDataset:
+    dataset: Dataset[Data]
+    indices: SplitIndices
+
+
+@dataclass(frozen=True)
+class PhaseDatasets:
+    train: Dataset[Data]
+    valid: Dataset[Data]
+    test: Dataset[Data]
 ```
 
-**Step 2: Verify failure**
+Cover these observable contracts:
+
+- generated, indexed, and phase-dataset inputs normalize to one train/valid/test
+  result;
+- index tensors must be non-boolean integral rank-one tensors;
+- every phase is non-empty and internally unique;
+- phases are pairwise disjoint and cover the source exactly;
+- node indices are bounded by the one source graph's node count;
+- example indices are bounded by the source dataset length;
+- `PhaseDatasets` rejects empty phases but does not require a shared backing
+  dataset;
+- invalid input combinations fail before preprocessing or loader iteration;
+- validation failures state only the invariant and counts, never index values.
+
+Add a confidentiality sentinel asserting that exception text does not contain
+the supplied index values or data tensor representations.
+
+**Step 2: Verify the split-input tests fail**
 
 Run:
 
 ```bash
-uv run pytest test/data/dataload/test_Dataloaders.py \
-  test/data/dataload/test_dataload_dataset.py \
+uv run pytest test/data/dataload/test_dataload_dataset.py \
   test/data/utils/test_split_utils.py -q
 ```
 
-Expected: FAIL because `GraphDataModule` is absent and splits return `DataloadDataset`.
+Expected: FAIL because the explicit input types and common normalization
+boundary do not exist.
 
-**Step 3: Implement `GraphDataModule` with PyG loaders**
+**Step 3: Implement the typed input and validation boundary**
 
-Core skeleton:
+Add the frozen input types to `topobench/data/splits.py`; expose a closed
+`GraphDatasetInput` union. Update `AbstractLoader` typing and every retained
+homogeneous loader to return exactly one member of that union:
 
-```python
-from typing import Literal
+- loaders without an authoritative split return `UnsplitDataset`;
+- OGB, molecule, ADME, and synthetic loaders with fixed example indices return
+  `IndexedDataset`;
+- an adapter that independently loads train, validation, and test data returns
+  `PhaseDatasets` directly.
 
-from lightning import LightningDataModule
-from torch.utils.data import Dataset
-from torch_geometric.data import Data
-from torch_geometric.loader import DataLoader
+Do not use optional fields that allow contradictory states. Do not retain
+`dataset.split_idx`, `dataset.split_idx_list`, or another ad hoc phase
+attribute as a compatibility path. Preserve the canonical phase key `valid`
+inside `SplitIndices`; use `val` only for Lightning method and metric names.
 
+Implement one validator that normalizes accepted index sequences to CPU
+`torch.long` tensors and checks shape, bounds, uniqueness, non-empty phases,
+pairwise disjointness, and complete coverage. Complete coverage is mandatory
+for this qualified product; a future partial-supervision policy would require
+a separate explicit contract.
 
-class GraphDataModule(LightningDataModule):
-    def __init__(
-        self,
-        dataset_train: Dataset[Data],
-        dataset_val=None,
-        dataset_test=None,
-        *,
-        learning_setting: Literal["inductive", "transductive"],
-        batch_size: int = 1,
-        num_workers: int = 0,
-        pin_memory: bool = False,
-        persistent_workers: bool = False,
-    ) -> None:
-        super().__init__()
-        if len(dataset_train) == 0:
-            raise ValueError("dataset_train must not be empty")
-        if learning_setting == "transductive":
-            if len(dataset_train) != 1:
-                raise ValueError("transductive graph loading requires exactly one graph")
-            if dataset_val is not None or dataset_test is not None:
-                raise ValueError("transductive phases must reuse the source graph")
-            if batch_size != 1:
-                raise ValueError("transductive graph loading requires batch_size=1")
-            dataset_val = dataset_test = dataset_train
-        elif learning_setting == "inductive":
-            if dataset_val is None or dataset_test is None:
-                raise ValueError("inductive loading requires train, validation, and test views")
-        else:
-            raise ValueError(f"unsupported learning_setting: {learning_setting!r}")
-        self.learning_setting = learning_setting
-        self.dataset_train = dataset_train
-        self.dataset_val = dataset_val
-        self.dataset_test = dataset_test
-        self.batch_size = batch_size
-        self.loader_kwargs = dict(
-            num_workers=num_workers,
-            pin_memory=pin_memory,
-            persistent_workers=persistent_workers and num_workers > 0,
-        )
+**Step 4: Replace generated splitting with ordinary three-way splits**
 
-    def train_dataloader(self) -> DataLoader:
-        return DataLoader(
-            self.dataset_train,
-            batch_size=self.batch_size,
-            shuffle=self.learning_setting == "inductive",
-            **self.loader_kwargs,
-        )
+Generated `random` and `stratified` modes require:
+
+```yaml
+split_params:
+  learning_setting: inductive
+  split_type: stratified
+  train_prop: 0.70
+  val_prop: 0.15
+  test_prop: 0.15
+  data_seed: 0
 ```
 
-Implement validation for positive integral `batch_size` and non-negative integral `num_workers`. Validation and test loaders use `shuffle=False`.
+Reject booleans, non-finite values, non-positive values, or a sum other than
+one within an explicit tolerance. Derive integer phase sizes deterministically
+with a documented largest-remainder rule and reject datasets too small to
+produce three non-empty phases. Classification stratification must either
+preserve every feasible class across phases or fail with a contextual error;
+it must never silently fall back to random splitting.
 
-**Step 4: Return index-backed views and canonical masks from split helpers**
+Use a local `numpy.random.Generator` or deterministic sklearn
+`random_state`; never call `torch.manual_seed`, `np.random.seed`, or mutate
+Python's global RNG. Generate the inexpensive indices on every run rather than
+persisting split files. Remove `k_fold_split`, `k_fold_split_fixed`, their
+configuration choices, and tests that treat a held-out fold as both
+validation and test.
 
-- Replace `assign_train_val_test_mask_to_graphs()` with a helper that returns
-  three `torch.utils.data.Subset` views over the same source dataset.
-- `load_transductive_splits()` returns `([data], None, None)`.
-- `load_inductive_splits()` returns three index-backed views and does not
-  mutate each graph with redundant phase masks.
-- Preserve fixed/random/stratified/k-fold index selection, but replace legacy
-  index-valued transductive masks with full-length boolean masks through one
-  `indices_to_mask()` helper in `topobench/data/splits.py`. Keep random/fixed
-  index-generation algorithms in `split_utils.py`; keep representation and
-  validation at the new narrow split boundary.
-- Validate that masks are rank-1, disjoint, non-empty, and cover all labeled
-  nodes expected by the split policy.
-- Change `PreProcessor.load_dataset_splits()` annotations to dataset views.
-- Change `DefaultDataPipeline` to pass the configured `learning_setting`
-  explicitly when it instantiates `GraphDataModule`.
+Tests must prove:
 
-Add a deterministic packaged synthetic loader with three native PyG fixtures:
-several graph-classification examples for `SyntheticGraph.yaml`, several
-scalar-regression examples with rank-one length-one floating labels for
-`SyntheticGraphRegression.yaml`, and one node-classification graph for
-`SyntheticNodeGraph.yaml`. The graph-level fixtures exercise real inductive
-batching with fixed splits and `batch_size: 4`; the node fixture exercises
-full-length boolean transductive masks. The loader returns native PyG datasets
-directly. Do not construct fixtures through `DataloadDataset` or a topology
-transform. Attach explicit `split_idx` arrays to both graph-level datasets so
-their fixed splits use the same production path as ZINC/OGB fixed splits.
+- exact disjoint coverage;
+- deterministic same-seed output;
+- at least one different-seed assignment;
+- declared phase sizes;
+- classification balance where mathematically feasible;
+- global NumPy and Torch RNG states are unchanged;
+- no cache-hit/cache-miss branch exists for generated split identity.
 
-Do not delete the legacy dataloader files until Task 13; this keeps the diff reviewable while all callers migrate.
+**Step 5: Normalize split ownership through preprocessing**
 
-**Step 5: Run focused and pipeline-boundary tests**
+Refactor the graph pipeline so preprocessing preserves the loader result:
+
+```text
+UnsplitDataset
+  -> preprocess source
+  -> generate and validate indices
+  -> Subset phase views or transductive masks
+
+IndexedDataset
+  -> preprocess source without reordering
+  -> validate supplied indices
+  -> Subset phase views or transductive masks
+
+PhaseDatasets
+  -> preprocess train/valid/test in distinct phase cache namespaces
+  -> validate each phase
+  -> keep the three datasets separate
+```
+
+For one homogeneous node-task source, generated or supplied indices select
+nodes and become canonical full-length `train_mask`, `val_mask`, and
+`test_mask`. The data module then reuses that one graph in transductive mode.
+For a multi-graph source, indices select examples and remain lazy `Subset`
+views. `PhaseDatasets` is inductive: graph tasks supervise each graph, while
+node tasks supervise every labeled node and do not create phase masks.
+
+Accumulate preprocessing time across phase datasets. Ensure train, validation,
+and test cannot reuse the same processed cache filename accidentally. Split
+indices supplied in memory must not be serialized merely because preprocessing
+is cached.
+
+**Step 6: Generalize native PyG batching**
+
+Keep the initial in-memory transductive constraints unchanged: one graph,
+`batch_size == 1`, and no separate phase datasets. Build the explicit
+`cluster_disk`/Parquet follow-on only after this native contract is green by
+executing the companion plan named under “Approved disk-streaming follow-on.”
+For inductive mode, require three non-empty datasets
+but remove the `Subset` and shared-source restrictions from `GraphDataModule`.
+Training alone shuffles; validation and test remain deterministic.
+
+Add batching tests for:
+
+- fixed graph indices over one shared source;
+- generated ordinary graph splits;
+- one independently loaded node-classification graph per phase;
+- multiple node-classification graphs in a phase;
+- graph-level phase datasets with unrelated backing objects;
+- transductive node indices converted to boolean masks;
+- rejection of phase datasets in transductive mode.
+
+For `task_level=node` plus `learning_setting=inductive`, verify the existing
+`node_inductive` supervision path consumes every label in the current phase
+batch and never asks for `train_mask`, `val_mask`, or `test_mask`.
+
+**Step 7: Add one phase-separated node lifecycle**
+
+Create a deterministic synthetic loader/config containing three independently
+constructed graphs, one for each phase. Run one GCN training, validation, and
+test step. Assert:
+
+- each loader sees only its owned graph;
+- node logits and labels have matching leading dimension;
+- every phase loss is finite;
+- validation and test do not mutate or acquire phase masks;
+- train/validation/test graph objects and storage are distinct.
+
+**Step 8: Run focused split, pipeline, and supervision tests**
 
 Run:
 
@@ -519,26 +618,21 @@ uv run pytest test/data/dataload/test_Dataloaders.py \
   test/data/dataload/test_dataload_dataset.py \
   test/data/utils/test_split_utils.py \
   test/data/pipelines/test_data_pipelines.py \
-  test/data/datasets/test_synthetic_graph_dataset.py -q
+  test/data/datasets/test_synthetic_graph_dataset.py \
+  test/model/test_supervision.py -q
 ```
 
 Expected: PASS.
 
-**Step 6: Commit**
+**Step 9: Commit**
 
 ```bash
-git add topobench/dataloader topobench/data/utils/split_utils.py \
-  topobench/data/splits.py \
-  topobench/data/preprocessor/preprocessor.py topobench/data/pipelines/default.py \
-  topobench/data/datasets/synthetic_graph_dataset.py \
-  topobench/data/loaders/graph/synthetic.py \
-  configs/dataset/graph/SyntheticGraph.yaml \
-  configs/dataset/graph/SyntheticNodeGraph.yaml \
-  configs/dataset/graph/SyntheticGraphRegression.yaml \
-  test/data/dataload test/data/utils/test_split_utils.py \
-  test/data/pipelines/test_data_pipelines.py \
-  test/data/datasets/test_synthetic_graph_dataset.py
-git commit -m "refactor: use native PyG graph batching"
+git add topobench/data/loaders topobench/data/splits.py \
+  topobench/data/utils/split_utils.py topobench/data/preprocessor \
+  topobench/data/pipelines topobench/dataloader \
+  configs/dataset/graph configs/experiment/graph_synthetic_inductive_node.yaml \
+  test/data test/model/test_supervision.py
+git commit -m "feat: make graph split ownership explicit"
 ```
 
 ### Task 4: Migrate homogeneous feature encoding to `data.x`
@@ -1843,13 +1937,18 @@ README structure:
 1. scope: graph, heterogeneous graph, hypergraph;
 2. installation with uv;
 3. smallest homogeneous command;
-4. heterogeneous full and neighbor-sampled commands;
-5. hypergraph EDGNN and HypergraphConv commands;
-6. batching semantics by domain;
-7. best-checkpoint rerun and W&B metric names;
-8. adding a dataset/model using the explicit registries.
+4. generated, explicit-index, and separate-phase graph inputs;
+5. heterogeneous full and neighbor-sampled commands;
+6. hypergraph EDGNN and HypergraphConv commands;
+7. batching and supervision semantics by domain;
+8. best-checkpoint rerun and W&B metric names;
+9. adding a dataset/model using the explicit registries.
 
-Keep `docs/heterogeneous_graphs.md` detailed and update only links/scope. `docs/hypergraphs.md` must document the exact incidence convention and cache incompatibility. `docs/graph_data.md` must document native `x`/`batch` fields.
+Keep `docs/heterogeneous_graphs.md` detailed and update only links/scope.
+`docs/hypergraphs.md` must document the exact incidence convention and cache
+incompatibility. `docs/graph_data.md` must document native `x`/`batch` fields,
+the three graph split input types, explicit split proportions, and the
+confidential-adapter rule that no real or derived fixture is committed.
 
 **Step 4: Prune generated API pages and obsolete artifacts**
 
@@ -1941,28 +2040,49 @@ uv run pytest test/integration/test_retained_datasets.py \
 
 uv run pytest test/integration/test_real_hypergraph_formats.py \
   -m "download and integration" -q
+
+TOPOBENCH_ALLOW_DOWNLOADS=1 uv run pytest \
+  test/integration/test_real_graph_disk.py -q
 ```
 
-Expected: every download-marked surviving dataset selector and both selected
-hypergraph raw formats PASS against fresh raw/processed directories. This
-includes real graph classification and scalar-regression lifecycles with exact
-`[B, 1]` regression targets, real heterogeneous full/neighbor loading, and
-selector-specific real hypergraph parser assertions. A network outage may
-postpone
-the release step, but a skip or postponed result is not a passing release.
+```bash
+TOPOBENCH_ALLOW_DOWNLOADS=1 uv run pytest \
+  test/integration/test_real_parquet_graph.py -q
 
-**Step 5: Run four end-to-end smoke tests**
+uv run pytest test/integration/qualify_parquet_graph_cuda.py -q
+```
 
-Run graph classification, graph scalar regression, synthetic heterogeneous
-neighbor batching, and synthetic hypergraph classification on CPU with W&B
-disabled:
+Expected: every download-marked surviving dataset selector, both selected
+hypergraph raw formats, the approved real disk-streamed transductive graph, the
+real Parquet graph, and the mandatory CUDA-overlap gate PASS against fresh
+raw/processed directories. This includes real graph classification and
+scalar-regression lifecycles with exact `[B, 1]` regression targets, strictly
+out-of-core Parquet conversion, bounded selected reads with all three
+node-supervision phases, at most 5% qualified input stall, real heterogeneous
+full/neighbor loading, and selector-specific real hypergraph
+parser assertions. A network outage may postpone the release step, but a skip
+or postponed result is not a passing release.
 
+**Step 5: Run six end-to-end smoke tests**
+
+Run graph classification, graph scalar regression, phase-separated inductive
+node classification, disk-streamed transductive node classification, synthetic
+heterogeneous neighbor batching, and synthetic hypergraph classification on
+CPU with W&B disabled:
 ```bash
 WANDB_MODE=disabled uv run python -m topobench.run \
   experiment=example trainer.accelerator=cpu trainer.devices=1 trainer.max_epochs=1
 
 WANDB_MODE=disabled uv run python -m topobench.run \
   experiment=graph_synthetic_regression \
+  trainer.accelerator=cpu trainer.devices=1 trainer.max_epochs=1
+
+WANDB_MODE=disabled uv run python -m topobench.run \
+  experiment=graph_synthetic_inductive_node \
+  trainer.accelerator=cpu trainer.devices=1 trainer.max_epochs=1
+
+WANDB_MODE=disabled uv run python -m topobench.run \
+  experiment=graph_synthetic_disk_gcn \
   trainer.accelerator=cpu trainer.devices=1 trainer.max_epochs=1
 
 WANDB_MODE=disabled uv run python -m topobench.run \
@@ -1977,6 +2097,7 @@ WANDB_MODE=disabled uv run python -m topobench.run \
 Expected for each: training completes, a best checkpoint is selected, and both
 `val_best_rerun/` and `test_best_rerun/` metrics are produced. The regression
 run reports exact `[B, 1]` predictions/targets without broadcasting. The
+inductive-node run consumes distinct phase graphs without masks. The
 heterogeneous neighbor run reports a target seed batch size greater than one.
 
 **Step 6: Verify clean forbidden imports in a subprocess**
@@ -2012,13 +2133,38 @@ If the tree is already clean, do not create an empty commit.
 
 Implementation is complete only when all of the following are true:
 
-- homogeneous inductive training uses real PyG mini-batches and native `x`/`batch`;
-- supported homogeneous tasks are limited to graph binary/multiclass
-  classification, graph scalar regression, and singleton transductive node
-  classification; unsupported selectors are absent;
-- inductive splits are lazy index-backed views, while explicit transductive
-  mode requires one graph, `batch_size == 1`, and full-length disjoint boolean
-  masks;
+- homogeneous inductive training uses real PyG mini-batches and native
+  `x`/`batch`;
+- supported homogeneous tasks are graph binary/multiclass classification,
+  graph scalar regression, singleton transductive node classification, and
+  phase-separated inductive node classification; unsupported selectors are
+  absent;
+- graph loaders use the explicit unsplit, indexed, or phase-dataset input
+  contract;
+- generated splits are ordinary three-way splits with explicit proportions
+  and local RNG state;
+- supplied node/example indices are validated as complete disjoint
+  partitions;
+- generated and fixed multi-graph splits remain lazy index-backed views, while
+  phase datasets may have independent backing storage;
+- explicit transductive mode requires one source graph and full-length
+  disjoint boolean masks; `full_graph` requires graph `batch_size == 1`, while
+  `cluster_disk` uses an explicit partition count per step;
+- disk-backed transductive batches use versioned non-executable partition
+  artifacts, bounded selected reads, exact induced-union edges, writable
+  tensors, and canonical numeric `global_nid` plus an exact external-ID export
+  map; runtime retains no full graph;
+- chunked node/edge Parquet conversion is schema-mapped and strictly out of
+  core, including external-ID joins, embeddings, supervision, edge sorting,
+  deterministic graph-aware partitioning, and final partition-order rewrite;
+- qualified `batch_transform` accepts and returns native graph `Data`, runs
+  exactly once before pinning/device transfer, and preserves
+  node/supervision identity;
+- bounded host prefetch and a configurable CUDA ring defaulting to three
+  batches ahead preserve exact sequence and committed-cursor resume;
+- continuous asynchronous input telemetry remains outside scientific metrics,
+  packaged runs warn on starvation, and mandatory CUDA qualification proves at
+  most 5% steady-state input stall;
 - scalar-regression logits and targets are exactly `[B, 1]` through
   supervision, loss, and metrics, including a smaller final batch;
 - every retained graph dataset is present in the exact manifest, has explicit
@@ -2033,8 +2179,8 @@ Implementation is complete only when all of the following are true:
   unsupported empty hyperedges, and run both EDGNN and HypergraphConv;
 - native hypergraph caches are versioned and cannot silently reuse legacy
   rank-based `data.pt` artifacts;
-- every mandatory real dataset-selector gate and both real hypergraph format
-  gates pass;
+- every mandatory real dataset-selector gate, real Parquet graph gate, CUDA
+  overlap gate, and both real hypergraph format gates pass;
 - only graph, heterogeneous, and hypergraph source/config groups remain;
 - no surviving runtime uses a rank-indexed field or a lifting;
 - TopoModelX, TopoNetX, GUDHI, HyperNetX, trimesh, and spharapy are absent from
@@ -2043,5 +2189,6 @@ Implementation is complete only when all of the following are true:
 - epoch losses are weighted by supervised examples for inductive, transductive,
   and sampled heterogeneous tasks;
 - the default CLI is network-free and executes final best-checkpoint evaluation;
-- the complete network-free suite, Ruff, clean-import probe, and all four
-  end-to-end smokes pass.
+- the complete network-free suite, Ruff, clean-import probe, all six
+  end-to-end smokes, bounded-RSS Parquet conversion, and mandatory
+  CUDA-overlap qualification pass.
