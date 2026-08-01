@@ -32,8 +32,8 @@ identity matrix.
 
 References
 ----------
-Yang, Sardellitti, Barbarossa, Leus & Isufi (2022) *Simplicial
-Convolutional Neural Networks* (ICASSP) -- primary reference for SCNN.
+Yang, Isufi & Leus (2022) *Simplicial Convolutional Neural Networks*
+(ICASSP 2022, arXiv:2110.02585) -- primary reference for SCNN.
 """
 
 from __future__ import annotations

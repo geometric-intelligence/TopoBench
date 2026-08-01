@@ -21,7 +21,7 @@ argument *relative to* ``L_apply`` (Chebyshev evaluates ``T_k`` at
 References
 ----------
 Ebli, Defferrard & Spreemann (2020) *Simplicial Neural Networks*
-(NeurIPS TDA workshop) -- primary reference for SNN.
+(NeurIPS 2020 TDA workshop, arXiv:2010.03633) -- primary reference for SNN.
 """
 
 from __future__ import annotations
