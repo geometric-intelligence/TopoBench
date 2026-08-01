@@ -29,6 +29,62 @@ def _require_tensor(data: Data, field: str) -> Tensor:
     return value
 
 
+def _validate_node_targets(labels: Tensor, node_count: int) -> None:
+    """Validate the only supported node-level target contract."""
+    if labels.size(0) != node_count:
+        raise ValueError(
+            "batch.y count must match batch.x rows for node targets"
+        )
+    if labels.dtype is not torch.long:
+        raise TypeError(
+            "batch.y must have dtype torch.long for node classification"
+        )
+    if labels.ndim != 1:
+        raise ValueError("batch.y must be rank-1 for node classification")
+
+
+def _validate_targets(
+    labels: Tensor,
+    *,
+    node_count: int,
+    graph_count: int | None,
+) -> None:
+    """Validate targets inferred from native graph membership and counts."""
+    if labels.ndim == 0:
+        raise ValueError("batch.y must have a leading example dimension")
+
+    if graph_count is None:
+        _validate_node_targets(labels, node_count)
+        return
+
+    if labels.size(0) == graph_count:
+        if labels.dtype is torch.long:
+            if labels.ndim != 1:
+                raise ValueError(
+                    "batch.y must be rank-1 for graph classification"
+                )
+            return
+        if labels.is_floating_point():
+            if labels.ndim != 1 and (labels.ndim != 2 or labels.size(1) != 1):
+                raise ValueError(
+                    "batch.y must have shape [B] or [B, 1] for graph scalar "
+                    "regression"
+                )
+            return
+        raise TypeError(
+            "batch.y must be floating for graph scalar regression or have "
+            "dtype torch.long for graph classification"
+        )
+
+    if labels.size(0) == node_count:
+        _validate_node_targets(labels, node_count)
+        return
+
+    raise ValueError(
+        "batch.y count must match graphs or nodes described by batch.batch"
+    )
+
+
 def _validated_graph_fields(
     data: Data,
 ) -> tuple[Tensor, Tensor, Tensor, Tensor | None]:
@@ -51,8 +107,6 @@ def _validated_graph_fields(
         raise ValueError("batch.edge_index contains an invalid node index")
 
     labels = _require_tensor(data, "y")
-    if labels.ndim == 0:
-        raise ValueError("batch.y must have a leading example dimension")
 
     batch_index = data.get("batch")
     if batch_index is None:
@@ -67,8 +121,11 @@ def _validated_graph_fields(
             )
         if has_multiple_boundaries:
             raise ValueError("batch.batch is required for graph-level targets")
-        if labels.size(0) != x.size(0):
-            raise ValueError("batch.batch is required for graph-level targets")
+        _validate_targets(
+            labels,
+            node_count=x.size(0),
+            graph_count=None,
+        )
         return x, edge_index, labels, None
     if not isinstance(batch_index, Tensor):
         raise TypeError("batch.batch must be a tensor")
@@ -88,16 +145,18 @@ def _validated_graph_fields(
         torch.arange(graph_count, device=batch_index.device),
     ):
         raise ValueError("batch.batch indices must be contiguous from zero")
-    if labels.size(0) not in {graph_count, x.size(0)}:
-        raise ValueError(
-            "batch.y count must match graphs or nodes described by batch.batch"
-        )
+    _validate_targets(
+        labels,
+        node_count=x.size(0),
+        graph_count=graph_count,
+    )
     return x, edge_index, labels, batch_index
 
 
 def _edge_kwargs(data: Data, modes: dict[str, EdgeMode]) -> dict[str, Tensor]:
     """Translate explicitly consumed optional edge tensors."""
     kwargs: dict[str, Tensor] = {}
+    edge_count = _require_tensor(data, "edge_index").size(1)
     for field, mode in modes.items():
         value = data.get(field)
         if value is None:
@@ -107,6 +166,14 @@ def _edge_kwargs(data: Data, modes: dict[str, EdgeMode]) -> dict[str, Tensor]:
         if mode == "consume":
             if not isinstance(value, Tensor):
                 raise TypeError(f"batch.{field} must be a tensor")
+            if field == "edge_weight" and value.ndim != 1:
+                raise ValueError("batch.edge_weight must be rank-1")
+            if field == "edge_attr" and value.ndim < 1:
+                raise ValueError("batch.edge_attr must have rank at least 1")
+            if value.size(0) != edge_count:
+                raise ValueError(
+                    f"batch.{field} length must match batch.edge_index edges"
+                )
             kwargs[field] = value
     return kwargs
 

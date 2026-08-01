@@ -163,7 +163,7 @@ _ROWS = (
         task="classification",
         task_level="graph",
         learning_setting="inductive",
-        feature_policy="continuous",
+        feature_policy="categorical_one_hot",
         edge_fields=_EDGE_ATTR,
     ),
     _capability(
@@ -172,7 +172,7 @@ _ROWS = (
         task="classification",
         task_level="graph",
         learning_setting="inductive",
-        feature_policy="continuous",
+        feature_policy="categorical_one_hot",
         edge_fields=_EDGE_ATTR,
     ),
     _capability(
@@ -181,7 +181,7 @@ _ROWS = (
         task="regression",
         task_level="graph",
         learning_setting="inductive",
-        feature_policy="continuous",
+        feature_policy="categorical_one_hot",
         edge_fields=_EDGE_ATTR,
     ),
     _capability(
@@ -190,7 +190,7 @@ _ROWS = (
         task="regression",
         task_level="graph",
         learning_setting="inductive",
-        feature_policy="continuous",
+        feature_policy="categorical_one_hot",
         edge_fields=_EDGE_ATTR,
     ),
     _capability(
@@ -377,7 +377,7 @@ _ROWS = (
         task="classification",
         task_level="graph",
         learning_setting="inductive",
-        feature_policy="continuous",
+        feature_policy="categorical_one_hot",
         edge_fields=_EDGE_ATTR,
     ),
     _capability(

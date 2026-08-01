@@ -17,7 +17,10 @@ from topobench.data import (
     HypergraphData,
     validate_hypergraph_structure,
 )
-from topobench.data.datasets import CitationHypergraphDataset, HypergraphDataset
+from topobench.data.datasets import (
+    CitationHypergraphDataset,
+    HypergraphDataset,
+)
 from topobench.data.loaders.hypergraph.citation_hypergraph_dataset_loader import (
     CitationHypergraphDatasetLoader,
 )
@@ -57,7 +60,26 @@ def _write_pickle_fixture(raw_dir: Path, *, empty: bool = False) -> None:
             pickle.dump(value, stream)
 
 
-def _write_content_fixture(raw_dir: Path, name: str) -> None:
+def _write_generic_content_fixture(raw_dir: Path, name: str) -> None:
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    (raw_dir / f"{name}.content").write_text(
+        "\n".join(
+            [
+                "10 1.0 1.5 1",
+                "20 0.0 0.0 0",
+                "700 0.0 0.0 0",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (raw_dir / f"{name}.edges").write_text(
+        "10 700\n",
+        encoding="utf-8",
+    )
+
+
+def _write_padded_content_fixture(raw_dir: Path, name: str) -> None:
     raw_dir.mkdir(parents=True, exist_ok=True)
     (raw_dir / f"{name}.content").write_text(
         "\n".join(
@@ -65,6 +87,7 @@ def _write_content_fixture(raw_dir: Path, name: str) -> None:
                 "10 1.0 1.5 3",
                 "20 2.0 2.5 5",
                 "30 3.0 3.5 4",
+                "40 0.0 0.0 0",
                 "700 0.0 0.0 0",
                 "900 0.0 0.0 0",
                 "1000 0.0 0.0 0",
@@ -74,7 +97,7 @@ def _write_content_fixture(raw_dir: Path, name: str) -> None:
         encoding="utf-8",
     )
     (raw_dir / f"{name}.edges").write_text(
-        "30 900\n10 700\n30 700\n10 700\n",
+        "30 900\n10 700\n30 700\n10 700\n40 900\n",
         encoding="utf-8",
     )
 
@@ -82,7 +105,8 @@ def _write_content_fixture(raw_dir: Path, name: str) -> None:
 def _assert_native(data: HypergraphData) -> None:
     assert validate_hypergraph_structure(data) is data
     assert data.representation_version == HYPERGRAPH_REPRESENTATION_VERSION
-    assert int(data["representation_version"]) == HYPERGRAPH_REPRESENTATION_VERSION
+    assert type(data["representation_version"]) is int
+    assert data["representation_version"] == HYPERGRAPH_REPRESENTATION_VERSION
     assert data.hyperedge_index.dtype == torch.long
     assert data.hyperedge_index.shape[0] == 2
     pairs = list(map(tuple, data.hyperedge_index.t().tolist()))
@@ -101,7 +125,9 @@ def test_pickle_parser_canonicalizes_sparse_mixed_ids_and_adds_singletons(
     raw_dir = tmp_path / "pickle-data"
     _write_pickle_fixture(raw_dir)
 
-    data, resolved_dir = load_hypergraph_pickle_dataset(tmp_path, "pickle-data")
+    data, resolved_dir = load_hypergraph_pickle_dataset(
+        tmp_path, "pickle-data"
+    )
 
     _assert_native(data)
     assert resolved_dir == str(raw_dir)
@@ -109,9 +135,7 @@ def test_pickle_parser_canonicalizes_sparse_mixed_ids_and_adds_singletons(
     assert data.num_hyperedges == 3
     assert torch.equal(
         data.x,
-        torch.tensor(
-            [[10.0, 11.0], [20.0, 21.0], [30.0, 31.0], [40.0, 41.0]]
-        ),
+        torch.tensor([[10.0, 11.0], [20.0, 21.0], [30.0, 31.0], [40.0, 41.0]]),
     )
     assert torch.equal(data.y, torch.tensor([2, 0, 1, 2]))
     assert torch.equal(
@@ -120,7 +144,9 @@ def test_pickle_parser_canonicalizes_sparse_mixed_ids_and_adds_singletons(
     )
 
 
-def test_pickle_parser_rejects_declared_empty_hyperedges(tmp_path: Path) -> None:
+def test_pickle_parser_rejects_declared_empty_hyperedges(
+    tmp_path: Path,
+) -> None:
     raw_dir = tmp_path / "pickle-empty"
     _write_pickle_fixture(raw_dir, empty=True)
 
@@ -128,28 +154,63 @@ def test_pickle_parser_rejects_declared_empty_hyperedges(tmp_path: Path) -> None
         load_hypergraph_pickle_dataset(tmp_path, "pickle-empty")
 
 
-def test_content_parser_preserves_isolated_node_rows_and_alignment(
+def test_content_parser_preserves_zero_valued_isolated_nodes_by_default(
     tmp_path: Path,
 ) -> None:
     name = "content-data"
-    _write_content_fixture(tmp_path, name)
+    _write_generic_content_fixture(tmp_path, name)
 
     data, resolved_dir = load_hypergraph_content_dataset(tmp_path, name)
 
     _assert_native(data)
     assert resolved_dir == str(tmp_path)
-    assert data.num_nodes == 3
+    assert data.num_nodes == 2
+    assert data.num_hyperedges == 1
+    assert torch.equal(
+        data.x,
+        torch.tensor([[1.0, 1.5], [0.0, 0.0]]),
+    )
+    assert torch.equal(data.y, torch.tensor([1, 0]))
+    assert torch.equal(
+        data.hyperedge_index,
+        torch.tensor([[0], [0]], dtype=torch.long),
+    )
+    assert 1 not in data.hyperedge_index[0]
+
+
+def test_content_parser_filters_only_nonincident_zero_placeholders_when_enabled(
+    tmp_path: Path,
+) -> None:
+    name = "padded-content"
+    _write_padded_content_fixture(tmp_path, name)
+
+    data, _ = load_hypergraph_content_dataset(
+        tmp_path,
+        name,
+        filter_zero_placeholders=True,
+    )
+
+    _assert_native(data)
+    assert data.num_nodes == 4
     assert data.num_hyperedges == 2
     assert torch.equal(
         data.x,
-        torch.tensor([[1.0, 1.5], [2.0, 2.5], [3.0, 3.5]]),
+        torch.tensor(
+            [
+                [1.0, 1.5],
+                [2.0, 2.5],
+                [3.0, 3.5],
+                [0.0, 0.0],
+            ]
+        ),
     )
-    assert torch.equal(data.y, torch.tensor([0, 2, 1]))
+    assert torch.equal(data.y, torch.tensor([3, 5, 4, 0]))
     assert torch.equal(
         data.hyperedge_index,
-        torch.tensor([[0, 2, 2], [0, 0, 1]], dtype=torch.long),
+        torch.tensor([[0, 2, 2, 3], [0, 0, 1, 1]], dtype=torch.long),
     )
     assert 1 not in data.hyperedge_index[0]
+    assert 3 in data.hyperedge_index[0]
 
 
 def test_citation_loader_bypasses_old_cache_and_loads_versioned_native_data(
@@ -162,8 +223,12 @@ def test_citation_loader_bypasses_old_cache_and_loads_versioned_native_data(
     processed_dir = tmp_path / name / "processed"
     processed_dir.mkdir(parents=True)
     (processed_dir / "data.pt").write_bytes(b"legacy rank-based cache")
-    monkeypatch.setattr(CitationHypergraphDataset, "download", lambda self: None)
-    parameters = OmegaConf.create({"data_dir": str(tmp_path), "data_name": name})
+    monkeypatch.setattr(
+        CitationHypergraphDataset, "download", lambda self: None
+    )
+    parameters = OmegaConf.create(
+        {"data_dir": str(tmp_path), "data_name": name}
+    )
 
     with pytest.warns(UserWarning, match="Ignoring legacy processed cache"):
         dataset = CitationHypergraphDatasetLoader(parameters).load_dataset()
@@ -172,7 +237,33 @@ def test_citation_loader_bypasses_old_cache_and_loads_versioned_native_data(
     _assert_native(data)
     assert dataset.processed_file_names == HYPERGRAPH_CACHE_FILENAME
     assert (processed_dir / HYPERGRAPH_CACHE_FILENAME).is_file()
-    assert (processed_dir / "data.pt").read_bytes() == b"legacy rank-based cache"
+    assert (
+        processed_dir / "data.pt"
+    ).read_bytes() == b"legacy rank-based cache"
+
+
+def test_citation_loader_rejects_wrong_typed_v2_cache_marker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pickle-family cache cannot normalize a textual version marker."""
+    name = "pickle-invalid-version"
+    _write_pickle_fixture(tmp_path / name / "raw")
+    monkeypatch.setattr(
+        CitationHypergraphDataset, "download", lambda self: None
+    )
+    parameters = OmegaConf.create(
+        {"data_dir": str(tmp_path), "data_name": name}
+    )
+    dataset = CitationHypergraphDatasetLoader(parameters).load_dataset()
+    data = dataset[0]
+    data.representation_version = "2"
+    dataset.save([data], dataset.processed_paths[0])
+
+    with pytest.raises(
+        TypeError, match="representation_version.*built-in int"
+    ):
+        CitationHypergraphDatasetLoader(parameters).load_dataset()
 
 
 def test_content_loader_round_trips_only_the_versioned_native_cache(
@@ -181,16 +272,23 @@ def test_content_loader_round_trips_only_the_versioned_native_cache(
 ) -> None:
     name = "content-cache"
     raw_dir = tmp_path / name / "raw"
-    _write_content_fixture(raw_dir, name)
+    _write_padded_content_fixture(raw_dir, name)
     monkeypatch.setattr(HypergraphDataset, "download", lambda self: None)
-    parameters = OmegaConf.create({"data_dir": str(tmp_path), "data_name": name})
+    parameters = OmegaConf.create(
+        {"data_dir": str(tmp_path), "data_name": name}
+    )
 
     first = HypergraphDatasetLoader(parameters).load_dataset()
     first_data = first[0]
     _assert_native(first_data)
+    assert first_data.num_nodes == 4
+    assert torch.equal(first_data.x[-1], torch.tensor([0.0, 0.0]))
+    assert 3 in first_data.hyperedge_index[0]
 
     def fail_if_reparsed(*args: object, **kwargs: object) -> None:
-        raise AssertionError("versioned cache should be loaded without reparsing raw data")
+        raise AssertionError(
+            "versioned cache should be loaded without reparsing raw data"
+        )
 
     monkeypatch.setattr(
         "topobench.data.datasets.hypergraph_datasets.load_hypergraph_content_dataset",
@@ -203,3 +301,25 @@ def test_content_loader_round_trips_only_the_versioned_native_cache(
     assert torch.equal(second_data.y, first_data.y)
     assert torch.equal(second_data.hyperedge_index, first_data.hyperedge_index)
     assert second.processed_file_names == HYPERGRAPH_CACHE_FILENAME
+
+
+def test_content_loader_rejects_wrong_typed_v2_cache_marker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The content-family cache cannot normalize a floating version marker."""
+    name = "content-invalid-version"
+    _write_padded_content_fixture(tmp_path / name / "raw", name)
+    monkeypatch.setattr(HypergraphDataset, "download", lambda self: None)
+    parameters = OmegaConf.create(
+        {"data_dir": str(tmp_path), "data_name": name}
+    )
+    dataset = HypergraphDatasetLoader(parameters).load_dataset()
+    data = dataset[0]
+    data.representation_version = 2.0
+    dataset.save([data], dataset.processed_paths[0])
+
+    with pytest.raises(
+        TypeError, match="representation_version.*built-in int"
+    ):
+        HypergraphDatasetLoader(parameters).load_dataset()

@@ -10,15 +10,14 @@ loader:
 # Dataset parameters
 parameters:
   num_features:
-  - 9 # Node features
+  - 174 # Concatenated one-hot OGB atom features
   - 3 # Edge features
   num_classes: 2
   task: classification
   loss_type: cross_entropy
   monitor_metric: auroc
   task_level: graph
-  feature_policy: continuous
-  preserve_edge_attr_if_lifted: True
+  feature_policy: categorical_one_hot
 
 #splits
 split_params:

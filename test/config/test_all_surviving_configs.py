@@ -31,6 +31,13 @@ from topobench.utils.model_instantiation import instantiate_model
 PROJECT_ROOT = Path(__file__).parents[2]
 CONFIG_ROOT = PROJECT_ROOT / "configs"
 SUPPORTED_DOMAINS = ("graph", "heterogeneous", "hypergraph")
+EXPECTED_PIPELINE_TARGETS: Mapping[str, str] = {
+    "graph": "topobench.data.pipelines.DefaultDataPipeline",
+    "heterogeneous": (
+        "topobench.data.pipelines.HeterogeneousNodeDataPipeline"
+    ),
+    "hypergraph": "topobench.data.pipelines.HypergraphNodeDataPipeline",
+}
 PACKAGED_DATASETS = frozenset(
     {
         "graph/SyntheticGraph",
@@ -521,6 +528,72 @@ def test_every_cross_domain_pair_is_rejected_by_the_central_gate(
     assert "cross-domain" in message.lower()
 
 
+@pytest.mark.parametrize(
+    ("dataset_selector", "model_selector"),
+    [
+        (
+            "heterogeneous/SyntheticHeterogeneous",
+            "heterogeneous/heterosage",
+        ),
+        ("hypergraph/SyntheticHypergraph", "hypergraph/edgnn"),
+    ],
+)
+def test_bare_non_graph_overrides_reject_the_default_graph_pipeline(
+    dataset_selector: str,
+    model_selector: str,
+) -> None:
+    cfg = _compose(
+        f"dataset={dataset_selector}",
+        f"model={model_selector}",
+        "transforms=no_transform",
+    )
+
+    with pytest.raises(ValueError) as error:
+        validate_domain_composition(cfg)
+
+    domain = dataset_selector.split("/", maxsplit=1)[0]
+    message = str(error.value)
+    assert "cfg.data_pipeline._target_" in message
+    assert EXPECTED_PIPELINE_TARGETS[domain] in message
+    assert EXPECTED_PIPELINE_TARGETS["graph"] in message
+
+
+def test_missing_pipeline_target_is_rejected_with_its_config_path() -> None:
+    cfg = _compose_pair("graph/SyntheticGraph", "graph/gcn")
+    with open_dict(cfg.data_pipeline):
+        del cfg.data_pipeline._target_
+
+    with pytest.raises(ValueError) as error:
+        validate_domain_composition(cfg)
+
+    assert "cfg.data_pipeline._target_ is required" in str(error.value)
+
+
+def test_non_string_pipeline_target_is_rejected_with_its_config_path() -> None:
+    cfg = _compose_pair("graph/SyntheticGraph", "graph/gcn")
+    with open_dict(cfg.data_pipeline):
+        cfg.data_pipeline._target_ = 42
+
+    with pytest.raises(TypeError) as error:
+        validate_domain_composition(cfg)
+
+    assert "cfg.data_pipeline._target_ must be a string" in str(error.value)
+
+
+def test_graph_dataset_rejects_a_non_graph_pipeline() -> None:
+    cfg = _compose_pair("graph/SyntheticGraph", "graph/gcn")
+    with open_dict(cfg.data_pipeline):
+        cfg.data_pipeline._target_ = EXPECTED_PIPELINE_TARGETS["heterogeneous"]
+
+    with pytest.raises(ValueError) as error:
+        validate_domain_composition(cfg)
+
+    message = str(error.value)
+    assert "cfg.data_pipeline._target_" in message
+    assert EXPECTED_PIPELINE_TARGETS["graph"] in message
+    assert EXPECTED_PIPELINE_TARGETS["heterogeneous"] in message
+
+
 def _experiment_parameters() -> Iterable[Any]:
     for experiment, (dataset, _, _) in EXPECTED_EXPERIMENTS.items():
         yield _dataset_param(
@@ -553,6 +626,11 @@ def test_every_experiment_composes_resolves_and_references_existing_selectors(
     assert choices.dataset == expected_dataset
     assert choices.model == expected_model
     assert choices.data_pipeline == expected_pipeline
+    expected_domain = expected_dataset.split("/", maxsplit=1)[0]
+    assert (
+        cfg.data_pipeline._target_
+        == EXPECTED_PIPELINE_TARGETS[expected_domain]
+    )
     if expected_dataset.startswith("heterogeneous/"):
         assert (
             choices.transforms

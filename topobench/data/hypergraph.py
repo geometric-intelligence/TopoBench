@@ -55,6 +55,21 @@ def _require_tensor(data: HypergraphData, field_name: str) -> Tensor:
     return value
 
 
+def _validate_representation_version(data: HypergraphData) -> int:
+    """Validate the explicitly stored native representation marker."""
+    if "representation_version" not in data:
+        raise ValueError("hypergraph data requires representation_version")
+    value = data["representation_version"]
+    if type(value) is not int:
+        raise TypeError("representation_version must be a built-in int")
+    if value != HYPERGRAPH_REPRESENTATION_VERSION:
+        raise ValueError(
+            "representation_version must equal "
+            f"{HYPERGRAPH_REPRESENTATION_VERSION}; received {value}"
+        )
+    return value
+
+
 def _validate_features(data: HypergraphData) -> tuple[Tensor, int]:
     """Validate the native node feature matrix."""
     x = _require_tensor(data, "x")
@@ -148,6 +163,7 @@ def validate_hypergraph_structure(data: HypergraphData) -> HypergraphData:
     """
     if not isinstance(data, HypergraphData):
         raise TypeError("Expected native topobench.data.HypergraphData")
+    _validate_representation_version(data)
     _, num_nodes = _validate_features(data)
     num_hyperedges = _validate_num_hyperedges(data)
     _validate_incidence(
@@ -161,6 +177,8 @@ def validate_hypergraph_structure(data: HypergraphData) -> HypergraphData:
 def _validate_labels(data: HypergraphData, *, num_nodes: int) -> Tensor:
     """Validate and return one label per native node."""
     labels = _require_tensor(data, "y")
+    if labels.dtype != torch.long:
+        raise TypeError(f"y must use torch.long; received {labels.dtype}")
     if labels.ndim != 1:
         raise ValueError(
             f"y must be rank-1; received shape {tuple(labels.shape)}"

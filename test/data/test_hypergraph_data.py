@@ -22,7 +22,9 @@ from topobench.data.datasets.synthetic_hypergraph_dataset import (
 
 def _valid_data() -> HypergraphData:
     """Return a fresh, valid native hypergraph."""
-    return make_synthetic_hypergraph_data(seed=7, num_nodes=9, num_hyperedges=4)
+    return make_synthetic_hypergraph_data(
+        seed=7, num_nodes=9, num_hyperedges=4
+    )
 
 
 def _assert_data_unchanged(
@@ -112,7 +114,9 @@ def test_validation_is_transactional_and_returns_identical_object() -> None:
     _assert_data_unchanged(data, before)
 
 
-def test_structure_validation_precedes_split_generation_without_mutation() -> None:
+def test_structure_validation_precedes_split_generation_without_mutation() -> (
+    None
+):
     """The pipeline can validate native structure before attaching masks."""
     data = _valid_data()
     del data.y
@@ -125,6 +129,69 @@ def test_structure_validation_precedes_split_generation_without_mutation() -> No
 
     assert validated is data
     _assert_data_unchanged(data, before)
+
+
+def test_structure_validation_accepts_stored_builtin_int_version() -> None:
+    """The current schema marker is accepted when stored as a plain int."""
+    data = _valid_data()
+    data.representation_version = HYPERGRAPH_REPRESENTATION_VERSION
+
+    validated = validate_hypergraph_structure(data)
+
+    assert validated is data
+    assert type(data["representation_version"]) is int
+
+
+def test_structure_validation_requires_stored_version_marker() -> None:
+    """A class-level default cannot stand in for serialized schema metadata."""
+    data = _valid_data()
+    del data.representation_version
+
+    with pytest.raises(ValueError, match="requires representation_version"):
+        validate_hypergraph_structure(data)
+
+
+@pytest.mark.parametrize("marker", [True, "2", 2.0])
+def test_structure_validation_rejects_wrong_typed_version_markers(
+    marker: object,
+) -> None:
+    """Cache schema metadata is never normalized through integer coercion."""
+    data = _valid_data()
+    data.representation_version = marker
+
+    with pytest.raises(
+        TypeError, match="representation_version.*built-in int"
+    ):
+        validate_hypergraph_structure(data)
+
+
+def test_structure_validation_rejects_wrong_version_value() -> None:
+    """A well-typed marker for another schema does not cross the boundary."""
+    data = _valid_data()
+    data.representation_version = HYPERGRAPH_REPRESENTATION_VERSION + 1
+
+    with pytest.raises(ValueError, match="representation_version.*2"):
+        validate_hypergraph_structure(data)
+
+
+@pytest.mark.parametrize(
+    "labels",
+    [
+        lambda labels: labels.float(),
+        lambda labels: labels.int(),
+        lambda labels: labels.bool(),
+    ],
+    ids=["float", "int32", "bool"],
+)
+def test_node_data_validation_requires_long_labels(
+    labels: Callable[[torch.Tensor], torch.Tensor],
+) -> None:
+    """Malformed class-label dtypes fail at the complete data boundary."""
+    data = _valid_data()
+    data.y = labels(data.y)
+
+    with pytest.raises(TypeError, match="y.*torch.long"):
+        validate_hypergraph_node_data(data)
 
 
 def test_invalid_incidence_is_not_renumbered_or_otherwise_mutated() -> None:
@@ -142,20 +209,32 @@ def test_invalid_incidence_is_not_renumbered_or_otherwise_mutated() -> None:
 @pytest.mark.parametrize(
     ("mutate", "error_type", "message"),
     [
-        (lambda data: setattr(data, "x", data.x.unsqueeze(0)), ValueError, "x.*rank-2"),
-        (lambda data: setattr(data, "x", data.x.long()), TypeError, "x.*floating"),
+        (
+            lambda data: setattr(data, "x", data.x.unsqueeze(0)),
+            ValueError,
+            "x.*rank-2",
+        ),
+        (
+            lambda data: setattr(data, "x", data.x.long()),
+            TypeError,
+            "x.*floating",
+        ),
         (
             lambda data: data.x.__setitem__((0, 0), float("nan")),
             ValueError,
             "x.*finite",
         ),
         (
-            lambda data: setattr(data, "hyperedge_index", data.hyperedge_index[0]),
+            lambda data: setattr(
+                data, "hyperedge_index", data.hyperedge_index[0]
+            ),
             ValueError,
             r"hyperedge_index.*\[2, M\]",
         ),
         (
-            lambda data: setattr(data, "hyperedge_index", data.hyperedge_index.int()),
+            lambda data: setattr(
+                data, "hyperedge_index", data.hyperedge_index.int()
+            ),
             TypeError,
             "hyperedge_index.*torch.long",
         ),
@@ -170,7 +249,9 @@ def test_invalid_incidence_is_not_renumbered_or_otherwise_mutated() -> None:
             "hyperedge IDs.*nonnegative",
         ),
         (
-            lambda data: data.hyperedge_index.__setitem__((0, 0), data.num_nodes),
+            lambda data: data.hyperedge_index.__setitem__(
+                (0, 0), data.num_nodes
+            ),
             ValueError,
             "node indices.*num_nodes",
         ),
@@ -181,21 +262,43 @@ def test_invalid_incidence_is_not_renumbered_or_otherwise_mutated() -> None:
             ValueError,
             "hyperedge IDs.*num_hyperedges",
         ),
-        (lambda data: data.__delattr__("num_hyperedges"), ValueError, "num_hyperedges"),
-        (lambda data: setattr(data, "num_hyperedges", True), TypeError, "integer"),
-        (lambda data: setattr(data, "num_hyperedges", 0), ValueError, "positive"),
+        (
+            lambda data: data.__delattr__("num_hyperedges"),
+            ValueError,
+            "num_hyperedges",
+        ),
+        (
+            lambda data: setattr(data, "num_hyperedges", True),
+            TypeError,
+            "integer",
+        ),
+        (
+            lambda data: setattr(data, "num_hyperedges", 0),
+            ValueError,
+            "positive",
+        ),
         (
             lambda data: data.hyperedge_index[1].add_(1),
             ValueError,
             "hyperedge IDs.*num_hyperedges|contiguous",
         ),
         (
-            lambda data: setattr(data, "num_hyperedges", data.num_hyperedges + 1),
+            lambda data: setattr(
+                data, "num_hyperedges", data.num_hyperedges + 1
+            ),
             ValueError,
             "empty|contiguous",
         ),
-        (lambda data: setattr(data, "y", data.y[:-1]), ValueError, "y.*num_nodes"),
-        (lambda data: setattr(data, "y", data.y.unsqueeze(1)), ValueError, "y.*rank-1"),
+        (
+            lambda data: setattr(data, "y", data.y[:-1]),
+            ValueError,
+            "y.*num_nodes",
+        ),
+        (
+            lambda data: setattr(data, "y", data.y.unsqueeze(1)),
+            ValueError,
+            "y.*rank-1",
+        ),
         (
             lambda data: setattr(data, "train_mask", data.train_mask.long()),
             TypeError,
@@ -241,7 +344,9 @@ def test_validation_rejects_overlapping_masks_without_mutation() -> None:
     _assert_data_unchanged(data, before)
 
 
-def test_validation_rejects_masks_that_do_not_cover_every_labeled_node() -> None:
+def test_validation_rejects_masks_that_do_not_cover_every_labeled_node() -> (
+    None
+):
     """Exactly one mask must select every node carrying a label."""
     data = _valid_data()
     data.train_mask[0] = False
@@ -260,14 +365,21 @@ def test_validation_rejects_empty_supervised_splits(mask_name: str) -> None:
     getattr(data, mask_name).zero_()
     before = _snapshot(data)
 
-    with pytest.raises(ValueError, match=rf"{mask_name}.*at least one labeled node"):
+    with pytest.raises(
+        ValueError, match=rf"{mask_name}.*at least one labeled node"
+    ):
         validate_hypergraph_node_data(data)
 
     _assert_data_unchanged(data, before)
 
 
-def test_representation_and_cache_versions_are_shared_public_constants() -> None:
+def test_representation_and_cache_versions_are_shared_public_constants() -> (
+    None
+):
     """Loaders and data objects use one explicit native cache schema."""
     assert HYPERGRAPH_REPRESENTATION_VERSION == 2
-    assert HypergraphData.representation_version == HYPERGRAPH_REPRESENTATION_VERSION
+    assert (
+        HypergraphData.representation_version
+        == HYPERGRAPH_REPRESENTATION_VERSION
+    )
     assert HYPERGRAPH_CACHE_FILENAME == "hypergraph_data_v2.pt"

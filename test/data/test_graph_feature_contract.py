@@ -8,11 +8,13 @@ from omegaconf import OmegaConf
 from torch_geometric.data import Data
 
 from topobench.data.features import (
+    OGB_ATOM_FEATURE_CARDINALITIES,
+    encode_categorical_columns,
     prepare_graph_features,
     validate_graph_features,
 )
-from topobench.dataloader import GraphDataModule
 from topobench.data.pipelines.default import DefaultDataPipeline
+from topobench.dataloader import GraphDataModule
 from topobench.transforms.data_manipulations import ConstantNodeFeatures
 
 
@@ -27,6 +29,72 @@ def test_one_hot_feature_policies_are_accepted(policy: str) -> None:
     data = Data(x=torch.eye(4, dtype=torch.float))
 
     assert validate_graph_features(data, policy, 4) is data
+
+
+def test_categorical_columns_have_deterministic_one_hot_offsets() -> None:
+    categories = torch.tensor(
+        [
+            [0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [118, 4, 11, 11, 9, 5, 5, 1, 1],
+        ]
+    )
+
+    encoded = encode_categorical_columns(
+        categories, OGB_ATOM_FEATURE_CARDINALITIES
+    )
+
+    expected = torch.zeros(2, 174)
+    expected[0, [0, 119, 124, 136, 148, 158, 164, 170, 172]] = 1
+    expected[1, [118, 123, 135, 147, 157, 163, 169, 171, 173]] = 1
+    torch.testing.assert_close(encoded, expected)
+    assert encoded.dtype == torch.float
+
+
+@pytest.mark.parametrize(
+    ("categories", "message"),
+    [
+        (torch.zeros(9, dtype=torch.long), "rank-2"),
+        (torch.zeros((2, 8), dtype=torch.long), "cardinality count"),
+        (
+            torch.tensor([[0.5, 0, 0, 0, 0, 0, 0, 0, 0]], dtype=torch.float),
+            "integral values",
+        ),
+        (
+            torch.tensor([[-1, 0, 0, 0, 0, 0, 0, 0, 0]]),
+            "out of range",
+        ),
+        (
+            torch.tensor([[119, 0, 0, 0, 0, 0, 0, 0, 0]]),
+            "out of range",
+        ),
+    ],
+)
+def test_categorical_column_encoder_rejects_invalid_input(
+    categories: torch.Tensor,
+    message: str,
+) -> None:
+    with pytest.raises((TypeError, ValueError), match=message):
+        encode_categorical_columns(categories, OGB_ATOM_FEATURE_CARDINALITIES)
+
+
+def test_categorical_policy_accepts_consistent_multi_hot_rows() -> None:
+    data = Data(x=torch.tensor([[1.0, 0.0, 1.0, 0.0], [0.0, 1.0, 0.0, 1.0]]))
+
+    assert validate_graph_features(data, "categorical_one_hot", 4) is data
+
+
+def test_degree_policy_retains_exact_one_hot_validation() -> None:
+    data = Data(x=torch.tensor([[1.0, 0.0, 1.0, 0.0]]))
+
+    with pytest.raises(ValueError, match="degree policy requires one-hot"):
+        validate_graph_features(data, "degree", 4)
+
+
+def test_categorical_policy_rejects_inconsistent_active_counts() -> None:
+    data = Data(x=torch.tensor([[1.0, 0.0, 1.0, 0.0], [0.0, 1.0, 0.0, 0.0]]))
+
+    with pytest.raises(ValueError, match="consistent multi-hot"):
+        validate_graph_features(data, "categorical_one_hot", 4)
 
 
 def test_constant_features_are_deterministic() -> None:

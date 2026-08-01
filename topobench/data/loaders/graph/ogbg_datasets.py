@@ -3,16 +3,19 @@
 import os
 from pathlib import Path
 
-import torch
 from ogb.graphproppred import PygGraphPropPredDataset
 from omegaconf import DictConfig
 from torch_geometric.data import Dataset
 
+from topobench.data.features import (
+    OGB_ATOM_FEATURE_CARDINALITIES,
+    encode_categorical_columns,
+)
 from topobench.data.loaders.base import AbstractLoader
 
 
 class OGBGDatasetLoader(AbstractLoader):
-    """Load molecule datasets (molhiv, molpcba, ppa) with predefined splits.
+    """Load OGB molecular property datasets with predefined splits.
 
     Parameters
     ----------
@@ -44,8 +47,10 @@ class OGBGDatasetLoader(AbstractLoader):
         dataset = PygGraphPropPredDataset(
             name=self.parameters.data_name, root=self.root_data_dir
         )
-        # Convert attributes to float
-        dataset._data.x = dataset._data.x.to(torch.float)
+        dataset._data.x = encode_categorical_columns(
+            dataset._data.x,
+            OGB_ATOM_FEATURE_CARDINALITIES,
+        )
         # Squeeze the target tensor
         dataset._data.y = dataset._data.y.squeeze(1)
         dataset.split_idx = dataset.get_idx_split()

@@ -58,9 +58,6 @@ _SELECTOR_METADATA = {
             "community_detection",
         ),
     ),
-    "graph/ogbg-molhiv": (
-        ("dataset.parameters.preserve_edge_attr_if_lifted", True),
-    ),
     "heterogeneous/OGB_MAG": (
         ("dataset.loader.parameters.preprocess", "metapath2vec"),
     ),

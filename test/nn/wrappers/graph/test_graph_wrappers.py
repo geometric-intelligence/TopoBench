@@ -19,10 +19,10 @@ from topobench.nn.wrappers.graph import (
 
 def test_graph_wrapper_exports_are_explicit_and_narrow() -> None:
     """Only native graph adapters are registered from this package."""
-    assert WRAPPER_CLASSES == {
+    assert {
         "GNNWrapper": GNNWrapper,
         "GraphMLPWrapper": GraphMLPWrapper,
-    }
+    } == WRAPPER_CLASSES
     assert GNNWrapper.__bases__ == (nn.Module,)
     assert GraphMLPWrapper.__bases__ == (nn.Module,)
 
@@ -81,9 +81,7 @@ WRAPPERS: tuple[tuple[str, WrapperFactory, type[nn.Module]], ...] = (
 def _graph_batch(*, regression: bool = False) -> Data:
     x = torch.arange(15, dtype=torch.float32).reshape(5, 3)
     labels = (
-        torch.tensor([1.5, -0.5])
-        if regression
-        else torch.tensor([0, 2])
+        torch.tensor([[1.5], [-0.5]]) if regression else torch.tensor([0, 2])
     )
     return Data(
         x=x,
@@ -96,6 +94,12 @@ def _graph_batch(*, regression: bool = False) -> Data:
     )
 
 
+def _rank_one_regression_batch() -> Data:
+    data = _graph_batch(regression=True)
+    data.y = data.y.squeeze(1)
+    return data
+
+
 def _node_graph() -> Data:
     return Data(
         x=torch.randn(4, 3),
@@ -105,7 +109,9 @@ def _node_graph() -> Data:
 
 
 @pytest.mark.parametrize(("name", "factory", "backbone_type"), WRAPPERS)
-@pytest.mark.parametrize("data", [_graph_batch(), _graph_batch(regression=True), _node_graph()])
+@pytest.mark.parametrize(
+    "data", [_graph_batch(), _graph_batch(regression=True), _node_graph()]
+)
 def test_native_wrappers_return_exact_contract(
     name: str,
     factory: WrapperFactory,
@@ -161,6 +167,86 @@ def test_wrapper_output_flows_directly_into_native_readout(
     assert result["logits"].shape == expected_shape
 
 
+@pytest.mark.parametrize(
+    "data",
+    [
+        _graph_batch(),
+        _graph_batch(regression=True),
+        _rank_one_regression_batch(),
+        _node_graph(),
+    ],
+    ids=[
+        "graph_classification",
+        "graph_regression_column",
+        "graph_regression_vector",
+        "node_classification",
+    ],
+)
+def test_gnn_forwards_supported_native_targets(data: Data) -> None:
+    """Every supported target contract reaches the backbone unchanged."""
+    backbone = RecordingGNN()
+    result = GNNWrapper(
+        backbone,
+        edge_attr_mode="ignore",
+        edge_weight_mode="ignore",
+    )(data)
+
+    assert len(backbone.calls) == 1
+    assert result["labels"] is data.y
+
+
+@pytest.mark.parametrize(
+    ("data", "labels"),
+    [
+        (_graph_batch(), torch.ones(2, 2)),
+        (_graph_batch(), torch.ones(2, 1, 1)),
+        (_graph_batch(), torch.ones(2, 1, dtype=torch.long)),
+        (_graph_batch(), torch.tensor([0, 1], dtype=torch.int32)),
+        (_graph_batch(), torch.tensor([False, True])),
+        (_graph_batch(), torch.ones(2, 1, dtype=torch.complex64)),
+        (_graph_batch(), torch.tensor([0, 1, 2])),
+        (_graph_batch(), torch.ones(3, 1)),
+        (_node_graph(), torch.arange(4, dtype=torch.float32)),
+        (_node_graph(), torch.ones(4, 1)),
+        (_node_graph(), torch.ones(4, 1, dtype=torch.long)),
+        (_node_graph(), torch.arange(4, dtype=torch.int32)),
+        (_node_graph(), torch.tensor([0, 1, 2])),
+    ],
+    ids=[
+        "graph_regression_width_two",
+        "graph_regression_rank_three",
+        "graph_integer_rank_two",
+        "graph_integer_non_long",
+        "graph_bool",
+        "graph_complex",
+        "classification_count_mismatch",
+        "regression_count_mismatch",
+        "node_float_rank_one",
+        "node_float_rank_two",
+        "node_integer_rank_two",
+        "node_integer_non_long",
+        "node_count_mismatch",
+    ],
+)
+def test_gnn_rejects_malformed_targets_before_backbone(
+    data: Data,
+    labels: Tensor,
+) -> None:
+    """Unsupported target shape, dtype, task level, or count fails locally."""
+    data.y = labels
+    backbone = RecordingGNN()
+    wrapper = GNNWrapper(
+        backbone,
+        edge_attr_mode="ignore",
+        edge_weight_mode="ignore",
+    )
+
+    with pytest.raises((TypeError, ValueError), match=r"batch\.y"):
+        wrapper(data)
+
+    assert backbone.calls == []
+
+
 @pytest.mark.parametrize(("name", "factory", "backbone_type"), WRAPPERS)
 @pytest.mark.parametrize("field", ["edge_attr", "edge_weight"])
 @pytest.mark.parametrize("mode", ["consume", "ignore", "reject"])
@@ -199,6 +285,80 @@ def test_optional_edge_field_modes_are_explicit(
         assert field not in kwargs
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("edge_weight", torch.tensor(1.0)),
+        ("edge_weight", torch.ones(6, 1)),
+        ("edge_weight", torch.ones(5)),
+        ("edge_weight", [1.0] * 6),
+        ("edge_attr", torch.tensor(1.0)),
+        ("edge_attr", torch.ones(5, 2)),
+        ("edge_attr", [[1.0]] * 6),
+    ],
+    ids=[
+        "edge_weight_scalar",
+        "edge_weight_rank_two",
+        "edge_weight_count",
+        "edge_weight_non_tensor",
+        "edge_attr_scalar",
+        "edge_attr_count",
+        "edge_attr_non_tensor",
+    ],
+)
+def test_gnn_rejects_malformed_consumed_edges_before_backbone(
+    field: str,
+    value: object,
+) -> None:
+    """Only structurally valid consumed edge fields reach the backbone."""
+    data = _graph_batch()
+    data[field] = value
+    modes = {"edge_attr": "ignore", "edge_weight": "ignore"}
+    modes[field] = "consume"
+    backbone = RecordingGNN()
+    wrapper = GNNWrapper(
+        backbone,
+        edge_attr_mode=modes["edge_attr"],
+        edge_weight_mode=modes["edge_weight"],
+    )
+
+    with pytest.raises((TypeError, ValueError), match=field):
+        wrapper(data)
+
+    assert backbone.calls == []
+
+
+@pytest.mark.parametrize("field", ["edge_attr", "edge_weight"])
+def test_gnn_ignores_malformed_ignored_edge_fields(field: str) -> None:
+    """Ignore mode neither validates nor forwards optional edge fields."""
+    data = _graph_batch()
+    data[field] = torch.tensor(1.0)
+    backbone = RecordingGNN()
+
+    GNNWrapper(
+        backbone,
+        edge_attr_mode="ignore",
+        edge_weight_mode="ignore",
+    )(data)
+
+    assert field not in backbone.calls[0][-1]
+
+
+def test_gnn_consumes_rank_one_edge_attributes() -> None:
+    """A scalar feature per edge satisfies the edge-attribute contract."""
+    data = _graph_batch()
+    data.edge_attr = torch.arange(data.edge_index.size(1))
+    backbone = RecordingGNN()
+
+    GNNWrapper(
+        backbone,
+        edge_attr_mode="consume",
+        edge_weight_mode="ignore",
+    )(data)
+
+    assert backbone.calls[0][-1]["edge_attr"] is data.edge_attr
+
+
 @pytest.mark.parametrize(("name", "factory", "backbone_type"), WRAPPERS)
 @pytest.mark.parametrize("field", ["edge_attr", "edge_weight"])
 def test_reject_mode_allows_absent_optional_field(
@@ -211,7 +371,9 @@ def test_reject_mode_allows_absent_optional_field(
     del name
     modes = {"edge_attr": "ignore", "edge_weight": "ignore"}
     modes[field] = "reject"
-    wrapper = factory(backbone_type(), modes["edge_attr"], modes["edge_weight"])
+    wrapper = factory(
+        backbone_type(), modes["edge_attr"], modes["edge_weight"]
+    )
 
     assert set(wrapper(_graph_batch())) == {"x", "labels", "batch"}
 

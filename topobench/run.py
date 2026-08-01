@@ -29,6 +29,14 @@ from topobench.utils import (
 )
 from topobench.utils.config_resolvers import register_all_resolvers
 
+_DOMAIN_PIPELINE_TARGETS = {
+    "graph": "topobench.data.pipelines.DefaultDataPipeline",
+    "heterogeneous": (
+        "topobench.data.pipelines.HeterogeneousNodeDataPipeline"
+    ),
+    "hypergraph": "topobench.data.pipelines.HypergraphNodeDataPipeline",
+}
+
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # ------------------------------------------------------------------------------------ #
 # the setup_root above is equivalent to:
@@ -68,7 +76,7 @@ def initialize_hydra() -> DictConfig:
 
 
 def validate_domain_composition(cfg: DictConfig) -> str:
-    """Reject unsupported or cross-domain dataset/model compositions."""
+    """Reject unsupported or cross-domain dataset, model, and pipeline compositions."""
     if not isinstance(cfg, DictConfig):
         raise TypeError("cfg must be a DictConfig")
 
@@ -98,6 +106,24 @@ def validate_domain_composition(cfg: DictConfig) -> str:
             "Cross-domain composition is unsupported: "
             f"{dataset_path}={dataset_domain!r} does not match "
             f"{model_path}={model_domain!r}"
+        )
+    pipeline_path = "cfg.data_pipeline._target_"
+    pipeline_target = OmegaConf.select(
+        cfg,
+        "data_pipeline._target_",
+        default=None,
+    )
+    if pipeline_target is None:
+        raise ValueError(f"{pipeline_path} is required")
+    if not isinstance(pipeline_target, str):
+        raise TypeError(f"{pipeline_path} must be a string")
+    expected_pipeline_target = _DOMAIN_PIPELINE_TARGETS[dataset_domain]
+    if pipeline_target != expected_pipeline_target:
+        raise ValueError(
+            "Cross-domain pipeline composition is unsupported: "
+            f"{dataset_path}={dataset_domain!r} requires "
+            f"{pipeline_path}={expected_pipeline_target!r}, "
+            f"got {pipeline_target!r}"
         )
     if dataset_domain == "graph":
         validate_graph_composition(cfg.dataset, cfg.model)

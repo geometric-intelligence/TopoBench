@@ -6,6 +6,7 @@ import torch
 from torch_geometric.data import InMemoryDataset
 
 from topobench.data.hypergraph import (
+    HYPERGRAPH_REPRESENTATION_VERSION,
     HypergraphData,
     validate_hypergraph_node_data,
 )
@@ -71,6 +72,7 @@ def make_synthetic_hypergraph_data(
         x=x,
         hyperedge_index=hyperedge_index,
         num_hyperedges=num_hyperedges,
+        representation_version=HYPERGRAPH_REPRESENTATION_VERSION,
         y=labels,
         train_mask=split_ids == 0,
         val_mask=split_ids == 1,

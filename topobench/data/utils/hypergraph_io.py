@@ -161,8 +161,14 @@ def _read_rows(path: Path, *, minimum_columns: int) -> np.ndarray:
 def load_hypergraph_content_dataset(
     data_dir: str | Path,
     data_name: str,
+    *,
+    filter_zero_placeholders: bool = False,
 ) -> tuple[HypergraphData, str]:
-    """Parse content/edges incidence files without inventing hyperedges."""
+    """Parse content/edges incidence files without inventing hyperedges.
+
+    ``filter_zero_placeholders`` opts packaged padded tables into dropping
+    all-zero, non-incident content rows. Incident nodes are always retained.
+    """
     resolved_dir = Path(data_dir)
     content = _read_rows(
         resolved_dir / f"{data_name}.content",
@@ -184,19 +190,26 @@ def load_hypergraph_content_dataset(
     ]
     raw_hyperedge_ids = {hyperedge for _, hyperedge in raw_edges}
     raw_node_ids = {node for node, _ in raw_edges}
-    content_payload = content[:, 1:].astype(np.float64)
     if any(node in raw_hyperedge_ids for node, _ in raw_edges):
         raise ValueError("raw node and hyperedge IDs must be disjoint")
 
-    node_rows = [
-        row_index
-        for row_index, raw_id in enumerate(content_ids)
-        if raw_id in raw_node_ids
-        or (
-            raw_id not in raw_hyperedge_ids
-            and np.any(content_payload[row_index] != 0)
-        )
-    ]
+    if filter_zero_placeholders:
+        content_payload = content[:, 1:].astype(np.float64)
+        node_rows = [
+            row_index
+            for row_index, raw_id in enumerate(content_ids)
+            if raw_id not in raw_hyperedge_ids
+            and (
+                raw_id in raw_node_ids
+                or np.any(content_payload[row_index] != 0)
+            )
+        ]
+    else:
+        node_rows = [
+            row_index
+            for row_index, raw_id in enumerate(content_ids)
+            if raw_id not in raw_hyperedge_ids
+        ]
     node_id = {content_ids[row]: index for index, row in enumerate(node_rows)}
     missing_nodes = sorted(
         {raw for raw, _ in raw_edges if raw not in node_id},

@@ -11,7 +11,6 @@ from torch_geometric.data import InMemoryDataset, extract_zip
 
 from topobench.data import (
     HYPERGRAPH_CACHE_FILENAME,
-    HYPERGRAPH_REPRESENTATION_VERSION,
     HypergraphData,
     validate_hypergraph_structure,
 )
@@ -81,15 +80,6 @@ class HypergraphDataset(InMemoryDataset):
         super().__init__(root)
         self.load(self.processed_paths[0], data_cls=HypergraphData)
         data = self.get(0)
-        if (
-            not isinstance(data, HypergraphData)
-            or "representation_version" not in data
-            or int(data["representation_version"])
-            != HYPERGRAPH_REPRESENTATION_VERSION
-        ):
-            raise ValueError(
-                "processed hypergraph cache has an invalid version"
-            )
         validate_hypergraph_structure(data)
 
     def __repr__(self) -> str:
@@ -177,14 +167,7 @@ class HypergraphDataset(InMemoryDataset):
         data, _ = load_hypergraph_content_dataset(
             data_dir=self.raw_dir,
             data_name=self.name,
+            filter_zero_placeholders=True,
         )
-        if (
-            "representation_version" not in data
-            or int(data["representation_version"])
-            != HYPERGRAPH_REPRESENTATION_VERSION
-        ):
-            raise ValueError(
-                "raw hypergraph parser returned an invalid version"
-            )
         validate_hypergraph_structure(data)
         self.save([data], self.processed_paths[0])

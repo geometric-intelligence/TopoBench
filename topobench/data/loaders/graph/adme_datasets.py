@@ -15,6 +15,10 @@ try:
 except ImportError:
     _ADME_DEPS_AVAILABLE = False
 
+from topobench.data.features import (
+    OGB_ATOM_FEATURE_CARDINALITIES,
+    encode_categorical_columns,
+)
 from topobench.data.loaders.base import AbstractLoader
 
 
@@ -27,7 +31,7 @@ class ADMEDatasetLoader(AbstractLoader):
     3. Uses fixed scaffold splits from TDC
     4. Returns graphs compatible with OGB molecular property prediction
 
-    Node features (9-dimensional):
+    Node features (nine categorical columns encoded to 174 binary channels):
         - Atomic number
         - Chirality
         - Degree
@@ -110,7 +114,7 @@ class ADMEDatasetLoader(AbstractLoader):
                 list[str]
                     File names used to cache the processed dataset.
                 """
-                return [f"{self.data_name}.pt"]
+                return [f"{self.data_name}_node_one_hot_174.pt"]
 
             def process(self):
                 """Collate the pre-built graphs and save them to disk."""
@@ -198,7 +202,10 @@ class ADMEDatasetLoader(AbstractLoader):
                     label_tensor = torch.tensor([label], dtype=torch.float)
 
                 pyg_graph = Data(
-                    x=torch.tensor(graph_dict["node_feat"], dtype=torch.float),
+                    x=encode_categorical_columns(
+                        torch.as_tensor(graph_dict["node_feat"]),
+                        OGB_ATOM_FEATURE_CARDINALITIES,
+                    ),
                     edge_index=torch.tensor(
                         graph_dict["edge_index"], dtype=torch.long
                     ),

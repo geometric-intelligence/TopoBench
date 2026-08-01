@@ -19,10 +19,10 @@ from omegaconf import OmegaConf
 
 from topobench.data.loaders.graph.adme_datasets import ADMEDatasetLoader
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_cfg(tmp_path, data_name="BBB_Martins"):
     return OmegaConf.create(
@@ -38,7 +38,11 @@ def _fake_smiles2graph(_smiles):
     """Minimal graph dict returned by ogb's smiles2graph."""
     return {
         "num_nodes": 3,
-        "node_feat": [[1, 0, 0, 0, 0, 0, 0, 0, 0]] * 3,
+        "node_feat": [
+            [1, 2, 3, 4, 5, 1, 2, 1, 0],
+            [6, 0, 0, 0, 0, 0, 0, 0, 1],
+            [118, 4, 11, 11, 9, 5, 5, 1, 1],
+        ],
         "edge_index": [[0, 1], [1, 0]],
         "edge_feat": [[1, 0, 0], [1, 0, 0]],
     }
@@ -61,6 +65,7 @@ def _fake_tdc_adme(name, path):
 # ---------------------------------------------------------------------------
 # Basic unit tests (no mocking needed)
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def loader(tmp_path):
@@ -85,8 +90,15 @@ def test_load_dataset_rejects_unknown_name(tmp_path):
 # Mocked load_dataset tests
 # ---------------------------------------------------------------------------
 
-@patch("topobench.data.loaders.graph.adme_datasets.smiles2graph", side_effect=_fake_smiles2graph)
-@patch("topobench.data.loaders.graph.adme_datasets.ADME", side_effect=_fake_tdc_adme)
+
+@patch(
+    "topobench.data.loaders.graph.adme_datasets.smiles2graph",
+    side_effect=_fake_smiles2graph,
+)
+@patch(
+    "topobench.data.loaders.graph.adme_datasets.ADME",
+    side_effect=_fake_tdc_adme,
+)
 def test_load_dataset_classification(mock_adme, mock_s2g, tmp_path):
     """load_dataset builds int labels for a classification dataset."""
     loader = ADMEDatasetLoader(_make_cfg(tmp_path, "BBB_Martins"))
@@ -100,8 +112,14 @@ def test_load_dataset_classification(mock_adme, mock_s2g, tmp_path):
     assert len(dataset.split_idx["train"]) == 2
 
 
-@patch("topobench.data.loaders.graph.adme_datasets.smiles2graph", side_effect=_fake_smiles2graph)
-@patch("topobench.data.loaders.graph.adme_datasets.ADME", side_effect=_fake_tdc_adme)
+@patch(
+    "topobench.data.loaders.graph.adme_datasets.smiles2graph",
+    side_effect=_fake_smiles2graph,
+)
+@patch(
+    "topobench.data.loaders.graph.adme_datasets.ADME",
+    side_effect=_fake_tdc_adme,
+)
 def test_load_dataset_regression(mock_adme, mock_s2g, tmp_path):
     """load_dataset builds float labels for a regression dataset."""
     loader = ADMEDatasetLoader(_make_cfg(tmp_path, "Caco2_Wang"))
@@ -112,21 +130,49 @@ def test_load_dataset_regression(mock_adme, mock_s2g, tmp_path):
     assert dataset[0].y.shape == (1,)
 
 
-@patch("topobench.data.loaders.graph.adme_datasets.smiles2graph", side_effect=_fake_smiles2graph)
-@patch("topobench.data.loaders.graph.adme_datasets.ADME", side_effect=_fake_tdc_adme)
+@patch(
+    "topobench.data.loaders.graph.adme_datasets.smiles2graph",
+    side_effect=_fake_smiles2graph,
+)
+@patch(
+    "topobench.data.loaders.graph.adme_datasets.ADME",
+    side_effect=_fake_tdc_adme,
+)
 def test_load_dataset_node_and_edge_features(mock_adme, mock_s2g, tmp_path):
-    """Each graph has 9-dim node features and 3-dim edge features."""
+    """Each graph has encoded node features and native edge features."""
     loader = ADMEDatasetLoader(_make_cfg(tmp_path, "BBB_Martins"))
     dataset = loader.load_dataset()
 
     graph = dataset[0]
-    assert graph.x.shape[1] == 9
+    assert graph.x.shape[1] == 174
+    assert graph.x.dtype == torch.float
+    assert torch.all((graph.x == 0) | (graph.x == 1))
+    torch.testing.assert_close(graph.x.sum(dim=1), torch.full((3,), 9.0))
+    assert torch.nonzero(graph.x[0], as_tuple=True)[0].tolist() == [
+        1,
+        121,
+        127,
+        140,
+        153,
+        159,
+        166,
+        171,
+        172,
+    ]
     assert graph.edge_attr.shape[1] == 3
 
 
-@patch("topobench.data.loaders.graph.adme_datasets.smiles2graph", side_effect=_fake_smiles2graph)
-@patch("topobench.data.loaders.graph.adme_datasets.ADME", side_effect=_fake_tdc_adme)
-def test_load_dataset_split_indices_partition_dataset(mock_adme, mock_s2g, tmp_path):
+@patch(
+    "topobench.data.loaders.graph.adme_datasets.smiles2graph",
+    side_effect=_fake_smiles2graph,
+)
+@patch(
+    "topobench.data.loaders.graph.adme_datasets.ADME",
+    side_effect=_fake_tdc_adme,
+)
+def test_load_dataset_split_indices_partition_dataset(
+    mock_adme, mock_s2g, tmp_path
+):
     """train/valid/test split indices together cover the whole dataset."""
     loader = ADMEDatasetLoader(_make_cfg(tmp_path, "BBB_Martins"))
     dataset = loader.load_dataset()

@@ -27,7 +27,10 @@ pytestmark = pytest.mark.skipif(
 def _assert_real_native_data(data: HypergraphData) -> None:
     assert validate_hypergraph_structure(data) is data
     assert data.representation_version == HYPERGRAPH_REPRESENTATION_VERSION
-    assert int(data["representation_version"]) == HYPERGRAPH_REPRESENTATION_VERSION
+    assert (
+        int(data["representation_version"])
+        == HYPERGRAPH_REPRESENTATION_VERSION
+    )
     assert data.hyperedge_index.dtype == torch.long
     assert torch.equal(
         torch.unique(data.hyperedge_index[1]),
@@ -54,7 +57,9 @@ def test_real_cocitation_cora_pickle_format(tmp_path: Path) -> None:
     assert (tmp_path / name / "raw" / "features.pickle").is_file()
     assert (tmp_path / name / "raw" / "labels.pickle").is_file()
     assert (tmp_path / name / "raw" / "hypergraph.pickle").is_file()
-    assert (tmp_path / name / "processed" / HYPERGRAPH_CACHE_FILENAME).is_file()
+    assert (
+        tmp_path / name / "processed" / HYPERGRAPH_CACHE_FILENAME
+    ).is_file()
 
 
 @pytest.mark.integration
@@ -70,9 +75,11 @@ def test_real_zoo_content_edges_format(tmp_path: Path) -> None:
     data = dataset[0]
 
     _assert_real_native_data(data)
+    assert data.num_nodes == 101
     assert data.x.shape[1] == 16
-    assert int(data.y.min()) == 0
-    assert int(data.y.max()) == 6
+    assert torch.equal(torch.unique(data.y), torch.arange(7))
     assert (tmp_path / name / "raw" / f"{name}.content").is_file()
     assert (tmp_path / name / "raw" / f"{name}.edges").is_file()
-    assert (tmp_path / name / "processed" / HYPERGRAPH_CACHE_FILENAME).is_file()
+    assert (
+        tmp_path / name / "processed" / HYPERGRAPH_CACHE_FILENAME
+    ).is_file()
