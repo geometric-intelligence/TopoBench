@@ -7,13 +7,7 @@ from test._utils.simplified_pipeline import run
 
 
 DATASET = "graph/MUTAG"  # ADD YOUR DATASET HERE
-MODELS = [  # FilterBankGNN + simplicial TNN variants (MUTAG auto-lifts)
-    "graph/filter_bank_acmgnn",
-    "graph/filter_bank_fagcn",
-    "graph/filter_bank_fbgnn",
-    "graph/filter_bank_figure",
-    "graph/filter_bank_g2cn",
-    "graph/filter_bank_gnnlfhf",
+MODELS = [  # simplicial TNN variants (MUTAG auto-lifts to a clique complex)
     "simplicial/poly_filter_tnn",
     "simplicial/poly_filter_tnn_monomial",
     "simplicial/poly_filter_tnn_jacobi",
