@@ -17,7 +17,10 @@ backbone:
   reaction_term: bspm  # GREAD-BS. Options: bspm, fisher, allen-cahn, zeldovich, st, fb, fb3, none
   time: 3.0
   step_size: 1.0
-  beta_diag: false
+  # Per-channel reaction gate (the "(VC)" variants of the paper); every
+  # tuned dataset configuration in the reference implementation's
+  # src/gread_params.py sets beta_diag: true.
+  beta_diag: true
   add_source: false
   data_norm: rw
   self_loop_weight: 1.0
