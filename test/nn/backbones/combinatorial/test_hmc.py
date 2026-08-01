@@ -229,7 +229,12 @@ class TestHBS:
 
         # The two-hop power must count paths, so it is not merely binary.
         assert (power > 1).any()
-        assert torch.allclose(out, expected, atol=1e-6)
+        # atol=1e-5: the block computes via torch.sparse CSR kernels while
+        # the reference above is dense matmul; their float32 rounding differs
+        # by a few ulps and the gap varies with the CPU microarchitecture of
+        # the runner. A genuine defect (wrong hop matrix, wrong weight, wrong
+        # normalization) produces errors several orders of magnitude larger.
+        assert torch.allclose(out, expected, atol=1e-5)
 
     def test_softmax(self):
         """Test HBS with softmax attention."""
