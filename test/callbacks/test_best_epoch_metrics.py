@@ -1,9 +1,24 @@
-"""Test the BestEpochMetricsCallback class."""
+"""Unit and real lifecycle tests for best-epoch checkpoint metrics."""
+
+from __future__ import annotations
+
+import math
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Any
+from unittest.mock import MagicMock, Mock
+
+import hydra
 import pytest
 import torch
-from unittest.mock import MagicMock, Mock
+from hydra.core.global_hydra import GlobalHydra
 from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.loggers.wandb import WandbLogger
+from omegaconf import DictConfig
+
+import topobench.run as run_module
 from topobench.callbacks import BestEpochMetricsCallback
+from topobench.utils.config_resolvers import register_all_resolvers
 
 
 class TestBestEpochMetricsCallback:
@@ -70,14 +85,14 @@ class TestBestEpochMetricsCallback:
         assert "val/loss" not in callback.current_epoch_train_metrics
         assert callback.current_epoch_train_metrics["train/loss"] == 0.5
 
-    def test_on_validation_epoch_end_first_epoch(self):
-        """Test that first epoch is always considered best."""
+    def test_on_validation_end_first_epoch(self):
+        """Test that the first epoch is always considered best."""
         callback = BestEpochMetricsCallback(monitor="val/loss", mode="min")
 
         # Setup training metrics
         callback.current_epoch_train_metrics = {
             "train/loss": 0.5,
-            "train/accuracy": 0.8
+            "train/accuracy": 0.8,
         }
 
         trainer = Mock()
@@ -88,14 +103,14 @@ class TestBestEpochMetricsCallback:
         }
         pl_module = Mock()
 
-        callback.on_validation_epoch_end(trainer, pl_module)
+        callback.on_validation_end(trainer, pl_module)
 
         assert callback.best_monitored_value == pytest.approx(0.6)
         assert callback.best_epoch_number == 0
         assert "train/loss" in callback.best_epoch_metrics
         assert "val/loss" in callback.best_epoch_metrics
 
-    def test_on_validation_epoch_end_min_mode_improvement(self):
+    def test_on_validation_end_min_mode_improvement(self):
         """Test detection of improvement in min mode."""
         callback = BestEpochMetricsCallback(monitor="val/loss", mode="min")
         callback.best_monitored_value = 0.6
@@ -113,12 +128,12 @@ class TestBestEpochMetricsCallback:
         }
         pl_module = Mock()
 
-        callback.on_validation_epoch_end(trainer, pl_module)
+        callback.on_validation_end(trainer, pl_module)
 
         assert callback.best_monitored_value == pytest.approx(0.4)
         assert callback.best_epoch_number == 1
 
-    def test_on_validation_epoch_end_min_mode_no_improvement(self):
+    def test_on_validation_end_min_mode_no_improvement(self):
         """Test that worse values don't update in min mode."""
         callback = BestEpochMetricsCallback(monitor="val/loss", mode="min")
         callback.best_monitored_value = 0.4
@@ -138,13 +153,13 @@ class TestBestEpochMetricsCallback:
         }
         pl_module = Mock()
 
-        callback.on_validation_epoch_end(trainer, pl_module)
+        callback.on_validation_end(trainer, pl_module)
 
         # Should not update
         assert callback.best_monitored_value == 0.4
         assert callback.best_epoch_number == 1
 
-    def test_on_validation_epoch_end_max_mode_improvement(self):
+    def test_on_validation_end_max_mode_improvement(self):
         """Test detection of improvement in max mode."""
         callback = BestEpochMetricsCallback(monitor="val/accuracy", mode="max")
         callback.best_monitored_value = 0.7
@@ -162,12 +177,12 @@ class TestBestEpochMetricsCallback:
         }
         pl_module = Mock()
 
-        callback.on_validation_epoch_end(trainer, pl_module)
+        callback.on_validation_end(trainer, pl_module)
 
         assert callback.best_monitored_value == pytest.approx(0.8)
         assert callback.best_epoch_number == 1
 
-    def test_on_validation_epoch_end_max_mode_no_improvement(self):
+    def test_on_validation_end_max_mode_no_improvement(self):
         """Test that worse values don't update in max mode."""
         callback = BestEpochMetricsCallback(monitor="val/accuracy", mode="max")
         callback.best_monitored_value = 0.8
@@ -185,7 +200,7 @@ class TestBestEpochMetricsCallback:
         }
         pl_module = Mock()
 
-        callback.on_validation_epoch_end(trainer, pl_module)
+        callback.on_validation_end(trainer, pl_module)
 
         # Should not update
         assert callback.best_monitored_value == 0.8
@@ -198,26 +213,32 @@ class TestBestEpochMetricsCallback:
         # Setup training metrics
         callback.current_epoch_train_metrics = {
             "train/loss": 0.5,
-            "train/accuracy": 0.8
+            "train/accuracy": 0.8,
         }
 
         trainer = Mock()
         trainer.current_epoch = 5
+        trainer.global_step = 7
         trainer.callback_metrics = {
             "val/loss": torch.tensor(0.3),
             "val/accuracy": torch.tensor(0.85),
         }
+        logger = Mock()
+        trainer.loggers = [logger]
         pl_module = Mock()
 
-        callback.on_validation_epoch_end(trainer, pl_module)
+        callback.on_validation_end(trainer, pl_module)
 
-        # Check that log was called with best epoch number
-        pl_module.log.assert_any_call("best_epoch", 5, prog_bar=False)
-
-        # Check that metrics were logged with best_epoch prefix
-        calls = [call[0] for call in pl_module.log.call_args_list]
-        assert any("best_epoch/train/loss" in str(call) for call in calls)
-        assert any("best_epoch/val/loss" in str(call) for call in calls)
+        logger.log_metrics.assert_called_once_with(
+            {
+                "best_epoch": 5,
+                "best_epoch/train/loss": 0.5,
+                "best_epoch/train/accuracy": 0.8,
+                "best_epoch/val/loss": pytest.approx(0.3),
+                "best_epoch/val/accuracy": pytest.approx(0.85),
+            },
+            step=7,
+        )
 
     def test_on_train_end_with_checkpoint(self):
         """Test on_train_end logs checkpoint path when available."""
@@ -236,8 +257,14 @@ class TestBestEpochMetricsCallback:
         callback.on_train_end(trainer, pl_module)
 
         # Check that checkpoint path was logged
-        assert pl_module.logger.experiment.summary["best_epoch/checkpoint"] == "/path/to/checkpoint.ckpt"
-        assert pl_module.logger.experiment.summary["monitored_metric"] == "val/loss (min)"
+        assert (
+            pl_module.logger.experiment.summary["best_epoch/checkpoint"]
+            == "/path/to/checkpoint.ckpt"
+        )
+        assert (
+            pl_module.logger.experiment.summary["monitored_metric"]
+            == "val/loss (min)"
+        )
 
     def test_on_train_end_without_checkpoint(self):
         """Test on_train_end handles missing checkpoint gracefully."""
@@ -278,8 +305,236 @@ class TestBestEpochMetricsCallback:
         callback.current_epoch_train_metrics = {}
         pl_module = Mock()
 
-        callback.on_validation_epoch_end(trainer, pl_module)
+        callback.on_validation_end(trainer, pl_module)
 
         # Values should be converted to floats
         assert isinstance(callback.best_monitored_value, float)
         assert callback.best_monitored_value == 0.5
+
+
+_LIFECYCLE_CASES = (
+    pytest.param(
+        "graph_classification",
+        (
+            "dataset=graph/SyntheticGraph",
+            "model=graph/gcn",
+        ),
+        id="graph-classification",
+    ),
+    pytest.param(
+        "graph_regression",
+        (
+            "dataset=graph/SyntheticGraphRegression",
+            "model=graph/gcn",
+        ),
+        id="graph-scalar-regression",
+    ),
+    pytest.param(
+        "heterogeneous_neighbor",
+        ("experiment=heterogeneous_synthetic_hgt_neighbor",),
+        id="heterogeneous-node-classification",
+    ),
+    pytest.param(
+        "hypergraph_node",
+        (
+            "dataset=hypergraph/SyntheticHypergraph",
+            "model=hypergraph/edgnn",
+            "data_pipeline=hypergraph_node",
+        ),
+        id="hypergraph-node-classification",
+    ),
+)
+
+
+def _compose_lifecycle(
+    family: str,
+    selector_overrides: tuple[str, ...],
+    tmp_path: Path,
+) -> DictConfig:
+    """Compose one bounded, logger-free production lifecycle."""
+    GlobalHydra.instance().clear()
+    register_all_resolvers()
+    output_dir = tmp_path / family
+    overrides = [
+        *selector_overrides,
+        "callbacks=default",
+        "logger=[]",
+        "paths=test",
+        f"paths.output_dir={output_dir}",
+        f"paths.work_dir={output_dir}",
+        f"trainer.default_root_dir={output_dir}",
+        "trainer.max_epochs=1",
+        "trainer.min_epochs=1",
+        "trainer.check_val_every_n_epoch=1",
+        "trainer.accelerator=cpu",
+        "trainer.devices=1",
+        "++trainer.limit_train_batches=1",
+        "++trainer.limit_val_batches=1.0",
+        "++trainer.limit_test_batches=1.0",
+        "++trainer.enable_progress_bar=false",
+        "++enable_progress_bar=false",
+    ]
+    with hydra.initialize(
+        version_base="1.3",
+        config_path="../../configs",
+        job_name=f"{family}_best_checkpoint_lifecycle",
+    ):
+        return hydra.compose(config_name="run.yaml", overrides=overrides)
+
+
+def _one_callback(
+    callbacks: list[object],
+    callback_type: type[Any],
+) -> Any:
+    """Return the only callback of one required concrete family."""
+    matches = [
+        callback
+        for callback in callbacks
+        if isinstance(callback, callback_type)
+    ]
+    assert len(matches) == 1
+    return matches[0]
+
+
+def _assert_finite_prefix(
+    metrics: Mapping[str, Any],
+    prefix: str,
+) -> None:
+    """Require nonempty finite metrics from one real trainer phase."""
+    matching = {
+        name: value
+        for name, value in metrics.items()
+        if name.startswith(prefix)
+    }
+    assert matching, f"No metrics with prefix {prefix!r}: {sorted(metrics)}"
+    assert all(math.isfinite(float(value)) for value in matching.values())
+
+
+def _captured_rerun_metrics(
+    sink: MagicMock,
+    phase: str,
+) -> dict[str, float]:
+    """Extract one complete best-checkpoint rerun payload."""
+    prefix = f"{phase}_best_rerun/"
+    matching = [
+        call.args[0]
+        for call in sink.log_metrics.call_args_list
+        if call.args
+        and isinstance(call.args[0], Mapping)
+        and call.args[0]
+        and all(str(name).startswith(prefix) for name in call.args[0])
+    ]
+    assert len(matching) == 1
+    captured = {str(name): float(value) for name, value in matching[0].items()}
+    assert all(math.isfinite(value) for value in captured.values())
+    return captured
+
+
+def _assert_batch_contract(
+    family: str,
+    objects: Mapping[str, Any],
+) -> None:
+    """Check the family-specific shape or seed invariant on a real batch."""
+    datamodule = objects["datamodule"]
+    model = objects["model"]
+    batch = next(iter(datamodule.train_dataloader()))
+    model.eval()
+    model.state_str = "Training"
+
+    with torch.no_grad():
+        raw = model.forward(batch)
+        if family == "hypergraph_node":
+            assert raw["logits"].size(0) == raw["labels"].size(0)
+            assert raw["logits"].size(0) == batch.y.size(0)
+            return
+
+        processed = model.process_outputs(raw, batch)
+
+    if family == "graph_regression":
+        expected_shape = (int(batch.num_graphs), 1)
+        assert tuple(processed["logits"].shape) == expected_shape
+        assert tuple(processed["labels"].shape) == expected_shape
+        return
+
+    if family == "graph_classification":
+        expected_examples = int(batch.num_graphs)
+        assert expected_examples > 1
+        assert processed["num_supervised_examples"] == expected_examples
+        assert processed["logits"].size(0) == expected_examples
+        assert processed["labels"].size(0) == expected_examples
+        return
+
+    target_type = datamodule.spec.target_node_type
+    seed_count = int(batch[target_type].batch_size)
+    assert seed_count > 1
+    assert processed["num_supervised_examples"] == seed_count
+    assert processed["logits"].size(0) == seed_count
+    assert processed["labels"].size(0) == seed_count
+
+
+@pytest.mark.parametrize(
+    ("family", "selector_overrides"),
+    _LIFECYCLE_CASES,
+)
+def test_real_one_epoch_best_checkpoint_rerun_contract(
+    family: str,
+    selector_overrides: tuple[str, ...],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Train and rerun the selected checkpoint for every supported task family."""
+    cfg = _compose_lifecycle(family, selector_overrides, tmp_path)
+    sink = MagicMock(spec=WandbLogger)
+    real_rerun = run_module.rerun_best_model_checkpoint
+
+    def capture_real_rerun(**kwargs: Any) -> None:
+        assert kwargs["logger"] == []
+        kwargs["logger"] = [sink]
+        real_rerun(**kwargs)
+
+    monkeypatch.setattr(
+        run_module,
+        "rerun_best_model_checkpoint",
+        capture_real_rerun,
+    )
+
+    fit_metrics, objects = run_module.run(cfg)
+
+    assert objects["logger"] == []
+    assert objects["trainer"].current_epoch == 1
+    _assert_finite_prefix(fit_metrics, "train/")
+    _assert_finite_prefix(fit_metrics, "val/")
+
+    checkpoint = _one_callback(objects["callbacks"], ModelCheckpoint)
+    checkpoint_path = Path(checkpoint.best_model_path)
+    assert checkpoint_path.is_file()
+    assert checkpoint_path.stat().st_size > 0
+
+    best_epoch = _one_callback(
+        objects["callbacks"],
+        BestEpochMetricsCallback,
+    )
+    assert best_epoch.checkpoint_callback is checkpoint
+    assert best_epoch.best_epoch_number == 0
+    assert math.isfinite(float(best_epoch.best_monitored_value))
+    _assert_finite_prefix(best_epoch.best_epoch_metrics, "val/")
+
+    assert sink.log_metrics.call_count == 2
+    val_metrics = _captured_rerun_metrics(sink, "val")
+    test_metrics = _captured_rerun_metrics(sink, "test")
+    assert val_metrics
+    assert test_metrics
+
+    checkpoint_state = torch.load(
+        checkpoint_path,
+        map_location="cpu",
+        weights_only=False,
+    )["state_dict"]
+    current_state = objects["model"].state_dict()
+    assert checkpoint_state.keys() == current_state.keys()
+    assert all(
+        torch.equal(checkpoint_state[name], current_state[name].cpu())
+        for name in checkpoint_state
+    )
+
+    _assert_batch_contract(family, objects)

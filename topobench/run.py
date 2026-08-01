@@ -13,8 +13,10 @@ from lightning import Callback, LightningDataModule, LightningModule, Trainer
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
 from lightning.pytorch.loggers import Logger
 from lightning.pytorch.loggers.wandb import WandbLogger
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
+from topobench.domains import SUPPORTED_DOMAINS
+from topobench.nn.capabilities import validate_graph_composition
 from topobench.utils import (
     RankedLogger,
     extras,
@@ -63,6 +65,43 @@ def initialize_hydra() -> DictConfig:
     )
     cfg = hydra.compose(config_name="run.yaml")
     return cfg
+
+
+def validate_domain_composition(cfg: DictConfig) -> str:
+    """Reject unsupported or cross-domain dataset/model compositions."""
+    if not isinstance(cfg, DictConfig):
+        raise TypeError("cfg must be a DictConfig")
+
+    dataset_path = "cfg.dataset.loader.parameters.data_domain"
+    model_path = "cfg.model.model_domain"
+    dataset_domain = OmegaConf.select(
+        cfg,
+        "dataset.loader.parameters.data_domain",
+        default=None,
+    )
+    model_domain = OmegaConf.select(cfg, "model.model_domain", default=None)
+    for path, domain in (
+        (dataset_path, dataset_domain),
+        (model_path, model_domain),
+    ):
+        if domain is None:
+            raise ValueError(f"{path} is required")
+        if not isinstance(domain, str):
+            raise TypeError(f"{path} must be a string")
+        if domain not in SUPPORTED_DOMAINS:
+            raise ValueError(
+                f"{path}={domain!r} is unsupported; "
+                f"expected one of {SUPPORTED_DOMAINS}"
+            )
+    if dataset_domain != model_domain:
+        raise ValueError(
+            "Cross-domain composition is unsupported: "
+            f"{dataset_path}={dataset_domain!r} does not match "
+            f"{model_path}={model_domain!r}"
+        )
+    if dataset_domain == "graph":
+        validate_graph_composition(cfg.dataset, cfg.model)
+    return dataset_domain
 
 
 torch.set_num_threads(1)
@@ -337,6 +376,8 @@ def main(cfg: DictConfig) -> float | None:
     float | None
         Optional[float] with optimized metric value.
     """
+    validate_domain_composition(cfg)
+
     # apply extra utilities
     # (e.g. ask for tags if none are provided in cfg, print cfg tree, etc.)
     extras(cfg)

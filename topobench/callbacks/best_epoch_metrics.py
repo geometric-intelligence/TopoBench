@@ -79,27 +79,17 @@ class BestEpochMetricsCallback(Callback):
             if k.startswith("train/")
         }
 
-    def on_validation_epoch_end(self, trainer, pl_module):
-        """Check if this is the best epoch and capture all metrics if so.
-
-        Parameters
-        ----------
-        trainer : Trainer
-            The PyTorch Lightning trainer.
-        pl_module : LightningModule
-            The PyTorch Lightning module being trained.
-        """
-        # Get current value of monitored metric
+    def on_validation_end(self, trainer, pl_module):
+        """Capture and log metrics after validation output is finalized."""
         current_value = trainer.callback_metrics.get(self.monitor_metric)
-
-        # Convert to float if tensor
         current_value = (
             current_value.item()
             if hasattr(current_value, "item")
             else current_value
         )
+        if current_value is None:
+            return
 
-        # Check if this is the best epoch
         is_best = (
             self.best_monitored_value is None
             or (
@@ -111,30 +101,32 @@ class BestEpochMetricsCallback(Callback):
                 and current_value > self.best_monitored_value
             )
         )
+        if not is_best:
+            return
 
-        # If best, capture ALL current metrics (train + val)
-        if is_best:
-            self.best_monitored_value = current_value
-            self.best_epoch_number = trainer.current_epoch
+        self.best_monitored_value = current_value
+        self.best_epoch_number = trainer.current_epoch
+        val_metrics = {
+            key: value.item() if hasattr(value, "item") else value
+            for key, value in trainer.callback_metrics.items()
+            if key.startswith("val/")
+        }
+        self.best_epoch_metrics = {
+            **self.current_epoch_train_metrics,
+            **val_metrics,
+        }
 
-            # Combine training metrics (captured earlier) with validation metrics (current)
-            val_metrics = {
-                k: v.item() if hasattr(v, "item") else v
-                for k, v in trainer.callback_metrics.items()
-                if k.startswith("val/")
-            }
-
-            self.best_epoch_metrics = {
-                **self.current_epoch_train_metrics,  # Training metrics from this epoch
-                **val_metrics,  # Validation metrics from this epoch
-            }
-
-            # Log the best epoch number
-            pl_module.log("best_epoch", self.best_epoch_number, prog_bar=False)
-
-            # Log all metrics from best epoch with special prefix
-            for key, value in self.best_epoch_metrics.items():
-                pl_module.log(f"best_epoch/{key}", value, prog_bar=False)
+        metrics_to_log = {
+            "best_epoch": self.best_epoch_number,
+            **{
+                f"best_epoch/{key}": value
+                for key, value in self.best_epoch_metrics.items()
+            },
+        }
+        loggers = trainer.loggers
+        if isinstance(loggers, (list, tuple)):
+            for logger in loggers:
+                logger.log_metrics(metrics_to_log, step=trainer.global_step)
 
     def _log_to_wandb_summary(self, pl_module, params_dict):
         """Log parameters to wandb summary for visibility.

@@ -1,0 +1,12 @@
+# @package _global_
+defaults:
+  - override /dataset: hypergraph/SyntheticHypergraph
+  - override /model: hypergraph/edgnn
+  - override /data_pipeline: hypergraph_node
+  - override /transforms: no_transform
+  - override /logger: csv
+  - _self_
+
+tags: [hypergraph, synthetic, node_classification, edgnn]
+train: true
+test: true

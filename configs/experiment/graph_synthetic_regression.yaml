@@ -1,12 +1,12 @@
 # @package _global_
 defaults:
-  - override /dataset: graph/SyntheticGraph
+  - override /dataset: graph/SyntheticGraphRegression
   - override /model: graph/gcn
   - override /data_pipeline: default
   - override /transforms: no_transform
   - override /logger: csv
   - _self_
 
-tags: [graph, synthetic, classification, gcn]
+tags: [graph, synthetic, regression, gcn]
 train: true
 test: true

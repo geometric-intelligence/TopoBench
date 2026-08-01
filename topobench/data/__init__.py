@@ -17,6 +17,10 @@ from .hypergraph import (
     validate_hypergraph_node_data,
     validate_hypergraph_structure,
 )
+from .qualification import (
+    DATASET_QUALIFICATION_MANIFEST,
+    DatasetQualification,
+)
 
 __all__ = [
     "GRAPH_DATASET_MANIFEST",
@@ -30,4 +34,6 @@ __all__ = [
     "HypergraphData",
     "validate_hypergraph_node_data",
     "validate_hypergraph_structure",
+    "DATASET_QUALIFICATION_MANIFEST",
+    "DatasetQualification",
 ]
