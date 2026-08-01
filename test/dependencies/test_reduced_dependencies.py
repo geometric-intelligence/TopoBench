@@ -43,3 +43,4 @@ def test_supported_public_imports_do_not_require_forbidden_packages() -> None:
     )
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert completed.stdout.strip() == "clean import verified"
