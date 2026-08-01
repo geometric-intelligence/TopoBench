@@ -215,6 +215,7 @@ class WHNN(nn.Module):
         dropout=0.0,
         activation="relu",
         residual=True,
+        **kwargs,
     ):
         super().__init__()
         if num_layers <= 0:
