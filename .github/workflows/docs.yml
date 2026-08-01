@@ -7,8 +7,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Project site https://geometric-intelligence.github.io/topobench/ is published from
-# this repo's gh-pages branch — not from geometric-intelligence.github.io/topobench/.
+# Project site https://geometric-intelligence.github.io/topobench/ is served from the
+# topobench/ folder of the org Pages repo geometric-intelligence.github.io — not from
+# this repo's gh-pages branch.
 concurrency:
   group: topobench-docs-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
@@ -58,12 +59,21 @@ jobs:
           # Disable Jekyll so paths like _static/ are served as static files.
           touch docs/_build/.nojekyll
 
-      # 5. Deploy — same repo gh-pages powers https://geometric-intelligence.github.io/topobench/
+      # 5. Deploy — push the build into the topobench/ folder of the org Pages repo,
+      # which is what actually serves https://geometric-intelligence.github.io/topobench/.
       - name: Deploy Docs
         uses: JamesIves/github-pages-deploy-action@v4
         if: ${{ github.ref == 'refs/heads/main' && github.repository == 'geometric-intelligence/topobench' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
         with:
-          branch: gh-pages
+          branch: main
           folder: docs/_build
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.DOCUMENTATION_KEY }}
+          repository-name: geometric-intelligence/geometric-intelligence.github.io
+          target-folder: topobench
           clean: true
+          # Restored from the last known-working deploy config (pre-regression) as a
+          # guard against `clean` deleting these paths on the target.
+          clean-exclude: |
+            leaderboard/**
+            tdl-challenge-2025/**
+            tdl-challenge-2026/**
