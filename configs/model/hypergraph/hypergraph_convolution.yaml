@@ -20,12 +20,8 @@ backbone:
   # False -> propagate with the raw incidence matrix (works only because the khop
   #          lifting produces a square [N, N] incidence).
   # True  -> build the actual HyperGCN Laplacian from the hyperedges each forward.
-  reapproximate: False
+  reapproximate: True
   cuda: 0
-  # NOTE: do NOT add a `loss:` key here. configs/loss/default.yaml pulls
-  # `model.backbone.loss` into TBLoss.modules_losses and calls it as
-  # loss(model_out: dict, batch), so only AbstractLoss subclasses belong here.
-  # The task loss (cross-entropy / MSE) comes from dataset.parameters.loss_type.
 
 backbone_wrapper:
   _target_: topobench.nn.wrappers.HypergraphWrapper
