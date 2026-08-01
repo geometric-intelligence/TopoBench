@@ -1,0 +1,59 @@
+_target_: topobench.model.TBModel
+
+model_name: gread
+model_domain: graph
+
+feature_encoder:
+  _target_: topobench.nn.encoders.${model.feature_encoder.encoder_name}
+  encoder_name: AllCellFeatureEncoder
+  in_channels: ${infer_in_channels:${dataset},${oc.select:transforms,null}}
+  out_channels: 64
+  proj_dropout: 0.1
+
+backbone:
+  _target_: topobench.nn.backbones.GREADEncoder
+  input_dim: ${model.feature_encoder.out_channels}
+  hidden_dim: ${model.feature_encoder.out_channels}
+  reaction_term: blurring_sharpening
+  adjacency: original
+  normalization: row
+  alpha_mode: scalar
+  beta_mode: channel
+  constrain_alpha: true
+  constrain_beta: false
+  integration_time: 1.0
+  step_size: 0.5
+  solver: rk4
+  heads: 4
+  attention_dim: ${model.feature_encoder.out_channels}
+  reweight_attention: false
+  dynamic_adjacency: false
+  self_loop_weight: 0.0
+  make_undirected: true
+  input_dropout: 0.0
+  output_dropout: 0.0
+  terminal_activation: false
+
+backbone_wrapper:
+  _target_: topobench.nn.wrappers.${model.backbone_wrapper.wrapper_name}
+  _partial_: true
+  wrapper_name: GNNWrapper
+  out_channels: ${model.feature_encoder.out_channels}
+  residual_connections: false
+  num_cell_dimensions: ${infer_num_cell_dimensions:${oc.select:model.feature_encoder.selected_dimensions,null},${model.feature_encoder.in_channels}}
+
+readout:
+  _target_: topobench.nn.readouts.${model.readout.readout_name}
+  readout_name: MLPReadout
+  num_cell_dimensions: ${infer_num_cell_dimensions:${oc.select:model.feature_encoder.selected_dimensions,null},${model.feature_encoder.in_channels}}
+  in_channels: ${model.feature_encoder.out_channels}
+  hidden_layers: [16]
+  out_channels: ${dataset.parameters.num_classes}
+  task_level: ${define_task_level:${dataset.parameters.task_level},${dataset.split_params.learning_setting}}
+  pooling_type: sum
+  dropout: 0.1
+  act: "relu"
+  norm: null
+  final_act: null
+
+compile: false
