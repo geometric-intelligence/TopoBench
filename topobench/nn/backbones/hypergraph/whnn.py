@@ -11,6 +11,17 @@ class SlicedWassersteinPooling(nn.Module):
     The layer projects member features onto several directions, sorts each
     one-dimensional projection inside every group, samples a fixed number of
     quantiles, and maps the resulting signature back to feature space.
+
+    Parameters
+    ----------
+    in_channels : int
+        Number of input features per item.
+    out_channels : int
+        Number of output features per group.
+    num_projections : int, optional
+        Number of random 1D projections. Defaults to 8.
+    num_reference_points : int, optional
+        Number of quantile reference points. Defaults to 4.
     """
 
     def __init__(
@@ -128,7 +139,23 @@ class SlicedWassersteinPooling(nn.Module):
 
 
 class WHNNLayer(nn.Module):
-    """One WHNN node-hyperedge-node message passing layer."""
+    r"""One WHNN node-hyperedge-node message passing layer.
+
+    Parameters
+    ----------
+    channels : int
+        Number of feature channels for nodes and hyperedges.
+    num_projections : int, optional
+        Number of 1D Wasserstein projections. Defaults to 8.
+    num_reference_points : int, optional
+        Number of quantile samples per projection. Defaults to 4.
+    dropout : float, optional
+        Dropout rate. Defaults to 0.0.
+    activation : str, optional
+        Activation function. Defaults to ``relu``.
+    residual : bool, optional
+        Whether to use residual connection. Defaults to True.
+    """
 
     def __init__(
         self,
@@ -164,7 +191,24 @@ class WHNNLayer(nn.Module):
         self.norm.reset_parameters()
 
     def forward(self, x, node_index, hyperedge_index, num_hyperedges):
-        """Run one WHNN layer."""
+        r"""Run one WHNN layer.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Node features.
+        node_index : torch.Tensor
+            Indices of nodes belonging to hyperedges.
+        hyperedge_index : torch.Tensor
+            Indices of hyperedges corresponding to node_index.
+        num_hyperedges : int
+            Total number of hyperedges.
+
+        Returns
+        -------
+        tuple[torch.Tensor, torch.Tensor]
+            Updated node features and hyperedge features.
+        """
         num_nodes = x.shape[0]
         hyperedge_features = self.node_to_hyperedge(
             x[node_index],
@@ -203,6 +247,8 @@ class WHNN(nn.Module):
         Activation function. Defaults to ``relu``.
     residual : bool, optional
         Whether to use residual node updates. Defaults to True.
+    **kwargs : dict, optional
+        Additional keyword arguments for Hydra configuration compatibility.
     """
 
     def __init__(
@@ -276,7 +322,18 @@ class WHNN(nn.Module):
 
 
 def _incidence_to_indices(incidence):
-    """Convert supported incidence formats to membership indices."""
+    r"""Convert supported incidence formats to membership indices.
+
+    Parameters
+    ----------
+    incidence : torch.Tensor
+        Node-hyperedge incidence matrix or index.
+
+    Returns
+    -------
+    tuple[torch.Tensor, torch.Tensor, int]
+        Node indices, hyperedge indices, and total number of hyperedges.
+    """
     if incidence.layout == torch.sparse_coo:
         incidence = incidence.coalesce()
         indices = incidence.indices()
@@ -305,7 +362,18 @@ def _incidence_to_indices(incidence):
 
 
 def _activation(name):
-    """Return activation module by name."""
+    r"""Return activation module by name.
+
+    Parameters
+    ----------
+    name : str
+        Activation function name.
+
+    Returns
+    -------
+    nn.Module
+        Activation module instance.
+    """
     activations = {
         "identity": nn.Identity(),
         "relu": nn.ReLU(),

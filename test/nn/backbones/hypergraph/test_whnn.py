@@ -2,11 +2,12 @@
 
 import torch
 
-from ...._utils.nn_module_auto_test import NNModuleAutoTest
 from topobench.nn.backbones.hypergraph.whnn import (
-    SlicedWassersteinPooling,
     WHNN,
+    SlicedWassersteinPooling,
 )
+
+from ...._utils.nn_module_auto_test import NNModuleAutoTest
 
 
 def test_whnn_forward_with_sparse_incidence():
