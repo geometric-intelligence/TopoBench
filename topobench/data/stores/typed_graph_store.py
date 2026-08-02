@@ -22,6 +22,7 @@ from topobench.data.stores.qualification_checks import (
     REPORT_FORMAT_VERSION,
     STORE_FORMAT_VERSION,
     QualificationFailure,
+    QualificationCheckResult,
     QualificationReport,
     ValidatedStore,
     _open_npy,
@@ -41,6 +42,16 @@ _PHASES = ("train", "val", "test")
 
 
 @dataclass(frozen=True, slots=True)
+class TypedGraphStoreState:
+    """Serializable qualification state without open files or connections."""
+
+    root: Path
+    manifest_json: bytes
+    report_json: bytes
+    file_identities: tuple[tuple[str, tuple[int, int, int, int, int]], ...]
+
+
+@dataclass(frozen=True, slots=True)
 class TypedGraphStoreBuild:
     """One validated content-addressed promotion result."""
 
@@ -49,6 +60,7 @@ class TypedGraphStoreBuild:
     cache_hit: bool
     quarantine_path: Path | None
     qualification_report: QualificationReport
+    store: TypedGraphStore
 
 
 class TypedGraphStoreWriter:
@@ -60,10 +72,19 @@ class TypedGraphStoreWriter:
         partition_build: TypedPartitionBuild,
         *,
         task_bindings: Mapping[str, Any] | None = None,
+        execution_monitor: object | None = None,
     ) -> None:
         self.ingestor = ingestor
         self.partition_build = partition_build
         self.task_bindings = _normalized_json(task_bindings or {})
+        if execution_monitor is not None and not callable(
+            getattr(execution_monitor, "record_qualification", None)
+        ):
+            raise TypeError(
+                "execution_monitor must expose "
+                "record_qualification(result, report_path)"
+            )
+        self.execution_monitor = execution_monitor
 
     def build(self) -> TypedGraphStoreBuild:
         """Reopen Task1-6 under its lock, validate, and atomically promote."""
@@ -106,6 +127,7 @@ class TypedGraphStoreWriter:
                         target,
                         expected_bindings=self.task_bindings,
                         require_directory_identity=True,
+                        execution_monitor=self.execution_monitor,
                     )
                 except QualificationFailure:
                     if target.is_symlink() or not target.is_dir():
@@ -131,6 +153,7 @@ class TypedGraphStoreWriter:
                         True,
                         None,
                         existing.report,
+                        TypedGraphStore(existing),
                     )
             _make_read_only(candidate, movable_root=True)
             _fsync_tree(candidate)
@@ -142,6 +165,7 @@ class TypedGraphStoreWriter:
                 target,
                 expected_bindings=self.task_bindings,
                 require_directory_identity=True,
+                execution_monitor=self.execution_monitor,
             )
             return TypedGraphStoreBuild(
                 target,
@@ -149,6 +173,7 @@ class TypedGraphStoreWriter:
                 False,
                 quarantine,
                 promoted.report,
+                TypedGraphStore(promoted),
             )
         finally:
             if candidate.exists():
@@ -608,6 +633,7 @@ class TypedGraphStore:
         self._file_identities = validated.file_identities
         self._maps: dict[str, Any] = {}
         self._closed = False
+        self._state: TypedGraphStoreState | None = None
         self._node_keys = {
             record["name"]: key for key, record in self._manifest["nodes"].items()
         }
@@ -622,14 +648,88 @@ class TypedGraphStore:
         path: str | Path,
         *,
         expected_bindings: Mapping[str, Any] | None = None,
+        execution_monitor: object | None = None,
     ) -> TypedGraphStore:
         return cls(
             validate_store(
                 path,
                 expected_bindings=expected_bindings,
                 require_directory_identity=True,
+                execution_monitor=execution_monitor,
             )
         )
+
+    @classmethod
+    def from_state(cls, state: TypedGraphStoreState) -> TypedGraphStore:
+        """Rehydrate an already-qualified immutable view without rescanning."""
+        if not isinstance(state, TypedGraphStoreState):
+            raise TypeError("state must be a TypedGraphStoreState")
+        manifest = json.loads(state.manifest_json)
+        report_record = json.loads(state.report_json)
+        if not isinstance(manifest, dict) or not isinstance(report_record, dict):
+            raise TypeError("typed graph store state must contain JSON objects")
+        root = Path(state.root)
+        if (
+            report_record.get("passed") is not True
+            or report_record.get("store_path") != str(root)
+        ):
+            raise ValueError("typed graph store state is not a passed root binding")
+        raw_checks = report_record.get("checks")
+        if not isinstance(raw_checks, list):
+            raise TypeError("typed graph store state has malformed checks")
+        checks = tuple(
+            QualificationCheckResult(
+                check_id=record["check_id"],
+                passed=record["passed"],
+                observed=record.get("observed"),
+                expected=record.get("expected"),
+                limit=record.get("limit"),
+                evidence=MappingProxyType(dict(record.get("evidence", {}))),
+                remediation=record.get("remediation", ""),
+            )
+            for record in raw_checks
+        )
+        report = QualificationReport(
+            passed=True,
+            checks=checks,
+            report_path=Path(report_record["report_path"]),
+            store_path=root,
+            format_version=report_record["format_version"],
+        )
+        store = cls(
+            ValidatedStore(
+                root=root,
+                manifest=manifest,
+                report=report,
+                file_identities=MappingProxyType(dict(state.file_identities)),
+            )
+        )
+        store._state = state
+        return store
+
+    def state(self) -> TypedGraphStoreState:
+        """Capture immutable, picklable qualification evidence for workers."""
+        self._ensure_open()
+        if self._state is None:
+            self._state = TypedGraphStoreState(
+                root=self.path,
+                manifest_json=json.dumps(
+                    _normalized_json(self._manifest),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                    allow_nan=False,
+                ).encode("utf-8"),
+                report_json=json.dumps(
+                    self.qualification_report.as_record(),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                    allow_nan=False,
+                ).encode("utf-8"),
+                file_identities=tuple(sorted(self._file_identities.items())),
+            )
+        return self._state
 
     def __enter__(self) -> TypedGraphStore:
         self._ensure_open()
@@ -1237,4 +1337,9 @@ def _lazy_array_failure(relative: str, observed: Any, expected: Any) -> Any:
     )
 
 
-__all__ = ["TypedGraphStore", "TypedGraphStoreBuild", "TypedGraphStoreWriter"]
+__all__ = [
+    "TypedGraphStore",
+    "TypedGraphStoreBuild",
+    "TypedGraphStoreState",
+    "TypedGraphStoreWriter",
+]

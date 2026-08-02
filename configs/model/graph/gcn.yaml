@@ -33,3 +33,4 @@ readout:
   pooling_type: sum
 
 compile: false
+execution_monitor: null

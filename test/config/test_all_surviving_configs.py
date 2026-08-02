@@ -333,6 +333,7 @@ def test_default_run_is_explicit_native_graph_and_network_free() -> None:
     assert choices.trainer == "cpu"
     assert cfg.train is True
     assert cfg.test is True
+    assert "input_pipeline" not in cfg.callbacks
     _fully_resolve(cfg)
 
 
@@ -407,6 +408,42 @@ def test_typed_parquet_selectors_compose_through_the_shared_capability(
 
     assert "sql" not in loader_parameters
     assert "python" not in loader_parameters
+
+
+def test_packaged_parquet_configs_compose_one_qualified_runtime_contract() -> None:
+    graph = _compose_pair("graph/ParquetTypedGraph", "graph/gcn")
+    heterogeneous = _compose_pair(
+        "heterogeneous/ParquetTypedGraph",
+        "heterogeneous/hgt",
+    )
+
+    for cfg in (graph, heterogeneous):
+        assert cfg.data_pipeline.parquet_store_root
+        assert cfg.data_pipeline.parquet_store_path is None
+        assert cfg.data_pipeline.active_split_tag is None
+        assert cfg.data_pipeline.qualified_profile is True
+        assert cfg.data_pipeline.execution_monitor is None
+        assert cfg.dataset.loader.parameters.profiling.enabled is True
+        assert (
+            cfg.dataset.loader.parameters.reproducibility.save_reproducibility_bundle
+            is True
+        )
+        assert cfg.callbacks.input_pipeline._target_ == (
+            "topobench.callbacks.input_pipeline.InputPipelineCallback"
+        )
+        assert cfg.callbacks.dataloader_commit._target_ == (
+            "topobench.callbacks.dataloader_commit.DataloaderCommitCallback"
+        )
+
+    assert graph.dataset.dataloader_params.clusters_per_batch == 1
+    assert graph.dataset.dataloader_params.train_shuffle is True
+    assert heterogeneous.dataset.dataloader_params.mode == "neighbor"
+    assert heterogeneous.dataset.dataloader_params.batch_size > 0
+    assert list(heterogeneous.dataset.dataloader_params.num_neighbors) == [-1, -1]
+    assert (
+        len(heterogeneous.dataset.dataloader_params.num_neighbors)
+        == heterogeneous.model.backbone.num_layers
+    )
 
 
 def test_graph_configs_do_not_advertise_unqualified_kfold() -> None:

@@ -36,3 +36,4 @@ supervision_adapter:
   mode: null
 
 compile: false
+execution_monitor: null

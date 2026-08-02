@@ -16,7 +16,10 @@ from test.data.dataload.test_disk_graph_datamodule import (
 )
 from test.data.stores.test_typed_graph_store import QualifiedStoreFixture
 from topobench.data.stores.typed_graph_store import TypedGraphStore
-from topobench.dataloader.disk_graph import HeterogeneousNeighborStrategy
+from topobench.dataloader.disk_graph import (
+    HeterogeneousNeighborStrategy,
+    SamplingCapabilityError,
+)
 
 
 def _asymmetric_two_hop_fanout(
@@ -143,6 +146,33 @@ def test_materialized_and_disk_neighbor_batches_are_ordered_exact_parity(
 
     assert node_reads and all(rows is not None for _, _, rows in node_reads)
     assert relation_reads and all(rows is not None for _, _, rows in relation_reads)
+
+
+def test_disk_neighbor_rejects_backward_sampling_without_native_csr(
+    task8_stores: dict[str, QualifiedStoreFixture],
+) -> None:
+    """Disk sampling fails before PyG expands CSC relations into CSR."""
+    fixture = task8_stores["heterogeneous"]
+    with TypedGraphStore.open(fixture.store_build.path) as store:
+        backward = HeterogeneousNeighborStrategy(
+            batch_size=1,
+            num_neighbors=[-1],
+            seed=57,
+            sample_direction="backward",
+        )
+        with pytest.raises(
+            SamplingCapabilityError,
+            match=(
+                "backward sampling is unavailable for TypedGraphStore: "
+                "native CSR is not qualified"
+            ),
+        ):
+            backward.setup(
+                store,
+                phase="train",
+                active_split_tag=store.active_split_tag,
+                shuffle=False,
+            )
 
 
 def test_disk_neighbor_reload_and_move_reproduce_the_same_batch(

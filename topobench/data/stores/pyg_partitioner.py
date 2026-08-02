@@ -224,16 +224,19 @@ class TopologyOnlyPyGPartitioner:
     def __init__(self, ingestor: Any, relation_build: Any, *, num_partitions: int | None = None) -> None:
         self.ingestor = ingestor
         self.relation_build = relation_build
-        if num_partitions is None:
-            self.num_partitions = (
-                ingestor.source.spec.partition.num_partitions
-            )
-        else:
-            if isinstance(num_partitions, bool):
-                raise TypeError("num_partitions must be an integer")
-            if not isinstance(num_partitions, int) or num_partitions < 2:
-                raise ValueError("num_partitions must be at least 2")
-            self.num_partitions = num_partitions
+        resolved_partitions = (
+            ingestor.source.spec.partition.num_partitions
+            if num_partitions is None
+            else num_partitions
+        )
+        if isinstance(resolved_partitions, bool):
+            raise TypeError("num_partitions must be an integer")
+        if (
+            not isinstance(resolved_partitions, int)
+            or resolved_partitions < 2
+        ):
+            raise ValueError("num_partitions must be at least 2")
+        self.num_partitions = resolved_partitions
         self.materialization_count = 0
         self.last_work_root: Path | None = None
         self._synthetic_edge_types: tuple[tuple[str, str, str], ...] = ()
@@ -779,7 +782,7 @@ def _partition_worker(request_name: str, response_name: str) -> None:
                 {
                     "status": "error",
                     "error_type": type(error).__name__,
-                    "detail": str(error),
+                    "detail": str(error) or repr(error),
                 },
             )
         except Exception:

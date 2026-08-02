@@ -21,10 +21,14 @@ from torch import Tensor
 from torch.utils.data import DataLoader, Dataset, Sampler
 from torch_geometric.data import Data, HeteroData
 from torch_geometric.loader import NeighborLoader
+from torch_geometric.sampler import NeighborSampler
 
 from topobench.data.stores.materialized_partition import MaterializedHomogeneousPartition
 from topobench.data.stores.pyg_store import PyGTypedFeatureStore, PyGTypedGraphStore
-from topobench.data.stores.typed_graph_store import TypedGraphStore
+from topobench.data.stores.typed_graph_store import (
+    TypedGraphStore,
+    TypedGraphStoreState,
+)
 from topobench.data.stores.typed_partition_book import TypedPartitionBook
 from topobench.dataloader.graph import loader_worker_options
 from topobench.dataloader.device_prefetch import (
@@ -877,8 +881,8 @@ class HeterogeneousNeighborStrategy:
         if subgraph_type not in {"directional", "induced"}:
             raise ValueError("subgraph_type must be 'directional' or 'induced'")
         self.subgraph_type = subgraph_type
-        if sample_direction != "forward":
-            raise ValueError("sample_direction must be 'forward' for installed NeighborLoader")
+        if sample_direction not in {"forward", "backward"}:
+            raise ValueError("sample_direction must be 'forward' or 'backward'")
         self.sample_direction = sample_direction
         if isinstance(num_neighbors, Mapping):
             self._relation_fanout: tuple[tuple[CanonicalRelation, tuple[int, ...]], ...] | None = tuple((_relation(key), _fanout_values(value)) for key, value in num_neighbors.items())
@@ -934,8 +938,21 @@ class HeterogeneousNeighborStrategy:
             if source.output_kind != "heterogeneous":
                 raise ValueError(f"heterogeneous-neighbor requires a heterogeneous store; received {source.output_kind!r}")
             _capability(source, self.name)
+            if self.sample_direction == "backward":
+                raise SamplingCapabilityError(
+                    "heterogeneous-neighbor backward sampling is unavailable "
+                    "for TypedGraphStore: native CSR is not qualified"
+                )
         elif not isinstance(source, HeteroData):
             raise TypeError("heterogeneous-neighbor source must be HeteroData or TypedGraphStore")
+        if (
+            self.sample_direction == "backward"
+            and isinstance(source, HeteroData)
+        ):
+            raise SamplingCapabilityError(
+                "heterogeneous-neighbor backward sampling is unsupported for "
+                "materialized HeteroData by the installed NeighborSampler"
+            )
         source = self._resolve_source(source)
         fanout = self._resolved(source)
         if self.replace:
@@ -977,7 +994,21 @@ class HeterogeneousNeighborStrategy:
             raise ValueError("descriptor target node identity mismatch")
         data: HeteroData | tuple[PyGTypedFeatureStore, PyGTypedGraphStore] = (PyGTypedFeatureStore(source), PyGTypedGraphStore(source)) if isinstance(source, TypedGraphStore) else source
         generator = torch.Generator().manual_seed(descriptor.generator_seed)
-        loader = NeighborLoader(data, input_nodes=(descriptor.target_node_type, torch.tensor(descriptor.target_seed_ids)), num_neighbors=self._resolved(source), batch_size=len(descriptor.target_seed_ids), shuffle=False, replace=self.replace, subgraph_type=self.subgraph_type, filter_per_worker=self.filter_per_worker, generator=generator)
+        sampler_fanout: Sequence[int] | Mapping[CanonicalRelation, Sequence[int]]
+        sampler_fanout = (
+            list(self._generic_fanout)
+            if self.sample_direction == "backward"
+            and self._generic_fanout is not None
+            else self._resolved(source)
+        )
+        neighbor_sampler = NeighborSampler(
+            data,
+            num_neighbors=sampler_fanout,
+            replace=self.replace,
+            subgraph_type=self.subgraph_type,
+            sample_direction=self.sample_direction,
+        )
+        loader = NeighborLoader(data, input_nodes=(descriptor.target_node_type, torch.tensor(descriptor.target_seed_ids)), num_neighbors=sampler_fanout, batch_size=len(descriptor.target_seed_ids), shuffle=False, replace=self.replace, subgraph_type=self.subgraph_type, filter_per_worker=self.filter_per_worker, neighbor_sampler=neighbor_sampler, generator=generator)
         with torch.random.fork_rng(devices=[]):
             torch.random.set_rng_state(generator.get_state())
             iterator = iter(loader)
@@ -1505,19 +1536,41 @@ class _LazyStore:
     """One validated path with one process-local lazily reopened store."""
 
     def __init__(self, source: str | Path | TypedGraphStore) -> None:
-        self.path = source.path if isinstance(source, TypedGraphStore) else Path(source)
-        self._store: TypedGraphStore | None = None
-        self._pid: int | None = None
+        if isinstance(source, TypedGraphStore):
+            self.path = source.path
+            self._state: TypedGraphStoreState | None = source.state()
+            self._store: TypedGraphStore | None = source
+            self._pid: int | None = os.getpid()
+        else:
+            self.path = Path(source)
+            self._state = None
+            self._store = None
+            self._pid = None
         self._closed = False
 
     def get(self) -> TypedGraphStore:
         if self._closed:
             raise RuntimeError("disk graph store owner is closed")
-        if self._pid != os.getpid():
-            self._store, self._pid = None, os.getpid()
+        process_id = os.getpid()
+        if self._pid != process_id:
+            if self._store is not None:
+                self._store.close()
+            self._store, self._pid = None, process_id
         if self._store is None:
-            self._store = TypedGraphStore.open(self.path)
+            self._store = (
+                TypedGraphStore.open(self.path)
+                if self._state is None
+                else TypedGraphStore.from_state(self._state)
+            )
+            if self._state is None:
+                self._state = self._store.state()
         return self._store
+
+    def release_store(self) -> None:
+        """Drop process-local maps while retaining qualified serializable state."""
+        if self._store is not None:
+            self._store.close()
+            self._store = None
 
     def close(self) -> None:
         if not self._closed:
@@ -1527,7 +1580,13 @@ class _LazyStore:
                 self._store = None
 
     def __getstate__(self) -> dict[str, object]:
-        return {"path": self.path, "_store": None, "_pid": None, "_closed": self._closed}
+        return {
+            "path": self.path,
+            "_state": self._state,
+            "_store": None,
+            "_pid": None,
+            "_closed": self._closed,
+        }
 
     def __del__(self) -> None:
         self.close()
@@ -1997,17 +2056,17 @@ class DiskGraphDataModule(LightningDataModule):
         if isinstance(source, (str, Path, TypedGraphStore)):
             self._owner: _LazyStore | None = _LazyStore(source)
             self._source: SamplingSource | _LazyStore = self._owner
-            with TypedGraphStore.open(self._owner.path) as reference:
-                declared = _declared_tag(reference)
-                if active_split_tag is None:
-                    assert declared is not None
-                    self.active_split_tag = declared
-                else:
-                    self.active_split_tag = _active_tag(
-                        reference,
-                        active_split_tag,
-                    )
-                self.strategy.validate_capabilities(reference)
+            reference = self._owner.get()
+            declared = _declared_tag(reference)
+            if active_split_tag is None:
+                assert declared is not None
+                self.active_split_tag = declared
+            else:
+                self.active_split_tag = _active_tag(
+                    reference,
+                    active_split_tag,
+                )
+            self.strategy.validate_capabilities(reference)
         elif isinstance(source, (MaterializedHomogeneousPartition, HeteroData)):
             self._owner = None
             self._source = source
@@ -2037,19 +2096,17 @@ class DiskGraphDataModule(LightningDataModule):
             Phase,
             DataLoader[NativeBatch] | DevicePrefetchLoader,
         ] = {}
-        reference = self._source if self._owner is None else None
-        if reference is None:
-            assert self._owner is not None
-            with TypedGraphStore.open(self._owner.path) as store:
-                self._partition_book_identity = _sequence_partition_identity(
-                    store,
-                    self.strategy,
-                )
-        else:
-            self._partition_book_identity = _sequence_partition_identity(
-                reference,
-                self.strategy,
-            )
+        reference = (
+            self._source
+            if self._owner is None
+            else self._owner.get()
+        )
+        self._partition_book_identity = _sequence_partition_identity(
+            reference,
+            self.strategy,
+        )
+        if self._owner is not None and not isinstance(source, TypedGraphStore):
+            self._owner.release_store()
         self._sequence_state: SequenceState | None = None
         self._closed = False
 
@@ -2222,8 +2279,7 @@ class DiskGraphDataModule(LightningDataModule):
             assert self._fit_materialized is not None
             ensure_view(self._fit_view(self._fit_materialized))
             return
-        with TypedGraphStore.open(self._owner.path) as source:
-            ensure_view(self._fit_view(source))
+        ensure_view(self._fit_view(self._owner.get()))
 
     def _setup_phase(self, phase: Phase) -> None:
         """Create one phase without evaluating unrelated split masks."""
@@ -2254,13 +2310,12 @@ class DiskGraphDataModule(LightningDataModule):
                     shuffle=phase == "train" and self.train_shuffle,
                 )
             else:
-                with TypedGraphStore.open(self._owner.path) as source:
-                    descriptors = self.strategy.setup(
-                        source,
-                        phase=phase,
-                        active_split_tag=self.active_split_tag,
-                        shuffle=phase == "train" and self.train_shuffle,
-                    )
+                descriptors = self.strategy.setup(
+                    self._owner.get(),
+                    phase=phase,
+                    active_split_tag=self.active_split_tag,
+                    shuffle=phase == "train" and self.train_shuffle,
+                )
             self._descriptors[phase] = descriptors
             if phase == "train":
                 self._ensure_sequence_state()
@@ -2532,7 +2587,12 @@ class DiskGraphDataModule(LightningDataModule):
         self._closed = True
 
     def teardown(self, stage: str | None = None) -> None:
-        self.close()
+        """Release transient loaders/maps while keeping the module reusable."""
+        if self._closed:
+            return
+        self._shutdown_loaders()
+        if self._owner is not None:
+            self._owner.release_store()
 
 
 __all__ = [

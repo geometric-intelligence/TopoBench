@@ -18,7 +18,11 @@ from topobench.data.loaders.parquet import (
     IngestionLimits, NodeTypeSpec, ParquetTypedGraphSource, ParquetTypedGraphSpec,
     PartitionSpec, RelationSpec, SplitRegistrySpec, SplitSetSpec, SupervisionSpec,
 )
-from topobench.data.stores.pyg_partitioner import PyGPartitionArtifactAdapter, TopologyOnlyPyGPartitioner
+from topobench.data.stores.pyg_partitioner import (
+    PyGPartitionArtifactAdapter,
+    TopologyOnlyPyGPartitioner,
+    _partition_worker,
+)
 from topobench.data.stores.typed_graph_ingestion import ArtifactValidationError, ParquetTypedGraphIngestor
 from topobench.data.stores.typed_partition_book import PartitionQualificationLimits
 
@@ -285,3 +289,44 @@ def test_partition_override_rejects_bool_and_values_below_two(
             relations,
             num_partitions=override,
         )
+
+
+
+def test_declared_partition_count_below_two_is_rejected_before_worker(
+    tmp_path: Path,
+) -> None:
+    source = asymmetric_typed_source(tmp_path / "source", num_partitions=1)
+    ingestor = ParquetTypedGraphIngestor(source, tmp_path / "stores")
+    relations = ingestor.build_relations()
+
+    with pytest.raises(ValueError, match="num_partitions must be at least 2"):
+        TopologyOnlyPyGPartitioner(ingestor, relations)
+
+def test_partition_worker_reports_nonempty_context_for_assertion_failures(
+    tmp_path: Path,
+) -> None:
+    work_root = tmp_path / "fingerprint"
+    work_root.mkdir()
+    request_path = work_root / "request.json"
+    response_path = work_root / "response.json"
+    request_path.write_text(
+        json.dumps(
+            {
+                "format_version": "topology-only-pyg-worker-v1",
+                "fingerprint": work_root.name,
+                "output_root": str(work_root / "output"),
+                "nodes": [{"internal_key": "node", "count": 1}],
+                "relations": [],
+                "num_partitions": 1,
+                "recursive": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    _partition_worker(str(request_path), str(response_path))
+
+    response = json.loads(response_path.read_text(encoding="utf-8"))
+    assert response["status"] == "error"
+    assert response["error_type"] == "AssertionError"
+    assert response["detail"] == "AssertionError()"

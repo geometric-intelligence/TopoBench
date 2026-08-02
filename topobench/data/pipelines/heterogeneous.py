@@ -9,7 +9,11 @@ from topobench.data.capabilities import qualify_heterogeneous_dataset
 from topobench.data.heterogeneous import validate_heterogeneous_node_data
 from topobench.dataloader.heterogeneous import HeterogeneousNodeDataModule
 
-from .base import AbstractDataPipeline, DataPipelineOutput
+from .base import (
+    AbstractDataPipeline,
+    DataPipelineOutput,
+    is_parquet_typed_graph_config,
+)
 
 
 class HeterogeneousNodeDataPipeline(AbstractDataPipeline):
@@ -17,6 +21,11 @@ class HeterogeneousNodeDataPipeline(AbstractDataPipeline):
 
     def build(self, cfg: DictConfig) -> DataPipelineOutput:
         """Preprocess, validate, and batch exactly one heterogeneous graph."""
+        if is_parquet_typed_graph_config(cfg):
+            return self.build_parquet(
+                cfg,
+                expected_output_kind="heterogeneous",
+            )
         qualification = qualify_heterogeneous_dataset(cfg.dataset)
         preprocessor = self.preprocess(cfg)
         if len(preprocessor) != 1:

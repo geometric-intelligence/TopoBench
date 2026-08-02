@@ -13,7 +13,11 @@ from topobench.data.utils.split_utils import validate_split_type_qualification
 from topobench.dataloader import GraphDataModule
 from topobench.utils.config_resolvers import infer_in_channels
 
-from .base import AbstractDataPipeline, DataPipelineOutput
+from .base import (
+    AbstractDataPipeline,
+    DataPipelineOutput,
+    is_parquet_typed_graph_config,
+)
 
 
 class DefaultDataPipeline(AbstractDataPipeline):
@@ -21,6 +25,11 @@ class DefaultDataPipeline(AbstractDataPipeline):
 
     def build(self, cfg: DictConfig) -> DataPipelineOutput:
         """Load, preprocess, split, and batch a homogeneous dataset."""
+        if is_parquet_typed_graph_config(cfg):
+            return self.build_parquet(
+                cfg,
+                expected_output_kind="homogeneous",
+            )
         validate_split_type_qualification(
             cfg.dataset.split_params.get("split_type")
         )

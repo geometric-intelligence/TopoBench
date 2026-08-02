@@ -1,3 +1,8 @@
+defaults:
+  - /callbacks/dataloader_commit@_global_.callbacks
+  - /callbacks/input_pipeline@_global_.callbacks
+  - _self_
+
 loader:
   _target_: topobench.data.loaders.parquet.ParquetTypedGraphLoader
   parameters:
@@ -87,6 +92,8 @@ split_params:
   source: explicit_registry
 
 dataloader_params:
-  batch_size: 1
+  clusters_per_batch: 1
+  partition_groups: null
   num_workers: 0
-  pin_memory: false
+  persistent_workers: false
+  train_shuffle: true

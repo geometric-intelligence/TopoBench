@@ -19,6 +19,7 @@ from topobench.data.stores.store_bundle import (
 from topobench.data.stores.typed_graph_store import (
     TypedGraphStore,
     TypedGraphStoreBuild,
+    TypedGraphStoreState,
     TypedGraphStoreWriter,
 )
 from topobench.data.stores.external_node_index import ExternalNodeIndex
@@ -59,6 +60,7 @@ __all__ = [
     "StoreBundle",
     "TypedGraphStore",
     "TypedGraphStoreBuild",
+    "TypedGraphStoreState",
     "TypedGraphStoreWriter",
     "qualify_store",
     "validate_store",

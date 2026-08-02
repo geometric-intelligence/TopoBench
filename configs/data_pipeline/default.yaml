@@ -1,1 +1,9 @@
 _target_: topobench.data.pipelines.DefaultDataPipeline
+parquet_store_root: ${paths.data_dir}/parquet_typed_stores
+parquet_store_path: null
+active_split_tag: null
+qualified_profile: true
+fitted_transform: null
+fitted_state_root: ${paths.data_dir}/parquet_typed_fit_states
+supervised_fit: false
+execution_monitor: null

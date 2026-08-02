@@ -1,3 +1,8 @@
+defaults:
+  - /callbacks/dataloader_commit@_global_.callbacks
+  - /callbacks/input_pipeline@_global_.callbacks
+  - _self_
+
 loader:
   _target_: topobench.data.loaders.parquet.ParquetTypedGraphLoader
   parameters:
@@ -106,8 +111,12 @@ split_params:
 
 dataloader_params:
   mode: neighbor
-  evaluation_protocol: full_graph
-  evaluation_seed: ${seed}
+  batch_size: 1024
+  num_neighbors: [-1, -1]
+  replace: false
+  subgraph_type: directional
+  sample_direction: forward
+  filter_per_worker: false
   num_workers: 0
-  pin_memory: false
   persistent_workers: false
+  train_shuffle: true
