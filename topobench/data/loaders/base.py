@@ -1,12 +1,48 @@
 """Abstract Loader class."""
 
+import hashlib
+import json
 import os
+import random
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Any
 
+import numpy as np
 import torch
 import torch_geometric
 from omegaconf import DictConfig
+
+
+def canonical_json_bytes(value: Any) -> bytes:
+    """Serialize a JSON-compatible value deterministically."""
+    return json.dumps(
+        value,
+        allow_nan=False,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+
+
+def canonical_sha256(value: Any) -> str:
+    """Hash a JSON-compatible value using canonical serialization."""
+    return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
+
+
+@contextmanager
+def isolated_rng_state() -> Iterator[None]:
+    """Restore caller-global Python, NumPy, and CPU Torch RNG state on exit."""
+    python_state = random.getstate()
+    numpy_state = np.random.get_state()
+    with torch.random.fork_rng(devices=[]):
+        try:
+            yield
+        finally:
+            np.random.set_state(numpy_state)
+            random.setstate(python_state)
 
 
 class AbstractLoader(ABC):

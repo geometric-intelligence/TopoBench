@@ -5,6 +5,8 @@ loader:
     data_domain: graph
     data_type: ADME
     data_name: CYP3A4_Veith
+    split_method: ${dataset.split_params.split_method}
+    split_seed: ${dataset.split_params.data_seed}
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
 
 # Dataset parameters
@@ -24,6 +26,7 @@ split_params:
   learning_setting: inductive
   data_split_dir: ${paths.data_dir}/data_splits/${dataset.loader.parameters.data_name}
   data_seed: 0
+  split_method: scaffold
   split_type: fixed  # TDC provides predefined scaffold splits
   train_prop: 0.5
 

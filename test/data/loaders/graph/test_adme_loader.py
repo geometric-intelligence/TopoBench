@@ -9,9 +9,14 @@ The ``test_load_dataset_*`` tests mock out ``tdc.single_pred.ADME`` and
 ``ogb.utils.smiles2graph`` so no network requests are made.
 """
 
+import hashlib
+import json
 import os
+import stat
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pandas as pd
 import pytest
 import torch
@@ -24,12 +29,20 @@ from topobench.data.loaders.graph.adme_datasets import ADMEDatasetLoader
 # ---------------------------------------------------------------------------
 
 
-def _make_cfg(tmp_path, data_name="BBB_Martins"):
+def _make_cfg(
+    tmp_path,
+    data_name="BBB_Martins",
+    *,
+    split_method="scaffold",
+    split_seed=0,
+):
     return OmegaConf.create(
         {
             "data_dir": str(tmp_path),
             "data_name": data_name,
             "data_type": "ADME",
+            "split_method": split_method,
+            "split_seed": split_seed,
         }
     )
 
@@ -62,6 +75,66 @@ def _fake_tdc_adme(name, path):
     return mock
 
 
+def _seeded_split(seed):
+    """Return a deterministic partition of one fixed source dataset."""
+    source = pd.DataFrame(
+        {
+            "Drug": ["C", "CC", "CCC", "CCCC"],
+            "Y": [0, 1, 0, 1],
+        },
+        index=[101, 203, 307, 409],
+    )
+    order = np.random.default_rng(seed).permutation(len(source))
+    return {
+        "train": source.iloc[order[:2]],
+        "valid": source.iloc[order[2:3]],
+        "test": source.iloc[order[3:]],
+    }
+
+
+def _rng_mutating_tdc(name, path):
+    """Emulate a dependency that consumes caller-global RNG internally."""
+    del name, path
+    mock = MagicMock()
+    mock.version = "fake-dataset-v1"
+
+    def get_split(*, method, seed):
+        assert method == "scaffold"
+        np.random.seed(seed + 100)
+        np.random.random(3)
+        torch.random.default_generator.manual_seed(seed + 100)
+        torch.rand(3)
+        return _seeded_split(seed)
+
+    mock.get_split.side_effect = get_split
+    return mock
+
+
+def _assert_rng_unchanged(load):
+    """Run ``load`` and assert NumPy/Torch caller streams are untouched."""
+    numpy_before = np.random.get_state()
+    torch_before = torch.random.get_rng_state().clone()
+
+    result = load()
+
+    numpy_after = np.random.get_state()
+    assert numpy_after[0] == numpy_before[0]
+    np.testing.assert_array_equal(numpy_after[1], numpy_before[1])
+    assert numpy_after[2:] == numpy_before[2:]
+    torch.testing.assert_close(torch.random.get_rng_state(), torch_before)
+    return result
+
+
+def _canonical_digest(value):
+    payload = json.dumps(
+        value,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 # ---------------------------------------------------------------------------
 # Basic unit tests (no mocking needed)
 # ---------------------------------------------------------------------------
@@ -84,6 +157,259 @@ def test_load_dataset_rejects_unknown_name(tmp_path):
     cfg = _make_cfg(tmp_path, data_name="TotallyMadeUp")
     with pytest.raises(ValueError, match="Unknown ADME dataset"):
         ADMEDatasetLoader(cfg).load_dataset()
+
+
+def test_load_dataset_rejects_non_scaffold_method(tmp_path):
+    cfg = _make_cfg(tmp_path, split_method="random")
+    with pytest.raises(ValueError, match="split_method.*scaffold"):
+        ADMEDatasetLoader(cfg)
+
+
+@patch(
+    "topobench.data.loaders.graph.adme_datasets.smiles2graph",
+    side_effect=_fake_smiles2graph,
+)
+def test_load_dataset_calls_scaffold_split_with_configured_seed(
+    mock_s2g, tmp_path
+):
+    tdc_dataset = _fake_tdc_adme("BBB_Martins", str(tmp_path))
+    with patch(
+        "topobench.data.loaders.graph.adme_datasets.ADME",
+        return_value=tdc_dataset,
+    ):
+        dataset = ADMEDatasetLoader(
+            _make_cfg(tmp_path, split_seed=37)
+        ).load_dataset()
+
+    assert len(dataset) == 4
+    tdc_dataset.get_split.assert_called_once_with(
+        method="scaffold",
+        seed=37,
+    )
+
+
+@patch(
+    "topobench.data.loaders.graph.adme_datasets.smiles2graph",
+    side_effect=_fake_smiles2graph,
+)
+@patch(
+    "topobench.data.loaders.graph.adme_datasets.ADME",
+    side_effect=_rng_mutating_tdc,
+)
+def test_cache_miss_and_hit_preserve_rng_and_reuse_matching_provenance(
+    mock_adme, mock_s2g, tmp_path
+):
+    cfg = _make_cfg(tmp_path, split_seed=7)
+
+    cache_miss = _assert_rng_unchanged(
+        lambda: ADMEDatasetLoader(cfg).load_dataset()
+    )
+    conversion_calls_after_miss = mock_s2g.call_count
+    cache_hit = _assert_rng_unchanged(
+        lambda: ADMEDatasetLoader(cfg).load_dataset()
+    )
+
+    assert mock_adme.call_count == 2
+    assert conversion_calls_after_miss == 4
+    assert mock_s2g.call_count == conversion_calls_after_miss
+    assert cache_hit.split_provenance == cache_miss.split_provenance
+    assert cache_hit.split_fingerprint == cache_miss.split_fingerprint
+
+
+@patch(
+    "topobench.data.loaders.graph.adme_datasets.smiles2graph",
+    side_effect=_fake_smiles2graph,
+)
+@patch(
+    "topobench.data.loaders.graph.adme_datasets.ADME",
+    side_effect=_rng_mutating_tdc,
+)
+def test_valid_read_only_cache_hit_does_not_chmod_or_mutate_artifacts(
+    mock_adme, mock_s2g, tmp_path
+):
+    del mock_adme
+    cfg = _make_cfg(tmp_path, split_seed=7)
+    first = ADMEDatasetLoader(cfg).load_dataset()
+    processed_path = Path(first.processed_paths[0])
+    provenance_path = Path(first.provenance_path)
+    os.chmod(processed_path, 0o444)
+    os.chmod(provenance_path, 0o444)
+
+    def snapshot(path):
+        file_stat = path.stat()
+        return (
+            stat.S_IMODE(file_stat.st_mode),
+            file_stat.st_mtime_ns,
+            hashlib.sha256(path.read_bytes()).hexdigest(),
+        )
+
+    before = {
+        path: snapshot(path) for path in (processed_path, provenance_path)
+    }
+    conversion_calls_after_miss = mock_s2g.call_count
+
+    with patch.object(
+        Path,
+        "chmod",
+        side_effect=AssertionError("cache hit attempted chmod"),
+    ):
+        cache_hit = _assert_rng_unchanged(
+            lambda: ADMEDatasetLoader(cfg).load_dataset()
+        )
+
+    assert cache_hit.split_fingerprint == first.split_fingerprint
+    assert mock_s2g.call_count == conversion_calls_after_miss
+    assert {
+        path: snapshot(path) for path in (processed_path, provenance_path)
+    } == before
+
+
+@patch(
+    "topobench.data.loaders.graph.adme_datasets.smiles2graph",
+    side_effect=_fake_smiles2graph,
+)
+@patch(
+    "topobench.data.loaders.graph.adme_datasets.ADME",
+    side_effect=_rng_mutating_tdc,
+)
+def test_split_fingerprint_is_seed_sensitive_and_repeat_stable(
+    mock_adme, mock_s2g, tmp_path
+):
+    del mock_adme, mock_s2g
+    seed_7 = _assert_rng_unchanged(
+        lambda: ADMEDatasetLoader(
+            _make_cfg(tmp_path, split_seed=7)
+        ).load_dataset()
+    )
+    seed_11 = _assert_rng_unchanged(
+        lambda: ADMEDatasetLoader(
+            _make_cfg(tmp_path, split_seed=11)
+        ).load_dataset()
+    )
+    seed_7_repeated = _assert_rng_unchanged(
+        lambda: ADMEDatasetLoader(
+            _make_cfg(tmp_path, split_seed=7)
+        ).load_dataset()
+    )
+
+    assert seed_7.split_fingerprint != seed_11.split_fingerprint
+    assert seed_7.split_fingerprint == seed_7_repeated.split_fingerprint
+    assert (
+        seed_7.split_provenance["source"]["data_digest"]
+        == seed_11.split_provenance["source"]["data_digest"]
+    )
+    assert (
+        seed_7.split_provenance["split"]["phase_index_digests"]
+        != seed_11.split_provenance["split"]["phase_index_digests"]
+    )
+    assert (
+        seed_7.split_provenance["split"]["phase_data_digests"]
+        != seed_11.split_provenance["split"]["phase_data_digests"]
+    )
+
+
+@patch(
+    "topobench.data.loaders.graph.adme_datasets.smiles2graph",
+    side_effect=_fake_smiles2graph,
+)
+@patch(
+    "topobench.data.loaders.graph.adme_datasets.ADME",
+    side_effect=_rng_mutating_tdc,
+)
+def test_split_provenance_is_versioned_complete_and_non_executable(
+    mock_adme, mock_s2g, tmp_path
+):
+    del mock_adme, mock_s2g
+    seed = 7
+    expected_split = _seeded_split(seed)
+    dataset = ADMEDatasetLoader(
+        _make_cfg(tmp_path, split_seed=seed)
+    ).load_dataset()
+    provenance = dataset.split_provenance
+
+    assert provenance["provenance_version"] == 1
+    assert provenance["source"]["provider"] == "PyTDC"
+    assert "provider_version" in provenance["source"]
+    assert provenance["source"]["dataset_name"] == "BBB_Martins"
+    assert provenance["source"]["dataset_version"] == "fake-dataset-v1"
+    assert len(provenance["source"]["data_digest"]) == 64
+    assert provenance["split"]["method"] == "scaffold"
+    assert provenance["split"]["seed"] == seed
+    assert provenance["split"]["phase_index_digests"] == {
+        phase: _canonical_digest(frame.index.tolist())
+        for phase, frame in expected_split.items()
+    }
+    assert provenance["split"]["phase_data_digests"] == {
+        phase: _canonical_digest(frame.to_dict(orient="records"))
+        for phase, frame in expected_split.items()
+    }
+
+    provenance_path = Path(dataset.provenance_path)
+    assert json.loads(provenance_path.read_text(encoding="utf-8")) == provenance
+    assert provenance_path.stat().st_mode & (
+        stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+    ) == 0
+    assert stat.S_IMODE(provenance_path.stat().st_mode) == 0o644
+
+
+@pytest.mark.parametrize(
+    ("field_path", "stale_value"),
+    [
+        (("provenance_version",), 0),
+        (("source", "provider"), "stale-provider"),
+        (("source", "provider_version"), "stale-provider-version"),
+        (("source", "dataset_name"), "stale-name"),
+        (("source", "dataset_version"), "stale-dataset-version"),
+        (("source", "data_digest"), "stale-data"),
+        (("split", "method"), "random"),
+        (("split", "seed"), -1),
+        (
+            ("split", "phase_index_digests", "train"),
+            "stale-phase-index",
+        ),
+        (
+            ("split", "phase_data_digests", "valid"),
+            "stale-phase-data",
+        ),
+    ],
+)
+@patch(
+    "topobench.data.loaders.graph.adme_datasets.smiles2graph",
+    side_effect=_fake_smiles2graph,
+)
+@patch(
+    "topobench.data.loaders.graph.adme_datasets.ADME",
+    side_effect=_rng_mutating_tdc,
+)
+def test_any_stale_provenance_field_forces_cache_rebuild(
+    mock_adme,
+    mock_s2g,
+    tmp_path,
+    field_path,
+    stale_value,
+):
+    del mock_adme
+    cfg = _make_cfg(tmp_path, split_seed=7)
+    first = ADMEDatasetLoader(cfg).load_dataset()
+    provenance_path = Path(first.provenance_path)
+    stale = json.loads(provenance_path.read_text(encoding="utf-8"))
+    target = stale
+    for field in field_path[:-1]:
+        target = target[field]
+    target[field_path[-1]] = stale_value
+    provenance_path.write_text(json.dumps(stale), encoding="utf-8")
+    mock_s2g.reset_mock()
+
+    rebuilt = _assert_rng_unchanged(
+        lambda: ADMEDatasetLoader(cfg).load_dataset()
+    )
+
+    assert mock_s2g.call_count == 4
+    assert rebuilt.split_fingerprint == first.split_fingerprint
+    assert (
+        json.loads(provenance_path.read_text(encoding="utf-8"))
+        == first.split_provenance
+    )
 
 
 # ---------------------------------------------------------------------------

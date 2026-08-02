@@ -20,6 +20,7 @@ from topobench.data import (
     DatasetQualification,
     HypergraphData,
 )
+from topobench.data.loaders.graph.adme_datasets import ADMEDatasetLoader
 from topobench.utils.config_resolvers import (
     get_default_transform,
     register_all_resolvers,
@@ -39,7 +40,33 @@ _DATA_NAME_OVERRIDES = {
     "graph/graphuniverse_transductive": "GraphUniverse",
     "hypergraph/20newsgroup": "20newsW100",
 }
+_ADME_SELECTORS = (
+    "graph/BBB_Martins",
+    "graph/CYP3A4_Veith",
+    "graph/Caco2_Wang",
+    "graph/Clearance_Hepatocyte_AZ",
+)
 _SELECTOR_METADATA = {
+    "graph/BBB_Martins": (
+        ("dataset.loader.parameters.split_method", "scaffold"),
+        ("dataset.loader.parameters.split_seed", 0),
+        ("dataset.split_params.split_method", "scaffold"),
+    ),
+    "graph/CYP3A4_Veith": (
+        ("dataset.loader.parameters.split_method", "scaffold"),
+        ("dataset.loader.parameters.split_seed", 0),
+        ("dataset.split_params.split_method", "scaffold"),
+    ),
+    "graph/Caco2_Wang": (
+        ("dataset.loader.parameters.split_method", "scaffold"),
+        ("dataset.loader.parameters.split_seed", 0),
+        ("dataset.split_params.split_method", "scaffold"),
+    ),
+    "graph/Clearance_Hepatocyte_AZ": (
+        ("dataset.loader.parameters.split_method", "scaffold"),
+        ("dataset.loader.parameters.split_seed", 0),
+        ("dataset.split_params.split_method", "scaffold"),
+    ),
     "graph/QM9": (
         ("dataset.loader.parameters.qm9_target_index", 0),
         ("dataset.parameters.qm9_target_index", 0),
@@ -319,6 +346,40 @@ def _assert_supervision_shapes(
         assert logits.shape == (count, 1)
         assert targets.shape == (count, 1)
         assert targets.is_floating_point()
+
+@pytest.mark.parametrize("selector", _ADME_SELECTORS)
+def test_retained_adme_selector_declares_executed_split_contract(
+    selector: str,
+    tmp_path: Path,
+) -> None:
+    """Retained ADME YAML drives the exact method and seed the loader uses."""
+    cfg = _compose(DATASET_QUALIFICATION_MANIFEST[selector], tmp_path)
+
+    assert cfg.dataset.split_params.split_method == "scaffold"
+    assert (
+        cfg.dataset.loader.parameters.split_method
+        == cfg.dataset.split_params.split_method
+    )
+    assert (
+        cfg.dataset.loader.parameters.split_seed
+        == cfg.dataset.split_params.data_seed
+    )
+
+
+def test_adme_loader_rejects_method_disagreeing_with_selector_metadata(
+    tmp_path: Path,
+) -> None:
+    """A selector claiming scaffold cannot instantiate a random-split loader."""
+    cfg = _compose(
+        DATASET_QUALIFICATION_MANIFEST["graph/BBB_Martins"],
+        tmp_path,
+    )
+    assert cfg.dataset.split_params.split_method == "scaffold"
+    cfg.dataset.loader.parameters.split_method = "random"
+
+    with pytest.raises(ValueError, match="split_method.*scaffold"):
+        ADMEDatasetLoader(cfg.dataset.loader.parameters)
+
 
 
 @pytest.mark.parametrize(
