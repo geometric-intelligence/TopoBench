@@ -1,6 +1,7 @@
 """Unit tests for split utilities."""
 
 import os
+import re
 import tempfile
 import shutil
 import pytest
@@ -110,25 +111,29 @@ class TestLoadInductiveSplits:
         # Verify total equals original
         assert len(train_ds) + len(val_ds) + len(test_ds) == n_graphs
 
-    def test_uniform_label_shapes_kfold_split(self):
-        """Test with uniform label shapes using k-fold split."""
-        n_graphs = 20
-        label_shapes = [()] * n_graphs
-        mock_dataset = self.create_mock_dataset(n_graphs, label_shapes)
+    @pytest.mark.parametrize("split_type", ["k-fold", "k-fold-fixed"])
+    def test_unqualified_kfold_rejected_before_dataset_loading(
+        self,
+        split_type,
+    ):
+        """Unqualified nested CV fails before the source dataset is read."""
+        mock_dataset = MagicMock()
+        mock_dataset.__len__.side_effect = AssertionError(
+            "dataset loading must not start"
+        )
+        parameters = DictConfig({"split_type": split_type})
 
-        parameters = DictConfig({
-            "split_type": "k-fold",
-            "data_seed": 0,
-            "k": 5,
-            "data_split_dir": os.path.join(self.test_dir, "data_splits")
-        })
+        with pytest.raises(
+            ValueError,
+            match=(
+                rf"^split_type {re.escape(repr(split_type))} is not qualified: "
+                r"nested cross-validation requires an outer held-out test "
+                r"partition$"
+            ),
+        ):
+            load_inductive_splits(mock_dataset, parameters)
 
-        train_ds, val_ds, test_ds = load_inductive_splits(mock_dataset, parameters)
-
-        assert len(train_ds) > 0
-        assert len(val_ds) > 0
-        # Note: test_ds and val_ds are the same in k-fold (test=valid)
-        assert len(train_ds) + len(val_ds) == n_graphs
+        mock_dataset.__len__.assert_not_called()
 
     def test_stratified_split(self):
         """Test with stratified split."""
@@ -171,23 +176,6 @@ class TestLoadInductiveSplits:
         assert len(test_ds) > 0
         assert len(train_ds) + len(val_ds) + len(test_ds) == n_graphs
 
-    def test_ragged_label_shapes_kfold_raises_error(self):
-        """Test that k-fold with ragged labels raises an assertion error."""
-        n_graphs = 15
-        label_shapes = [()] * 5 + [(2,)] * 5 + [(3,)] * 5
-        mock_dataset = self.create_mock_dataset(n_graphs, label_shapes)
-
-        parameters = DictConfig({
-            "split_type": "k-fold",
-            "data_seed": 0,
-            "k": 5,
-            "data_split_dir": os.path.join(self.test_dir, "data_splits")
-        })
-
-        # Should raise assertion error for ragged labels with k-fold
-        with pytest.raises((AssertionError, ValueError)):
-            # Could be AssertionError from the check or ValueError from sklearn
-            load_inductive_splits(mock_dataset, parameters)
 
     def test_fixed_split_type(self):
         """Test with fixed split type."""
@@ -214,32 +202,6 @@ class TestLoadInductiveSplits:
         assert len(val_ds) == 4
         assert len(test_ds) == 4
 
-    def test_kfold_fixed_split_type(self):
-        """Test with k-fold-fixed split type."""
-        n_graphs = 10
-        label_shapes = [()] * n_graphs
-        mock_dataset = self.create_mock_dataset(n_graphs, label_shapes)
-
-        # Add split_idx_list attribute
-        split_idx_list = {
-            "train": [np.arange(6)],
-            "valid": [np.arange(6, 8)],
-            "test": [np.arange(8, 10)]
-        }
-        mock_dataset.split_idx_list = split_idx_list
-
-        parameters = DictConfig({
-            "split_type": "k-fold-fixed",
-            "data_seed": 0,
-            "k": 1,
-            "data_split_dir": os.path.join(self.test_dir, "data_splits")
-        })
-
-        train_ds, val_ds, test_ds = load_inductive_splits(mock_dataset, parameters)
-
-        assert len(train_ds) == 6
-        assert len(val_ds) == 2
-        assert len(test_ds) == 2
 
     def test_fixed_split_type_without_split_idx_raises_error(self):
         """Test that fixed split without split_idx raises error."""
@@ -385,52 +347,53 @@ class TestLoadInductiveSplits:
         assert len(train_ds) + len(val_ds) + len(test_ds) == n_graphs
 
 
-class TestKFoldSplit:
-    """Test k_fold_split function."""
+class TestRejectedKFoldSplits:
+    """Direct k-fold helpers never return validation aliased as test."""
 
-    def setup_method(self):
-        """Setup method for each test."""
-        self.test_dir = tempfile.mkdtemp(prefix=".topobench_test_tmp_")
-
-    def teardown_method(self):
-        """Cleanup after each test."""
-        if os.path.exists(self.test_dir):
-            shutil.rmtree(self.test_dir)
-
-    def test_basic_kfold(self):
-        """Test basic k-fold splitting."""
-        # Use more samples per class to avoid n_splits > samples per class
-        labels = np.array([0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2] * 2)  # 30 samples, 10 per class
+    @pytest.mark.parametrize(
+        ("helper", "split_type"),
+        [
+            (k_fold_split, "k-fold"),
+            (k_fold_split_fixed, "k-fold-fixed"),
+        ],
+    )
+    def test_direct_helper_rejects_without_creating_split_artifacts(
+        self,
+        helper,
+        split_type,
+        tmp_path,
+    ):
+        """Legacy helper entry points explain the missing outer test."""
         parameters = DictConfig({
-            "k": 5,
+            "k": 2,
             "data_seed": 0,
-            "data_split_dir": os.path.join(self.test_dir, "data_splits")
+            "data_split_dir": str(tmp_path / "data_splits"),
         })
+        args = (
+            (np.array([0, 1]), parameters)
+            if helper is k_fold_split
+            else (
+                torch.tensor([0, 1]),
+                parameters,
+                {
+                    "train": [np.array([0])],
+                    "valid": [np.array([1])],
+                    "test": [np.array([1])],
+                },
+            )
+        )
 
-        split_idx = k_fold_split(labels, parameters)
+        with pytest.raises(
+            ValueError,
+            match=(
+                rf"^split_type {re.escape(repr(split_type))} is not qualified: "
+                r"nested cross-validation requires an outer held-out test "
+                r"partition$"
+            ),
+        ):
+            helper(*args)
 
-        assert "train" in split_idx
-        assert "valid" in split_idx
-        assert "test" in split_idx
-        assert len(split_idx["train"]) + len(split_idx["valid"]) == len(labels)
-
-    def test_kfold_with_root_override(self):
-        """Test k-fold with root directory override."""
-        labels = np.array([0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2] * 2)  # 30 samples
-        custom_root = os.path.join(self.test_dir, "custom")
-        os.makedirs(custom_root, exist_ok=True)
-
-        parameters = DictConfig({
-            "k": 5,
-            "data_seed": 0,
-            "data_split_dir": "original_dir"  # Should be ignored
-        })
-
-        split_idx = k_fold_split(labels, parameters, root=custom_root)
-
-        assert "train" in split_idx
-        # Check that split was saved in custom root
-        assert os.path.exists(os.path.join(custom_root, "data_splits", "5-fold"))
+        assert not (tmp_path / "data_splits").exists()
 
 
 class TestRandomSplitting:
@@ -526,43 +489,6 @@ class TestStratifiedSplitting:
         assert total == len(labels)
 
 
-class TestKFoldSplitFixed:
-    """Test k_fold_split_fixed function."""
-
-    def setup_method(self):
-        """Setup method for each test."""
-        self.test_dir = tempfile.mkdtemp(prefix=".topobench_test_tmp_")
-
-    def teardown_method(self):
-        """Cleanup after each test."""
-        if os.path.exists(self.test_dir):
-            shutil.rmtree(self.test_dir)
-
-    def test_basic_kfold_fixed(self):
-        """Test basic k-fold fixed splitting."""
-        labels = torch.tensor([0, 1, 0, 1, 0, 1])
-        k = 3
-        split_idx_list = {
-            "train": [np.array([0, 1, 2, 3]), np.array([2, 3, 4, 5]), np.array([0, 1, 4, 5])],
-            "valid": [np.array([4]), np.array([0]), np.array([2])],
-            "test": [np.array([5]), np.array([1]), np.array([3])]
-        }
-        parameters = DictConfig({
-            "k": k,
-            "data_seed": 0,
-            "data_split_dir": os.path.join(self.test_dir, "data_splits")
-        })
-
-        # Test creating the split
-        split_idx = k_fold_split_fixed(labels, parameters, split_idx_list)
-
-        assert np.array_equal(split_idx["train"], split_idx_list["train"][0])
-        assert np.array_equal(split_idx["valid"], split_idx_list["valid"][0])
-        assert np.array_equal(split_idx["test"], split_idx_list["test"][0])
-
-        # Test loading the split
-        split_idx_loaded = k_fold_split_fixed(labels, parameters, split_idx_list)
-        assert np.array_equal(split_idx_loaded["train"], split_idx["train"])
 
 
 class TestLoadTransductiveSplits:
@@ -656,7 +582,7 @@ class TestLoadTransductiveSplits:
         with pytest.raises(ValueError, match="^indices must be in \\[0, 3\\)$"):
             indices_to_mask([3], 3)
 
-    @pytest.mark.parametrize("split_type", ["random", "stratified", "k-fold"])
+    @pytest.mark.parametrize("split_type", ["random", "stratified"])
     def test_generated_transductive_splits_are_canonical(self, split_type):
         """All supported index algorithms feed the same mask boundary."""
         labels = torch.tensor([0, 0, 0, 1, 1, 1])
@@ -665,12 +591,7 @@ class TestLoadTransductiveSplits:
             "data_seed": 0,
             "data_split_dir": self.test_dir,
         }
-        if split_type == "random":
-            parameters["train_prop"] = 0.5
-        elif split_type == "stratified":
-            parameters["train_prop"] = 0.5
-        else:
-            parameters["k"] = 3
+        parameters["train_prop"] = 0.5
 
         dataset, val, test = load_transductive_splits(
             self.dataset(labels),
@@ -716,8 +637,14 @@ class TestLoadTransductiveSplits:
 
 
     def test_invalid_split_type_raises_error(self):
-        """Test that invalid split type raises error."""
-        with pytest.raises(NotImplementedError):
+        """Unsupported choices list only qualified split strategies."""
+        with pytest.raises(
+            NotImplementedError,
+            match=(
+                r"^split_type invalid not valid\. Choose either "
+                r"'random', 'stratified', or 'fixed'$"
+            ),
+        ):
             load_transductive_splits(
                 self.dataset(torch.tensor([0, 1])),
                 DictConfig({"split_type": "invalid"}),
@@ -767,6 +694,72 @@ class TestLoadCoauthorshipHypergraphSplits:
 
 class TestInductiveSubsetViews:
     """Test the narrow inductive representation boundary."""
+    @pytest.mark.parametrize(
+        ("split_idx", "message"),
+        [
+            (
+                {"train": [0, 1], "valid": [1], "test": [2, 3]},
+                "train, valid, and test splits must be pairwise disjoint",
+            ),
+            (
+                {"train": [0], "valid": [1], "test": [2]},
+                "train, valid, and test splits must cover every source index "
+                "exactly once",
+            ),
+            (
+                {"train": [0, 0], "valid": [1], "test": [2, 3]},
+                "train split indices must be unique",
+            ),
+            (
+                {"train": [0], "valid": [1], "test": [2, 4]},
+                "test split indices must be in [0, 4)",
+            ),
+            (
+                {"train": [0], "valid": [], "test": [1, 2, 3]},
+                "valid split must not be empty",
+            ),
+            (
+                {"train": [0], "valid": [1.5], "test": [2, 3]},
+                "valid split indices must contain integers",
+            ),
+        ],
+        ids=[
+            "phase-overlap",
+            "incomplete-coverage",
+            "duplicate-within-phase",
+            "out-of-range",
+            "empty-phase",
+            "non-integral",
+        ],
+    )
+    def test_invalid_partition_fails_with_context(
+        self,
+        split_idx,
+        message,
+    ):
+        """Malformed partitions name the phase or cross-phase invariant."""
+        with pytest.raises(
+            ValueError,
+            match=rf"^{re.escape(message)}$",
+        ):
+            inductive_split_views(list(range(4)), split_idx)
+
+    def test_unordered_valid_partition_preserves_phase_order(self):
+        """Unordered indices are valid and retain their lazy view order."""
+        source = list(range(6))
+
+        train_ds, val_ds, test_ds = inductive_split_views(
+            source,
+            {
+                "train": [2, 0],
+                "valid": [5, 3],
+                "test": [4, 1],
+            },
+        )
+
+        assert list(train_ds.indices) == [2, 0]
+        assert list(val_ds.indices) == [5, 3]
+        assert list(test_ds.indices) == [4, 1]
 
     def test_complete_fixed_split_views_share_source_without_item_access(self):
         """Complete fixed phases create lazy views over one source dataset."""

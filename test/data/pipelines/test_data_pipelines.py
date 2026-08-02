@@ -34,6 +34,30 @@ from topobench.data.pipelines import (
 from topobench.dataloader import GraphDataModule
 from topobench.utils.config_resolvers import register_all_resolvers
 
+K_FOLD_NOT_QUALIFIED = (
+    "split_type 'k-fold' is not qualified: nested cross-validation requires "
+    "an outer held-out test partition"
+)
+GRAPH_CONFIGS_THAT_ADVERTISED_K_FOLD = (
+    "IMDB-BINARY",
+    "IMDB-MULTI",
+    "MUTAG",
+    "NCI1",
+    "NCI109",
+    "PROTEINS",
+    "REDDIT-BINARY",
+    "amazon_ratings",
+    "cocitation_citeseer",
+    "cocitation_cora",
+    "cocitation_pubmed",
+    "graphuniverse_transductive",
+    "minesweeper",
+    "ogbg-molhiv",
+    "questions",
+    "roman_empire",
+    "tolokers",
+)
+
 
 @pytest.fixture(autouse=True)
 def _isolate_global_hydra() -> Iterator[None]:
@@ -609,6 +633,40 @@ def test_default_pipeline_is_composed_for_surviving_graph_config() -> None:
         cfg.data_pipeline._target_
         == "topobench.data.pipelines.DefaultDataPipeline"
     )
+
+@pytest.mark.parametrize(
+    "dataset_selector",
+    GRAPH_CONFIGS_THAT_ADVERTISED_K_FOLD,
+)
+def test_composed_graph_kfold_rejected_before_dataset_loading(
+    dataset_selector: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every formerly advertised selector rejects nested CV before loading."""
+    register_all_resolvers()
+    hydra.initialize(
+        version_base="1.3",
+        config_path="../../../configs",
+    )
+    cfg = hydra.compose(
+        config_name="run.yaml",
+        overrides=[
+            f"dataset=graph/{dataset_selector}",
+            "dataset.split_params.split_type=k-fold",
+        ],
+    )
+    preprocess = MagicMock(
+        side_effect=AssertionError("dataset loading must not start")
+    )
+    monkeypatch.setattr(DefaultDataPipeline, "preprocess", preprocess)
+
+    with pytest.raises(
+        ValueError,
+        match=rf"^{K_FOLD_NOT_QUALIFIED}$",
+    ):
+        DefaultDataPipeline().build(cfg)
+
+    preprocess.assert_not_called()
 
 
 def test_composed_minesweeper_params_construct_native_graph_datamodule() -> None:

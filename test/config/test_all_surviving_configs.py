@@ -337,6 +337,19 @@ def test_dataset_manifest_exactly_matches_supported_yaml_selectors() -> None:
         | frozenset(NON_GRAPH_MODEL_ROWS)
     )
 
+def test_graph_configs_do_not_advertise_unqualified_kfold() -> None:
+    """Surviving graph selectors expose only qualified split parameters."""
+    for config_path in sorted((CONFIG_ROOT / "dataset" / "graph").glob("*.yaml")):
+        config = OmegaConf.load(config_path)
+        split_params = config.split_params
+        assert split_params.split_type not in {"k-fold", "k-fold-fixed"}, (
+            config_path
+        )
+        assert "k" not in split_params, config_path
+        assert "k-fold" not in config_path.read_text(encoding="utf-8").lower(), (
+            config_path
+        )
+
 
 def test_model_directories_are_exact_and_match_capabilities() -> None:
     for domain, expected in EXPECTED_MODELS.items():

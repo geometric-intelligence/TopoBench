@@ -146,26 +146,53 @@ def apply_transductive_split(
     return data
 
 
+def _normalize_inductive_partition(
+    split_idx: Mapping[str, Sequence[int] | torch.Tensor],
+    num_graphs: int,
+) -> tuple[list[int], list[int], list[int]]:
+    """Normalize and validate one complete graph-level phase partition."""
+    phase_keys = ("train", "valid", "test")
+    normalized: list[torch.Tensor] = []
+    for key in phase_keys:
+        if key not in split_idx:
+            raise ValueError(f"split_idx must contain {key!r}")
+        try:
+            indices = _index_tensor(split_idx[key], num_graphs)
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"{key} split {error}") from error
+        if indices.numel() == 0:
+            raise ValueError(f"{key} split must not be empty")
+        normalized.append(indices)
+
+    combined = torch.cat(normalized)
+    if torch.unique(combined).numel() != combined.numel():
+        raise ValueError(
+            "train, valid, and test splits must be pairwise disjoint"
+        )
+    if not torch.equal(
+        torch.sort(combined).values,
+        torch.arange(num_graphs),
+    ):
+        raise ValueError(
+            "train, valid, and test splits must cover every source index "
+            "exactly once"
+        )
+
+    return tuple(indices.tolist() for indices in normalized)  # type: ignore[return-value]
+
+
 def inductive_split_views(
     dataset: Dataset[Data],
     split_idx: Mapping[str, Sequence[int] | torch.Tensor],
 ) -> tuple[Subset[Data], Subset[Data], Subset[Data]]:
-    """Return non-empty index-backed phase views over one source dataset."""
-    num_graphs = len(dataset)
-    phase_keys = ("train", "valid", "test")
-    normalized: list[list[int]] = []
-    for key in phase_keys:
-        if key not in split_idx:
-            raise ValueError(f"split_idx must contain {key!r}")
-        indices = _index_tensor(split_idx[key], num_graphs)
-        if indices.numel() == 0:
-            raise ValueError(f"{key} split must not be empty")
-        normalized.append(indices.tolist())
-
+    """Return validated index-backed phase views over one source dataset."""
+    train_indices, valid_indices, test_indices = (
+        _normalize_inductive_partition(split_idx, len(dataset))
+    )
     return (
-        Subset(dataset, normalized[0]),
-        Subset(dataset, normalized[1]),
-        Subset(dataset, normalized[2]),
+        Subset(dataset, train_indices),
+        Subset(dataset, valid_indices),
+        Subset(dataset, test_indices),
     )
 
 

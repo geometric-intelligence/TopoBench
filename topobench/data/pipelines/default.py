@@ -5,6 +5,7 @@ from __future__ import annotations
 from omegaconf import DictConfig
 
 from topobench.data.features import prepare_graph_features
+from topobench.data.utils.split_utils import validate_split_type_qualification
 from topobench.dataloader import GraphDataModule
 from topobench.utils.config_resolvers import infer_in_channels
 
@@ -16,6 +17,9 @@ class DefaultDataPipeline(AbstractDataPipeline):
 
     def build(self, cfg: DictConfig) -> DataPipelineOutput:
         """Load, preprocess, split, and batch a homogeneous dataset."""
+        validate_split_type_qualification(
+            cfg.dataset.split_params.get("split_type")
+        )
         preprocessor = self.preprocess(cfg)
         train, val, test = preprocessor.load_dataset_splits(
             cfg.dataset.split_params

@@ -1,10 +1,11 @@
 """Split utilities."""
 
 import os
+from typing import NoReturn
 
 import numpy as np
 import torch
-from sklearn.model_selection import StratifiedKFold, train_test_split
+from sklearn.model_selection import train_test_split
 
 from topobench.data.splits import (
     apply_transductive_split,
@@ -12,172 +13,29 @@ from topobench.data.splits import (
     validate_transductive_masks,
 )
 
+def _raise_unqualified_kfold(split_type: str) -> NoReturn:
+    """Reject nested CV until it has a qualified outer test partition."""
+    raise ValueError(
+        f"split_type {split_type!r} is not qualified: nested "
+        "cross-validation requires an outer held-out test partition"
+    )
+
+
+def validate_split_type_qualification(split_type: object) -> None:
+    """Reject split selectors that cannot report an honest held-out test."""
+    if split_type in ("k-fold", "k-fold-fixed"):
+        _raise_unqualified_kfold(str(split_type))
+
 
 def k_fold_split_fixed(labels, parameters, split_idx_list):
-    """Return train and valid indices as in K-Fold Cross-Validation.
-
-    If the split already exists it loads it automatically, otherwise it creates the
-    split file for the subsequent runs.
-
-    Parameters
-    ----------
-    labels : torch.Tensor
-        Label tensor.
-    parameters : DictConfig
-        Configuration parameters.
-    split_idx_list : dict
-        Pre-computed split indices keyed by "train", "valid", and "test",
-        each containing one entry per fold.
-
-    Returns
-    -------
-    dict
-        Dictionary containing the train, validation and test indices, with keys "train", "valid", and "test".
-    """
-
-    data_dir = parameters.data_split_dir
-    k = parameters.k
-    fold = parameters.data_seed
-    assert fold < k, "data_seed needs to be less than k"
-
-    torch.manual_seed(0)
-    np.random.seed(0)
-
-    split_dir = os.path.join(data_dir, f"{k}-fold")
-
-    if not os.path.isdir(split_dir):
-        os.makedirs(split_dir)
-
-    split_path = os.path.join(split_dir, f"{fold}.npz")
-    if not os.path.isfile(split_path):
-        n = labels.shape[0]
-        x_idx = np.arange(n)
-        x_idx = np.random.permutation(x_idx)
-        labels = labels[x_idx]
-
-        for fold_n in range(len(split_idx_list["train"])):
-            split_idx = {
-                "train": split_idx_list["train"][fold_n],
-                "valid": split_idx_list["valid"][fold_n],
-                "test": split_idx_list["test"][fold_n],
-            }
-
-            # Check that all nodes/graph have been assigned to some split
-            # assert np.all(
-            #     np.sort(
-            #         np.array(
-            #             split_idx["train"]
-            #             + split_idx["valid"]
-            #         )
-            #     )
-            #     == np.sort(np.arange(len(labels)))
-            # ), "Not every sample has been loaded."
-            split_path = os.path.join(split_dir, f"{fold_n}.npz")
-
-            np.savez(split_path, **split_idx)
-
-    split_path = os.path.join(split_dir, f"{fold}.npz")
-    split_idx = np.load(split_path)
-
-    # Check that all nodes/graph have been assigned to some split
-    # assert (
-    #     np.unique(
-    #         np.array(
-    #             split_idx["train"].tolist()
-    #             + split_idx["valid"].tolist()
-    #             + split_idx["test"].tolist()
-    #         )
-    #     ).shape[0]
-    #     == labels.shape[0]
-    # ), "Not all nodes within splits"
-
-    return split_idx
+    """Reject the unqualified fixed nested cross-validation protocol."""
+    _raise_unqualified_kfold("k-fold-fixed")
 
 
 # Generate splits in different fasions
 def k_fold_split(labels, parameters, root=None):
-    """Return train and valid indices as in K-Fold Cross-Validation.
-
-    If the split already exists it loads it automatically, otherwise it creates the
-    split file for the subsequent runs.
-
-    Parameters
-    ----------
-    labels : torch.Tensor
-        Label tensor.
-    parameters : DictConfig
-        Configuration parameters.
-    root : str, optional
-        Root directory for data splits. Overwrite the default directory.
-
-    Returns
-    -------
-    dict
-        Dictionary containing the train, validation and test indices, with keys "train", "valid", and "test".
-    """
-
-    data_dir = (
-        parameters["data_split_dir"]
-        if root is None
-        else os.path.join(root, "data_splits")
-    )
-    k = parameters.k
-    fold = parameters.data_seed
-    assert fold < k, "data_seed needs to be less than k"
-
-    torch.manual_seed(0)
-    np.random.seed(0)
-
-    split_dir = os.path.join(data_dir, f"{k}-fold")
-
-    if not os.path.isdir(split_dir):
-        os.makedirs(split_dir)
-
-    split_path = os.path.join(split_dir, f"{fold}.npz")
-    if not os.path.isfile(split_path):
-        n = len(labels)
-        x_idx = np.arange(n)
-        x_idx = np.random.permutation(x_idx)
-        labels = labels[x_idx]
-
-        skf = StratifiedKFold(n_splits=k, shuffle=True, random_state=42)
-
-        for fold_n, (train_idx, valid_idx) in enumerate(
-            skf.split(x_idx, labels)
-        ):
-            split_idx = {
-                "train": train_idx,
-                "valid": valid_idx,
-                "test": valid_idx,
-            }
-
-            # Check that all nodes/graph have been assigned to some split
-            assert np.all(
-                np.sort(
-                    np.array(
-                        split_idx["train"].tolist()
-                        + split_idx["valid"].tolist()
-                    )
-                )
-                == np.sort(np.arange(len(labels)))
-            ), "Not every sample has been loaded."
-            split_path = os.path.join(split_dir, f"{fold_n}.npz")
-
-            np.savez(split_path, **split_idx)
-
-    split_path = os.path.join(split_dir, f"{fold}.npz")
-    split_idx = np.load(split_path)
-
-    # Check that all nodes/graph have been assigned to some split
-    assert np.unique(
-        np.array(
-            split_idx["train"].tolist()
-            + split_idx["valid"].tolist()
-            + split_idx["test"].tolist()
-        )
-    ).shape[0] == len(labels), "Not all nodes within splits"
-
-    return split_idx
+    """Reject nested cross-validation without an outer held-out test."""
+    _raise_unqualified_kfold("k-fold")
 
 
 def random_splitting(labels, parameters, root=None, global_data_seed=42):
@@ -378,6 +236,9 @@ def load_transductive_splits(dataset, parameters):
     tuple[list, None, None]
         Native singleton source dataset and absent phase-specific datasets.
     """
+    split_type = parameters.split_type
+    validate_split_type_qualification(split_type)
+
     if len(dataset) != 1:
         raise ValueError(
             "transductive splitting requires exactly one source graph"
@@ -392,7 +253,7 @@ def load_transductive_splits(dataset, parameters):
     get_data_dir = getattr(wrapped_dataset, "get_data_dir", None)
     root = get_data_dir() if callable(get_data_dir) else None
 
-    if parameters.split_type == "random":
+    if split_type == "random":
         splits = random_splitting(labels, parameters, root=root)
         apply_transductive_split(
             data,
@@ -400,7 +261,7 @@ def load_transductive_splits(dataset, parameters):
             val=splits["valid"],
             test=splits["test"],
         )
-    elif parameters.split_type == "stratified":
+    elif split_type == "stratified":
         splits = stratified_splitting(labels, parameters)
         apply_transductive_split(
             data,
@@ -408,17 +269,7 @@ def load_transductive_splits(dataset, parameters):
             val=splits["valid"],
             test=splits["test"],
         )
-    elif parameters.split_type == "k-fold":
-        splits = k_fold_split(labels, parameters, root=root)
-        holdout = np.asarray(splits["valid"])
-        split_point = (len(holdout) + 1) // 2
-        apply_transductive_split(
-            data,
-            train=splits["train"],
-            val=holdout[:split_point],
-            test=holdout[split_point:],
-        )
-    elif parameters.split_type == "fixed":
+    elif split_type == "fixed":
         fixed_masks = (
             data.train_mask,
             data.val_mask,
@@ -438,8 +289,8 @@ def load_transductive_splits(dataset, parameters):
             )
     else:
         raise NotImplementedError(
-            f"split_type {parameters.split_type} not valid. Choose either "
-            "'random', 'stratified', 'k-fold', or 'fixed'"
+            f"split_type {split_type} not valid. Choose either "
+            "'random', 'stratified', or 'fixed'"
         )
 
     if data.x.shape[0] == 0 or not torch.any(data.train_mask):
@@ -468,10 +319,13 @@ def load_inductive_splits(dataset, parameters):
     tuple[torch.utils.data.Subset, torch.utils.data.Subset, torch.utils.data.Subset]
         Non-empty train, validation, and test views over ``dataset``.
     """
+    split_type = parameters.split_type
+    validate_split_type_qualification(split_type)
+
     if len(dataset) <= 1:
         raise ValueError("inductive splitting requires more than one graph")
 
-    if parameters.split_type == "fixed" and hasattr(dataset, "split_idx"):
+    if split_type == "fixed" and hasattr(dataset, "split_idx"):
         return inductive_split_views(dataset, dataset.split_idx)
 
     label_list = [data.y.squeeze(0).numpy() for data in dataset]
@@ -486,27 +340,15 @@ def load_inductive_splits(dataset, parameters):
     get_data_dir = getattr(wrapped_dataset, "get_data_dir", None)
     root = get_data_dir() if callable(get_data_dir) else None
 
-    if parameters.split_type == "random":
+    if split_type == "random":
         split_idx = random_splitting(labels, parameters, root=root)
-    elif parameters.split_type == "stratified":
+    elif split_type == "stratified":
         split_idx = stratified_splitting(labels, parameters)
-    elif parameters.split_type == "k-fold":
-        if labels.dtype == object:
-            raise ValueError(
-                "K-Fold splitting not supported for ragged labels."
-            )
-        split_idx = k_fold_split(labels, parameters, root=root)
-    elif parameters.split_type == "k-fold-fixed":
-        split_idx = k_fold_split_fixed(
-            labels,
-            parameters,
-            dataset.split_idx_list,
-        )
     else:
         raise NotImplementedError(
-            f"split_type {parameters.split_type} not valid. Choose either "
-            "'random', 'stratified', 'k-fold' or 'fixed'. If 'fixed' is "
-            "chosen, the dataset should have the attribute split_idx"
+            f"split_type {split_type} not valid. Choose either "
+            "'random', 'stratified', or 'fixed'. If 'fixed' is chosen, "
+            "the dataset should have the attribute split_idx"
         )
 
     return inductive_split_views(dataset, split_idx)

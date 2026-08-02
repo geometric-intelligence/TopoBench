@@ -43,7 +43,6 @@ split_params:
   data_split_dir: ${dataset.loader.parameters.data_dir}/data_splits
   data_seed: 0
   split_type: random
-  k: 10
   train_prop: 0.7
 
 dataloader_params:
