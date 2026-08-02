@@ -59,8 +59,8 @@ class EDGNN(nn.Module):
         super().__init__()
         act = {"Id": nn.Identity(), "relu": nn.ReLU(), "prelu": nn.PReLU()}
         self.act = act[activation]
-        self.input_drop = nn.Dropout(input_dropout)  # 0.6 is chosen as default
-        self.dropout = nn.Dropout(dropout)  # 0.2 is chosen for GCNII
+        self.input_drop = nn.Dropout(input_dropout)
+        self.dropout = nn.Dropout(dropout)
 
         self.in_channels = num_features
         self.hidden_channels = self.in_channels
@@ -132,27 +132,13 @@ class EDGNN(nn.Module):
             raise TypeError("hyperedge_index must use torch.long")
         if hyperedge_index.device != x.device:
             raise ValueError("x and hyperedge_index must use the same device")
-        if hyperedge_index.numel():
-            vertex, edges = hyperedge_index
-            if int(vertex.min()) < 0 or int(vertex.max()) >= x.size(0):
-                raise ValueError(
-                    "hyperedge_index contains an invalid node index"
-                )
-            if int(edges.min()) < 0:
-                raise ValueError(
-                    "hyperedge_index contains a negative hyperedge ID"
-                )
-            expected = torch.arange(
-                int(edges.max()) + 1,
-                device=edges.device,
+        if not hyperedge_index.numel():
+            raise ValueError(
+                "EDGNN hyperedge_index must contain at least one incidence"
             )
-            if not torch.equal(torch.unique(edges), expected):
-                raise ValueError(
-                    "hyperedge_index hyperedge IDs must be contiguous from zero"
-                )
-        else:
-            vertex, edges = hyperedge_index
+        vertex, edges = hyperedge_index
 
+        x = self.input_drop(x)
         x0 = x
         for _ in range(self.nlayer):
             x = self.dropout(x)
@@ -693,23 +679,27 @@ class MeanDegConv(nn.Module):
         )  # [E, C], reduce is 'mean' here as default
 
         deg_e = scatter(
-            torch.ones(Xve.shape[0], device=Xve.device),
+            Xve.new_ones(Xve.shape[0]),
             edges,
-            dim=-2,
+            dim=0,
             reduce="sum",
         )
-        Xe = torch.cat([Xe, torch.log(deg_e)[..., None]], -1)
+        Xe = torch.cat([Xe, torch.log(deg_e.clamp_min(1))[..., None]], -1)
 
         Xev = Xe[..., edges, :]  # [nnz, C]
         Xev = self.W2(torch.cat([X[..., vertex, :], Xev], -1))
         Xv = scatter(Xev, vertex, dim=-2, reduce="mean", dim_size=N)  # [N, C]
 
+        # Zero is the isolated-node degree. Clamping it to one maps its
+        # logarithmic feature to zero without changing positive degrees.
         deg_v = scatter(
-            torch.ones(Xev.shape[0], device=Xev.device),
+            Xev.new_ones(Xev.shape[0]),
             vertex,
-            dim=-2,
+            dim=0,
             reduce="sum",
+            dim_size=N,
         )
-        X = self.W3(torch.cat([Xv, X, X0, torch.log(deg_v)[..., None]], -1))
+        log_deg_v = torch.log(deg_v.clamp_min(1))
+        X = self.W3(torch.cat([Xv, X, X0, log_deg_v[..., None]], -1))
 
         return X

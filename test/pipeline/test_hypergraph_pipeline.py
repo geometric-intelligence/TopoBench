@@ -5,7 +5,7 @@ from __future__ import annotations
 import hydra
 import pytest
 import torch
-from omegaconf import DictConfig
+from omegaconf import DictConfig, open_dict
 
 from test._utils.simplified_pipeline import run
 from topobench.utils.config_resolvers import register_all_resolvers
@@ -57,6 +57,25 @@ def test_synthetic_hypergraph_composes_to_finite_node_logits(
         batch.y.size(0),
         int(cfg.dataset.parameters.num_classes),
     )
+    assert torch.isfinite(model_out["logits"]).all()
+
+
+def test_synthetic_hypergraph_meandeg_returns_finite_full_node_logits() -> None:
+    """The configured MeanDeg path preserves every nonisolated fixture node."""
+    cfg = _compose("edgnn")
+    with open_dict(cfg.model.backbone):
+        cfg.model.backbone.edconv_type = "MeanDeg"
+        cfg.model.backbone.input_dropout = 0.0
+        cfg.model.backbone.dropout = 0.0
+    pipeline_output = hydra.utils.instantiate(cfg.data_pipeline).build(cfg)
+    batch = next(iter(pipeline_output.datamodule.train_dataloader()))
+    model = instantiate_model(cfg, data_spec=None)
+    model.eval()
+
+    model_out = model.forward(batch)
+
+    assert model_out["logits"].shape[0] == batch.x.size(0)
+    assert torch.isfinite(model_out["x"]).all()
     assert torch.isfinite(model_out["logits"]).all()
 
 
