@@ -2,8 +2,7 @@
 
 Supplementary analysis for the 2026 TDL Challenge, Track 2 (team: *Oversmooth
 operators*, model: DPHGNN, arXiv:2405.16616). This file is the
-human-readable summary: question, protocol, and results. The full
-authoritative spec is `conf/E2_CLAUDE.md` (repo root).
+human-readable summary: question, protocol, and results.
 
 ## Question
 
@@ -45,7 +44,7 @@ paper-faithful architecture:
 | `A4` | no_sib | `use_sib=False` | SIB block's Laplacian term (Eq. 6.1) disabled -- reduces to its `lambda -> 0` residual | H1 |
 | `A5` | clique_only | `expansions=("clique",)` | star + HyperGCN expansions dropped; clique view stands in for both | H1 |
 
-### Masking strategy (E2_CLAUDE.md Sec. 2.1) -- decision and caveats
+### Masking strategy -- decision and caveats
 
 **Default to output masking, not deletion.** Every submodule (`clique_conv`,
 `star_conv`, `hyp_conv`, `taa_spatial`, `taa_spectral`, `sib`,
@@ -57,14 +56,14 @@ via the preflight check below). A reader must not infer that a masked arm is
 a smaller model -- some of its parameters simply receive no gradient for that
 arm.
 
-Two consequences flagged explicitly by `E2_CLAUDE.md` and handled as follows:
+Two consequences are handled as follows:
 
 - **A1/A2 and the gate.** In this implementation the multiplicative gate in
   Eq. (2) is derived entirely from the SIB block's output (`X_spectral`), not
   from either TAA branch. So `use_spectral=False` / `use_spatial=False`
-  zeroing `x_Z`/`x_kappa` does **not** halve the gate the way the generic
-  `sigma(W . x_spec) (*) x_spat` example in `E2_CLAUDE.md` Sec. 2.1 warns
-  about -- that formula does not describe this codebase's actual wiring. The
+  zeroing `x_Z`/`x_kappa` does **not** halve the gate the way a generic
+  `sigma(W . x_spec) (*) x_spat` gating formula would -- that formula does
+  not describe this codebase's actual wiring. The
   real (smaller) caveat: `MLP_1` in Eq. (7.1) has a learned bias and shares
   weights across both halves of its concatenated `[x_kappa | x_Z]` input, so
   a small bias-driven signal from the "disabled" branch can still reach
@@ -142,15 +141,13 @@ reasons):
 dphgnn.yaml`** (that file lists `hidden_channels`, `n_gnn_layers`,
 `taa_heads`, `dropout`, `sib_lambda`, `n_dff_layers`, `supernode_init`,
 `with_mediators`, `taa_neighborhood` -- not the new flags, since it was left
-unmodified per `E2_CLAUDE.md` Sec. 3: "Create no new files under
-`configs/model/`", read together with the instruction not to modify that
-file at all). Consequently, a plain `model.backbone.use_spectral=false`-style
-override -- the literal form `E2_CLAUDE.md` Sec. 3 illustrates -- **fails**
-under OmegaConf's struct mode with `Could not override 'model.backbone.
-use_spectral'. To append to your config use +model.backbone.use_spectral=
-false`. This was verified empirically (see item 6 in the report to the
-session's caller) before trusting it in `run_e2.py`; the leading `+` is
-required for all five flags:
+unmodified by design: no new files were created under `configs/model/`, and
+that file itself was not modified. Consequently, a plain
+`model.backbone.use_spectral=false`-style override -- the naive literal form
+-- **fails** under OmegaConf's struct mode with `Could not override
+'model.backbone.use_spectral'. To append to your config use
++model.backbone.use_spectral=false`. This was verified empirically before
+trusting it in `run_e2.py`; the leading `+` is required for all five flags:
 
 ```text
 A0 full:           (no override)
@@ -200,12 +197,12 @@ job returning `status: "ok"` in a few seconds each. Real Phase-1/Phase-2
 runs (`python run_e2.py` / `--phase2`, no `--smoke-test`) were deliberately
 **not** launched from this development environment -- no GPU was available
 locally, and the repo's own accelerator default assumes one. That sweep is
-reserved for a Kaggle GPU session; see `E2_kaggle_run.ipynb`.
+reserved for a Kaggle GPU session; see `kaggle_run_ablation.ipynb`.
 
 ## Known risks
 
-1. **Silent no-op flag.** The single highest-probability failure mode
-   (E2_CLAUDE.md Sec. 7). Covered by `test_dphgnn_ablation.py`'s
+1. **Silent no-op flag.** The single highest-probability failure mode.
+   Covered by `test_dphgnn_ablation.py`'s
    `test_arm_output_differs_from_a0` (unit level, toy fixture) and
    `run_e2.py`'s `preflight_check()` (integration level, through the real
    Hydra/`hydra.utils.instantiate` path) -- both currently pass.
@@ -217,17 +214,16 @@ reserved for a Kaggle GPU session; see `E2_kaggle_run.ipynb`.
    passes after every flag was implemented.
 3. **Arm/architecture mismatch.** Ruled out for all six arms during design
    (see "Masking strategy" above) -- each maps onto a distinct, documented
-   piece of the implementation (`DPHGNN_SPEC.md` Sec. 4-9). No arm required
-   improvising an interpretation of the paper.
+   piece of the implementation. No arm required improvising an
+   interpretation of the paper.
 4. **A1/A2 gate interaction.** Decided and documented above and in the
    `use_spectral`/`use_spatial` docstrings: this implementation's gate does
-   not depend on either TAA branch, so the generic warning in
-   `E2_CLAUDE.md` Sec. 2.1 does not literally apply here; the real (smaller)
-   caveat is `MLP_1`'s shared bias.
+   not depend on either TAA branch, so the generic gating-formula warning
+   above does not literally apply here; the real (smaller) caveat is
+   `MLP_1`'s shared bias.
 5. **Runtime.** A single real (non-smoke-test) run was not measured locally
    (no GPU). Watch the first few Kaggle runs' wall-clock time against the
-   ~15-minute budget in `E2_CLAUDE.md` Sec. 7 before trusting an unattended
-   sweep.
+   ~15-minute budget before trusting an unattended sweep.
 
 ## Statistics
 
@@ -241,36 +237,66 @@ reserved for a Kaggle GPU session; see `E2_kaggle_run.ipynb`.
   regime-dependence. No t-test per arm is run: with 6 arms, multiplicity
   correction would leave n=3 underpowered; effect sizes with CIs are
   reported instead, and the design is plainly underpowered for formal
-  testing. All of the above is implemented in `02_component_ablation.ipynb`
-  and will populate automatically once `e2_ablation_results.json` has
-  Phase-2 records.
+  testing. All of the above is implemented in `component_ablation.ipynb`
+  and is populated automatically from `e2_ablation_results.json` -- see
+  Results and Finding below for the Phase-2 numbers.
+
+## Results
+
+Full 36-run sweep (6 arms x 2 cells x seeds 42/43/44), test accuracy, mean
+over the 3 seeds. `n_params` is identical across every arm (55,630) by
+design -- masking, not deletion, see "Ablation arms" above.
+
+| Arm | Name | `h_lo` (severe heterophily) | Δ vs A0 (95% CI) | `h_hi` (strong homophily) | Δ vs A0 (95% CI) |
+|---|---|---|---|---|---|
+| A0 | full (reference) | 0.2832 | -- | 0.6142 | -- |
+| A1 | spatial_only | 0.2878 | **+0.0046** [+0.0008, +0.0072] | 0.6134 | −0.0009 [−0.0066, +0.0028] |
+| A2 | spectral_only | 0.2764 | **−0.0069** [−0.0155, −0.0016] | 0.5886 | **−0.0256** [−0.0295, −0.0225] |
+| A3 | fusion_sum | 0.2825 | −0.0008 [−0.0019, +0.0005] | 0.6116 | −0.0026 [−0.0060, +0.0039] |
+| A4 | no_sib | 0.2850 | **+0.0018** [+0.0006, +0.0026] | 0.6144 | +0.0002 [−0.0015, +0.0024] |
+| A5 | clique_only | 0.2844 | +0.0011 [−0.0004, +0.0040] | 0.6177 | +0.0035 [−0.0029, +0.0091] |
+
+**Bold** deltas have a bootstrap 95% CI that excludes zero. Difference of
+deltas across cells (H3 -- regime-dependence test):
+
+| Arm | `Δ(h_lo) − Δ(h_hi)` | 95% CI | Regime-dependent? |
+|---|---|---|---|
+| A1 spatial_only | +0.0054 | [+0.0002, +0.0112] | yes (CI excludes 0) |
+| A2 spectral_only | +0.0187 | [+0.0101, +0.0257] | **yes, strongly** |
+| A3 fusion_sum | +0.0018 | [−0.0046, +0.0059] | no |
+| A4 no_sib | +0.0016 | [−0.0005, +0.0036] | no |
+| A5 clique_only | −0.0024 | [−0.0079, +0.0041] | no |
 
 ## Figures
+
+![Ablation delta: accuracy(arm) − accuracy(A0), two panels for h_lo and h_hi](figures/fig3_ablation_delta.png)
 
 `figures/fig3_ablation_delta.png` (main) -- horizontal bar chart of
 `Δ = accuracy(arm) − accuracy(A0)`, one bar per arm (`A1`-`A5`), two panels
 side by side (left = `h_lo`, right = `h_hi`), shared x axis, `A0` marked as
 a zero reference line. Bars left of zero mean the ablated component helps
 the full model (removing it hurts accuracy); the *difference in bar
-magnitude between the two panels* is the evidence for H3.
+magnitude between the two panels* is the evidence for H3 -- clearly visible
+for `A2`, whose bar is roughly 4x longer in the `h_hi` panel.
+
+![Raw test accuracy per arm, one colour per cell, with the E1 GCN baseline as a dashed reference line](figures/fig4_component_by_regime.png)
 
 `figures/fig4_component_by_regime.png` -- grouped bars: x = arms (`A0`-`A5`),
 y = raw test accuracy, one colour per cell, with the Experiment-E1 GCN
 baseline plotted as a dashed horizontal reference line per cell (from
 `../lifting_confounding_study/lifting_ablation_results.json`, arm `gcn`,
 same two cell keys) -- shows whether an ablated DPHGNN is still above the
-Track-1 baseline.
+Track-1 baseline. Every ablation arm, including the worst one (`A2` on
+`h_hi`), stays comfortably above the GCN baseline.
 
-Both figures are produced by `02_component_ablation.ipynb`, which reads
-`e2_ablation_results.json` only and never trains. As of this commit, no
-Phase-1 records exist yet (see Finding below), so both figures were not yet
-generated -- the notebook prints `"No data yet -- skipping ..."` for each
-and exits cleanly rather than fabricating a plot from nothing.
+Both figures are produced by `component_ablation.ipynb`, which reads
+`e2_ablation_results.json` only and never trains; executed in place against
+the real 36-record sweep.
 
 ## Reproducing
 
 ```bash
-cd 2026_tdl_challenge/extra_analysis_oversmooth_operators/E2_ablation
+cd 2026_tdl_challenge/extra_analysis_oversmooth_operators/model_ablation
 
 # Sanity check first -- see "Local testing" above.
 python run_e2.py --smoke-test --cpu
@@ -278,7 +304,7 @@ python run_e2.py --smoke-test --cpu
 # Phase 1 -- 12 runs, seed 42 only. Resumable: safe to kill and re-run,
 # already-present (arm, cell, seed) triples are skipped. Requires a GPU
 # (or drop --cpu manually if you accept CPU wall-clock times); intended
-# to be run from E2_kaggle_run.ipynb on Kaggle.
+# to be run from kaggle_run_ablation.ipynb on Kaggle.
 python run_e2.py
 
 # Phase 2 -- once Phase 1 is fully green, adds seeds 43/44 (36 runs total).
@@ -286,7 +312,7 @@ python run_e2.py --phase2
 
 # Analysis notebook only reads e2_ablation_results.json and plots -- never
 # trains.
-jupyter nbconvert --to notebook --execute --inplace 02_component_ablation.ipynb
+jupyter nbconvert --to notebook --execute --inplace component_ablation.ipynb
 ```
 
 `e2_ablation_results.json` is written incrementally (one record appended per
@@ -296,21 +322,46 @@ git-ignored.
 
 ## Finding
 
-**Status: Phase 1 not yet run.** All code for this experiment -- the five
-ablation flags in `topobench/nn/backbones/hypergraph/dphgnn.py`, the unit
-tests in `test_dphgnn_ablation.py` (regression + per-arm, all green), the
-`preflight_check()` verifying every Hydra override takes effect, and the
-`run_e2.py` runner's mechanics (verified end to end via `--smoke-test
---cpu`, all 12 smoke jobs `status: "ok"`) -- is implemented and locally
-validated. The real Phase-1 sweep (12 GPU training runs) was deliberately
-**not** launched from this development session: no GPU was available
-locally, real DPHGNN training runs are not "fast, CPU/tiny-data only"
-validation, and the task explicitly reserves that sweep for a Kaggle GPU
-session via `E2_kaggle_run.ipynb`.
+**Status: Phase 1 and Phase 2 complete (36/36 runs, seeds 42/43/44, all
+`status: "ok"`), run on Kaggle GPU via `kaggle_run_ablation.ipynb`.**
 
-Once `e2_ablation_results.json` has 12 `status: "ok"` Phase-1 records (run
-`E2_kaggle_run.ipynb` on Kaggle, or `python run_e2.py` locally with a GPU),
-re-run `02_component_ablation.ipynb` -- it will populate this section's
-figures and the notebook's `print_finding()` cell automatically, and this
-paragraph should be replaced with the real three-line H1/H2/H3 summary,
-stated honestly including any nulls.
+**H1 (removing a component hurts) is only half-confirmed -- the spatial
+branch is load-bearing, the spectral branch is not.** Disabling the
+*spatial* TAA branch (`A2 spectral_only`, i.e. spatial removed) costs
+−0.7 points on `h_lo` and a much larger **−2.6 points on `h_hi`**, both
+statistically significant. But disabling the *spectral* branch instead
+(`A1 spatial_only`, i.e. spectral removed) does not hurt at all -- on
+`h_lo` it even **significantly improves** accuracy by +0.5 points, and on
+`h_hi` the effect is indistinguishable from zero. `A4 no_sib` (disabling
+the Spectral Inductive Bias block) and `A5 clique_only` (dropping the
+star and HyperGCN expansions) are both statistically indistinguishable
+from `A0` on `h_hi`, and only marginally different on `h_lo` (`A4`:
++0.2 points, technically significant but practically negligible). Net
+reading: at this model/task scale (community detection, GraphUniverse),
+the architecture's real load-bearing component is the **spatial**
+pathway (TAA over the raw expansions); the spectral machinery (spectral
+TAA branch, SIB block, star/HyperGCN expansions beyond clique) is
+largely redundant rather than "decorative duality" being fully real as
+H1 originally framed it.
+
+**H2 (the learned gate matters) is not supported -- a legitimate null
+result.** `A3 fusion_sum` (replacing the multiplicative gate with a plain
+sum) is statistically indistinguishable from `A0` on both cells (95% CIs
+[−0.0019, +0.0005] and [−0.0060, +0.0039], both include zero). The
+paper's contribution here reduces, at this scale, to "combine both
+branches" -- the specific learned gate is not shown to add measurable
+value over naive addition. This is exactly the kind of null result the
+design anticipated as legitimate and worth reporting honestly rather than
+tuning away.
+
+**H3 (regime-dependence) is confirmed, but only for the two components
+that matter at all.** The branch-removal effects of `A1` and `A2` differ
+significantly between `h_lo` and `h_hi` (difference-of-deltas 95% CIs
+both exclude zero -- see the H3 table above), with `A2`'s effect nearly
+4x larger under strong homophily than under severe heterophily. `A3`,
+`A4`, and `A5` show no such regime-dependence (their difference-of-deltas
+CIs all include zero) -- consistent with them not being load-bearing
+components in the first place. So the regime-sensitivity the challenge
+asks about is real, but concentrated specifically in the spatial-vs-
+spectral branch choice, not spread evenly across every architectural
+piece.

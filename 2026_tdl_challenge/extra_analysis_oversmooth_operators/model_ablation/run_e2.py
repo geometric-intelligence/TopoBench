@@ -1,8 +1,7 @@
 """Runner for Experiment E2: DPHGNN component ablation.
 
 See ``README.md`` in this folder for the scientific question, design, and
-findings, and ``conf/E2_CLAUDE.md`` (repo root) for the full authoritative
-spec. This is a plain script (not a notebook) so it survives a Kaggle
+findings. This is a plain script (not a notebook) so it survives a Kaggle
 session restart: it is idempotent and resumable, appending one record to
 ``e2_ablation_results.json`` immediately after each run and skipping any
 ``(arm, cell_key, seed)`` already present on the next invocation.
@@ -11,14 +10,13 @@ Unlike Experiment E1 (which swept the *lifting*, holding the model fixed),
 E2 sweeps the *model*: a single ``hypergraph/dphgnn`` config with five
 keyword-only ablation flags added to ``DPHGNN.__init__`` (arms A1-A5),
 against ``A0`` (the unmodified, paper-faithful default). See
-``2026_tdl_challenge/extra_analysis_oversmooth_operators/E2_ablation/
-test_dphgnn_ablation.py`` for the unit-level guarantee that every flag is
-load-bearing (output differs from A0) before any of this script's runs are
-trusted.
+``test_dphgnn_ablation.py`` in this folder for the unit-level guarantee
+that every flag is load-bearing (output differs from A0) before any of
+this script's runs are trusted.
 
 Each ``(arm, cell, seed)`` job runs in its **own subprocess**, spawned by
 the orchestrator in ``run_sweep()`` (called by both the CLI's ``main()``
-and, on Kaggle, ``E2_kaggle_run.ipynb`` directly) -- same rationale as E1's
+and, on Kaggle, ``kaggle_run_ablation.ipynb`` directly) -- same rationale as E1's
 runner: a hard OOM-kill is not a catchable Python exception, so the
 orchestrator never touches CUDA itself and observes a dead job as an
 ordinary non-zero/killed exit code.
@@ -97,12 +95,11 @@ RUNS_DIR = _HERE / "runs"
 MODEL_CONFIG = "hypergraph/dphgnn"
 
 # =============================================================================
-# Experimental design -- see README.md and conf/E2_CLAUDE.md for the
-# full rationale (arms, masking strategy, hypotheses).
+# Experimental design -- see README.md for the full rationale (arms,
+# masking strategy, hypotheses).
 # =============================================================================
 
-# Verified Hydra override strings (E2_CLAUDE.md Sec. 3 asks for
-# `backbone.use_spectral=false`-style overrides; empirically, since none
+# Verified Hydra override strings. Since none
 # of the five ablation flags exist as keys in `configs/model/hypergraph/
 # dphgnn.yaml`, OmegaConf's struct mode rejects a plain `model.backbone.
 # X=value` override with "Could not override ... use '+' to add it" --
@@ -137,7 +134,7 @@ ARMS: dict[str, dict[str, Any]] = {
 }
 
 # Two official grid cells (via `build_generation_parameters`), contrasted
-# on homophily -- the axis H3 predicts will matter (E2_CLAUDE.md Sec. 3).
+# on homophily -- the axis H3 predicts will matter.
 CELL_KEYS: list[tuple[str, str, str]] = [
     ("h_lo", "d_lo", "pl_lo"),
     ("h_hi", "d_lo", "pl_lo"),
@@ -331,8 +328,7 @@ def preflight_check() -> None:
        *wrong* key name would not).
     2. On the same toy hypergraph, every non-A0 arm's forward output
        differs from A0's -- the single most important guard in this
-       whole experiment (E2_CLAUDE.md Sec. 7, risk 1: "a flag that
-       changes nothing is a silent no-op").
+       whole experiment: a flag that changes nothing is a silent no-op.
 
     This never touches the GPU (only builds the backbone directly, no
     dataset/trainer), so it is always safe to run.
@@ -647,8 +643,8 @@ def run_one(
 # =============================================================================
 
 # Generous but bounded: a single healthy run should be well under
-# ~15 minutes (E2_CLAUDE.md Sec. 7, risk 5). This is a safety valve
-# against a hung/thrashing job, not the expected runtime.
+# ~15 minutes. This is a safety valve against a hung/thrashing job, not
+# the expected runtime.
 _DEFAULT_JOB_TIMEOUT_S = 3600
 
 
@@ -787,7 +783,7 @@ def run_sweep(
     """Run the full (arm, cell, seed) sweep, resuming from the results file.
 
     Public entry point shared by the CLI (``main()``, below) and
-    ``E2_kaggle_run.ipynb``: the Kaggle notebook imports this module and
+    ``kaggle_run_ablation.ipynb``: the Kaggle notebook imports this module and
     calls ``run_sweep(phase2=...)`` directly rather than shelling out,
     while still getting the same per-job subprocess isolation (protects
     a long real-GPU sweep against an uncatchable OOM-kill, exactly as in

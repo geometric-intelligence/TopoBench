@@ -201,16 +201,16 @@ def _combinatorial_laplacian(adjacency):
 
 
 # --------------------------------------------------------------------- #
-# Structure derivation (DPHGNN_SPEC.md Sec. 2-3).
+# Structure derivation: hypergraph expansions and Laplacians.
 # --------------------------------------------------------------------- #
 
 
 def _clique_adjacency(incidence, num_nodes):
     r"""Compute the binarized clique-expansion adjacency.
 
-    Implements :math:`A_c = \mathbb{1}[H H^\top > 0] - I`
-    (DPHGNN_SPEC.md Sec. 3.1): every hyperedge becomes a clique among its
-    members, without multiplicity, diagonal set to zero.
+    Implements :math:`A_c = \mathbb{1}[H H^\top > 0] - I`: every hyperedge
+    becomes a clique among its members, without multiplicity, diagonal set
+    to zero.
 
     Parameters
     ----------
@@ -240,7 +240,7 @@ def _clique_adjacency(incidence, num_nodes):
 def _star_adjacency(incidence, num_nodes, num_edges):
     r"""Compute the star-expansion adjacency.
 
-    Builds the bipartite adjacency (DPHGNN_SPEC.md Sec. 3.2)::
+    Builds the bipartite adjacency used by the star expansion::
 
         A_* = [[0, H], [H^T, 0]]
 
@@ -282,7 +282,7 @@ def _hypergcn_adjacency(incidence, x, num_nodes, with_mediators):
     For each hyperedge with cardinality :math:`\geq 2`, connects the pair
     of members farthest apart in feature space; optionally adds mediator
     edges to the other members, weighted :math:`1 / (2|e| - 3)`
-    (DPHGNN_SPEC.md Sec. 3.3, HyperGCN "with mediators" variant).
+    (the HyperGCN "with mediators" construction).
 
     Parameters
     ----------
@@ -403,7 +403,7 @@ def _hypergraph_laplacians(incidence, dv_inv, dv_inv_sqrt, de_inv):
         \Delta_{sym}  &= I - \Delta_{HGNN} \\
         \Delta_{rw}   &= I - D_v^{-1} H D_e^{-1} H^\top
 
-    (DPHGNN_SPEC.md Sec. 2 and 6.)
+    the HGNN, symmetric-normalized, and random-walk hypergraph Laplacians.
 
     Parameters
     ----------
@@ -461,7 +461,7 @@ def _validate_expansions(expansions):
         (structurally required: the TAA neighborhood, decision D-3, and
         every other block's fallback view are both defined in terms of
         the clique expansion, so dropping it has no clean counterpart in
-        this architecture -- ``E2_ablation/CLAUDE.md`` Sec. 7, risk 3).
+        this architecture).
     """
     seen = set(expansions)
     unknown = seen - _VALID_EXPANSIONS
@@ -490,8 +490,8 @@ def _clique_or_self_edges(adjacency, num_nodes, neighborhood):
         Number of hypernodes ``n``.
     neighborhood : {"clique", "self"}
         ``"clique"`` uses the clique-expansion neighborhood plus self
-        loops (decision D-3, DPHGNN_SPEC.md Sec. 12); ``"self"``
-        degenerates the attention into a per-node cross-gate.
+        loops (decision D-3); ``"self"`` degenerates the attention into
+        a per-node cross-gate.
 
     Returns
     -------
@@ -508,14 +508,14 @@ def _clique_or_self_edges(adjacency, num_nodes, neighborhood):
 
 
 # --------------------------------------------------------------------- #
-# Sub-modules (DPHGNN_SPEC.md Sec. 4-9).
+# Sub-modules.
 # --------------------------------------------------------------------- #
 
 
 class CliqueGCN(nn.Module):
     r"""Stacked convolution over the clique expansion :math:`G_c`.
 
-    Implements Eq. (4.1) of DPHGNN_SPEC.md::
+    Implements the clique-expansion convolution::
 
         X_c = sigma[(I + D_v^{-1} A_c) X theta_c]
 
@@ -531,14 +531,13 @@ class CliqueGCN(nn.Module):
 
     Notes
     -----
-    DPHGNN_SPEC.md writes plain :math:`D_v` in Eq. (4.1), but the
-    accompanying text for Eq. (4.2) clarifies that the star-expansion
-    convolution uses the degree of :math:`G_*` (:math:`D_{v_*}`), which is
-    dimensionally required since :math:`G_*` has :math:`n+m` nodes. By
-    consistency, and to match the graph-specific degrees explicitly used
-    for the Laplacians in Sec. 4.1, this implementation normalizes by the
-    clique graph's own degree rather than the raw hypergraph incidence
-    degree.
+    The paper is not fully explicit about which degree normalizes this
+    convolution. The corresponding star-expansion convolution normalizes
+    by the degree of :math:`G_*` (:math:`D_{v_*}`), which is dimensionally
+    required since :math:`G_*` has :math:`n+m` nodes; by consistency, and
+    to match the graph-specific degrees used for the Laplacians, this
+    implementation normalizes by the clique graph's own degree rather
+    than the raw hypergraph incidence degree.
     """
 
     def __init__(self, hidden_channels, n_layers):
@@ -591,7 +590,7 @@ class CliqueGCN(nn.Module):
 class StarGCN(nn.Module):
     r"""Stacked convolution over the star expansion :math:`G_*`.
 
-    Implements Eq. (4.2) of DPHGNN_SPEC.md::
+    Implements the star-expansion convolution::
 
         X_* = sigma[(I + D_{v_*}^{-1} A_*) X_{G_*}^{(0)} theta_*]
 
@@ -657,7 +656,7 @@ class StarGCN(nn.Module):
 class HyperGCNConv(nn.Module):
     r"""Stacked convolution over the HyperGCN expansion :math:`G_{hyp}`.
 
-    Implements Eq. (4.3) of DPHGNN_SPEC.md::
+    Implements the HyperGCN-expansion convolution::
 
         X_hyp = sigma[D_hat^{-1/2} A_hat_hyp D_hat^{-1/2} X theta_hyp]
 
@@ -723,9 +722,9 @@ class HyperGCNConv(nn.Module):
 class TopologyAwareAttention(nn.Module):
     r"""Topology-Aware Attention (TAA) block.
 
-    Implements the additive GAT-style cross-attention of DPHGNN_SPEC.md
-    Sec. 5, Eqs. (5.1)-(5.3), between a query, key and value view of the
-    same node set::
+    Implements additive GAT-style cross-attention between a query, key
+    and value view of the same node set, as used by DPHGNN's
+    Topology-Aware Attention formulation::
 
         alpha(i,j) = LeakyReLU_0.2(delta^T [W q_i | W k_j])
         alpha_hat  = softmax_j(alpha(i,j))   over j in N(i)
@@ -748,8 +747,8 @@ class TopologyAwareAttention(nn.Module):
     Notes
     -----
     The neighborhood :math:`N(i)` is passed in explicitly as an
-    ``edge_index`` at call time (decision D-3, DPHGNN_SPEC.md Sec. 12):
-    the clique-expansion neighborhood plus self loops by default.
+    ``edge_index`` at call time (decision D-3): the clique-expansion
+    neighborhood plus self loops by default.
     """
 
     def __init__(self, hidden_channels, heads, dropout, negative_slope=0.2):
@@ -830,7 +829,8 @@ class TopologyAwareAttention(nn.Module):
 class SpectralInductiveBias(nn.Module):
     r"""Spectral Inductive Biases (SIB) block.
 
-    Implements Eqs. (6.1)-(6.2) of DPHGNN_SPEC.md::
+    Implements the SIB block's spectral smoothing (Saxena et al.,
+    KDD'24, Sec. 3.2)::
 
         Delta_spectral X = [(Delta_rw + Delta_sym) X | Delta_HGNN X]
         X_spectral = sigma([X | X] + lambda * Delta_spectral X)
@@ -895,7 +895,7 @@ class SpectralInductiveBias(nn.Module):
 class FeatureMixtureModule(nn.Module):
     r"""Feature Mixture Module — Eq. (2) of the paper.
 
-    Implements Eqs. (7.1)-(7.2) of DPHGNN_SPEC.md::
+    Implements the following feature mixture (Eq. 2 of the paper)::
 
         X_eqv = MLP_1(x_kappa | x_Z) (*) sigmoid(ReLU(MLP_2(X_spectral)))
         X_static = X_eqv | MLP_3(X)
@@ -907,12 +907,12 @@ class FeatureMixtureModule(nn.Module):
     fusion : {"gate", "sum"}, optional
         How ``MLP_1(x_kappa | x_Z)`` is combined with the SIB-derived gate
         in Eq. (2). ``"gate"`` (default) reproduces the paper's Hadamard
-        product. ``"sum"`` is an Experiment-E2 ablation flag (arm A3,
-        H2 in ``E2_ablation/CLAUDE.md``): it replaces the product with
-        elementwise addition, testing whether the *learned multiplicative
-        gate* is load-bearing or whether "use both branches" already
-        explains the paper's gain. Validity is enforced by the caller
-        (``DPHGNN.__init__``). Defaults to ``"gate"``.
+        product. ``"sum"`` is a component-ablation flag (arm A3,
+        hypothesis: does the *learned multiplicative gate* matter, or does
+        "use both branches" already explain the paper's gain?): it
+        replaces the product with elementwise addition. Validity is
+        enforced by the caller (``DPHGNN.__init__``). Defaults to
+        ``"gate"``.
 
     Notes
     -----
@@ -976,7 +976,7 @@ class FeatureMixtureModule(nn.Module):
 class DynamicFeatureFusion(nn.Module):
     r"""Dynamic Feature Fusion (DFF) block — Eq. (3) of the paper.
 
-    Implements Eq. (8.1) of DPHGNN_SPEC.md::
+    Implements the following dynamic fusion (Eq. 3 of the paper)::
 
         M_V  = H^T D_v^{-1/2} X_static             # V -> E
         M_S  = D_e^{-1} phi_S{A_* X_{G_*}}          # S -> E
@@ -993,12 +993,13 @@ class DynamicFeatureFusion(nn.Module):
     :math:`X_{G_*}` in the ``S -> E`` term is the *output* of the star
     convolution, not the initial star features (decision D-6).
 
-    Experiment-E2 ablation (arm A5, ``expansions`` without ``"star"`` in
+    Component-ablation (arm A5, ``expansions`` without ``"star"`` in
     ``DPHGNN``): when ``star_adjacency`` is ``None``, the ``S -> E`` term
     has no supernode representation to draw on and is dropped entirely,
     so :math:`X_E = M_V` alone. This is a genuine change to the fused
-    quantity, not a zero-masked approximation of it (``E2_ablation/
-    CLAUDE.md`` Sec. 2.1: "A5 is not maskable").
+    quantity, not a zero-masked approximation of it: dropping an
+    expansion changes what is fused, so it has no clean output-masking
+    counterpart (unlike the other ablation flags).
     """
 
     def __init__(self, hidden_channels):
@@ -1076,7 +1077,7 @@ class DynamicFeatureFusion(nn.Module):
 class HypergraphOutputLayer(nn.Module):
     r"""Output hypergraph convolution — last line of Algorithm 1.
 
-    Implements Eq. (9.1) of DPHGNN_SPEC.md::
+    Implements the following UniGCN-style output convolution::
 
         X_out = sigma(D_v^{-1/2} H D_e_bar^{-1/2} D_e^{-1} H^T D_v^{-1/2}
                       X_dp Theta_out)
@@ -1163,7 +1164,7 @@ class DPHGNN(nn.Module):
     Saxena, Ghatak, Kolla, Mukherjee, Chakraborty, KDD'24,
     arXiv:2405.16616. Combines three hypergraph expansions (clique, star,
     HyperGCN), topology-aware attention, spectral inductive biases and
-    dynamic feature fusion, following DPHGNN_SPEC.md Sec. 10.
+    dynamic feature fusion, following the paper's Algorithm 1.
 
     Parameters
     ----------
@@ -1196,42 +1197,43 @@ class DPHGNN(nn.Module):
         Neighborhood used by the TAA blocks (decision D-3). Defaults to
         ``"clique"``.
     use_spectral : bool, optional
-        Experiment-E2 ablation flag (arm A1 ``spatial_only``, H1 in
-        ``E2_ablation/CLAUDE.md``). If ``False``, the spectral TAA-branch
-        output (Eq. 5.4, :math:`\hat{x}_Z`) is zeroed before the Feature
-        Mixture Module fuses it (Eq. 7.1). The default (``True``)
-        reproduces the published dual spatial/spectral architecture.
+        Component-ablation flag (arm A1 ``spatial_only``). If ``False``,
+        the spectral TAA-branch output (:math:`\hat{x}_Z`) is zeroed
+        before the Feature Mixture Module fuses it (Eq. 2). The default
+        (``True``) reproduces the published dual spatial/spectral
+        architecture.
     use_spatial : bool, optional
-        Experiment-E2 ablation flag (arm A2 ``spectral_only``, H1). If
-        ``False``, the spatial TAA-branch output (Eq. 5.3,
-        :math:`\hat{x}_\kappa`) is zeroed before fusion (Eq. 7.1). The
-        default (``True``) reproduces the published architecture.
+        Component-ablation flag (arm A2 ``spectral_only``). If
+        ``False``, the spatial TAA-branch output (:math:`\hat{x}_\kappa`)
+        is zeroed before fusion (Eq. 2). The default (``True``)
+        reproduces the published architecture.
     use_sib : bool, optional
-        Experiment-E2 ablation flag (arm A4 ``no_sib``, H1). If
-        ``False``, the Spectral Inductive Bias block's Laplacian
-        smoothing term (Eq. 6.1) is disabled: Eq. 6.2 collapses to its
-        :math:`\lambda \to 0` limit, :math:`X_{spectral} = \sigma([X|X])`
-        -- the residual alone, at the same :math:`2d` shape so the
-        downstream :math:`MLP_2` (Eq. 7.1) is unaffected. The default
-        (``True``) reproduces the published architecture.
+        Component-ablation flag (arm A4 ``no_sib``). If ``False``, the
+        Spectral Inductive Bias block's Laplacian smoothing term is
+        disabled: the SIB output collapses to its :math:`\lambda \to 0`
+        limit, :math:`X_{spectral} = \sigma([X|X])` -- the residual
+        alone, at the same :math:`2d` shape so the downstream
+        :math:`MLP_2` (Eq. 2) is unaffected. The default (``True``)
+        reproduces the published architecture.
     fusion : {"gate", "sum"}, optional
-        Experiment-E2 ablation flag (arm A3 ``fusion_sum``, **H2** --
-        the interesting hypothesis in ``E2_ablation/CLAUDE.md``). Passed
-        to :class:`FeatureMixtureModule`; controls whether Eq. (2)'s
-        second factor is combined with :math:`MLP_1`'s output by a
+        Component-ablation flag (arm A3 ``fusion_sum`` -- tests whether
+        the learned multiplicative gate is load-bearing, or whether
+        "use both branches" alone already explains the paper's gain).
+        Passed to :class:`FeatureMixtureModule`; controls whether Eq.
+        (2)'s second factor is combined with :math:`MLP_1`'s output by a
         Hadamard product (``"gate"``, default, paper-faithful) or by
         elementwise addition (``"sum"``). Raises ``ValueError`` if not
         one of ``{"gate", "sum"}``.
     expansions : tuple of str, optional
-        Experiment-E2 ablation flag (arm A5 ``clique_only``, H1). Which
-        of the three hypergraph expansions (Sec. 3.1) feed the model;
+        Component-ablation flag (arm A5 ``clique_only``). Which
+        of the three hypergraph expansions feed the model;
         must be a subset of ``{"clique", "star", "hypergcn"}`` that
         always includes ``"clique"`` (see ``_validate_expansions``).
         When ``"star"`` is absent, the star-conv branch is skipped
-        entirely: the TAA query view (:math:`X_*^V`, Eq. 4.4) and its
+        entirely: the TAA query view (:math:`X_*^V`) and its
         Laplacian-smoothed counterpart (:math:`Y_*^V`) both fall back to
         the clique-conv view, and the Dynamic Feature Fusion ``S -> E``
-        term (Eq. 8.1) is dropped, leaving :math:`X_E = M_V` alone. When
+        term is dropped, leaving :math:`X_E = M_V` alone. When
         ``"hypergcn"`` is absent, the TAA value view
         (:math:`X_{hyp}`/:math:`Y_{hyp}`) likewise falls back to the
         clique-conv view. Defaults to
@@ -1250,25 +1252,23 @@ class DPHGNN(nn.Module):
     D-8): a single ``dropout`` hyperparameter is shared across blocks.
 
     ``use_spectral``/``use_spatial``/``use_sib``/``fusion``/``expansions``
-    are Experiment-E2 component-ablation flags (see ``E2_ablation/
-    CLAUDE.md`` in ``2026_tdl_challenge/extra_analysis_oversmooth_operators/``
-    for the full study). They default to the values that reproduce the
-    published architecture exactly, and every submodule stays registered
-    regardless of the flags (masking, not deletion): parameter count
-    (``n_params``) is therefore identical across every ablation arm, and
-    a reader must not infer that a masked arm is a smaller model -- some
-    of its parameters simply receive no gradient. One documented
-    consequence of masking rather than deleting: ``use_spectral=False``
-    / ``use_spatial=False`` zero the corresponding TAA branch's *output*,
-    not its contribution to :math:`MLP_1` in Eq. (7.1) -- because
-    :math:`MLP_1` has a learned bias and shares weights across both
-    halves of its concatenated input, a small bias-driven signal from the
-    "disabled" branch can still reach :math:`X_{eqv}`. This differs from
-    (and is more precise than) the generic ``sigma(W . x) (*) x``
-    gate-interaction example in ``E2_ablation/CLAUDE.md`` Sec. 2.1: in
-    this implementation the multiplicative gate is derived from SIB
-    (:math:`X_{spectral}`), not from either TAA branch, so masking a TAA
-    branch does not halve the gate -- only the bias caveat above applies.
+    are component-ablation flags used by a supplementary study isolating
+    which architectural piece of DPHGNN is load-bearing. They default to
+    the values that reproduce the published architecture exactly, and
+    every submodule stays registered regardless of the flags (masking,
+    not deletion): parameter count (``n_params``) is therefore identical
+    across every ablation arm, and a reader must not infer that a masked
+    arm is a smaller model -- some of its parameters simply receive no
+    gradient. One documented consequence of masking rather than deleting:
+    ``use_spectral=False`` / ``use_spatial=False`` zero the corresponding
+    TAA branch's *output*, not its contribution to :math:`MLP_1` in Eq.
+    (2) -- because :math:`MLP_1` has a learned bias and shares weights
+    across both halves of its concatenated input, a small bias-driven
+    signal from the "disabled" branch can still reach :math:`X_{eqv}`.
+    Note also that, in this implementation, the multiplicative gate in
+    Eq. (2) is derived from SIB (:math:`X_{spectral}`), not from either
+    TAA branch, so masking a TAA branch does not halve the gate -- only
+    the bias caveat above applies.
     """
 
     def __init__(

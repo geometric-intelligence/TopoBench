@@ -1,19 +1,16 @@
-# E3 — Feature-signal sweep
+# Experimentation 3 — Feature-signal sweep
 
 Supplementary analysis for the 2026 TDL Challenge, Track 2 (team: *Oversmooth
 operators*, model: DPHGNN, arXiv:2405.16616). This file is the
 human-readable summary: question, protocol, and (once the Kaggle GPU sweep
 has run) findings.
 
-**Status: mechanics validated locally, GPU sweep not yet run.** Every
-acceptance test, the preprocessing-cache check, and the empirical
+**Status: Phase 1 and Phase 2 complete (30/30 runs, seeds 42/43/44, all
+`status: "ok"`), run on Kaggle GPU via `kaggle_run_feature_signal.ipynb`.**
+Every acceptance test, the preprocessing-cache check, and the empirical
 feature-signal diagnostic below were executed for real on this machine and
-passed. The actual Phase-1 training sweep (10 runs: 5 `center_variance`
-points x 2 models x seed 42) is reserved for `E3_kaggle_run.ipynb` on
-Kaggle GPU — it was deliberately **not** run locally (5 universe
-regenerations x 2 models is real GPU + preprocessing cost, and this repo's
-`configs/trainer/default.yaml` hardcodes `accelerator: gpu` with no CPU
-fallback). See "Reproducing" below.
+passed *before* the real sweep started. See "Results" and "Finding" below
+for the outcome.
 
 ## Question
 
@@ -36,8 +33,8 @@ A flat curve (no crossover) is a legitimate and interesting null result.
 
 ## Protocol
 
-**Swept:** `center_variance`, a **universe-level** parameter (`CLAUDE.md`
-§2). Changing it regenerates the whole latent universe — each point is a
+**Swept:** `center_variance`, a **universe-level** parameter. Changing it
+regenerates the whole latent universe — each point is a
 genuinely different dataset, not a resample.
 
 | Point | `center_variance` | Expected regime |
@@ -74,7 +71,7 @@ official structural axes live under `family_parameters` — a different path
 from anything used in E1 or the official notebook. Guessing this path is
 dangerous: a wrong path **silently composes the default value** instead of
 failing, producing five identical datasets and a flat curve that looks like
-a real null result (`CLAUDE.md` §3).
+a real null result.
 
 `run_e3.py` never hand-writes the override string. It reuses
 `utils.generation_parameters_to_hydra_overrides()`, which walks the nested
@@ -89,7 +86,7 @@ dataset.loader.parameters.generation_parameters.universe_parameters.center_varia
 verified empirically for all 5 sweep points by `preflight_check()`'s
 acceptance test A (below) — never assumed.
 
-## Acceptance tests (`CLAUDE.md` §3, blocking — run for real, locally)
+## Acceptance tests (blocking — run for real, locally)
 
 Both live in `run_e3.py` as plain functions (`_acceptance_test_a`,
 `_acceptance_test_b`, `_verify_cache_dirs_distinct`, all called from
@@ -129,7 +126,7 @@ Strictly monotonically increasing across all 5 points (not just the
 `fs_00`/`fs_04` pair the test formally requires) — a ~270x separation
 between the extremes. **Test A and test B both passed.**
 
-**Preprocessing-cache-directory check (`CLAUDE.md` §4, §7 risk 2):** a
+**Preprocessing-cache-directory check:** a
 shared raw-data cache across points would silently reuse `fs_00`'s data for
 every point — the data-level analogue of the test-B failure mode, verified
 independently by listing the `GraphUniverseDatasetLoader` raw directory for
@@ -149,7 +146,7 @@ depends on the full generation-parameters dict (including
 is shared but the leaf hash directory is not — confirmed by direct
 inspection, not inferred.
 
-## Step 0b — empirical feature-signal diagnostic (`CLAUDE.md` §3, succeeded)
+## Step 0b — empirical feature-signal diagnostic (succeeded)
 
 `graph_universe.GraphSample.calculate_feature_signal()` trains a
 Random-Forest classifier on node features alone and reports macro-F1
@@ -163,8 +160,8 @@ builds a `GraphFamilyGenerator`, calls `generate_family()`, converts the
 result to PyG `Data` via `to_pyg_graphs()`, and discards the
 `GraphFamilyGenerator`/`GraphSample` objects — nothing survives past
 `download()` except the collated PyG tensors. Refactoring the loader to
-smuggle them out was ruled out per `CLAUDE.md` §3 Step 0b ("do not refactor
-the loader to reach them").
+smuggle them out was ruled out ("do not refactor the loader to reach
+them").
 
 Instead, `compute_empirical_feature_signal_all_points()` in `run_e3.py`
 calls `graph_universe`'s own public API a **second time**, directly, with
@@ -194,7 +191,7 @@ only explains ~29% macro-F1 at the official operating point, confirming the
 "features are weak by construction" premise in section 1 quantitatively,
 independent of any trained TDL/GNN model.
 
-## Dataset generation cost (`CLAUDE.md` §4, §7 risk 3)
+## Dataset generation cost
 
 Timed the first full-scale (`n_graphs=1000`, official
 `STANDARD_GENERATION_PARAMETERS` size) universe generation +
@@ -257,7 +254,7 @@ matching the official challenge configuration and E1's reference arm.
 
 ## Known risks
 
-1. **Silent override failure** (`CLAUDE.md` §3). Blocking; acceptance
+1. **Silent override failure.** Blocking; acceptance
    tests A and B, both passed locally (see above) — re-verified
    automatically by `preflight_check()` before every real sweep.
 2. **Shared preprocessing cache** across the 5 points. Verified distinct
@@ -303,7 +300,7 @@ test, as designed.
 ## Reproducing
 
 ```bash
-cd 2026_tdl_challenge/extra_analysis_oversmooth_operators/E3_feature_signal
+cd 2026_tdl_challenge/extra_analysis_oversmooth_operators/feature_signal
 
 # Sanity check first — see "Local testing" above. Runs preflight (tests
 # A/B + cache-dir check + Step 0b) followed by 10 tiny CPU jobs.
@@ -311,7 +308,7 @@ python run_e3.py --smoke-test --cpu
 
 # Phase 1 — 10 runs, seed 42 only. GPU required (no --cpu). Resumable:
 # safe to kill and re-run, already-present (point, model, seed) triples
-# are skipped. Reserved for Kaggle — see E3_kaggle_run.ipynb.
+# are skipped. Reserved for Kaggle — see kaggle_run_feature_signal.ipynb.
 python run_e3.py
 
 # Phase 2 — once Phase 1 is fully green, adds seeds 43/44 (30 runs total).
@@ -319,7 +316,7 @@ python run_e3.py --phase2
 
 # Analysis notebook only reads e3_feature_signal_results.json and
 # feature_signal_empirical.json, and plots — never trains.
-jupyter nbconvert --to notebook --execute --inplace 03_feature_signal.ipynb
+jupyter nbconvert --to notebook --execute --inplace feature_signal.ipynb
 ```
 
 `e3_feature_signal_results.json` is written incrementally (one record
@@ -328,37 +325,82 @@ loses at most the in-flight run. Per-run checkpoints/logs land in `runs/`,
 which is git-ignored (large, regenerable, not part of the reported
 results).
 
-For the actual GPU sweep, open `E3_kaggle_run.ipynb` on Kaggle (GPU
+For the actual GPU sweep, open `kaggle_run_feature_signal.ipynb` on Kaggle (GPU
 runtime): it runs the same acceptance tests first, then Phase 1 (and
 optionally Phase 2), then the analysis inline.
 
+## Results
+
+Full 30-run sweep (5 `center_variance` points x 2 models x seeds
+42/43/44), test accuracy, mean over the 3 seeds:
+
+| Point | `center_variance` | `feature_signal` | DPHGNN | GCN | Δ (DPHGNN − GCN) | 95% CI on Δ |
+|---|---|---|---|---|---|---|
+| `fs_00` | 0.02 | 0.139 | 0.074 | 0.071 | +0.003 | [+0.001, +0.005] |
+| `fs_01` | 0.05 | 0.142 | 0.096 | 0.099 | −0.002 | [−0.008, +0.004] |
+| `fs_02` (**official**) | 0.20 | 0.293 | 0.407 | 0.376 | **+0.031** | **[+0.027, +0.035]** |
+| `fs_03` | 0.80 | 0.932 | 0.969 | 0.969 | +0.000 | [−0.001, +0.002] |
+| `fs_04` | 2.00 | 1.000 | 0.999 | 0.999 | +0.000 | [−0.000, +0.000] |
+
+Spearman ρ(feature_signal, Δ) = **−0.20** (p = 0.75) — no significant
+monotonic trend across the full sweep. Crossover interval (range of x
+where the CI on Δ contains zero): **[0.142, 1.000]**, reported as an
+interval per the Statistics section, not a point estimate.
+
 ## Figures
 
+![Feature-signal crossover: accuracy and Δ = DPHGNN − GCN vs. feature signal, official setting marked](figures/fig5_feature_signal_crossover.png)
+
 `figures/fig5_feature_signal_crossover.png` — two stacked panels sharing
-the x axis (empirical `feature_signal` if Step 0b succeeded — it did, see
-above — else `center_variance` on a log scale), official setting marked
-with a labelled vertical line in both panels.
+the x axis (empirical `feature_signal`, Step 0b succeeded — see above),
+official setting (`fs_02`) marked with a labelled vertical line in both
+panels.
 
 - **Top panel.** Accuracy vs. x, one line per model (DPHGNN, GCN), plus a
   dotted grey `y = feature_signal` reference line ("features only, no
-  graph") — any model below it is being actively hurt by the graph. Phase 2
-  adds bootstrap CI bands.
+  graph") — any model below it is being actively hurt by the graph.
 - **Bottom panel.** `Δ = DPHGNN - GCN`, horizontal line at 0, shaded where
-  `Δ > 0`. The x location where Δ crosses zero is the headline number
-  (Phase 2 only, reported as an interval — see Statistics).
+  `Δ > 0`. The bump is concentrated almost entirely around the official
+  setting — see Finding below.
 
-Generated by `03_feature_signal.ipynb`; not yet populated with real
-training data (Phase 1 has not run on Kaggle GPU yet — see Status at the
-top of this file).
+Generated by `feature_signal.ipynb`, executed in place against the real
+`e3_feature_signal_results.json`.
 
 ## Finding
 
-**Status: pending.** Phase 1 has not yet run on Kaggle GPU. All mechanics
-(acceptance tests A/B, cache-directory distinctness, Step 0b empirical
-`feature_signal`, `--smoke-test --cpu` end-to-end run) are validated and
-green locally — see the sections above for concrete numbers. Once
-`E3_kaggle_run.ipynb` produces the 10 Phase-1 records, this section should
-report: the 10 accuracies and Δ per point (table), whether H1's crossover
-is visible even descriptively at n=1, and where the official setting
-(`fs_02`, `feature_signal ≈ 0.29`) falls relative to it — remembering the
-n=1 caveat above before quoting anything numerically.
+**H2 is supported; H1 (a clean monotonic crossover) is not.** The
+DPHGNN − GCN gap is not a smoothly decaying curve — it is a **bump**
+concentrated almost entirely at the official operating point:
+
+1. At `fs_02` (`center_variance=0.2`, the official challenge setting),
+   DPHGNN beats GCN by **+3.1 accuracy points** (95% CI [+2.7, +3.5],
+   comfortably excludes zero) — by far the largest and most confident gap
+   in the sweep. **This is the headline result: the official challenge
+   grid sits exactly where DPHGNN's structural advantage is largest and
+   most statistically robust**, confirming H2's premise that the
+   challenge is conducted in a regime that structurally favours
+   topology-exploiting models.
+2. At `fs_00` (features ≈ pure noise), there is a tiny but real advantage
+   (+0.3 points, CI excludes zero) — both models are near the
+   ~5% chance floor for 20 latent communities, so this is statistically
+   detectable but practically marginal.
+3. At `fs_01`, the gap is not distinguishable from zero (CI includes
+   zero, point estimate even slightly negative).
+4. At `fs_03` and `fs_04`, both models saturate near 97-100% accuracy —
+   the **ceiling effect flagged in Known risks #4** dominates: Δ → 0
+   because there is no headroom left for either model to be better, not
+   because topology "stopped mattering". `feature_signal` at `fs_04` is
+   already `1.000` (features alone are perfectly separating), so this is
+   the expected, uninformative regime, not evidence against H1.
+
+Net reading: the data do not support a clean H1-style crossover (Spearman
+ρ = −0.20, p = 0.75 — no significant monotonic trend, and the raw curve
+is non-monotonic: it rises from `fs_00` to a peak at `fs_02`, then
+collapses under the ceiling effect). What the data *do* establish
+robustly is H2: **the official `center_variance=0.2` setting is the one
+point in this sweep where DPHGNN's advantage over a plain GCN is both
+largest and statistically unambiguous.** Below it, both models are too
+close to the noise floor for the structural advantage to be practically
+useful; above it, both models saturate before any structural advantage
+can be observed. The interesting region is narrow, and the official grid
+happens to sit inside it.

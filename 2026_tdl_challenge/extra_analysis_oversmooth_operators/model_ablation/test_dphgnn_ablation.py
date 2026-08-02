@@ -4,24 +4,22 @@ Lives inside the experiment folder (not under the repo's ``test/`` tree),
 mirroring how ``lifting_confounding_study`` (Experiment E1) is a
 self-contained folder with no files under ``test/``. Run directly with::
 
-    pytest 2026_tdl_challenge/extra_analysis_oversmooth_operators/E2_ablation/test_dphgnn_ablation.py -v
+    pytest 2026_tdl_challenge/extra_analysis_oversmooth_operators/model_ablation/test_dphgnn_ablation.py -v
 
-See ``conf/E2_CLAUDE.md`` for the experimental design. This file has two
-parts:
+See ``README.md`` in this folder for the experimental design. This file has
+two parts:
 
 1. ``TestDefaultPathRegression`` — locks the *default* forward path to the
    values it produced **before any ablation flag existed** (generated once,
    from the pre-flag code, with a fixed seed). If this test ever fails after
    a flag is added, the flag was implemented wrong: with every flag at its
    default, ``DPHGNN.forward`` must execute exactly the same operations, in
-   the same order, with the same shapes, as before this session (E2_CLAUDE.md
-   Sec. 0).
+   the same order, with the same shapes, as before any flag was added.
 2. ``TestAblationArms`` — one test per arm (A0-A5) asserting the model
    instantiates and forwards without error, the output shape is unchanged,
    the output *differs* from A0 on the same input (a flag that changes
-   nothing is a silent no-op — the highest-probability failure mode per
-   E2_CLAUDE.md Sec. 7), and invalid ``fusion``/``expansions`` values raise
-   ``ValueError``.
+   nothing is a silent no-op — the highest-probability failure mode), and
+   invalid ``fusion``/``expansions`` values raise ``ValueError``.
 """
 
 import pytest
@@ -53,7 +51,7 @@ def _toy_features(seed=0):
 
 
 # --------------------------------------------------------------------- #
-# Step 1 — regression test locking the default path (E2_CLAUDE.md Sec. 4).
+# Step 1 — regression test locking the default path.
 #
 # Reference values below were generated from the pre-flag code with:
 #
@@ -212,11 +210,11 @@ class TestDefaultPathRegression:
 
 
 # --------------------------------------------------------------------- #
-# Step 3 — per-arm unit tests (E2_CLAUDE.md Sec. 2, Sec. 4).
+# Step 3 — per-arm unit tests.
 # --------------------------------------------------------------------- #
 
 # Exact override -> kwarg mapping for each arm, mirroring the Hydra CLI
-# overrides used by run_e2.py (E2_CLAUDE.md Sec. 2, Sec. 3).
+# overrides used by run_e2.py.
 ARM_KWARGS = {
     "A1_spatial_only": {"use_spectral": False},
     "A2_spectral_only": {"use_spatial": False},
@@ -258,9 +256,8 @@ class TestAblationArms:
 
     @pytest.mark.parametrize("arm", list(ARM_KWARGS))
     def test_arm_output_differs_from_a0(self, arm):
-        """A flag that changes nothing is a silent no-op (E2_CLAUDE.md
-        Sec. 7, risk 1) -- the single most important assertion in this
-        file.
+        """A flag that changes nothing is a silent no-op -- the single
+        most important assertion in this file.
         """
         x0_a0, x1_a0 = self._forward()
         x0_arm, x1_arm = self._forward(**ARM_KWARGS[arm])
@@ -271,9 +268,9 @@ class TestAblationArms:
 
     @pytest.mark.parametrize("arm", list(ARM_KWARGS))
     def test_arm_n_params_equals_a0(self, arm):
-        """Masking changes behaviour, not parameter count (E2_CLAUDE.md
-        Sec. 2.1): every arm keeps the same submodules registered, so
-        some parameters become dead rather than absent.
+        """Masking changes behaviour, not parameter count: every arm
+        keeps the same submodules registered, so some parameters become
+        dead rather than absent.
         """
         torch.manual_seed(1234)
         model_a0 = DPHGNN(hidden_channels=8)
@@ -321,7 +318,7 @@ class TestAblationArms:
     def test_expansions_without_clique_raises_value_error(self):
         """Dropping the clique expansion has no clean counterpart in this
         architecture (it is structurally required by TAA's neighborhood,
-        decision D-3) and must raise, per E2_CLAUDE.md Sec. 7 risk 3.
+        decision D-3) and must raise.
         """
         with pytest.raises(ValueError):
             DPHGNN(hidden_channels=8, expansions=("star", "hypergcn"))

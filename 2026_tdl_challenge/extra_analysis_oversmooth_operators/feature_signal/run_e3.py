@@ -1,4 +1,4 @@
-"""Runner for the E3 feature-signal sweep.
+"""Runner for the exp3 feature-signal sweep.
 
 See ``README.md`` in this folder for the scientific question, design, and
 findings. This is a plain script (not a notebook) so it survives a Kaggle
@@ -13,8 +13,8 @@ the orchestrator in ``main()``, mirroring
 exception, so the orchestrator itself never touches CUDA and observes a
 dying job only as a non-zero/killed subprocess exit code.
 
-``center_variance`` is a **universe-level** parameter (``CLAUDE.md`` §2-3):
-changing it regenerates the whole latent universe, not just a resample, so
+``center_variance`` is a **universe-level** parameter: changing it
+regenerates the whole latent universe, not just a resample, so
 each of the 5 sweep points pays its own dataset-generation cost and gets its
 own preprocessing cache directory (verified in ``preflight_check()``).
 
@@ -96,7 +96,7 @@ FEATURE_SIGNAL_CACHE_PATH = _HERE / "feature_signal_empirical.json"
 RUNS_DIR = _HERE / "runs"
 
 # =============================================================================
-# Experimental design — see README.md and CLAUDE.md §2 for the full rationale
+# Experimental design — see README.md for the full rationale
 # =============================================================================
 
 # 5 points, log-ish spacing around the official center_variance=0.2.
@@ -110,7 +110,7 @@ CENTER_VARIANCE_POINTS: dict[str, float] = {
 POINT_ORDER: tuple[str, ...] = tuple(CENTER_VARIANCE_POINTS)
 OFFICIAL_POINT = "fs_02"
 
-# Fixed structural cell (CLAUDE.md §2): mid-homophily, sparse, heavy-tailed.
+# Fixed structural cell: mid-homophily, sparse, heavy-tailed.
 CELL_HOMOPHILY, CELL_AVG_DEGREE, CELL_POWER_LAW = "h_mid", "d_lo", "pl_lo"
 CELL_KEY = f"{CELL_HOMOPHILY}__{CELL_AVG_DEGREE}__{CELL_POWER_LAW}"
 
@@ -120,7 +120,7 @@ MODELS: tuple[str, ...] = ("hypergraph/dphgnn", "graph/gcn")
 PHASE1_SEEDS: tuple[int, ...] = (42,)
 
 # Step 0b: number of graphs probed per point for the empirical feature_signal
-# (community_signals diagnostic, CLAUDE.md §3 Step 0b).
+# (community_signals diagnostic).
 _FEATURE_SIGNAL_N_GRAPHS = 30
 _FEATURE_SIGNAL_RANDOM_STATE = 42
 
@@ -141,8 +141,8 @@ _SMOKE_TEST_GP_PATCH: dict[str, Any] = {
 def build_e3_generation_parameters(center_variance: float) -> dict[str, Any]:
     """Build the E3 generation-parameters dict for one sweep point.
 
-    Starts from the fixed structural cell (``h_mid__d_lo__pl_lo``, CLAUDE.md
-    §2) via ``utils.build_generation_parameters``, then overrides only
+    Starts from the fixed structural cell (``h_mid__d_lo__pl_lo``) via
+    ``utils.build_generation_parameters``, then overrides only
     ``universe_parameters.center_variance``. Everything else — including
     ``cluster_variance`` — stays at ``STANDARD_GENERATION_PARAMETERS``.
 
@@ -186,8 +186,8 @@ def _compose_cfg(
     ``CHALLENGE_GRID_HYDRA_OVERRIDES``, same ``MAX_EPOCHS``, same
     ``feature_encoder.out_channels`` patch) so real runs stay comparable to
     the official ``results.json``. The ``center_variance`` override is
-    produced by ``utils.generation_parameters_to_hydra_overrides`` — see
-    ``CLAUDE.md`` §3 for why this must never be hand-written.
+    produced by ``utils.generation_parameters_to_hydra_overrides`` and must
+    never be hand-written.
 
     Parameters
     ----------
@@ -263,8 +263,8 @@ def _compose_cfg(
 
 
 # =============================================================================
-# Preflight — center_variance override acceptance tests (CLAUDE.md §3,
-# blocking: must pass before the sweep starts)
+# Preflight — center_variance override acceptance tests (blocking: must
+# pass before the sweep starts)
 # =============================================================================
 
 
@@ -274,8 +274,8 @@ def _between_within_variance_ratio(x: np.ndarray, y: np.ndarray) -> float:
     A simple multivariate analogue of a one-way ANOVA F-ratio numerator vs.
     denominator: ``sum_c n_c * ||mean_c - mean||^2`` over
     ``sum_c sum_{i in c} ||x_i - mean_c||^2``, both normalized by the total
-    sample count. Used by acceptance test B (``CLAUDE.md`` §3) to verify
-    that ``center_variance`` overrides actually reach the feature generator.
+    sample count. Used by acceptance test B to verify that
+    ``center_variance`` overrides actually reach the feature generator.
 
     Parameters
     ----------
@@ -338,7 +338,7 @@ def _acceptance_test_a() -> None:
     AssertionError
         If any composed config's resolved ``center_variance`` does not match
         the intended sweep-point value — the override silently composed the
-        default instead (``CLAUDE.md`` §3).
+        default instead.
     """
     print("[preflight] test A: center_variance Hydra overrides...", flush=True)
     with tempfile.TemporaryDirectory(prefix="e3_preflight_a_") as tmp:
@@ -357,8 +357,7 @@ def _acceptance_test_a() -> None:
             assert resolved == cv, (
                 f"[preflight] test A FAILED: point={point} expected "
                 f"center_variance={cv}, composed config resolved to "
-                f"{resolved}. The Hydra override did not take effect — see "
-                "CLAUDE.md §3."
+                f"{resolved}. The Hydra override did not take effect."
             )
             print(f"    {point}: center_variance={resolved} OK", flush=True)
     print("[preflight] test A PASSED.", flush=True)
@@ -371,7 +370,7 @@ def _acceptance_test_b() -> dict[str, float]:
     between/within-class variance ratio of ``data.x`` (pooled over the
     training split). The ratio must increase monotonically with
     ``center_variance`` — identical statistics across points would mean the
-    override did not reach the feature generator (``CLAUDE.md`` §3).
+    override did not reach the feature generator.
 
     Returns
     -------
@@ -456,7 +455,7 @@ def _verify_cache_dirs_distinct() -> None:
 
     A shared preprocessing/raw-data cache across points would silently
     reuse ``fs_00``'s data for every point — the data-level analogue of the
-    acceptance-test-B failure mode (``CLAUDE.md`` §4, §7 risk 2). This is
+    acceptance-test-B failure mode. This is
     checked independently of test B by directly listing
     ``GraphUniverseDatasetLoader``'s raw directory for each point and
     asserting 5 distinct paths, all actually populated with a ``data.pt``.
@@ -528,7 +527,7 @@ def compute_empirical_feature_signal_all_points(
 ) -> dict[str, float | None]:
     """Compute the empirical ``feature_signal`` diagnostic for all 5 points.
 
-    Implements ``CLAUDE.md`` §3 Step 0b: ``graph_universe.GraphSample``
+    Implements the Step 0b empirical diagnostic: ``graph_universe.GraphSample``
     exposes ``calculate_feature_signal()`` (Random-Forest macro-F1 of a
     classifier trained on node features alone, predicting the community
     label). Those objects are not reachable through the TopoBench loader
@@ -769,7 +768,7 @@ def run_one(
     Returns
     -------
     dict
-        A flat record following the schema in ``CLAUDE.md`` §4; always
+        A flat record following this experiment's results schema; always
         contains at least ``point``, ``model``, ``seed``, and ``status``.
     """
     center_variance = CENTER_VARIANCE_POINTS[point]
