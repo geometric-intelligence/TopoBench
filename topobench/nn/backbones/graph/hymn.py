@@ -8,9 +8,11 @@ paper, and the authors' reference implementation [2].
 References
 ----------
 [1] J. Southern et al., "Balancing Efficiency and Expressiveness: Subgraph
-    GNNs with Walk-Based Centrality," ICML 2025.
-[2] https://github.com/jks17/HyMN (``graphgps/network/colour_gnn.py`` and
-    ``graphgps/transform/posenc_stats.py``).
+    GNNs with Walk-Based Centrality," ICML 2025,
+    https://proceedings.mlr.press/v267/southern25a.html.
+[2] J. Southern et al., HyMN reference implementation, revision
+    ``adde55268307ff69527375757ec31a146d59ccae``,
+    https://github.com/jks17/HyMN.
 """
 
 from __future__ import annotations
@@ -21,6 +23,13 @@ from collections import OrderedDict
 import torch
 from torch import nn
 from torch_geometric.nn import GINConv
+
+# The reference implementation computes CSEs once in the dataset transform.
+# TopoBench constructs a fresh backbone for every benchmark run, so a bounded
+# process cache preserves that preprocessing behavior across model instances.
+_GLOBAL_STATISTICS_CACHE: OrderedDict[
+    tuple[int, int, int, bytes], tuple[tuple[int, ...], torch.Tensor]
+] = OrderedDict()
 
 
 class HyMN(nn.Module):
@@ -76,6 +85,10 @@ class HyMN(nn.Module):
         in the reference configurations.
     cache_size : int, optional
         Maximum number of per-graph CSE computations retained by a model.
+    global_cache_size : int, optional
+        Maximum number of CSE computations shared across model instances in a
+        process.  This mirrors the reference implementation's dataset-level
+        preprocessing when TopoBench creates a model per benchmark run.
     **kwargs : dict, optional
         Extra configuration values accepted for TopoBench compatibility.
 
@@ -83,6 +96,22 @@ class HyMN(nn.Module):
     -----
     Node features are expected to be ordered graph-by-graph when ``batch`` is
     supplied, as they are in :class:`torch_geometric.data.Batch`.
+
+    The authors use marked GINE layers when molecular bond attributes are
+    available and marked GIN layers for unattributed counting graphs.  The
+    standard TopoBench :class:`~topobench.nn.wrappers.GNNWrapper` does not
+    expose bond attributes, so this backbone follows the latter, edge-less
+    reference path (``counting_substructures/conv.py`` in [2]).  It contains
+    no GraphUniverse-specific features, labels, or task logic.
+
+    Exact centrality ties are resolved by stable node-index order.  This is a
+    deterministic instance of the arbitrary tie-breaking policy explicitly
+    allowed by [1]; as with the authors' ``torch.argsort`` implementation,
+    tied selections need not be permutation equivariant.
+
+    Both statistics caches store only the deterministic output of Algorithm
+    1.  They reproduce the authors' dataset-level preprocessing without
+    changing the mathematical forward pass.
     """
 
     def __init__(
@@ -100,6 +129,7 @@ class HyMN(nn.Module):
         use_centrality_encoding: bool = True,
         sample_aggregation: str = "mean",
         cache_size: int = 4096,
+        global_cache_size: int = 65536,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -119,6 +149,8 @@ class HyMN(nn.Module):
             raise ValueError("sample_aggregation must be mean or sum")
         if cache_size < 0:
             raise ValueError("cache_size cannot be negative")
+        if global_cache_size < 0:
+            raise ValueError("global_cache_size cannot be negative")
         if use_centrality_encoding and not 0 < cse_channels < hidden_channels:
             raise ValueError(
                 "cse_channels must lie between zero and hidden_channels"
@@ -138,6 +170,7 @@ class HyMN(nn.Module):
         self.use_centrality_encoding = use_centrality_encoding
         self.sample_aggregation = sample_aggregation
         self.cache_size = cache_size
+        self.global_cache_size = global_cache_size
 
         node_channels = (
             hidden_channels - cse_channels
@@ -320,12 +353,28 @@ class HyMN(nn.Module):
             key = self._graph_key(graph_size, local_edges)
             cached = self._statistics_cache.get(key)
             if cached is None:
-                cached = self._compute_graph_statistics(
-                    graph_size,
-                    local_edges,
-                    self.num_samples - 1,
+                global_key = (
                     self.cse_steps,
+                    self.num_samples - 1,
+                    *key,
                 )
+                cached = _GLOBAL_STATISTICS_CACHE.get(global_key)
+                if cached is None:
+                    cached = self._compute_graph_statistics(
+                        graph_size,
+                        local_edges,
+                        self.num_samples - 1,
+                        self.cse_steps,
+                    )
+                    if self.global_cache_size:
+                        _GLOBAL_STATISTICS_CACHE[global_key] = cached
+                        if (
+                            len(_GLOBAL_STATISTICS_CACHE)
+                            > self.global_cache_size
+                        ):
+                            _GLOBAL_STATISTICS_CACHE.popitem(last=False)
+                elif self.global_cache_size:
+                    _GLOBAL_STATISTICS_CACHE.move_to_end(global_key)
                 if self.cache_size:
                     self._statistics_cache[key] = cached
                     if len(self._statistics_cache) > self.cache_size:

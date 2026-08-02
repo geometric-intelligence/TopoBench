@@ -4,7 +4,10 @@ import pytest
 import torch
 from torch_geometric.data import Batch, Data
 
-from topobench.nn.backbones.graph.hymn import HyMN
+from topobench.nn.backbones.graph.hymn import (
+    _GLOBAL_STATISTICS_CACHE,
+    HyMN,
+)
 
 
 def _graph(edge_pairs, num_nodes, feature_dim=5):
@@ -49,6 +52,14 @@ def _graph(edge_pairs, num_nodes, feature_dim=5):
         (
             {"in_channels": 5, "hidden_channels": 8, "cache_size": -1},
             "cache_size",
+        ),
+        (
+            {
+                "in_channels": 5,
+                "hidden_channels": 8,
+                "global_cache_size": -1,
+            },
+            "global_cache_size",
         ),
         (
             {"in_channels": 5, "hidden_channels": 8, "cse_channels": 8},
@@ -152,6 +163,57 @@ def test_hymn_batch_statistics_mark_roots_and_use_lru_cache():
     torch.testing.assert_close(cse, cached_cse)
 
 
+def test_hymn_global_cache_reuses_reference_preprocessing(monkeypatch):
+    """Independent models reuse the authors' deterministic preprocessing."""
+    graph = _graph([(0, 1), (1, 2), (2, 0)], 3)
+    batch = torch.zeros(graph.num_nodes, dtype=torch.long)
+    _GLOBAL_STATISTICS_CACHE.clear()
+    try:
+        first = HyMN(
+            5,
+            8,
+            num_samples=2,
+            cse_steps=3,
+            cse_channels=2,
+            cache_size=0,
+            global_cache_size=2,
+        )
+        expected = first._statistics_for_batch(
+            graph.edge_index,
+            batch,
+            graph.num_nodes,
+        )
+        assert len(_GLOBAL_STATISTICS_CACHE) == 1
+
+        def fail_if_recomputed(*args, **kwargs):
+            raise AssertionError("global cache entry was recomputed")
+
+        monkeypatch.setattr(
+            HyMN,
+            "_compute_graph_statistics",
+            staticmethod(fail_if_recomputed),
+        )
+        second = HyMN(
+            5,
+            8,
+            num_samples=2,
+            cse_steps=3,
+            cse_channels=2,
+            cache_size=0,
+            global_cache_size=2,
+        )
+        actual = second._statistics_for_batch(
+            graph.edge_index,
+            batch,
+            graph.num_nodes,
+        )
+
+        torch.testing.assert_close(actual[0], expected[0])
+        torch.testing.assert_close(actual[1], expected[1])
+    finally:
+        _GLOBAL_STATISTICS_CACHE.clear()
+
+
 def test_hymn_batch_statistics_validate_assignments_and_skip_empty_ids():
     """Batched CSE validates assignments and tolerates empty graph IDs."""
     model = HyMN(5, 8, cse_steps=2, cse_channels=2, cache_size=0)
@@ -190,6 +252,55 @@ def test_hymn_expand_views_offsets_edges_and_markers():
     torch.testing.assert_close(expanded_x, x.repeat(2, 1))
     assert expanded_edges.tolist() == [[0, 1, 2, 3], [1, 0, 3, 2]]
     assert expanded_markers.squeeze(-1).tolist() == [0.0, 0.0, 1.0, 0.0]
+
+
+def test_hymn_disjoint_views_match_authors_wide_tensor_update():
+    """Disjoint views exactly reproduce the authors' shared wide-tensor GIN."""
+    graph = _graph([(0, 1), (1, 2), (2, 0)], 3, feature_dim=4)
+    model = HyMN(
+        4,
+        4,
+        num_layers=2,
+        num_samples=3,
+        cse_steps=2,
+        use_centrality_encoding=False,
+        dropout=0.0,
+        residual=True,
+    ).eval()
+    markers = torch.tensor([[0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 0.0]])
+
+    disjoint, expanded_edges, expanded_markers = model._expand_views(
+        graph.x,
+        graph.edge_index,
+        markers,
+    )
+    reference = graph.x[:, None, :].expand(-1, model.num_samples, -1)
+    source, target = graph.edge_index
+
+    for conv in model.convs:
+        disjoint_input = torch.cat((disjoint, expanded_markers), dim=-1)
+        disjoint_update = torch.relu(conv(disjoint_input, expanded_edges))
+        disjoint = disjoint + disjoint_update
+
+        # The reference implementation stores all views in one wide tensor,
+        # aggregates each view independently, then applies one shared MLP.
+        reference_input = torch.cat((reference, markers.unsqueeze(-1)), dim=-1)
+        wide_input = reference_input.reshape(graph.num_nodes, -1)
+        wide_messages = torch.zeros_like(wide_input)
+        wide_messages.index_add_(0, target, wide_input[source])
+        wide_update = (1 + conv.eps) * wide_input + wide_messages
+        reference_update = torch.relu(
+            conv.nn(wide_update.reshape(-1, model.hidden_channels + 1))
+        ).reshape(graph.num_nodes, model.num_samples, model.hidden_channels)
+        reference = reference + reference_update
+
+    disjoint = disjoint.reshape(
+        model.num_samples,
+        graph.num_nodes,
+        model.hidden_channels,
+    ).permute(1, 0, 2)
+    torch.testing.assert_close(disjoint, reference)
+    torch.testing.assert_close(disjoint.mean(dim=1), reference.mean(dim=1))
 
 
 def test_hymn_forward_and_gradients():
