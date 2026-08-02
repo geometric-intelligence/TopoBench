@@ -7,6 +7,7 @@ import pytest
 import torch
 from omegaconf import DictConfig, open_dict
 from torch_geometric.data import Data
+from torch_geometric.nn.models import GCN
 
 from test._utils.simplified_pipeline import run
 from topobench.data.capabilities import GRAPH_DATASET_MANIFEST
@@ -17,6 +18,8 @@ from topobench.nn.capabilities import (
     compatible_graph_models,
     validate_graph_composition,
 )
+from topobench.nn.readouts import NoReadOut
+from topobench.nn.wrappers.graph import GNNWrapper
 from topobench.utils.config_resolvers import register_all_resolvers
 from topobench.utils.model_instantiation import instantiate_model
 
@@ -178,6 +181,60 @@ def test_every_model_enforces_its_declared_optional_edge_mode(
         model_out = model.forward(batch)
         assert set(model_out) == {"x", "labels", "batch", "logits"}
 
+
+
+def test_gcn_edge_weights_change_logits_and_zero_matches_edge_removal() -> None:
+    """The declared consumed weights control native GCN messages."""
+    assert GRAPH_MODEL_CAPABILITIES["gcn"].edge_weight_mode == "consume"
+    backbone = GCN(
+        in_channels=2,
+        hidden_channels=2,
+        num_layers=2,
+        out_channels=2,
+        dropout=0.0,
+    )
+    with torch.no_grad():
+        for index, parameter in enumerate(backbone.parameters(), start=1):
+            parameter.copy_(
+                torch.linspace(
+                    0.1 * index,
+                    0.1 * index + 0.05,
+                    parameter.numel(),
+                    dtype=parameter.dtype,
+                ).reshape_as(parameter)
+            )
+    backbone.eval()
+    wrapper = GNNWrapper(
+        backbone,
+        edge_attr_mode="ignore",
+        edge_weight_mode="consume",
+    )
+    readout = NoReadOut(
+        hidden_dim=2,
+        out_channels=2,
+        task_level="node",
+        logits_linear_layer=False,
+    )
+    x = torch.tensor([[1.0, 0.25], [0.5, 2.0], [3.0, 0.75]])
+    labels = torch.tensor([0, 1, 0])
+    edge_index = torch.tensor([[0, 1], [1, 2]])
+
+    def logits(edges: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
+        data = Data(
+            x=x.clone(),
+            edge_index=edges.clone(),
+            edge_weight=weights.clone(),
+            y=labels.clone(),
+        )
+        return readout(wrapper(data), data)["logits"]
+
+    weighted = logits(edge_index, torch.tensor([0.25, 2.0]))
+    unweighted = logits(edge_index, torch.ones(2))
+    zero_bridge = logits(edge_index, torch.tensor([1.0, 0.0]))
+    removed_bridge = logits(edge_index[:, :1], torch.ones(1))
+
+    assert not torch.allclose(weighted, unweighted)
+    torch.testing.assert_close(zero_bridge, removed_bridge)
 
 def _cycle_edges(node_count: int, offset: int = 0) -> torch.Tensor:
     nodes = torch.arange(node_count, dtype=torch.long)

@@ -6,12 +6,17 @@ from typing import Any
 
 import torch
 from lightning import LightningModule
-from torch_geometric.data import Data, HeteroData
+from torch_geometric.data import Batch, Data, HeteroData
 from torchmetrics import MeanMetric
 
+from topobench.data.hypergraph import HypergraphData
 from topobench.model.supervision import (
     DefaultSupervisionAdapter,
     SupervisionAdapter,
+)
+from topobench.nn.wrappers.graph.gnn_wrapper import (
+    _bind_graph_batch_evidence,
+    _prepare_graph_batch_evidence,
 )
 
 
@@ -137,6 +142,33 @@ class TBModel(LightningModule):
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(backbone={self.backbone}, readout={self.readout}, loss={self.loss}, feature_encoder={self.feature_encoder})"
+
+    def transfer_batch_to_device(
+        self,
+        batch: Any,
+        device: torch.device,
+        dataloader_idx: int,
+    ) -> Any:
+        """Transfer homogeneous graph batches with CPU-derived evidence."""
+        evidence = None
+        if (
+            isinstance(batch, Batch)
+            and not isinstance(batch, HeteroData)
+            and not isinstance(batch, HypergraphData)
+        ):
+            evidence = _prepare_graph_batch_evidence(batch)
+        transferred = super().transfer_batch_to_device(
+            batch,
+            device,
+            dataloader_idx,
+        )
+        if evidence is not None:
+            if not isinstance(transferred, Data):
+                raise TypeError(
+                    "homogeneous graph transfer must return native Data"
+                )
+            _bind_graph_batch_evidence(transferred, evidence)
+        return transferred
 
     def forward(self, batch: Data | HeteroData) -> dict[str, Any]:
         r"""Perform a forward pass through the model.
