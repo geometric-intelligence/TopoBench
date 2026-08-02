@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from omegaconf import DictConfig
 
+from topobench.data.capabilities import qualify_graph_dataset
 from topobench.data.features import prepare_graph_features
 from topobench.data.utils.split_utils import validate_split_type_qualification
 from topobench.dataloader import GraphDataModule
@@ -29,18 +30,21 @@ class DefaultDataPipeline(AbstractDataPipeline):
             raise ValueError("Invalid task_level")
 
         if cfg.dataset.loader.parameters.data_domain == "graph":
-            in_channels = infer_in_channels(
+            base_channels = qualify_graph_dataset(
+                cfg.dataset
+            ).feature_width
+            total_channels = infer_in_channels(
                 cfg.dataset,
                 cfg.get("transforms"),
             )
-            if isinstance(in_channels, int):
-                prepare_graph_features(
-                    train,
-                    val,
-                    test,
-                    feature_policy=cfg.dataset.parameters.feature_policy,
-                    num_features=in_channels,
-                )
+            prepare_graph_features(
+                train,
+                val,
+                test,
+                feature_policy=cfg.dataset.parameters.feature_policy,
+                base_num_features=base_channels,
+                total_num_features=total_channels,
+            )
 
         datamodule = GraphDataModule(
             dataset_train=train,

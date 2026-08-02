@@ -122,7 +122,9 @@ def _validate_consistent_multi_hot(x: Tensor, policy: str) -> None:
 def validate_graph_features(
     data: Data,
     feature_policy: GraphFeaturePolicy | str,
-    num_features: object,
+    *,
+    base_num_features: object,
+    total_num_features: object,
 ) -> Data:
     """Validate one post-transform homogeneous graph.
 
@@ -147,7 +149,12 @@ def validate_graph_features(
             "data.x must have a floating dtype after graph transforms"
         )
 
-    expected_channels = _node_feature_channels(num_features)
+    base_channels = _node_feature_channels(base_num_features)
+    expected_channels = _node_feature_channels(total_num_features)
+    if expected_channels < base_channels:
+        raise ValueError(
+            "total_num_features must be at least base_num_features"
+        )
     if x.shape[1] != expected_channels:
         raise ValueError(
             f"expected {expected_channels} feature channels, got {x.shape[1]}"
@@ -155,11 +162,18 @@ def validate_graph_features(
     if data.num_nodes is not None and x.shape[0] != data.num_nodes:
         raise ValueError("data.x must have one row per node")
 
+    base_features = x[:, :base_channels]
+    appended_features = x[:, base_channels:]
+    if appended_features.numel() and not torch.isfinite(
+        appended_features
+    ).all():
+        raise ValueError("appended graph feature channels must be finite")
+
     if feature_policy == "categorical_one_hot":
-        _validate_consistent_multi_hot(x, feature_policy)
+        _validate_consistent_multi_hot(base_features, feature_policy)
     elif feature_policy == "degree":
-        _validate_one_hot(x, feature_policy)
-    elif feature_policy == "constant" and not torch.all(x == 1):
+        _validate_one_hot(base_features, feature_policy)
+    elif feature_policy == "constant" and not torch.all(base_features == 1):
         raise ValueError("constant policy requires data.x filled with ones")
     return data
 
@@ -170,7 +184,8 @@ def prepare_graph_features(
     dataset_test: Sized | None,
     *,
     feature_policy: GraphFeaturePolicy | str,
-    num_features: object,
+    base_num_features: object,
+    total_num_features: object,
 ) -> tuple[Sized, Sized | None, Sized | None]:
     """Validate every graph in the post-transform phase datasets."""
     datasets = (dataset_train, dataset_val, dataset_test)
@@ -181,7 +196,8 @@ def prepare_graph_features(
             validate_graph_features(
                 dataset[index],  # type: ignore[index]
                 feature_policy,
-                num_features,
+                base_num_features=base_num_features,
+                total_num_features=total_num_features,
             )
     return datasets
 

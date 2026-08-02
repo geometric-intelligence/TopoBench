@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Literal
@@ -40,8 +40,16 @@ class GraphDatasetCapability:
     feature_policy: FeaturePolicy
     edge_fields: frozenset[EdgeField]
     qualification: tuple[tuple[str, QualificationValue], ...]
+    feature_width: int = 1
+    feature_transforms: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
+        if isinstance(self.feature_width, bool) or self.feature_width <= 0:
+            raise ValueError("feature_width must be a positive integer")
+        if not all(
+            isinstance(name, str) and name for name in self.feature_transforms
+        ):
+            raise ValueError("feature_transforms must contain non-empty names")
         if not self.qualification:
             raise ValueError("qualification evidence is required")
         paths = [path for path, _ in self.qualification]
@@ -123,6 +131,8 @@ def _capability(
     task_level: TaskLevel,
     learning_setting: LearningSetting,
     feature_policy: FeaturePolicy,
+    feature_width: int,
+    feature_transforms: frozenset[str] = frozenset(),
     edge_fields: frozenset[EdgeField] = frozenset(),
     extra_evidence: tuple[tuple[str, QualificationValue], ...] = (),
 ) -> GraphDatasetCapability:
@@ -133,6 +143,8 @@ def _capability(
         task_level=task_level,
         learning_setting=learning_setting,
         feature_policy=feature_policy,
+        feature_width=feature_width,
+        feature_transforms=feature_transforms,
         edge_fields=edge_fields,
         qualification=(
             ("loader._target_", _loader_target(selector)),
@@ -147,6 +159,11 @@ def _capability(
 
 
 _EDGE_ATTR = frozenset({"edge_attr"})
+_DEGREE_FEATURE_TRANSFORMS = frozenset(
+    {"NodeDegrees", "OneHotDegreeFeatures"}
+)
+_CATEGORICAL_FEATURE_TRANSFORMS = frozenset({"OneHotDegreeFeatures"})
+_CONSTANT_FEATURE_TRANSFORMS = frozenset({"ConstantNodeFeatures"})
 _ROWS = (
     _capability(
         "AQSOL",
@@ -155,6 +172,8 @@ _ROWS = (
         task_level="graph",
         learning_setting="inductive",
         feature_policy="degree",
+        feature_width=21,
+        feature_transforms=_DEGREE_FEATURE_TRANSFORMS,
         edge_fields=_EDGE_ATTR,
     ),
     _capability(
@@ -164,6 +183,7 @@ _ROWS = (
         task_level="graph",
         learning_setting="inductive",
         feature_policy="categorical_one_hot",
+        feature_width=174,
         edge_fields=_EDGE_ATTR,
     ),
     _capability(
@@ -173,6 +193,7 @@ _ROWS = (
         task_level="graph",
         learning_setting="inductive",
         feature_policy="categorical_one_hot",
+        feature_width=174,
         edge_fields=_EDGE_ATTR,
     ),
     _capability(
@@ -182,6 +203,7 @@ _ROWS = (
         task_level="graph",
         learning_setting="inductive",
         feature_policy="categorical_one_hot",
+        feature_width=174,
         edge_fields=_EDGE_ATTR,
     ),
     _capability(
@@ -191,6 +213,7 @@ _ROWS = (
         task_level="graph",
         learning_setting="inductive",
         feature_policy="categorical_one_hot",
+        feature_width=174,
         edge_fields=_EDGE_ATTR,
     ),
     _capability(
@@ -200,6 +223,8 @@ _ROWS = (
         task_level="graph",
         learning_setting="inductive",
         feature_policy="degree",
+        feature_width=136,
+        feature_transforms=_DEGREE_FEATURE_TRANSFORMS,
     ),
     _capability(
         "IMDB-MULTI",
@@ -208,6 +233,8 @@ _ROWS = (
         task_level="graph",
         learning_setting="inductive",
         feature_policy="degree",
+        feature_width=89,
+        feature_transforms=_DEGREE_FEATURE_TRANSFORMS,
     ),
     _capability(
         "MUTAG",
@@ -216,6 +243,7 @@ _ROWS = (
         task_level="graph",
         learning_setting="inductive",
         feature_policy="continuous",
+        feature_width=7,
         edge_fields=_EDGE_ATTR,
     ),
     _capability(
@@ -225,6 +253,7 @@ _ROWS = (
         task_level="graph",
         learning_setting="inductive",
         feature_policy="continuous",
+        feature_width=37,
     ),
     _capability(
         "NCI109",
@@ -233,6 +262,7 @@ _ROWS = (
         task_level="graph",
         learning_setting="inductive",
         feature_policy="continuous",
+        feature_width=38,
     ),
     _capability(
         "PROTEINS",
@@ -241,6 +271,7 @@ _ROWS = (
         task_level="graph",
         learning_setting="inductive",
         feature_policy="continuous",
+        feature_width=3,
     ),
     _capability(
         "QM9",
@@ -249,6 +280,7 @@ _ROWS = (
         task_level="graph",
         learning_setting="inductive",
         feature_policy="continuous",
+        feature_width=11,
         edge_fields=_EDGE_ATTR,
     ),
     _capability(
@@ -258,6 +290,8 @@ _ROWS = (
         task_level="graph",
         learning_setting="inductive",
         feature_policy="constant",
+        feature_width=10,
+        feature_transforms=_CONSTANT_FEATURE_TRANSFORMS,
     ),
     _capability(
         "SyntheticGraph",
@@ -266,6 +300,7 @@ _ROWS = (
         task_level="graph",
         learning_setting="inductive",
         feature_policy="continuous",
+        feature_width=4,
     ),
     _capability(
         "SyntheticGraphRegression",
@@ -274,6 +309,7 @@ _ROWS = (
         task_level="graph",
         learning_setting="inductive",
         feature_policy="continuous",
+        feature_width=4,
     ),
     _capability(
         "SyntheticNodeGraph",
@@ -282,6 +318,7 @@ _ROWS = (
         task_level="node",
         learning_setting="transductive",
         feature_policy="continuous",
+        feature_width=4,
     ),
     _capability(
         "ZINC",
@@ -290,6 +327,8 @@ _ROWS = (
         task_level="graph",
         learning_setting="inductive",
         feature_policy="categorical_one_hot",
+        feature_width=21,
+        feature_transforms=_CATEGORICAL_FEATURE_TRANSFORMS,
         edge_fields=_EDGE_ATTR,
         extra_evidence=(("parameters.loss_type", "mse"),),
     ),
@@ -300,6 +339,8 @@ _ROWS = (
         task_level="graph",
         learning_setting="inductive",
         feature_policy="categorical_one_hot",
+        feature_width=21,
+        feature_transforms=_CATEGORICAL_FEATURE_TRANSFORMS,
         edge_fields=_EDGE_ATTR,
         extra_evidence=(("parameters.loss_type", "mae"),),
     ),
@@ -310,6 +351,7 @@ _ROWS = (
         task_level="node",
         learning_setting="transductive",
         feature_policy="continuous",
+        feature_width=300,
     ),
     _capability(
         "cocitation_citeseer",
@@ -318,6 +360,7 @@ _ROWS = (
         task_level="node",
         learning_setting="transductive",
         feature_policy="continuous",
+        feature_width=3703,
     ),
     _capability(
         "cocitation_cora",
@@ -326,6 +369,7 @@ _ROWS = (
         task_level="node",
         learning_setting="transductive",
         feature_policy="continuous",
+        feature_width=1433,
     ),
     _capability(
         "cocitation_pubmed",
@@ -334,6 +378,7 @@ _ROWS = (
         task_level="node",
         learning_setting="transductive",
         feature_policy="continuous",
+        feature_width=500,
     ),
     _capability(
         "graphuniverse_inductive_triangle",
@@ -342,6 +387,7 @@ _ROWS = (
         task_level="graph",
         learning_setting="inductive",
         feature_policy="continuous",
+        feature_width=15,
         extra_evidence=(
             (
                 "loader.parameters.generation_parameters.task",
@@ -356,6 +402,7 @@ _ROWS = (
         task_level="node",
         learning_setting="transductive",
         feature_policy="continuous",
+        feature_width=15,
         extra_evidence=(
             (
                 "loader.parameters.generation_parameters.task",
@@ -370,6 +417,7 @@ _ROWS = (
         task_level="node",
         learning_setting="transductive",
         feature_policy="continuous",
+        feature_width=7,
     ),
     _capability(
         "ogbg-molhiv",
@@ -378,6 +426,7 @@ _ROWS = (
         task_level="graph",
         learning_setting="inductive",
         feature_policy="categorical_one_hot",
+        feature_width=174,
         edge_fields=_EDGE_ATTR,
     ),
     _capability(
@@ -387,6 +436,7 @@ _ROWS = (
         task_level="node",
         learning_setting="transductive",
         feature_policy="continuous",
+        feature_width=301,
     ),
     _capability(
         "roman_empire",
@@ -395,6 +445,7 @@ _ROWS = (
         task_level="node",
         learning_setting="transductive",
         feature_policy="continuous",
+        feature_width=300,
     ),
     _capability(
         "tolokers",
@@ -403,6 +454,7 @@ _ROWS = (
         task_level="node",
         learning_setting="transductive",
         feature_policy="continuous",
+        feature_width=10,
     ),
 )
 GRAPH_DATASET_MANIFEST: Mapping[str, GraphDatasetCapability] = (
@@ -418,6 +470,35 @@ def _value_at_path(config: Mapping[str, Any], path: str) -> object:
             return None
         value = value[component]
     return value
+
+
+def configured_graph_feature_width(dataset: Mapping[str, Any]) -> int:
+    """Return the declared node width without accepting ambiguous values."""
+    value = _value_at_path(dataset, "parameters.num_features")
+    if isinstance(value, bool):
+        raise TypeError(
+            "dataset.parameters.num_features must declare an integer width"
+        )
+    if isinstance(value, int):
+        width = value
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        if (
+            not value
+            or isinstance(value[0], bool)
+            or not isinstance(value[0], int)
+        ):
+            raise TypeError(
+                "dataset.parameters.num_features[0] must declare an integer "
+                "node width"
+            )
+        width = value[0]
+    else:
+        raise TypeError(
+            "dataset.parameters.num_features must declare an integer width"
+        )
+    if width <= 0:
+        raise ValueError("dataset.parameters.num_features must be positive")
+    return width
 
 
 def qualify_graph_dataset(
@@ -470,6 +551,7 @@ __all__ = [
     "GRAPH_DATASET_MANIFEST",
     "GraphDatasetCapability",
     "GraphTaskContract",
+    "configured_graph_feature_width",
     "LearningSetting",
     "TaskKind",
     "TaskLevel",

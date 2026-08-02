@@ -9,6 +9,7 @@ from omegaconf import OmegaConf
 from topobench.nn.capabilities import (
     validated_edge_attr_mode,
     validated_edge_weight_mode,
+    validated_graph_feature_width,
 )
 
 
@@ -626,14 +627,20 @@ def check_fes_in_transforms(transforms):
 
 
 def infer_in_channels(dataset, transforms):
-    """Infer one native node-feature width for a graph or hypergraph."""
-    num_features = dataset.parameters.num_features
+    """Infer and validate one native node-feature width."""
     added_features = 0
     if transforms is not None:
         added_features = check_pses_in_transforms(
             transforms
         ) + check_fes_in_transforms(transforms)
 
+    data_domain = dataset.loader.parameters.data_domain
+    if data_domain == "graph":
+        return int(
+            validated_graph_feature_width(dataset, transforms) + added_features
+        )
+
+    num_features = dataset.parameters.num_features
     if isinstance(num_features, int):
         return int(num_features + added_features)
     if isinstance(

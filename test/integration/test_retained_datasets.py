@@ -12,7 +12,7 @@ import pytest
 import torch
 from hydra.core.global_hydra import GlobalHydra
 from omegaconf import DictConfig, OmegaConf
-from torch_geometric.data import Data, HeteroData
+from torch_geometric.data import Data, HeteroData, InMemoryDataset
 
 from topobench.data import (
     DATASET_QUALIFICATION_MANIFEST,
@@ -20,11 +20,9 @@ from topobench.data import (
     DatasetQualification,
     HypergraphData,
 )
+from topobench.data.capabilities import GRAPH_DATASET_MANIFEST
 from topobench.data.loaders.graph.adme_datasets import ADMEDatasetLoader
-from topobench.utils.config_resolvers import (
-    get_default_transform,
-    register_all_resolvers,
-)
+from topobench.utils.config_resolvers import register_all_resolvers
 from topobench.utils.model_instantiation import instantiate_model
 
 _EVIDENCE_PREFIX = (
@@ -97,6 +95,12 @@ _PIPELINE_BY_DOMAIN = {
     "heterogeneous": "heterogeneous_node",
     "hypergraph": "hypergraph_node",
 }
+_LOCAL_FEATURE_POLICY_SELECTORS = (
+    ("continuous", "graph/SyntheticGraph", None),
+    ("categorical_one_hot", "graph/ZINC", "graph/gps"),
+    ("degree", "graph/IMDB-MULTI", None),
+    ("constant", "graph/REDDIT-BINARY", None),
+)
 
 
 def _qualified_parameter(row: DatasetQualification) -> pytest.ParameterSet:
@@ -112,20 +116,20 @@ _RETAINED_DATASET_PARAMETERS = tuple(
 )
 
 
-def _compose(row: DatasetQualification, tmp_path: Path) -> DictConfig:
+def _compose(
+    row: DatasetQualification,
+    tmp_path: Path,
+    *,
+    model_selector: str | None = None,
+) -> DictConfig:
     """Compose an isolated production dataset/model/pipeline combination."""
     domain = row.selector.split("/", maxsplit=1)[0]
     data_root = tmp_path / "datasets"
     assert not data_root.exists()
-    transform_selector = get_default_transform(
-        row.selector,
-        row.compatible_model,
-    )
     overrides = [
         f"dataset={row.selector}",
-        f"model={row.compatible_model}",
+        f"model={model_selector or row.compatible_model}",
         f"data_pipeline={_PIPELINE_BY_DOMAIN[domain]}",
-        f"transforms={transform_selector}",
         f"paths.data_dir={data_root}",
         f"paths.output_dir={tmp_path / 'output'}",
         "logger=[]",
@@ -174,6 +178,8 @@ def _assert_composed_metadata(
     row: DatasetQualification,
     cfg: DictConfig,
     tmp_path: Path,
+    *,
+    model_selector: str | None = None,
 ) -> None:
     """Check selector-specific YAML metadata before any data is loaded."""
     domain, selector = row.selector.split("/", maxsplit=1)
@@ -187,7 +193,7 @@ def _assert_composed_metadata(
     assert cfg.dataset.split_params.learning_setting == row.split_mode
     assert (
         f"{cfg.model.model_domain}/{cfg.model.model_name}"
-        == row.compatible_model
+        == (model_selector or row.compatible_model)
     )
     assert Path(str(cfg.dataset.loader.parameters.data_dir)).is_relative_to(
         tmp_path
@@ -347,6 +353,96 @@ def _assert_supervision_shapes(
         assert targets.shape == (count, 1)
         assert targets.is_floating_point()
 
+
+def _local_graph_dataset(
+    row: DatasetQualification,
+    *,
+    width: int,
+    num_classes: int,
+) -> InMemoryDataset:
+    """Build a deterministic in-memory loader fixture in the raw policy format."""
+    graphs: list[Data] = []
+    for graph_index in range(12):
+        num_nodes = 6
+        path = torch.arange(num_nodes - 1, dtype=torch.long)
+        edge_index = torch.stack(
+            (
+                torch.cat((path, path + 1)),
+                torch.cat((path + 1, path)),
+            )
+        )
+        data = Data(edge_index=edge_index, num_nodes=num_nodes)
+        if row.feature_policy == "continuous":
+            data.x = torch.arange(
+                num_nodes * width,
+                dtype=torch.float32,
+            ).reshape(num_nodes, width)
+        elif row.feature_policy == "categorical_one_hot":
+            data.x = (
+                torch.arange(num_nodes, dtype=torch.long) % width
+            ).reshape(-1, 1)
+        else:
+            assert row.feature_policy in {"degree", "constant"}
+
+        if row.edge_policy == "edge_attr_available":
+            data.edge_attr = torch.ones(
+                (edge_index.shape[1], 1),
+                dtype=torch.float32,
+            )
+        if row.task == "classification":
+            data.y = torch.tensor(
+                [graph_index % num_classes],
+                dtype=torch.long,
+            )
+        else:
+            data.y = torch.tensor(
+                [[float(graph_index) / 10.0]],
+                dtype=torch.float32,
+            )
+        graphs.append(data)
+
+    dataset = InMemoryDataset()
+    dataset._data, dataset.slices = dataset.collate(graphs)
+    dataset._data_list = None
+    dataset.split_idx = {
+        "train": torch.arange(0, 8),
+        "valid": torch.arange(8, 10),
+        "test": torch.arange(10, 12),
+    }
+    return dataset
+
+
+def _execute_lifecycle(
+    qualification: DatasetQualification,
+    cfg: DictConfig,
+) -> tuple[Data | HeteroData, Any, dict[str, Any]]:
+    """Execute the retained load-through-forward lifecycle once."""
+    pipeline = hydra.utils.instantiate(cfg.data_pipeline)
+    output = pipeline.build(cfg)
+    batch = _take_one(output.datamodule.train_dataloader())
+    _assert_runtime_format(qualification, cfg, batch)
+    feature_batch = batch.clone()
+
+    model = instantiate_model(cfg, data_spec=output.data_spec)
+    model.train()
+    model.state_str = "Training"
+    model_out = model.model_step(batch)
+    _assert_supervision_shapes(qualification, cfg, model_out)
+
+    loss = model_out["loss"]
+    assert isinstance(loss, torch.Tensor)
+    assert loss.ndim == 0
+    assert math.isfinite(float(loss.detach()))
+
+    metrics = model.evaluator.compute()
+    assert metrics
+    for metric in metrics.values():
+        assert isinstance(metric, torch.Tensor)
+        assert metric.ndim == 0
+        assert torch.isfinite(metric)
+    return feature_batch, model, model_out
+
+
 @pytest.mark.parametrize("selector", _ADME_SELECTORS)
 def test_retained_adme_selector_declares_executed_split_contract(
     selector: str,
@@ -393,29 +489,61 @@ def test_retained_dataset_lifecycle(
     """Load, preprocess, split, batch, forward, supervise, loss, and score."""
     cfg = _compose(qualification, tmp_path)
     _assert_composed_metadata(qualification, cfg, tmp_path)
+    _execute_lifecycle(qualification, cfg)
 
-    pipeline = hydra.utils.instantiate(cfg.data_pipeline)
-    output = pipeline.build(cfg)
-    batch = _take_one(output.datamodule.train_dataloader())
-    _assert_runtime_format(qualification, cfg, batch)
 
-    model = instantiate_model(cfg, data_spec=output.data_spec)
-    model.train()
-    model.state_str = "Training"
-    model_out = model.model_step(batch)
-    _assert_supervision_shapes(qualification, cfg, model_out)
+@pytest.mark.parametrize(
+    ("policy", "selector", "model_selector"),
+    [
+        pytest.param(policy, selector, model_selector, id=policy)
+        for policy, selector, model_selector in _LOCAL_FEATURE_POLICY_SELECTORS
+    ],
+)
+def test_local_graph_feature_policy_lifecycle(
+    policy: str,
+    selector: str,
+    model_selector: str | None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exercise each graph feature policy without downloading a dataset."""
+    qualification = DATASET_QUALIFICATION_MANIFEST[selector]
+    capability = GRAPH_DATASET_MANIFEST[selector.split("/", maxsplit=1)[1]]
+    assert qualification.feature_policy == policy
+    cfg = _compose(
+        qualification,
+        tmp_path,
+        model_selector=model_selector,
+    )
+    if model_selector is not None:
+        assert (
+            cfg.model.feature_encoder.in_channels
+            > capability.feature_width
+        )
+    fixture = _local_graph_dataset(
+        qualification,
+        width=capability.feature_width,
+        num_classes=int(cfg.dataset.parameters.num_classes),
+    )
+    loader_type = hydra.utils.get_class(str(cfg.dataset.loader._target_))
+    monkeypatch.setattr(
+        loader_type,
+        "load",
+        lambda loader: (fixture, str(tmp_path / "local-source")),
+    )
 
-    loss = model_out["loss"]
-    assert isinstance(loss, torch.Tensor)
-    assert loss.ndim == 0
-    assert math.isfinite(float(loss.detach()))
-
-    metrics = model.evaluator.compute()
-    assert metrics
-    for metric in metrics.values():
-        assert isinstance(metric, torch.Tensor)
-        assert metric.ndim == 0
-        assert torch.isfinite(metric)
+    _assert_composed_metadata(
+        qualification,
+        cfg,
+        tmp_path,
+        model_selector=model_selector,
+    )
+    batch, _, model_out = _execute_lifecycle(qualification, cfg)
+    assert isinstance(batch, Data)
+    assert batch.x.dtype == torch.float32
+    assert batch.x.shape[1] == cfg.model.feature_encoder.in_channels
+    assert torch.isfinite(batch.x).all()
+    assert torch.isfinite(model_out["logits"]).all()
 
 
 def test_qualification_manifest_keys_evidence_and_gates_are_consistent() -> (

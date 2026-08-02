@@ -2,13 +2,22 @@
 
 from pathlib import Path
 
+import hydra
+import pytest
+from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
 
 from topobench.data.capabilities import GRAPH_DATASET_MANIFEST
 from topobench.data.qualification import DATASET_QUALIFICATION_MANIFEST
+from topobench.run import validate_domain_composition
+from topobench.utils.config_resolvers import (
+    get_default_transform,
+    register_all_resolvers,
+)
 
 GRAPH_CONFIG_DIR = Path("configs/dataset/graph")
 DEFAULT_TRANSFORM_DIR = Path("configs/transforms/dataset_defaults")
+CONFIG_ROOT = Path("configs").resolve()
 ALLOWED_POLICIES = {
     "continuous",
     "categorical_one_hot",
@@ -53,6 +62,112 @@ def _default_transform_names(config: DictConfig) -> set[str]:
             continue
         names.update(str(value) for value in entry.values())
     return names
+
+
+def _compose_graph(selector: str, *overrides: str) -> DictConfig:
+    hydra.core.global_hydra.GlobalHydra.instance().clear()
+    register_all_resolvers()
+    with hydra.initialize_config_dir(
+        version_base="1.3",
+        config_dir=str(CONFIG_ROOT),
+        job_name="dataset_feature_policies",
+    ):
+        cfg = hydra.compose(
+            config_name="run.yaml",
+            overrides=[f"dataset=graph/{selector}", *overrides],
+            return_hydra_config=True,
+        )
+    HydraConfig.instance().set_config(cfg)
+    return cfg
+
+
+@pytest.mark.parametrize(
+    "selector",
+    [pytest.param(selector, id=selector) for selector in GRAPH_DATASET_MANIFEST],
+)
+def test_default_graph_composition_resolves_qualified_feature_policy_and_width(
+    selector: str,
+) -> None:
+    capability = GRAPH_DATASET_MANIFEST[selector]
+    cfg = _compose_graph(selector)
+
+    assert cfg.hydra.runtime.choices.transforms == get_default_transform(
+        f"graph/{selector}",
+        "graph/gcn",
+    )
+    assert cfg.dataset.parameters.feature_policy == capability.feature_policy
+    validate_domain_composition(cfg)
+    assert cfg.model.feature_encoder.in_channels == capability.feature_width
+
+
+@pytest.mark.parametrize(
+    ("selector", "transform_override", "message"),
+    (
+        pytest.param(
+            "AQSOL",
+            "no_transform",
+            "feature policy",
+            id="missing-degree-policy",
+        ),
+        pytest.param(
+            "AQSOL",
+            "dataset_defaults/REDDIT-BINARY",
+            "feature policy",
+            id="contradictory-constant-policy",
+        ),
+        pytest.param(
+            "AQSOL",
+            "data_manipulations/constant_node_features",
+            "ConstantNodeFeatures",
+            id="single-constant-policy",
+        ),
+        pytest.param(
+            "AQSOL",
+            "dataset_defaults/AQSOL",
+            "feature width",
+            id="contradictory-degree-width",
+        ),
+    ),
+)
+def test_explicit_transform_contradictions_fail_before_loading(
+    selector: str,
+    transform_override: str,
+    message: str,
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "never-loaded"
+    overrides = [
+        f"transforms={transform_override}",
+        f"paths.data_dir={data_root}",
+    ]
+    if message == "feature width":
+        overrides.append(
+            "transforms.one_hot_node_degree_features.max_degree=5"
+        )
+    cfg = _compose_graph(selector, *overrides)
+
+    assert cfg.hydra.runtime.choices.transforms == transform_override
+    with pytest.raises(ValueError, match=message):
+        validate_domain_composition(cfg)
+    assert not data_root.exists()
+
+
+def test_manual_model_feature_width_fails_before_loading(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "never-loaded"
+    cfg = _compose_graph(
+        "SyntheticGraph",
+        "model.feature_encoder.in_channels=1",
+        f"paths.data_dir={data_root}",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=r"model\.feature_encoder\.in_channels.*4.*1",
+    ):
+        validate_domain_composition(cfg)
+    assert not data_root.exists()
 
 
 def test_every_retained_graph_dataset_has_a_valid_feature_policy() -> None:

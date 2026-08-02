@@ -269,7 +269,6 @@ def _compose_pair(dataset_selector: str, model_selector: str) -> DictConfig:
         f"dataset={dataset_selector}",
         f"model={model_selector}",
         f"data_pipeline={pipeline_selector}",
-        "transforms=no_transform",
         "trainer.accelerator=cpu",
         "trainer.devices=1",
     )
@@ -526,19 +525,20 @@ def test_mutated_unsupported_task_contract_is_rejected_with_paths() -> None:
         for dataset_selector, model_selector in CROSS_DOMAIN_PAIRS
     ],
 )
-def test_every_cross_domain_pair_is_rejected_by_the_central_gate(
+def test_every_cross_domain_pair_is_rejected_during_default_composition(
     dataset_selector: str,
     model_selector: str,
 ) -> None:
-    cfg = _compose_pair(dataset_selector, model_selector)
+    with pytest.raises(hydra.errors.ConfigCompositionException) as error:
+        _compose_pair(dataset_selector, model_selector)
 
-    with pytest.raises(ValueError) as error:
-        validate_domain_composition(cfg)
-
-    message = str(error.value)
-    assert "cfg.dataset.loader.parameters.data_domain" in message
-    assert "cfg.model.model_domain" in message
-    assert "cross-domain" in message.lower()
+    messages: list[str] = []
+    cause: BaseException | None = error.value
+    while cause is not None:
+        messages.append(str(cause))
+        cause = cause.__cause__
+    message = " ".join(messages)
+    assert "get_default_transform" in message
 
 
 @pytest.mark.parametrize(

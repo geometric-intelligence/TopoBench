@@ -9,8 +9,10 @@ from typing import Any, Literal
 
 from topobench.data.capabilities import (
     FeaturePolicy,
+    GRAPH_DATASET_MANIFEST,
     GraphDatasetCapability,
     GraphTaskContract,
+    configured_graph_feature_width,
     qualify_graph_dataset,
 )
 
@@ -162,6 +164,90 @@ GRAPH_MODEL_CAPABILITIES: Mapping[str, GraphModelCapability] = (
 )
 
 
+def _configured_transforms(
+    transforms: Mapping[str, Any] | None,
+) -> dict[str, Mapping[str, Any]]:
+    """Index composed transforms by their public constructor name."""
+    if transforms is None:
+        return {}
+    if not isinstance(transforms, Mapping):
+        raise TypeError("transforms must be a mapping or None")
+    root_name = transforms.get("transform_name")
+    if isinstance(root_name, str):
+        return {root_name: transforms}
+    declared: dict[str, Mapping[str, Any]] = {}
+    for transform in transforms.values():
+        if not isinstance(transform, Mapping):
+            continue
+        name = transform.get("transform_name")
+        if isinstance(name, str):
+            declared[name] = transform
+    return declared
+
+
+def validated_graph_feature_width(
+    dataset: Mapping[str, Any],
+    transforms: Mapping[str, Any] | None,
+) -> int:
+    """Validate one manifest-backed graph feature policy and output width."""
+    capability = qualify_graph_dataset(dataset)
+    configured_width = configured_graph_feature_width(dataset)
+    if configured_width != capability.feature_width:
+        raise ValueError(
+            "dataset.parameters.num_features must declare qualified "
+            f"feature width {capability.feature_width}, got "
+            f"{configured_width}"
+        )
+    declared = _configured_transforms(transforms)
+    if not declared and transforms is not None and "defaults" in transforms:
+        return capability.feature_width
+    known_feature_transforms = frozenset(
+        name
+        for row in GRAPH_DATASET_MANIFEST.values()
+        for name in row.feature_transforms
+    )
+    actual = frozenset(declared) & known_feature_transforms
+    feature_writers = frozenset(
+        {"OneHotDegreeFeatures", "ConstantNodeFeatures"}
+    )
+    missing = capability.feature_transforms - actual
+    wrong_writers = (actual & feature_writers) != (
+        capability.feature_transforms & feature_writers
+    )
+    if missing or wrong_writers:
+        raise ValueError(
+            "dataset feature policy "
+            f"(dataset.parameters.feature_policy={capability.feature_policy!r}) "
+            "requires feature transforms "
+            f"{sorted(capability.feature_transforms)!r}, got "
+            f"{sorted(actual)!r}"
+        )
+
+    width = capability.feature_width
+    if "OneHotDegreeFeatures" in declared:
+        max_degree = declared["OneHotDegreeFeatures"].get("max_degree")
+        if isinstance(max_degree, bool) or not isinstance(max_degree, int):
+            raise TypeError(
+                "transforms OneHotDegreeFeatures.max_degree must be an integer"
+            )
+        width = max_degree + 1
+    elif "ConstantNodeFeatures" in declared:
+        num_features = declared["ConstantNodeFeatures"].get("num_features")
+        if isinstance(num_features, bool) or not isinstance(num_features, int):
+            raise TypeError(
+                "transforms ConstantNodeFeatures.num_features must be an "
+                "integer"
+            )
+        width = num_features
+
+    if width != capability.feature_width:
+        raise ValueError(
+            f"dataset feature width must resolve to {capability.feature_width}, "
+            f"got {width}"
+        )
+    return width
+
+
 def _required_mapping(
     parent: Mapping[str, Any],
     key: str,
@@ -238,6 +324,24 @@ def _qualified_capability(
     return dataset_capability, model_capability
 
 
+def _expected_feature_width(
+    dataset: Mapping[str, Any],
+    model: Mapping[str, Any],
+    capability: GraphDatasetCapability,
+) -> int:
+    """Resolve the authoritative composed width, including feature encodings."""
+    get_root = getattr(model, "_get_root", None)
+    if not callable(get_root):
+        return capability.feature_width
+    root = get_root()
+    if not isinstance(root, Mapping) or "transforms" not in root:
+        return capability.feature_width
+
+    from topobench.utils.config_resolvers import infer_in_channels
+
+    return infer_in_channels(dataset, root.get("transforms"))
+
+
 def _validated_pair(
     dataset: Mapping[str, Any],
     model: Mapping[str, Any],
@@ -286,6 +390,30 @@ def _validated_pair(
         raise ValueError(
             "model.feature_encoder._target_ must be "
             f"{_GRAPH_NODE_ENCODER!r}, got {encoder_target!r}"
+        )
+    expected_in_channels = _expected_feature_width(
+        dataset,
+        model,
+        dataset_capability,
+    )
+    in_channels = _required_value(
+        encoder,
+        "in_channels",
+        path="model.feature_encoder",
+    )
+    if (
+        isinstance(in_channels, bool)
+        or not isinstance(in_channels, int)
+        or in_channels <= 0
+    ):
+        raise ValueError(
+            "model.feature_encoder.in_channels must resolve to a positive "
+            "integer"
+        )
+    if in_channels != expected_in_channels:
+        raise ValueError(
+            "model.feature_encoder.in_channels must resolve to "
+            f"{expected_in_channels}, got {in_channels}"
         )
     backbone = _required_mapping(model, "backbone", path="model")
     backbone_target = _required_value(
@@ -380,5 +508,6 @@ __all__ = [
     "compatible_graph_models",
     "validate_graph_composition",
     "validated_edge_attr_mode",
+    "validated_graph_feature_width",
     "validated_edge_weight_mode",
 ]
