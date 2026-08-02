@@ -25,6 +25,7 @@ from topobench.data.stores.external_node_index import ExternalNodeIndex
 if TYPE_CHECKING:
     from topobench.data.loaders.parquet import ParquetTypedGraphSource
     from topobench.data.stores.typed_graph_arrays import TypedGraphArrayBuild
+    from topobench.data.stores.typed_graph_csc import TypedGraphRelationBuild
 
 _BEHAVIOR_VERSION = "typed-node-index-v3"
 _SUPPORTED_ID_DTYPES = frozenset({"int64", "uint64", "string"})
@@ -259,6 +260,51 @@ class ParquetTypedGraphIngestor:
         )
 
         return TypedGraphArrayWriter(self, validated_indexes).build()
+
+    def build_relations(
+        self,
+        index_build: ExternalNodeIndexBuild | None = None,
+    ) -> TypedGraphRelationBuild:
+        """Stream every canonical directed relation into one verified CSC subtree."""
+        if index_build is None:
+            validated_indexes = self.build()
+        else:
+            if not isinstance(index_build, ExternalNodeIndexBuild):
+                raise TypeError("index_build must be an ExternalNodeIndexBuild")
+            expected_stage = self.stage_root(index_build.inventory)
+            if index_build.stage_root != expected_stage:
+                raise ArtifactValidationError(
+                    "COMPLETION-EVIDENCE-001: external-ID index stage does not "
+                    "belong to this ingestor"
+                )
+            validated_indexes = self.build_external_node_indexes(
+                index_build.inventory
+            )
+        arrays_completion = (
+            validated_indexes.stage_root
+            / "arrays"
+            / "arrays.complete.json"
+        )
+        if arrays_completion.is_file() and not arrays_completion.is_symlink():
+            from topobench.data.stores.typed_graph_arrays import (
+                TypedGraphArrayWriter,
+            )
+
+            validated_arrays = TypedGraphArrayWriter(
+                self,
+                validated_indexes,
+            )._open_validated(resumed=True)
+        else:
+            validated_arrays = self.build_arrays(validated_indexes)
+        from topobench.data.stores.typed_graph_csc import (
+            TypedGraphRelationWriter,
+        )
+
+        return TypedGraphRelationWriter(
+            self,
+            validated_indexes,
+            validated_arrays,
+        ).build()
 
     def build_external_node_indexes(
         self,
@@ -787,6 +833,39 @@ class ParquetTypedGraphIngestor:
         return pending_complete
 
 
+    def _recover_incomplete_relation_artifacts(
+        self,
+        stage_root: Path,
+    ) -> bool:
+        """Quarantine uncommitted Task 4 paths while preserving exact indexes."""
+        candidates: list[Path] = []
+        relations_root = stage_root / "relations"
+        pending_complete = (
+            not relations_root.is_symlink()
+            and relations_root.is_dir()
+            and not (relations_root / "relations.complete.json").is_symlink()
+            and (relations_root / "relations.complete.json").is_file()
+        )
+        if os.path.lexists(relations_root) and not pending_complete:
+            candidates.append(relations_root)
+        candidates.extend(
+            path
+            for path in stage_root.iterdir()
+            if path.name.startswith(".relations-tmp-")
+        )
+        if not candidates:
+            return pending_complete
+        quarantine = stage_root.parent / (
+            f".{stage_root.name}.relations-quarantine-{uuid.uuid4().hex}"
+        )
+        quarantine.mkdir(parents=False, exist_ok=False)
+        for candidate in candidates:
+            os.replace(candidate, quarantine / candidate.name)
+        _fsync_directory(quarantine)
+        _fsync_directory(stage_root)
+        _fsync_directory(stage_root.parent)
+        return pending_complete
+
     def _resume(
         self,
         inventory: SourceInventory,
@@ -808,6 +887,7 @@ class ParquetTypedGraphIngestor:
         if completed_stage not in {
             "external_node_indexes",
             "typed_graph_arrays",
+            "typed_graph_relations",
         }:
             raise ArtifactValidationError(
                 "COMPLETION-EVIDENCE-001: unknown completed stage"
@@ -815,6 +895,9 @@ class ParquetTypedGraphIngestor:
         pending_complete_arrays = self._recover_incomplete_array_artifacts(
             stage_root,
             completed_stage=completed_stage,
+        )
+        pending_complete_relations = (
+            self._recover_incomplete_relation_artifacts(stage_root)
         )
         if completion.get("disk_admission") != _disk_admission_record(inventory):
             raise ArtifactValidationError(
@@ -846,14 +929,27 @@ class ParquetTypedGraphIngestor:
                     "is unsafe or present"
                 )
         outputs = _validated_output_map(completion.get("outputs"))
-        expected_files = set(outputs) | {"build.complete.json"}
+        core_outputs = {
+            relative: checksum
+            for relative, checksum in outputs.items()
+            if not (
+                pending_complete_relations
+                and relative.startswith("relations/")
+            )
+        }
+        expected_files = set(core_outputs) | {"build.complete.json"}
         observed_files: set[str] = set()
         for path in stage_root.rglob("*"):
+            relative = path.relative_to(stage_root).as_posix()
+            if (
+                pending_complete_relations
+                and relative.startswith("relations/")
+            ):
+                continue
             if path.is_symlink():
                 raise ArtifactValidationError(
                     f"UNKNOWN-ARTIFACT-001: symlink in staging: {path}"
                 )
-            relative = path.relative_to(stage_root).as_posix()
             if pending_complete_arrays and relative.startswith("arrays/"):
                 continue
             if path.is_file():
@@ -868,7 +964,7 @@ class ParquetTypedGraphIngestor:
             raise ArtifactValidationError(
                 f"INCOMPLETE-ARTIFACT-001: missing staging artifact {missing[0]!r}"
             )
-        for relative, expected_checksum in outputs.items():
+        for relative, expected_checksum in core_outputs.items():
             if _sha256_file(_safe_artifact_path(stage_root, relative)) != expected_checksum:
                 raise ArtifactValidationError(
                     f"CHECKSUM-001: staging artifact checksum mismatch for {relative!r}"
