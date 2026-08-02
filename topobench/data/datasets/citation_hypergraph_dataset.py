@@ -1,25 +1,31 @@
-"""Dataset class for US County Demographics dataset."""
+"""Authenticated NPZ hypergraph dataset adapter."""
 
-import os
 import os.path as osp
-import shutil
 import warnings
+from collections.abc import Mapping
+from types import MappingProxyType
 from typing import ClassVar
 
 from omegaconf import DictConfig
-from torch_geometric.data import InMemoryDataset, extract_zip
+from torch_geometric.data import InMemoryDataset
 
 from topobench.data import (
     HYPERGRAPH_CACHE_FILENAME,
     HypergraphData,
     validate_hypergraph_structure,
 )
-from topobench.data.utils.downloads import download_file_from_drive
-from topobench.data.utils.hypergraph_io import load_hypergraph_pickle_dataset
+from topobench.data.utils.downloads import (
+    RemoteArchive,
+    acquire_verified_archive,
+)
+from topobench.data.utils.hypergraph_io import (
+    load_hypergraph_npz_dataset,
+    validate_hypergraph_npz_assets,
+)
 
 
 class CitationHypergraphDataset(InMemoryDataset):
-    r"""Dataset class for US County Demographics dataset.
+    r"""Load a citation hypergraph only from authenticated safe NPZ assets.
 
     Parameters
     ----------
@@ -32,28 +38,12 @@ class CitationHypergraphDataset(InMemoryDataset):
 
     Attributes
     ----------
-    URLS (dict): Dictionary containing the URLs for downloading the dataset.
-    FILE_FORMAT (dict): Dictionary containing the file formats for the dataset.
-    RAW_FILE_NAMES (dict): Dictionary containing the raw file names for the dataset.
+    ASSETS:
+        Immutable exact asset manifest. An entry is publishable only with an
+        HTTPS URL, exact byte size and SHA-256, and explicit extraction limits.
     """
 
-    URLS: ClassVar = {
-        "coauthorship_cora": "https://drive.google.com/file/d/1J5fLPABWrM9SH_7m85n7--oHDVmwJeib/view?usp=sharing",
-        "coauthorship_dblp": "https://drive.google.com/file/d/16ryf4Ve-t0_nAla0VfjtSxSAG8Sye8TZ/view?usp=sharing",
-        "cocitation_cora": "https://drive.google.com/file/d/1WVRx5yDxSdZpvL6FK5Ji8H3lOnyYlraN/view?usp=sharing",
-        "cocitation_citeseer": "https://drive.google.com/file/d/1XWfu1jtijsmHmfCP6UQxyLsuPM8GBNJb/view?usp=sharing",
-        "cocitation_pubmed": "https://drive.google.com/file/d/1XbqDJnHnV0HYvie3fcM8rquamnQsLTpK/view?usp=sharing",
-    }
-
-    FILE_FORMAT: ClassVar = {
-        "coauthorship_cora": "zip",
-        "coauthorship_dblp": "zip",
-        "cocitation_cora": "zip",
-        "cocitation_citeseer": "zip",
-        "cocitation_pubmed": "zip",
-    }
-
-    RAW_FILE_NAMES: ClassVar = {}
+    ASSETS: ClassVar[Mapping[str, RemoteArchive]] = MappingProxyType({})
 
     def __init__(
         self,
@@ -117,7 +107,7 @@ class CitationHypergraphDataset(InMemoryDataset):
         list[str]
             List of raw file names.
         """
-        return []  # ["county_graph.csv", f"county_stats_{self.year}.csv"]
+        return [f"{self.name}.json", f"{self.name}.npz"]
 
     @property
     def processed_file_names(self) -> str:
@@ -131,40 +121,22 @@ class CitationHypergraphDataset(InMemoryDataset):
         return HYPERGRAPH_CACHE_FILENAME
 
     def download(self) -> None:
-        r"""Download the dataset from a URL and saves it to the raw directory.
-
-        Raises:
-            FileNotFoundError: If the dataset URL is not found.
-        """
-        # Step 1: Download data from the source
-        self.url = self.URLS[self.name]
-        self.file_format = self.FILE_FORMAT[self.name]
-
-        download_file_from_drive(
-            file_link=self.url,
-            path_to_save=self.raw_dir,
-            dataset_name=self.name,
-            file_format=self.file_format,
+        """Acquire one authenticated safe-format archive atomically."""
+        try:
+            asset = self.ASSETS[self.name]
+        except KeyError as error:
+            raise ValueError(
+                f"{self.name}: no authenticated safe archive is published"
+            ) from error
+        acquire_verified_archive(
+            asset,
+            self.raw_dir,
+            lambda root: validate_hypergraph_npz_assets(root, self.name),
         )
-        # Extract zip file
-        folder = self.raw_dir
-        filename = f"{self.name}.{self.file_format}"
-        path = osp.join(folder, filename)
-        extract_zip(path, folder)
-        # Delete zip file
-        os.unlink(path)
-
-        # Move files from osp.join(folder, name_download) to folder
-        for file in os.listdir(osp.join(folder, self.name)):
-            shutil.move(
-                osp.join(folder, self.name, file), osp.join(folder, file)
-            )
-        # Delete osp.join(folder, self.name) dir
-        shutil.rmtree(osp.join(folder, self.name))
 
     def process(self) -> None:
-        """Parse raw pickle files and save one native v2 hypergraph."""
-        data, _ = load_hypergraph_pickle_dataset(
+        """Parse safe NPZ assets and save one native hypergraph."""
+        data, _ = load_hypergraph_npz_dataset(
             data_dir=self.raw_dir,
             data_name=self.name,
         )

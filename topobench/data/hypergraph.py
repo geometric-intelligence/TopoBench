@@ -76,13 +76,18 @@ def _validate_features(
     *,
     selector: str,
 ) -> tuple[Tensor, int]:
-    """Validate the native node feature matrix."""
+    """Validate dense or fully sparse native node feature matrices."""
     x = _require_tensor(data, "x")
     context = f"{selector}: node field x"
     if x.ndim != 2:
         raise ValueError(
             f"{context} observed shape={tuple(x.shape)}, dtype={x.dtype}; "
             "expected rank-2"
+        )
+    if x.layout not in {torch.strided, torch.sparse_coo}:
+        raise TypeError(
+            f"{context} observed shape={tuple(x.shape)}, dtype={x.dtype}, "
+            f"layout={x.layout}; expected dense strided or sparse COO"
         )
     if not x.is_floating_point():
         raise TypeError(
@@ -94,7 +99,36 @@ def _validate_features(
             f"{context} observed shape={tuple(x.shape)}, dtype={x.dtype}; "
             "expected positive feature width"
         )
-    if not bool(torch.isfinite(x).all()):
+
+    if x.layout == torch.sparse_coo:
+        if x.sparse_dim() != 2 or x.dense_dim() != 0:
+            raise TypeError(
+                f"{context} observed shape={tuple(x.shape)}, dtype={x.dtype}; "
+                "expected a fully sparse rank-2 COO tensor"
+            )
+        if not x.is_coalesced():
+            raise ValueError(
+                f"{context} observed shape={tuple(x.shape)}, dtype={x.dtype}; "
+                "expected coalesced sparse COO"
+            )
+        indices = x.indices()
+        if indices.dtype != torch.long:
+            raise TypeError(
+                f"{context} sparse COO indices must use torch.int64"
+            )
+        if indices.numel() and (
+            bool((indices < 0).any())
+            or bool((indices[0] >= x.size(0)).any())
+            or bool((indices[1] >= x.size(1)).any())
+        ):
+            raise ValueError(
+                f"{context} sparse COO indices must be within shape bounds "
+                f"{tuple(x.shape)}"
+            )
+        finite_values = torch.isfinite(x.values()).all()
+    else:
+        finite_values = torch.isfinite(x).all()
+    if not bool(finite_values):
         raise ValueError(
             f"{context} observed shape={tuple(x.shape)}, dtype={x.dtype}; "
             "expected finite values"

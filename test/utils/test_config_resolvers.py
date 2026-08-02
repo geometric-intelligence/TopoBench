@@ -151,7 +151,7 @@ class TestConfigResolvers:
                 "configs/transforms/dataset_defaults/REDDIT-BINARY.yaml",
                 10,
             ),
-            ("configs/dataset/hypergraph/20newsgroup.yaml", None, 100),
+            ("configs/dataset/hypergraph/SyntheticHypergraph.yaml", None, 4),
         ],
     )
     def test_no_lifting_returns_scalar_channels_for_native_features(

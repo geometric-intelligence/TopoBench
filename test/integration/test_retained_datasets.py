@@ -40,7 +40,6 @@ _DATA_NAME_OVERRIDES = {
     "graph/cocitation_pubmed": "PubMed",
     "graph/graphuniverse_inductive_triangle": "GraphUniverse",
     "graph/graphuniverse_transductive": "GraphUniverse",
-    "hypergraph/20newsgroup": "20newsW100",
 }
 _ADME_SELECTORS = (
     "graph/BBB_Martins",
@@ -305,31 +304,10 @@ def _assert_hypergraph_format(
         torch.arange(num_hyperedges, device=batch.hyperedge_index.device),
     )
 
-    raw_dir = (
-        Path(str(cfg.dataset.loader.parameters.data_dir))
-        / str(cfg.dataset.loader.parameters.data_name)
-        / "raw"
+    assert row.loader_family == (
+        "topobench.data.loaders.hypergraph.synthetic."
+        "SyntheticHypergraphDatasetLoader"
     )
-    if row.loader_family == (
-        "topobench.data.loaders.CitationHypergraphDatasetLoader"
-    ):
-        assert all(
-            (raw_dir / filename).is_file()
-            for filename in (
-                "features.pickle",
-                "labels.pickle",
-                "hypergraph.pickle",
-            )
-        )
-    elif row.loader_family == "topobench.data.loaders.HypergraphDatasetLoader":
-        name = str(cfg.dataset.loader.parameters.data_name)
-        assert (raw_dir / f"{name}.content").is_file()
-        assert (raw_dir / f"{name}.edges").is_file()
-    else:
-        assert row.loader_family == (
-            "topobench.data.loaders.hypergraph.synthetic."
-            "SyntheticHypergraphDatasetLoader"
-        )
 
 
 def _assert_runtime_format(

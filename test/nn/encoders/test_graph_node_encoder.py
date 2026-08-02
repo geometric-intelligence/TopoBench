@@ -11,6 +11,7 @@ from topobench.data.features import (
     OGB_ATOM_FEATURE_CARDINALITIES,
     encode_categorical_columns,
 )
+from topobench.dataloader.graph import mark_hypergraph_validated
 from topobench.nn.encoders import GraphNodeFeatureEncoder
 
 
@@ -125,6 +126,159 @@ def test_graph_node_encoder_replaces_native_features() -> None:
     assert result.x.shape == (graph_a.num_nodes + graph_b.num_nodes, 8)
     assert result.x is not original_x
 
+
+
+def test_sparse_coo_projection_matches_dense_linear_reference() -> None:
+    dense_x = torch.tensor(
+        [
+            [0.0, 1.5, 0.0, -2.0, 0.0],
+            [3.0, 0.0, 0.0, 0.0, 4.0],
+            [0.0, 0.0, -1.0, 0.0, 0.0],
+        ]
+    )
+    sparse_x = dense_x.to_sparse_coo().coalesce()
+    batch = torch.tensor([0, 0, 1], dtype=torch.long)
+    data = Data(x=sparse_x, batch=batch)
+    encoder = GraphNodeFeatureEncoder(5, 3, dropout=0.0).eval()
+
+    with torch.no_grad():
+        projected = torch.nn.functional.linear(
+            dense_x,
+            encoder.projection.weight,
+            encoder.projection.bias,
+        )
+        expected = torch.relu(
+            encoder.sparse_norm(projected, batch=batch)
+        )
+
+    result = encoder(data)
+
+    assert result.x.layout == torch.strided
+    assert result.x.shape == (3, 3)
+    torch.testing.assert_close(result.x, expected)
+    assert data.x is sparse_x
+    assert data.x.layout == torch.sparse_coo
+
+
+def test_sparse_projection_has_finite_value_and_parameter_gradients() -> None:
+    indices = torch.tensor(
+        [[0, 0, 1, 2], [0, 3, 1, 2]],
+        dtype=torch.long,
+    )
+    values = torch.tensor([1.0, -2.0, 3.0, 0.5], requires_grad=True)
+    sparse_x = torch.sparse_coo_tensor(
+        indices,
+        values,
+        size=(3, 4),
+    ).coalesce()
+    encoder = GraphNodeFeatureEncoder(4, 2, dropout=0.0)
+
+    result = encoder(Data(x=sparse_x))
+    result.x.square().sum().backward()
+
+    assert result.x.shape == (3, 2)
+    assert values.grad is not None
+    assert torch.isfinite(values.grad).all()
+    parameter_gradients = [
+        encoder.projection.weight.grad,
+        encoder.projection.bias.grad,
+        encoder.sparse_norm.weight.grad,
+        encoder.sparse_norm.bias.grad,
+        encoder.sparse_norm.mean_scale.grad,
+    ]
+    assert all(gradient is not None for gradient in parameter_gradients)
+    assert all(
+        torch.isfinite(gradient).all()
+        for gradient in parameter_gradients
+        if gradient is not None
+    )
+
+
+def test_validated_sparse_forward_skips_redundant_full_value_scan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sparse_x = torch.tensor(
+        [[1.0, 0.0, 2.0], [0.0, -1.0, 0.0]]
+    ).to_sparse_coo().coalesce()
+    data = Data(x=sparse_x)
+    mark_hypergraph_validated(
+        data,
+        selector="validated-sparse",
+        num_classes=2,
+    )
+    encoder = GraphNodeFeatureEncoder(3, 2, dropout=0.0)
+
+    def unexpected_scan(*_: object, **__: object) -> torch.Tensor:
+        raise AssertionError("validated sparse values were scanned again")
+
+    monkeypatch.setattr(torch, "isfinite", unexpected_scan)
+
+    result = encoder(data)
+
+    assert result.x.shape == (2, 2)
+
+
+def test_unvalidated_sparse_forward_rejects_nonfinite_values() -> None:
+    sparse_x = torch.sparse_coo_tensor(
+        torch.tensor([[0], [1]], dtype=torch.long),
+        torch.tensor([float("nan")]),
+        size=(2, 3),
+        is_coalesced=True,
+    )
+    encoder = GraphNodeFeatureEncoder(3, 2, dropout=0.0)
+
+    with pytest.raises(ValueError, match="sparse data.x values.*finite"):
+        encoder(Data(x=sparse_x))
+
+
+def test_stale_sparse_validation_context_is_rejected() -> None:
+    original = torch.tensor(
+        [[1.0, 0.0, 2.0], [0.0, -1.0, 0.0]]
+    ).to_sparse_coo().coalesce()
+    data = Data(x=original)
+    mark_hypergraph_validated(
+        data,
+        selector="validated-sparse",
+        num_classes=2,
+    )
+    data.x = torch.sparse_coo_tensor(
+        torch.tensor([[0], [1]], dtype=torch.long),
+        torch.tensor([float("nan")]),
+        size=original.shape,
+        is_coalesced=True,
+    )
+    encoder = GraphNodeFeatureEncoder(3, 2, dropout=0.0)
+
+    with pytest.raises(ValueError, match="batch.x changed"):
+        encoder(data)
+
+
+@pytest.mark.parametrize(
+    ("features", "message"),
+    [
+        (
+            torch.eye(3).to_sparse_csr(),
+            "sparse COO",
+        ),
+        (
+            torch.sparse_coo_tensor(
+                torch.tensor([[0, 0], [1, 1]], dtype=torch.long),
+                torch.tensor([1.0, 2.0]),
+                size=(3, 3),
+            ),
+            "coalesced",
+        ),
+    ],
+    ids=["csr-layout", "uncoalesced"],
+)
+def test_sparse_encoder_rejects_unsupported_layouts(
+    features: torch.Tensor,
+    message: str,
+) -> None:
+    encoder = GraphNodeFeatureEncoder(3, 2, dropout=0.0)
+
+    with pytest.raises((TypeError, ValueError), match=message):
+        encoder(Data(x=features))
 
 def test_categorical_batch_encoding_matches_canonical_one_hot_path() -> None:
     categories = torch.tensor(

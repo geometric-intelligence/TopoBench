@@ -1,85 +1,127 @@
-"""Opt-in smoke tests for the two supported real hypergraph raw formats."""
+"""Adapter-level evidence for the published non-executable hypergraph format."""
 
-import os
+from __future__ import annotations
+
+import hashlib
+import json
 from pathlib import Path
+from typing import Any
 
+import numpy as np
 import pytest
 import torch
 from omegaconf import OmegaConf
 
-from topobench.data import (
-    HYPERGRAPH_CACHE_FILENAME,
-    HYPERGRAPH_REPRESENTATION_VERSION,
-    HypergraphData,
-    validate_hypergraph_structure,
-)
-from topobench.data.datasets import (
-    CitationHypergraphDataset,
-    HypergraphDataset,
-)
-
-pytestmark = pytest.mark.skipif(
-    os.getenv("TOPOBENCH_RUN_DOWNLOAD_TESTS") != "1",
-    reason="set TOPOBENCH_RUN_DOWNLOAD_TESTS=1 to run network smokes",
+from topobench.data import HYPERGRAPH_CACHE_FILENAME, HypergraphData
+from topobench.data.datasets import CitationHypergraphDataset, HypergraphDataset
+from topobench.data.utils.hypergraph_io import (
+    SAFE_HYPERGRAPH_CONVERTER_VERSION,
+    SAFE_HYPERGRAPH_FORMAT,
+    SAFE_HYPERGRAPH_FORMAT_VERSION,
 )
 
 
-def _assert_real_native_data(data: HypergraphData) -> None:
-    assert validate_hypergraph_structure(data) is data
-    assert data.representation_version == HYPERGRAPH_REPRESENTATION_VERSION
-    assert (
-        int(data["representation_version"])
-        == HYPERGRAPH_REPRESENTATION_VERSION
+def _canonical_json(payload: dict[str, Any]) -> bytes:
+    return (
+        json.dumps(
+            payload,
+            allow_nan=False,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
+def _write_safe_asset(raw_dir: Path, name: str, *, valid_digest: bool) -> None:
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    arrays = {
+        "features": np.asarray(
+            [[0.0, 0.0], [1.0, 2.0], [3.0, 4.0]], dtype=np.float32
+        ),
+        "incidence": np.asarray(
+            [[1, 1, 2], [1, 1, 0]], dtype=np.int64
+        ),
+        "labels": np.asarray([0, 2, 1], dtype=np.int64),
+    }
+    npz_path = raw_dir / f"{name}.npz"
+    np.savez(npz_path, **arrays)
+    digest = hashlib.sha256(npz_path.read_bytes()).hexdigest()
+    metadata = {
+        "arrays": {
+            key: {"dtype": value.dtype.str, "shape": list(value.shape)}
+            for key, value in arrays.items()
+        },
+        "converter_version": SAFE_HYPERGRAPH_CONVERTER_VERSION,
+        "feature_storage": "dense",
+        "format": SAFE_HYPERGRAPH_FORMAT,
+        "format_version": SAFE_HYPERGRAPH_FORMAT_VERSION,
+        "incidence_roles": ["node", "hyperedge"],
+        "npz_sha256": digest if valid_digest else "0" * 64,
+        "num_hyperedges": 2,
+        "num_nodes": 3,
+        "padding_count": 0,
+        "padding_sentinel": None,
+        "raw_sha256": "a" * 64,
+    }
+    (raw_dir / f"{name}.json").write_bytes(_canonical_json(metadata))
+
+
+@pytest.mark.parametrize(
+    "dataset_class",
+    [CitationHypergraphDataset, HypergraphDataset],
+)
+def test_safe_asset_processes_and_caches_without_losing_declared_rows(
+    tmp_path: Path,
+    dataset_class: type[CitationHypergraphDataset] | type[HypergraphDataset],
+) -> None:
+    name = dataset_class.__name__.lower()
+    _write_safe_asset(tmp_path / name / "raw", name, valid_digest=True)
+
+    dataset = dataset_class(
+        root=str(tmp_path),
+        name=name,
+        parameters=OmegaConf.create({"data_name": name}),
     )
-    assert data.hyperedge_index.dtype == torch.long
+
+    data = dataset[0]
+    assert isinstance(data, HypergraphData)
+    assert torch.equal(data.x[0], torch.tensor([0.0, 0.0]))
+    assert int(data.y[0]) == 0
+    assert 0 not in data.hyperedge_index[0]
     assert torch.equal(
-        torch.unique(data.hyperedge_index[1]),
-        torch.arange(data.num_hyperedges),
+        data.hyperedge_index,
+        torch.tensor([[1, 1, 2], [1, 1, 0]], dtype=torch.long),
     )
-
-
-@pytest.mark.integration
-@pytest.mark.download
-def test_real_cocitation_cora_pickle_format(tmp_path: Path) -> None:
-    """Download, extract, parse, and cache the small Cora pickle archive."""
-    name = "cocitation_cora"
-    dataset = CitationHypergraphDataset(
-        root=str(tmp_path),
-        name=name,
-        parameters=OmegaConf.create({"data_name": name}),
-    )
-    data = dataset[0]
-
-    _assert_real_native_data(data)
-    assert data.x.shape[1] == 1433
-    assert int(data.y.min()) == 0
-    assert int(data.y.max()) == 6
-    assert (tmp_path / name / "raw" / "features.pickle").is_file()
-    assert (tmp_path / name / "raw" / "labels.pickle").is_file()
-    assert (tmp_path / name / "raw" / "hypergraph.pickle").is_file()
     assert (
         tmp_path / name / "processed" / HYPERGRAPH_CACHE_FILENAME
     ).is_file()
 
 
-@pytest.mark.integration
-@pytest.mark.download
-def test_real_zoo_content_edges_format(tmp_path: Path) -> None:
-    """Download, extract, parse, and cache the small Zoo content archive."""
-    name = "zoo"
-    dataset = HypergraphDataset(
-        root=str(tmp_path),
-        name=name,
-        parameters=OmegaConf.create({"data_name": name}),
-    )
-    data = dataset[0]
+@pytest.mark.parametrize(
+    "dataset_class",
+    [CitationHypergraphDataset, HypergraphDataset],
+)
+def test_malformed_safe_asset_fails_before_cache_creation(
+    tmp_path: Path,
+    dataset_class: type[CitationHypergraphDataset] | type[HypergraphDataset],
+) -> None:
+    name = f"invalid-{dataset_class.__name__.lower()}"
+    _write_safe_asset(tmp_path / name / "raw", name, valid_digest=False)
 
-    _assert_real_native_data(data)
-    assert data.num_nodes == 101
-    assert data.x.shape[1] == 16
-    assert torch.equal(torch.unique(data.y), torch.arange(7))
-    assert (tmp_path / name / "raw" / f"{name}.content").is_file()
-    assert (tmp_path / name / "raw" / f"{name}.edges").is_file()
-    assert (
+    with pytest.raises(ValueError, match="NPZ SHA-256 mismatch"):
+        dataset_class(
+            root=str(tmp_path),
+            name=name,
+            parameters=OmegaConf.create({"data_name": name}),
+        )
+
+    assert not (
         tmp_path / name / "processed" / HYPERGRAPH_CACHE_FILENAME
-    ).is_file()
+    ).exists()
+
+
+def test_unpublished_remote_selectors_have_no_runtime_asset_fallback() -> None:
+    assert dict(CitationHypergraphDataset.ASSETS) == {}
+    assert dict(HypergraphDataset.ASSETS) == {}

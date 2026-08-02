@@ -97,6 +97,24 @@ def test_pipeline_aliases_immutable_hypergraph_tensors(
         assert source[name] is mask
 
 
+
+def test_singleton_pipeline_keeps_sparse_features_until_encoder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = make_synthetic_hypergraph_data(seed=27)
+    sparse_x = source.x.to_sparse_coo().coalesce()
+    source.x = sparse_x
+
+    _, output = _build_from_source(monkeypatch, source)
+    runtime = output.datamodule.dataset_train[0]
+    batch = next(iter(output.datamodule.train_dataloader()))
+
+    assert runtime.x is sparse_x
+    assert runtime.x.layout == torch.sparse_coo
+    assert batch.x is sparse_x
+    assert batch.x.layout == torch.sparse_coo
+    assert batch.x.is_coalesced()
+
 def test_exhaustive_hypergraph_validation_runs_once_at_pipeline_boundary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

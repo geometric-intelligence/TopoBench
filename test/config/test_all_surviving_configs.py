@@ -140,47 +140,23 @@ NON_GRAPH_MODEL_ROWS: Mapping[str, tuple[str, ...]] = {
         "hypergraph/edgnn",
         "hypergraph/hypergraph_conv",
     ),
-    "hypergraph/20newsgroup": (
-        "hypergraph/edgnn",
-        "hypergraph/hypergraph_conv",
-    ),
-    "hypergraph/ModelNet40": (
-        "hypergraph/edgnn",
-        "hypergraph/hypergraph_conv",
-    ),
-    "hypergraph/Mushroom": (
-        "hypergraph/edgnn",
-        "hypergraph/hypergraph_conv",
-    ),
-    "hypergraph/NTU2012": (
-        "hypergraph/edgnn",
-        "hypergraph/hypergraph_conv",
-    ),
-    "hypergraph/coauthorship_cora": (
-        "hypergraph/edgnn",
-        "hypergraph/hypergraph_conv",
-    ),
-    "hypergraph/coauthorship_dblp": (
-        "hypergraph/edgnn",
-        "hypergraph/hypergraph_conv",
-    ),
-    "hypergraph/cocitation_citeseer": (
-        "hypergraph/edgnn",
-        "hypergraph/hypergraph_conv",
-    ),
-    "hypergraph/cocitation_cora": (
-        "hypergraph/edgnn",
-        "hypergraph/hypergraph_conv",
-    ),
-    "hypergraph/cocitation_pubmed": (
-        "hypergraph/edgnn",
-        "hypergraph/hypergraph_conv",
-    ),
-    "hypergraph/zoo": (
-        "hypergraph/edgnn",
-        "hypergraph/hypergraph_conv",
-    ),
 }
+EXPECTED_NON_GRAPH_PAIRS = (
+    ("heterogeneous/DBLP", "heterogeneous/heterosage"),
+    ("heterogeneous/DBLP", "heterogeneous/hgt"),
+    ("heterogeneous/OGB_MAG", "heterogeneous/heterosage"),
+    ("heterogeneous/OGB_MAG", "heterogeneous/hgt"),
+    (
+        "heterogeneous/SyntheticHeterogeneous",
+        "heterogeneous/heterosage",
+    ),
+    ("heterogeneous/SyntheticHeterogeneous", "heterogeneous/hgt"),
+    ("hypergraph/SyntheticHypergraph", "hypergraph/edgnn"),
+    (
+        "hypergraph/SyntheticHypergraph",
+        "hypergraph/hypergraph_conv",
+    ),
+)
 REQUIRED_QUALIFICATION_FIELDS = frozenset(
     {
         "selector",
@@ -461,13 +437,23 @@ def test_model_directories_are_exact_and_match_capabilities() -> None:
 
 def test_declared_pair_matrix_is_total_and_exact() -> None:
     assert len(_graph_pairs()) == 155
-    assert len(_non_graph_pairs()) == 28
-    assert len(VALID_PAIRS) == 183
+    assert tuple(sorted(_non_graph_pairs())) == EXPECTED_NON_GRAPH_PAIRS
+    assert len(VALID_PAIRS) == len(_graph_pairs()) + len(
+        EXPECTED_NON_GRAPH_PAIRS
+    )
     assert len(VALID_PAIR_SET) == len(VALID_PAIRS)
     assert {dataset for dataset, _ in VALID_PAIRS} == set(
         DATASET_QUALIFICATION_MANIFEST
     )
-    assert len(CROSS_DOMAIN_PAIRS) == 246
+    expected_cross_domain_count = sum(
+        sum(
+            len(model_selectors)
+            for model_domain, model_selectors in EXPECTED_MODELS.items()
+            if model_domain != dataset_selector.partition("/")[0]
+        )
+        for dataset_selector in DATASET_QUALIFICATION_MANIFEST
+    )
+    assert len(CROSS_DOMAIN_PAIRS) == expected_cross_domain_count
 
 
 @pytest.mark.parametrize(

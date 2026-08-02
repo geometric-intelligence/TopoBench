@@ -113,6 +113,7 @@ class GraphNodeFeatureEncoder(AbstractFeatureEncoder):
         self.categorical_cardinalities = cardinalities
         self.norm = GraphNorm(encoded_in_channels)
         self.projection = torch.nn.Linear(encoded_in_channels, out_channels)
+        self.sparse_norm = GraphNorm(out_channels)
         self.activation = torch.nn.ReLU()
         self.dropout = torch.nn.Dropout(dropout)
 
@@ -133,7 +134,41 @@ class GraphNodeFeatureEncoder(AbstractFeatureEncoder):
             raise ValueError(
                 f"data.x must have exactly {self.in_channels} input columns"
             )
-        if self.encoding_mode == "categorical_one_hot":
+        if x.layout not in {torch.strided, torch.sparse_coo}:
+            raise TypeError(
+                "sparse data.x must use torch sparse COO layout"
+            )
+        is_sparse = x.layout == torch.sparse_coo
+        if is_sparse:
+            if self.encoding_mode != "continuous":
+                raise TypeError(
+                    "categorical_one_hot encoding does not accept sparse data.x"
+                )
+            if x.sparse_dim() != 2 or x.dense_dim() != 0:
+                raise TypeError(
+                    "sparse data.x must be a fully sparse rank-2 COO tensor"
+                )
+            if not x.is_coalesced():
+                raise ValueError("sparse data.x must be coalesced")
+            if not x.is_floating_point():
+                raise TypeError("data.x must have a floating dtype")
+            indices = x.indices()
+            if indices.dtype != torch.long:
+                raise TypeError("sparse data.x indices must use torch.int64")
+            if validation_context is None:
+                if indices.numel() and (
+                    bool((indices < 0).any())
+                    or bool((indices[0] >= x.size(0)).any())
+                    or bool((indices[1] >= x.size(1)).any())
+                ):
+                    raise ValueError(
+                        "sparse data.x indices must be within shape bounds"
+                    )
+                if not bool(torch.isfinite(x.values()).all()):
+                    raise ValueError(
+                        "sparse data.x values must contain only finite values"
+                    )
+        elif self.encoding_mode == "categorical_one_hot":
             categorical_columns = len(self.categorical_cardinalities)
             categorical_prefix = x[:, :categorical_columns]
             encoded_prefix = encode_categorical_columns(
@@ -165,10 +200,19 @@ class GraphNodeFeatureEncoder(AbstractFeatureEncoder):
         batch = data.get("batch")
         if batch is None:
             batch = torch.zeros(x.shape[0], dtype=torch.long, device=x.device)
+        if is_sparse:
+            projected = torch.sparse.mm(x, self.projection.weight.t())
+            if self.projection.bias is not None:
+                projected = projected + self.projection.bias
+            encoded = self.dropout(
+                self.activation(self.sparse_norm(projected, batch=batch))
+            )
+        else:
+            encoded = self.dropout(
+                self.activation(self.projection(self.norm(x, batch=batch)))
+            )
         result = copy(data)
-        result.x = self.dropout(
-            self.activation(self.projection(self.norm(x, batch=batch)))
-        )
+        result.x = encoded
         if validation_context is not None:
             mark_hypergraph_validated(
                 result,

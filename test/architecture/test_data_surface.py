@@ -8,7 +8,8 @@ import topobench.data.utils as data_utils
 import topobench.dataloader as dataloader
 from topobench.data.utils.hypergraph_io import (
     load_hypergraph_content_dataset,
-    load_hypergraph_pickle_dataset,
+    load_hypergraph_npz_dataset,
+    validate_hypergraph_npz_assets,
 )
 from topobench.dataloader import GraphDataModule, HeterogeneousNodeDataModule
 
@@ -32,16 +33,19 @@ FORBIDDEN_SYMBOLS = {
 }
 NARROW_SYMBOL_OWNERS = {
     "apply_transductive_split": {"topobench.data.splits"},
-    "download_file_from_drive": {"topobench.data.utils.downloads"},
-    "download_file_from_link": {"topobench.data.utils.downloads"},
+    "ArchiveLimits": {"topobench.data.utils.downloads"},
+    "RemoteArchive": {"topobench.data.utils.downloads"},
+    "acquire_verified_archive": {"topobench.data.utils.downloads"},
     "ensure_serializable": {"topobench.data.utils.common"},
-    "get_file_id_from_url": {"topobench.data.utils.downloads"},
     "incidence_pairs": {"topobench.data.utils.hypergraph_io"},
     "inductive_split_views": {"topobench.data.splits"},
     "load_hypergraph_content_dataset": {
         "topobench.data.utils.hypergraph_io"
     },
-    "load_hypergraph_pickle_dataset": {
+    "load_hypergraph_npz_dataset": {
+        "topobench.data.utils.hypergraph_io"
+    },
+    "validate_hypergraph_npz_assets": {
         "topobench.data.utils.hypergraph_io"
     },
     "make_hash": {"topobench.data.utils.common"},
@@ -124,8 +128,8 @@ def test_dependency_light_data_symbols_use_their_narrow_owners() -> None:
     assert violations == []
 
 
-def test_native_datamodules_and_real_hypergraph_parsers_remain_public() -> None:
-    """Pruning retains native batching and both supported raw formats."""
+def test_native_datamodules_and_safe_hypergraph_parsers_remain_public() -> None:
+    """Pruning retains native batching and non-executable parser formats."""
     assert GraphDataModule.__name__ == "GraphDataModule"
     assert HeterogeneousNodeDataModule.__name__ == "HeterogeneousNodeDataModule"
     assert dataloader.__all__ == [
@@ -133,17 +137,23 @@ def test_native_datamodules_and_real_hypergraph_parsers_remain_public() -> None:
         "HeterogeneousNodeDataModule",
     ]
     assert data_utils.__all__ == [
-        "download_file_from_drive",
-        "download_file_from_link",
+        "ArchiveLimits",
+        "RemoteArchive",
+        "acquire_verified_archive",
+        "ContentRoleSpec",
+        "SAFE_HYPERGRAPH_CONVERTER_VERSION",
+        "SAFE_HYPERGRAPH_FORMAT",
+        "SAFE_HYPERGRAPH_FORMAT_VERSION",
         "ensure_serializable",
-        "get_file_id_from_url",
         "incidence_pairs",
         "load_coauthorship_hypergraph_splits",
         "load_hypergraph_content_dataset",
-        "load_hypergraph_pickle_dataset",
+        "load_hypergraph_npz_dataset",
+        "validate_hypergraph_npz_assets",
         "load_inductive_splits",
         "load_transductive_splits",
         "make_hash",
     ]
     assert callable(load_hypergraph_content_dataset)
-    assert callable(load_hypergraph_pickle_dataset)
+    assert callable(load_hypergraph_npz_dataset)
+    assert callable(validate_hypergraph_npz_assets)

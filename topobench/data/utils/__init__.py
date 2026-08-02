@@ -2,14 +2,19 @@
 
 from .common import ensure_serializable, make_hash
 from .downloads import (
-    download_file_from_drive,
-    download_file_from_link,
-    get_file_id_from_url,
+    ArchiveLimits,
+    RemoteArchive,
+    acquire_verified_archive,
 )
 from .hypergraph_io import (
+    SAFE_HYPERGRAPH_CONVERTER_VERSION,
+    SAFE_HYPERGRAPH_FORMAT,
+    SAFE_HYPERGRAPH_FORMAT_VERSION,
+    ContentRoleSpec,
     incidence_pairs,
     load_hypergraph_content_dataset,
-    load_hypergraph_pickle_dataset,
+    load_hypergraph_npz_dataset,
+    validate_hypergraph_npz_assets,
 )
 from .split_utils import (
     load_coauthorship_hypergraph_splits,
@@ -18,14 +23,19 @@ from .split_utils import (
 )
 
 __all__ = [
-    "download_file_from_drive",
-    "download_file_from_link",
+    "ArchiveLimits",
+    "RemoteArchive",
+    "acquire_verified_archive",
+    "ContentRoleSpec",
+    "SAFE_HYPERGRAPH_CONVERTER_VERSION",
+    "SAFE_HYPERGRAPH_FORMAT",
+    "SAFE_HYPERGRAPH_FORMAT_VERSION",
     "ensure_serializable",
-    "get_file_id_from_url",
     "incidence_pairs",
     "load_coauthorship_hypergraph_splits",
     "load_hypergraph_content_dataset",
-    "load_hypergraph_pickle_dataset",
+    "load_hypergraph_npz_dataset",
+    "validate_hypergraph_npz_assets",
     "load_inductive_splits",
     "load_transductive_splits",
     "make_hash",

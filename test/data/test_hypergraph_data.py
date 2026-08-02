@@ -261,6 +261,88 @@ def test_hypergraph_rejects_zero_feature_width_before_splitting() -> None:
     assert "positive feature width" in message
 
 
+def test_structure_validation_preserves_finite_sparse_coo_features() -> None:
+    data = _valid_data()
+    sparse_x = data.x.to_sparse_coo().coalesce()
+    data.x = sparse_x
+
+    validated = validate_hypergraph_structure(data)
+
+    assert validated is data
+    assert validated.x is sparse_x
+    assert validated.x.layout == torch.sparse_coo
+    assert validated.x.is_coalesced()
+
+
+@pytest.mark.parametrize(
+    ("features", "error_type", "message"),
+    [
+        (
+            lambda dense: dense.to_sparse_csr(),
+            TypeError,
+            "x.*sparse COO",
+        ),
+        (
+            lambda dense: torch.sparse_coo_tensor(
+                torch.tensor([[0, 0], [0, 0]], dtype=torch.long),
+                torch.tensor([1.0, 2.0]),
+                size=dense.shape,
+            ),
+            ValueError,
+            "x.*coalesced",
+        ),
+        (
+            lambda dense: torch.sparse_coo_tensor(
+                torch.tensor([[0], [0]], dtype=torch.long),
+                torch.tensor([float("nan")]),
+                size=dense.shape,
+                is_coalesced=True,
+            ),
+            ValueError,
+            "x.*finite",
+        ),
+        (
+            lambda dense: torch.sparse_coo_tensor(
+                torch.tensor([[dense.size(0)], [0]], dtype=torch.long),
+                torch.tensor([1.0]),
+                size=dense.shape,
+                is_coalesced=True,
+                check_invariants=False,
+            ),
+            ValueError,
+            "x.*indices.*bounds",
+        ),
+        (
+            lambda dense: torch.sparse_coo_tensor(
+                torch.tensor([[0], [0]], dtype=torch.long),
+                torch.tensor([1], dtype=torch.long),
+                size=dense.shape,
+                is_coalesced=True,
+            ),
+            TypeError,
+            "x.*floating",
+        ),
+    ],
+    ids=[
+        "csr-layout",
+        "uncoalesced",
+        "nonfinite",
+        "out-of-bounds",
+        "integer-values",
+    ],
+)
+def test_structure_validation_rejects_invalid_sparse_features(
+    features: Callable[[torch.Tensor], torch.Tensor],
+    error_type: type[Exception],
+    message: str,
+) -> None:
+    data = _valid_data()
+    data.x = features(data.x)
+
+    with pytest.raises(error_type, match=message):
+        validate_hypergraph_structure(data)
+
+
 
 
 @pytest.mark.parametrize(
