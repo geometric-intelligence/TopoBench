@@ -7,7 +7,7 @@ import hashlib
 import json
 import os
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, fields as dataclass_fields, replace
+from dataclasses import dataclass, fields as dataclass_fields, is_dataclass, replace
 from importlib import metadata
 from numbers import Integral
 from pathlib import Path
@@ -26,6 +26,14 @@ from topobench.data.stores.pyg_store import PyGTypedFeatureStore, PyGTypedGraphS
 from topobench.data.stores.typed_graph_store import TypedGraphStore
 from topobench.data.stores.typed_partition_book import TypedPartitionBook
 from topobench.dataloader.graph import loader_worker_options
+from topobench.transforms.fittable import (
+    FitContext,
+    FitStateError,
+    FitStateNotFoundError,
+    FitStatus,
+    FittableTransform,
+    build_fit_state_key,
+)
 
 Phase: TypeAlias = Literal["train", "val", "test"]
 CanonicalRelation: TypeAlias = tuple[str, str, str]
@@ -1014,6 +1022,472 @@ def _disk_neighbor_fields(store: TypedGraphStore, batch: HeteroData, descriptor:
             batch[relation][name] = _torch(store.relation_field(relation, name, ids))
 
 
+@dataclass(frozen=True, slots=True)
+class _CanonicalFitView:
+    """One exact canonical training-row identity over an admitted source."""
+
+    source: SamplingSource
+    context: FitContext
+    target_node_type: str
+    target_field: str
+    train_ids: np.ndarray
+
+
+def _fit_digest(value: object) -> str:
+    return hashlib.sha256(_json(value).encode()).hexdigest()
+
+
+def _fit_ids(
+    values: object,
+    *,
+    row_count: int,
+    active_split_tag: str,
+) -> np.ndarray:
+    source = np.asarray(values)
+    if source.ndim != 1 or source.dtype.kind not in "iu":
+        raise ValueError(
+            f"canonical train IDs for split {active_split_tag!r} must be integral and one-dimensional"
+        )
+    identifiers = np.asarray(source, dtype=np.int64)
+    if len(np.unique(identifiers)) != len(identifiers):
+        raise ValueError(
+            f"canonical train IDs for split {active_split_tag!r} contain duplicates"
+        )
+    if len(identifiers) and (
+        int(identifiers.min()) < 0 or int(identifiers.max()) >= row_count
+    ):
+        raise ValueError(
+            f"canonical train IDs for split {active_split_tag!r} are outside [0, {row_count})"
+        )
+    return np.sort(np.array(identifiers, copy=True))
+
+
+def _fit_versions() -> tuple[tuple[str, str], ...]:
+    return tuple(
+        sorted(
+            (
+                ("numpy", np.__version__),
+                ("torch", str(torch.__version__)),
+                ("torch-geometric", _version("torch-geometric") or "unknown"),
+                ("topobench", _version("topobench") or "unknown"),
+            )
+        )
+    )
+
+
+def _store_fit_view(
+    source: TypedGraphStore,
+    transform: FittableTransform,
+    active_split_tag: str,
+) -> _CanonicalFitView:
+    if (
+        source.output_kind == "heterogeneous"
+        and transform.spec.target_node_type is None
+    ):
+        raise ValueError(
+            "heterogeneous fitted transform requires explicit target_node_type"
+        )
+    target = transform.spec.target_node_type or _target(source)
+    declared_target = _target(source)
+    if target != declared_target:
+        raise ValueError(
+            f"fitted transform target {target!r} must match supervised target {declared_target!r}"
+        )
+    node = source._node(target)
+    field = transform.spec.target_field
+    if field == "x":
+        record = node["x"]
+    else:
+        try:
+            record = node["fields"][field]
+        except KeyError as error:
+            raise ValueError(
+                f"fitted transform field {field!r} is unavailable on target {target!r}"
+            ) from error
+    shape = tuple(record["shape"])
+    if len(shape) != 2 or shape[0] != node["count"] or shape[1] < 1:
+        raise ValueError("fitted transform input must be a two-dimensional node field")
+    train = source.split_ids(active_split_tag, "train")
+    identifiers = _fit_ids(
+        train,
+        row_count=shape[0],
+        active_split_tag=active_split_tag,
+    )
+    train_ids_sha = _fit_digest(
+        {
+            "dtype": identifiers.dtype.str,
+            "shape": list(identifiers.shape),
+            "values": identifiers.tolist(),
+        }
+    )
+    split = source._manifest["splits"][active_split_tag]
+    train_source_sha = _fit_digest(
+        {
+            "feature_sha256": record["sha256"],
+            "split_fingerprint": split["fingerprint"],
+            "train_ids_sha256": train_ids_sha,
+            "train_phase_sha256": split["phases"]["train"]["sha256"],
+        }
+    )
+    schema_sha = _fit_digest(
+        {
+            "node_type": target,
+            "field": field,
+            "dtype": record["dtype"],
+            "shape": record["shape"],
+            "finite": record["finite"],
+            "role": record["role"],
+        }
+    )
+    context = FitContext(
+        content_sha256=source.content_sha256,
+        active_split_tag=active_split_tag,
+        train_ids_sha256=train_ids_sha,
+        train_source_sha256=train_source_sha,
+        target_node_type=target,
+        target_field=field,
+        input_shape=(len(identifiers), int(shape[1])),
+        input_width=int(shape[1]),
+        input_dtype=np.dtype(record["dtype"]).name,
+        input_schema_sha256=schema_sha,
+        package_versions=_fit_versions(),
+        numeric_precision=transform.spec.accumulation_dtype,
+    )
+    return _CanonicalFitView(source, context, target, field, identifiers)
+
+
+def _materialized_graph(
+    source: MaterializedSource,
+) -> Data | HeteroData:
+    if isinstance(source, MaterializedHomogeneousPartition):
+        return source._data
+    return source
+
+
+def _materialized_fit_view(
+    source: MaterializedSource,
+    content_sha256: str,
+    transform: FittableTransform,
+    active_split_tag: str,
+) -> _CanonicalFitView:
+    graph = _materialized_graph(source)
+    if isinstance(graph, HeteroData):
+        if transform.spec.target_node_type is None:
+            raise ValueError(
+                "heterogeneous fitted transform requires explicit target_node_type"
+            )
+        declared_target = _target(graph)
+        target = transform.spec.target_node_type or declared_target
+        if target != declared_target:
+            raise ValueError(
+                f"fitted transform target {target!r} must match supervised target {declared_target!r}"
+            )
+        storage = graph[target]
+        identifiers = _fit_ids(
+            _phase_ids(graph, target, active_split_tag, "train"),
+            row_count=int(storage.num_nodes),
+            active_split_tag=active_split_tag,
+        )
+    else:
+        target = transform.spec.target_node_type or "node"
+        mask_name = f"{active_split_tag}_train_mask"
+        if mask_name not in graph:
+            mask_name = "train_mask"
+        if mask_name not in graph:
+            raise ValueError(
+                f"materialized source has no training mask for split {active_split_tag!r}"
+            )
+        storage = graph
+        mask = storage[mask_name]
+        if not isinstance(mask, Tensor) or mask.dtype is not torch.bool:
+            raise ValueError("materialized training mask must be a boolean tensor")
+        identifiers = _fit_ids(
+            mask.nonzero(as_tuple=False).reshape(-1).cpu().numpy(),
+            row_count=int(graph.num_nodes),
+            active_split_tag=active_split_tag,
+        )
+    field = transform.spec.target_field
+    if field not in storage:
+        raise ValueError(
+            f"fitted transform field {field!r} is unavailable on target {target!r}"
+        )
+    feature = storage[field]
+    if (
+        not isinstance(feature, Tensor)
+        or feature.device.type != "cpu"
+        or feature.ndim != 2
+        or feature.shape[0] != int(storage.num_nodes)
+    ):
+        raise ValueError("fitted transform input must be a two-dimensional CPU node field")
+    dtype = feature.detach().numpy().dtype
+    train_ids_sha = _fit_digest(
+        {
+            "dtype": identifiers.dtype.str,
+            "shape": list(identifiers.shape),
+            "values": identifiers.tolist(),
+        }
+    )
+    train_source_sha = _fit_digest(
+        {
+            "content_sha256": content_sha256,
+            "target_node_type": target,
+            "target_field": field,
+            "train_ids_sha256": train_ids_sha,
+        }
+    )
+    schema_sha = _fit_digest(
+        {
+            "node_type": target,
+            "field": field,
+            "dtype": dtype.str,
+            "shape": [int(feature.shape[0]), int(feature.shape[1])],
+        }
+    )
+    context = FitContext(
+        content_sha256=content_sha256,
+        active_split_tag=active_split_tag,
+        train_ids_sha256=train_ids_sha,
+        train_source_sha256=train_source_sha,
+        target_node_type=target,
+        target_field=field,
+        input_shape=(len(identifiers), int(feature.shape[1])),
+        input_width=int(feature.shape[1]),
+        input_dtype=dtype.name,
+        input_schema_sha256=schema_sha,
+        package_versions=_fit_versions(),
+        numeric_precision=transform.spec.accumulation_dtype,
+    )
+    return _CanonicalFitView(source, context, target, field, identifiers)
+
+
+def _fit_view_features(view: _CanonicalFitView, rows: np.ndarray) -> np.ndarray:
+    if isinstance(view.source, TypedGraphStore):
+        return view.source.node_array(view.target_node_type, view.target_field, rows)
+    graph = _materialized_graph(view.source)
+    storage = graph[view.target_node_type] if isinstance(graph, HeteroData) else graph
+    selected = torch.from_numpy(np.array(rows, copy=True))
+    return storage[view.target_field].index_select(0, selected).detach().numpy()
+
+
+def _fit_view_labels(view: _CanonicalFitView, rows: np.ndarray) -> np.ndarray:
+    if isinstance(view.source, TypedGraphStore):
+        return view.source.node_labels(view.target_node_type, rows)
+    graph = _materialized_graph(view.source)
+    storage = graph[view.target_node_type] if isinstance(graph, HeteroData) else graph
+    if "y" not in storage:
+        raise ValueError(
+            f"supervised fitted transform target {view.target_node_type!r} has no labels"
+        )
+    selected = torch.from_numpy(np.array(rows, copy=True))
+    return storage.y.index_select(0, selected).detach().numpy()
+
+
+@dataclass(frozen=True, slots=True)
+class _TensorWitness:
+    reference: Tensor
+    version: int
+    dtype: torch.dtype
+    shape: tuple[int, ...]
+    device: torch.device
+
+
+@dataclass(frozen=True, slots=True)
+class _BatchWitness:
+    graph_type: type[NativeBatch]
+    store_schema: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...]
+    protected_tensors: dict[tuple[tuple[str, ...], str], _TensorWitness]
+    metadata: dict[tuple[tuple[str, ...], str], object]
+    target_location: tuple[tuple[str, ...], str]
+    target_tensor: _TensorWitness
+
+
+def _immutable_metadata(value: object) -> object:
+    if is_dataclass(value):
+        return (
+            "dataclass",
+            type(value).__module__,
+            type(value).__qualname__,
+            tuple(
+                (field.name, _immutable_metadata(getattr(value, field.name)))
+                for field in dataclass_fields(value)
+            ),
+        )
+    if isinstance(value, Mapping):
+        items = (
+            (_immutable_metadata(key), _immutable_metadata(item))
+            for key, item in value.items()
+        )
+        return ("mapping", tuple(sorted(items, key=repr)))
+    if isinstance(value, tuple):
+        return ("tuple", tuple(_immutable_metadata(item) for item in value))
+    if isinstance(value, list):
+        return ("list", tuple(_immutable_metadata(item) for item in value))
+    if isinstance(value, np.generic):
+        return _immutable_metadata(value.item())
+    if value is None or type(value) in {bool, int, str}:
+        return (type(value).__name__, value)
+    if isinstance(value, float):
+        return ("float", value.hex())
+    raise RuntimeError(
+        f"unsupported protected batch metadata type {type(value).__name__}"
+    )
+
+
+def _native_stores(
+    batch: NativeBatch,
+) -> tuple[tuple[tuple[str, ...], Any], ...]:
+    if isinstance(batch, HeteroData):
+        return (
+            (("global",), batch._global_store),
+            *(
+                (("node", node_type), batch[node_type])
+                for node_type in batch.node_types
+            ),
+            *(
+                (("edge", *relation), batch[relation])
+                for relation in batch.edge_types
+            ),
+        )
+    return ((("data",), batch),)
+
+
+def _tensor_witness(value: Tensor) -> _TensorWitness:
+    return _TensorWitness(
+        value,
+        int(value._version),
+        value.dtype,
+        tuple(value.shape),
+        value.device,
+    )
+
+
+def _snapshot_batch(
+    batch: NativeBatch,
+    transform: FittableTransform,
+) -> _BatchWitness:
+    if isinstance(batch, HeteroData) and transform.spec.target_node_type is None:
+        raise ValueError(
+            "heterogeneous fitted transform requires explicit target_node_type"
+        )
+    protected: dict[tuple[tuple[str, ...], str], _TensorWitness] = {}
+    metadata: dict[tuple[tuple[str, ...], str], object] = {}
+    schema: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
+    target_store = (
+        ("node", transform.spec.target_node_type)
+        if isinstance(batch, HeteroData)
+        else ("data",)
+    )
+    target_location = (target_store, transform.spec.target_field)
+    target_tensor: _TensorWitness | None = None
+    for store_key, storage in _native_stores(batch):
+        keys = tuple(sorted(storage.keys()))
+        schema.append((store_key, keys))
+        for name in keys:
+            value = storage[name]
+            location = (store_key, name)
+            if isinstance(value, Tensor):
+                witness = _tensor_witness(value)
+                if location == target_location:
+                    target_tensor = witness
+                else:
+                    protected[location] = witness
+            else:
+                metadata[location] = _immutable_metadata(value)
+    if target_tensor is None:
+        raise RuntimeError(
+            "fitted transform target feature tensor is absent from native batch"
+        )
+    return _BatchWitness(
+        type(batch),
+        tuple(schema),
+        protected,
+        metadata,
+        target_location,
+        target_tensor,
+    )
+
+
+def _validate_witness(
+    witness: _BatchWitness,
+    output: NativeBatch,
+    transform: FittableTransform,
+) -> None:
+    if type(output) is not witness.graph_type:
+        raise RuntimeError("fitted transform changed native graph kind")
+    stores = _native_stores(output)
+    schema = tuple(
+        (store_key, tuple(sorted(storage.keys())))
+        for store_key, storage in stores
+    )
+    if schema != witness.store_schema:
+        raise RuntimeError("fitted transform changed native store/key schema")
+    current = {
+        (store_key, name): storage[name]
+        for store_key, storage in stores
+        for name in storage.keys()
+    }
+    for location, expected in witness.metadata.items():
+        value = current[location]
+        if isinstance(value, Tensor) or _immutable_metadata(value) != expected:
+            raise RuntimeError(
+                f"fitted transform changed protected metadata {location[-1]}"
+            )
+    for location, expected in witness.protected_tensors.items():
+        value = current[location]
+        if expected.reference._version != expected.version:
+            raise RuntimeError(
+                f"fitted transform performed in-place protected tensor mutation at {location}"
+            )
+        if not isinstance(value, Tensor):
+            raise RuntimeError(f"fitted transform replaced protected tensor {location}")
+        if (
+            value is expected.reference
+            or
+            value.dtype != expected.dtype
+            or tuple(value.shape) != expected.shape
+            or value.device != expected.device
+            or not torch.equal(value, expected.reference)
+        ):
+            raise RuntimeError(f"fitted transform changed protected tensor {location}")
+    target = current[witness.target_location]
+    original = witness.target_tensor
+    if original.reference._version != original.version:
+        raise RuntimeError("fitted transform mutated target features in place")
+    if not isinstance(target, Tensor) or target is original.reference:
+        raise RuntimeError("fitted transform target features alias the source batch")
+    if target.device.type != transform.spec.device or target.ndim != 2:
+        raise RuntimeError("fitted transform target device/rank violates declaration")
+    if target.shape[0] != original.shape[0]:
+        raise RuntimeError("fitted transform changed target node identity/order")
+    behavior = transform.spec.feature_width_behavior
+    expected_width = (
+        int(behavior.removeprefix("fixed:"))
+        if behavior.startswith("fixed:")
+        else original.shape[1]
+    )
+    if target.shape[1] != expected_width:
+        raise RuntimeError("fitted transform output width violates declaration")
+    expected_dtype = torch.from_numpy(
+        np.empty((), dtype=np.dtype(transform.spec.output_dtype))
+    ).dtype
+    if target.dtype != expected_dtype:
+        raise RuntimeError("fitted transform output dtype violates declaration")
+
+
+def _apply_fitted_transform(
+    batch: NativeBatch,
+    transform: FittableTransform | None,
+) -> NativeBatch:
+    if transform is None:
+        return batch
+    witness = _snapshot_batch(batch, transform)
+    output = transform.transform(batch)
+    if output is batch:
+        raise RuntimeError("fitted transform must return a native batch clone")
+    _validate_witness(witness, output, transform)
+    return output
+
+
 class _LazyStore:
     """One validated path with one process-local lazily reopened store."""
 
@@ -1047,15 +1521,32 @@ class _LazyStore:
 
 
 class _DescriptorDataset(Dataset[NativeBatch]):
-    def __init__(self, source: SamplingSource | _LazyStore, strategy: GraphSamplingStrategy, descriptors: tuple[SamplingDescriptor, ...]) -> None:
-        self.source, self.strategy, self.descriptor_values = source, strategy, descriptors
+    def __init__(
+        self,
+        source: SamplingSource | _LazyStore,
+        strategy: GraphSamplingStrategy,
+        descriptors: tuple[SamplingDescriptor, ...],
+        fitted_transform: FittableTransform | None,
+    ) -> None:
+        self.source = source
+        self.strategy = strategy
+        self.descriptor_values = descriptors
+        self.fitted_transform = fitted_transform
 
     def __len__(self) -> int:
         return len(self.descriptor_values)
 
     def __getitem__(self, index: int) -> NativeBatch:
-        source = self.source.get() if isinstance(self.source, _LazyStore) else self.source
-        return self.strategy.materialize(source, self.descriptor_values[index])
+        source = (
+            self.source.get()
+            if isinstance(self.source, _LazyStore)
+            else self.source
+        )
+        batch = self.strategy.materialize(
+            source,
+            self.descriptor_values[index],
+        )
+        return _apply_fitted_transform(batch, self.fitted_transform)
 
 
 def _identity(value: NativeBatch) -> NativeBatch:
@@ -1065,16 +1556,63 @@ def _identity(value: NativeBatch) -> NativeBatch:
 class DiskGraphDataModule(LightningDataModule):
     """Own one validated source and one strategy across all phase loaders."""
 
-    def __init__(self, source: str | Path | SamplingSource, strategy: GraphSamplingStrategy, *, active_split_tag: str | None = None, num_workers: int = 0, persistent_workers: bool = False, train_shuffle: bool = True) -> None:
+    def __init__(
+        self,
+        source: str | Path | SamplingSource,
+        strategy: GraphSamplingStrategy,
+        *,
+        active_split_tag: str | None = None,
+        num_workers: int = 0,
+        persistent_workers: bool = False,
+        train_shuffle: bool = True,
+        fitted_transform: FittableTransform | None = None,
+        fitted_state_root: str | Path | None = None,
+        supervised_fit: bool = False,
+    ) -> None:
         super().__init__()
         if not isinstance(strategy, GraphSamplingStrategy):
             raise TypeError("strategy must implement GraphSamplingStrategy")
+        if fitted_transform is not None and not isinstance(
+            fitted_transform,
+            FittableTransform,
+        ):
+            raise TypeError("fitted_transform must implement FittableTransform")
+        if fitted_transform is None:
+            if fitted_state_root is not None or supervised_fit:
+                raise ValueError(
+                    "fitted state location/capability requires fitted_transform"
+                )
+        elif fitted_state_root is None:
+            raise ValueError("fitted_transform requires fitted_state_root")
         self.strategy = strategy
+        self.fitted_transform = fitted_transform
+        self.fitted_state_root = (
+            None if fitted_state_root is None else Path(fitted_state_root)
+        )
+        self.supervised_fit = _boolean(supervised_fit, "supervised_fit")
+        if fitted_transform is not None:
+            _integer(
+                getattr(fitted_transform, "max_batch_rows", None),
+                "fitted_transform.max_batch_rows",
+                minimum=1,
+            )
+            _integer(
+                getattr(fitted_transform, "max_batch_bytes", None),
+                "fitted_transform.max_batch_bytes",
+                minimum=1,
+            )
         self.num_workers = _integer(num_workers, "num_workers", minimum=0)
-        self.persistent_workers = _boolean(persistent_workers, "persistent_workers")
+        self.persistent_workers = _boolean(
+            persistent_workers,
+            "persistent_workers",
+        )
         if self.persistent_workers and not self.num_workers:
-            raise ValueError("persistent_workers requires num_workers greater than zero")
+            raise ValueError(
+                "persistent_workers requires num_workers greater than zero"
+            )
         self.train_shuffle = _boolean(train_shuffle, "train_shuffle")
+        self._fit_materialized: MaterializedSource | None = None
+        self._fit_materialized_sha256: str | None = None
         if isinstance(source, (str, Path, TypedGraphStore)):
             self._owner: _LazyStore | None = _LazyStore(source)
             self._source: SamplingSource | _LazyStore = self._owner
@@ -1102,8 +1640,17 @@ class DiskGraphDataModule(LightningDataModule):
             else:
                 self.active_split_tag = _active_tag(source, active_split_tag)
             self.strategy.validate_capabilities(source)
+            admission = getattr(self.strategy, "_admission", None)
+            if not isinstance(admission, _MaterializedAdmission):
+                raise RuntimeError(
+                    "sampling strategy did not retain its admitted Task8 snapshot"
+                )
+            self._fit_materialized = admission.source
+            self._fit_materialized_sha256 = admission.content_sha256
         else:
-            raise TypeError("source must be a graph reference, store, or store path")
+            raise TypeError(
+                "source must be a graph reference, store, or store path"
+            )
         self._descriptors: dict[Phase, tuple[SamplingDescriptor, ...]] = {}
         self._loaders: dict[Phase, DataLoader[NativeBatch]] = {}
         self._closed = False
@@ -1118,6 +1665,111 @@ class DiskGraphDataModule(LightningDataModule):
         if self._owner is not None:
             raise RuntimeError("disk descriptors require a temporary store")
         return self._source  # type: ignore[return-value]
+
+    def _fit_view(self, source: SamplingSource) -> _CanonicalFitView:
+        assert self.fitted_transform is not None
+        if isinstance(source, TypedGraphStore):
+            return _store_fit_view(
+                source,
+                self.fitted_transform,
+                self.active_split_tag,
+            )
+        if self._fit_materialized is None or self._fit_materialized_sha256 is None:
+            raise RuntimeError("admitted materialized fit snapshot is unavailable")
+        return _materialized_fit_view(
+            self._fit_materialized,
+            self._fit_materialized_sha256,
+            self.fitted_transform,
+            self.active_split_tag,
+        )
+
+    def _fit_missing_state(self, view: _CanonicalFitView) -> None:
+        assert self.fitted_transform is not None
+        assert self.fitted_state_root is not None
+        transform = self.fitted_transform
+        if not len(view.train_ids):
+            raise ValueError(
+                f"fitted transform has empty canonical train input for split {self.active_split_tag!r}"
+            )
+        if transform.spec.accesses_labels and not self.supervised_fit:
+            raise PermissionError(
+                "label-consuming fitted transform requires supervised_fit capability"
+            )
+        max_rows = _integer(
+            getattr(transform, "max_batch_rows"),
+            "fitted_transform.max_batch_rows",
+            minimum=1,
+        )
+        max_bytes = _integer(
+            getattr(transform, "max_batch_bytes"),
+            "fitted_transform.max_batch_bytes",
+            minimum=1,
+        )
+        bytes_per_row = view.context.input_width * max(
+            np.dtype(view.context.input_dtype).itemsize,
+            np.dtype(transform.spec.accumulation_dtype).itemsize,
+        )
+        chunk_rows = min(max_rows, max_bytes // bytes_per_row)
+        if chunk_rows < 1:
+            raise ValueError(
+                "fitted transform byte bound cannot hold one canonical input row"
+            )
+        transform.begin_fit(view.context)
+        for start in range(0, len(view.train_ids), chunk_rows):
+            rows = view.train_ids[start : start + chunk_rows]
+            features = _fit_view_features(view, rows)
+            labels = (
+                _fit_view_labels(view, rows)
+                if transform.spec.accesses_labels
+                else None
+            )
+            transform.update_fit(features, labels)
+        transform.finalize_fit(self.fitted_state_root)
+
+    def _ensure_fitted(self, *, allow_fit: bool) -> None:
+        transform = self.fitted_transform
+        if transform is None:
+            return
+        if self._closed:
+            raise RuntimeError("DiskGraphDataModule is closed")
+        assert self.fitted_state_root is not None
+
+        def ensure_view(view: _CanonicalFitView) -> None:
+            expected_key = build_fit_state_key(view.context, transform)
+
+            def validate_binding() -> None:
+                actual_key = transform.state_key
+                if transform.status is not FitStatus.FITTED or actual_key != expected_key:
+                    raise FitStateError(
+                        "fitted transform context identity mismatch: "
+                        f"state={actual_key!r}, expected={expected_key!r}, "
+                        f"content={view.context.content_sha256!r}, "
+                        f"split={view.context.active_split_tag!r}"
+                    )
+
+            if transform.status is FitStatus.FITTED:
+                validate_binding()
+                return
+            if transform.status is not FitStatus.UNFITTED:
+                raise RuntimeError(
+                    f"fitted transform is not reusable ({transform.status.value})"
+                )
+            try:
+                transform.load_state(self.fitted_state_root, view.context)
+            except FitStateNotFoundError as error:
+                if not allow_fit:
+                    raise FitStateError(
+                        "validation/test setup requires an existing exact fitted state"
+                    ) from error
+                self._fit_missing_state(view)
+            validate_binding()
+
+        if self._owner is None:
+            assert self._fit_materialized is not None
+            ensure_view(self._fit_view(self._fit_materialized))
+            return
+        with TypedGraphStore.open(self._owner.path) as source:
+            ensure_view(self._fit_view(source))
 
     def _setup_phase(self, phase: Phase) -> None:
         """Create one phase without evaluating unrelated split masks."""
@@ -1157,6 +1809,7 @@ class DiskGraphDataModule(LightningDataModule):
             phases = phases_by_stage[stage]
         except (KeyError, TypeError) as error:
             raise ValueError(f"unsupported setup stage: {stage!r}") from error
+        self._ensure_fitted(allow_fit=stage in {None, "fit"})
         for phase in phases:
             self._setup_phase(phase)
 
@@ -1165,6 +1818,7 @@ class DiskGraphDataModule(LightningDataModule):
         phase = _phase(phase)
         if self._closed:
             raise RuntimeError("DiskGraphDataModule is closed")
+        self._ensure_fitted(allow_fit=phase == "train")
         self._setup_phase(phase)
         return self._descriptors[phase]
 
@@ -1177,6 +1831,7 @@ class DiskGraphDataModule(LightningDataModule):
                     self._source,
                     self.strategy,
                     self.descriptors(phase),
+                    self.fitted_transform,
                 ),
                 batch_size=None,
                 shuffle=False,
