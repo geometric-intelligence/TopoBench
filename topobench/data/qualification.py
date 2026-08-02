@@ -64,6 +64,7 @@ def _qualification(
     compatible_model: str,
     num_classes: int | None = None,
     target_node_type: str | None = None,
+    evidence_test: str = _EVIDENCE_TEST,
 ) -> DatasetQualification:
     """Attach the shared parameterized evidence node to one explicit row."""
     return DatasetQualification(
@@ -76,7 +77,7 @@ def _qualification(
         feature_policy=feature_policy,
         edge_policy=edge_policy,
         compatible_model=compatible_model,
-        evidence_test=_EVIDENCE_TEST,
+        evidence_test=evidence_test,
         num_classes=num_classes,
         target_node_type=target_node_type,
     )
@@ -203,6 +204,25 @@ _ROWS = (
         feature_policy="continuous",
         edge_policy="structural_edges",
         compatible_model="graph/gcn",
+    ),
+    _qualification(
+        "graph/ParquetTypedGraph",
+        loader_family=(
+            "topobench.data.loaders.parquet.ParquetTypedGraphLoader"
+        ),
+        gate="packaged",
+        task="classification",
+        task_level="node",
+        split_mode="transductive",
+        feature_policy="continuous",
+        edge_policy="structural_edges",
+        compatible_model="graph/gcn",
+        num_classes=2,
+        target_node_type="paper",
+        evidence_test=(
+            "test/data/stores/test_typed_graph_store.py::"
+            "test_opens_homogeneous_and_heterogeneous_content_addressed_stores"
+        ),
     ),
     _qualification(
         "graph/QM9",

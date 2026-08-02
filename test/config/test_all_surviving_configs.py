@@ -44,6 +44,7 @@ EXPECTED_PIPELINE_TARGETS: Mapping[str, str] = {
 PACKAGED_DATASETS = frozenset(
     {
         "graph/SyntheticGraph",
+        "graph/ParquetTypedGraph",
         "graph/SyntheticGraphRegression",
         "graph/SyntheticNodeGraph",
         "heterogeneous/SyntheticHeterogeneous",
@@ -198,11 +199,28 @@ REQUIRED_QUALIFICATION_FIELDS = frozenset(
 )
 
 
+def _is_runnable_graph_dataset(dataset: Any) -> bool:
+    if not dataset.descriptor_only:
+        return True
+    source = OmegaConf.load(
+        CONFIG_ROOT / "dataset" / "graph" / f"{dataset.selector}.yaml"
+    )
+    output_kind = source.loader.parameters.output_kind
+    strategy = source.loader.parameters.partition.strategy
+    backend = source.loader.parameters.partition.backend
+    return output_kind == "homogeneous" and dataset.supports_source(
+        domain="graph",
+        output_kind=output_kind,
+        strategy=strategy,
+        backend=backend,
+    )
+
+
 def _graph_pairs() -> tuple[tuple[str, str], ...]:
     return tuple(
         (f"graph/{dataset.selector}", f"graph/{model.selector}")
         for dataset in GRAPH_DATASET_MANIFEST.values()
-        if not dataset.descriptor_only
+        if _is_runnable_graph_dataset(dataset)
         for model in compatible_graph_models(dataset)
     )
 
@@ -348,7 +366,7 @@ def test_dataset_manifest_exactly_matches_supported_yaml_selectors() -> None:
     runnable_graph_selectors = frozenset(
         f"graph/{selector}"
         for selector, capability in GRAPH_DATASET_MANIFEST.items()
-        if not capability.descriptor_only
+        if _is_runnable_graph_dataset(capability)
     )
 
     assert discovered == (
@@ -409,11 +427,7 @@ def test_typed_parquet_selectors_compose_through_the_shared_capability(
     loader = hydra.utils.instantiate(cfg.dataset.loader)
     assert type(loader).__module__ == "topobench.data.loaders.parquet"
     if domain == "graph":
-        with pytest.raises(
-            ValueError,
-            match="does not match an exact graph manifest selector",
-        ):
-            qualify_graph_dataset(cfg.dataset)
+        assert qualify_graph_dataset(cfg.dataset) is capability
 
     assert "sql" not in loader_parameters
     assert "python" not in loader_parameters
@@ -453,7 +467,7 @@ def test_declared_pair_matrix_is_total_and_exact() -> None:
     assert {dataset for dataset, _ in VALID_PAIRS} == set(
         DATASET_QUALIFICATION_MANIFEST
     )
-    assert len(CROSS_DOMAIN_PAIRS) == 242
+    assert len(CROSS_DOMAIN_PAIRS) == 246
 
 
 @pytest.mark.parametrize(

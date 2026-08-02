@@ -30,6 +30,7 @@ EXPECTED_SELECTORS = frozenset(
         "NCI1",
         "NCI109",
         "PROTEINS",
+        "ParquetTypedGraph",
         "QM9",
         "REDDIT-BINARY",
         "SyntheticGraph",
@@ -237,6 +238,44 @@ def test_manifest_rejects_configured_class_count_mismatch(
         in message
     )
     assert "manifest expects 2" in message
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        ("loader.parameters.output_kind", "heterogeneous"),
+        ("loader.parameters.output_kind", "unknown"),
+        ("loader.parameters.output_kind", None),
+        ("loader.parameters.partition.strategy", "neighbor"),
+        ("loader.parameters.partition.backend", "unsupported"),
+    ],
+)
+def test_parquet_descriptor_requires_an_exact_homogeneous_source_capability(
+    path: str,
+    value: object,
+) -> None:
+    config = _load_dataset_config("ParquetTypedGraph")
+    OmegaConf.update(config, path, value)
+
+    with pytest.raises(
+        ValueError,
+        match="does not match an exact graph manifest selector",
+    ) as error:
+        qualify_graph_dataset(config)
+
+    assert f"dataset.{path}" in str(error.value)
+
+
+def test_parquet_heterogeneous_source_remains_outside_graph_qualification() -> (
+    None
+):
+    config = _load_dataset_config("ParquetTypedGraph")
+    config.loader.parameters.data_domain = "heterogeneous"
+    config.loader.parameters.output_kind = "heterogeneous"
+    config.loader.parameters.partition.strategy = "neighbor"
+
+    with pytest.raises(ValueError, match="must be 'graph'"):
+        qualify_graph_dataset(config)
 
 
 def test_dataset_capability_constructor_cannot_hide_missing_evidence() -> None:

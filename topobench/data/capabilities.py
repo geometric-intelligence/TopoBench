@@ -797,6 +797,39 @@ def configured_graph_feature_width(dataset: Mapping[str, Any]) -> int:
     return width
 
 
+def _descriptor_is_runnable_graph_source(
+    capability: GraphDatasetCapability,
+    dataset: Mapping[str, Any],
+    domain: object,
+) -> bool:
+    """Admit one descriptor only through its exact configured source mode."""
+    output_kind = _value_at_path(
+        dataset,
+        "loader.parameters.output_kind",
+    )
+    strategy = _value_at_path(
+        dataset,
+        "loader.parameters.partition.strategy",
+    )
+    backend = _value_at_path(
+        dataset,
+        "loader.parameters.partition.backend",
+    )
+    if (
+        output_kind != "homogeneous"
+        or not isinstance(domain, str)
+        or not isinstance(strategy, str)
+        or not isinstance(backend, str)
+    ):
+        return False
+    return capability.supports_source(
+        domain=domain,
+        output_kind=output_kind,
+        strategy=strategy,
+        backend=backend,
+    )
+
+
 def qualify_graph_dataset(
     dataset: Mapping[str, Any],
 ) -> GraphDatasetCapability:
@@ -811,7 +844,14 @@ def qualify_graph_dataset(
     matches = [
         capability
         for capability in GRAPH_DATASET_MANIFEST.values()
-        if not capability.descriptor_only
+        if (
+            not capability.descriptor_only
+            or _descriptor_is_runnable_graph_source(
+                capability,
+                dataset,
+                domain,
+            )
+        )
         if all(
             path == "parameters.num_classes"
             or _value_at_path(dataset, path) == expected
@@ -862,6 +902,9 @@ def qualify_graph_dataset(
         "parameters.task_level",
         "parameters.feature_policy",
         "parameters.num_classes",
+        "loader.parameters.output_kind",
+        "loader.parameters.partition.strategy",
+        "loader.parameters.partition.backend",
         "split_params.learning_setting",
     )
     observed = ", ".join(

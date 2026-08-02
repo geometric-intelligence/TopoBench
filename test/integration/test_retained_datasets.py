@@ -29,6 +29,10 @@ _EVIDENCE_PREFIX = (
     "test/integration/test_retained_datasets.py::"
     "test_retained_dataset_lifecycle"
 )
+_PARQUET_EVIDENCE = (
+    "test/data/stores/test_typed_graph_store.py::"
+    "test_opens_homogeneous_and_heterogeneous_content_addressed_stores"
+)
 _DATA_NAME_OVERRIDES = {
     "graph/ZINC_OGB": "ZINC",
     "graph/cocitation_citeseer": "citeseer",
@@ -113,6 +117,7 @@ def _qualified_parameter(row: DatasetQualification) -> pytest.ParameterSet:
 _RETAINED_DATASET_PARAMETERS = tuple(
     _qualified_parameter(row)
     for row in DATASET_QUALIFICATION_MANIFEST.values()
+    if row.evidence_test == _EVIDENCE_PREFIX
 )
 
 
@@ -550,10 +555,19 @@ def test_qualification_manifest_keys_evidence_and_gates_are_consistent() -> (
     None
 ):
     """Keep immutable manifest identity, evidence, and release marks aligned."""
-    assert len(_RETAINED_DATASET_PARAMETERS) == len(
-        DATASET_QUALIFICATION_MANIFEST
+    lifecycle_rows = {
+        key: row
+        for key, row in DATASET_QUALIFICATION_MANIFEST.items()
+        if row.evidence_test == _EVIDENCE_PREFIX
+    }
+    assert len(_RETAINED_DATASET_PARAMETERS) == len(lifecycle_rows) == 43
+    assert len(DATASET_QUALIFICATION_MANIFEST) == 44
+    assert (
+        DATASET_QUALIFICATION_MANIFEST[
+            "graph/ParquetTypedGraph"
+        ].evidence_test
+        == _PARQUET_EVIDENCE
     )
-    assert len(DATASET_QUALIFICATION_MANIFEST) == 43
     packaged = {
         row.selector
         for row in DATASET_QUALIFICATION_MANIFEST.values()
@@ -561,6 +575,7 @@ def test_qualification_manifest_keys_evidence_and_gates_are_consistent() -> (
     }
     assert packaged == {
         "graph/SyntheticGraph",
+        "graph/ParquetTypedGraph",
         "graph/SyntheticGraphRegression",
         "graph/SyntheticNodeGraph",
         "heterogeneous/SyntheticHeterogeneous",
@@ -574,7 +589,7 @@ def test_qualification_manifest_keys_evidence_and_gates_are_consistent() -> (
         == 38
     )
     for (key, row), parameter in zip(
-        DATASET_QUALIFICATION_MANIFEST.items(),
+        lifecycle_rows.items(),
         _RETAINED_DATASET_PARAMETERS,
         strict=True,
     ):
