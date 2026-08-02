@@ -1,0 +1,113 @@
+loader:
+  _target_: topobench.data.loaders.parquet.ParquetTypedGraphLoader
+  parameters:
+    data_domain: heterogeneous
+    data_type: parquet_typed
+    data_name: ParquetTypedGraph
+    source_root: ${paths.data_dir}/heterogeneous/parquet_typed
+    output_kind: heterogeneous
+    node_types:
+      author:
+        paths:
+          - nodes/author.parquet
+        columns:
+          id: author_id
+          id_dtype: string
+          features:
+            columns: [feature_0, feature_1, feature_2]
+            dtype: float32
+            width: 3
+            representation: scalar_columns
+      paper:
+        paths:
+          - nodes/paper.parquet
+        columns:
+          id: paper_id
+          id_dtype: uint64
+          features:
+            column: embedding
+            dtype: float32
+            width: 128
+            representation: fixed_size_list
+    edge_types:
+      - type: [paper, cites, paper]
+        paths:
+          - edges/cites.parquet
+        columns:
+          source: source_id
+          destination: destination_id
+          edge_id: edge_id
+          fields: [timestamp, weight]
+      - type: [author, writes, paper]
+        paths:
+          - edges/writes.parquet
+        columns:
+          source: author_id
+          destination: paper_id
+          edge_id: edge_id
+          fields: [weight]
+    supervision:
+      target_node_type: paper
+      labels:
+        source: nodes
+        column: label
+        dtype: int64
+        paths: null
+        node_id: null
+      splits:
+        active: split_01_01_1990
+        cross_tag_overlap: allowed
+        within_phase_ids: unique
+        within_tag_phases: disjoint
+        target_id_resolution: required
+        sets:
+          split_01_01_1990:
+            train: splits/train_split_01_01_1990.parquet
+            val: splits/val_split_01_01_1990.parquet
+            test: splits/test_split_01_01_1990.parquet
+            coverage: partial
+            qualified: true
+    partition:
+      strategy: neighbor
+      backend: pyg
+      num_partitions: 1500
+      recursive: false
+      memory_limit_bytes: 274877906944
+      external_partition_map: null
+    fitted_transform:
+      name: identity
+      fit_on: train
+      state_path: null
+    profiling:
+      enabled: true
+      sample_every_steps: 10
+      emit_on_duration_delta: 0.10
+      emit_on_memory_delta_bytes: 268435456
+    reproducibility:
+      save_reproducibility_bundle: true
+    ingestion:
+      record_batch_rows: 65536
+      memory_limit_bytes: 4294967296
+      temp_directory: tmp
+
+parameters:
+  task: classification
+  task_level: node
+  num_features: [3, 128]
+  num_classes: 2
+  target_node_type: paper
+  feature_policy: continuous_per_node_type
+  loss_type: cross_entropy
+  monitor_metric: accuracy
+
+split_params:
+  learning_setting: transductive
+  source: explicit_registry
+
+dataloader_params:
+  mode: neighbor
+  evaluation_protocol: full_graph
+  evaluation_seed: ${seed}
+  num_workers: 0
+  pin_memory: false
+  persistent_workers: false

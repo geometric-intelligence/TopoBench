@@ -39,7 +39,7 @@ class GraphTaskContract:
 
 @dataclass(frozen=True, slots=True)
 class GraphDatasetCapability:
-    """Static evidence and supported native fields for one YAML selector."""
+    """Static evidence and supported fields for one YAML selector."""
 
     selector: str
     task: TaskKind
@@ -52,6 +52,8 @@ class GraphDatasetCapability:
     feature_transforms: frozenset[str] = frozenset()
     num_classes: int = 2
     allow_incomplete_class_vocabulary: bool = False
+    descriptor_only: bool = False
+    source_capabilities: frozenset[tuple[str, str, str, str]] = frozenset()
 
     def __post_init__(self) -> None:
         if (
@@ -85,6 +87,39 @@ class GraphDatasetCapability:
             raise ValueError(
                 "edge_fields contains an unsupported native field"
             )
+        try:
+            source_capabilities = frozenset(self.source_capabilities)
+        except TypeError as error:
+            raise TypeError(
+                "source_capabilities must contain hashable capability tuples"
+            ) from error
+        object.__setattr__(
+            self,
+            "source_capabilities",
+            source_capabilities,
+        )
+        if not isinstance(self.descriptor_only, bool):
+            raise TypeError("descriptor_only must be boolean")
+        if self.descriptor_only and not self.source_capabilities:
+            raise ValueError(
+                "descriptor-only selectors require source capabilities"
+            )
+        if not self.descriptor_only and self.source_capabilities:
+            raise ValueError(
+                "runtime dataset selectors may not declare source capabilities"
+            )
+        supported_source_capabilities = frozenset(
+            {
+                ("graph", "homogeneous", "cluster", "pyg"),
+                ("heterogeneous", "heterogeneous", "cluster", "pyg"),
+                ("heterogeneous", "heterogeneous", "neighbor", "pyg"),
+            }
+        )
+        if not self.source_capabilities <= supported_source_capabilities:
+            raise ValueError(
+                "source_capabilities contains an unsupported "
+                "domain/output/strategy/backend combination"
+            )
 
     @property
     def task_contract(self) -> GraphTaskContract:
@@ -94,6 +129,22 @@ class GraphDatasetCapability:
             task_level=self.task_level,
             learning_setting=self.learning_setting,
         )
+
+    def supports_source(
+        self,
+        *,
+        domain: str,
+        output_kind: str,
+        strategy: str,
+        backend: str,
+    ) -> bool:
+        """Return whether this selector declares one exact source mode."""
+        return (
+            domain,
+            output_kind,
+            strategy,
+            backend,
+        ) in self.source_capabilities
 
 
 def validate_classification_vocabulary(
@@ -296,6 +347,10 @@ def _loader_target(selector: str) -> str:
         return "topobench.data.loaders.GraphUniverseDatasetLoader"
     if selector == "ogbg-molhiv":
         return "topobench.data.loaders.OGBGDatasetLoader"
+    if selector == "ParquetTypedGraph":
+        return (
+            "topobench.data.loaders.parquet.ParquetTypedGraphLoader"
+        )
     raise ValueError(f"missing loader qualification for {selector!r}")
 
 
@@ -312,6 +367,8 @@ def _capability(
     feature_transforms: frozenset[str] = frozenset(),
     edge_fields: frozenset[EdgeField] = frozenset(),
     extra_evidence: tuple[tuple[str, QualificationValue], ...] = (),
+    descriptor_only: bool = False,
+    source_capabilities: frozenset[tuple[str, str, str, str]] = frozenset(),
 ) -> GraphDatasetCapability:
     """Construct one manifest row with common path-level evidence."""
     class_count = (
@@ -329,6 +386,8 @@ def _capability(
         feature_transforms=feature_transforms,
         edge_fields=edge_fields,
         num_classes=class_count,
+        descriptor_only=descriptor_only,
+        source_capabilities=source_capabilities,
         qualification=(
             ("loader._target_", _loader_target(selector)),
             ("loader.parameters.data_name", data_name),
@@ -457,6 +516,33 @@ _ROWS = (
         learning_setting="inductive",
         feature_policy="continuous",
         feature_width=3,
+    ),
+    _capability(
+        "ParquetTypedGraph",
+        data_name="ParquetTypedGraph",
+        task="classification",
+        task_level="node",
+        learning_setting="transductive",
+        feature_policy="continuous",
+        feature_width=2,
+        descriptor_only=True,
+        source_capabilities=frozenset(
+            {
+                ("graph", "homogeneous", "cluster", "pyg"),
+                (
+                    "heterogeneous",
+                    "heterogeneous",
+                    "cluster",
+                    "pyg",
+                ),
+                (
+                    "heterogeneous",
+                    "heterogeneous",
+                    "neighbor",
+                    "pyg",
+                ),
+            }
+        ),
     ),
     _capability(
         "QM9",
@@ -706,6 +792,7 @@ def qualify_graph_dataset(
     matches = [
         capability
         for capability in GRAPH_DATASET_MANIFEST.values()
+        if not capability.descriptor_only
         if all(
             path == "parameters.num_classes"
             or _value_at_path(dataset, path) == expected

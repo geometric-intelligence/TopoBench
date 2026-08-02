@@ -14,7 +14,10 @@ import pytest
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf, open_dict
 
-from topobench.data.capabilities import GRAPH_DATASET_MANIFEST
+from topobench.data.capabilities import (
+    GRAPH_DATASET_MANIFEST,
+    qualify_graph_dataset,
+)
 from topobench.data.heterogeneous import HeterogeneousDataSpec
 from topobench.data.qualification import (
     DATASET_QUALIFICATION_MANIFEST,
@@ -186,6 +189,8 @@ REQUIRED_QUALIFICATION_FIELDS = frozenset(
         "task_level",
         "split_mode",
         "feature_policy",
+        "num_classes",
+        "target_node_type",
         "edge_policy",
         "compatible_model",
         "evidence_test",
@@ -197,7 +202,17 @@ def _graph_pairs() -> tuple[tuple[str, str], ...]:
     return tuple(
         (f"graph/{dataset.selector}", f"graph/{model.selector}")
         for dataset in GRAPH_DATASET_MANIFEST.values()
+        if not dataset.descriptor_only
         for model in compatible_graph_models(dataset)
+    )
+
+
+def _descriptor_only_dataset_selectors() -> frozenset[str]:
+    return frozenset(
+        f"{domain}/{capability.selector}"
+        for capability in GRAPH_DATASET_MANIFEST.values()
+        if capability.descriptor_only
+        for domain, _, _, _ in capability.source_capabilities
     )
 
 
@@ -329,12 +344,80 @@ def test_default_run_is_explicit_native_graph_and_network_free() -> None:
 
 def test_dataset_manifest_exactly_matches_supported_yaml_selectors() -> None:
     discovered = _discover_selectors("dataset")
-
-    assert discovered == frozenset(DATASET_QUALIFICATION_MANIFEST)
-    assert frozenset(DATASET_QUALIFICATION_MANIFEST) == (
-        frozenset(f"graph/{selector}" for selector in GRAPH_DATASET_MANIFEST)
-        | frozenset(NON_GRAPH_MODEL_ROWS)
+    descriptor_selectors = _descriptor_only_dataset_selectors()
+    runnable_graph_selectors = frozenset(
+        f"graph/{selector}"
+        for selector, capability in GRAPH_DATASET_MANIFEST.items()
+        if not capability.descriptor_only
     )
+
+    assert discovered == (
+        frozenset(DATASET_QUALIFICATION_MANIFEST) | descriptor_selectors
+    )
+    assert frozenset(DATASET_QUALIFICATION_MANIFEST) == (
+        runnable_graph_selectors | frozenset(NON_GRAPH_MODEL_ROWS)
+    )
+
+
+@pytest.mark.parametrize(
+    ("domain", "model", "pipeline", "output_kind", "strategy"),
+    [
+        ("graph", "graph/gcn", "default", "homogeneous", "cluster"),
+        (
+            "heterogeneous",
+            "heterogeneous/hgt",
+            "heterogeneous_node",
+            "heterogeneous",
+            "neighbor",
+        ),
+    ],
+)
+def test_typed_parquet_selectors_compose_through_the_shared_capability(
+    domain: str,
+    model: str,
+    pipeline: str,
+    output_kind: str,
+    strategy: str,
+) -> None:
+    capability = GRAPH_DATASET_MANIFEST["ParquetTypedGraph"]
+    selector = f"{domain}/ParquetTypedGraph"
+    cfg = _compose(
+        f"dataset={selector}",
+        f"model={model}",
+        f"data_pipeline={pipeline}",
+        "trainer.accelerator=cpu",
+        "trainer.devices=1",
+    )
+    loader_parameters = OmegaConf.to_container(
+        cfg.dataset.loader.parameters,
+        resolve=True,
+        throw_on_missing=True,
+    )
+
+    assert cfg.dataset.loader._target_ == (
+        "topobench.data.loaders.parquet.ParquetTypedGraphLoader"
+    )
+    assert cfg.data_pipeline._target_ == EXPECTED_PIPELINE_TARGETS[domain]
+    assert cfg.dataset.loader.parameters.output_kind == output_kind
+    assert cfg.dataset.loader.parameters.partition.strategy == strategy
+    assert capability.supports_source(
+        domain=domain,
+        output_kind=output_kind,
+        strategy=strategy,
+        backend=str(cfg.dataset.loader.parameters.partition.backend),
+    )
+    loader = hydra.utils.instantiate(cfg.dataset.loader)
+    assert type(loader).__module__ == "topobench.data.loaders.parquet"
+    if domain == "graph":
+        with pytest.raises(
+            ValueError,
+            match="does not match an exact graph manifest selector",
+        ):
+            qualify_graph_dataset(cfg.dataset)
+
+    assert "sql" not in loader_parameters
+    assert "python" not in loader_parameters
+
 
 def test_graph_configs_do_not_advertise_unqualified_kfold() -> None:
     """Surviving graph selectors expose only qualified split parameters."""
@@ -394,7 +477,11 @@ def test_every_dataset_has_complete_resolvable_qualification(
     assert (qualification.gate == "packaged") == (
         selector in PACKAGED_DATASETS
     )
-    for field_name in REQUIRED_QUALIFICATION_FIELDS - {"gate"}:
+    for field_name in REQUIRED_QUALIFICATION_FIELDS - {
+        "gate",
+        "num_classes",
+        "target_node_type",
+    }:
         assert getattr(qualification, field_name), f"{selector}: {field_name}"
 
     model_selector = qualification.compatible_model
