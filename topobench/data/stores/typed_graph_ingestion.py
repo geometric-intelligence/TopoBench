@@ -24,6 +24,7 @@ from topobench.data.stores.external_node_index import ExternalNodeIndex
 
 if TYPE_CHECKING:
     from topobench.data.loaders.parquet import ParquetTypedGraphSource
+    from topobench.data.stores.typed_graph_arrays import TypedGraphArrayBuild
 
 _BEHAVIOR_VERSION = "typed-node-index-v3"
 _SUPPORTED_ID_DTYPES = frozenset({"int64", "uint64", "string"})
@@ -234,6 +235,31 @@ class ParquetTypedGraphIngestor:
         inventory = self.inventory()
         return self.build_external_node_indexes(inventory)
 
+    def build_arrays(
+        self,
+        index_build: ExternalNodeIndexBuild | None = None,
+    ) -> TypedGraphArrayBuild:
+        """Stream typed features, target labels, and every registered split."""
+        if index_build is None:
+            validated_indexes = self.build()
+        else:
+            if not isinstance(index_build, ExternalNodeIndexBuild):
+                raise TypeError("index_build must be an ExternalNodeIndexBuild")
+            expected_stage = self.stage_root(index_build.inventory)
+            if index_build.stage_root != expected_stage:
+                raise ArtifactValidationError(
+                    "COMPLETION-EVIDENCE-001: external-ID index stage does not "
+                    "belong to this ingestor"
+                )
+            validated_indexes = self.build_external_node_indexes(
+                index_build.inventory
+            )
+        from topobench.data.stores.typed_graph_arrays import (
+            TypedGraphArrayWriter,
+        )
+
+        return TypedGraphArrayWriter(self, validated_indexes).build()
+
     def build_external_node_indexes(
         self,
         inventory: SourceInventory,
@@ -283,23 +309,13 @@ class ParquetTypedGraphIngestor:
                 inventory,
                 purpose="build-spill",
             )
-            snapshot_root = self._new_ephemeral_root(
-                inventory,
-                purpose="source-snapshot",
-            )
             spill_created = False
-            snapshot_created = False
+            snapshot_root: Path | None = None
             try:
                 mappings_root = stage_root / "mappings"
                 mappings_root.mkdir()
                 spill_root.mkdir(parents=True, exist_ok=False)
                 spill_created = True
-                snapshot_root.mkdir(parents=True, exist_ok=False)
-                snapshot_created = True
-                snapshot_paths = self._snapshot_sources(
-                    inventory,
-                    snapshot_root,
-                )
                 inventory_path = stage_root / "inventory.json"
                 _atomic_json(inventory_path, _inventory_record(inventory))
                 _atomic_json(
@@ -314,23 +330,26 @@ class ParquetTypedGraphIngestor:
                     },
                 )
                 indexes: dict[str, ExternalNodeIndex] = {}
-                for ordinal, node in enumerate(self.source.spec.node_types):
-                    internal_key = f"n{ordinal:04d}"
-                    indexes[node.name] = self._build_one_index(
-                        inventory,
-                        node=node,
-                        internal_key=internal_key,
-                        root=mappings_root / internal_key,
-                        spill_root=spill_root,
-                        snapshot_paths=snapshot_paths,
-                        duckdb=duckdb,
-                    )
-                self._verify_snapshot(inventory, snapshot_paths)
-                self._validate_inventory_current(inventory, pa=pa, pq=pq)
+                with self._immutable_source_snapshot(
+                    inventory,
+                    purpose="source-snapshot",
+                    pa=pa,
+                    pq=pq,
+                ) as snapshot_stage:
+                    snapshot_paths, snapshot_root = snapshot_stage
+                    for ordinal, node in enumerate(self.source.spec.node_types):
+                        internal_key = f"n{ordinal:04d}"
+                        indexes[node.name] = self._build_one_index(
+                            inventory,
+                            node=node,
+                            internal_key=internal_key,
+                            root=mappings_root / internal_key,
+                            spill_root=spill_root,
+                            snapshot_paths=snapshot_paths,
+                            duckdb=duckdb,
+                        )
                 shutil.rmtree(spill_root)
                 spill_created = False
-                shutil.rmtree(snapshot_root)
-                snapshot_created = False
                 outputs = _stage_output_checksums(stage_root)
                 _atomic_json(
                     stage_root / "build.complete.json",
@@ -367,8 +386,6 @@ class ParquetTypedGraphIngestor:
             finally:
                 if spill_created and spill_root.exists():
                     shutil.rmtree(spill_root)
-                if snapshot_created and snapshot_root.exists():
-                    shutil.rmtree(snapshot_root)
                 if fresh and stage_root.exists():
                     shutil.rmtree(stage_root)
 
@@ -397,6 +414,32 @@ class ParquetTypedGraphIngestor:
         os.replace(stage_root, quarantine)
         _fsync_directory(stage_root.parent)
         return quarantine
+
+    @contextmanager
+    def _immutable_source_snapshot(
+        self,
+        inventory: SourceInventory,
+        *,
+        purpose: str,
+        pa: Any,
+        pq: Any,
+    ) -> Iterator[tuple[Mapping[str, Path], Path]]:
+        """Yield verified read-only source copies and always remove them."""
+        snapshot_root = self._new_ephemeral_root(
+            inventory,
+            purpose=purpose,
+        )
+        self._validate_inventory_current(inventory, pa=pa, pq=pq)
+        snapshot_root.mkdir(parents=True, exist_ok=False)
+        try:
+            snapshots = self._snapshot_sources(inventory, snapshot_root)
+            self._verify_snapshot(inventory, snapshots)
+            yield snapshots, snapshot_root
+            self._verify_snapshot(inventory, snapshots)
+            self._validate_inventory_current(inventory, pa=pa, pq=pq)
+        finally:
+            if snapshot_root.exists():
+                shutil.rmtree(snapshot_root)
 
     def _snapshot_sources(
         self,
@@ -453,7 +496,12 @@ class ParquetTypedGraphIngestor:
         return root.parent / f"{root.name}.lock"
 
     def _inventory_file(self, path: Path, *, pa: Any, pq: Any) -> FileInventory:
-        expected = path.resolve(strict=True)
+        try:
+            expected = path.resolve(strict=True)
+        except (FileNotFoundError, NotADirectoryError) as error:
+            raise ArtifactValidationError(
+                f"SOURCE-MISSING-001: declared Parquet source is missing: {path}"
+            ) from error
         if expected != path:
             raise SourceMutationError(
                 f"SOURCE-PATH-001: canonical source path changed: {path}"
@@ -692,6 +740,53 @@ class ParquetTypedGraphIngestor:
             root=root,
         )
 
+    def _recover_incomplete_array_artifacts(
+        self,
+        stage_root: Path,
+        *,
+        completed_stage: str,
+    ) -> bool:
+        """Quarantine only uncommitted Task 3 paths under the shared lock."""
+        if completed_stage != "external_node_indexes":
+            return False
+        candidates: list[Path] = []
+        arrays_root = stage_root / "arrays"
+        pending_complete = (
+            not arrays_root.is_symlink()
+            and arrays_root.is_dir()
+            and not (arrays_root / "arrays.complete.json").is_symlink()
+            and (arrays_root / "arrays.complete.json").is_file()
+        )
+        if os.path.lexists(arrays_root) and not pending_complete:
+            candidates.append(arrays_root)
+        for relative in (
+            "nodes",
+            "splits",
+            "arrays.json",
+            "arrays.complete.json",
+        ):
+            candidate = stage_root / relative
+            if os.path.lexists(candidate):
+                candidates.append(candidate)
+        candidates.extend(
+            path
+            for path in stage_root.iterdir()
+            if path.name.startswith(".arrays-tmp-")
+        )
+        if not candidates:
+            return pending_complete
+        quarantine = stage_root.parent / (
+            f".{stage_root.name}.arrays-quarantine-{uuid.uuid4().hex}"
+        )
+        quarantine.mkdir(parents=False, exist_ok=False)
+        for candidate in candidates:
+            os.replace(candidate, quarantine / candidate.name)
+        _fsync_directory(quarantine)
+        _fsync_directory(stage_root)
+        _fsync_directory(stage_root.parent)
+        return pending_complete
+
+
     def _resume(
         self,
         inventory: SourceInventory,
@@ -709,10 +804,18 @@ class ParquetTypedGraphIngestor:
             )
         completion = _read_json(completion_path)
         _validate_common_evidence(completion, inventory)
-        if completion.get("stage") != "external_node_indexes":
+        completed_stage = completion.get("stage")
+        if completed_stage not in {
+            "external_node_indexes",
+            "typed_graph_arrays",
+        }:
             raise ArtifactValidationError(
                 "COMPLETION-EVIDENCE-001: unknown completed stage"
             )
+        pending_complete_arrays = self._recover_incomplete_array_artifacts(
+            stage_root,
+            completed_stage=completed_stage,
+        )
         if completion.get("disk_admission") != _disk_admission_record(inventory):
             raise ArtifactValidationError(
                 "COMPLETION-EVIDENCE-001: filesystem admission evidence changed"
@@ -750,8 +853,11 @@ class ParquetTypedGraphIngestor:
                 raise ArtifactValidationError(
                     f"UNKNOWN-ARTIFACT-001: symlink in staging: {path}"
                 )
+            relative = path.relative_to(stage_root).as_posix()
+            if pending_complete_arrays and relative.startswith("arrays/"):
+                continue
             if path.is_file():
-                observed_files.add(path.relative_to(stage_root).as_posix())
+                observed_files.add(relative)
         unknown = sorted(observed_files - expected_files)
         missing = sorted(expected_files - observed_files)
         if unknown:
@@ -1308,6 +1414,8 @@ def _stage_output_checksums(stage_root: Path) -> dict[str, str]:
                 f"UNKNOWN-ARTIFACT-001: symlink produced in staging: {path}"
             )
         if path.is_file():
+            if path.name == "build.complete.json":
+                continue
             relative = path.relative_to(stage_root).as_posix()
             outputs[relative] = _sha256_file(path)
     return outputs
