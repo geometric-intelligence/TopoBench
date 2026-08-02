@@ -51,6 +51,7 @@ class GraphDatasetCapability:
     feature_width: int = 1
     feature_transforms: frozenset[str] = frozenset()
     num_classes: int = 2
+    num_nodes: int | None = None
     allow_incomplete_class_vocabulary: bool = False
     descriptor_only: bool = False
     source_capabilities: frozenset[tuple[str, str, str, str]] = frozenset()
@@ -68,6 +69,13 @@ class GraphDatasetCapability:
             )
         if self.task == "regression" and self.num_classes != 1:
             raise ValueError("regression num_classes must equal 1")
+        if self.num_nodes is not None:
+            if isinstance(self.num_nodes, bool) or not isinstance(
+                self.num_nodes, int
+            ):
+                raise TypeError("num_nodes must be an integer or None")
+            if self.num_nodes <= 0:
+                raise ValueError("num_nodes must be positive")
         if not isinstance(self.allow_incomplete_class_vocabulary, bool):
             raise TypeError(
                 "allow_incomplete_class_vocabulary must be boolean"
@@ -364,6 +372,7 @@ def _capability(
     feature_policy: FeaturePolicy,
     feature_width: int,
     num_classes: int | None = None,
+    num_nodes: int | None = None,
     feature_transforms: frozenset[str] = frozenset(),
     edge_fields: frozenset[EdgeField] = frozenset(),
     extra_evidence: tuple[tuple[str, QualificationValue], ...] = (),
@@ -386,6 +395,7 @@ def _capability(
         feature_transforms=feature_transforms,
         edge_fields=edge_fields,
         num_classes=class_count,
+        num_nodes=num_nodes,
         descriptor_only=descriptor_only,
         source_capabilities=source_capabilities,
         qualification=(
@@ -395,6 +405,11 @@ def _capability(
             ("parameters.task_level", task_level),
             ("parameters.feature_policy", feature_policy),
             ("parameters.num_classes", class_count),
+            *(
+                (("parameters.num_nodes", num_nodes),)
+                if num_nodes is not None
+                else ()
+            ),
             ("split_params.learning_setting", learning_setting),
             *extra_evidence,
         ),
@@ -590,6 +605,7 @@ _ROWS = (
         learning_setting="transductive",
         feature_policy="continuous",
         feature_width=4,
+        num_nodes=18,
     ),
     _capability(
         "ZINC",
@@ -634,6 +650,7 @@ _ROWS = (
         feature_policy="continuous",
         feature_width=3703,
         num_classes=6,
+        num_nodes=3327,
     ),
     _capability(
         "cocitation_cora",
@@ -644,6 +661,7 @@ _ROWS = (
         feature_policy="continuous",
         feature_width=1433,
         num_classes=7,
+        num_nodes=2708,
     ),
     _capability(
         "cocitation_pubmed",
@@ -654,6 +672,7 @@ _ROWS = (
         feature_policy="continuous",
         feature_width=500,
         num_classes=3,
+        num_nodes=19717,
     ),
     _capability(
         "graphuniverse_inductive_triangle",

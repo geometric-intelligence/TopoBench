@@ -5,7 +5,7 @@ from __future__ import annotations
 import hydra
 import pytest
 import torch
-from omegaconf import DictConfig
+from omegaconf import DictConfig, open_dict
 from torch_geometric.data import Data
 
 from test._utils.simplified_pipeline import run
@@ -15,6 +15,7 @@ from topobench.nn.backbones.graph import GCNDGM
 from topobench.nn.capabilities import (
     GRAPH_MODEL_CAPABILITIES,
     compatible_graph_models,
+    validate_graph_composition,
 )
 from topobench.utils.config_resolvers import register_all_resolvers
 from topobench.utils.model_instantiation import instantiate_model
@@ -290,3 +291,63 @@ def test_gcn_dgm_auxiliary_edges_masks_and_gradients_are_batch_isolated() -> Non
     output.square().mean().backward()
     assert model.structure_encoder.linear.weight.grad is not None
     assert torch.count_nonzero(model.structure_encoder.linear.weight.grad)
+
+
+def test_gcn_dgm_config_records_exact_search_and_scale_provenance() -> None:
+    cfg = _compose("SyntheticNodeGraph", "gcn_dgm")
+
+    assert cfg.model.backbone.query_chunk_size == 256
+    assert cfg.model.backbone.max_nodes == 20_000
+    assert cfg.model.backbone.max_workspace_bytes == 768 * 1024**2
+    assert GRAPH_DATASET_MANIFEST["SyntheticNodeGraph"].num_nodes == 18
+
+
+def test_gcn_dgm_requires_qualified_node_count_evidence() -> None:
+    compatible = {
+        capability.selector
+        for capability in compatible_graph_models(
+            GRAPH_DATASET_MANIFEST["roman_empire"]
+        )
+    }
+
+    assert "gcn_dgm" not in compatible
+
+
+def test_gcn_dgm_rejects_infeasible_k_before_model_construction() -> None:
+    cfg = _compose("SyntheticNodeGraph", "gcn_dgm")
+    with open_dict(cfg.model.backbone):
+        cfg.model.backbone.k = 18
+
+    with pytest.raises(
+        ValueError,
+        match=r"model\.backbone\.k=18 must be less than qualified "
+        r"dataset node count 18",
+    ):
+        validate_graph_composition(cfg.dataset, cfg.model)
+
+
+def test_gcn_dgm_rejects_dataset_above_node_limit_before_training() -> None:
+    cfg = _compose("SyntheticNodeGraph", "gcn_dgm")
+    with open_dict(cfg.model.backbone):
+        cfg.model.backbone.max_nodes = 17
+
+    with pytest.raises(
+        ValueError,
+        match=r"qualified dataset node count 18 exceeds "
+        r"model\.backbone\.max_nodes=17",
+    ):
+        validate_graph_composition(cfg.dataset, cfg.model)
+
+
+def test_gcn_dgm_rejects_workspace_limit_before_training() -> None:
+    cfg = _compose("SyntheticNodeGraph", "gcn_dgm")
+    with open_dict(cfg.model.backbone):
+        cfg.model.backbone.query_chunk_size = 4
+        cfg.model.backbone.max_workspace_bytes = 1
+
+    with pytest.raises(
+        ValueError,
+        match=r"model\.backbone\.max_workspace_bytes=1 cannot admit "
+        r"qualified dataset node count 18",
+    ):
+        validate_graph_composition(cfg.dataset, cfg.model)

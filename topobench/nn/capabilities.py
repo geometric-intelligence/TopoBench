@@ -37,6 +37,7 @@ class GraphModelCapability:
     backbone_target: str
     wrapper_target: str
     readout_target: str
+    requires_node_count: bool = False
 
     def __post_init__(self) -> None:
         if not self.tasks:
@@ -51,12 +52,16 @@ class GraphModelCapability:
             raise ValueError(
                 "edge_weight_mode must be consume, ignore, or reject"
             )
+        if not isinstance(self.requires_node_count, bool):
+            raise TypeError("requires_node_count must be boolean")
 
     def supports(self, dataset: GraphDatasetCapability) -> bool:
         """Return whether this model accepts the complete dataset contract."""
         if dataset.task_contract not in self.tasks:
             return False
         if dataset.feature_policy not in self.feature_policies:
+            return False
+        if self.requires_node_count and dataset.num_nodes is None:
             return False
         for field in dataset.edge_fields:
             if getattr(self, f"{field}_mode") == "reject":
@@ -157,6 +162,7 @@ _ROWS = (
         backbone_target="topobench.nn.backbones.GCNDGM",
         wrapper_target=_GNN_WRAPPER,
         readout_target=_NO_READOUT,
+        requires_node_count=True,
     ),
 )
 GRAPH_MODEL_CAPABILITIES: Mapping[str, GraphModelCapability] = (
@@ -313,6 +319,14 @@ def _qualified_capability(
             f"{dataset_capability.feature_policy!r} is unsupported by "
             f"model.model_name={model_selector!r}"
         )
+    if (
+        model_capability.requires_node_count
+        and dataset_capability.num_nodes is None
+    ):
+        raise ValueError(
+            f"model.model_name={model_selector!r} requires qualified "
+            "dataset.parameters.num_nodes evidence"
+        )
     for edge_field in sorted(dataset_capability.edge_fields):
         mode = getattr(model_capability, f"{edge_field}_mode")
         if mode == "reject":
@@ -340,6 +354,96 @@ def _expected_feature_width(
     from topobench.utils.config_resolvers import infer_in_channels
 
     return infer_in_channels(dataset, root.get("transforms"))
+
+
+def _positive_backbone_integer(
+    backbone: Mapping[str, Any],
+    key: str,
+    *,
+    minimum: int = 1,
+) -> int:
+    """Return one strict positive integer from a model backbone config."""
+    value = _required_value(backbone, key, path="model.backbone")
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"model.backbone.{key} must be an integer")
+    if value < minimum:
+        raise ValueError(
+            f"model.backbone.{key} must be at least {minimum}, got {value}"
+        )
+    return value
+
+
+def _validate_gcn_dgm_scale(
+    dataset: GraphDatasetCapability,
+    backbone: Mapping[str, Any],
+) -> None:
+    """Admit one exact GCN-DGM search before model construction or training."""
+    node_count = dataset.num_nodes
+    if node_count is None:
+        raise ValueError(
+            "model.model_name='gcn_dgm' requires qualified "
+            "dataset.parameters.num_nodes evidence"
+        )
+    k = _positive_backbone_integer(backbone, "k", minimum=2)
+    query_chunk_size = _positive_backbone_integer(
+        backbone,
+        "query_chunk_size",
+    )
+    feature_dim = _positive_backbone_integer(backbone, "hidden_channels")
+    max_nodes = _positive_backbone_integer(backbone, "max_nodes")
+    max_workspace_bytes = _positive_backbone_integer(
+        backbone,
+        "max_workspace_bytes",
+    )
+    if k >= node_count:
+        raise ValueError(
+            f"model.backbone.k={k} must be less than qualified "
+            f"dataset node count {node_count}"
+        )
+    if max_nodes <= k:
+        raise ValueError(
+            f"model.backbone.max_nodes={max_nodes} must be greater than "
+            f"model.backbone.k={k}"
+        )
+    if node_count > max_nodes:
+        raise ValueError(
+            f"qualified dataset node count {node_count} exceeds "
+            f"model.backbone.max_nodes={max_nodes}"
+        )
+    if query_chunk_size > max_nodes:
+        raise ValueError(
+            "model.backbone.query_chunk_size must not exceed "
+            "model.backbone.max_nodes"
+        )
+
+    from topobench.nn.backbones.graph.gcn_dgm import GCNDGM
+
+    dataset_workspace = GCNDGM.estimate_workspace_bytes(
+        node_count=node_count,
+        query_chunk_size=query_chunk_size,
+        k=k,
+        feature_dim=feature_dim,
+        element_size=8,
+    )
+    if dataset_workspace > max_workspace_bytes:
+        raise ValueError(
+            f"model.backbone.max_workspace_bytes={max_workspace_bytes} "
+            f"cannot admit qualified dataset node count {node_count}; "
+            f"requires {dataset_workspace} bytes"
+        )
+    declared_workspace = GCNDGM.estimate_workspace_bytes(
+        node_count=max_nodes,
+        query_chunk_size=query_chunk_size,
+        k=k,
+        feature_dim=feature_dim,
+        element_size=8,
+    )
+    if declared_workspace > max_workspace_bytes:
+        raise ValueError(
+            f"model.backbone.max_workspace_bytes={max_workspace_bytes} "
+            f"cannot admit model.backbone.max_nodes={max_nodes}; "
+            f"requires {declared_workspace} bytes"
+        )
 
 
 def _validated_pair(
@@ -426,6 +530,8 @@ def _validated_pair(
             f"model.backbone._target_ must be "
             f"{model_capability.backbone_target!r}, got {backbone_target!r}"
         )
+    if model_selector == "gcn_dgm":
+        _validate_gcn_dgm_scale(dataset_capability, backbone)
     wrapper = _required_mapping(model, "backbone_wrapper", path="model")
     wrapper_target = _required_value(
         wrapper,

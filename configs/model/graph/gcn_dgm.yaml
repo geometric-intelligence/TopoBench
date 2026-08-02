@@ -16,6 +16,9 @@ backbone:
   num_layers: 1
   dropout: 0.0
   k: 5
+  query_chunk_size: 256
+  max_nodes: 20000
+  max_workspace_bytes: 805306368
 
 backbone_wrapper:
   _target_: topobench.nn.wrappers.GNNWrapper
