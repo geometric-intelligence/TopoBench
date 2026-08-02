@@ -26,6 +26,11 @@ from topobench.data.stores.pyg_store import PyGTypedFeatureStore, PyGTypedGraphS
 from topobench.data.stores.typed_graph_store import TypedGraphStore
 from topobench.data.stores.typed_partition_book import TypedPartitionBook
 from topobench.dataloader.graph import loader_worker_options
+from topobench.dataloader.device_prefetch import (
+    DevicePrefetchLoader,
+    PrefetchCapability,
+    PrefetchLimits,
+)
 from topobench.dataloader.sequence_state import SequenceIdentity, SequenceState
 from topobench.transforms.fittable import (
     FitContext,
@@ -1579,9 +1584,11 @@ class _TrainSequenceLoader(DataLoader[NativeBatch]):
         self,
         owner: "DiskGraphDataModule",
         dataset: "_DescriptorDataset",
+        defer_delivery: bool = False,
         **kwargs: object,
     ) -> None:
         self.sequence_owner = owner
+        self.defer_delivery = _boolean(defer_delivery, "defer_delivery")
         super().__init__(
             dataset,
             batch_size=None,
@@ -1603,7 +1610,8 @@ class _TrainSequenceLoader(DataLoader[NativeBatch]):
                 sequence_id
             )
             self.sequence_owner.prepare_sequence(sequence_id, descriptor)
-            self.sequence_owner.deliver_sequence(sequence_id)
+            if not self.defer_delivery:
+                self.sequence_owner.deliver_sequence(sequence_id)
             yield batch
 
 
@@ -1663,6 +1671,8 @@ class DiskGraphDataModule(LightningDataModule):
         fitted_transform: FittableTransform | None = None,
         fitted_state_root: str | Path | None = None,
         supervised_fit: bool = False,
+        prefetch_limits: PrefetchLimits | None = None,
+        prefetch_device: object = "cpu",
     ) -> None:
         super().__init__()
         if not isinstance(strategy, GraphSamplingStrategy):
@@ -1706,6 +1716,17 @@ class DiskGraphDataModule(LightningDataModule):
                 "persistent_workers requires num_workers greater than zero"
             )
         self.train_shuffle = _boolean(train_shuffle, "train_shuffle")
+        if prefetch_limits is not None and not isinstance(
+            prefetch_limits,
+            PrefetchLimits,
+        ):
+            raise TypeError("prefetch_limits must be PrefetchLimits")
+        self.prefetch_limits = prefetch_limits
+        self._prefetch_capability = (
+            None
+            if prefetch_limits is None
+            else PrefetchCapability.detect(prefetch_device)
+        )
         self._fit_materialized: MaterializedSource | None = None
         self._fit_materialized_sha256: str | None = None
         if isinstance(source, (str, Path, TypedGraphStore)):
@@ -1747,7 +1768,10 @@ class DiskGraphDataModule(LightningDataModule):
                 "source must be a graph reference, store, or store path"
             )
         self._descriptors: dict[Phase, tuple[SamplingDescriptor, ...]] = {}
-        self._loaders: dict[Phase, DataLoader[NativeBatch]] = {}
+        self._loaders: dict[
+            Phase,
+            DataLoader[NativeBatch] | DevicePrefetchLoader,
+        ] = {}
         reference = self._source if self._owner is None else None
         if reference is None:
             assert self._owner is not None
@@ -2036,7 +2060,22 @@ class DiskGraphDataModule(LightningDataModule):
             )
 
 
-    def _loader(self, phase: Phase) -> DataLoader[NativeBatch]:
+    def _deliver_prefetched(self, batch: NativeBatch) -> None:
+        sequence_id = _integer(
+            getattr(batch, "sequence_id", None),
+            "batch.sequence_id",
+            minimum=1,
+        )
+        self.deliver_sequence(sequence_id)
+
+    def _abort_prefetched_training(self) -> None:
+        durable = self.sequence_state.state_dict()
+        self.sequence_state.load_state_dict(durable)
+
+    def _loader(
+        self,
+        phase: Phase,
+    ) -> DataLoader[NativeBatch] | DevicePrefetchLoader:
         if phase == "train":
             self._require_commit_callback()
         if self._closed:
@@ -2053,8 +2092,13 @@ class DiskGraphDataModule(LightningDataModule):
                 pin_memory=False,
                 persistent_workers=self.persistent_workers,
             )
-            self._loaders[phase] = (
-                _TrainSequenceLoader(self, dataset, **options)
+            base: DataLoader[NativeBatch] = (
+                _TrainSequenceLoader(
+                    self,
+                    dataset,
+                    defer_delivery=self.prefetch_limits is not None,
+                    **options,
+                )
                 if phase == "train"
                 else DataLoader(
                     dataset,
@@ -2064,23 +2108,49 @@ class DiskGraphDataModule(LightningDataModule):
                     **options,
                 )
             )
+            if self.prefetch_limits is None:
+                self._loaders[phase] = base
+            else:
+                assert self._prefetch_capability is not None
+                self._loaders[phase] = DevicePrefetchLoader(
+                    base,
+                    self.prefetch_limits,
+                    capability=self._prefetch_capability,
+                    owns_source=True,
+                    on_yield=(
+                        self._deliver_prefetched
+                        if phase == "train"
+                        else None
+                    ),
+                    on_abort=(
+                        self._abort_prefetched_training
+                        if phase == "train"
+                        else None
+                    ),
+                )
         return self._loaders[phase]
 
-    def train_dataloader(self) -> DataLoader[NativeBatch]:
+    def train_dataloader(self) -> DataLoader[NativeBatch] | DevicePrefetchLoader:
         return self._loader("train")
 
-    def val_dataloader(self) -> DataLoader[NativeBatch]:
+    def val_dataloader(self) -> DataLoader[NativeBatch] | DevicePrefetchLoader:
         return self._loader("val")
 
-    def test_dataloader(self) -> DataLoader[NativeBatch]:
+    def test_dataloader(self) -> DataLoader[NativeBatch] | DevicePrefetchLoader:
         return self._loader("test")
 
-    def predict_dataloader(self) -> DataLoader[NativeBatch]:
+    def predict_dataloader(
+        self,
+    ) -> DataLoader[NativeBatch] | DevicePrefetchLoader:
         """Use the explicitly supported test split for prediction identity."""
         return self._loader("test")
 
     def _shutdown_loaders(self) -> None:
         for loader in self._loaders.values():
+            close = getattr(loader, "close", None)
+            if callable(close):
+                close()
+                continue
             iterator = getattr(loader, "_iterator", None)
             shutdown = getattr(iterator, "_shutdown_workers", None)
             if callable(shutdown):
