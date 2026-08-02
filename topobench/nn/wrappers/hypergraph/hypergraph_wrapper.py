@@ -8,6 +8,8 @@ import torch
 from torch import Tensor, nn
 from torch_geometric.data import Data
 
+from topobench.dataloader.graph import require_hypergraph_validation
+
 
 def _require_tensor(batch: Data, field: str) -> Tensor:
     value = batch.get(field)
@@ -19,9 +21,9 @@ def _require_tensor(batch: Data, field: str) -> Tensor:
 def _hyperedge_counts(
     batch: Data,
     *,
-    graph_count: int,
     device: torch.device,
-) -> Tensor:
+) -> int:
+    """Return the graph count without scanning incidence storage."""
     value = batch.get("num_hyperedges")
     if isinstance(value, Tensor):
         if value.ndim != 1:
@@ -33,24 +35,19 @@ def _hyperedge_counts(
                 "batch.num_hyperedges and batch.hyperedge_index "
                 "must use the same device"
             )
-        if value.size(0) != graph_count:
+        if not value.numel():
             raise ValueError(
                 "batch.num_hyperedges must contain one count per graph"
             )
-        counts = value
-    elif isinstance(value, Integral) and not isinstance(value, bool):
-        if graph_count != 1:
-            raise ValueError(
-                "batch.num_hyperedges must contain one count per graph"
-            )
-        counts = torch.tensor([int(value)], dtype=torch.long, device=device)
-    else:
-        raise TypeError(
-            "batch.num_hyperedges must be an integer or rank-1 long tensor"
-        )
-    if bool((counts < 1).any()):
-        raise ValueError("batch.num_hyperedges counts must be positive")
-    return counts
+        return value.size(0)
+    if isinstance(value, Integral) and not isinstance(value, bool):
+        count = int(value)
+        if count < 1:
+            raise ValueError("batch.num_hyperedges counts must be positive")
+        return 1
+    raise TypeError(
+        "batch.num_hyperedges must be an integer or rank-1 long tensor"
+    )
 
 
 def _validated_fields(
@@ -64,9 +61,9 @@ def _validated_fields(
         raise ValueError("batch.x must be rank-2")
     if not x.is_floating_point():
         raise TypeError("batch.x must use a floating dtype")
-    if not bool(torch.isfinite(x).all()):
-        raise ValueError("batch.x must contain only finite values")
 
+    if x.size(1) == 0:
+        raise ValueError("batch.x must have positive feature width")
     labels = _require_tensor(batch, "y")
     if labels.ndim != 1:
         raise ValueError("batch.y must be rank-1")
@@ -86,12 +83,8 @@ def _validated_fields(
         raise ValueError("batch.batch length must match batch.x rows")
     if batch_index.device != x.device:
         raise ValueError("batch.x and batch.batch must use the same device")
-    if not batch_index.numel() or int(batch_index.min()) < 0:
-        raise ValueError("batch.batch must contain non-negative graph IDs")
-    graph_count = int(batch_index.max()) + 1
-    nodes_per_graph = torch.bincount(batch_index, minlength=graph_count)
-    if bool((nodes_per_graph == 0).any()):
-        raise ValueError("batch.batch graph IDs must be contiguous from zero")
+    if not batch_index.numel():
+        raise ValueError("batch.batch must contain graph IDs")
 
     hyperedge_index = _require_tensor(batch, "hyperedge_index")
     if hyperedge_index.layout != torch.strided:
@@ -105,45 +98,18 @@ def _validated_fields(
             "batch.x and batch.hyperedge_index must use the same device"
         )
 
-    counts = _hyperedge_counts(
+    graph_count = _hyperedge_counts(
         batch,
-        graph_count=graph_count,
         device=hyperedge_index.device,
     )
-    total_hyperedges = int(counts.sum())
-    node_ids, hyperedge_ids = hyperedge_index
+    if graph_count > x.size(0):
+        raise ValueError(
+            "batch.num_hyperedges contains more graphs than batch.x rows"
+        )
     if not hyperedge_index.numel():
         raise ValueError("batch.hyperedge_index must contain every hyperedge")
-    if int(node_ids.min()) < 0 or int(node_ids.max()) >= x.size(0):
-        raise ValueError(
-            "batch.hyperedge_index contains an invalid node index"
-        )
-    if (
-        int(hyperedge_ids.min()) < 0
-        or int(hyperedge_ids.max()) >= total_hyperedges
-    ):
-        raise ValueError(
-            "batch.hyperedge_index contains an invalid hyperedge ID"
-        )
-    incidence_counts = torch.bincount(
-        hyperedge_ids,
-        minlength=total_hyperedges,
-    )
-    if bool((incidence_counts == 0).any()):
-        raise ValueError(
-            "batch.hyperedge_index hyperedge IDs must be contiguous from zero"
-        )
 
-    boundaries = counts.cumsum(0)[:-1]
-    hyperedge_graph = torch.bucketize(
-        hyperedge_ids,
-        boundaries,
-        right=True,
-    )
-    if not torch.equal(batch_index[node_ids], hyperedge_graph):
-        raise ValueError(
-            "batch.hyperedge_index incidence must stay within each graph"
-        )
+    require_hypergraph_validation(batch)
 
     return x, hyperedge_index, labels, batch_index
 

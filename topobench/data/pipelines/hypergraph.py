@@ -6,12 +6,14 @@ from omegaconf import DictConfig
 
 from topobench.data.hypergraph import (
     HypergraphData,
-    validate_hypergraph_node_data,
     validate_hypergraph_source,
 )
-from topobench.data.splits import validate_transductive_masks
 from topobench.data.utils.split_utils import load_transductive_splits
 from topobench.dataloader import GraphDataModule
+from topobench.dataloader.graph import (
+    has_hypergraph_validation,
+    mark_hypergraph_validated,
+)
 
 from .base import AbstractDataPipeline, DataPipelineOutput
 
@@ -49,23 +51,23 @@ class HypergraphNodeDataPipeline(AbstractDataPipeline):
             "data_name",
             cfg.dataset.get("selector", "<hypergraph>"),
         )
-        validate_hypergraph_source(
+        if not has_hypergraph_validation(
             source_data,
             selector=selector,
             num_classes=num_classes,
-        )
-        runtime_data = source_data.clone()
-
-        if split_params.get("split_type") == "fixed":
-            validate_transductive_masks(runtime_data)
+        ):
+            validate_hypergraph_source(
+                source_data,
+                selector=selector,
+                num_classes=num_classes,
+            )
 
         train, val, test = load_transductive_splits(
-            [runtime_data],
+            [source_data],
             split_params,
         )
-        data = train[0]
-        validate_hypergraph_node_data(
-            data,
+        mark_hypergraph_validated(
+            train[0],
             selector=selector,
             num_classes=num_classes,
         )

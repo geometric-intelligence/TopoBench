@@ -1,16 +1,263 @@
 """Native PyG batching for homogeneous graph data."""
 
 from __future__ import annotations
-
+from copy import copy
+from dataclasses import dataclass
 from numbers import Integral
 from typing import Literal
 
+import torch
+from torch import Tensor
 from lightning import LightningDataModule
+from torch.utils.data import DataLoader as TorchDataLoader
 from torch.utils.data import Dataset, Subset
 from torch_geometric.data import Data
-from torch_geometric.loader import DataLoader
+from torch_geometric.loader import DataLoader as GeometricDataLoader
 
 LearningSetting = Literal["inductive", "transductive"]
+_VALIDATION_ATTRIBUTE = "_topobench_hypergraph_validation"
+_VALIDATION_SCHEMA_VERSION = 1
+_VALIDATED_TENSOR_FIELDS = (
+    "x",
+    "y",
+    "hyperedge_index",
+    "num_hyperedges",
+    "train_mask",
+    "val_mask",
+    "test_mask",
+    "batch",
+    "ptr",
+)
+_VALIDATED_SCALAR_FIELDS = (
+    "num_hyperedges",
+    "representation_version",
+    "num_graphs",
+)
+
+
+@dataclass(frozen=True)
+class _TensorValidationSnapshot:
+    """Constant-size mutation evidence for one boundary-validated tensor."""
+
+    field: str
+    tensor: Tensor
+    version: int
+    shape: torch.Size
+    dtype: torch.dtype
+    layout: torch.layout
+    device: torch.device
+    pinned: bool
+
+
+@dataclass(frozen=True)
+class _HypergraphValidationContext:
+    """Pipeline qualification attached to current validation evidence."""
+
+    selector: str | None
+    num_classes: object
+
+
+@dataclass(frozen=True)
+class _HypergraphValidationMarker:
+    """Evidence that exhaustive validation already ran at the data boundary."""
+
+    tensors: tuple[_TensorValidationSnapshot, ...]
+    scalars: tuple[tuple[str, object], ...]
+    context: _HypergraphValidationContext
+    schema_version: int
+
+
+def _tensor_snapshot(field: str, tensor: Tensor) -> _TensorValidationSnapshot:
+    """Capture metadata that detects replacement and in-place mutation."""
+    return _TensorValidationSnapshot(
+        field=field,
+        tensor=tensor,
+        version=tensor._version,
+        shape=tensor.shape,
+        dtype=tensor.dtype,
+        layout=tensor.layout,
+        device=tensor.device,
+        pinned=tensor.is_pinned(),
+    )
+
+
+def mark_hypergraph_validated(
+    data: Data,
+    *,
+    selector: str | None = None,
+    num_classes: object = None,
+) -> Data:
+    """Mark one exhaustively validated hypergraph without scanning tensors."""
+    if not isinstance(data, Data):
+        raise TypeError("validated hypergraph data must be native PyG Data")
+    tensors = tuple(
+        _tensor_snapshot(field, value)
+        for field in _VALIDATED_TENSOR_FIELDS
+        if isinstance((value := data.get(field)), Tensor)
+    )
+    scalars = tuple(
+        (field, value)
+        for field in _VALIDATED_SCALAR_FIELDS
+        if (value := data.get(field)) is not None
+        and not isinstance(value, Tensor)
+    )
+    existing = getattr(data, _VALIDATION_ATTRIBUTE, None)
+    context = (
+        existing.context
+        if selector is None
+        and num_classes is None
+        and isinstance(existing, _HypergraphValidationMarker)
+        else _HypergraphValidationContext(
+            selector=selector,
+            num_classes=num_classes,
+        )
+    )
+    setattr(
+        data,
+        _VALIDATION_ATTRIBUTE,
+        _HypergraphValidationMarker(
+            tensors=tensors,
+            scalars=scalars,
+            context=context,
+            schema_version=_VALIDATION_SCHEMA_VERSION,
+        ),
+    )
+    return data
+
+
+def has_hypergraph_validation(
+    data: Data,
+    *,
+    selector: str | None = None,
+    num_classes: object = None,
+) -> bool:
+    """Return whether native data carries current matching evidence."""
+    marker = getattr(data, _VALIDATION_ATTRIBUTE, None)
+    if not isinstance(marker, _HypergraphValidationMarker):
+        return False
+    if selector is not None and (
+        marker.context.selector != selector
+        or type(marker.context.num_classes) is not type(num_classes)
+        or marker.context.num_classes != num_classes
+    ):
+        return False
+    try:
+        require_hypergraph_validation(data)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def require_hypergraph_validation(
+    data: Data,
+) -> _HypergraphValidationContext:
+    """Reject post-boundary injection using constant-size mutation evidence."""
+    marker = getattr(data, _VALIDATION_ATTRIBUTE, None)
+    if not isinstance(marker, _HypergraphValidationMarker):
+        raise ValueError("batch is not boundary-validated hypergraph data")
+    if marker.schema_version != _VALIDATION_SCHEMA_VERSION:
+        raise ValueError("batch hypergraph validation marker schema is stale")
+    expected_tensor_fields = tuple(
+        field
+        for field in _VALIDATED_TENSOR_FIELDS
+        if isinstance(data.get(field), Tensor)
+    )
+    if tuple(snapshot.field for snapshot in marker.tensors) != (
+        expected_tensor_fields
+    ):
+        raise ValueError("batch hypergraph validation marker schema is stale")
+    expected_scalar_fields = tuple(
+        field
+        for field in _VALIDATED_SCALAR_FIELDS
+        if data.get(field) is not None
+        and not isinstance(data.get(field), Tensor)
+    )
+    if tuple(field for field, _ in marker.scalars) != expected_scalar_fields:
+        raise ValueError("batch hypergraph validation marker schema is stale")
+    for field, expected in marker.scalars:
+        current = data.get(field)
+        if type(current) is not type(expected) or current != expected:
+            raise ValueError(
+                f"batch.{field} changed after boundary validation"
+            )
+
+    replacements: list[tuple[_TensorValidationSnapshot, Tensor]] = []
+    for snapshot in marker.tensors:
+        current = data.get(snapshot.field)
+        if not isinstance(current, Tensor):
+            raise ValueError(
+                f"batch.{snapshot.field} changed after boundary validation"
+            )
+        if current is snapshot.tensor:
+            if current._version != snapshot.version:
+                raise ValueError(
+                    f"batch.{snapshot.field} changed after boundary validation"
+                )
+            continue
+        if (
+            current.shape != snapshot.shape
+            or current.dtype != snapshot.dtype
+            or current.layout != snapshot.layout
+        ):
+            raise ValueError(
+                f"batch.{snapshot.field} changed after boundary validation"
+            )
+        replacements.append((snapshot, current))
+
+    if not replacements:
+        return marker.context
+
+    device_transfer = all(
+        current.device != snapshot.device
+        for snapshot, current in replacements
+    )
+    pin_transfer = all(
+        current.device == snapshot.device
+        and not snapshot.pinned
+        and current.is_pinned()
+        for snapshot, current in replacements
+    )
+    if not device_transfer and not pin_transfer:
+        changed_field = replacements[0][0].field
+        raise ValueError(
+            f"batch.{changed_field} changed after boundary validation"
+        )
+    mark_hypergraph_validated(data)
+    refreshed = getattr(data, _VALIDATION_ATTRIBUTE)
+    return refreshed.context
+
+
+def hypergraph_validation_context(
+    data: Data,
+) -> _HypergraphValidationContext | None:
+    """Return current evidence context when data is a marked hypergraph."""
+    marker = getattr(data, _VALIDATION_ATTRIBUTE, None)
+    if not isinstance(marker, _HypergraphValidationMarker):
+        return None
+    return require_hypergraph_validation(data)
+
+
+def _singleton_hypergraph_view(data: Data) -> Data:
+    """Create one batch-shaped store view while aliasing validated tensors."""
+    require_hypergraph_validation(data)
+    view = copy(data)
+    x = view.get("x")
+    if not isinstance(x, Tensor) or x.ndim != 2:
+        raise ValueError("validated hypergraph data requires rank-2 x")
+    view.batch = torch.zeros(x.size(0), dtype=torch.long, device=x.device)
+    view.ptr = torch.tensor(
+        [0, x.size(0)],
+        dtype=torch.long,
+        device=x.device,
+    )
+    view.num_graphs = 1
+    object.__setattr__(view, "_num_graphs", 1)
+    return mark_hypergraph_validated(view)
+
+
+def _identity_collate(data: Data) -> Data:
+    """Return the singleton data object without PyG recollation."""
+    return data
 
 
 def _validate_integer(
@@ -33,6 +280,7 @@ def _require_non_empty(name: str, dataset: Dataset[Data]) -> None:
     """Reject an empty phase dataset with a stable boundary error."""
     if len(dataset) == 0:
         raise ValueError(f"dataset_{name} must not be empty")
+
 
 def loader_worker_options(
     *,
@@ -101,6 +349,7 @@ class GraphDataModule(LightningDataModule):
             range_message="num_workers must be non-negative",
         )
         _require_non_empty("train", dataset_train)
+        singleton_hypergraph = False
 
         if learning_setting == "transductive":
             if len(dataset_train) != 1:
@@ -115,6 +364,10 @@ class GraphDataModule(LightningDataModule):
                 raise ValueError(
                     "transductive graph loading requires batch_size=1"
                 )
+            source_data = dataset_train[0]
+            if has_hypergraph_validation(source_data):
+                dataset_train = [_singleton_hypergraph_view(source_data)]
+                singleton_hypergraph = True
             dataset_val = dataset_test = dataset_train
         elif learning_setting == "inductive":
             if dataset_val is None or dataset_test is None:
@@ -153,30 +406,42 @@ class GraphDataModule(LightningDataModule):
             pin_memory=pin_memory,
             persistent_workers=persistent_workers,
         )
+        self._singleton_hypergraph = singleton_hypergraph
 
-    def train_dataloader(self) -> DataLoader:
+    def _loader(
+        self,
+        dataset: Dataset[Data],
+        *,
+        shuffle: bool,
+    ) -> TorchDataLoader | GeometricDataLoader:
+        """Use a direct singleton view or ordinary native PyG collation."""
+        if self._singleton_hypergraph:
+            return TorchDataLoader(
+                dataset,
+                batch_size=None,
+                shuffle=False,
+                num_workers=0,
+                pin_memory=bool(self.loader_kwargs["pin_memory"]),
+                collate_fn=_identity_collate,
+            )
+        return GeometricDataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            shuffle=shuffle,
+            **self.loader_kwargs,
+        )
+
+    def train_dataloader(self) -> TorchDataLoader | GeometricDataLoader:
         """Return the training graph loader."""
-        return DataLoader(
+        return self._loader(
             self.dataset_train,
-            batch_size=self.batch_size,
             shuffle=self.learning_setting == "inductive",
-            **self.loader_kwargs,
         )
 
-    def val_dataloader(self) -> DataLoader:
+    def val_dataloader(self) -> TorchDataLoader | GeometricDataLoader:
         """Return the deterministic validation graph loader."""
-        return DataLoader(
-            self.dataset_val,
-            batch_size=self.batch_size,
-            shuffle=False,
-            **self.loader_kwargs,
-        )
+        return self._loader(self.dataset_val, shuffle=False)
 
-    def test_dataloader(self) -> DataLoader:
+    def test_dataloader(self) -> TorchDataLoader | GeometricDataLoader:
         """Return the deterministic test graph loader."""
-        return DataLoader(
-            self.dataset_test,
-            batch_size=self.batch_size,
-            shuffle=False,
-            **self.loader_kwargs,
-        )
+        return self._loader(self.dataset_test, shuffle=False)

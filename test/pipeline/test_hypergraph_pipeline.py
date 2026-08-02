@@ -1,13 +1,23 @@
 """Network-free composition gates for native hypergraph models."""
 
 from __future__ import annotations
+from collections.abc import Callable
 
 import hydra
 import pytest
 import torch
+from torch import Tensor, nn
 from omegaconf import DictConfig, open_dict
 
+import topobench.data.pipelines.hypergraph as hypergraph_pipeline_module
+
 from test._utils.simplified_pipeline import run
+from topobench.data.datasets.synthetic_hypergraph_dataset import (
+    make_synthetic_hypergraph_data,
+)
+from topobench.data.pipelines.hypergraph import HypergraphNodeDataPipeline
+from topobench.nn.encoders.graph_node_encoder import GraphNodeFeatureEncoder
+from topobench.nn.wrappers.hypergraph import HypergraphWrapper
 from topobench.utils.config_resolvers import register_all_resolvers
 from topobench.utils.model_instantiation import instantiate_model
 
@@ -35,6 +45,137 @@ def _compose(model_selector: str) -> DictConfig:
                 "paths=test",
             ],
         )
+
+
+class _PreprocessorFixture(list):
+    """Minimal singleton preprocessor result for ownership tests."""
+
+    preprocessing_time = 0.0
+
+
+class _IdentityHypergraphBackbone(nn.Module):
+    """Return node features while accepting the native incidence argument."""
+
+    def forward(self, x: Tensor, hyperedge_index: Tensor) -> Tensor:
+        del hyperedge_index
+        return x
+
+
+def _build_from_source(
+    monkeypatch: pytest.MonkeyPatch,
+    source: object,
+) -> tuple[DictConfig, object]:
+    cfg = _compose("hypergraph_conv")
+    monkeypatch.setattr(
+        HypergraphNodeDataPipeline,
+        "preprocess",
+        staticmethod(lambda _cfg: _PreprocessorFixture([source])),
+    )
+    return cfg, HypergraphNodeDataPipeline().build(cfg)
+
+
+def test_pipeline_aliases_immutable_hypergraph_tensors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pipeline masks and batch metadata never copy feature or incidence stores."""
+    source = make_synthetic_hypergraph_data(seed=23)
+    source_fields = set(source.keys())
+    source_masks = {
+        name: source[name]
+        for name in ("train_mask", "val_mask", "test_mask")
+    }
+
+    _, output = _build_from_source(monkeypatch, source)
+    runtime = output.datamodule.dataset_train[0]
+
+    assert runtime is not source
+    for field in ("x", "y", "hyperedge_index"):
+        assert runtime[field] is source[field]
+    assert set(source.keys()) == source_fields
+    assert "batch" not in source
+    for name, mask in source_masks.items():
+        assert source[name] is mask
+
+
+def test_exhaustive_hypergraph_validation_runs_once_at_pipeline_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Repeated wrapper forwards reuse the pipeline validation marker."""
+    source = make_synthetic_hypergraph_data(seed=29)
+    validation_calls = 0
+    validate_source = hypergraph_pipeline_module.validate_hypergraph_source
+
+    def counted_validation(*args: object, **kwargs: object) -> object:
+        nonlocal validation_calls
+        validation_calls += 1
+        return validate_source(*args, **kwargs)
+
+    monkeypatch.setattr(
+        hypergraph_pipeline_module,
+        "validate_hypergraph_source",
+        counted_validation,
+    )
+    _, output = _build_from_source(monkeypatch, source)
+    batch = next(iter(output.datamodule.train_dataloader()))
+    wrapper = HypergraphWrapper(_IdentityHypergraphBackbone())
+
+    wrapper(batch)
+    wrapper(batch)
+
+    assert validation_calls == 1
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    (
+        lambda data: data.x.__setitem__((0, 0), float("nan")),
+        lambda data: data.y.__setitem__(0, -1),
+        lambda data: data.hyperedge_index.__setitem__(
+            (0, 0),
+            data.num_nodes,
+        ),
+        lambda data: data.train_mask.__setitem__(
+            0,
+            ~data.train_mask[0],
+        ),
+    ),
+)
+def test_pipeline_revalidates_stale_source_marker_before_reuse(
+    monkeypatch: pytest.MonkeyPatch,
+    mutate: Callable[[object], object],
+) -> None:
+    """In-place tensor writes cannot reuse stale boundary evidence."""
+    source = make_synthetic_hypergraph_data(seed=37)
+    _build_from_source(monkeypatch, source)
+    mutate(source)
+
+    with pytest.raises((TypeError, ValueError)):
+        _build_from_source(monkeypatch, source)
+
+
+def test_feature_encoder_rebinds_validation_to_projected_x(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Trusted shallow feature encoding refreshes x evidence for the wrapper."""
+    source = make_synthetic_hypergraph_data(seed=41)
+    _, output = _build_from_source(monkeypatch, source)
+    batch = next(iter(output.datamodule.train_dataloader()))
+    torch.manual_seed(41)
+    encoder = GraphNodeFeatureEncoder(
+        in_channels=batch.x.size(1),
+        out_channels=7,
+        dropout=0.0,
+    ).eval()
+
+    encoded = encoder(batch)
+    result = HypergraphWrapper(_IdentityHypergraphBackbone())(encoded)
+
+    assert encoded is not batch
+    assert encoded.x.shape == (batch.num_nodes, 7)
+    assert encoded.y is batch.y
+    assert encoded.hyperedge_index is batch.hyperedge_index
+    assert result["x"] is encoded.x
+    assert result["labels"] is encoded.y
 
 
 @pytest.mark.parametrize("model_selector", ("edgnn", "hypergraph_conv"))

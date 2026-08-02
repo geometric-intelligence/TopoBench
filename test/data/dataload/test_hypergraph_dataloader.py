@@ -12,6 +12,7 @@ from topobench.data.datasets.synthetic_hypergraph_dataset import (
     make_synthetic_hypergraph_data,
 )
 from topobench.dataloader import GraphDataModule
+from topobench.dataloader.graph import mark_hypergraph_validated
 
 
 def test_native_loader_offsets_each_incidence_row_by_its_entity_count() -> None:
@@ -79,6 +80,44 @@ def test_transductive_phase_loaders_preserve_native_hypergraph_fields(
         assert mask.dtype == torch.bool
         assert mask.shape == (data.num_nodes,)
         assert torch.equal(mask, data[mask_name])
+
+
+def test_validated_transductive_hypergraph_uses_one_shallow_batch_view() -> None:
+    """Singleton phases reuse one view without recollating immutable tensors."""
+    data = make_synthetic_hypergraph_data(
+        seed=31,
+        num_nodes=9,
+        num_hyperedges=4,
+    )
+    mark_hypergraph_validated(data)
+    module = GraphDataModule(
+        dataset_train=[data],
+        learning_setting="transductive",
+        batch_size=1,
+        num_workers=0,
+    )
+
+    phase_batches = [
+        next(iter(getattr(module, loader_name)()))
+        for loader_name in (
+            "train_dataloader",
+            "val_dataloader",
+            "test_dataloader",
+        )
+    ]
+    batch = phase_batches[0]
+
+    assert all(phase_batch is batch for phase_batch in phase_batches)
+    assert batch is module.dataset_train[0]
+    assert batch is not data
+    for field in ("x", "y", "hyperedge_index"):
+        assert batch[field] is data[field]
+    assert batch.num_graphs == 1
+    assert "batch" not in data
+    assert torch.equal(
+        batch.batch,
+        torch.zeros(data.num_nodes, dtype=torch.long),
+    )
 
 
 def test_transductive_hypergraph_loading_requires_one_graph_per_batch() -> None:

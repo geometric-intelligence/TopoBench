@@ -14,6 +14,10 @@ from torch_geometric.data import Data, HeteroData
 from torch_geometric.nn import GraphNorm
 
 from topobench.data.features import encode_categorical_columns
+from topobench.dataloader.graph import (
+    hypergraph_validation_context,
+    mark_hypergraph_validated,
+)
 from topobench.nn.encoders.base import AbstractFeatureEncoder
 
 
@@ -118,6 +122,7 @@ class GraphNodeFeatureEncoder(AbstractFeatureEncoder):
             raise TypeError(
                 "GraphNodeFeatureEncoder requires homogeneous Data"
             )
+        validation_context = hypergraph_validation_context(data)
 
         x = data.get("x")
         if not isinstance(x, Tensor):
@@ -164,6 +169,12 @@ class GraphNodeFeatureEncoder(AbstractFeatureEncoder):
         result.x = self.dropout(
             self.activation(self.projection(self.norm(x, batch=batch)))
         )
+        if validation_context is not None:
+            mark_hypergraph_validated(
+                result,
+                selector=validation_context.selector,
+                num_classes=validation_context.num_classes,
+            )
         return result
 
 

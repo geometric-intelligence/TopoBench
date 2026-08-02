@@ -10,6 +10,7 @@ from torch import Tensor, nn
 from torch_geometric.data import Batch
 
 from topobench.data import HypergraphData
+from topobench.dataloader.graph import mark_hypergraph_validated
 from topobench.nn.wrappers.hypergraph import (
     WRAPPER_CLASSES,
     HypergraphWrapper,
@@ -49,7 +50,12 @@ def _native_batch() -> Batch:
         num_hyperedges=1,
         y=torch.tensor([1, 0], dtype=torch.long),
     )
-    return Batch.from_data_list([first, second])
+    batch = Batch.from_data_list([first, second])
+    split_ids = torch.arange(batch.num_nodes) % 3
+    batch.train_mask = split_ids == 0
+    batch.val_mask = split_ids == 1
+    batch.test_mask = split_ids == 2
+    return mark_hypergraph_validated(batch)
 
 
 def test_hypergraph_wrapper_export_is_explicit_and_narrow() -> None:
@@ -74,7 +80,7 @@ def test_wrapper_uses_exact_native_fields_and_returns_exact_keys() -> None:
 
 
 def _without(batch: Batch, field: str) -> Batch:
-    clone = batch.clone()
+    clone = mark_hypergraph_validated(batch.clone())
     del clone[field]
     return clone
 
@@ -119,7 +125,7 @@ def _invalid_cases() -> tuple[tuple[str, Batch], ...]:
         ("batch", torch.tensor([0, 0, 0, 2, 2], dtype=torch.long)),
     )
     for field, value in invalid_values:
-        batch = base.clone()
+        batch = mark_hypergraph_validated(base.clone())
         batch[field] = value
         cases.append((field, batch))
     return tuple(cases)
@@ -136,6 +142,62 @@ def test_invalid_native_fields_fail_before_backbone(
         HypergraphWrapper(backbone)(batch)
 
     assert backbone.calls == []
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    (
+        lambda batch: setattr(batch, "x", batch.x.clone()),
+        lambda batch: setattr(batch, "y", batch.y.clone()),
+        lambda batch: batch.hyperedge_index.add_(0),
+        lambda batch: batch.train_mask.logical_not_(),
+    ),
+)
+def test_wrapper_rejects_mutation_after_boundary_validation(
+    mutate: Callable[[Batch], object],
+) -> None:
+    """Tensor replacement and in-place writes invalidate the cheap marker."""
+    batch = _native_batch()
+    backbone = RecordingBackbone()
+    mutate(batch)
+
+    with pytest.raises(ValueError, match="changed after boundary validation"):
+        HypergraphWrapper(backbone)(batch)
+
+    assert backbone.calls == []
+
+
+def test_wrapper_reuses_boundary_validation_without_full_tensor_scans(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Forward performs only constant-size field and marker checks."""
+    batch = _native_batch()
+    backbone = RecordingBackbone()
+
+    def forbidden_scan(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise AssertionError("full tensor scan reached wrapper forward")
+
+    for scan_name in ("isfinite", "bincount", "bucketize", "equal"):
+        monkeypatch.setattr(torch, scan_name, forbidden_scan)
+
+    result = HypergraphWrapper(backbone)(batch)
+
+    assert result["x"].shape == (batch.num_nodes, 2)
+    assert len(backbone.calls) == 1
+
+
+def test_wrapper_accepts_valid_data_device_transfer() -> None:
+    """Boundary metadata survives framework-managed Data.to transfers."""
+    batch = _native_batch()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    batch = batch.to(device)
+
+    result = HypergraphWrapper(RecordingBackbone())(batch)
+
+    assert result["x"].device == device
+    assert result["labels"].device == device
+    assert result["batch"].device == device
 
 
 @pytest.mark.parametrize(
