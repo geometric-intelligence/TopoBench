@@ -201,13 +201,25 @@ def test_molecular_configs_and_manifests_declare_encoded_atom_features() -> (
         config = OmegaConf.load(GRAPH_CONFIG_DIR / f"{selector}.yaml")
 
         assert config.parameters.feature_policy == "categorical_one_hot"
-        assert config.parameters.num_features[0] == 174
+        assert config.parameters.num_features[0] == 9
+        assert config.parameters.stored_num_features == 9
+        assert sum(config.parameters.feature_cardinalities) == 174
+        assert config.parameters.feature_encoding == "categorical_one_hot"
+        assert (
+            config.loader.parameters.representation_version
+            == "molecular-compact-categorical-v1"
+        )
         assert "max_dim_if_lifted" not in config.parameters
         assert "preserve_edge_attr_if_lifted" not in config.parameters
         assert (
             GRAPH_DATASET_MANIFEST[selector].feature_policy
             == "categorical_one_hot"
         )
+        capability = GRAPH_DATASET_MANIFEST[selector]
+        assert capability.feature_width == 9
+        assert capability.stored_feature_width == 9
+        assert sum(capability.feature_cardinalities) == 174
+        assert capability.feature_encoding == "categorical_one_hot"
         assert (
             DATASET_QUALIFICATION_MANIFEST[f"graph/{selector}"].feature_policy
             == "categorical_one_hot"

@@ -27,6 +27,8 @@ FeaturePolicy = Literal[
 EdgeField = Literal["edge_attr", "edge_weight"]
 QualificationValue = str | int | float | bool
 
+OGB_ATOM_FEATURE_CARDINALITIES = (119, 5, 12, 12, 10, 6, 6, 2, 2)
+
 
 @dataclass(frozen=True, slots=True)
 class GraphTaskContract:
@@ -49,6 +51,9 @@ class GraphDatasetCapability:
     edge_fields: frozenset[EdgeField]
     qualification: tuple[tuple[str, QualificationValue], ...]
     feature_width: int = 1
+    stored_feature_width: int | None = None
+    feature_encoding: str = "continuous"
+    feature_cardinalities: tuple[int, ...] = ()
     feature_transforms: frozenset[str] = frozenset()
     num_classes: int = 2
     num_nodes: int | None = None
@@ -86,6 +91,47 @@ class GraphDatasetCapability:
             isinstance(name, str) and name for name in self.feature_transforms
         ):
             raise ValueError("feature_transforms must contain non-empty names")
+        stored_width = (
+            self.feature_width
+            if self.stored_feature_width is None
+            else self.stored_feature_width
+        )
+        if isinstance(stored_width, bool) or not isinstance(
+            stored_width, int
+        ):
+            raise TypeError("stored_feature_width must be an integer")
+        if stored_width <= 0:
+            raise ValueError("stored_feature_width must be positive")
+        object.__setattr__(self, "stored_feature_width", stored_width)
+        if self.feature_encoding not in {
+            "continuous",
+            "categorical_one_hot",
+        }:
+            raise ValueError("feature_encoding is unsupported")
+        if self.feature_encoding == "categorical_one_hot":
+            if (
+                not self.feature_cardinalities
+                or len(self.feature_cardinalities) != stored_width
+                or any(
+                    isinstance(cardinality, bool)
+                    or not isinstance(cardinality, int)
+                    or cardinality <= 0
+                    for cardinality in self.feature_cardinalities
+                )
+            ):
+                raise ValueError(
+                    "categorical feature_cardinalities must contain one "
+                    "positive integer per stored feature"
+                )
+            if self.feature_width != stored_width:
+                raise ValueError(
+                    "categorical feature_width must equal "
+                    "stored_feature_width"
+                )
+        elif self.feature_cardinalities:
+            raise ValueError(
+                "feature_cardinalities require categorical_one_hot encoding"
+            )
         if not self.qualification:
             raise ValueError("qualification evidence is required")
         paths = [path for path, _ in self.qualification]
@@ -371,6 +417,9 @@ def _capability(
     learning_setting: LearningSetting,
     feature_policy: FeaturePolicy,
     feature_width: int,
+    stored_feature_width: int | None = None,
+    feature_encoding: str = "continuous",
+    feature_cardinalities: tuple[int, ...] = (),
     num_classes: int | None = None,
     num_nodes: int | None = None,
     feature_transforms: frozenset[str] = frozenset(),
@@ -392,6 +441,9 @@ def _capability(
         learning_setting=learning_setting,
         feature_policy=feature_policy,
         feature_width=feature_width,
+        stored_feature_width=stored_feature_width,
+        feature_encoding=feature_encoding,
+        feature_cardinalities=feature_cardinalities,
         feature_transforms=feature_transforms,
         edge_fields=edge_fields,
         num_classes=class_count,
@@ -411,6 +463,17 @@ def _capability(
                 else ()
             ),
             ("split_params.learning_setting", learning_setting),
+            *(
+                (
+                    ("parameters.feature_encoding", feature_encoding),
+                    (
+                        "parameters.stored_num_features",
+                        stored_feature_width,
+                    ),
+                )
+                if stored_feature_width is not None
+                else ()
+            ),
             *extra_evidence,
         ),
     )
@@ -441,7 +504,10 @@ _ROWS = (
         task_level="graph",
         learning_setting="inductive",
         feature_policy="categorical_one_hot",
-        feature_width=174,
+        feature_width=9,
+        stored_feature_width=9,
+        feature_encoding="categorical_one_hot",
+        feature_cardinalities=OGB_ATOM_FEATURE_CARDINALITIES,
         edge_fields=_EDGE_ATTR,
     ),
     _capability(
@@ -451,7 +517,10 @@ _ROWS = (
         task_level="graph",
         learning_setting="inductive",
         feature_policy="categorical_one_hot",
-        feature_width=174,
+        feature_width=9,
+        stored_feature_width=9,
+        feature_encoding="categorical_one_hot",
+        feature_cardinalities=OGB_ATOM_FEATURE_CARDINALITIES,
         edge_fields=_EDGE_ATTR,
     ),
     _capability(
@@ -461,7 +530,10 @@ _ROWS = (
         task_level="graph",
         learning_setting="inductive",
         feature_policy="categorical_one_hot",
-        feature_width=174,
+        feature_width=9,
+        stored_feature_width=9,
+        feature_encoding="categorical_one_hot",
+        feature_cardinalities=OGB_ATOM_FEATURE_CARDINALITIES,
         edge_fields=_EDGE_ATTR,
     ),
     _capability(
@@ -471,7 +543,10 @@ _ROWS = (
         task_level="graph",
         learning_setting="inductive",
         feature_policy="categorical_one_hot",
-        feature_width=174,
+        feature_width=9,
+        stored_feature_width=9,
+        feature_encoding="categorical_one_hot",
+        feature_cardinalities=OGB_ATOM_FEATURE_CARDINALITIES,
         edge_fields=_EDGE_ATTR,
     ),
     _capability(
@@ -721,7 +796,10 @@ _ROWS = (
         task_level="graph",
         learning_setting="inductive",
         feature_policy="categorical_one_hot",
-        feature_width=174,
+        feature_width=9,
+        stored_feature_width=9,
+        feature_encoding="categorical_one_hot",
+        feature_cardinalities=OGB_ATOM_FEATURE_CARDINALITIES,
         edge_fields=_EDGE_ATTR,
     ),
     _capability(
@@ -881,6 +959,23 @@ def qualify_graph_dataset(
                 f"{configured_classes!r}; manifest expects "
                 f"{capability.num_classes}"
             )
+        if capability.feature_cardinalities:
+            observed_cardinalities = _value_at_path(
+                dataset,
+                "parameters.feature_cardinalities",
+            )
+            if (
+                not isinstance(observed_cardinalities, Sequence)
+                or isinstance(observed_cardinalities, (str, bytes))
+                or tuple(observed_cardinalities)
+                != capability.feature_cardinalities
+            ):
+                raise ValueError(
+                    f"{capability.selector}: "
+                    "dataset.parameters.feature_cardinalities="
+                    f"{observed_cardinalities!r}; manifest expects "
+                    f"{capability.feature_cardinalities!r}"
+                )
         if capability.selector == "graphuniverse_transductive":
             generated_classes = _value_at_path(
                 dataset,
@@ -926,6 +1021,7 @@ __all__ = [
     "EdgeField",
     "FeaturePolicy",
     "GRAPH_DATASET_MANIFEST",
+    "OGB_ATOM_FEATURE_CARDINALITIES",
     "GraphDatasetCapability",
     "GraphTaskContract",
     "configured_graph_feature_width",

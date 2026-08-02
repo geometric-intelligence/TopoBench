@@ -5,12 +5,13 @@ loader:
     data_domain: graph
     data_type: OGBGDataset
     data_name: ogbg-molhiv
+    representation_version: molecular-compact-categorical-v1
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
 
 # Dataset parameters
 parameters:
   num_features:
-  - 174 # Concatenated one-hot OGB atom features
+  - 9 # Compact integral OGB atom category columns
   - 3 # Edge features
   num_classes: 2
   task: classification
@@ -18,6 +19,9 @@ parameters:
   monitor_metric: auroc
   task_level: graph
   feature_policy: categorical_one_hot
+  feature_encoding: categorical_one_hot
+  stored_num_features: 9
+  feature_cardinalities: [119, 5, 12, 12, 10, 6, 6, 2, 2]
 
 #splits
 split_params:

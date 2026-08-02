@@ -223,8 +223,21 @@ def _assert_graph_format(row: DatasetQualification, batch: Data) -> None:
     assert not isinstance(batch, HypergraphData)
     assert isinstance(batch.x, torch.Tensor)
     assert batch.x.ndim == 2
-    assert batch.x.is_floating_point()
-    assert torch.isfinite(batch.x).all()
+    selector = row.selector.split("/", maxsplit=1)[1]
+    capability = GRAPH_DATASET_MANIFEST[selector]
+    cardinalities = capability.feature_cardinalities
+    if row.feature_policy == "categorical_one_hot" and cardinalities:
+        assert cardinalities
+        assert batch.x.dtype != torch.bool
+        assert not batch.x.is_floating_point()
+        assert not batch.x.is_complex()
+        assert batch.x.shape[1] == len(cardinalities)
+        for column, cardinality in enumerate(cardinalities):
+            assert torch.all(batch.x[:, column] >= 0)
+            assert torch.all(batch.x[:, column] < cardinality)
+    else:
+        assert batch.x.is_floating_point()
+        assert torch.isfinite(batch.x).all()
     assert isinstance(batch.edge_index, torch.Tensor)
     assert batch.edge_index.dtype == torch.long
     assert batch.edge_index.shape[0] == 2

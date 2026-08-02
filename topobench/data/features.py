@@ -11,6 +11,7 @@ from torch import Tensor
 from torch_geometric.data import Data, HeteroData
 from topobench.data.capabilities import (
     GraphDatasetCapability,
+    OGB_ATOM_FEATURE_CARDINALITIES,
     validate_classification_vocabulary,
 )
 
@@ -25,24 +26,22 @@ _FEATURE_POLICIES = frozenset(
     {"continuous", "categorical_one_hot", "degree", "constant"}
 )
 
-OGB_ATOM_FEATURE_CARDINALITIES = (119, 5, 12, 12, 10, 6, 6, 2, 2)
 
 
-def encode_categorical_columns(
+def validate_categorical_columns(
     categories: Tensor,
     cardinalities: Sequence[int],
-) -> Tensor:
-    """Encode columns as deterministic concatenated one-hot blocks."""
+    *,
+    context: str = "categories",
+    allow_integral_float: bool = False,
+) -> tuple[int, ...]:
+    """Validate compact categorical columns without expanding their width."""
     if not isinstance(categories, Tensor):
-        raise TypeError("categories must be a torch.Tensor")
+        raise TypeError(f"{context} must be a torch.Tensor")
     if categories.ndim != 2:
-        raise ValueError("categories must be rank-2")
+        raise ValueError(f"{context} must be rank-2")
 
     cardinality_values = tuple(cardinalities)
-    if len(cardinality_values) != categories.shape[1]:
-        raise ValueError(
-            "cardinality count must match the number of category columns"
-        )
     if not cardinality_values or any(
         isinstance(cardinality, bool)
         or not isinstance(cardinality, Integral)
@@ -50,24 +49,54 @@ def encode_categorical_columns(
         for cardinality in cardinality_values
     ):
         raise ValueError("cardinalities must be positive integers")
-
+    if categories.shape[1] != len(cardinality_values):
+        raise ValueError(
+            f"{context} must have exactly {len(cardinality_values)} "
+            "categorical columns"
+        )
     if categories.dtype == torch.bool or categories.is_complex():
-        raise TypeError("categories must contain integral values")
-    if categories.is_floating_point() and (
-        not torch.all(torch.isfinite(categories))
-        or not torch.all(categories == torch.trunc(categories))
-    ):
-        raise ValueError("categories must contain integral values")
+        raise TypeError(f"{context} must have an integral dtype")
+    if categories.is_floating_point():
+        if not allow_integral_float:
+            raise TypeError(f"{context} must have an integral dtype")
+        if (
+            not torch.isfinite(categories).all()
+            or not torch.all(categories == torch.trunc(categories))
+        ):
+            raise ValueError(
+                f"{context} must contain exact integral categories"
+            )
 
+    for column, cardinality in enumerate(cardinality_values):
+        values = categories[:, column]
+        if torch.any(values < 0) or torch.any(values >= cardinality):
+            raise ValueError(
+                f"{context} column {column} contains a category outside "
+                f"the valid range [0, {cardinality})"
+            )
+    return tuple(int(value) for value in cardinality_values)
+
+
+def encode_categorical_columns(
+    categories: Tensor,
+    cardinalities: Sequence[int],
+    *,
+    context: str = "categories",
+    allow_integral_float: bool = False,
+) -> Tensor:
+    """Encode validated columns as concatenated one-hot blocks."""
+    cardinality_values = validate_categorical_columns(
+        categories,
+        cardinalities,
+        context=context,
+        allow_integral_float=allow_integral_float,
+    )
+    values = categories.to(dtype=torch.long)
     limits = torch.tensor(
         cardinality_values,
         dtype=torch.long,
         device=categories.device,
     )
-    if torch.any(categories < 0) or torch.any(categories >= limits):
-        raise ValueError("category value out of range for its column")
-
-    values = categories.to(dtype=torch.long)
     offsets = torch.zeros_like(limits)
     offsets[1:] = torch.cumsum(limits[:-1], dim=0)
     column_indices = values + offsets
@@ -129,6 +158,7 @@ def validate_graph_features(
     *,
     base_num_features: object,
     total_num_features: object,
+    categorical_cardinalities: Sequence[int] = (),
     selector: str = "<graph>",
     item: str = "graph",
 ) -> Data:
@@ -157,24 +187,66 @@ def validate_graph_features(
             f"{context} observed shape={tuple(x.shape)}, dtype={x.dtype}; "
             "data.x must be rank-2 after graph transforms"
         )
-    if not x.is_floating_point():
-        raise TypeError(
-            f"{context} observed shape={tuple(x.shape)}, dtype={x.dtype}; "
-            "data.x must have a floating dtype after graph transforms"
-        )
     if x.shape[0] == 0:
         raise ValueError(
             f"{context} observed shape={tuple(x.shape)}, dtype={x.dtype}; "
             "expected at least one node"
+        )
+
+    base_channels = _node_feature_channels(base_num_features)
+    expected_channels = _node_feature_channels(total_num_features)
+    cardinalities = tuple(categorical_cardinalities)
+    if cardinalities:
+        if base_channels != len(cardinalities):
+            raise ValueError(
+                f"{context} categorical cardinality count must equal "
+                f"base_num_features={base_channels}"
+            )
+        if expected_channels < len(cardinalities):
+            raise ValueError(
+                f"{context} categorical cardinality count exceeds "
+                f"total_num_features={expected_channels}"
+            )
+        if x.shape[1] != expected_channels:
+            raise ValueError(
+                f"{context} observed shape={tuple(x.shape)}, dtype={x.dtype}; "
+                f"expected shape=(N, {expected_channels})"
+            )
+        categorical_prefix = x[:, : len(cardinalities)]
+        validate_categorical_columns(
+            categorical_prefix,
+            cardinalities,
+            context=f"{context} categorical prefix",
+            allow_integral_float=True,
+        )
+        continuous_suffix = x[:, len(cardinalities) :]
+        if continuous_suffix.shape[1]:
+            if not x.is_floating_point():
+                raise TypeError(
+                    f"{context} continuous suffix must have a floating dtype"
+                )
+            if not torch.isfinite(continuous_suffix).all():
+                raise ValueError(
+                    f"{context} continuous suffix must contain finite values"
+                )
+        if data.num_nodes is not None and x.shape[0] != data.num_nodes:
+            raise ValueError(
+                f"{context} observed shape={tuple(x.shape)}, "
+                f"dtype={x.dtype}; expected one row per "
+                f"num_nodes={data.num_nodes}"
+            )
+        return data
+
+    if not x.is_floating_point():
+        raise TypeError(
+            f"{context} observed shape={tuple(x.shape)}, dtype={x.dtype}; "
+            "data.x must have a floating dtype after graph transforms"
         )
     if not torch.isfinite(x).all():
         raise ValueError(
             f"{context} observed shape={tuple(x.shape)}, dtype={x.dtype}; "
             "expected finite feature values"
         )
-
-    base_channels = _node_feature_channels(base_num_features)
-    expected_channels = _node_feature_channels(total_num_features)
     if expected_channels < base_channels:
         raise ValueError(
             f"{context} observed shape={tuple(x.shape)}, dtype={x.dtype}; "
@@ -229,6 +301,7 @@ def validate_qualified_graph_source(
                 capability.feature_policy,
                 base_num_features=capability.feature_width,
                 total_num_features=total_num_features,
+                categorical_cardinalities=capability.feature_cardinalities,
                 selector=selector,
                 item=item,
             )
@@ -257,6 +330,7 @@ def validate_qualified_graph_source(
                 capability.feature_policy,
                 base_num_features=capability.feature_width,
                 total_num_features=total_num_features,
+                categorical_cardinalities=capability.feature_cardinalities,
                 selector=selector,
                 item=item,
             )
@@ -302,6 +376,7 @@ def prepare_graph_features(
     feature_policy: GraphFeaturePolicy | str,
     base_num_features: object,
     total_num_features: object,
+    categorical_cardinalities: Sequence[int] = (),
 ) -> tuple[Sized, Sized | None, Sized | None]:
     """Validate every graph in the post-transform phase datasets."""
     datasets = (dataset_train, dataset_val, dataset_test)
@@ -314,6 +389,7 @@ def prepare_graph_features(
                 feature_policy,
                 base_num_features=base_num_features,
                 total_num_features=total_num_features,
+                categorical_cardinalities=categorical_cardinalities,
             )
     return datasets
 
@@ -321,6 +397,7 @@ def prepare_graph_features(
 __all__ = [
     "OGB_ATOM_FEATURE_CARDINALITIES",
     "encode_categorical_columns",
+    "validate_categorical_columns",
     "GraphFeaturePolicy",
     "prepare_graph_features",
     "validate_graph_features",

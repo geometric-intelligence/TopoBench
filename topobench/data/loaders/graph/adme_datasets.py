@@ -23,7 +23,7 @@ except ImportError:
 
 from topobench.data.features import (
     OGB_ATOM_FEATURE_CARDINALITIES,
-    encode_categorical_columns,
+    validate_categorical_columns,
 )
 from topobench.data.loaders.base import (
     AbstractLoader,
@@ -33,7 +33,7 @@ from topobench.data.loaders.base import (
 )
 
 
-_PROVENANCE_VERSION = 1
+_PROVENANCE_VERSION = 2
 _PHASES = ("train", "valid", "test")
 
 try:
@@ -141,6 +141,18 @@ def _build_provenance(
                 for phase in _PHASES
             },
         },
+        "representation": {
+            "node_feature_encoding": "categorical_one_hot",
+            "node_feature_cardinalities": list(
+                OGB_ATOM_FEATURE_CARDINALITIES
+            ),
+            "stored_node_feature_width": len(
+                OGB_ATOM_FEATURE_CARDINALITIES
+            ),
+            "encoded_node_feature_width": sum(
+                OGB_ATOM_FEATURE_CARDINALITIES
+            ),
+        },
     }
 
 
@@ -185,7 +197,7 @@ class ADMEDatasetLoader(AbstractLoader):
     3. Uses fixed scaffold splits from TDC
     4. Returns graphs compatible with OGB molecular property prediction
 
-    Node features (nine categorical columns encoded to 174 binary channels):
+    Node features (nine compact integral OGB categorical columns):
         - Atomic number
         - Chirality
         - Degree
@@ -257,7 +269,7 @@ class ADMEDatasetLoader(AbstractLoader):
             @property
             def processed_file_names(self):
                 """Return the representation-specific processed file name."""
-                return [f"{self.data_name}_node_one_hot_174.pt"]
+                return [f"{self.data_name}_node_categories_v1.pt"]
 
             def process(self):
                 """Collate pre-built graphs and persist the processed cache."""
@@ -327,7 +339,7 @@ class ADMEDatasetLoader(AbstractLoader):
         processed_path = (
             dataset_root
             / "processed"
-            / f"{dataset_name}_node_one_hot_174.pt"
+            / f"{dataset_name}_node_categories_v1.pt"
         )
         provenance_path = processed_path.with_name(
             f"{processed_path.name}.provenance.json"
@@ -345,6 +357,14 @@ class ADMEDatasetLoader(AbstractLoader):
             for split_data in (train_data, valid_data, test_data):
                 for _, row in split_data.iterrows():
                     graph_dict = smiles2graph(row["Drug"])
+                    node_features = torch.as_tensor(
+                        graph_dict["node_feat"]
+                    )
+                    validate_categorical_columns(
+                        node_features,
+                        OGB_ATOM_FEATURE_CARDINALITIES,
+                        context=f"{dataset_name} node features",
+                    )
                     if is_classification:
                         label_tensor = torch.tensor(
                             int(row["Y"]),
@@ -357,10 +377,7 @@ class ADMEDatasetLoader(AbstractLoader):
                         )
                     graph_list.append(
                         Data(
-                            x=encode_categorical_columns(
-                                torch.as_tensor(graph_dict["node_feat"]),
-                                OGB_ATOM_FEATURE_CARDINALITIES,
-                            ),
+                            x=node_features,
                             edge_index=torch.tensor(
                                 graph_dict["edge_index"],
                                 dtype=torch.long,
@@ -398,6 +415,8 @@ class ADMEDatasetLoader(AbstractLoader):
         dataset.split_idx = split_idx
         dataset.split_provenance = provenance
         dataset.split_fingerprint = canonical_sha256(provenance)
+        dataset.feature_encoding = "categorical_one_hot"
+        dataset.feature_cardinalities = OGB_ATOM_FEATURE_CARDINALITIES
         dataset.provenance_path = str(provenance_path)
         return dataset
 

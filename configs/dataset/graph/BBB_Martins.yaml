@@ -5,6 +5,7 @@ loader:
     data_domain: graph
     data_type: ADME
     data_name: BBB_Martins
+    representation_version: molecular-compact-categorical-v1
     split_method: ${dataset.split_params.split_method}
     split_seed: ${dataset.split_params.data_seed}
     data_dir: ${paths.data_dir}/${dataset.loader.parameters.data_domain}/${dataset.loader.parameters.data_type}
@@ -12,7 +13,7 @@ loader:
 # Dataset parameters
 parameters:
   num_features:
-    - 174  # Concatenated one-hot OGB atom features
+    - 9  # Compact integral OGB atom category columns
     - 3  # OGB edge features
   num_classes: 2
   task: classification
@@ -20,6 +21,9 @@ parameters:
   monitor_metric: accuracy
   task_level: graph
   feature_policy: categorical_one_hot
+  feature_encoding: categorical_one_hot
+  stored_num_features: 9
+  feature_cardinalities: [119, 5, 12, 12, 10, 6, 6, 2, 2]
 
 # Splits - using fixed scaffold split from TDC
 split_params:

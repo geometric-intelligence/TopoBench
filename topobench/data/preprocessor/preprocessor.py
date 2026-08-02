@@ -10,6 +10,7 @@ from collections.abc import Mapping
 import torch
 import torch_geometric
 from filelock import FileLock
+from omegaconf import OmegaConf
 from torch_geometric.data import Data, HeteroData
 from torch_geometric.io import fs
 from tqdm import tqdm
@@ -268,7 +269,20 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         current_device = "cpu"
 
         for name, value in config_items:
-            kwargs = dict(value)
+            resolved_value = (
+                OmegaConf.to_container(
+                    value,
+                    resolve=True,
+                    throw_on_missing=True,
+                )
+                if OmegaConf.is_config(value)
+                else value
+            )
+            if not isinstance(resolved_value, Mapping):
+                raise TypeError(
+                    f"transform {name!r} must resolve to a mapping"
+                )
+            kwargs = dict(resolved_value)
 
             requested_device = kwargs.pop("preprocessor_device", "cpu")
 

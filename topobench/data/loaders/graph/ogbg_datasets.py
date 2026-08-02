@@ -9,7 +9,7 @@ from torch_geometric.data import Dataset
 
 from topobench.data.features import (
     OGB_ATOM_FEATURE_CARDINALITIES,
-    encode_categorical_columns,
+    validate_categorical_columns,
 )
 from topobench.data.loaders.base import AbstractLoader
 
@@ -47,10 +47,13 @@ class OGBGDatasetLoader(AbstractLoader):
         dataset = PygGraphPropPredDataset(
             name=self.parameters.data_name, root=self.root_data_dir
         )
-        dataset._data.x = encode_categorical_columns(
+        validate_categorical_columns(
             dataset._data.x,
             OGB_ATOM_FEATURE_CARDINALITIES,
+            context=f"{self.parameters.data_name} node features",
         )
+        dataset.feature_encoding = "categorical_one_hot"
+        dataset.feature_cardinalities = OGB_ATOM_FEATURE_CARDINALITIES
         # Squeeze the target tensor
         dataset._data.y = dataset._data.y.squeeze(1)
         dataset.split_idx = dataset.get_idx_split()

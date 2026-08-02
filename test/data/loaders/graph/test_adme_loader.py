@@ -22,6 +22,8 @@ import pytest
 import torch
 from omegaconf import OmegaConf
 
+from topobench.data.capabilities import GRAPH_DATASET_MANIFEST
+from topobench.data.features import validate_qualified_graph_source
 from topobench.data.loaders.graph.adme_datasets import ADMEDatasetLoader
 
 # ---------------------------------------------------------------------------
@@ -327,7 +329,7 @@ def test_split_provenance_is_versioned_complete_and_non_executable(
     ).load_dataset()
     provenance = dataset.split_provenance
 
-    assert provenance["provenance_version"] == 1
+    assert provenance["provenance_version"] == 2
     assert provenance["source"]["provider"] == "PyTDC"
     assert "provider_version" in provenance["source"]
     assert provenance["source"]["dataset_name"] == "BBB_Martins"
@@ -342,6 +344,12 @@ def test_split_provenance_is_versioned_complete_and_non_executable(
     assert provenance["split"]["phase_data_digests"] == {
         phase: _canonical_digest(frame.to_dict(orient="records"))
         for phase, frame in expected_split.items()
+    }
+    assert provenance["representation"] == {
+        "node_feature_encoding": "categorical_one_hot",
+        "node_feature_cardinalities": [119, 5, 12, 12, 10, 6, 6, 2, 2],
+        "stored_node_feature_width": 9,
+        "encoded_node_feature_width": 174,
     }
 
     provenance_path = Path(dataset.provenance_path)
@@ -370,6 +378,14 @@ def test_split_provenance_is_versioned_complete_and_non_executable(
         (
             ("split", "phase_data_digests", "valid"),
             "stale-phase-data",
+        ),
+        (
+            ("representation", "node_feature_encoding"),
+            "stale-encoding",
+        ),
+        (
+            ("representation", "node_feature_cardinalities"),
+            [1],
         ),
     ],
 )
@@ -436,6 +452,15 @@ def test_load_dataset_classification(mock_adme, mock_s2g, tmp_path):
     assert hasattr(dataset, "split_idx")
     assert "train" in dataset.split_idx
     assert len(dataset.split_idx["train"]) == 2
+    assert (
+        validate_qualified_graph_source(
+            dataset,
+            capability=GRAPH_DATASET_MANIFEST["BBB_Martins"],
+            configured_num_classes=2,
+            total_num_features=9,
+        )
+        is dataset
+    )
 
 
 @patch(
@@ -454,6 +479,15 @@ def test_load_dataset_regression(mock_adme, mock_s2g, tmp_path):
     assert len(dataset) == 4
     assert dataset[0].y.dtype == torch.float
     assert dataset[0].y.shape == (1,)
+    assert (
+        validate_qualified_graph_source(
+            dataset,
+            capability=GRAPH_DATASET_MANIFEST["Caco2_Wang"],
+            configured_num_classes=1,
+            total_num_features=9,
+        )
+        is dataset
+    )
 
 
 @patch(
@@ -464,28 +498,43 @@ def test_load_dataset_regression(mock_adme, mock_s2g, tmp_path):
     "topobench.data.loaders.graph.adme_datasets.ADME",
     side_effect=_fake_tdc_adme,
 )
-def test_load_dataset_node_and_edge_features(mock_adme, mock_s2g, tmp_path):
-    """Each graph has encoded node features and native edge features."""
+def test_load_dataset_keeps_node_categories_compact(
+    mock_adme, mock_s2g, tmp_path
+):
+    """Cached graphs retain compact integral OGB atom columns."""
     loader = ADMEDatasetLoader(_make_cfg(tmp_path, "BBB_Martins"))
     dataset = loader.load_dataset()
 
     graph = dataset[0]
-    assert graph.x.shape[1] == 174
-    assert graph.x.dtype == torch.float
-    assert torch.all((graph.x == 0) | (graph.x == 1))
-    torch.testing.assert_close(graph.x.sum(dim=1), torch.full((3,), 9.0))
-    assert torch.nonzero(graph.x[0], as_tuple=True)[0].tolist() == [
-        1,
-        121,
-        127,
-        140,
-        153,
-        159,
-        166,
-        171,
-        172,
-    ]
+    expected = torch.tensor(
+        [
+            [1, 2, 3, 4, 5, 1, 2, 1, 0],
+            [6, 0, 0, 0, 0, 0, 0, 0, 1],
+            [118, 4, 11, 11, 9, 5, 5, 1, 1],
+        ]
+    )
+    torch.testing.assert_close(graph.x, expected)
+    assert graph.x.shape == (3, 9)
+    assert graph.x.dtype == torch.long
     assert graph.edge_attr.shape[1] == 3
+    assert dataset.feature_encoding == "categorical_one_hot"
+    assert dataset.feature_cardinalities == (
+        119,
+        5,
+        12,
+        12,
+        10,
+        6,
+        6,
+        2,
+        2,
+    )
+    assert dataset.split_provenance["representation"] == {
+        "node_feature_encoding": "categorical_one_hot",
+        "node_feature_cardinalities": [119, 5, 12, 12, 10, 6, 6, 2, 2],
+        "stored_node_feature_width": 9,
+        "encoded_node_feature_width": 174,
+    }
 
 
 @patch(

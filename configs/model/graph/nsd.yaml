@@ -8,6 +8,8 @@ feature_encoder:
   in_channels: ${infer_in_channels:${dataset},${oc.select:transforms,null}}
   out_channels: 64
   dropout: 0.0
+  encoding_mode: ${oc.select:dataset.parameters.feature_encoding,continuous}
+  categorical_cardinalities: ${oc.select:dataset.parameters.feature_cardinalities,null}
 
 backbone:
   _target_: topobench.nn.backbones.NSDEncoder

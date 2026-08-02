@@ -51,7 +51,7 @@ class DefaultDataPipeline(AbstractDataPipeline):
         if cfg.dataset.loader.parameters.data_domain == "graph":
             assert capability is not None
             assert total_channels is not None
-            base_channels = capability.feature_width
+            base_channels = capability.stored_feature_width
             prepare_graph_features(
                 train,
                 val,
@@ -59,6 +59,7 @@ class DefaultDataPipeline(AbstractDataPipeline):
                 feature_policy=cfg.dataset.parameters.feature_policy,
                 base_num_features=base_channels,
                 total_num_features=total_channels,
+                categorical_cardinalities=capability.feature_cardinalities,
             )
 
         datamodule = GraphDataModule(
