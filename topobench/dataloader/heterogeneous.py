@@ -17,6 +17,7 @@ from torch_geometric.loader import DataLoader, NeighborLoader
 from torch_geometric.typing import EdgeType
 
 from topobench.data.heterogeneous import HeterogeneousDataSpec
+from topobench.dataloader.graph import loader_worker_options
 
 Phase = Literal["train", "val", "test"]
 SamplingMode = Literal["full_batch", "neighbor"]
@@ -380,11 +381,11 @@ class HeterogeneousNodeDataModule(LightningDataModule):
 
     def _common_kwargs(self) -> dict[str, object]:
         """Return worker options shared by full and sampled PyG loaders."""
-        return {
-            "num_workers": self.num_workers,
-            "pin_memory": self.pin_memory,
-            "persistent_workers": self.persistent_workers,
-        }
+        return loader_worker_options(
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+            persistent_workers=self.persistent_workers,
+        )
 
     def _full_loader(self) -> DataLoader:
         """Construct a fresh one-graph, non-shuffled PyG loader."""

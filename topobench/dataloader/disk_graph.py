@@ -1,0 +1,1232 @@
+"""Strategy-driven CPU sampling over materialized and immutable graph stores."""
+
+from __future__ import annotations
+
+import copy
+import hashlib
+import json
+import os
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, fields as dataclass_fields, replace
+from importlib import metadata
+from numbers import Integral
+from pathlib import Path
+from typing import Any, Literal, Protocol, TypeAlias, runtime_checkable
+
+import numpy as np
+import torch
+from lightning import LightningDataModule
+from torch import Tensor
+from torch.utils.data import DataLoader, Dataset
+from torch_geometric.data import Data, HeteroData
+from torch_geometric.loader import NeighborLoader
+
+from topobench.data.stores.materialized_partition import MaterializedHomogeneousPartition
+from topobench.data.stores.pyg_store import PyGTypedFeatureStore, PyGTypedGraphStore
+from topobench.data.stores.typed_graph_store import TypedGraphStore
+from topobench.data.stores.typed_partition_book import TypedPartitionBook
+from topobench.dataloader.graph import loader_worker_options
+
+Phase: TypeAlias = Literal["train", "val", "test"]
+CanonicalRelation: TypeAlias = tuple[str, str, str]
+NativeBatch: TypeAlias = Data | HeteroData
+SamplingSource: TypeAlias = TypedGraphStore | MaterializedHomogeneousPartition | HeteroData
+MaterializedSource: TypeAlias = MaterializedHomogeneousPartition | HeteroData
+_MAX_SEED = 2**63 - 1
+_PHASES: tuple[Phase, ...] = ("train", "val", "test")
+
+
+class SamplingCapabilityError(RuntimeError):
+    """Report a contextual strategy/backend capability mismatch."""
+
+
+@dataclass(frozen=True, slots=True)
+class SamplingDescriptor:
+    """One immutable, content-bound native batch materialization request."""
+
+    content_sha256: str
+    active_split_tag: str
+    phase: Phase
+    strategy: str
+    strategy_options_json: str
+    batch_ordinal: int
+    partition_ids: tuple[int, ...] = ()
+    target_node_type: str | None = None
+    target_seed_ids: tuple[int, ...] = ()
+    participant_counts: tuple[tuple[str, int], ...] = ()
+    generator_seed: int = 0
+    generator_state_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        _require_sha256(self.content_sha256, "content_sha256")
+        _nonempty(self.active_split_tag, "active_split_tag")
+        _phase(self.phase)
+        _nonempty(self.strategy, "strategy")
+        try:
+            options = json.loads(self.strategy_options_json)
+        except (TypeError, json.JSONDecodeError) as error:
+            raise ValueError("strategy_options_json must be canonical JSON") from error
+        if _json(options) != self.strategy_options_json:
+            raise ValueError("strategy_options_json must be canonical JSON")
+        object.__setattr__(
+            self,
+            "batch_ordinal",
+            _integer(self.batch_ordinal, "batch_ordinal", minimum=0),
+        )
+        object.__setattr__(
+            self,
+            "partition_ids",
+            _identities(
+                self.partition_ids,
+                "partition IDs",
+                "duplicate partition identity",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "target_seed_ids",
+            _identities(
+                self.target_seed_ids,
+                "target seed IDs",
+                "duplicate target seed identity",
+            ),
+        )
+        if self.partition_ids and self.target_seed_ids:
+            raise ValueError("sampling descriptor cannot bind both partition and target identities")
+        if self.target_node_type is None and self.target_seed_ids:
+            raise ValueError("target seed IDs require target_node_type")
+        if self.target_node_type is not None:
+            _nonempty(self.target_node_type, "target_node_type")
+            if not self.target_seed_ids:
+                raise ValueError("target_node_type requires target seed IDs")
+        if not self.partition_ids and not self.target_seed_ids:
+            raise ValueError("sampling descriptor requires participant identities")
+        object.__setattr__(
+            self,
+            "participant_counts",
+            _canonical_participant_counts(self.participant_counts),
+        )
+        seed = _integer(self.generator_seed, "generator_seed", minimum=0)
+        object.__setattr__(self, "generator_seed", seed)
+        if seed > _MAX_SEED:
+            raise ValueError(f"generator_seed must be no greater than {_MAX_SEED}")
+        _require_sha256(self.generator_state_sha256, "generator_state_sha256")
+
+
+@runtime_checkable
+class GraphSamplingStrategy(Protocol):
+    """Small lifecycle shared by graph sampling implementations."""
+
+    name: str
+    seed: int
+
+    def validate_capabilities(self, source: SamplingSource) -> None: ...
+
+    def setup(
+        self,
+        source: SamplingSource,
+        *,
+        phase: Phase,
+        active_split_tag: str,
+        shuffle: bool,
+    ) -> tuple[SamplingDescriptor, ...]: ...
+
+    def materialize(self, source: SamplingSource, descriptor: SamplingDescriptor) -> NativeBatch: ...
+
+    def sampler_state(self) -> dict[str, object]: ...
+
+
+def _json(value: object) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+def _nonempty(value: object, name: str) -> str:
+    if not isinstance(value, str):
+        raise TypeError(f"{name} must be a string")
+    if not value:
+        raise ValueError(f"{name} must not be empty")
+    return value
+
+
+def _require_sha256(value: object, name: str) -> str:
+    if not isinstance(value, str):
+        raise TypeError(f"{name} must be a string")
+    if len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+        raise ValueError(f"{name} must be a lowercase SHA-256 digest")
+    return value
+
+
+def _integer(value: object, name: str, *, minimum: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, Integral):
+        raise TypeError(f"{name} must be an integer")
+    result = int(value)
+    if result < minimum:
+        raise ValueError(f"{name} must be at least {minimum}")
+    return result
+
+
+def _boolean(value: object, name: str) -> bool:
+    if type(value) is not bool:
+        raise TypeError(f"{name} must be bool")
+    return value
+
+
+def _phase(value: object) -> Phase:
+    if not isinstance(value, str):
+        raise TypeError("phase must be a string")
+    if value not in _PHASES:
+        raise ValueError(f"phase must be one of {_PHASES!r}")
+    return value
+
+
+def _identities(values: object, name: str, duplicate: str) -> tuple[int, ...]:
+    if isinstance(values, (str, bytes)) or not isinstance(values, Sequence):
+        raise TypeError(f"{name} must be an ordered sequence")
+    result: list[int] = []
+    seen: set[int] = set()
+    for value in values:
+        if isinstance(value, bool) or not isinstance(value, Integral):
+            raise TypeError(f"{name} must contain non-boolean integers")
+        identity = int(value)
+        if identity < 0:
+            raise ValueError(f"{name} must be non-negative")
+        if identity in seen:
+            raise ValueError(duplicate)
+        result.append(identity)
+        seen.add(identity)
+    return tuple(result)
+
+def _canonical_participant_counts(
+    values: object,
+) -> tuple[tuple[str, int], ...]:
+    """Return immutable counts in deterministic participant-name order."""
+    if isinstance(values, Mapping):
+        entries: object = tuple(values.items())
+    else:
+        entries = values
+    if isinstance(entries, (str, bytes)) or not isinstance(entries, Sequence):
+        raise TypeError("participant_counts must be a mapping or ordered sequence")
+    result: list[tuple[str, int]] = []
+    seen: set[str] = set()
+    for entry in entries:
+        if (
+            isinstance(entry, (str, bytes))
+            or not isinstance(entry, Sequence)
+            or len(entry) != 2
+        ):
+            raise TypeError(
+                "participant_counts entries must be (str, integer) pairs"
+            )
+        participant = _nonempty(entry[0], "participant_counts participant")
+        count = _integer(
+            entry[1],
+            "participant_counts count",
+            minimum=0,
+        )
+        if participant in seen:
+            raise ValueError("duplicate participant count identity")
+        seen.add(participant)
+        result.append((participant, count))
+    return tuple(sorted(result))
+
+
+def _partition_groups(groups: Sequence[Sequence[int]] | None) -> tuple[tuple[int, ...], ...] | None:
+    if groups is None:
+        return None
+    if isinstance(groups, (str, bytes)) or not isinstance(groups, Sequence):
+        raise TypeError("partition_groups must be an ordered sequence")
+    result: list[tuple[int, ...]] = []
+    for group in groups:
+        normalized = _identities(group, "partition IDs", "duplicate partition identity")
+        if not normalized:
+            raise ValueError("partition group must not be empty")
+        result.append(tuple(sorted(normalized)))
+    if not result:
+        raise ValueError("partition_groups must not be empty")
+    return tuple(result)
+
+
+def _state_sha(seed: int) -> str:
+    state = torch.Generator(device="cpu").manual_seed(seed).get_state()
+    return hashlib.sha256(state.numpy().tobytes()).hexdigest()
+
+
+def _descriptor_seed(
+    root_seed: int,
+    content_sha256: str,
+    tag: str,
+    phase: Phase,
+    strategy: str,
+    options: str,
+    ordinal: int,
+    identities: Sequence[int],
+) -> int:
+    payload = _json({
+        "active_split_tag": tag,
+        "batch_ordinal": ordinal,
+        "content_sha256": content_sha256,
+        "identities": list(identities),
+        "phase": phase,
+        "root_seed": root_seed,
+        "strategy": strategy,
+        "strategy_options": json.loads(options),
+    }).encode()
+    return int.from_bytes(hashlib.sha256(payload).digest()[:8], "big") & _MAX_SEED
+
+
+def _frame(digest: Any, name: str, payload: bytes) -> None:
+    encoded = name.encode()
+    digest.update(len(encoded).to_bytes(8, "big"))
+    digest.update(encoded)
+    digest.update(len(payload).to_bytes(8, "big"))
+    digest.update(payload)
+
+
+def _tensor_frame(digest: Any, name: str, tensor: Tensor) -> None:
+    value = tensor.detach().cpu().contiguous()
+    _frame(digest, name + ":dtype", str(value.dtype).encode())
+    _frame(digest, name + ":shape", _json(list(value.shape)).encode())
+    _frame(digest, name, value.numpy().tobytes())
+
+
+def _materialized_sha(source: Data | HeteroData) -> str:
+    """Hash the actual native tensor payload without trusting graph metadata."""
+    digest = hashlib.sha256()
+    if isinstance(source, HeteroData):
+        _frame(digest, "kind", b"heterogeneous")
+        for node_type in source.node_types:
+            _frame(digest, "node_type", node_type.encode())
+            _frame(
+                digest,
+                f"node:{node_type}:num_nodes",
+                str(int(source[node_type].num_nodes)).encode(),
+            )
+            for name, value in sorted(source[node_type].items()):
+                if isinstance(value, Tensor):
+                    _tensor_frame(digest, f"node:{node_type}:{name}", value)
+        for relation in source.edge_types:
+            _frame(digest, "relation", _json(relation).encode())
+            for name, value in sorted(source[relation].items()):
+                if isinstance(value, Tensor):
+                    _tensor_frame(digest, f"edge:{relation}:{name}", value)
+    else:
+        _frame(digest, "kind", b"homogeneous")
+        _frame(digest, "num_nodes", str(int(source.num_nodes)).encode())
+        for name, value in sorted(source.items()):
+            if isinstance(value, Tensor):
+                _tensor_frame(digest, f"field:{name}", value)
+    return digest.hexdigest()
+
+
+def _partition_items(
+    source: MaterializedHomogeneousPartition,
+) -> tuple[tuple[str, object], ...]:
+    return tuple(
+        (field.name, getattr(source.partition, field.name))
+        for field in dataclass_fields(source.partition)
+    )
+
+
+def _clone_materialized(source: MaterializedSource) -> MaterializedSource:
+    """Clone every admitted native tensor while retaining qualified metadata."""
+    if isinstance(source, HeteroData):
+        return source.clone()
+    snapshot = copy.copy(source)
+    snapshot._data = source._data.clone()
+    snapshot._attribute_roles = dict(source._attribute_roles)
+    partition_values = {
+        name: value.clone() if isinstance(value, Tensor) else value
+        for name, value in _partition_items(source)
+    }
+    snapshot.partition = type(source.partition)(**partition_values)
+    snapshot.perm_to_global = snapshot.partition.node_perm
+    return snapshot
+
+
+def _version_signature(
+    source: MaterializedSource,
+) -> tuple[tuple[str, int, int], ...]:
+    """Describe tensor bindings and version counters without scanning payloads."""
+    data = source._data if isinstance(source, MaterializedHomogeneousPartition) else source
+    result: list[tuple[str, int, int]] = []
+    for storage_index, storage in enumerate(data.stores):
+        for name, value in sorted(storage.items()):
+            if isinstance(value, Tensor):
+                result.append(
+                    (
+                        f"storage:{storage_index}:{name}",
+                        id(value),
+                        value._version,
+                    )
+                )
+    if isinstance(source, MaterializedHomogeneousPartition):
+        for name, value in _partition_items(source):
+            if isinstance(value, Tensor):
+                result.append((f"partition:{name}", id(value), value._version))
+    return tuple(result)
+
+
+def _snapshot_sha(source: MaterializedSource) -> str:
+    if isinstance(source, HeteroData):
+        return _materialized_sha(source)
+    digest = hashlib.sha256()
+    _frame(digest, "graph", _materialized_sha(source._data).encode())
+    for name, value in _partition_items(source):
+        if isinstance(value, Tensor):
+            _tensor_frame(digest, f"partition:{name}", value)
+        else:
+            _frame(digest, f"partition:{name}", str(value).encode())
+    return digest.hexdigest()
+
+
+@dataclass(slots=True)
+class _MaterializedAdmission:
+    """One private immutable-by-contract materialized strategy source."""
+
+    original: MaterializedSource
+    source: MaterializedSource
+    content_sha256: str
+    versions: tuple[tuple[str, int, int], ...]
+
+    def check(self, requested: MaterializedSource) -> None:
+        if self.original is not requested and self.source is not requested:
+            raise ValueError(
+                "sampling strategy is already bound to another materialized source"
+            )
+        if _version_signature(self.source) != self.versions:
+            raise RuntimeError("admitted materialized tensor payload was mutated")
+
+    def __getstate__(
+        self,
+    ) -> tuple[MaterializedSource, MaterializedSource, str]:
+        return self.original, self.source, self.content_sha256
+
+    def __setstate__(
+        self,
+        state: tuple[MaterializedSource, MaterializedSource, str],
+    ) -> None:
+        self.original, self.source, self.content_sha256 = state
+        self.versions = _version_signature(self.source)
+
+
+def _admit_materialized(
+    admission: _MaterializedAdmission | None,
+    source: MaterializedSource,
+) -> _MaterializedAdmission:
+    if admission is None:
+        snapshot = _clone_materialized(source)
+        admission = _MaterializedAdmission(
+            original=source,
+            source=snapshot,
+            content_sha256=_snapshot_sha(snapshot),
+            versions=_version_signature(snapshot),
+        )
+    admission.check(source)
+    return admission
+
+
+def _declared_tag(source: SamplingSource) -> str | None:
+    if isinstance(source, TypedGraphStore):
+        return source.active_split_tag
+    data = source._data if isinstance(source, MaterializedHomogeneousPartition) else source
+    value = getattr(data, "active_split_tag", None)
+    return value if isinstance(value, str) else None
+
+
+def _active_tag(source: SamplingSource, tag: str) -> str:
+    tag = _nonempty(tag, "active_split_tag")
+    declared = _declared_tag(source)
+    if declared is not None and declared != tag:
+        raise ValueError(f"active split tag must remain {declared!r}; received {tag!r}")
+    if isinstance(source, TypedGraphStore) and tag not in source._manifest["splits"]:
+        raise ValueError(f"active split tag {tag!r} is not stored")
+    return tag
+
+
+def _target(source: TypedGraphStore | HeteroData) -> str:
+    if isinstance(source, TypedGraphStore):
+        return source._manifest["target_node_type"]
+    declared = getattr(source, "target_node_type", None)
+    if isinstance(declared, str) and declared in source.node_types:
+        return declared
+    candidates = [node_type for node_type in source.node_types if all(f"{p}_mask" in source[node_type] for p in _PHASES)]
+    if len(candidates) != 1:
+        raise ValueError("heterogeneous source must identify exactly one target node type")
+    return candidates[0]
+
+
+def _phase_ids(source: TypedGraphStore | HeteroData, target: str, tag: str, phase: Phase) -> tuple[int, ...]:
+    if isinstance(source, TypedGraphStore):
+        values = tuple(int(value) for value in source.split_ids(tag, phase))
+    else:
+        field = f"{phase}_mask" if _declared_tag(source) in {None, tag} else f"{tag}_{phase}_mask"
+        if field not in source[target]:
+            raise ValueError(f"target node type {target!r} is missing {field!r}")
+        mask = source[target][field]
+        if not isinstance(mask, Tensor) or mask.dtype != torch.bool or mask.dim() != 1:
+            raise TypeError(f"{field} must be a one-dimensional bool tensor")
+        if mask.device.type != "cpu":
+            raise ValueError(f"{field} must remain on CPU")
+        values = tuple(int(value) for value in mask.nonzero().reshape(-1))
+    _identities(values, "phase target seed IDs", "duplicate phase target seed identity")
+    if not values:
+        raise ValueError(f"phase {phase!r} has no target seed IDs")
+    return values
+
+
+def _shuffled(values: tuple[Any, ...], shuffle: bool, seed: int) -> tuple[Any, ...]:
+    if not shuffle or len(values) < 2:
+        return values
+    order = torch.randperm(len(values), generator=torch.Generator().manual_seed(seed)).tolist()
+    return tuple(values[index] for index in order)
+
+
+def _torch(value: np.ndarray) -> Tensor:
+    return torch.from_numpy(np.array(value, copy=True))
+
+
+def _store_nodes(store: TypedGraphStore, node_type: str, partition_ids: Sequence[int]) -> np.ndarray:
+    permutation = store.partition_permutation(node_type)
+    partptr = store.partition_partptr(node_type)
+    return np.concatenate([permutation[int(partptr[p]):int(partptr[p + 1])] for p in partition_ids]).astype(np.int64, copy=False)
+
+
+def _book_nodes(book: TypedPartitionBook, node_type: str, partition_ids: Sequence[int]) -> np.ndarray:
+    permutation = book.node_permutations[node_type]
+    partptr = book.node_partptr[node_type]
+    return np.concatenate([permutation[int(partptr[p]):int(partptr[p + 1])] for p in partition_ids]).astype(np.int64, copy=False)
+
+
+def _validate_partitions(groups: Sequence[Sequence[int]], count: int) -> None:
+    for group in groups:
+        for part_id in group:
+            if part_id >= count:
+                raise ValueError(f"partition ID {part_id} is outside [0, {count})")
+
+
+def _default_groups(partition_ids: Iterable[int], size: int) -> tuple[tuple[int, ...], ...]:
+    values = tuple(sorted(set(int(value) for value in partition_ids)))
+    if not values:
+        raise ValueError("active phase does not participate in any partition")
+    return tuple(values[start:start + size] for start in range(0, len(values), size))
+
+
+def _capability(store: TypedGraphStore, name: str) -> None:
+    supported = tuple(store._manifest.get("supported_capabilities", ()))
+    if name not in supported:
+        raise SamplingCapabilityError(f"{name} is unavailable for store {store.content_sha256}; supported={supported!r}")
+
+
+def _attach(batch: NativeBatch, descriptor: SamplingDescriptor, counts: Mapping[str, int]) -> NativeBatch:
+    batch.sampling_descriptor = descriptor
+    batch.participant_counts = dict(counts)
+    batch.active_split_tag = descriptor.active_split_tag
+    batch.sampling_phase = descriptor.phase
+    for storage in batch.stores:
+        for value in storage.values():
+            if isinstance(value, Tensor) and value.device.type != "cpu":
+                raise RuntimeError("graph sampling strategies emit CPU tensors only")
+    return batch
+
+
+class _ClusterBase:
+    name: str
+
+    def __init__(self, clusters_per_batch: int, partition_groups: Sequence[Sequence[int]] | None, seed: int) -> None:
+        self.clusters_per_batch = _integer(clusters_per_batch, "clusters_per_batch", minimum=1)
+        self.partition_groups = _partition_groups(partition_groups)
+        self.seed = _integer(seed, "seed", minimum=0)
+        if self.seed > _MAX_SEED:
+            raise ValueError(f"seed must be no greater than {_MAX_SEED}")
+        self._admission: _MaterializedAdmission | None = None
+
+    def _resolve_source(self, source: SamplingSource) -> SamplingSource:
+        if isinstance(source, TypedGraphStore):
+            return source
+        assert isinstance(source, (MaterializedHomogeneousPartition, HeteroData))
+        self._admission = _admit_materialized(self._admission, source)
+        return self._admission.source
+
+    def _content_identity(self, source: SamplingSource) -> str:
+        if isinstance(source, TypedGraphStore):
+            return source.content_sha256
+        self._resolve_source(source)
+        assert self._admission is not None
+        return self._admission.content_sha256
+
+    def sampler_state(self) -> dict[str, object]:
+        return {"format_version": "graph-sampling-state-v1", "seed": self.seed, "strategy": self.name}
+
+    def _options(self) -> str:
+        return _json({"clusters_per_batch": self.clusters_per_batch, "partition_groups": None if self.partition_groups is None else [list(g) for g in self.partition_groups]})
+
+    def _ordered(self, groups: tuple[tuple[int, ...], ...], shuffle: bool, content: str, tag: str, phase: Phase) -> tuple[tuple[int, ...], ...]:
+        seed = _descriptor_seed(self.seed, content, tag, phase, self.name, self._options(), 0, tuple(v for g in groups for v in g))
+        return _shuffled(groups, shuffle, seed)
+
+    def _descriptor(self, content: str, tag: str, phase: Phase, ordinal: int, parts: tuple[int, ...], counts: tuple[tuple[str, int], ...]) -> SamplingDescriptor:
+        options = self._options()
+        seed = _descriptor_seed(self.seed, content, tag, phase, self.name, options, ordinal, parts)
+        return SamplingDescriptor(content, tag, phase, self.name, options, ordinal, partition_ids=parts, participant_counts=counts, generator_seed=seed, generator_state_sha256=_state_sha(seed))
+
+
+class HomogeneousClusterStrategy(_ClusterBase):
+    """Exact directed homogeneous unions over Task5 or Task7 partitions."""
+
+    name = "homogeneous-cluster"
+
+    def __init__(self, *, clusters_per_batch: int = 1, partition_groups: Sequence[Sequence[int]] | None = None, seed: int = 0) -> None:
+        super().__init__(clusters_per_batch, partition_groups, seed)
+
+    def validate_capabilities(self, source: SamplingSource) -> None:
+        if isinstance(source, TypedGraphStore):
+            if source.output_kind != "homogeneous":
+                raise ValueError(f"homogeneous-cluster requires a homogeneous store; received {source.output_kind!r}")
+            _capability(source, self.name)
+        elif not isinstance(source, MaterializedHomogeneousPartition):
+            raise TypeError("homogeneous-cluster source must be MaterializedHomogeneousPartition or TypedGraphStore")
+        else:
+            self._resolve_source(source)
+
+    def setup(self, source: SamplingSource, *, phase: Phase, active_split_tag: str, shuffle: bool) -> tuple[SamplingDescriptor, ...]:
+        self.validate_capabilities(source)
+        source = self._resolve_source(source)
+        phase, tag, shuffle = _phase(phase), _active_tag(source, active_split_tag), _boolean(shuffle, "shuffle")
+        content = self._content_identity(source)
+        if isinstance(source, TypedGraphStore):
+            count = source.num_partitions
+            if self.partition_groups is None:
+                target = source._manifest["target_node_type"]
+                assignment = source.partition_assignment(target)
+                groups = _default_groups((int(assignment[int(i)]) for i in source.split_ids(tag, phase)), self.clusters_per_batch)
+            else:
+                groups = self.partition_groups
+            participant = lambda ids: len(_store_nodes(source, source.node_types[0], ids))
+        else:
+            count = source.num_parts
+            groups = _default_groups(source.partition_ids_for_phase(phase), self.clusters_per_batch) if self.partition_groups is None else self.partition_groups
+            participant = lambda ids: sum(int(source.partition.partptr[p + 1]) - int(source.partition.partptr[p]) for p in ids)
+        _validate_partitions(groups, count)
+        groups = self._ordered(groups, shuffle, content, tag, phase)
+        return tuple(self._descriptor(content, tag, phase, ordinal, group, (("node", participant(group)),)) for ordinal, group in enumerate(groups))
+
+    def materialize(self, source: SamplingSource, descriptor: SamplingDescriptor) -> Data:
+        self.validate_capabilities(source)
+        source = self._resolve_source(source)
+        self._validate(source, descriptor)
+        batch = source.materialize(descriptor.partition_ids, phase=descriptor.phase) if isinstance(source, MaterializedHomogeneousPartition) else _homogeneous_store(source, descriptor)
+        return _attach(batch, descriptor, {"node": int(batch.num_nodes)})
+
+    def _validate(self, source: SamplingSource, descriptor: SamplingDescriptor) -> None:
+        if descriptor.strategy != self.name:
+            raise ValueError("descriptor strategy identity mismatch")
+        if descriptor.content_sha256 != self._content_identity(source):
+            raise ValueError("descriptor content identity mismatch")
+        _active_tag(source, descriptor.active_split_tag)
+        if descriptor.strategy_options_json != self._options():
+            raise ValueError("descriptor strategy options mismatch")
+
+
+def _mask(selected: np.ndarray, identities: np.ndarray) -> Tensor:
+    return torch.from_numpy(np.isin(selected, identities, assume_unique=True))
+
+
+def _induced(store: TypedGraphStore, relation: CanonicalRelation, source_ids: np.ndarray, destination_ids: np.ndarray) -> tuple[Tensor, np.ndarray]:
+    row, colptr = store.relation_csc(relation)
+    source_local = {int(value): index for index, value in enumerate(source_ids)}
+    destination_local = {int(value): index for index, value in enumerate(destination_ids)}
+    sources: list[int] = []
+    destinations: list[int] = []
+    positions: list[int] = []
+    for destination in sorted(destination_local):
+        for position in range(int(colptr[destination]), int(colptr[destination + 1])):
+            source = source_local.get(int(row[position]))
+            if source is not None:
+                sources.append(source)
+                destinations.append(destination_local[destination])
+                positions.append(position)
+    return torch.tensor([sources, destinations], dtype=torch.long).reshape(2, -1), np.asarray(positions, dtype=np.int64)
+
+
+def _homogeneous_store(store: TypedGraphStore, descriptor: SamplingDescriptor) -> Data:
+    node_type, relation = store.node_types[0], store.relation_types[0]
+    selected = _store_nodes(store, node_type, descriptor.partition_ids)
+    edge_index, positions = _induced(store, relation, selected, selected)
+    output = Data(edge_index=edge_index, num_nodes=len(selected))
+    node = store._node(node_type)
+    output.x = _torch(store.node_array(node_type, "x", selected))
+    if node["y"] is not None:
+        output.y = _torch(store.node_array(node_type, "y", selected))
+    for name in node["fields"]:
+        output[name] = _torch(store.node_array(node_type, name, selected))
+    if store._relation(relation)["edge_id"] is not None:
+        output.edge_id = _torch(
+            store.relation_field(relation, "edge_id", positions)
+        )
+    for name in store._relation(relation)["fields"]:
+        output[name] = _torch(store.relation_field(relation, name, positions))
+    for phase in _PHASES:
+        output[f"{phase}_mask"] = _mask(selected, store.split_ids(descriptor.active_split_tag, phase))
+    output.global_nid = _torch(selected)
+    output.selected_partition_ids = torch.tensor(descriptor.partition_ids)
+    output.num_selected_partitions = len(descriptor.partition_ids)
+    output.supervised_mask = output[f"{descriptor.phase}_mask"].clone()
+    return output
+
+
+class HeterogeneousClusterStrategy(_ClusterBase):
+    """Exact typed partition unions owned by ``HeteroData.subgraph`` semantics."""
+
+    name = "heterogeneous-cluster"
+
+    def __init__(self, *, partition_book: TypedPartitionBook | None = None, clusters_per_batch: int = 1, partition_groups: Sequence[Sequence[int]] | None = None, seed: int = 0) -> None:
+        if partition_book is not None and not isinstance(partition_book, TypedPartitionBook):
+            raise TypeError("partition_book must be a TypedPartitionBook")
+        self.partition_book = partition_book
+        super().__init__(clusters_per_batch, partition_groups, seed)
+
+    def _content_identity(self, source: SamplingSource) -> str:
+        content = super()._content_identity(source)
+        if isinstance(source, TypedGraphStore):
+            return content
+        assert self.partition_book is not None
+        digest = hashlib.sha256()
+        _frame(digest, "graph", content.encode())
+        _frame(
+            digest,
+            "partition_book",
+            self.partition_book.content_identity.encode(),
+        )
+        return digest.hexdigest()
+
+    def validate_capabilities(self, source: SamplingSource) -> None:
+        if isinstance(source, TypedGraphStore):
+            if source.output_kind != "heterogeneous":
+                raise ValueError(f"heterogeneous-cluster requires a heterogeneous store; received {source.output_kind!r}")
+            _capability(source, self.name)
+            return
+        if not isinstance(source, HeteroData):
+            raise TypeError("source must be HeteroData or TypedGraphStore")
+        source = self._resolve_source(source)
+        assert isinstance(source, HeteroData)
+        if self.partition_book is None:
+            raise ValueError("materialized heterogeneous-cluster requires partition_book")
+        if tuple(source.node_types) != tuple(self.partition_book.node_assignments):
+            raise ValueError("partition book node types do not match HeteroData")
+        declared_identity = getattr(source, "partition_book_identity", None)
+        if declared_identity is None:
+            raise ValueError(
+                "materialized partition book identity is required"
+            )
+        if declared_identity != self.partition_book.content_identity:
+            raise ValueError("partition book identity mismatch")
+
+    def setup(self, source: SamplingSource, *, phase: Phase, active_split_tag: str, shuffle: bool) -> tuple[SamplingDescriptor, ...]:
+        self.validate_capabilities(source)
+        source = self._resolve_source(source)
+        assert isinstance(source, (TypedGraphStore, HeteroData))
+        phase, tag, shuffle = _phase(phase), _active_tag(source, active_split_tag), _boolean(shuffle, "shuffle")
+        content, target = self._content_identity(source), _target(source)
+        seeds = _phase_ids(source, target, tag, phase)
+        if isinstance(source, TypedGraphStore):
+            count, assignment, node_types = source.num_partitions, source.partition_assignment(target), source.node_types
+            select = lambda node_type, ids: _store_nodes(source, node_type, ids)
+        else:
+            assert self.partition_book is not None
+            count, assignment, node_types = self.partition_book.num_partitions, self.partition_book.node_assignments[target], tuple(source.node_types)
+            select = lambda node_type, ids: _book_nodes(self.partition_book, node_type, ids)
+        groups = _default_groups((int(assignment[seed]) for seed in seeds), self.clusters_per_batch) if self.partition_groups is None else self.partition_groups
+        _validate_partitions(groups, count)
+        groups = self._ordered(groups, shuffle, content, tag, phase)
+        return tuple(self._descriptor(content, tag, phase, ordinal, group, tuple((node_type, len(select(node_type, group))) for node_type in node_types)) for ordinal, group in enumerate(groups))
+
+    def materialize(self, source: SamplingSource, descriptor: SamplingDescriptor) -> HeteroData:
+        self.validate_capabilities(source)
+        source = self._resolve_source(source)
+        if descriptor.strategy != self.name or descriptor.content_sha256 != self._content_identity(source):
+            raise ValueError("descriptor strategy or content identity mismatch")
+        _active_tag(source, descriptor.active_split_tag)
+        if descriptor.strategy_options_json != self._options():
+            raise ValueError("descriptor strategy options mismatch")
+        if isinstance(source, TypedGraphStore):
+            batch = _heterogeneous_store(source, descriptor)
+        else:
+            assert self.partition_book is not None
+            subsets = {node_type: _torch(_book_nodes(self.partition_book, node_type, descriptor.partition_ids)) for node_type in source.node_types}
+            batch = source.subgraph(subsets)
+            for node_type, subset in subsets.items():
+                if "n_id" not in batch[node_type]:
+                    batch[node_type].n_id = subset
+            target = _target(source)
+            batch[target].supervised_mask = batch[target][f"{descriptor.phase}_mask"].clone()
+            batch.selected_partition_ids = torch.tensor(descriptor.partition_ids)
+            batch.num_selected_partitions = len(descriptor.partition_ids)
+        return _attach(batch, descriptor, {node_type: int(batch[node_type].num_nodes) for node_type in batch.node_types})
+
+
+def _attach_store_split_masks(
+    store: TypedGraphStore,
+    storage: Any,
+    node_ids: np.ndarray,
+    active_split_tag: str,
+) -> None:
+    """Attach every named split mask and the active-tag convenience masks."""
+    for tag in store._manifest["splits"]:
+        for phase in _PHASES:
+            value = _mask(node_ids, store.split_ids(tag, phase))
+            storage[f"{tag}_{phase}_mask"] = value
+            if tag == active_split_tag:
+                storage[f"{phase}_mask"] = value.clone()
+
+
+def _heterogeneous_store(store: TypedGraphStore, descriptor: SamplingDescriptor) -> HeteroData:
+    selected = {node_type: _store_nodes(store, node_type, descriptor.partition_ids) for node_type in store.node_types}
+    output, target = HeteroData(), store._manifest["target_node_type"]
+    for node_type, ids in selected.items():
+        node = store._node(node_type)
+        output[node_type].x = _torch(store.node_array(node_type, "x", ids))
+        if node["y"] is not None:
+            output[node_type].y = _torch(store.node_array(node_type, "y", ids))
+        for name in node["fields"]:
+            output[node_type][name] = _torch(store.node_array(node_type, name, ids))
+        output[node_type].n_id = _torch(ids)
+        output[node_type].num_nodes = len(ids)
+        if node_type == target:
+            _attach_store_split_masks(
+                store,
+                output[node_type],
+                ids,
+                descriptor.active_split_tag,
+            )
+    for relation in store.relation_types:
+        edge_index, positions = _induced(store, relation, selected[relation[0]], selected[relation[2]])
+        output[relation].edge_index = edge_index
+        if store._relation(relation)["edge_id"] is not None:
+            output[relation].edge_id = _torch(
+                store.relation_field(relation, "edge_id", positions)
+            )
+        for name in store._relation(relation)["fields"]:
+            output[relation][name] = _torch(store.relation_field(relation, name, positions))
+    output[target].supervised_mask = output[target][f"{descriptor.phase}_mask"].clone()
+    output.selected_partition_ids = torch.tensor(descriptor.partition_ids)
+    output.num_selected_partitions = len(descriptor.partition_ids)
+    return output
+
+
+def _fanout_values(values: object) -> tuple[int, ...]:
+    if isinstance(values, (str, bytes)) or not isinstance(values, Sequence):
+        raise TypeError("fanout must be an ordered sequence")
+    if not values:
+        raise ValueError("fanout must not be empty")
+    result: list[int] = []
+    for value in values:
+        if isinstance(value, bool) or not isinstance(value, Integral):
+            raise TypeError("fanout values must contain non-boolean integers")
+        value = int(value)
+        if value < -1:
+            raise ValueError("fanout values must be at least -1")
+        result.append(value)
+    return tuple(result)
+
+
+def _relation(value: object) -> CanonicalRelation:
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence) or len(value) != 3 or any(not isinstance(item, str) or not item for item in value):
+        raise TypeError("fanout relation keys must be canonical string triples")
+    return value[0], value[1], value[2]
+
+
+def _version(name: str) -> str | None:
+    try:
+        return metadata.version(name)
+    except metadata.PackageNotFoundError:
+        return None
+
+
+class HeterogeneousNeighborStrategy:
+    """PyG-owned typed target-seed sampling with deterministic qualification."""
+
+    name = "heterogeneous-neighbor"
+
+    def __init__(self, *, batch_size: int, num_neighbors: Sequence[int] | Mapping[CanonicalRelation, Sequence[int]], seed: int = 0, replace: bool = False, subgraph_type: str = "directional", sample_direction: str = "forward", filter_per_worker: bool = False) -> None:
+        self.batch_size = _integer(batch_size, "batch_size", minimum=1)
+        self.seed = _integer(seed, "seed", minimum=0)
+        if self.seed > _MAX_SEED:
+            raise ValueError(f"seed must be no greater than {_MAX_SEED}")
+        self.replace, self.filter_per_worker = _boolean(replace, "replace"), _boolean(filter_per_worker, "filter_per_worker")
+        if subgraph_type not in {"directional", "induced"}:
+            raise ValueError("subgraph_type must be 'directional' or 'induced'")
+        self.subgraph_type = subgraph_type
+        if sample_direction != "forward":
+            raise ValueError("sample_direction must be 'forward' for installed NeighborLoader")
+        self.sample_direction = sample_direction
+        if isinstance(num_neighbors, Mapping):
+            self._relation_fanout: tuple[tuple[CanonicalRelation, tuple[int, ...]], ...] | None = tuple((_relation(key), _fanout_values(value)) for key, value in num_neighbors.items())
+            if len({key for key, _ in self._relation_fanout}) != len(self._relation_fanout):
+                raise ValueError("duplicate fanout relation identity")
+            self._generic_fanout: tuple[int, ...] | None = None
+        else:
+            self._relation_fanout, self._generic_fanout = None, _fanout_values(num_neighbors)
+        self._admission: _MaterializedAdmission | None = None
+
+    def _resolve_source(
+        self,
+        source: SamplingSource,
+    ) -> TypedGraphStore | HeteroData:
+        if isinstance(source, TypedGraphStore):
+            return source
+        assert isinstance(source, HeteroData)
+        self._admission = _admit_materialized(self._admission, source)
+        assert isinstance(self._admission.source, HeteroData)
+        return self._admission.source
+
+    def _content_identity(self, source: SamplingSource) -> str:
+        if isinstance(source, TypedGraphStore):
+            return source.content_sha256
+        self._resolve_source(source)
+        assert self._admission is not None
+        return self._admission.content_sha256
+
+    def sampler_state(self) -> dict[str, object]:
+        return {"format_version": "graph-sampling-state-v1", "seed": self.seed, "strategy": self.name}
+
+    def _relations(self, source: TypedGraphStore | HeteroData) -> tuple[CanonicalRelation, ...]:
+        return source.relation_types if isinstance(source, TypedGraphStore) else tuple(source.edge_types)
+
+    def _resolved(self, source: TypedGraphStore | HeteroData) -> dict[CanonicalRelation, list[int]]:
+        relations = self._relations(source)
+        if self._relation_fanout is None:
+            assert self._generic_fanout is not None
+            resolved = {relation: list(self._generic_fanout) for relation in relations}
+        else:
+            configured = dict(self._relation_fanout)
+            missing = tuple(relation for relation in relations if relation not in configured)
+            extra = tuple(relation for relation in configured if relation not in relations)
+            if missing or extra:
+                raise ValueError(f"relation fanout keys must exactly match source relations; missing={missing!r}, extra={extra!r}")
+            resolved = {relation: list(configured[relation]) for relation in relations}
+        if len({len(values) for values in resolved.values()}) != 1:
+            raise ValueError("relation fanout values must have equal hop counts")
+        return resolved
+
+    def validate_capabilities(self, source: SamplingSource) -> None:
+        if isinstance(source, TypedGraphStore):
+            if source.output_kind != "heterogeneous":
+                raise ValueError(f"heterogeneous-neighbor requires a heterogeneous store; received {source.output_kind!r}")
+            _capability(source, self.name)
+        elif not isinstance(source, HeteroData):
+            raise TypeError("heterogeneous-neighbor source must be HeteroData or TypedGraphStore")
+        source = self._resolve_source(source)
+        fanout = self._resolved(source)
+        if self.replace:
+            raise SamplingCapabilityError("heterogeneous-neighbor replace=True cannot satisfy deterministic local-generator parity on the installed backend")
+        if any(value > 0 for values in fanout.values() for value in values):
+            versions = {"pyg-lib": _version("pyg-lib"), "torch-sparse": _version("torch-sparse")}
+            raise SamplingCapabilityError(f"heterogeneous-neighbor truncated fanout requires a local torch.Generator, but installed pyg-lib/torch-sparse operators expose process-global sampling RNG only; versions={versions!r}")
+
+    def _options(self, source: TypedGraphStore | HeteroData) -> str:
+        fanout = self._resolved(source)
+        return _json({"batch_size": self.batch_size, "fanout": [{"relation": list(relation), "values": fanout[relation]} for relation in self._relations(source)], "filter_per_worker": self.filter_per_worker, "replace": self.replace, "sample_direction": self.sample_direction, "subgraph_type": self.subgraph_type})
+
+    def setup(self, source: SamplingSource, *, phase: Phase, active_split_tag: str, shuffle: bool) -> tuple[SamplingDescriptor, ...]:
+        self.validate_capabilities(source)
+        source = self._resolve_source(source)
+        assert isinstance(source, (TypedGraphStore, HeteroData))
+        phase, tag, shuffle = _phase(phase), _active_tag(source, active_split_tag), _boolean(shuffle, "shuffle")
+        content, target, options = self._content_identity(source), _target(source), self._options(source)
+        values = _phase_ids(source, target, tag, phase)
+        order_seed = _descriptor_seed(self.seed, content, tag, phase, self.name, options, 0, values)
+        values = _shuffled(values, shuffle, order_seed)
+        result: list[SamplingDescriptor] = []
+        for ordinal, start in enumerate(range(0, len(values), self.batch_size)):
+            seeds = values[start:start + self.batch_size]
+            seed = _descriptor_seed(self.seed, content, tag, phase, self.name, options, ordinal, seeds)
+            result.append(SamplingDescriptor(content, tag, phase, self.name, options, ordinal, target_node_type=target, target_seed_ids=seeds, participant_counts=(), generator_seed=seed, generator_state_sha256=_state_sha(seed)))
+        return tuple(result)
+
+    def materialize(self, source: SamplingSource, descriptor: SamplingDescriptor) -> HeteroData:
+        self.validate_capabilities(source)
+        source = self._resolve_source(source)
+        assert isinstance(source, (TypedGraphStore, HeteroData))
+        if descriptor.strategy != self.name or descriptor.content_sha256 != self._content_identity(source):
+            raise ValueError("descriptor strategy or content identity mismatch")
+        _active_tag(source, descriptor.active_split_tag)
+        if descriptor.strategy_options_json != self._options(source):
+            raise ValueError("descriptor strategy options mismatch")
+        if descriptor.target_node_type != _target(source):
+            raise ValueError("descriptor target node identity mismatch")
+        data: HeteroData | tuple[PyGTypedFeatureStore, PyGTypedGraphStore] = (PyGTypedFeatureStore(source), PyGTypedGraphStore(source)) if isinstance(source, TypedGraphStore) else source
+        generator = torch.Generator().manual_seed(descriptor.generator_seed)
+        loader = NeighborLoader(data, input_nodes=(descriptor.target_node_type, torch.tensor(descriptor.target_seed_ids)), num_neighbors=self._resolved(source), batch_size=len(descriptor.target_seed_ids), shuffle=False, replace=self.replace, subgraph_type=self.subgraph_type, filter_per_worker=self.filter_per_worker, generator=generator)
+        with torch.random.fork_rng(devices=[]):
+            torch.random.set_rng_state(generator.get_state())
+            iterator = iter(loader)
+            batch = next(iterator)
+            try:
+                next(iterator)
+            except StopIteration:
+                pass
+            else:
+                raise RuntimeError("one neighbor descriptor produced multiple batches")
+        if isinstance(source, TypedGraphStore):
+            _disk_neighbor_fields(source, batch, descriptor)
+        target = descriptor.target_node_type
+        assert target is not None
+        batch[target].supervised_mask = batch[target][f"{descriptor.phase}_mask"].clone()
+        counts = {
+            node_type: len(batch[node_type].n_id)
+            for node_type in batch.node_types
+        }
+        realized = replace(
+            descriptor,
+            participant_counts=tuple(counts.items()),
+        )
+        return _attach(
+            batch,
+            realized,
+            dict(realized.participant_counts),
+        )
+
+
+def _disk_neighbor_fields(store: TypedGraphStore, batch: HeteroData, descriptor: SamplingDescriptor) -> None:
+    target = store._manifest["target_node_type"]
+    for node_type in batch.node_types:
+        ids = batch[node_type].n_id.detach().cpu().numpy()
+        node = store._node(node_type)
+        batch[node_type].x = _torch(store.node_array(node_type, "x", ids))
+        if node["y"] is not None:
+            batch[node_type].y = _torch(store.node_array(node_type, "y", ids))
+        for name in node["fields"]:
+            batch[node_type][name] = _torch(store.node_array(node_type, name, ids))
+        if node_type == target:
+            _attach_store_split_masks(
+                store,
+                batch[node_type],
+                ids,
+                descriptor.active_split_tag,
+            )
+    for relation in batch.edge_types:
+        ids = batch[relation].e_id.detach().cpu().numpy()
+        if store._relation(relation)["edge_id"] is not None:
+            batch[relation].edge_id = _torch(
+                store.relation_field(relation, "edge_id", ids)
+            )
+        for name in store._relation(relation)["fields"]:
+            batch[relation][name] = _torch(store.relation_field(relation, name, ids))
+
+
+class _LazyStore:
+    """One validated path with one process-local lazily reopened store."""
+
+    def __init__(self, source: str | Path | TypedGraphStore) -> None:
+        self.path = source.path if isinstance(source, TypedGraphStore) else Path(source)
+        self._store: TypedGraphStore | None = None
+        self._pid: int | None = None
+        self._closed = False
+
+    def get(self) -> TypedGraphStore:
+        if self._closed:
+            raise RuntimeError("disk graph store owner is closed")
+        if self._pid != os.getpid():
+            self._store, self._pid = None, os.getpid()
+        if self._store is None:
+            self._store = TypedGraphStore.open(self.path)
+        return self._store
+
+    def close(self) -> None:
+        if not self._closed:
+            self._closed = True
+            if self._store is not None:
+                self._store.close()
+                self._store = None
+
+    def __getstate__(self) -> dict[str, object]:
+        return {"path": self.path, "_store": None, "_pid": None, "_closed": self._closed}
+
+    def __del__(self) -> None:
+        self.close()
+
+
+class _DescriptorDataset(Dataset[NativeBatch]):
+    def __init__(self, source: SamplingSource | _LazyStore, strategy: GraphSamplingStrategy, descriptors: tuple[SamplingDescriptor, ...]) -> None:
+        self.source, self.strategy, self.descriptor_values = source, strategy, descriptors
+
+    def __len__(self) -> int:
+        return len(self.descriptor_values)
+
+    def __getitem__(self, index: int) -> NativeBatch:
+        source = self.source.get() if isinstance(self.source, _LazyStore) else self.source
+        return self.strategy.materialize(source, self.descriptor_values[index])
+
+
+def _identity(value: NativeBatch) -> NativeBatch:
+    return value
+
+
+class DiskGraphDataModule(LightningDataModule):
+    """Own one validated source and one strategy across all phase loaders."""
+
+    def __init__(self, source: str | Path | SamplingSource, strategy: GraphSamplingStrategy, *, active_split_tag: str | None = None, num_workers: int = 0, persistent_workers: bool = False, train_shuffle: bool = True) -> None:
+        super().__init__()
+        if not isinstance(strategy, GraphSamplingStrategy):
+            raise TypeError("strategy must implement GraphSamplingStrategy")
+        self.strategy = strategy
+        self.num_workers = _integer(num_workers, "num_workers", minimum=0)
+        self.persistent_workers = _boolean(persistent_workers, "persistent_workers")
+        if self.persistent_workers and not self.num_workers:
+            raise ValueError("persistent_workers requires num_workers greater than zero")
+        self.train_shuffle = _boolean(train_shuffle, "train_shuffle")
+        if isinstance(source, (str, Path, TypedGraphStore)):
+            self._owner: _LazyStore | None = _LazyStore(source)
+            self._source: SamplingSource | _LazyStore = self._owner
+            with TypedGraphStore.open(self._owner.path) as reference:
+                declared = _declared_tag(reference)
+                if active_split_tag is None:
+                    assert declared is not None
+                    self.active_split_tag = declared
+                else:
+                    self.active_split_tag = _active_tag(
+                        reference,
+                        active_split_tag,
+                    )
+                self.strategy.validate_capabilities(reference)
+        elif isinstance(source, (MaterializedHomogeneousPartition, HeteroData)):
+            self._owner = None
+            self._source = source
+            declared = _declared_tag(source)
+            if active_split_tag is None:
+                if declared is None:
+                    raise ValueError(
+                        "materialized source requires an active_split_tag"
+                    )
+                self.active_split_tag = declared
+            else:
+                self.active_split_tag = _active_tag(source, active_split_tag)
+            self.strategy.validate_capabilities(source)
+        else:
+            raise TypeError("source must be a graph reference, store, or store path")
+        self._descriptors: dict[Phase, tuple[SamplingDescriptor, ...]] = {}
+        self._loaders: dict[Phase, DataLoader[NativeBatch]] = {}
+        self._closed = False
+
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
+    def _materialized_reference(self) -> SamplingSource:
+        if self._closed:
+            raise RuntimeError("DiskGraphDataModule is closed")
+        if self._owner is not None:
+            raise RuntimeError("disk descriptors require a temporary store")
+        return self._source  # type: ignore[return-value]
+
+    def _setup_phase(self, phase: Phase) -> None:
+        """Create one phase without evaluating unrelated split masks."""
+        if phase in self._descriptors:
+            return
+        try:
+            if self._owner is None:
+                source = self._materialized_reference()
+                descriptors = self.strategy.setup(
+                    source,
+                    phase=phase,
+                    active_split_tag=self.active_split_tag,
+                    shuffle=phase == "train" and self.train_shuffle,
+                )
+            else:
+                with TypedGraphStore.open(self._owner.path) as source:
+                    descriptors = self.strategy.setup(
+                        source,
+                        phase=phase,
+                        active_split_tag=self.active_split_tag,
+                        shuffle=phase == "train" and self.train_shuffle,
+                    )
+            self._descriptors[phase] = descriptors
+        except ValueError as error:
+            raise ValueError(f"{phase} phase setup failed: {error}") from error
+
+    def setup(self, stage: str | None = None) -> None:
+        """Set up exactly the phases required by one Lightning stage."""
+        phases_by_stage: dict[str | None, tuple[Phase, ...]] = {
+            None: _PHASES,
+            "fit": ("train", "val"),
+            "validate": ("val",),
+            "test": ("test",),
+            "predict": ("test",),
+        }
+        try:
+            phases = phases_by_stage[stage]
+        except (KeyError, TypeError) as error:
+            raise ValueError(f"unsupported setup stage: {stage!r}") from error
+        for phase in phases:
+            self._setup_phase(phase)
+
+    def descriptors(self, phase: Phase) -> tuple[SamplingDescriptor, ...]:
+        """Return one phase's descriptors, setting up only that phase."""
+        phase = _phase(phase)
+        if self._closed:
+            raise RuntimeError("DiskGraphDataModule is closed")
+        self._setup_phase(phase)
+        return self._descriptors[phase]
+
+    def _loader(self, phase: Phase) -> DataLoader[NativeBatch]:
+        if self._closed:
+            raise RuntimeError("DiskGraphDataModule is closed")
+        if phase not in self._loaders:
+            self._loaders[phase] = DataLoader(
+                _DescriptorDataset(
+                    self._source,
+                    self.strategy,
+                    self.descriptors(phase),
+                ),
+                batch_size=None,
+                shuffle=False,
+                collate_fn=_identity,
+                **loader_worker_options(
+                    num_workers=self.num_workers,
+                    pin_memory=False,
+                    persistent_workers=self.persistent_workers,
+                ),
+            )
+        return self._loaders[phase]
+
+    def train_dataloader(self) -> DataLoader[NativeBatch]:
+        return self._loader("train")
+
+    def val_dataloader(self) -> DataLoader[NativeBatch]:
+        return self._loader("val")
+
+    def test_dataloader(self) -> DataLoader[NativeBatch]:
+        return self._loader("test")
+
+    def predict_dataloader(self) -> DataLoader[NativeBatch]:
+        """Use the explicitly supported test split for prediction identity."""
+        return self._loader("test")
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        for loader in self._loaders.values():
+            iterator = getattr(loader, "_iterator", None)
+            shutdown = getattr(iterator, "_shutdown_workers", None)
+            if callable(shutdown):
+                shutdown()
+            if iterator is not None:
+                loader._iterator = None
+        self._loaders.clear()
+        if self._owner is not None:
+            self._owner.close()
+        self._closed = True
+
+    def teardown(self, stage: str | None = None) -> None:
+        self.close()
+
+
+__all__ = [
+    "DiskGraphDataModule",
+    "GraphSamplingStrategy",
+    "HeterogeneousClusterStrategy",
+    "HeterogeneousNeighborStrategy",
+    "HomogeneousClusterStrategy",
+    "SamplingCapabilityError",
+    "SamplingDescriptor",
+]

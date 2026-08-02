@@ -34,6 +34,19 @@ def _require_non_empty(name: str, dataset: Dataset[Data]) -> None:
     if len(dataset) == 0:
         raise ValueError(f"dataset_{name} must not be empty")
 
+def loader_worker_options(
+    *,
+    num_workers: int,
+    pin_memory: bool,
+    persistent_workers: bool,
+) -> dict[str, int | bool]:
+    """Return the worker lifecycle options shared by native graph loaders."""
+    return {
+        "num_workers": num_workers,
+        "pin_memory": pin_memory,
+        "persistent_workers": persistent_workers and num_workers > 0,
+    }
+
 
 class GraphDataModule(LightningDataModule):
     """Batch native homogeneous PyG graphs for one learning setting.
@@ -135,11 +148,11 @@ class GraphDataModule(LightningDataModule):
         self.dataset_val = dataset_val
         self.dataset_test = dataset_test
         self.batch_size = batch_size
-        self.loader_kwargs = {
-            "num_workers": num_workers,
-            "pin_memory": pin_memory,
-            "persistent_workers": persistent_workers and num_workers > 0,
-        }
+        self.loader_kwargs = loader_worker_options(
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            persistent_workers=persistent_workers,
+        )
 
     def train_dataloader(self) -> DataLoader:
         """Return the training graph loader."""
