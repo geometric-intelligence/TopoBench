@@ -26,6 +26,10 @@ if TYPE_CHECKING:
     from topobench.data.loaders.parquet import ParquetTypedGraphSource
     from topobench.data.stores.typed_graph_arrays import TypedGraphArrayBuild
     from topobench.data.stores.typed_graph_csc import TypedGraphRelationBuild
+    from topobench.data.stores.pyg_partitioner import TypedPartitionBuild
+    from topobench.data.stores.typed_partition_book import (
+        PartitionQualificationLimits,
+    )
 
 _BEHAVIOR_VERSION = "typed-node-index-v3"
 _SUPPORTED_ID_DTYPES = frozenset({"int64", "uint64", "string"})
@@ -305,6 +309,29 @@ class ParquetTypedGraphIngestor:
             validated_indexes,
             validated_arrays,
         ).build()
+
+    def build_partitions(
+        self,
+        *,
+        limits: PartitionQualificationLimits | None = None,
+    ) -> TypedPartitionBuild:
+        """Generate, qualify, and atomically publish one typed partition book."""
+        from topobench.data.stores.pyg_partitioner import (
+            TopologyOnlyPyGPartitioner,
+        )
+        from topobench.data.stores.typed_partition_book import (
+            PartitionQualificationLimits,
+        )
+
+        qualification_limits = (
+            PartitionQualificationLimits() if limits is None else limits
+        )
+        if not isinstance(qualification_limits, PartitionQualificationLimits):
+            raise TypeError("limits must be PartitionQualificationLimits")
+        relations = self.build_relations()
+        return TopologyOnlyPyGPartitioner(self, relations).build(
+            qualification_limits
+        )
 
     def build_external_node_indexes(
         self,
@@ -941,6 +968,16 @@ class ParquetTypedGraphIngestor:
         observed_files: set[str] = set()
         for path in stage_root.rglob("*"):
             relative = path.relative_to(stage_root).as_posix()
+            if (
+                relative == "partitions"
+                or relative.startswith("partitions/")
+                or relative.startswith(".partitions-quarantine-")
+                or relative.startswith(".partitions-tmp-")
+                or relative.startswith(".pyg-partition-work/")
+            ):
+                # Task6 owns and fully validates these downstream subtrees
+                # under this same content lock. They are not Task2-4 outputs.
+                continue
             if (
                 pending_complete_relations
                 and relative.startswith("relations/")
