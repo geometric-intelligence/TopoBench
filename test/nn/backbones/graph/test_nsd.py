@@ -102,11 +102,11 @@ class TestNSDEncoder:
             hidden_dim=self.hidden_dim,
             num_layers=2,
             sheaf_type="general",
-            d=3
+            d=4
         )
 
         assert model.sheaf_type == "general"
-        assert model.d == 3
+        assert model.d == 4
 
     def test_initialization_invalid_sheaf_type(self):
         """Test that invalid sheaf type raises error."""
@@ -127,64 +127,80 @@ class TestNSDEncoder:
                 sheaf_act="relu"  # Not supported, only 'id', 'tanh', 'elu' are valid
             )
 
-    def test_initialization_diag_d_validation(self):
-        """Test that diag sheaf type validates d >= 1."""
-        # Should work with d=1
-        model = NSDEncoder(
-            input_dim=self.input_dim,
-            hidden_dim=self.hidden_dim,
-            sheaf_type="diag",
-            d=1
-        )
-        assert model.d == 1
-
-        # Should fail with d < 1
-        with pytest.raises(AssertionError):
+    @pytest.mark.parametrize("d", [True, 2.5, 0])
+    def test_initialization_rejects_invalid_d(self, d):
+        """Reject booleans, non-integral values, and zero before allocation."""
+        with pytest.raises(ValueError, match="d must be a positive integer"):
             NSDEncoder(
                 input_dim=self.input_dim,
                 hidden_dim=self.hidden_dim,
                 sheaf_type="diag",
-                d=0
+                d=d,
             )
 
+    def test_initialization_rejects_nondivisible_hidden_dimension(self):
+        """Reject a hidden width that cannot be split exactly across stalks."""
+        with pytest.raises(
+            ValueError,
+            match=r"hidden_dim \(32\) must be divisible by d \(3\)",
+        ):
+            NSDEncoder(
+                input_dim=self.input_dim,
+                hidden_dim=self.hidden_dim,
+                sheaf_type="diag",
+                d=3,
+            )
+
+    def test_initialization_diag_d_validation(self):
+        """Test that diag sheaf type accepts d >= 1."""
+        model = NSDEncoder(
+            input_dim=self.input_dim,
+            hidden_dim=self.hidden_dim,
+            sheaf_type="diag",
+            d=1,
+        )
+        assert model.d == 1
+
     def test_initialization_bundle_d_validation(self):
-        """Test that bundle sheaf type validates d > 1."""
-        # Should work with d=2
+        """Test that bundle sheaf type requires d > 1."""
         model = NSDEncoder(
             input_dim=self.input_dim,
             hidden_dim=self.hidden_dim,
             sheaf_type="bundle",
-            d=2
+            d=2,
         )
         assert model.d == 2
 
-        # Should fail with d <= 1
-        with pytest.raises(AssertionError):
+        with pytest.raises(
+            ValueError,
+            match="d must be greater than 1 for bundle sheaf type",
+        ):
             NSDEncoder(
                 input_dim=self.input_dim,
                 hidden_dim=self.hidden_dim,
                 sheaf_type="bundle",
-                d=1
+                d=1,
             )
 
     def test_initialization_general_d_validation(self):
-        """Test that general sheaf type validates d > 1."""
-        # Should work with d=2
+        """Test that general sheaf type requires d > 1."""
         model = NSDEncoder(
             input_dim=self.input_dim,
             hidden_dim=self.hidden_dim,
             sheaf_type="general",
-            d=2
+            d=2,
         )
         assert model.d == 2
 
-        # Should fail with d <= 1
-        with pytest.raises(AssertionError):
+        with pytest.raises(
+            ValueError,
+            match="d must be greater than 1 for general sheaf type",
+        ):
             NSDEncoder(
                 input_dim=self.input_dim,
                 hidden_dim=self.hidden_dim,
                 sheaf_type="general",
-                d=1
+                d=1,
             )
 
     def test_forward_basic(self, simple_graph_0):
@@ -359,7 +375,7 @@ class TestNSDEncoder:
             hidden_dim=self.hidden_dim,
             num_layers=2,
             sheaf_type="general",
-            d=3
+            d=4
         )
 
         out = model(
@@ -967,8 +983,8 @@ class TestNSDEncoder:
         assert sheaf_model is not None
         assert sheaf_model == model.sheaf_model
 
-    def test_sheaf_config_correctness(self):
-        """Test that sheaf config is set up correctly."""
+    def test_sheaf_config_uses_exact_internal_widths(self):
+        """Keep the requested hidden width exact throughout construction."""
         model = NSDEncoder(
             input_dim=self.input_dim,
             hidden_dim=64,
@@ -977,20 +993,27 @@ class TestNSDEncoder:
             dropout=0.2,
             input_dropout=0.15,
             sheaf_act="elu",
-            orth="matrix_exp"
+            orth="matrix_exp",
         )
 
         config = model.sheaf_config
 
         assert config["d"] == 4
         assert config["layers"] == 3
-        assert config["hidden_channels"] == 64 // 4  # hidden_dim // d
+        assert config["hidden_channels"] == 16
         assert config["input_dim"] == self.input_dim
         assert config["output_dim"] == 64
         assert config["dropout"] == 0.2
         assert config["input_dropout"] == 0.15
         assert config["sheaf_act"] == "elu"
         assert config["orth"] == "matrix_exp"
+        assert model.sheaf_model.hidden_channels == 16
+        assert model.sheaf_model.hidden_dim == 64
+        assert model.sheaf_model.lin1.out_features == 64
+        assert all(
+            layer.in_features == layer.out_features == 16
+            for layer in model.sheaf_model.lin_right_weights
+        )
 
     def test_multiple_forward_passes_same_graph(self, simple_graph_0):
         """Test multiple forward passes on the same graph.
@@ -1102,7 +1125,7 @@ class TestNSDEncoder:
             hidden_dim=self.hidden_dim,
             num_layers=2,
             sheaf_type="general",
-            d=3,
+            d=4,
             orth="matrix_exp"
         )
 
@@ -1166,7 +1189,7 @@ class TestNSDEncoder:
             hidden_dim=self.hidden_dim,
             num_layers=2,
             sheaf_type="general",
-            d=3
+            d=4
         )
         model.train()
 

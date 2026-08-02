@@ -16,7 +16,7 @@ backbone:
   num_layers: 2
   dropout: 0.4
   sheaf_type: bundle
-  d: 3
+  d: 4
   input_dropout: 0.0
 
 backbone_wrapper:

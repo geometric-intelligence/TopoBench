@@ -97,6 +97,19 @@ def test_every_declared_graph_pair_resolves_and_instantiates_without_data_spec(
     }
 
 
+def test_packaged_nsd_uses_an_exact_stalk_width_composition() -> None:
+    cfg = _compose("SyntheticGraph", "nsd")
+
+    assert cfg.model.feature_encoder.out_channels == 64
+    assert cfg.model.backbone.hidden_dim == 64
+    assert cfg.model.backbone.d == 4
+
+    model = instantiate_model(cfg, data_spec=None)
+    encoder = model.backbone.backbone
+    assert encoder.sheaf_config["hidden_channels"] == 16
+    assert encoder.sheaf_model.hidden_dim == 64
+
+
 def test_model_capability_matrix_and_entries_are_immutable() -> None:
     capability = GRAPH_MODEL_CAPABILITIES["gcn"]
 

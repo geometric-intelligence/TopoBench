@@ -7,6 +7,8 @@ Adapted and simplified from Bodnar et al. [1]
 https://arxiv.org/abs/2202.04579
 """
 
+from numbers import Integral
+
 from torch.nn import Module
 from torch_geometric.utils import to_undirected
 
@@ -71,24 +73,33 @@ class NSDEncoder(Module):
     ):
         super().__init__()
 
+        if sheaf_type == "diag":
+            self.sheaf_class = InductiveDiscreteDiagSheafDiffusion
+        elif sheaf_type == "bundle":
+            self.sheaf_class = InductiveDiscreteBundleSheafDiffusion
+        elif sheaf_type == "general":
+            self.sheaf_class = InductiveDiscreteGeneralSheafDiffusion
+        else:
+            raise ValueError(f"Unknown sheaf type: {sheaf_type}")
+
+        if isinstance(d, bool) or not isinstance(d, Integral) or d < 1:
+            raise ValueError("d must be a positive integer")
+        d = int(d)
+        if sheaf_type in {"bundle", "general"} and d == 1:
+            raise ValueError(
+                f"d must be greater than 1 for {sheaf_type} sheaf type"
+            )
+        if hidden_dim % d != 0:
+            raise ValueError(
+                f"hidden_dim ({hidden_dim}) must be divisible by d ({d})"
+            )
+
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.sheaf_type = sheaf_type
         self.d = d
         self.num_layers = num_layers
         self.device = device
-
-        if sheaf_type == "diag":
-            assert d >= 1
-            self.sheaf_class = InductiveDiscreteDiagSheafDiffusion
-        elif sheaf_type == "bundle":
-            assert d > 1
-            self.sheaf_class = InductiveDiscreteBundleSheafDiffusion
-        elif sheaf_type == "general":
-            assert d > 1
-            self.sheaf_class = InductiveDiscreteGeneralSheafDiffusion
-        else:
-            raise ValueError(f"Unknown sheaf type: {sheaf_type}")
 
         self.sheaf_config = {
             "d": d,
