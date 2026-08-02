@@ -1874,12 +1874,34 @@ def _write_report(path: Path, report: QualificationReport) -> None:
         os.close(descriptor)
 
 
+def _emit_qualification_results(
+    execution_monitor: object | None,
+    report: QualificationReport,
+) -> None:
+    """Mirror canonical check evidence without changing qualification semantics."""
+    if execution_monitor is None:
+        return
+    record = getattr(execution_monitor, "record_qualification", None)
+    if not callable(record):
+        raise TypeError(
+            "execution_monitor must expose record_qualification(result, report_path)"
+        )
+    try:
+        for result in report.checks:
+            record(result, report.report_path)
+    except Exception:
+        if report.passed:
+            raise
+
+
+
 def _run_qualification(
     root: Path,
     *,
     expected_bindings: Mapping[str, Any] | None,
     report_path: str | Path | None,
     require_directory_identity: bool,
+    execution_monitor: object | None,
 ) -> tuple[
     QualificationReport,
     dict[str, Any] | None,
@@ -1928,6 +1950,7 @@ def _run_qualification(
         root,
     )
     _write_report(destination, report)
+    _emit_qualification_results(execution_monitor, report)
     return report, validated_manifest, MappingProxyType(
         dict(checker.file_identities)
     )
@@ -1939,6 +1962,7 @@ def qualify_store(
     expected_bindings: Mapping[str, Any] | None = None,
     report_path: str | Path | None = None,
     require_directory_identity: bool = True,
+    execution_monitor: object | None = None,
 ) -> QualificationReport:
     """Run canonical checks and always return/write a structured report."""
     report, _, _ = _run_qualification(
@@ -1946,6 +1970,7 @@ def qualify_store(
         expected_bindings=expected_bindings,
         report_path=report_path,
         require_directory_identity=require_directory_identity,
+        execution_monitor=execution_monitor,
     )
     return report
 
@@ -1956,6 +1981,7 @@ def validate_store(
     expected_bindings: Mapping[str, Any] | None = None,
     report_path: str | Path | None = None,
     require_directory_identity: bool = True,
+    execution_monitor: object | None = None,
 ) -> ValidatedStore:
     """Return the exact manifest instance accepted by canonical validation."""
     root = Path(path)
@@ -1964,6 +1990,7 @@ def validate_store(
         expected_bindings=expected_bindings,
         report_path=report_path,
         require_directory_identity=require_directory_identity,
+        execution_monitor=execution_monitor,
     )
     if not report.passed or manifest is None:
         raise QualificationFailure(report.failures[0], report.report_path)

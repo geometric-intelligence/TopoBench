@@ -27,6 +27,8 @@ from topobench.dataloader.disk_graph import (
     DiskGraphDataModule,
     HomogeneousClusterStrategy,
 )
+from topobench.dataloader.input_monitor import InputMonitor, MonitorOverflowError
+from topobench.profiling.execution_events import ExecutionOperation
 
 _MIB = 1024 * 1024
 
@@ -691,6 +693,28 @@ def test_prefetch_error_rolls_back_transient_sequence_for_reiteration(
         range(1, descriptor_count + 1)
     )
     module.close()
+
+
+
+def test_successful_schedule_propagates_monitor_error_policy() -> None:
+    monitor = InputMonitor(
+        event_capacity=1,
+        pending_cuda_capacity=1,
+        overflow_policy="error",
+    )
+    monitor.record(ExecutionOperation.ARTIFACT, phase="prefill")
+    loader = DevicePrefetchLoader(
+        [_batch(1)],
+        _limits(),
+        capability=_capability(),
+        execution_monitor=monitor,
+        monitor_phase="fit",
+        monitor_split="train",
+    )
+
+    with pytest.raises(MonitorOverflowError, match="event queue"):
+        next(iter(loader))
+    loader.close()
 
 
 

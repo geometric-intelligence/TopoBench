@@ -10,6 +10,16 @@ from torch_geometric.data import Batch, Data, HeteroData
 from torchmetrics import MeanMetric
 
 from topobench.data.hypergraph import HypergraphData
+from topobench.dataloader.input_monitor import (
+    InputMonitor,
+    InputStallError,
+    MonitorOverflowError,
+    OperationToken,
+)
+from topobench.profiling.execution_events import (
+    ExecutionOperation,
+    ExecutionStatus,
+)
 from topobench.model.supervision import (
     DefaultSupervisionAdapter,
     SupervisionAdapter,
@@ -88,6 +98,7 @@ class TBModel(LightningModule):
         evaluator: Any = None,
         optimizer: Any = None,
         supervision_adapter: SupervisionAdapter | None = None,
+        execution_monitor: InputMonitor | None = None,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -101,8 +112,15 @@ class TBModel(LightningModule):
                 "readout",
                 "feature_encoder",
                 "supervision_adapter",
+                "execution_monitor",
             ],
         )
+        if execution_monitor is not None and not isinstance(
+            execution_monitor,
+            InputMonitor,
+        ):
+            raise TypeError("execution_monitor must be InputMonitor or None")
+        self.execution_monitor = execution_monitor
 
         self.feature_encoder = (
             feature_encoder
@@ -194,36 +212,118 @@ class TBModel(LightningModule):
 
         return model_out
 
+    def _execution_context(
+        self,
+        batch: Data | HeteroData,
+    ) -> tuple[str, str, int | None, int | None, int | None, str | None, bool]:
+        state = getattr(self, "state_str", "")
+        split = {
+            "Training": "train",
+            "Validation": "val",
+            "Test": "test",
+        }.get(state, "predict")
+        phase = "fit" if split in {"train", "val"} else "test"
+        sequence = getattr(batch, "sequence_id", None)
+        if isinstance(sequence, bool) or not isinstance(sequence, Integral):
+            sequence = None
+        else:
+            sequence = int(sequence)
+        trainer = getattr(self, "_trainer", None)
+        epoch = getattr(trainer, "current_epoch", None)
+        if isinstance(epoch, bool) or not isinstance(epoch, int):
+            epoch = None
+        global_step = getattr(trainer, "global_step", None)
+        if isinstance(global_step, bool) or not isinstance(global_step, int):
+            global_step = None
+        digest = getattr(batch, "execution_descriptor_digest", None)
+        cuda_timing = (
+            getattr(getattr(self, "device", None), "type", None) == "cuda"
+        )
+        return (
+            phase,
+            split,
+            sequence,
+            epoch,
+            global_step,
+            digest,
+            cuda_timing,
+        )
+
     def model_step(self, batch: Data | HeteroData) -> dict[str, Any]:
-        r"""Perform a single model step on a batch of data.
-
-        Parameters
-        ----------
-        batch : torch_geometric.data.Data or torch_geometric.data.HeteroData
-            Homogeneous or heterogeneous batch containing the model inputs.
-
-        Returns
-        -------
-        dict
-            Dictionary containing the model output and the loss.
-        """
-        # Allow batch object to know the phase of the training
-        batch["model_state"] = self.state_str
-
-        # Forward pass
-        model_out = self.forward(batch)
-
-        # Loss
-        model_out = self.process_outputs(model_out=model_out, batch=batch)
-
-        # Metric
-        model_out = self.loss(model_out=model_out, batch=batch)
-
-        # Add batch to model_out for evaluator access to target normalizer stats
+        r"""Perform a single model and evaluator step on native graph data."""
+        monitor = self.execution_monitor
+        compute_token: OperationToken | None = None
+        context = self._execution_context(batch) if monitor is not None else None
+        if monitor is not None:
+            assert context is not None
+            phase, split, sequence, epoch, global_step, digest, cuda_timing = (
+                context
+            )
+            compute_token = monitor.begin_model_compute(
+                phase=phase,
+                split=split,
+                descriptor_sequence=sequence,
+                descriptor_digest_value=digest,
+                epoch=epoch,
+                global_step=global_step,
+                cuda_timing=cuda_timing,
+            )
+        try:
+            batch["model_state"] = self.state_str
+            model_out = self.forward(batch)
+            model_out = self.process_outputs(model_out=model_out, batch=batch)
+            model_out = self.loss(model_out=model_out, batch=batch)
+        except BaseException:
+            if monitor is not None and compute_token is not None:
+                try:
+                    monitor.finish_model_compute(
+                        compute_token,
+                        status=ExecutionStatus.ERROR,
+                        evidence={"failure_stage": "model_compute"},
+                    )
+                except Exception:
+                    pass
+            raise
+        if monitor is not None and compute_token is not None:
+            examples = model_out.get("num_supervised_examples")
+            if isinstance(examples, bool) or not isinstance(examples, Integral):
+                examples = None
+            monitor.finish_model_compute(
+                compute_token,
+                example_count=None if examples is None else int(examples),
+            )
         model_out["batch"] = batch
-
-        self.evaluator.update(model_out)
-
+        evaluator_token: OperationToken | None = None
+        if monitor is not None:
+            assert context is not None
+            phase, split, sequence, epoch, global_step, digest, cuda_timing = (
+                context
+            )
+            evaluator_token = monitor.begin(
+                ExecutionOperation.EVALUATOR,
+                phase=phase,
+                split=split,
+                descriptor_sequence=sequence,
+                descriptor_digest_value=digest,
+                epoch=epoch,
+                global_step=global_step,
+                cuda_timing=cuda_timing,
+            )
+        try:
+            self.evaluator.update(model_out)
+        except BaseException:
+            if monitor is not None and evaluator_token is not None:
+                try:
+                    monitor.finish(
+                        evaluator_token,
+                        status=ExecutionStatus.ERROR,
+                        evidence={"failure_stage": "evaluator_update"},
+                    )
+                except Exception:
+                    pass
+            raise
+        if monitor is not None and evaluator_token is not None:
+            monitor.finish(evaluator_token)
         return model_out
 
     def training_step(
@@ -485,6 +585,24 @@ class TBModel(LightningModule):
             raw_step_completed = True
 
         handle = register_hook(mark_completed)
+        monitor = self.execution_monitor
+        monitor_token = (
+            None
+            if monitor is None
+            else monitor.begin(
+                ExecutionOperation.OPTIMIZER,
+                phase="optimizer",
+                split="train",
+                epoch=epoch,
+                global_step=(
+                    getattr(getattr(self, "_trainer", None), "global_step", None)
+                ),
+                cuda_timing=(
+                    getattr(getattr(self, "device", None), "type", None)
+                    == "cuda"
+                ),
+            )
+        )
         try:
             super().optimizer_step(
                 epoch,
@@ -492,10 +610,36 @@ class TBModel(LightningModule):
                 optimizer,
                 optimizer_closure,
             )
+        except BaseException:
+            if monitor_token is not None:
+                try:
+                    monitor.finish(
+                        monitor_token,
+                        status=ExecutionStatus.ERROR,
+                        evidence={"failure_stage": "optimizer"},
+                    )
+                except Exception:
+                    pass
+            raise
         finally:
             handle.remove()
         if raw_step_completed:
             self._dataloader_optimizer_success_token += 1
+        if monitor_token is not None:
+            try:
+                monitor.finish(
+                    monitor_token,
+                    status=(
+                        ExecutionStatus.SUCCESS
+                        if raw_step_completed
+                        else ExecutionStatus.WARNING
+                    ),
+                    evidence={"raw_step_completed": raw_step_completed},
+                )
+            except (InputStallError, MonitorOverflowError):
+                raise
+            except Exception:
+                pass
 
     def _dataloader_evaluator_owner(self) -> Any:
         owner = self.evaluator

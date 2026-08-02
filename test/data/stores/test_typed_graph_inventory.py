@@ -35,6 +35,8 @@ from topobench.data.stores.typed_graph_ingestion import (
     ParquetTypedGraphIngestor,
     SourceMutationError,
 )
+from topobench.dataloader.input_monitor import InputMonitor
+from topobench.profiling.execution_events import ExecutionOperation
 
 
 def _write_table(path: Path, columns: dict[str, pa.Array]) -> None:
@@ -145,6 +147,38 @@ def _sha256(path: Path) -> str:
         while chunk := stream.read(8192):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def test_ingestor_emits_bounded_conversion_stage_events(tmp_path: Path) -> None:
+    source = _make_source(tmp_path / "private-source")
+    monitor = InputMonitor(event_capacity=16, pending_cuda_capacity=1)
+    result = ParquetTypedGraphIngestor(
+        source,
+        tmp_path / "stores",
+        execution_monitor=monitor,
+    ).build()
+    result.indexes["user"].close()
+    result.indexes["item"].close()
+
+    events = monitor.drain()
+    assert [
+        (event.operation, event.phase)
+        for event in events
+    ] == [
+        (ExecutionOperation.CONVERSION, "inventory"),
+        (ExecutionOperation.CONVERSION, "index"),
+        (ExecutionOperation.CONVERSION, "publish"),
+    ]
+    assert all(
+        event.row_count == result.inventory.total_rows
+        for event in events
+    )
+    assert all(
+        event.unique_storage_bytes == result.inventory.total_bytes
+        for event in events
+    )
+    assert "private-source" not in repr(events)
+
 
 
 def test_inventory_is_canonical_exact_and_resource_admitted(tmp_path: Path) -> None:

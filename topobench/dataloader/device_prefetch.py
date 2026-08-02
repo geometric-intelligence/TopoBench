@@ -7,7 +7,7 @@ import queue
 import threading
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from numbers import Integral
 from types import MappingProxyType
 from typing import Any, Literal, TypeAlias
@@ -15,6 +15,16 @@ from typing import Any, Literal, TypeAlias
 import torch
 from torch import Tensor
 from torch_geometric.data import Data, HeteroData
+from topobench.dataloader.input_monitor import (
+    InputMonitor,
+    MonitorOverflowError,
+    OperationToken,
+    QueueSnapshot,
+)
+from topobench.profiling.execution_events import (
+    ExecutionOperation,
+    ExecutionStatus,
+)
 
 CanonicalRelation: TypeAlias = tuple[str, str, str]
 NativeBatch: TypeAlias = Data | HeteroData
@@ -730,7 +740,7 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
         self.max_host_queue_size = 0
         self.max_device_queued_bytes = 0
         self._device_queued_bytes = 0
-        self._producer_error: tuple[PrefetchError, BaseException] | None = None
+        self._producer_error: tuple[BaseException, BaseException] | None = None
         self._deferred_error: tuple[PrefetchError, BaseException] | None = None
         self._source_iterator: Iterator[NativeBatch] | None = None
         self._closed = False
@@ -757,6 +767,93 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
     @property
     def closed(self) -> bool:
         return self._closed
+    def _monitor_queue(self) -> QueueSnapshot:
+        with self._condition:
+            host_bytes = self._host_queued_bytes
+        return QueueSnapshot(
+            host_configured_depth=self._owner.limits.host_queue_depth,
+            host_depth=self._queue.qsize(),
+            host_configured_bytes=self._owner.limits.max_host_queue_bytes,
+            host_bytes=host_bytes,
+            device_configured_depth=self._owner.limits.device_queue_depth,
+            device_depth=len(self._ring),
+            device_configured_bytes=self._owner.limits.max_device_queue_bytes,
+            device_bytes=self._device_queued_bytes,
+        )
+
+    def _monitor_begin(
+        self,
+        operation: ExecutionOperation,
+        item: _HostItem,
+        *,
+        cuda_timing: bool = False,
+    ) -> OperationToken | None:
+        monitor = self._owner.execution_monitor
+        if monitor is None:
+            return None
+        prehashed = getattr(item.batch, "execution_descriptor_digest", None)
+        return monitor.begin(
+            operation,
+            phase=self._owner.monitor_phase,
+            split=self._owner.monitor_split,
+            descriptor_sequence=item.sequence,
+            descriptor_identity=(
+                item.descriptor if prehashed is None else None
+            ),
+            descriptor_digest_value=prehashed,
+            queue=self._monitor_queue(),
+            cuda_timing=cuda_timing,
+            cuda_stream=self.transfer_stream,
+        )
+
+    def _monitor_finish(
+        self,
+        token: OperationToken | None,
+        item: _HostItem,
+        *,
+        status: ExecutionStatus = ExecutionStatus.SUCCESS,
+        evidence: Mapping[str, object] | None = None,
+    ) -> None:
+        monitor = self._owner.execution_monitor
+        if token is None or monitor is None:
+            return
+        monitor.finish(
+            token,
+            status=status,
+            node_count=item.estimate.node_count,
+            edge_count=item.estimate.edge_count,
+            unique_storage_bytes=item.estimate.total_bytes,
+            queue=self._monitor_queue(),
+            cuda_stream=self.transfer_stream,
+            evidence=evidence,
+        )
+
+    def _monitor_queue_admission(self, item: _HostItem) -> None:
+        monitor = self._owner.execution_monitor
+        if monitor is None:
+            return
+        prehashed = getattr(item.batch, "execution_descriptor_digest", None)
+        queue_state = self._monitor_queue()
+        queue_state = replace(
+            queue_state,
+            host_depth=(queue_state.host_depth or 0) + 1,
+        )
+        monitor.record(
+            ExecutionOperation.H2D_QUEUE,
+            phase=self._owner.monitor_phase,
+            split=self._owner.monitor_split,
+            descriptor_sequence=item.sequence,
+            descriptor_identity=(
+                item.descriptor if prehashed is None else None
+            ),
+            descriptor_digest_value=prehashed,
+            node_count=item.estimate.node_count,
+            edge_count=item.estimate.edge_count,
+            unique_storage_bytes=item.estimate.total_bytes,
+            queue=queue_state,
+            evidence={"prefetch_mode": self._owner.status.mode},
+        )
+
 
     def __iter__(self) -> "DevicePrefetchIterator":
         return self
@@ -766,7 +863,12 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
     ) -> None:
         with self._condition:
             if self._producer_error is None:
-                self._producer_error = (PrefetchError(phase, sequence, descriptor, cause), cause)
+                error: BaseException = (
+                    cause
+                    if isinstance(cause, MonitorOverflowError)
+                    else PrefetchError(phase, sequence, descriptor, cause)
+                )
+                self._producer_error = (error, cause)
             self._condition.notify_all()
 
     def _reserve_host(self, byte_count: int) -> bool:
@@ -847,7 +949,20 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
                     break
                 if not self._acquire_host(estimate.host_bytes):
                     break
+                monitor_item: _HostItem | None = None
+                pin_token: OperationToken | None = None
                 try:
+                    if self._owner.execution_monitor is not None:
+                        monitor_item = _HostItem(
+                            batch,
+                            estimate,
+                            sequence,
+                            descriptor,
+                        )
+                        pin_token = self._monitor_begin(
+                            ExecutionOperation.HOST_PIN,
+                            monitor_item,
+                        )
                     prepared = (
                         batch
                         if source_mode == "resident"
@@ -857,6 +972,14 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
                             self._owner.pin_memory,
                         )
                     )
+                    if (
+                        source_mode != "resident"
+                        and pin_token is not None
+                        and pin_token.descriptor_digest is not None
+                    ):
+                        prepared.execution_descriptor_digest = (
+                            pin_token.descriptor_digest
+                        )
                     prepared_estimate = estimate_batch_bytes(prepared)
                     if prepared_estimate.host_bytes != estimate.host_bytes:
                         raise RuntimeError(
@@ -865,15 +988,40 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
                     if self._stop.is_set():
                         self._release_admission(estimate.host_bytes)
                         break
-                    self._put_host(
-                        _HostItem(
-                            prepared,
-                            prepared_estimate,
-                            sequence,
-                            descriptor,
-                        )
+                    queued = _HostItem(
+                        prepared,
+                        prepared_estimate,
+                        sequence,
+                        descriptor,
                     )
+                    self._monitor_finish(
+                        pin_token,
+                        queued,
+                        status=(
+                            ExecutionStatus.SKIPPED
+                            if source_mode == "resident"
+                            else ExecutionStatus.SUCCESS
+                        ),
+                        evidence={"source_mode": source_mode},
+                    )
+                    pin_token = None
+                    self._monitor_queue_admission(queued)
+                    self._put_host(queued)
                 except BaseException as cause:
+                    if pin_token is not None and monitor_item is not None:
+                        try:
+                            self._monitor_finish(
+                                pin_token,
+                                monitor_item,
+                                status=ExecutionStatus.ERROR,
+                                evidence={"failure_stage": "host_pin"},
+                            )
+                        except Exception as monitor_error:
+                            if not isinstance(cause, MonitorOverflowError):
+                                cause.add_note(
+                                    "secondary input monitor failure: "
+                                    f"{type(monitor_error).__name__}"
+                                )
                     self._release_admission(estimate.host_bytes)
                     self._set_error("host_pin", sequence, descriptor, cause)
                     break
@@ -885,6 +1033,8 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
     def _raise_producer_error(self) -> None:
         assert self._producer_error is not None
         error, cause = self._producer_error
+        if error is cause:
+            raise error
         raise error from cause
 
     def _take_host(
@@ -926,11 +1076,35 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
 
     def _schedule(self, item: _HostItem, slot_index: int) -> None:
         assert self.transfer_stream is not None
+        transfer_token = self._monitor_begin(
+            ExecutionOperation.H2D_COPY,
+            item,
+            cuda_timing=True,
+        )
         slot = self._slots[slot_index]
-        with torch.cuda.stream(self.transfer_stream):
-            device_batch = _move_cuda(item.batch, self._owner.capability.device)
-            _record_stream(item.batch, self.transfer_stream)
-            slot.event.record(self.transfer_stream)
+        try:
+            with torch.cuda.stream(self.transfer_stream):
+                device_batch = _move_cuda(
+                    item.batch,
+                    self._owner.capability.device,
+                )
+                _record_stream(item.batch, self.transfer_stream)
+                slot.event.record(self.transfer_stream)
+        except BaseException as cause:
+            if transfer_token is not None:
+                try:
+                    self._monitor_finish(
+                        transfer_token,
+                        item,
+                        status=ExecutionStatus.ERROR,
+                        evidence={"failure_stage": "device_transfer"},
+                    )
+                except Exception as monitor_error:
+                    cause.add_note(
+                        "secondary input monitor failure: "
+                        f"{type(monitor_error).__name__}"
+                    )
+            raise
         slot.host_batch = item.batch
         slot.device_batch = device_batch
         slot.sequence = item.sequence
@@ -938,8 +1112,21 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
         slot.admitted_bytes = item.estimate.total_bytes
         slot.host_bytes = item.estimate.host_bytes
         self._device_queued_bytes += slot.admitted_bytes
-        self.max_device_queued_bytes = max(self.max_device_queued_bytes, self._device_queued_bytes)
+        self.max_device_queued_bytes = max(
+            self.max_device_queued_bytes,
+            self._device_queued_bytes,
+        )
         self._ring.append(slot_index)
+        try:
+            self._monitor_finish(
+                transfer_token,
+                item,
+                evidence={"prefetch_mode": self._owner.status.mode},
+            )
+        except MonitorOverflowError:
+            raise
+        except Exception:
+            pass
 
     def _reap_completed_slots(self) -> None:
         retained: deque[int] = deque()
@@ -1018,19 +1205,42 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
 
 
     def _deliver_callback(self, batch: NativeBatch) -> None:
-        if self._owner.on_yield is None:
-            return
         try:
-            self._owner.on_yield(batch)
+            monitor = self._owner.execution_monitor
+            if monitor is not None:
+                prehashed = getattr(
+                    batch,
+                    "execution_descriptor_digest",
+                    None,
+                )
+                monitor.mark_batch_ready(
+                    phase=self._owner.monitor_phase,
+                    split=self._owner.monitor_split,
+                    descriptor_sequence=_sequence(batch, 1),
+                    descriptor_identity=(
+                        _descriptor(batch) if prehashed is None else None
+                    ),
+                    descriptor_digest_value=prehashed,
+                    queue=self._monitor_queue(),
+                )
+            if self._owner.on_yield is not None:
+                self._owner.on_yield(batch)
         except BaseException as cause:
-            error = PrefetchError("delivery", _sequence(batch, 1), _descriptor(batch), cause)
             self.close()
+            if isinstance(cause, MonitorOverflowError):
+                raise
+            error = PrefetchError(
+                "delivery",
+                _sequence(batch, 1),
+                _descriptor(batch),
+                cause,
+            )
             raise error from cause
 
     def _next_host_only(self) -> NativeBatch:
         try:
             item = self._take_host()
-        except PrefetchError:
+        except (PrefetchError, MonitorOverflowError):
             self.close()
             raise
         if item is None:
@@ -1044,7 +1254,7 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
     def _next_cuda(self) -> NativeBatch:
         try:
             self._fill_ring(block_for_first=True)
-        except PrefetchError:
+        except (PrefetchError, MonitorOverflowError):
             self.close()
             raise
         if not self._ring:
@@ -1066,6 +1276,9 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
             self._fill_ring(block_for_first=False)
         except PrefetchError as error:
             self._deferred_error = (error, error.root_cause)
+        except MonitorOverflowError:
+            self.close()
+            raise
         self._mark_exhausted_if_drained()
         self._deliver_callback(batch)
         return batch
@@ -1182,6 +1395,9 @@ class DevicePrefetchLoader(Iterable[NativeBatch]):
         owns_source: bool = False,
         on_yield: Callable[[NativeBatch], None] | None = None,
         on_abort: Callable[[], None] | None = None,
+        execution_monitor: InputMonitor | None = None,
+        monitor_phase: str = "fit",
+        monitor_split: str | None = None,
     ) -> None:
         if not isinstance(source, Iterable):
             raise TypeError("source must be a finite iterable")
@@ -1207,6 +1423,17 @@ class DevicePrefetchLoader(Iterable[NativeBatch]):
             raise TypeError("on_yield must be callable")
         if on_abort is not None and not callable(on_abort):
             raise TypeError("on_abort must be callable")
+        if execution_monitor is not None and not isinstance(
+            execution_monitor,
+            InputMonitor,
+        ):
+            raise TypeError("execution_monitor must be InputMonitor or None")
+        if not isinstance(monitor_phase, str) or not monitor_phase:
+            raise TypeError("monitor_phase must be a non-empty string")
+        if monitor_split is not None and (
+            not isinstance(monitor_split, str) or not monitor_split
+        ):
+            raise TypeError("monitor_split must be a non-empty string or None")
         self.source = source
         self.limits = limits
         self.capability = resolved
@@ -1214,6 +1441,9 @@ class DevicePrefetchLoader(Iterable[NativeBatch]):
         self.owns_source = owns_source
         self.on_yield = on_yield
         self.on_abort = on_abort
+        self.execution_monitor = execution_monitor
+        self.monitor_phase = monitor_phase
+        self.monitor_split = monitor_split
         self.status = (
             PrefetchStatus(
                 "cuda",

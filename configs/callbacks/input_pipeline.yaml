@@ -1,0 +1,20 @@
+input_pipeline:
+  _target_: topobench.callbacks.input_pipeline.InputPipelineCallback
+  event_log_path: ${paths.output_dir}/execution/events.jsonl
+  max_log_bytes: 16777216
+  max_log_records: 10000
+  max_rotations: 2
+  fsync_policy: rotation
+  event_capacity: 4096
+  pending_cuda_capacity: 256
+  overflow_policy: warn
+  sample_every_n: 10
+  sample_offset: 0
+  warmup_steps: 20
+  rolling_window_steps: 100
+  max_input_stall_fraction: 0.05
+  max_consecutive_starved_steps: 3
+  patience_windows: 2
+  stall_action: warn
+  max_logger_metrics: 64
+  publish_every_n_flushes: 10

@@ -7,7 +7,9 @@ lookup-table construction to spill-capable DuckDB operators.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
+import functools
 import hashlib
 import json
 import os
@@ -34,6 +36,75 @@ if TYPE_CHECKING:
 _BEHAVIOR_VERSION = "typed-node-index-v3"
 _SUPPORTED_ID_DTYPES = frozenset({"int64", "uint64", "string"})
 _HASH_CHUNK_BYTES = 1024 * 1024
+
+
+def _known_inventory_counts(
+    result: object,
+) -> tuple[int | None, int | None]:
+    inventory = (
+        result
+        if hasattr(result, "total_rows") and hasattr(result, "total_bytes")
+        else getattr(result, "inventory", None)
+    )
+    rows = getattr(inventory, "total_rows", None)
+    byte_count = getattr(inventory, "total_bytes", None)
+    return (
+        rows if type(rows) is int and rows >= 0 else None,
+        byte_count
+        if type(byte_count) is int and byte_count >= 0
+        else None,
+    )
+
+
+
+def _monitored_stage(
+    operation: str,
+    phase: str,
+) -> Any:
+    def decorate(method: Any) -> Any:
+        @functools.wraps(method)
+        def monitored(
+            self: "ParquetTypedGraphIngestor",
+            *args: object,
+            **kwargs: object,
+        ) -> object:
+            monitor = self.execution_monitor
+            token = (
+                None
+                if monitor is None
+                else monitor.begin(
+                    operation,
+                    phase=phase,
+                    evidence={"producer": "typed_parquet"},
+                )
+            )
+            try:
+                result = method(self, *args, **kwargs)
+            except BaseException as error:
+                if token is not None:
+                    with contextlib.suppress(Exception):
+                        monitor.finish(
+                            token,
+                            status="error",
+                            evidence={
+                                "failure_stage": phase,
+                                "error_type": type(error).__name__,
+                            },
+                        )
+                raise
+            if token is not None:
+                row_count, byte_count = _known_inventory_counts(result)
+                monitor.finish(
+                    token,
+                    row_count=row_count,
+                    unique_storage_bytes=byte_count,
+                )
+            return result
+
+        return monitored
+
+    return decorate
+
 
 
 class ArtifactValidationError(RuntimeError):
@@ -108,6 +179,7 @@ class ParquetTypedGraphIngestor:
         disk_limit_bytes: int | None = None,
         threads: int = 1,
         lock_stale_seconds: float = 3600.0,
+        execution_monitor: object | None = None,
     ) -> None:
         if not hasattr(source, "spec") or not hasattr(source, "files"):
             raise TypeError("source must expose the ParquetTypedGraphSource contract")
@@ -120,12 +192,21 @@ class ParquetTypedGraphIngestor:
             raise ValueError("threads must be a positive integer")
         if lock_stale_seconds <= 0:
             raise ValueError("lock_stale_seconds must be positive")
+        if execution_monitor is not None and (
+            not callable(getattr(execution_monitor, "begin", None))
+            or not callable(getattr(execution_monitor, "finish", None))
+        ):
+            raise TypeError(
+                "execution_monitor must expose callable begin and finish methods"
+            )
         self.source = source
         self.store_root = Path(store_root).expanduser().resolve(strict=False)
         self.disk_limit_bytes = disk_limit_bytes
         self.threads = threads
         self.lock_stale_seconds = float(lock_stale_seconds)
+        self.execution_monitor = execution_monitor
 
+    @_monitored_stage("conversion", "inventory")
     def inventory(self) -> SourceInventory:
         """Stream hashes and inspect exact Arrow metadata in canonical order."""
         pa, pq, duckdb = _parquet_dependencies()
@@ -235,11 +316,13 @@ class ParquetTypedGraphIngestor:
         self._admit_disk(inventory)
         return inventory
 
+    @_monitored_stage("conversion", "publish")
     def build(self) -> ExternalNodeIndexBuild:
         """Inventory and build all type-local indexes."""
         inventory = self.inventory()
         return self.build_external_node_indexes(inventory)
 
+    @_monitored_stage("conversion", "arrays")
     def build_arrays(
         self,
         index_build: ExternalNodeIndexBuild | None = None,
@@ -265,6 +348,7 @@ class ParquetTypedGraphIngestor:
 
         return TypedGraphArrayWriter(self, validated_indexes).build()
 
+    @_monitored_stage("conversion", "relations")
     def build_relations(
         self,
         index_build: ExternalNodeIndexBuild | None = None,
@@ -310,6 +394,7 @@ class ParquetTypedGraphIngestor:
             validated_arrays,
         ).build()
 
+    @_monitored_stage("partition", "partition")
     def build_partitions(
         self,
         *,
@@ -333,6 +418,7 @@ class ParquetTypedGraphIngestor:
             qualification_limits
         )
 
+    @_monitored_stage("conversion", "index")
     def build_external_node_indexes(
         self,
         inventory: SourceInventory,

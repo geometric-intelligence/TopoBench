@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 import os
+import time
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, fields as dataclass_fields, is_dataclass, replace
 from importlib import metadata
@@ -31,7 +32,13 @@ from topobench.dataloader.device_prefetch import (
     PrefetchCapability,
     PrefetchLimits,
 )
+from topobench.dataloader.input_monitor import InputMonitor
 from topobench.dataloader.sequence_state import SequenceIdentity, SequenceState
+from topobench.profiling.execution_events import (
+    ExecutionOperation,
+    ExecutionStatus,
+    descriptor_digest,
+)
 from topobench.transforms.fittable import (
     FitContext,
     FitStateError,
@@ -1577,6 +1584,89 @@ class _TrainSequenceSampler(Sampler[tuple[int, int]]):
         return state.descriptor_count - start
 
 
+def _descriptor_record_count(descriptor: SamplingDescriptor) -> int | None:
+    if descriptor.participant_counts:
+        return sum(count for _, count in descriptor.participant_counts)
+    if descriptor.target_seed_ids:
+        return len(descriptor.target_seed_ids)
+    return None
+
+
+
+_WORKER_EVENT_ATTRIBUTE = "_execution_event_envelopes"
+_MAX_WORKER_EVENTS_PER_ITEM = 3
+
+
+@dataclass(frozen=True, slots=True)
+class _WorkerEventEnvelope:
+    operation: str
+    phase: str
+    split: str
+    descriptor_sequence: int | None
+    descriptor_digest: str
+    duration_ns: int
+
+    row_count: int | None
+    unique_storage_bytes: int | None
+
+def _drain_worker_events(
+    batch: NativeBatch,
+    monitor: InputMonitor | None,
+) -> None:
+    if _WORKER_EVENT_ATTRIBUTE not in batch:
+        return
+    raw = batch[_WORKER_EVENT_ATTRIBUTE]
+    del batch[_WORKER_EVENT_ATTRIBUTE]
+    if (
+        not isinstance(raw, tuple)
+        or len(raw) > _MAX_WORKER_EVENTS_PER_ITEM
+        or any(not isinstance(item, _WorkerEventEnvelope) for item in raw)
+    ):
+        raise RuntimeError("worker execution event envelope is invalid")
+    if monitor is None:
+        return
+    for item in raw:
+        monitor.record(
+            item.operation,
+            phase=item.phase,
+            split=item.split,
+            descriptor_sequence=item.descriptor_sequence,
+            descriptor_digest_value=item.descriptor_digest,
+            duration_ns=item.duration_ns,
+            evidence={"producer": "disk_graph_worker"},
+            row_count=item.row_count,
+            unique_storage_bytes=item.unique_storage_bytes,
+        )
+
+
+class _ExecutionEventLoader(DataLoader[NativeBatch]):
+    """Drain bounded worker evidence in parent delivery order."""
+
+    def __init__(
+        self,
+        owner: "DiskGraphDataModule | object",
+        dataset: "_DescriptorDataset",
+        **kwargs: object,
+    ) -> None:
+        self.event_owner = owner
+        super().__init__(
+            dataset,
+            batch_size=None,
+            shuffle=False,
+            collate_fn=_identity,
+            **kwargs,
+        )
+
+    def __iter__(self):
+        for batch in super().__iter__():
+            _drain_worker_events(
+                batch,
+                getattr(self.event_owner, "execution_monitor", None),
+            )
+            yield batch
+
+
+
 class _TrainSequenceLoader(DataLoader[NativeBatch]):
     """Observe parent-side preparation/delivery as ordered batches arrive."""
 
@@ -1601,6 +1691,7 @@ class _TrainSequenceLoader(DataLoader[NativeBatch]):
     def __iter__(self):
         self.sequence_owner._require_commit_callback()
         for batch in super().__iter__():
+            _drain_worker_events(batch, self.sequence_owner.execution_monitor)
             sequence_id = _integer(
                 getattr(batch, "sequence_id", None),
                 "batch.sequence_id",
@@ -1612,6 +1703,22 @@ class _TrainSequenceLoader(DataLoader[NativeBatch]):
             self.sequence_owner.prepare_sequence(sequence_id, descriptor)
             if not self.defer_delivery:
                 self.sequence_owner.deliver_sequence(sequence_id)
+            monitor = self.sequence_owner.execution_monitor
+            if monitor is not None and self.sequence_owner.prefetch_limits is None:
+                prehashed = getattr(
+                    batch,
+                    "execution_descriptor_digest",
+                    None,
+                )
+                if prehashed is None:
+                    prehashed = descriptor_digest(descriptor)
+                    batch.execution_descriptor_digest = prehashed
+                monitor.mark_batch_ready(
+                    phase="fit",
+                    split="train",
+                    descriptor_sequence=sequence_id,
+                    descriptor_digest_value=prehashed,
+                )
             yield batch
 
 
@@ -1622,11 +1729,20 @@ class _DescriptorDataset(Dataset[NativeBatch]):
         strategy: GraphSamplingStrategy,
         descriptors: tuple[SamplingDescriptor, ...],
         fitted_transform: FittableTransform | None,
+        phase: Phase,
+        execution_monitor: InputMonitor | None,
+        capture_worker_events: bool = False,
     ) -> None:
         self.source = source
         self.strategy = strategy
         self.descriptor_values = descriptors
         self.fitted_transform = fitted_transform
+        self.phase = phase
+        self.execution_monitor = execution_monitor
+        self.capture_worker_events = _boolean(
+            capture_worker_events,
+            "capture_worker_events",
+        )
 
     def __len__(self) -> int:
         return len(self.descriptor_values)
@@ -1643,12 +1759,154 @@ class _DescriptorDataset(Dataset[NativeBatch]):
             else self.source
         )
         descriptor = self.descriptor_values[descriptor_index]
-        batch = self.strategy.materialize(source, descriptor)
-        batch = _apply_fitted_transform(batch, self.fitted_transform)
+        record_count = _descriptor_record_count(descriptor)
+        monitor = self.execution_monitor
+        lifecycle_phase = (
+            "fit" if self.phase in {"train", "val"} else "test"
+        )
+        worker_digest = (
+            descriptor_digest(descriptor)
+            if self.capture_worker_events
+            else None
+        )
+        worker_events: list[_WorkerEventEnvelope] = []
+        read_started_ns = (
+            time.monotonic_ns() if self.capture_worker_events else None
+        )
+        read_token = (
+            None
+            if monitor is None
+            else monitor.begin(
+                ExecutionOperation.SELECTED_READ,
+                phase=lifecycle_phase,
+                split=self.phase,
+                descriptor_sequence=sequence_id,
+                descriptor_identity=descriptor,
+            )
+        )
+        try:
+            batch = self.strategy.materialize(source, descriptor)
+        except BaseException:
+            if read_token is not None:
+                try:
+                    monitor.finish(
+                        read_token,
+                        status=ExecutionStatus.ERROR,
+                        evidence={"failure_stage": "materialize"},
+                    )
+                except Exception:
+                    pass
+            raise
+        if worker_digest is not None and read_started_ns is not None:
+            batch.execution_descriptor_digest = worker_digest
+            worker_duration_ns = max(
+                0,
+                time.monotonic_ns() - read_started_ns,
+            )
+            worker_events.extend(
+                (
+                    _WorkerEventEnvelope(
+                        operation=ExecutionOperation.SELECTED_READ.value,
+                        phase=lifecycle_phase,
+                        split=self.phase,
+                        descriptor_sequence=sequence_id,
+                        descriptor_digest=worker_digest,
+                        duration_ns=worker_duration_ns,
+                        row_count=record_count,
+                        unique_storage_bytes=None,
+                    ),
+                    _WorkerEventEnvelope(
+                        operation=ExecutionOperation.NATIVE_ASSEMBLY.value,
+                        phase=lifecycle_phase,
+                        split=self.phase,
+                        descriptor_sequence=sequence_id,
+                        descriptor_digest=worker_digest,
+                        duration_ns=worker_duration_ns,
+                        row_count=record_count,
+                        unique_storage_bytes=None,
+                    ),
+                )
+            )
+        if read_token is not None:
+            batch.execution_descriptor_digest = read_token.descriptor_digest
+            read_event = monitor.finish(
+                read_token,
+                row_count=record_count,
+            )
+            monitor.record(
+                ExecutionOperation.NATIVE_ASSEMBLY,
+                phase=lifecycle_phase,
+                split=self.phase,
+                descriptor_sequence=sequence_id,
+                descriptor_digest_value=read_token.descriptor_digest,
+                duration_ns=(
+                    0 if read_event is None else read_event.duration_ns
+                ),
+                row_count=record_count,
+            )
+        transform_token = (
+            None
+            if monitor is None or self.fitted_transform is None
+            else monitor.begin(
+                ExecutionOperation.FITTED_TRANSFORM,
+                phase="transform_apply",
+                split=self.phase,
+                descriptor_sequence=sequence_id,
+                descriptor_digest_value=getattr(
+                    batch,
+                    "execution_descriptor_digest",
+                    None,
+                ),
+            )
+        )
+        transform_started_ns = (
+            time.monotonic_ns()
+            if self.capture_worker_events and self.fitted_transform is not None
+            else None
+        )
+        try:
+            batch = _apply_fitted_transform(batch, self.fitted_transform)
+        except BaseException:
+            if transform_token is not None:
+                try:
+                    monitor.finish(
+                        transform_token,
+                        status=ExecutionStatus.ERROR,
+                        evidence={"failure_stage": "transform_apply"},
+                    )
+                except Exception:
+                    pass
+            raise
+        if transform_token is not None:
+            monitor.finish(transform_token)
+        if (
+            worker_digest is not None
+            and transform_started_ns is not None
+        ):
+            batch.execution_descriptor_digest = worker_digest
+            worker_events.append(
+                _WorkerEventEnvelope(
+                    operation=ExecutionOperation.FITTED_TRANSFORM.value,
+                    phase="transform_apply",
+                    split=self.phase,
+                    descriptor_sequence=sequence_id,
+                    descriptor_digest=worker_digest,
+                    duration_ns=max(
+                        0,
+                        time.monotonic_ns() - transform_started_ns,
+                    ),
+                    row_count=record_count,
+                    unique_storage_bytes=None,
+                )
+            )
         if sequence_id is not None:
             batch.sequence_id = sequence_id
             if isinstance(self.source, _LazyStore):
                 batch.sampling_descriptor = descriptor
+        if worker_events:
+            if len(worker_events) > _MAX_WORKER_EVENTS_PER_ITEM:
+                raise RuntimeError("worker execution event envelope bound exceeded")
+            batch[_WORKER_EVENT_ATTRIBUTE] = tuple(worker_events)
         return batch
 
 
@@ -1673,8 +1931,15 @@ class DiskGraphDataModule(LightningDataModule):
         supervised_fit: bool = False,
         prefetch_limits: PrefetchLimits | None = None,
         prefetch_device: object = "cpu",
+        execution_monitor: InputMonitor | None = None,
     ) -> None:
         super().__init__()
+        if execution_monitor is not None and not isinstance(
+            execution_monitor,
+            InputMonitor,
+        ):
+            raise TypeError("execution_monitor must be InputMonitor or None")
+        self.execution_monitor = execution_monitor
         if not isinstance(strategy, GraphSamplingStrategy):
             raise TypeError("strategy must implement GraphSamplingStrategy")
         if fitted_transform is not None and not isinstance(
@@ -1791,6 +2056,32 @@ class DiskGraphDataModule(LightningDataModule):
     @property
     def closed(self) -> bool:
         return self._closed
+    def set_execution_monitor(
+        self,
+        execution_monitor: InputMonitor | None,
+    ) -> None:
+        """Attach or detach the callback-owned optional monitor."""
+        if execution_monitor is not None and not isinstance(
+            execution_monitor,
+            InputMonitor,
+        ):
+            raise TypeError("execution_monitor must be InputMonitor or None")
+        self.execution_monitor = execution_monitor
+        for loader in self._loaders.values():
+            if isinstance(loader, DevicePrefetchLoader):
+                loader.execution_monitor = execution_monitor
+                base = loader.source
+            else:
+                base = loader
+            dataset = getattr(base, "dataset", None)
+            if isinstance(dataset, _DescriptorDataset):
+                dataset.execution_monitor = (
+                    execution_monitor if self.num_workers == 0 else None
+                )
+                dataset.capture_worker_events = (
+                    execution_monitor is not None and self.num_workers > 0
+                )
+
 
     def _materialized_reference(self) -> SamplingSource:
         if self._closed:
@@ -1847,17 +2138,47 @@ class DiskGraphDataModule(LightningDataModule):
             raise ValueError(
                 "fitted transform byte bound cannot hold one canonical input row"
             )
-        transform.begin_fit(view.context)
-        for start in range(0, len(view.train_ids), chunk_rows):
-            rows = view.train_ids[start : start + chunk_rows]
-            features = _fit_view_features(view, rows)
-            labels = (
-                _fit_view_labels(view, rows)
-                if transform.spec.accesses_labels
-                else None
+        monitor = self.execution_monitor
+        token = (
+            None
+            if monitor is None
+            else monitor.begin(
+                ExecutionOperation.FITTED_TRANSFORM,
+                phase="transform_fit",
+                split="train",
+                descriptor_identity=(
+                    view.context.content_sha256,
+                    view.context.active_split_tag,
+                    type(transform).__qualname__,
+                ),
             )
-            transform.update_fit(features, labels)
-        transform.finalize_fit(self.fitted_state_root)
+        )
+        try:
+            transform.begin_fit(view.context)
+            for start in range(0, len(view.train_ids), chunk_rows):
+                rows = view.train_ids[start : start + chunk_rows]
+                features = _fit_view_features(view, rows)
+                labels = (
+                    _fit_view_labels(view, rows)
+                    if transform.spec.accesses_labels
+                    else None
+                )
+                transform.update_fit(features, labels)
+            transform.finalize_fit(self.fitted_state_root)
+        except BaseException:
+            if token is not None:
+                try:
+                    monitor.finish(
+                        token,
+                        status=ExecutionStatus.ERROR,
+                        row_count=len(view.train_ids),
+                        evidence={"failure_stage": "transform_fit"},
+                    )
+                except Exception:
+                    pass
+            raise
+        if token is not None:
+            monitor.finish(token, row_count=len(view.train_ids))
 
     def _ensure_fitted(self, *, allow_fit: bool) -> None:
         transform = self.fitted_transform
@@ -1908,6 +2229,21 @@ class DiskGraphDataModule(LightningDataModule):
         """Create one phase without evaluating unrelated split masks."""
         if phase in self._descriptors:
             return
+        monitor = self.execution_monitor
+        token = (
+            None
+            if monitor is None
+            else monitor.begin(
+                ExecutionOperation.PARTITION,
+                phase="descriptor_setup",
+                split=phase,
+                descriptor_identity=(
+                    self._partition_book_identity,
+                    self.active_split_tag,
+                    type(self.strategy).__qualname__,
+                ),
+            )
+        )
         try:
             if self._owner is None:
                 source = self._materialized_reference()
@@ -1929,7 +2265,29 @@ class DiskGraphDataModule(LightningDataModule):
             if phase == "train":
                 self._ensure_sequence_state()
         except ValueError as error:
+            if token is not None:
+                try:
+                    monitor.finish(
+                        token,
+                        status=ExecutionStatus.ERROR,
+                        evidence={"failure_stage": "descriptor_setup"},
+                    )
+                except Exception:
+                    pass
             raise ValueError(f"{phase} phase setup failed: {error}") from error
+        except BaseException:
+            if token is not None:
+                try:
+                    monitor.finish(
+                        token,
+                        status=ExecutionStatus.ERROR,
+                        evidence={"failure_stage": "descriptor_setup"},
+                    )
+                except Exception:
+                    pass
+            raise
+        if token is not None:
+            monitor.finish(token, row_count=len(descriptors))
 
     def _ensure_sequence_state(self) -> SequenceState:
         if self._sequence_state is None:
@@ -2086,6 +2444,9 @@ class DiskGraphDataModule(LightningDataModule):
                 self.strategy,
                 self.descriptors(phase),
                 self.fitted_transform,
+                phase,
+                self.execution_monitor if self.num_workers == 0 else None,
+                self.num_workers > 0 and self.execution_monitor is not None,
             )
             options = loader_worker_options(
                 num_workers=self.num_workers,
@@ -2100,11 +2461,9 @@ class DiskGraphDataModule(LightningDataModule):
                     **options,
                 )
                 if phase == "train"
-                else DataLoader(
+                else _ExecutionEventLoader(
+                    self,
                     dataset,
-                    batch_size=None,
-                    shuffle=False,
-                    collate_fn=_identity,
                     **options,
                 )
             )
@@ -2127,6 +2486,11 @@ class DiskGraphDataModule(LightningDataModule):
                         if phase == "train"
                         else None
                     ),
+                    execution_monitor=self.execution_monitor,
+                    monitor_phase=(
+                        "fit" if phase in {"train", "val"} else "test"
+                    ),
+                    monitor_split=phase,
                 )
         return self._loaders[phase]
 
