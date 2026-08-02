@@ -7,7 +7,7 @@ from omegaconf import DictConfig
 from topobench.data.hypergraph import (
     HypergraphData,
     validate_hypergraph_node_data,
-    validate_hypergraph_structure,
+    validate_hypergraph_source,
 )
 from topobench.data.splits import validate_transductive_masks
 from topobench.data.utils.split_utils import load_transductive_splits
@@ -42,7 +42,18 @@ class HypergraphNodeDataPipeline(AbstractDataPipeline):
                 "learning_setting"
             )
 
-        validate_hypergraph_structure(source_data)
+        parameters = cfg.dataset.get("parameters", {})
+        num_classes = parameters.get("num_classes")
+        loader = cfg.dataset.get("loader", {})
+        selector = loader.get("parameters", {}).get(
+            "data_name",
+            cfg.dataset.get("selector", "<hypergraph>"),
+        )
+        validate_hypergraph_source(
+            source_data,
+            selector=selector,
+            num_classes=num_classes,
+        )
         runtime_data = source_data.clone()
 
         if split_params.get("split_type") == "fixed":
@@ -53,7 +64,11 @@ class HypergraphNodeDataPipeline(AbstractDataPipeline):
             split_params,
         )
         data = train[0]
-        validate_hypergraph_node_data(data)
+        validate_hypergraph_node_data(
+            data,
+            selector=selector,
+            num_classes=num_classes,
+        )
 
         datamodule = GraphDataModule(
             dataset_train=train,

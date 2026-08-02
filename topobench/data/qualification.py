@@ -47,6 +47,8 @@ class DatasetQualification:
     edge_policy: EdgePolicy
     compatible_model: str
     evidence_test: str
+    num_classes: int | None = None
+    target_node_type: str | None = None
 
 
 def _qualification(
@@ -60,6 +62,8 @@ def _qualification(
     feature_policy: FeaturePolicy,
     edge_policy: EdgePolicy,
     compatible_model: str,
+    num_classes: int | None = None,
+    target_node_type: str | None = None,
 ) -> DatasetQualification:
     """Attach the shared parameterized evidence node to one explicit row."""
     return DatasetQualification(
@@ -73,6 +77,8 @@ def _qualification(
         edge_policy=edge_policy,
         compatible_model=compatible_model,
         evidence_test=_EVIDENCE_TEST,
+        num_classes=num_classes,
+        target_node_type=target_node_type,
     )
 
 
@@ -416,6 +422,8 @@ _ROWS = (
         feature_policy="continuous_with_constant_fill",
         edge_policy="native_typed_relations",
         compatible_model="heterogeneous/hgt",
+        num_classes=4,
+        target_node_type="author",
     ),
     _qualification(
         "heterogeneous/OGB_MAG",
@@ -427,6 +435,8 @@ _ROWS = (
         feature_policy="continuous_per_node_type",
         edge_policy="typed_relations_with_reverse",
         compatible_model="heterogeneous/hgt",
+        num_classes=349,
+        target_node_type="paper",
     ),
     _qualification(
         "heterogeneous/SyntheticHeterogeneous",
@@ -440,6 +450,8 @@ _ROWS = (
         feature_policy="continuous_with_constant_fill",
         edge_policy="typed_relations_with_reverse",
         compatible_model="heterogeneous/hgt",
+        num_classes=2,
+        target_node_type="author",
     ),
     _qualification(
         "hypergraph/20newsgroup",

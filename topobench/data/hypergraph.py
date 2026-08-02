@@ -8,6 +8,7 @@ from typing import Any, ClassVar, Final
 import torch
 from torch import Tensor
 from torch_geometric.data import Data
+from topobench.data.capabilities import validate_classification_vocabulary
 
 HYPERGRAPH_REPRESENTATION_VERSION: Final = 2
 HYPERGRAPH_CACHE_FILENAME: Final = "hypergraph_data_v2.pt"
@@ -70,15 +71,34 @@ def _validate_representation_version(data: HypergraphData) -> int:
     return value
 
 
-def _validate_features(data: HypergraphData) -> tuple[Tensor, int]:
+def _validate_features(
+    data: HypergraphData,
+    *,
+    selector: str,
+) -> tuple[Tensor, int]:
     """Validate the native node feature matrix."""
     x = _require_tensor(data, "x")
+    context = f"{selector}: node field x"
     if x.ndim != 2:
-        raise ValueError(f"x must be rank-2; received shape {tuple(x.shape)}")
+        raise ValueError(
+            f"{context} observed shape={tuple(x.shape)}, dtype={x.dtype}; "
+            "expected rank-2"
+        )
     if not x.is_floating_point():
-        raise TypeError(f"x must use a floating dtype; received {x.dtype}")
+        raise TypeError(
+            f"{context} observed shape={tuple(x.shape)}, dtype={x.dtype}; "
+            "expected floating dtype"
+        )
+    if x.size(1) == 0:
+        raise ValueError(
+            f"{context} observed shape={tuple(x.shape)}, dtype={x.dtype}; "
+            "expected positive feature width"
+        )
     if not bool(torch.isfinite(x).all()):
-        raise ValueError("x must contain only finite values")
+        raise ValueError(
+            f"{context} observed shape={tuple(x.shape)}, dtype={x.dtype}; "
+            "expected finite values"
+        )
 
     num_nodes = int(x.size(0))
     if "num_nodes" in data:
@@ -154,7 +174,11 @@ def _validate_incidence(
     return hyperedge_index
 
 
-def validate_hypergraph_structure(data: HypergraphData) -> HypergraphData:
+def validate_hypergraph_structure(
+    data: HypergraphData,
+    *,
+    selector: str = "<hypergraph>",
+) -> HypergraphData:
     """Validate native hypergraph structure without labels or split masks.
 
     This representation-only boundary is intended for raw loaders and pipeline
@@ -164,7 +188,7 @@ def validate_hypergraph_structure(data: HypergraphData) -> HypergraphData:
     if not isinstance(data, HypergraphData):
         raise TypeError("Expected native topobench.data.HypergraphData")
     _validate_representation_version(data)
-    _, num_nodes = _validate_features(data)
+    _, num_nodes = _validate_features(data, selector=selector)
     num_hyperedges = _validate_num_hyperedges(data)
     _validate_incidence(
         data,
@@ -174,19 +198,30 @@ def validate_hypergraph_structure(data: HypergraphData) -> HypergraphData:
     return data
 
 
-def _validate_labels(data: HypergraphData, *, num_nodes: int) -> Tensor:
+def _validate_labels(
+    data: HypergraphData,
+    *,
+    num_nodes: int,
+    selector: str,
+) -> Tensor:
     """Validate and return one label per native node."""
     labels = _require_tensor(data, "y")
+    context = f"{selector}: node field y"
     if labels.dtype != torch.long:
-        raise TypeError(f"y must use torch.long; received {labels.dtype}")
+        raise TypeError(
+            f"{context} observed shape={tuple(labels.shape)}, "
+            f"dtype={labels.dtype}; expected dtype=torch.long"
+        )
     if labels.ndim != 1:
         raise ValueError(
-            f"y must be rank-1; received shape {tuple(labels.shape)}"
+            f"{context} observed shape={tuple(labels.shape)}, "
+            f"dtype={labels.dtype}; expected rank-1"
         )
     if labels.size(0) != num_nodes:
         raise ValueError(
-            f"y must contain one label per num_nodes={num_nodes}; "
-            f"received {labels.size(0)}"
+            f"{context} observed shape={tuple(labels.shape)}, "
+            f"dtype={labels.dtype}; expected one label per "
+            f"num_nodes={num_nodes}"
         )
     return labels
 
@@ -234,17 +269,42 @@ def _validate_masks(
     return masks[0], masks[1], masks[2]
 
 
-def validate_hypergraph_node_data(data: HypergraphData) -> HypergraphData:
-    """Validate a complete native hypergraph node-classification example.
-
-    All checks are observational. The identical input object is returned only
-    after its representation, labels, and masks satisfy the complete contract.
-    No malformed input is normalized or partially updated.
-    """
-    validate_hypergraph_structure(data)
+def validate_hypergraph_source(
+    data: HypergraphData,
+    *,
+    selector: str = "<hypergraph>",
+    num_classes: object,
+) -> HypergraphData:
+    """Validate the complete feature and target source before phase splitting."""
+    validate_hypergraph_structure(data, selector=selector)
     num_nodes = int(data.x.size(0))
-    _validate_labels(data, num_nodes=num_nodes)
-    _validate_masks(data, num_nodes=num_nodes)
+    labels = _validate_labels(
+        data,
+        num_nodes=num_nodes,
+        selector=selector,
+    )
+    validate_classification_vocabulary(
+        [("node", labels, num_nodes)],
+        selector=selector,
+        field="y",
+        configured_num_classes=num_classes,
+    )
+    return data
+
+
+def validate_hypergraph_node_data(
+    data: HypergraphData,
+    *,
+    num_classes: object,
+    selector: str = "<hypergraph>",
+) -> HypergraphData:
+    """Validate a complete native hypergraph node-classification example."""
+    validate_hypergraph_source(
+        data,
+        selector=selector,
+        num_classes=num_classes,
+    )
+    _validate_masks(data, num_nodes=int(data.x.size(0)))
     return data
 
 
@@ -254,4 +314,5 @@ __all__ = [
     "HypergraphData",
     "validate_hypergraph_node_data",
     "validate_hypergraph_structure",
+    "validate_hypergraph_source",
 ]

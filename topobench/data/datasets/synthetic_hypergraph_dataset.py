@@ -78,7 +78,11 @@ def make_synthetic_hypergraph_data(
         val_mask=split_ids == 1,
         test_mask=split_ids == 2,
     )
-    return validate_hypergraph_node_data(data)
+    return validate_hypergraph_node_data(
+        data,
+        num_classes=2,
+        selector="SyntheticHypergraph",
+    )
 
 
 class SyntheticHypergraphDataset(InMemoryDataset):

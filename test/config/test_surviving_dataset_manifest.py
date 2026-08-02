@@ -13,6 +13,7 @@ from topobench.data.capabilities import (
     GraphDatasetCapability,
     qualify_graph_dataset,
 )
+from topobench.data.qualification import DATASET_QUALIFICATION_MANIFEST
 from topobench.nn.capabilities import compatible_graph_models
 
 GRAPH_CONFIG_DIR = Path("configs/dataset/graph")
@@ -65,6 +66,14 @@ EDGE_ATTR_SELECTORS = frozenset(
 )
 
 
+def _load_dataset_config(selector: str) -> DictConfig:
+    raw = OmegaConf.load(GRAPH_CONFIG_DIR / f"{selector}.yaml")
+    root = OmegaConf.create(
+        {"dataset": OmegaConf.to_container(raw, resolve=False)}
+    )
+    return root.dataset
+
+
 def _at_path(config: DictConfig, path: str) -> object:
     value: object = config
     for component in path.split("."):
@@ -82,11 +91,30 @@ def test_manifest_selectors_exactly_equal_surviving_yaml_files() -> None:
 
 
 @pytest.mark.parametrize(
+    ("selector", "num_classes", "target_node_type"),
+    [
+        ("heterogeneous/DBLP", 4, "author"),
+        ("heterogeneous/OGB_MAG", 349, "paper"),
+        ("heterogeneous/SyntheticHeterogeneous", 2, "author"),
+    ],
+)
+def test_heterogeneous_qualification_anchors_supervision_contract(
+    selector: str,
+    num_classes: int,
+    target_node_type: str,
+) -> None:
+    qualification = DATASET_QUALIFICATION_MANIFEST[selector]
+
+    assert qualification.num_classes == num_classes
+    assert qualification.target_node_type == target_node_type
+
+
+@pytest.mark.parametrize(
     "selector",
     sorted(EXPECTED_SELECTORS),
 )
 def test_manifest_entry_exactly_matches_qualified_yaml(selector: str) -> None:
-    config = OmegaConf.load(GRAPH_CONFIG_DIR / f"{selector}.yaml")
+    config = _load_dataset_config(selector)
     capability = GRAPH_DATASET_MANIFEST[selector]
 
     assert capability.selector == selector
@@ -94,6 +122,7 @@ def test_manifest_entry_exactly_matches_qualified_yaml(selector: str) -> None:
     assert capability.task_level == config.parameters.task_level
     assert capability.learning_setting == config.split_params.learning_setting
     assert capability.feature_policy == config.parameters.feature_policy
+    assert capability.num_classes == config.parameters.num_classes
     expected_edge_fields = (
         frozenset({"edge_attr"})
         if selector in EDGE_ATTR_SELECTORS
@@ -133,17 +162,81 @@ def test_manifest_and_entries_are_immutable() -> None:
         capability.task = "regression"  # type: ignore[misc]
 
 
+def test_graphuniverse_uses_resolved_configured_class_count() -> None:
+    config = _load_dataset_config("graphuniverse_transductive")
+    assert config.parameters.num_classes == 10
+    assert (
+        config.loader.parameters.generation_parameters.universe_parameters.K
+        == 10
+    )
+    config.parameters.num_classes = 11
+
+    with pytest.raises(ValueError) as error:
+        qualify_graph_dataset(config)
+
+    message = str(error.value)
+    assert "graphuniverse_transductive" in message
+    assert "dataset.parameters.num_classes=11" in message
+    assert "manifest expects 10" in message
+
+
 def test_unqualified_dataset_reports_the_failing_paths() -> None:
     config = OmegaConf.load(GRAPH_CONFIG_DIR / "SyntheticGraph.yaml")
     config.loader.parameters.data_name = "unknown"
 
     with pytest.raises(ValueError) as error:
         qualify_graph_dataset(config)
-
     message = str(error.value)
     assert "dataset.loader.parameters.data_name" in message
     assert "dataset.parameters.task" in message
     assert "dataset.split_params.learning_setting" in message
+
+
+
+@pytest.mark.parametrize(
+    "configured_num_classes",
+    [True, 1.0],
+    ids=["bool", "integral-float"],
+)
+def test_manifest_rejects_nonintegral_class_count_types(
+    configured_num_classes: object,
+) -> None:
+    config = _load_dataset_config("SyntheticGraphRegression")
+    config.parameters.num_classes = configured_num_classes
+
+    with pytest.raises(TypeError) as error:
+        qualify_graph_dataset(config)
+
+    message = str(error.value)
+    assert "SyntheticGraphRegression" in message
+    assert "dataset.parameters.num_classes" in message
+    assert type(configured_num_classes).__name__ in message
+    assert "integer" in message
+
+
+
+
+@pytest.mark.parametrize(
+    "configured_num_classes",
+    [1, 3],
+    ids=["missing-class", "extra-class"],
+)
+def test_manifest_rejects_configured_class_count_mismatch(
+    configured_num_classes: int,
+) -> None:
+    config = OmegaConf.load(GRAPH_CONFIG_DIR / "SyntheticGraph.yaml")
+    config.parameters.num_classes = configured_num_classes
+
+    with pytest.raises(ValueError) as error:
+        qualify_graph_dataset(config)
+
+    message = str(error.value)
+    assert "SyntheticGraph" in message
+    assert (
+        f"dataset.parameters.num_classes={configured_num_classes}"
+        in message
+    )
+    assert "manifest expects 2" in message
 
 
 def test_dataset_capability_constructor_cannot_hide_missing_evidence() -> None:

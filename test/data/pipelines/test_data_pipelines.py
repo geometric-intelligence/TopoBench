@@ -377,21 +377,35 @@ def _pipeline_cfg(
     task_level: str = "graph",
     transforms: dict[str, str] | None = None,
 ) -> DictConfig:
-    """Return the smallest configuration accepted by the default pipeline."""
+    """Return a qualified synthetic graph pipeline configuration."""
+    selector = (
+        "SyntheticNodeGraph" if task_level == "node" else "SyntheticGraph"
+    )
+    learning_setting = (
+        "transductive" if task_level == "node" else "inductive"
+    )
     return OmegaConf.create(
         {
             "dataset": {
                 "loader": {
-                    "_target_": "tests.Loader",
-                    "parameters": {"data_domain": "graph"},
+                    "_target_": (
+                        "topobench.data.loaders."
+                        "SyntheticGraphDatasetLoader"
+                    ),
+                    "parameters": {
+                        "data_domain": "graph",
+                        "data_name": selector,
+                    },
                 },
                 "parameters": {
+                    "task": "classification",
                     "task_level": task_level,
                     "feature_policy": "continuous",
-                    "num_features": 1,
+                    "num_features": 4,
+                    "num_classes": 2,
                 },
                 "split_params": {
-                    "learning_setting": "inductive",
+                    "learning_setting": learning_setting,
                     "data_seed": 17,
                 },
                 "dataloader_params": {
@@ -452,6 +466,20 @@ def _install_pipeline_spies(
 
     preprocessor = MagicMock()
     preprocessor.preprocessing_time = 1.25
+    if cfg.dataset.parameters.task_level == "node":
+        source_items = [
+            Data(
+                x=torch.ones(2, 4),
+                y=torch.tensor([0, 1]),
+            )
+        ]
+    else:
+        source_items = [
+            Data(x=torch.ones(2, 4), y=torch.tensor([0])),
+            Data(x=torch.ones(3, 4), y=torch.tensor([1])),
+        ]
+    preprocessor.__len__.return_value = len(source_items)
+    preprocessor.__getitem__.side_effect = source_items.__getitem__
 
     def load_splits(split_params: DictConfig) -> tuple[object, object, object]:
         events.append(("load_splits", split_params))
@@ -486,7 +514,8 @@ def _install_pipeline_spies(
         assert (dataset_train, dataset_val, dataset_test) == splits
         assert kwargs == {
             "feature_policy": "continuous",
-            "num_features": 1,
+            "base_num_features": 4,
+            "total_num_features": 4,
         }
         events.append("prepare_graph_features")
 
@@ -551,7 +580,7 @@ def test_default_pipeline_preserves_orchestration_and_output_contract(
                 "dataset_train": splits[0],
                 "dataset_val": splits[1],
                 "dataset_test": splits[2],
-                "learning_setting": "inductive",
+                "learning_setting": cfg.dataset.split_params.learning_setting,
                 "batch_size": 8,
                 "num_workers": 2,
             },
@@ -607,12 +636,7 @@ def test_default_pipeline_retains_invalid_task_level_error(
     event_names = [
         event if isinstance(event, str) else event[0] for event in events
     ]
-    assert event_names == [
-        "instantiate_loader",
-        "load",
-        "preprocessor",
-        "load_splits",
-    ]
+    assert event_names == []
 
 
 def test_default_pipeline_is_composed_for_surviving_graph_config() -> None:
@@ -922,10 +946,23 @@ def _heterogeneous_pipeline_cfg(
     return OmegaConf.create(
         {
             "dataset": {
+                "loader": {
+                    "_target_": (
+                        "topobench.data.loaders."
+                        "SyntheticHeterogeneousDatasetLoader"
+                    ),
+                    "parameters": {
+                        "data_domain": "heterogeneous",
+                        "data_name": "SyntheticHeterogeneous",
+                    },
+                },
                 "parameters": {
+                    "task": "classification",
+                    "task_level": "node",
                     "target_node_type": "author",
                     "num_classes": 2,
                 },
+                "split_params": {"learning_setting": "transductive"},
                 "dataloader_params": dataloader_params
                 or {
                     "mode": "neighbor",
@@ -1002,6 +1039,56 @@ def test_heterogeneous_pipeline_validates_and_passes_exact_dataloader_params(
     )
     preprocessor.load_dataset_splits.assert_not_called()
     assert not hasattr(module, "TBDataloader")
+
+
+@pytest.mark.parametrize(
+    "mismatch",
+    ["num_classes", "target_node_type"],
+)
+def test_heterogeneous_pipeline_rejects_manifest_supervision_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+    mismatch: str,
+) -> None:
+    import topobench.data.pipelines.heterogeneous as module
+
+    data = _fully_featured_heterogeneous_data()
+    cfg = _heterogeneous_pipeline_cfg()
+    if mismatch == "num_classes":
+        cfg.dataset.parameters.num_classes = 3
+        data["author"].y[0] = 2
+        expected = "num_classes"
+    else:
+        cfg.dataset.parameters.target_node_type = "paper"
+        paper = data["paper"]
+        paper.y = torch.arange(paper.num_nodes) % 2
+        paper.train_mask = torch.zeros(paper.num_nodes, dtype=torch.bool)
+        paper.val_mask = torch.zeros(paper.num_nodes, dtype=torch.bool)
+        paper.test_mask = torch.zeros(paper.num_nodes, dtype=torch.bool)
+        paper.train_mask[:8] = True
+        paper.val_mask[8:16] = True
+        paper.test_mask[16:] = True
+        expected = "target_node_type"
+
+    constructor = MagicMock()
+    monkeypatch.setattr(
+        HeterogeneousNodeDataPipeline,
+        "preprocess",
+        MagicMock(return_value=_FakePreprocessor([data])),
+    )
+    monkeypatch.setattr(
+        module,
+        "HeterogeneousNodeDataModule",
+        constructor,
+    )
+
+    with pytest.raises(ValueError) as error:
+        HeterogeneousNodeDataPipeline().build(cfg)
+
+    message = str(error.value)
+    assert "heterogeneous/SyntheticHeterogeneous" in message
+    assert expected in message
+    assert "manifest expects" in message
+    constructor.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -1204,6 +1291,7 @@ def _hypergraph_pipeline_cfg(
     return OmegaConf.create(
         {
             "dataset": {
+                "parameters": {"num_classes": 2},
                 "split_params": {
                     "learning_setting": learning_setting,
                     "split_type": split_type,
@@ -1345,6 +1433,32 @@ def test_hypergraph_pipeline_rejects_invalid_processed_output(
         HypergraphNodeDataPipeline().build(
             _hypergraph_pipeline_cfg(tmp_path)
         )
+
+    split_loader.assert_not_called()
+
+
+def test_hypergraph_pipeline_requires_configured_num_classes_before_split(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import topobench.data.pipelines.hypergraph as module
+
+    source = make_synthetic_hypergraph_data(seed=7)
+    split_loader = MagicMock()
+    cfg = _hypergraph_pipeline_cfg(tmp_path)
+    del cfg.dataset.parameters.num_classes
+    monkeypatch.setattr(
+        HypergraphNodeDataPipeline,
+        "preprocess",
+        MagicMock(return_value=_FakePreprocessor([source])),
+    )
+    monkeypatch.setattr(module, "load_transductive_splits", split_loader)
+
+    with pytest.raises(
+        TypeError,
+        match=r"<hypergraph>.*parameters.num_classes.*integer",
+    ):
+        HypergraphNodeDataPipeline().build(cfg)
 
     split_loader.assert_not_called()
 

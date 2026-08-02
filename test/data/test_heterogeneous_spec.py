@@ -495,16 +495,23 @@ def test_rejects_out_of_range_supervised_label(
         _validate(transformed_data)
 
 
-def test_allows_sentinel_labels_on_unsupervised_nodes(
+def test_rejects_negative_label_on_unsupervised_node(
     transformed_data: HeteroData,
 ) -> None:
-    """Official-dataset sentinel labels are valid outside all masks."""
+    """The qualified full source rejects sentinel class IDs everywhere."""
     target = transformed_data[TARGET]
     index = target.train_mask.nonzero()[0]
     target.train_mask[index] = False
     target.y[index] = -1
 
-    assert _validate(transformed_data).num_classes == NUM_CLASSES
+    with pytest.raises(ValueError) as error:
+        _validate(transformed_data)
+
+    message = str(error.value)
+    assert "<heterogeneous>" in message
+    assert TARGET in message
+    assert "y" in message
+    assert "range" in message
 
 
 def test_masks_may_be_nonexhaustive(
@@ -565,6 +572,71 @@ def test_rejects_invalid_node_features(
 
     with pytest.raises((TypeError, ValueError), match=rf"'paper'.*{message}"):
         _validate(transformed_data)
+
+
+def test_rejects_zero_node_heterogeneous_store_contextually(
+    transformed_data: HeteroData,
+) -> None:
+    transformed_data["orphan"].num_nodes = 0
+    transformed_data["orphan"].x = torch.empty((0, 1))
+
+    with pytest.raises(ValueError) as error:
+        _validate(transformed_data)
+
+    message = str(error.value)
+    assert "<heterogeneous>" in message
+    assert "orphan" in message
+    assert "field x" in message
+    assert "shape=(0, 1)" in message
+    assert "dtype=torch.float32" in message
+    assert "at least one node" in message
+
+
+@pytest.mark.parametrize("invalid", [float("nan"), float("inf")], ids=["nan", "inf"])
+def test_rejects_nonfinite_heterogeneous_features_contextually(
+    transformed_data: HeteroData,
+    invalid: float,
+) -> None:
+    transformed_data["paper"].x[0, 0] = invalid
+
+    with pytest.raises(ValueError) as error:
+        _validate(transformed_data)
+
+    message = str(error.value)
+    assert "<heterogeneous>" in message
+    assert "paper" in message
+    assert "x" in message
+    assert "finite" in message
+
+
+def test_rejects_runtime_vocabulary_missing_configured_class(
+    transformed_data: HeteroData,
+) -> None:
+    with pytest.raises(ValueError) as error:
+        _validate(transformed_data, num_classes=3)
+
+    message = str(error.value)
+    assert "<heterogeneous>" in message
+    assert TARGET in message
+    assert "y" in message
+    assert "missing" in message
+    assert "2" in message
+
+
+def test_full_heterogeneous_source_allows_one_phase_to_omit_class(
+    transformed_data: HeteroData,
+) -> None:
+    target = transformed_data[TARGET]
+    zero = (target.y == 0).nonzero()[0]
+    one = (target.y == 1).nonzero()[0]
+    target.train_mask.zero_()
+    target.val_mask.zero_()
+    target.test_mask.zero_()
+    target.train_mask[zero] = True
+    target.val_mask[one] = True
+    target.test_mask[(target.y == 0).nonzero()[1]] = True
+
+    assert _validate(transformed_data).num_classes == NUM_CLASSES
 
 
 @pytest.mark.parametrize(

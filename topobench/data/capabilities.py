@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from numbers import Integral
 from types import MappingProxyType
 from typing import Any, Literal
+
+import torch
+from torch import Tensor
+from topobench.data.qualification import (
+    DATASET_QUALIFICATION_MANIFEST,
+    DatasetQualification,
+)
 
 TaskKind = Literal["classification", "regression"]
 TaskLevel = Literal["graph", "node"]
@@ -42,8 +50,26 @@ class GraphDatasetCapability:
     qualification: tuple[tuple[str, QualificationValue], ...]
     feature_width: int = 1
     feature_transforms: frozenset[str] = frozenset()
+    num_classes: int = 2
+    allow_incomplete_class_vocabulary: bool = False
 
     def __post_init__(self) -> None:
+        if (
+            isinstance(self.num_classes, bool)
+            or not isinstance(self.num_classes, int)
+            or self.num_classes <= 0
+        ):
+            raise ValueError("num_classes must be a positive integer")
+        if self.task == "classification" and self.num_classes < 2:
+            raise ValueError(
+                "classification num_classes must be at least 2"
+            )
+        if self.task == "regression" and self.num_classes != 1:
+            raise ValueError("regression num_classes must equal 1")
+        if not isinstance(self.allow_incomplete_class_vocabulary, bool):
+            raise TypeError(
+                "allow_incomplete_class_vocabulary must be boolean"
+            )
         if isinstance(self.feature_width, bool) or self.feature_width <= 0:
             raise ValueError("feature_width must be a positive integer")
         if not all(
@@ -68,6 +94,156 @@ class GraphDatasetCapability:
             task_level=self.task_level,
             learning_setting=self.learning_setting,
         )
+
+
+def validate_classification_vocabulary(
+    labels: Iterable[tuple[str, object, int]],
+    *,
+    selector: str,
+    field: str,
+    configured_num_classes: object,
+    manifest_num_classes: int | None = None,
+    allow_incomplete: bool = False,
+) -> None:
+    """Validate exact class-label tensors and the complete source vocabulary."""
+    if isinstance(configured_num_classes, bool) or not isinstance(
+        configured_num_classes, Integral
+    ):
+        raise TypeError(
+            f"{selector}: full source field parameters.num_classes observed "
+            f"dtype={type(configured_num_classes).__name__}; expected an "
+            "integer class count"
+        )
+    num_classes = int(configured_num_classes)
+    if num_classes < 2:
+        raise ValueError(
+            f"{selector}: full source field parameters.num_classes observed "
+            f"range=[{num_classes}, {num_classes}]; expected at least 2"
+        )
+    if (
+        manifest_num_classes is not None
+        and num_classes != manifest_num_classes
+    ):
+        raise ValueError(
+            f"{selector}: full source field parameters.num_classes observed "
+            f"value={num_classes}; manifest expects "
+            f"{manifest_num_classes}"
+        )
+
+    first_item: str | None = None
+    seen: set[int] = set()
+    item_count = 0
+    for item, value, expected_size in labels:
+        item_count += 1
+        if first_item is None:
+            first_item = item
+        shape = tuple(value.shape) if isinstance(value, Tensor) else None
+        dtype = value.dtype if isinstance(value, Tensor) else type(value).__name__
+        context = (
+            f"{selector}: {item} field {field} observed "
+            f"shape={shape}, dtype={dtype}"
+        )
+        if not isinstance(value, Tensor):
+            raise TypeError(
+                f"{context}; expected rank-1 torch.long labels"
+            )
+        if value.dtype != torch.long:
+            raise TypeError(
+                f"{context}; expected dtype=torch.long"
+            )
+        if value.ndim != 1:
+            raise ValueError(
+                f"{context}; expected rank-1 labels"
+            )
+        if value.numel() != expected_size:
+            raise ValueError(
+                f"{context}; expected shape=({expected_size},)"
+            )
+        if value.numel() == 0:
+            raise ValueError(
+                f"{context}; expected at least one label in "
+                f"range=[0, {num_classes})"
+            )
+        observed_min = int(value.min().item())
+        observed_max = int(value.max().item())
+        if observed_min < 0 or observed_max >= num_classes:
+            raise ValueError(
+                f"{context}, range=[{observed_min}, {observed_max}]; "
+                f"expected range=[0, {num_classes})"
+            )
+        seen.update(int(class_id) for class_id in value.unique().tolist())
+
+    if item_count == 0:
+        raise ValueError(
+            f"{selector}: full source field {field} observed shape=(0,); "
+            "expected non-empty qualified labels"
+        )
+    missing = sorted(set(range(num_classes)) - seen)
+    if missing and not allow_incomplete:
+        raise ValueError(
+            f"{selector}: full source {first_item} field {field} runtime "
+            f"vocabulary={sorted(seen)} missing declared classes={missing}; "
+            f"expected complete range=[0, {num_classes})"
+        )
+
+
+def qualify_heterogeneous_dataset(
+    dataset: Mapping[str, Any],
+) -> DatasetQualification:
+    """Qualify heterogeneous supervision against the retained manifest."""
+    if not isinstance(dataset, Mapping):
+        raise TypeError("dataset must be a mapping")
+    domain = _value_at_path(dataset, "loader.parameters.data_domain")
+    if domain != "heterogeneous":
+        raise ValueError(
+            "dataset.loader.parameters.data_domain must be "
+            f"'heterogeneous', got {domain!r}"
+        )
+    data_name = _value_at_path(dataset, "loader.parameters.data_name")
+    selector = f"heterogeneous/{data_name}"
+    qualification = DATASET_QUALIFICATION_MANIFEST.get(selector)
+    if qualification is None:
+        raise ValueError(
+            f"{selector}: no retained heterogeneous qualification"
+        )
+    loader_family = _value_at_path(dataset, "loader._target_")
+    if loader_family != qualification.loader_family:
+        raise ValueError(
+            f"{selector}: dataset.loader._target_={loader_family!r}; "
+            f"manifest expects {qualification.loader_family!r}"
+        )
+
+    configured_classes = _value_at_path(
+        dataset,
+        "parameters.num_classes",
+    )
+    if (
+        isinstance(configured_classes, bool)
+        or not isinstance(configured_classes, Integral)
+    ):
+        raise TypeError(
+            f"{selector}: dataset.parameters.num_classes observed "
+            f"dtype={type(configured_classes).__name__}; manifest expects "
+            f"integer {qualification.num_classes}"
+        )
+    if configured_classes != qualification.num_classes:
+        raise ValueError(
+            f"{selector}: dataset.parameters.num_classes="
+            f"{configured_classes!r}; manifest expects "
+            f"{qualification.num_classes}"
+        )
+
+    target_node_type = _value_at_path(
+        dataset,
+        "parameters.target_node_type",
+    )
+    if target_node_type != qualification.target_node_type:
+        raise ValueError(
+            f"{selector}: dataset.parameters.target_node_type="
+            f"{target_node_type!r}; manifest expects "
+            f"{qualification.target_node_type!r}"
+        )
+    return qualification
 
 
 def _loader_target(selector: str) -> str:
@@ -132,11 +308,17 @@ def _capability(
     learning_setting: LearningSetting,
     feature_policy: FeaturePolicy,
     feature_width: int,
+    num_classes: int | None = None,
     feature_transforms: frozenset[str] = frozenset(),
     edge_fields: frozenset[EdgeField] = frozenset(),
     extra_evidence: tuple[tuple[str, QualificationValue], ...] = (),
 ) -> GraphDatasetCapability:
     """Construct one manifest row with common path-level evidence."""
+    class_count = (
+        num_classes
+        if num_classes is not None
+        else (2 if task == "classification" else 1)
+    )
     return GraphDatasetCapability(
         selector=selector,
         task=task,
@@ -146,12 +328,14 @@ def _capability(
         feature_width=feature_width,
         feature_transforms=feature_transforms,
         edge_fields=edge_fields,
+        num_classes=class_count,
         qualification=(
             ("loader._target_", _loader_target(selector)),
             ("loader.parameters.data_name", data_name),
             ("parameters.task", task),
             ("parameters.task_level", task_level),
             ("parameters.feature_policy", feature_policy),
+            ("parameters.num_classes", class_count),
             ("split_params.learning_setting", learning_setting),
             *extra_evidence,
         ),
@@ -234,6 +418,7 @@ _ROWS = (
         learning_setting="inductive",
         feature_policy="degree",
         feature_width=89,
+        num_classes=3,
         feature_transforms=_DEGREE_FEATURE_TRANSFORMS,
     ),
     _capability(
@@ -352,6 +537,7 @@ _ROWS = (
         learning_setting="transductive",
         feature_policy="continuous",
         feature_width=300,
+        num_classes=5,
     ),
     _capability(
         "cocitation_citeseer",
@@ -361,6 +547,7 @@ _ROWS = (
         learning_setting="transductive",
         feature_policy="continuous",
         feature_width=3703,
+        num_classes=6,
     ),
     _capability(
         "cocitation_cora",
@@ -370,6 +557,7 @@ _ROWS = (
         learning_setting="transductive",
         feature_policy="continuous",
         feature_width=1433,
+        num_classes=7,
     ),
     _capability(
         "cocitation_pubmed",
@@ -379,6 +567,7 @@ _ROWS = (
         learning_setting="transductive",
         feature_policy="continuous",
         feature_width=500,
+        num_classes=3,
     ),
     _capability(
         "graphuniverse_inductive_triangle",
@@ -403,6 +592,7 @@ _ROWS = (
         learning_setting="transductive",
         feature_policy="continuous",
         feature_width=15,
+        num_classes=10,
         extra_evidence=(
             (
                 "loader.parameters.generation_parameters.task",
@@ -446,6 +636,7 @@ _ROWS = (
         learning_setting="transductive",
         feature_policy="continuous",
         feature_width=300,
+        num_classes=18,
     ),
     _capability(
         "tolokers",
@@ -516,18 +707,55 @@ def qualify_graph_dataset(
         capability
         for capability in GRAPH_DATASET_MANIFEST.values()
         if all(
-            _value_at_path(dataset, path) == expected
+            path == "parameters.num_classes"
+            or _value_at_path(dataset, path) == expected
             for path, expected in capability.qualification
         )
     ]
     if len(matches) == 1:
-        return matches[0]
+        capability = matches[0]
+        configured_classes = _value_at_path(
+            dataset,
+            "parameters.num_classes",
+        )
+        if isinstance(configured_classes, bool) or not isinstance(
+            configured_classes,
+            Integral,
+        ):
+            raise TypeError(
+                f"{capability.selector}: full source field "
+                "dataset.parameters.num_classes observed "
+                f"dtype={type(configured_classes).__name__}; expected "
+                "an integer"
+            )
+        if configured_classes != capability.num_classes:
+            raise ValueError(
+                f"{capability.selector}: full source field "
+                "dataset.parameters.num_classes="
+                f"{configured_classes!r}; manifest expects "
+                f"{capability.num_classes}"
+            )
+        if capability.selector == "graphuniverse_transductive":
+            generated_classes = _value_at_path(
+                dataset,
+                "loader.parameters.generation_parameters."
+                "universe_parameters.K",
+            )
+            if generated_classes != configured_classes:
+                raise ValueError(
+                    f"{capability.selector}: dataset.parameters.num_classes="
+                    f"{configured_classes!r} disagrees with "
+                    "loader generation universe K="
+                    f"{generated_classes!r}"
+                )
+        return capability
 
     observed_paths = (
         "loader.parameters.data_name",
         "parameters.task",
         "parameters.task_level",
         "parameters.feature_policy",
+        "parameters.num_classes",
         "split_params.learning_setting",
     )
     observed = ", ".join(
@@ -556,4 +784,6 @@ __all__ = [
     "TaskKind",
     "TaskLevel",
     "qualify_graph_dataset",
+    "qualify_heterogeneous_dataset",
+    "validate_classification_vocabulary",
 ]

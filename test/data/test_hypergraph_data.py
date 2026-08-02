@@ -15,6 +15,7 @@ from topobench.data import (
     validate_hypergraph_node_data,
     validate_hypergraph_structure,
 )
+import topobench.data.datasets.synthetic_hypergraph_dataset as synthetic_module
 from topobench.data.datasets.synthetic_hypergraph_dataset import (
     make_synthetic_hypergraph_data,
 )
@@ -53,6 +54,41 @@ def _snapshot(data: HypergraphData) -> dict[str, object]:
     return {
         key: value.clone() if isinstance(value, torch.Tensor) else value
         for key, value in data.to_dict().items()
+    }
+
+
+def test_synthetic_factory_supplies_authoritative_class_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: dict[str, object] = {}
+    validator = synthetic_module.validate_hypergraph_node_data
+
+    def record_qualification(
+        data: HypergraphData,
+        *,
+        selector: str,
+        num_classes: object,
+    ) -> HypergraphData:
+        observed["selector"] = selector
+        observed["num_classes"] = num_classes
+        return validator(
+            data,
+            selector=selector,
+            num_classes=num_classes,
+        )
+
+    monkeypatch.setattr(
+        synthetic_module,
+        "validate_hypergraph_node_data",
+        record_qualification,
+    )
+
+    data = synthetic_module.make_synthetic_hypergraph_data(seed=7)
+
+    assert isinstance(data, HypergraphData)
+    assert observed == {
+        "selector": "SyntheticHypergraph",
+        "num_classes": 2,
     }
 
 
@@ -108,7 +144,7 @@ def test_validation_is_transactional_and_returns_identical_object() -> None:
     data = _valid_data()
     before = _snapshot(data)
 
-    validated = validate_hypergraph_node_data(data)
+    validated = validate_hypergraph_node_data(data, num_classes=2)
 
     assert validated is data
     _assert_data_unchanged(data, before)
@@ -191,7 +227,7 @@ def test_node_data_validation_requires_long_labels(
     data.y = labels(data.y)
 
     with pytest.raises(TypeError, match="y.*torch.long"):
-        validate_hypergraph_node_data(data)
+        validate_hypergraph_node_data(data, num_classes=2)
 
 
 def test_invalid_incidence_is_not_renumbered_or_otherwise_mutated() -> None:
@@ -201,9 +237,30 @@ def test_invalid_incidence_is_not_renumbered_or_otherwise_mutated() -> None:
     before = _snapshot(data)
 
     with pytest.raises(ValueError, match="contiguous|empty"):
-        validate_hypergraph_node_data(data)
+        validate_hypergraph_node_data(data, num_classes=2)
 
     _assert_data_unchanged(data, before)
+
+
+def test_hypergraph_rejects_zero_feature_width_before_splitting() -> None:
+    data = _valid_data()
+    data.x = torch.empty((data.num_nodes, 0))
+
+    with pytest.raises(ValueError) as error:
+        validate_hypergraph_node_data(
+            data,
+            num_classes=2,
+            selector="SyntheticHypergraph",
+        )
+
+    message = str(error.value)
+    assert "SyntheticHypergraph" in message
+    assert "node field x" in message
+    assert f"shape=({data.num_nodes}, 0)" in message
+    assert "dtype=torch.float32" in message
+    assert "positive feature width" in message
+
+
 
 
 @pytest.mark.parametrize(
@@ -221,6 +278,11 @@ def test_invalid_incidence_is_not_renumbered_or_otherwise_mutated() -> None:
         ),
         (
             lambda data: data.x.__setitem__((0, 0), float("nan")),
+            ValueError,
+            "x.*finite",
+        ),
+        (
+            lambda data: data.x.__setitem__((0, 0), float("inf")),
             ValueError,
             "x.*finite",
         ),
@@ -327,9 +389,74 @@ def test_validation_rejects_malformed_native_fields_without_mutation(
     before = _snapshot(data)
 
     with pytest.raises(error_type, match=message):
-        validate_hypergraph_node_data(data)
+        validate_hypergraph_node_data(data, num_classes=2)
 
     _assert_data_unchanged(data, before)
+
+
+@pytest.mark.parametrize(
+    ("labels", "expected"),
+    [
+        (lambda data: data.y.float(), "dtype"),
+        (lambda data: data.y.unsqueeze(1), "rank-1"),
+        (lambda data: data.y.masked_fill(data.y == 0, -1), "range"),
+        (lambda data: data.y.masked_fill(data.y == 1, 2), "range"),
+    ],
+    ids=["dtype", "rank", "negative", "above-range"],
+)
+def test_hypergraph_rejects_malformed_labels_contextually(
+    labels: Callable[[HypergraphData], torch.Tensor],
+    expected: str,
+) -> None:
+    data = _valid_data()
+    data.y = labels(data)
+
+    with pytest.raises((TypeError, ValueError)) as error:
+        validate_hypergraph_node_data(
+            data,
+            selector="synthetic_hypergraph",
+            num_classes=2,
+        )
+
+    message = str(error.value)
+    assert "synthetic_hypergraph" in message
+    assert "node" in message
+    assert "y" in message
+    assert expected in message
+
+
+def test_hypergraph_rejects_missing_runtime_class() -> None:
+    data = _valid_data()
+    data.y.zero_()
+
+    with pytest.raises(ValueError, match=r"synthetic_hypergraph.*y.*missing.*1"):
+        validate_hypergraph_node_data(
+            data,
+            selector="synthetic_hypergraph",
+            num_classes=2,
+        )
+
+
+def test_full_hypergraph_source_allows_one_phase_to_omit_class() -> None:
+    data = _valid_data()
+    zero = (data.y == 0).nonzero(as_tuple=False).flatten()
+    one = (data.y == 1).nonzero(as_tuple=False).flatten()
+    data.train_mask.zero_()
+    data.val_mask.zero_()
+    data.test_mask.fill_(True)
+    data.train_mask[zero[0]] = True
+    data.test_mask[zero[0]] = False
+    data.val_mask[one] = True
+    data.test_mask[one] = False
+
+    assert (
+        validate_hypergraph_node_data(
+            data,
+            selector="synthetic_hypergraph",
+            num_classes=2,
+        )
+        is data
+    )
 
 
 def test_validation_rejects_overlapping_masks_without_mutation() -> None:
@@ -339,7 +466,7 @@ def test_validation_rejects_overlapping_masks_without_mutation() -> None:
     before = _snapshot(data)
 
     with pytest.raises(ValueError, match="train_mask.*val_mask.*overlap"):
-        validate_hypergraph_node_data(data)
+        validate_hypergraph_node_data(data, num_classes=2)
 
     _assert_data_unchanged(data, before)
 
@@ -353,7 +480,7 @@ def test_validation_rejects_masks_that_do_not_cover_every_labeled_node() -> (
     before = _snapshot(data)
 
     with pytest.raises(ValueError, match="cover.*labeled nodes"):
-        validate_hypergraph_node_data(data)
+        validate_hypergraph_node_data(data, num_classes=2)
 
     _assert_data_unchanged(data, before)
 
@@ -368,7 +495,7 @@ def test_validation_rejects_empty_supervised_splits(mask_name: str) -> None:
     with pytest.raises(
         ValueError, match=rf"{mask_name}.*at least one labeled node"
     ):
-        validate_hypergraph_node_data(data)
+        validate_hypergraph_node_data(data, num_classes=2)
 
     _assert_data_unchanged(data, before)
 

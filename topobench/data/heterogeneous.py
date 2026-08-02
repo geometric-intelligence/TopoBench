@@ -10,6 +10,7 @@ from typing import cast
 import torch
 from torch_geometric.data import HeteroData
 from torch_geometric.typing import EdgeType, Metadata
+from topobench.data.capabilities import validate_classification_vocabulary
 
 _MASK_NAMES = ("train_mask", "val_mask", "test_mask")
 
@@ -205,31 +206,46 @@ class HeterogeneousDataSpec:
 
 def _validate_node_features(
     data: HeteroData,
+    *,
+    selector: str,
 ) -> tuple[tuple[str, int], ...]:
     """Validate feature matrices and collect their ordered widths."""
     channels: list[tuple[str, int]] = []
     for node_type in data.node_types:
+        context = f"{selector}: node type {node_type!r} field x"
         store = data[node_type]
         if store.num_nodes is None:
-            raise ValueError(f"Node type {node_type!r} has no num_nodes")
+            raise ValueError(f"{context} has no num_nodes")
         if "x" not in store:
-            raise ValueError(
-                f"Node type {node_type!r} has no x after preprocessing"
-            )
+            raise ValueError(f"{context} has no x after preprocessing")
         if not isinstance(store.x, torch.Tensor):
             raise TypeError(
-                f"Node type {node_type!r} features must be a torch.Tensor"
+                f"{context} observed shape=None, "
+                f"dtype={type(store.x).__name__}; expected a torch.Tensor"
+            )
+        if store.num_nodes == 0 or (
+            store.x.ndim >= 1 and store.x.size(0) == 0
+        ):
+            raise ValueError(
+                f"{context} observed shape={tuple(store.x.shape)}, "
+                f"dtype={store.x.dtype}; expected at least one node"
             )
         if store.x.ndim != 2 or store.x.size(0) != store.num_nodes:
             raise ValueError(
-                f"Node type {node_type!r} has invalid x shape "
-                f"{tuple(store.x.shape)} for {store.num_nodes} nodes"
+                f"{context} has invalid x shape {tuple(store.x.shape)} "
+                f"for {store.num_nodes} nodes; expected rank-2 alignment"
             )
         if store.x.size(-1) < 1:
-            raise ValueError(f"Node type {node_type!r} has zero feature width")
+            raise ValueError(f"{context} has zero feature width")
         if not store.x.is_floating_point():
             raise TypeError(
-                f"Node type {node_type!r} features must be floating point"
+                f"{context} observed shape={tuple(store.x.shape)}, "
+                f"dtype={store.x.dtype}; expected floating point"
+            )
+        if not torch.isfinite(store.x).all():
+            raise ValueError(
+                f"{context} observed shape={tuple(store.x.shape)}, "
+                f"dtype={store.x.dtype}; expected finite values"
             )
         channels.append((node_type, int(store.x.size(-1))))
     return tuple(channels)
@@ -257,8 +273,10 @@ def _validate_target_labels(
     data: HeteroData,
     *,
     target_node_type: str,
+    selector: str,
 ) -> torch.Tensor:
     """Validate and return the target node label vector."""
+    context = f"{selector}: node type {target_node_type!r} field y"
     available = tuple(data.node_types)
     if target_node_type not in data.node_types:
         raise ValueError(
@@ -268,26 +286,28 @@ def _validate_target_labels(
 
     store = data[target_node_type]
     if "y" not in store:
-        raise ValueError(
-            f"Target node type {target_node_type!r} has no y labels"
-        )
+        raise ValueError(f"{context} has no y labels")
     labels = store.y
     if not isinstance(labels, torch.Tensor):
         raise TypeError(
-            f"Target node type {target_node_type!r} y must be a torch.Tensor"
+            f"{context} observed shape=None, "
+            f"dtype={type(labels).__name__}; expected a torch.Tensor"
         )
     if labels.dtype != torch.long:
         raise TypeError(
-            f"Target node type {target_node_type!r} y must use torch.long"
+            f"{context} observed shape={tuple(labels.shape)}, "
+            f"dtype={labels.dtype}; expected torch.long"
         )
     if labels.ndim != 1:
         raise ValueError(
-            f"Target node type {target_node_type!r} y must be one-dimensional"
+            f"{context} observed shape={tuple(labels.shape)}, "
+            f"dtype={labels.dtype}; expected one-dimensional labels"
         )
     if labels.size(0) != store.num_nodes:
         raise ValueError(
-            f"Target node type {target_node_type!r} y has "
-            f"{labels.size(0)} entries for {store.num_nodes} nodes"
+            f"{context} observed shape={tuple(labels.shape)}, "
+            f"dtype={labels.dtype}; expected one label for each of "
+            f"{store.num_nodes} nodes"
         )
     return labels
 
@@ -341,45 +361,35 @@ def _validate_target_masks(
     return tuple(masks)
 
 
-def _validate_supervised_labels(
-    labels: torch.Tensor,
-    masks: tuple[torch.Tensor, ...],
-    *,
-    target_node_type: str,
-    num_classes: int,
-) -> None:
-    """Validate class IDs only where one of the split masks supervises."""
-    supervised = masks[0] | masks[1] | masks[2]
-    supervised_labels = labels[supervised]
-    valid = (supervised_labels >= 0) & (supervised_labels < num_classes)
-    if not bool(valid.all()):
-        raise ValueError(
-            f"Target node type {target_node_type!r} has supervised labels "
-            f"outside [0, {num_classes})"
-        )
-
-
 def _validate_target_store(
     data: HeteroData,
     *,
     target_node_type: str,
     num_classes: int,
+    selector: str,
 ) -> None:
-    """Validate target labels, masks, and supervised class IDs."""
+    """Validate the full target vocabulary and phase masks."""
     labels = _validate_target_labels(
         data,
         target_node_type=target_node_type,
+        selector=selector,
     )
-    masks = _validate_target_masks(
+    validate_classification_vocabulary(
+        [
+            (
+                f"node type {target_node_type!r}",
+                labels,
+                int(data[target_node_type].num_nodes),
+            )
+        ],
+        selector=selector,
+        field="y",
+        configured_num_classes=num_classes,
+    )
+    _validate_target_masks(
         data,
         target_node_type=target_node_type,
         labels=labels,
-    )
-    _validate_supervised_labels(
-        labels,
-        masks,
-        target_node_type=target_node_type,
-        num_classes=num_classes,
     )
 
 
@@ -388,6 +398,7 @@ def validate_heterogeneous_node_data(
     *,
     target_node_type: str,
     num_classes: int,
+    selector: str = "<heterogeneous>",
 ) -> HeterogeneousDataSpec:
     """Validate native heterogeneous node-classification data.
 
@@ -433,11 +444,12 @@ def validate_heterogeneous_node_data(
     except ValueError as error:
         raise ValueError(f"Invalid heterogeneous graph: {error}") from error
 
-    input_channels = _validate_node_features(data)
+    input_channels = _validate_node_features(data, selector=selector)
     _validate_target_store(
         data,
         target_node_type=target_node_type,
         num_classes=num_classes,
+        selector=selector,
     )
     node_types, edge_types = data.metadata()
     return HeterogeneousDataSpec(

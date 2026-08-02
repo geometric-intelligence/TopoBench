@@ -5,6 +5,7 @@ from __future__ import annotations
 from omegaconf import DictConfig
 from torch_geometric.data import HeteroData
 
+from topobench.data.capabilities import qualify_heterogeneous_dataset
 from topobench.data.heterogeneous import validate_heterogeneous_node_data
 from topobench.dataloader.heterogeneous import HeterogeneousNodeDataModule
 
@@ -16,6 +17,7 @@ class HeterogeneousNodeDataPipeline(AbstractDataPipeline):
 
     def build(self, cfg: DictConfig) -> DataPipelineOutput:
         """Preprocess, validate, and batch exactly one heterogeneous graph."""
+        qualification = qualify_heterogeneous_dataset(cfg.dataset)
         preprocessor = self.preprocess(cfg)
         if len(preprocessor) != 1:
             raise ValueError(
@@ -28,10 +30,12 @@ class HeterogeneousNodeDataPipeline(AbstractDataPipeline):
                 "The heterogeneous pipeline requires native HeteroData; "
                 f"received {type(data).__name__}"
             )
+        selector = qualification.selector
         spec = validate_heterogeneous_node_data(
             data,
             target_node_type=cfg.dataset.parameters.target_node_type,
             num_classes=cfg.dataset.parameters.num_classes,
+            selector=selector,
         )
         datamodule = HeterogeneousNodeDataModule(
             data=data,

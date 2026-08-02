@@ -9,6 +9,10 @@ from typing import Literal
 import torch
 from torch import Tensor
 from torch_geometric.data import Data, HeteroData
+from topobench.data.capabilities import (
+    GraphDatasetCapability,
+    validate_classification_vocabulary,
+)
 
 GraphFeaturePolicy = Literal[
     "continuous",
@@ -125,6 +129,8 @@ def validate_graph_features(
     *,
     base_num_features: object,
     total_num_features: object,
+    selector: str = "<graph>",
+    item: str = "graph",
 ) -> Data:
     """Validate one post-transform homogeneous graph.
 
@@ -139,35 +145,56 @@ def validate_graph_features(
             f"unsupported graph feature policy: {feature_policy!r}"
         )
 
+    context = f"{selector}: {item} field x"
     x = data.get("x")
     if not isinstance(x, Tensor):
-        raise ValueError("data.x is required after graph transforms")
+        raise ValueError(
+            f"{context} observed shape=None, dtype=None; data.x is required "
+            "as a rank-2 floating tensor after graph transforms"
+        )
     if x.ndim != 2:
-        raise ValueError("data.x must be rank-2 after graph transforms")
+        raise ValueError(
+            f"{context} observed shape={tuple(x.shape)}, dtype={x.dtype}; "
+            "data.x must be rank-2 after graph transforms"
+        )
     if not x.is_floating_point():
         raise TypeError(
+            f"{context} observed shape={tuple(x.shape)}, dtype={x.dtype}; "
             "data.x must have a floating dtype after graph transforms"
+        )
+    if x.shape[0] == 0:
+        raise ValueError(
+            f"{context} observed shape={tuple(x.shape)}, dtype={x.dtype}; "
+            "expected at least one node"
+        )
+    if not torch.isfinite(x).all():
+        raise ValueError(
+            f"{context} observed shape={tuple(x.shape)}, dtype={x.dtype}; "
+            "expected finite feature values"
         )
 
     base_channels = _node_feature_channels(base_num_features)
     expected_channels = _node_feature_channels(total_num_features)
     if expected_channels < base_channels:
         raise ValueError(
-            "total_num_features must be at least base_num_features"
+            f"{context} observed shape={tuple(x.shape)}, dtype={x.dtype}; "
+            "expected total_num_features to be at least "
+            f"base_num_features={base_channels}"
         )
     if x.shape[1] != expected_channels:
         raise ValueError(
-            f"expected {expected_channels} feature channels, got {x.shape[1]}"
+            f"{context} observed shape={tuple(x.shape)}, dtype={x.dtype}; "
+            f"expected shape=(N, {expected_channels}); expected "
+            f"{expected_channels} feature channels"
         )
     if data.num_nodes is not None and x.shape[0] != data.num_nodes:
-        raise ValueError("data.x must have one row per node")
+        raise ValueError(
+            f"{context} observed shape={tuple(x.shape)}, dtype={x.dtype}; "
+            f"expected one row per num_nodes={data.num_nodes}"
+        )
 
     base_features = x[:, :base_channels]
     appended_features = x[:, base_channels:]
-    if appended_features.numel() and not torch.isfinite(
-        appended_features
-    ).all():
-        raise ValueError("appended graph feature channels must be finite")
 
     if feature_policy == "categorical_one_hot":
         _validate_consistent_multi_hot(base_features, feature_policy)
@@ -176,6 +203,95 @@ def validate_graph_features(
     elif feature_policy == "constant" and not torch.all(base_features == 1):
         raise ValueError("constant policy requires data.x filled with ones")
     return data
+
+
+def validate_qualified_graph_source(
+    dataset: Sized,
+    *,
+    capability: GraphDatasetCapability,
+    configured_num_classes: object,
+    total_num_features: object,
+) -> Sized:
+    """Validate one complete qualified graph source before phase splitting."""
+    selector = capability.selector
+    if len(dataset) == 0:
+        raise ValueError(
+            f"{selector}: full source observed shape=(0,); expected a "
+            "non-empty graph source"
+        )
+
+    def classification_labels():
+        for index in range(len(dataset)):
+            item = f"graph[{index}]"
+            data = dataset[index]  # type: ignore[index]
+            validate_graph_features(
+                data,
+                capability.feature_policy,
+                base_num_features=capability.feature_width,
+                total_num_features=total_num_features,
+                selector=selector,
+                item=item,
+            )
+            expected_size = (
+                1
+                if capability.task_level == "graph"
+                else int(data.num_nodes)
+            )
+            yield item, data.get("y"), expected_size
+
+    if capability.task == "classification":
+        validate_classification_vocabulary(
+            classification_labels(),
+            selector=selector,
+            field="y",
+            configured_num_classes=configured_num_classes,
+            manifest_num_classes=capability.num_classes,
+            allow_incomplete=capability.allow_incomplete_class_vocabulary,
+        )
+    else:
+        for index in range(len(dataset)):
+            item = f"graph[{index}]"
+            data = dataset[index]  # type: ignore[index]
+            validate_graph_features(
+                data,
+                capability.feature_policy,
+                base_num_features=capability.feature_width,
+                total_num_features=total_num_features,
+                selector=selector,
+                item=item,
+            )
+            target = data.get("y")
+            shape = (
+                tuple(target.shape)
+                if isinstance(target, Tensor)
+                else None
+            )
+            dtype = (
+                target.dtype
+                if isinstance(target, Tensor)
+                else type(target).__name__
+            )
+            context = (
+                f"{selector}: {item} field y observed "
+                f"shape={shape}, dtype={dtype}"
+            )
+            if not isinstance(target, Tensor):
+                raise ValueError(
+                    f"{context}; target is required with shape=(1,)"
+                )
+            if not target.is_floating_point():
+                raise TypeError(
+                    f"{context}; expected floating dtype"
+                )
+            if target.shape != (1,):
+                raise ValueError(
+                    f"{context}; expected shape=(1,)"
+                )
+            if not torch.isfinite(target).all():
+                raise ValueError(
+                    f"{context}; expected one finite scalar target"
+                )
+    return dataset
 
 
 def prepare_graph_features(
@@ -208,4 +324,5 @@ __all__ = [
     "GraphFeaturePolicy",
     "prepare_graph_features",
     "validate_graph_features",
+    "validate_qualified_graph_source",
 ]

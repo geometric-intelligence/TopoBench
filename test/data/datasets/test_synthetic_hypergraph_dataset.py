@@ -44,7 +44,7 @@ def test_production_factory_is_deterministic_and_generator_local() -> None:
 
     _assert_same_data(first, second)
     assert torch.equal(actual_next, expected_next)
-    assert validate_hypergraph_node_data(first) is first
+    assert validate_hypergraph_node_data(first, num_classes=2) is first
 
 
 def test_fixture_clones_the_production_factory(
@@ -71,7 +71,7 @@ def test_synthetic_dataset_is_deterministic_and_native() -> None:
     right = second[0]
     assert isinstance(left, HypergraphData)
     _assert_same_data(left, right)
-    assert validate_hypergraph_node_data(left) is left
+    assert validate_hypergraph_node_data(left, num_classes=2) is left
 
 
 def test_synthetic_loader_is_deterministic_and_network_free(tmp_path) -> None:

@@ -5,7 +5,10 @@ from __future__ import annotations
 from omegaconf import DictConfig
 
 from topobench.data.capabilities import qualify_graph_dataset
-from topobench.data.features import prepare_graph_features
+from topobench.data.features import (
+    prepare_graph_features,
+    validate_qualified_graph_source,
+)
 from topobench.data.utils.split_utils import validate_split_type_qualification
 from topobench.dataloader import GraphDataModule
 from topobench.utils.config_resolvers import infer_in_channels
@@ -21,22 +24,34 @@ class DefaultDataPipeline(AbstractDataPipeline):
         validate_split_type_qualification(
             cfg.dataset.split_params.get("split_type")
         )
-        preprocessor = self.preprocess(cfg)
-        train, val, test = preprocessor.load_dataset_splits(
-            cfg.dataset.split_params
-        )
-
         if cfg.dataset.parameters.task_level not in ["node", "graph"]:
             raise ValueError("Invalid task_level")
 
+        preprocessor = self.preprocess(cfg)
+        capability = None
+        total_channels = None
         if cfg.dataset.loader.parameters.data_domain == "graph":
-            base_channels = qualify_graph_dataset(
-                cfg.dataset
-            ).feature_width
+            capability = qualify_graph_dataset(cfg.dataset)
             total_channels = infer_in_channels(
                 cfg.dataset,
                 cfg.get("transforms"),
             )
+            validate_qualified_graph_source(
+                preprocessor,
+                capability=capability,
+                configured_num_classes=cfg.dataset.parameters.num_classes,
+                total_num_features=total_channels,
+            )
+
+        train, val, test = preprocessor.load_dataset_splits(
+            cfg.dataset.split_params
+        )
+
+
+        if cfg.dataset.loader.parameters.data_domain == "graph":
+            assert capability is not None
+            assert total_channels is not None
+            base_channels = capability.feature_width
             prepare_graph_features(
                 train,
                 val,
