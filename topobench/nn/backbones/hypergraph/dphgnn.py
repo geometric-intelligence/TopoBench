@@ -442,6 +442,43 @@ def _hypergraph_laplacians(incidence, dv_inv, dv_inv_sqrt, de_inv):
     return delta_hgnn, delta_sym, delta_rw
 
 
+_VALID_EXPANSIONS = frozenset({"clique", "star", "hypergcn"})
+_VALID_FUSIONS = ("gate", "sum")
+
+
+def _validate_expansions(expansions):
+    """Validate an Experiment-E2 ``expansions`` ablation tuple.
+
+    Parameters
+    ----------
+    expansions : tuple of str
+        Candidate value for ``DPHGNN(expansions=...)``.
+
+    Raises
+    ------
+    ValueError
+        If ``expansions`` contains an unknown name, or omits ``"clique"``
+        (structurally required: the TAA neighborhood, decision D-3, and
+        every other block's fallback view are both defined in terms of
+        the clique expansion, so dropping it has no clean counterpart in
+        this architecture -- ``E2_ablation/CLAUDE.md`` Sec. 7, risk 3).
+    """
+    seen = set(expansions)
+    unknown = seen - _VALID_EXPANSIONS
+    if unknown:
+        raise ValueError(
+            f"Unknown expansions: {sorted(unknown)!r}; must be a subset "
+            f"of {sorted(_VALID_EXPANSIONS)!r}"
+        )
+    if "clique" not in seen:
+        raise ValueError(
+            "expansions must include 'clique': it is structurally "
+            "required (TAA neighborhood, decision D-3) and has no "
+            "clean ablation counterpart in this architecture, got "
+            f"{expansions!r}"
+        )
+
+
 def _clique_or_self_edges(adjacency, num_nodes, neighborhood):
     """Build the neighbor edge index used by topology-aware attention.
 
@@ -867,6 +904,15 @@ class FeatureMixtureModule(nn.Module):
     ----------
     hidden_channels : int
         Feature dimension ``d`` of the backbone.
+    fusion : {"gate", "sum"}, optional
+        How ``MLP_1(x_kappa | x_Z)`` is combined with the SIB-derived gate
+        in Eq. (2). ``"gate"`` (default) reproduces the paper's Hadamard
+        product. ``"sum"`` is an Experiment-E2 ablation flag (arm A3,
+        H2 in ``E2_ablation/CLAUDE.md``): it replaces the product with
+        elementwise addition, testing whether the *learned multiplicative
+        gate* is load-bearing or whether "use both branches" already
+        explains the paper's gain. Validity is enforced by the caller
+        (``DPHGNN.__init__``). Defaults to ``"gate"``.
 
     Notes
     -----
@@ -878,9 +924,10 @@ class FeatureMixtureModule(nn.Module):
     concatenation is exactly ``d`` wide even for odd ``d``.
     """
 
-    def __init__(self, hidden_channels):
+    def __init__(self, hidden_channels, fusion="gate"):
         super().__init__()
         self.hidden_channels = hidden_channels
+        self.fusion = fusion
         half_floor = hidden_channels // 2
         half_ceil = hidden_channels - half_floor
         self.mlp1 = nn.Linear(2 * hidden_channels, half_floor)
@@ -897,7 +944,8 @@ class FeatureMixtureModule(nn.Module):
         """
         return (
             f"{self.__class__.__name__}("
-            f"hidden_channels={self.hidden_channels})"
+            f"hidden_channels={self.hidden_channels}, "
+            f"fusion={self.fusion!r})"
         )
 
     def forward(self, x_kappa, x_z, x_spectral, x):
@@ -920,7 +968,8 @@ class FeatureMixtureModule(nn.Module):
             Static node representation, shape ``[n, d]``.
         """
         gate = torch.sigmoid(F.relu(self.mlp2(x_spectral)))
-        x_eqv = self.mlp1(torch.cat([x_kappa, x_z], dim=-1)) * gate
+        mlp1_out = self.mlp1(torch.cat([x_kappa, x_z], dim=-1))
+        x_eqv = mlp1_out * gate if self.fusion == "gate" else mlp1_out + gate
         return torch.cat([x_eqv, self.mlp3(x)], dim=-1)
 
 
@@ -943,6 +992,13 @@ class DynamicFeatureFusion(nn.Module):
     -----
     :math:`X_{G_*}` in the ``S -> E`` term is the *output* of the star
     convolution, not the initial star features (decision D-6).
+
+    Experiment-E2 ablation (arm A5, ``expansions`` without ``"star"`` in
+    ``DPHGNN``): when ``star_adjacency`` is ``None``, the ``S -> E`` term
+    has no supernode representation to draw on and is dropped entirely,
+    so :math:`X_E = M_V` alone. This is a genuine change to the fused
+    quantity, not a zero-masked approximation of it (``E2_ablation/
+    CLAUDE.md`` Sec. 2.1: "A5 is not maskable").
     """
 
     def __init__(self, hidden_channels):
@@ -981,12 +1037,16 @@ class DynamicFeatureFusion(nn.Module):
             Static node representation, shape ``[n, d]``.
         incidence : torch.Tensor
             Sparse COO incidence matrix, shape ``[n, m]``.
-        star_adjacency : torch.Tensor
-            Sparse COO star adjacency, shape ``[n + m, n + m]``.
-        x_star : torch.Tensor
-            Star convolution output, shape ``[n + m, d]``.
-        phi_s : torch.Tensor
-            Boolean mask selecting the ``m`` supernode rows.
+        star_adjacency : torch.Tensor or None
+            Sparse COO star adjacency, shape ``[n + m, n + m]``, or
+            ``None`` if the star expansion is excluded (``expansions``
+            ablation, arm A5): the ``S -> E`` term is then dropped.
+        x_star : torch.Tensor or None
+            Star convolution output, shape ``[n + m, d]``, or ``None``
+            iff ``star_adjacency`` is ``None``.
+        phi_s : torch.Tensor or None
+            Boolean mask selecting the ``m`` supernode rows, or ``None``
+            iff ``star_adjacency`` is ``None``.
         dv_inv_sqrt : torch.Tensor
             Guarded :math:`D_v^{-1/2}`, shape ``[n]``.
         de_inv : torch.Tensor
@@ -1000,11 +1060,14 @@ class DynamicFeatureFusion(nn.Module):
         incidence_t = incidence.transpose(0, 1)
         scaled_static = dv_inv_sqrt.unsqueeze(-1) * x_static
         m_v = torch.sparse.mm(incidence_t, scaled_static)
-        m_s = (
-            de_inv.unsqueeze(-1)
-            * torch.sparse.mm(star_adjacency, x_star)[phi_s]
-        )
-        x_e = m_v + m_s
+        if star_adjacency is not None:
+            m_s = (
+                de_inv.unsqueeze(-1)
+                * torch.sparse.mm(star_adjacency, x_star)[phi_s]
+            )
+            x_e = m_v + m_s
+        else:
+            x_e = m_v
         propagated = torch.sparse.mm(incidence, de_inv.unsqueeze(-1) * x_e)
         x_dp = F.relu(x_static + self.theta(propagated))
         return x_dp, x_e
@@ -1132,6 +1195,49 @@ class DPHGNN(nn.Module):
     taa_neighborhood : {"clique", "self"}, optional
         Neighborhood used by the TAA blocks (decision D-3). Defaults to
         ``"clique"``.
+    use_spectral : bool, optional
+        Experiment-E2 ablation flag (arm A1 ``spatial_only``, H1 in
+        ``E2_ablation/CLAUDE.md``). If ``False``, the spectral TAA-branch
+        output (Eq. 5.4, :math:`\hat{x}_Z`) is zeroed before the Feature
+        Mixture Module fuses it (Eq. 7.1). The default (``True``)
+        reproduces the published dual spatial/spectral architecture.
+    use_spatial : bool, optional
+        Experiment-E2 ablation flag (arm A2 ``spectral_only``, H1). If
+        ``False``, the spatial TAA-branch output (Eq. 5.3,
+        :math:`\hat{x}_\kappa`) is zeroed before fusion (Eq. 7.1). The
+        default (``True``) reproduces the published architecture.
+    use_sib : bool, optional
+        Experiment-E2 ablation flag (arm A4 ``no_sib``, H1). If
+        ``False``, the Spectral Inductive Bias block's Laplacian
+        smoothing term (Eq. 6.1) is disabled: Eq. 6.2 collapses to its
+        :math:`\lambda \to 0` limit, :math:`X_{spectral} = \sigma([X|X])`
+        -- the residual alone, at the same :math:`2d` shape so the
+        downstream :math:`MLP_2` (Eq. 7.1) is unaffected. The default
+        (``True``) reproduces the published architecture.
+    fusion : {"gate", "sum"}, optional
+        Experiment-E2 ablation flag (arm A3 ``fusion_sum``, **H2** --
+        the interesting hypothesis in ``E2_ablation/CLAUDE.md``). Passed
+        to :class:`FeatureMixtureModule`; controls whether Eq. (2)'s
+        second factor is combined with :math:`MLP_1`'s output by a
+        Hadamard product (``"gate"``, default, paper-faithful) or by
+        elementwise addition (``"sum"``). Raises ``ValueError`` if not
+        one of ``{"gate", "sum"}``.
+    expansions : tuple of str, optional
+        Experiment-E2 ablation flag (arm A5 ``clique_only``, H1). Which
+        of the three hypergraph expansions (Sec. 3.1) feed the model;
+        must be a subset of ``{"clique", "star", "hypergcn"}`` that
+        always includes ``"clique"`` (see ``_validate_expansions``).
+        When ``"star"`` is absent, the star-conv branch is skipped
+        entirely: the TAA query view (:math:`X_*^V`, Eq. 4.4) and its
+        Laplacian-smoothed counterpart (:math:`Y_*^V`) both fall back to
+        the clique-conv view, and the Dynamic Feature Fusion ``S -> E``
+        term (Eq. 8.1) is dropped, leaving :math:`X_E = M_V` alone. When
+        ``"hypergcn"`` is absent, the TAA value view
+        (:math:`X_{hyp}`/:math:`Y_{hyp}`) likewise falls back to the
+        clique-conv view. Defaults to
+        ``("clique", "star", "hypergcn")`` (the full, paper-faithful
+        architecture). Raises ``ValueError`` on an unknown expansion
+        name or if ``"clique"`` is missing.
 
     Notes
     -----
@@ -1142,6 +1248,27 @@ class DPHGNN(nn.Module):
     ``(x_0, incidence_hyperedges)``. Learning rates and dropout rates
     per sub-module (Table 10) are not exposed individually (decision
     D-8): a single ``dropout`` hyperparameter is shared across blocks.
+
+    ``use_spectral``/``use_spatial``/``use_sib``/``fusion``/``expansions``
+    are Experiment-E2 component-ablation flags (see ``E2_ablation/
+    CLAUDE.md`` in ``2026_tdl_challenge/extra_analysis_oversmooth_operators/``
+    for the full study). They default to the values that reproduce the
+    published architecture exactly, and every submodule stays registered
+    regardless of the flags (masking, not deletion): parameter count
+    (``n_params``) is therefore identical across every ablation arm, and
+    a reader must not infer that a masked arm is a smaller model -- some
+    of its parameters simply receive no gradient. One documented
+    consequence of masking rather than deleting: ``use_spectral=False``
+    / ``use_spatial=False`` zero the corresponding TAA branch's *output*,
+    not its contribution to :math:`MLP_1` in Eq. (7.1) -- because
+    :math:`MLP_1` has a learned bias and shares weights across both
+    halves of its concatenated input, a small bias-driven signal from the
+    "disabled" branch can still reach :math:`X_{eqv}`. This differs from
+    (and is more precise than) the generic ``sigma(W . x) (*) x``
+    gate-interaction example in ``E2_ablation/CLAUDE.md`` Sec. 2.1: in
+    this implementation the multiplicative gate is derived from SIB
+    (:math:`X_{spectral}`), not from either TAA branch, so masking a TAA
+    branch does not halve the gate -- only the bias caveat above applies.
     """
 
     def __init__(
@@ -1155,10 +1282,22 @@ class DPHGNN(nn.Module):
         supernode_init="zeros",
         with_mediators=False,
         taa_neighborhood="clique",
+        *,
+        use_spectral: bool = True,
+        use_spatial: bool = True,
+        use_sib: bool = True,
+        fusion: str = "gate",
+        expansions: tuple = ("clique", "star", "hypergcn"),
     ):
         super().__init__()
         if supernode_init not in ("zeros", "mean"):
             raise ValueError(f"Unknown supernode_init: {supernode_init!r}")
+        if fusion not in _VALID_FUSIONS:
+            raise ValueError(
+                f"Unknown fusion: {fusion!r}; must be one of "
+                f"{_VALID_FUSIONS!r}"
+            )
+        _validate_expansions(expansions)
         self.hidden_channels = hidden_channels
         self.n_gnn_layers = n_gnn_layers
         self.taa_heads = taa_heads
@@ -1168,6 +1307,11 @@ class DPHGNN(nn.Module):
         self.supernode_init = supernode_init
         self.with_mediators = with_mediators
         self.taa_neighborhood = taa_neighborhood
+        self.use_spectral = use_spectral
+        self.use_spatial = use_spatial
+        self.use_sib = use_sib
+        self.fusion = fusion
+        self.expansions = tuple(expansions)
 
         self.clique_conv = CliqueGCN(hidden_channels, n_gnn_layers)
         self.star_conv = StarGCN(hidden_channels, n_gnn_layers)
@@ -1181,7 +1325,9 @@ class DPHGNN(nn.Module):
         )
 
         self.sib = SpectralInductiveBias(sib_lambda)
-        self.feature_mixture = FeatureMixtureModule(hidden_channels)
+        self.feature_mixture = FeatureMixtureModule(
+            hidden_channels, fusion=fusion
+        )
 
         self.dff_layers = nn.ModuleList(
             DynamicFeatureFusion(hidden_channels) for _ in range(n_dff_layers)
@@ -1207,7 +1353,12 @@ class DPHGNN(nn.Module):
             f"n_dff_layers={self.n_dff_layers}, "
             f"supernode_init={self.supernode_init!r}, "
             f"with_mediators={self.with_mediators}, "
-            f"taa_neighborhood={self.taa_neighborhood!r})"
+            f"taa_neighborhood={self.taa_neighborhood!r}, "
+            f"use_spectral={self.use_spectral}, "
+            f"use_spatial={self.use_spatial}, "
+            f"use_sib={self.use_sib}, "
+            f"fusion={self.fusion!r}, "
+            f"expansions={self.expansions!r})"
         )
 
     def forward(self, x_0, incidence_hyperedges):
@@ -1241,45 +1392,63 @@ class DPHGNN(nn.Module):
         ).squeeze(-1)
         de_bar_inv_sqrt = _inv_pow(de_bar, -0.5)
 
+        # Experiment-E2 ablation (arm A5 `clique_only`): "clique" is
+        # structurally required (validated in __init__) and always
+        # computed; "star"/"hypergcn" are only computed when selected,
+        # with the surviving clique view standing in for the dropped
+        # one downstream (see the `expansions` docstring above). When
+        # both are enabled (the default), the RNG-consuming dropout
+        # calls below (x_c, x_star, x_hyp, in that order) reproduce the
+        # exact pre-ablation call sequence.
+        use_star = "star" in self.expansions
+        use_hypergcn = "hypergcn" in self.expansions
+
         a_c = _clique_adjacency(incidence, num_nodes)
-        a_star = _star_adjacency(incidence, num_nodes, num_edges)
-        a_hyp = _hypergcn_adjacency(
-            incidence, x_0, num_nodes, self.with_mediators
-        )
         delta_hgnn, delta_sym, delta_rw = _hypergraph_laplacians(
             incidence, dv_inv, dv_inv_sqrt, de_inv
         )
 
-        if self.supernode_init == "zeros":
-            s_0 = torch.zeros(
-                num_edges,
-                self.hidden_channels,
-                device=x_0.device,
-                dtype=x_0.dtype,
-            )
-        else:
-            s_0 = de_inv.unsqueeze(-1) * torch.sparse.mm(
-                incidence.transpose(0, 1), x_0
-            )
-        x_star0 = torch.cat([x_0, s_0], dim=0)
-
         x_c = self.dropout(self.clique_conv(x_0, a_c))
-        x_star = self.dropout(self.star_conv(x_star0, a_star))
-        x_hyp = self.dropout(self.hyp_conv(x_0, a_hyp))
+        l_c = _combinatorial_laplacian(a_c)
+        y_c = torch.sparse.mm(l_c, x_c)
 
         phi_v = torch.zeros(
             num_nodes + num_edges, dtype=torch.bool, device=x_0.device
         )
         phi_v[:num_nodes] = True
         phi_s = ~phi_v
-        x_star_v = x_star[phi_v]
 
-        l_c = _combinatorial_laplacian(a_c)
-        l_star = _combinatorial_laplacian(a_star)
-        l_hyp = _combinatorial_laplacian(a_hyp)
-        y_c = torch.sparse.mm(l_c, x_c)
-        y_star_v = torch.sparse.mm(l_star, x_star)[phi_v]
-        y_hyp = torch.sparse.mm(l_hyp, x_hyp)
+        if use_star:
+            if self.supernode_init == "zeros":
+                s_0 = torch.zeros(
+                    num_edges,
+                    self.hidden_channels,
+                    device=x_0.device,
+                    dtype=x_0.dtype,
+                )
+            else:
+                s_0 = de_inv.unsqueeze(-1) * torch.sparse.mm(
+                    incidence.transpose(0, 1), x_0
+                )
+            x_star0 = torch.cat([x_0, s_0], dim=0)
+            a_star = _star_adjacency(incidence, num_nodes, num_edges)
+            x_star = self.dropout(self.star_conv(x_star0, a_star))
+            x_star_v = x_star[phi_v]
+            l_star = _combinatorial_laplacian(a_star)
+            y_star_v = torch.sparse.mm(l_star, x_star)[phi_v]
+        else:
+            a_star, x_star = None, None
+            x_star_v, y_star_v = x_c, y_c
+
+        if use_hypergcn:
+            a_hyp = _hypergcn_adjacency(
+                incidence, x_0, num_nodes, self.with_mediators
+            )
+            x_hyp = self.dropout(self.hyp_conv(x_0, a_hyp))
+            l_hyp = _combinatorial_laplacian(a_hyp)
+            y_hyp = torch.sparse.mm(l_hyp, x_hyp)
+        else:
+            x_hyp, y_hyp = x_c, y_c
 
         edge_index = _clique_or_self_edges(
             a_c, num_nodes, self.taa_neighborhood
@@ -1287,7 +1456,21 @@ class DPHGNN(nn.Module):
         x_kappa = self.taa_spatial(x_star_v, x_c, x_hyp, edge_index)
         x_z = self.taa_spectral(y_star_v, y_c, y_hyp, edge_index)
 
-        x_spectral = self.sib(x_0, delta_rw, delta_sym, delta_hgnn)
+        # Experiment-E2 ablation (arms A1/A2): output-masking, applied
+        # after the branch is computed and before it reaches fusion
+        # (see the `use_spectral`/`use_spatial` docstrings above for the
+        # documented gate-interaction caveat).
+        if not self.use_spatial:
+            x_kappa = torch.zeros_like(x_kappa)
+        if not self.use_spectral:
+            x_z = torch.zeros_like(x_z)
+
+        # Experiment-E2 ablation (arm A4 `no_sib`): the lambda -> 0
+        # limit of Eq. 6.2, at the same 2d shape.
+        if self.use_sib:
+            x_spectral = self.sib(x_0, delta_rw, delta_sym, delta_hgnn)
+        else:
+            x_spectral = F.relu(torch.cat([x_0, x_0], dim=-1))
         x_static = self.feature_mixture(x_kappa, x_z, x_spectral, x_0)
 
         x_dp = x_static
@@ -1298,7 +1481,7 @@ class DPHGNN(nn.Module):
                 incidence,
                 a_star,
                 x_star,
-                phi_s,
+                phi_s if use_star else None,
                 dv_inv_sqrt,
                 de_inv,
             )
