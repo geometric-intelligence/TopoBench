@@ -1,5 +1,7 @@
 """This module defines the `TBModel` class."""
 
+from collections.abc import Mapping
+from numbers import Integral
 from typing import Any
 
 import torch
@@ -11,6 +13,28 @@ from topobench.model.supervision import (
     DefaultSupervisionAdapter,
     SupervisionAdapter,
 )
+
+
+def _clone_evaluator_state(value: object) -> object:
+    """Clone only checkpoint-safe evaluator primitives without retaining graphs."""
+    if value is None or type(value) in {bool, int, float, str}:
+        return value
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu().clone()
+    if isinstance(value, Mapping):
+        if any(not isinstance(key, str) or not key for key in value):
+            raise TypeError("evaluator state mapping keys must be non-empty strings")
+        return {
+            key: _clone_evaluator_state(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, tuple):
+        return tuple(_clone_evaluator_state(item) for item in value)
+    if isinstance(value, list):
+        return [_clone_evaluator_state(item) for item in value]
+    raise TypeError(
+        "evaluator state must contain only JSON or tensor checkpoint primitives"
+    )
 
 
 class TBModel(LightningModule):
@@ -89,6 +113,9 @@ class TBModel(LightningModule):
         # Evaluator
         self.evaluator = evaluator
         self.train_metrics_logged = False
+        self._dataloader_optimizer_success_token = 0
+        self._dataloader_evaluator_sequence = 0
+        self._dataloader_evaluator_count = 0
 
         # Optimizer (it also internally manages Scheduler if provided)
         self.optimizer = optimizer
@@ -186,6 +213,22 @@ class TBModel(LightningModule):
         """
         self.state_str = "Training"
         model_out = self.model_step(batch)
+        sequence_id = getattr(batch, "sequence_id", None)
+        if sequence_id is not None:
+            if isinstance(sequence_id, bool) or not isinstance(
+                sequence_id,
+                Integral,
+            ):
+                raise TypeError("training batch sequence_id must be an integer")
+            sequence_id = int(sequence_id)
+            expected_sequence = self._dataloader_evaluator_sequence + 1
+            if sequence_id != expected_sequence:
+                raise ValueError(
+                    "training evaluator sequence expected "
+                    f"{expected_sequence}, received {sequence_id}"
+                )
+            self._dataloader_evaluator_sequence = sequence_id
+            self._dataloader_evaluator_count += 1
 
         # Update and log metrics
         loss_value = model_out["loss"].item()
@@ -383,6 +426,96 @@ class TBModel(LightningModule):
         """
         if self.hparams.compile and stage == "fit":
             self.net = torch.compile(self.net)
+
+    @property
+    def dataloader_optimizer_success_token(self) -> int:
+        """Monotonic count of raw optimizer steps that returned successfully."""
+        return self._dataloader_optimizer_success_token
+
+    def optimizer_step(
+        self,
+        epoch: int,
+        batch_idx: int,
+        optimizer: Any,
+        optimizer_closure: Any = None,
+    ) -> None:
+        """Advance the success token only when the raw optimizer really ran."""
+        raw_optimizer = getattr(optimizer, "optimizer", optimizer)
+        register_hook = getattr(raw_optimizer, "register_step_post_hook", None)
+        if not callable(register_hook):
+            raise RuntimeError(
+                "optimizer cannot prove successful completion with a post-step hook"
+            )
+        raw_step_completed = False
+
+        def mark_completed(*_: object) -> None:
+            nonlocal raw_step_completed
+            raw_step_completed = True
+
+        handle = register_hook(mark_completed)
+        try:
+            super().optimizer_step(
+                epoch,
+                batch_idx,
+                optimizer,
+                optimizer_closure,
+            )
+        finally:
+            handle.remove()
+        if raw_step_completed:
+            self._dataloader_optimizer_success_token += 1
+
+    def _dataloader_evaluator_owner(self) -> Any:
+        owner = self.evaluator
+        if not callable(getattr(owner, "state_dict", None)):
+            owner = getattr(owner, "metrics", None)
+        if (
+            owner is None
+            or not callable(getattr(owner, "state_dict", None))
+            or not callable(getattr(owner, "load_state_dict", None))
+        ):
+            raise TypeError(
+                "evaluator must expose strict state_dict/load_state_dict participation"
+            )
+        return owner
+
+    def dataloader_evaluator_snapshot(self) -> dict[str, object]:
+        """Capture the current evaluator participant without sampler knowledge."""
+        owner = self._dataloader_evaluator_owner()
+        return {
+            "sequence_id": self._dataloader_evaluator_sequence,
+            "count": self._dataloader_evaluator_count,
+            "state": _clone_evaluator_state(owner.state_dict()),
+        }
+
+    def dataloader_restore_evaluator(
+        self,
+        snapshot: Mapping[str, object],
+    ) -> None:
+        """Strictly restore one previously committed evaluator participant."""
+        if set(snapshot) != {"sequence_id", "count", "state"}:
+            raise ValueError(
+                "evaluator snapshot keys must be sequence_id, count, and state"
+            )
+        sequence_id = snapshot["sequence_id"]
+        count = snapshot["count"]
+        if (
+            isinstance(sequence_id, bool)
+            or not isinstance(sequence_id, Integral)
+            or isinstance(count, bool)
+            or not isinstance(count, Integral)
+        ):
+            raise TypeError("evaluator sequence and count must be integers")
+        sequence_id, count = int(sequence_id), int(count)
+        if sequence_id < 0 or count != sequence_id:
+            raise ValueError(
+                "evaluator sequence/count must be equal non-negative values"
+            )
+        state = _clone_evaluator_state(snapshot["state"])
+        owner = self._dataloader_evaluator_owner()
+        owner.load_state_dict(state, strict=True)
+        self._dataloader_evaluator_sequence = sequence_id
+        self._dataloader_evaluator_count = count
 
     def configure_optimizers(self) -> dict[str, Any]:
         r"""Configure optimizers and learning-rate schedulers.

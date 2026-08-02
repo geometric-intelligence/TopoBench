@@ -1,0 +1,2 @@
+dataloader_commit:
+  _target_: topobench.callbacks.dataloader_commit.DataloaderCommitCallback

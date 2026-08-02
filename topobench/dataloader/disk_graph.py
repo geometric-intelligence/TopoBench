@@ -17,7 +17,7 @@ import numpy as np
 import torch
 from lightning import LightningDataModule
 from torch import Tensor
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Sampler
 from torch_geometric.data import Data, HeteroData
 from torch_geometric.loader import NeighborLoader
 
@@ -26,6 +26,7 @@ from topobench.data.stores.pyg_store import PyGTypedFeatureStore, PyGTypedGraphS
 from topobench.data.stores.typed_graph_store import TypedGraphStore
 from topobench.data.stores.typed_partition_book import TypedPartitionBook
 from topobench.dataloader.graph import loader_worker_options
+from topobench.dataloader.sequence_state import SequenceIdentity, SequenceState
 from topobench.transforms.fittable import (
     FitContext,
     FitStateError,
@@ -1520,6 +1521,92 @@ class _LazyStore:
         self.close()
 
 
+def _sequence_partition_identity(
+    source: SamplingSource,
+    strategy: GraphSamplingStrategy,
+) -> str:
+    """Return the content identity of the exact partition/sampling domain."""
+    if isinstance(source, TypedGraphStore):
+        return source.partition_book_identity
+    declared = getattr(source, "partition_book_identity", None)
+    if isinstance(declared, str):
+        return _require_sha256(declared, "partition_book_identity")
+    book = getattr(strategy, "partition_book", None)
+    if isinstance(book, TypedPartitionBook):
+        return _require_sha256(
+            book.content_identity,
+            "partition_book_identity",
+        )
+    if isinstance(source, MaterializedHomogeneousPartition):
+        digest = hashlib.sha256()
+        _tensor_frame(digest, "partition.node_perm", source.partition.node_perm)
+        _tensor_frame(digest, "partition.partptr", source.partition.partptr)
+        return digest.hexdigest()
+    content = getattr(source, "content_sha256", None)
+    if content is None:
+        admission = getattr(strategy, "_admission", None)
+        content = getattr(admission, "content_sha256", None)
+    _require_sha256(content, "content_sha256")
+    digest = hashlib.sha256()
+    _frame(digest, "unpartitioned_graph", content.encode())
+    return digest.hexdigest()
+
+
+class _TrainSequenceSampler(Sampler[tuple[int, int]]):
+    """Assign global sequence IDs in the parent while workers see immutable work."""
+
+    def __init__(self, owner: "DiskGraphDataModule") -> None:
+        self.owner = owner
+
+    def __iter__(self):
+        state = self.owner.sequence_state
+        start = (state.next_issue_id - 1) % state.descriptor_count
+        for descriptor_index in range(start, state.descriptor_count):
+            descriptor = self.owner.descriptors("train")[descriptor_index]
+            sequence_id = self.owner.issue_descriptor(descriptor)
+            yield sequence_id, descriptor_index
+
+    def __len__(self) -> int:
+        state = self.owner.sequence_state
+        start = (state.next_issue_id - 1) % state.descriptor_count
+        return state.descriptor_count - start
+
+
+class _TrainSequenceLoader(DataLoader[NativeBatch]):
+    """Observe parent-side preparation/delivery as ordered batches arrive."""
+
+    def __init__(
+        self,
+        owner: "DiskGraphDataModule",
+        dataset: "_DescriptorDataset",
+        **kwargs: object,
+    ) -> None:
+        self.sequence_owner = owner
+        super().__init__(
+            dataset,
+            batch_size=None,
+            sampler=_TrainSequenceSampler(owner),
+            shuffle=False,
+            collate_fn=_identity,
+            **kwargs,
+        )
+
+    def __iter__(self):
+        self.sequence_owner._require_commit_callback()
+        for batch in super().__iter__():
+            sequence_id = _integer(
+                getattr(batch, "sequence_id", None),
+                "batch.sequence_id",
+                minimum=1,
+            )
+            descriptor = self.sequence_owner.sequence_state.descriptor_for(
+                sequence_id
+            )
+            self.sequence_owner.prepare_sequence(sequence_id, descriptor)
+            self.sequence_owner.deliver_sequence(sequence_id)
+            yield batch
+
+
 class _DescriptorDataset(Dataset[NativeBatch]):
     def __init__(
         self,
@@ -1536,17 +1623,25 @@ class _DescriptorDataset(Dataset[NativeBatch]):
     def __len__(self) -> int:
         return len(self.descriptor_values)
 
-    def __getitem__(self, index: int) -> NativeBatch:
+    def __getitem__(self, index: int | tuple[int, int]) -> NativeBatch:
+        sequence_id: int | None
+        if isinstance(index, tuple):
+            sequence_id, descriptor_index = index
+        else:
+            sequence_id, descriptor_index = None, index
         source = (
             self.source.get()
             if isinstance(self.source, _LazyStore)
             else self.source
         )
-        batch = self.strategy.materialize(
-            source,
-            self.descriptor_values[index],
-        )
-        return _apply_fitted_transform(batch, self.fitted_transform)
+        descriptor = self.descriptor_values[descriptor_index]
+        batch = self.strategy.materialize(source, descriptor)
+        batch = _apply_fitted_transform(batch, self.fitted_transform)
+        if sequence_id is not None:
+            batch.sequence_id = sequence_id
+            if isinstance(self.source, _LazyStore):
+                batch.sampling_descriptor = descriptor
+        return batch
 
 
 def _identity(value: NativeBatch) -> NativeBatch:
@@ -1653,6 +1748,20 @@ class DiskGraphDataModule(LightningDataModule):
             )
         self._descriptors: dict[Phase, tuple[SamplingDescriptor, ...]] = {}
         self._loaders: dict[Phase, DataLoader[NativeBatch]] = {}
+        reference = self._source if self._owner is None else None
+        if reference is None:
+            assert self._owner is not None
+            with TypedGraphStore.open(self._owner.path) as store:
+                self._partition_book_identity = _sequence_partition_identity(
+                    store,
+                    self.strategy,
+                )
+        else:
+            self._partition_book_identity = _sequence_partition_identity(
+                reference,
+                self.strategy,
+            )
+        self._sequence_state: SequenceState | None = None
         self._closed = False
 
     @property
@@ -1793,8 +1902,92 @@ class DiskGraphDataModule(LightningDataModule):
                         shuffle=phase == "train" and self.train_shuffle,
                     )
             self._descriptors[phase] = descriptors
+            if phase == "train":
+                self._ensure_sequence_state()
         except ValueError as error:
             raise ValueError(f"{phase} phase setup failed: {error}") from error
+
+    def _ensure_sequence_state(self) -> SequenceState:
+        if self._sequence_state is None:
+            descriptors = self._descriptors.get("train")
+            if descriptors is None:
+                raise RuntimeError(
+                    "train descriptors must exist before sequence state"
+                )
+            fitted_state_key = (
+                None
+                if self.fitted_transform is None
+                else self.fitted_transform.state_key
+            )
+            identity = SequenceIdentity.from_descriptors(
+                descriptors,
+                partition_book_identity=self._partition_book_identity,
+                fitted_transform_state_key=fitted_state_key,
+                sampler_state=self.strategy.sampler_state(),
+            )
+            self._sequence_state = SequenceState(identity, descriptors)
+        return self._sequence_state
+
+    @property
+    def sequence_state(self) -> SequenceState:
+        """Return the parent-owned training sequence state."""
+        self.descriptors("train")
+        return self._ensure_sequence_state()
+
+    def issue_descriptor(self, descriptor: SamplingDescriptor) -> int:
+        """Issue the next exact immutable training descriptor."""
+        return self.sequence_state.issue(descriptor)
+
+    def prepare_sequence(
+        self,
+        sequence_id: int,
+        descriptor: SamplingDescriptor,
+    ) -> None:
+        """Record one materialized descriptor without relaxing delivery order."""
+        self.sequence_state.prepare(sequence_id, descriptor)
+
+    def deliver_sequence(self, sequence_id: int) -> SamplingDescriptor:
+        """Deliver a prepared training descriptor in exact sequence order."""
+        descriptor = self.sequence_state.deliver(sequence_id)
+        assert isinstance(descriptor, SamplingDescriptor)
+        return descriptor
+
+    def consume_sequence(self, sequence_id: int) -> None:
+        """Append one delivered training sequence to the pending step group."""
+        self.sequence_state.consume(sequence_id)
+
+    def commit_optimizer_step(
+        self,
+        *,
+        optimizer_succeeded: bool,
+        model_global_step: int,
+        evaluator_snapshot: Mapping[str, object],
+        epoch: int,
+    ) -> bool:
+        """Atomically commit sampler/evaluator/global-step participants."""
+        expected = {"sequence_id", "count", "state"}
+        if set(evaluator_snapshot) != expected:
+            raise ValueError(
+                "evaluator snapshot keys must be exactly "
+                f"{sorted(expected)!r}"
+            )
+        return self.sequence_state.commit(
+            optimizer_succeeded=optimizer_succeeded,
+            model_global_step=model_global_step,
+            evaluator_sequence=evaluator_snapshot["sequence_id"],
+            evaluator_count=evaluator_snapshot["count"],
+            evaluator_state=evaluator_snapshot["state"],
+            epoch=epoch,
+        )
+
+    def state_dict(self) -> dict[str, object]:
+        """Serialize only the committed training sequence boundary."""
+        return self.sequence_state.state_dict()
+
+    def load_state_dict(self, state_dict: Mapping[str, object]) -> None:
+        """Restore one exact committed boundary and discard transient work."""
+        self.sequence_state.load_state_dict(state_dict)
+        self._shutdown_loaders()
 
     def setup(self, stage: str | None = None) -> None:
         """Set up exactly the phases required by one Lightning stage."""
@@ -1822,25 +2015,54 @@ class DiskGraphDataModule(LightningDataModule):
         self._setup_phase(phase)
         return self._descriptors[phase]
 
+    def _require_commit_callback(self) -> None:
+        """Reject attached training that cannot durably commit sequence state."""
+        trainer = self.trainer
+        if trainer is None:
+            return
+        from topobench.callbacks.dataloader_commit import (
+            DataloaderCommitCallback,
+        )
+
+        count = sum(
+            isinstance(callback, DataloaderCommitCallback)
+            for callback in trainer.callbacks
+        )
+        if count != 1:
+            raise RuntimeError(
+                "DiskGraphDataModule training requires exactly one "
+                "DataloaderCommitCallback; "
+                f"found {count}"
+            )
+
+
     def _loader(self, phase: Phase) -> DataLoader[NativeBatch]:
+        if phase == "train":
+            self._require_commit_callback()
         if self._closed:
             raise RuntimeError("DiskGraphDataModule is closed")
         if phase not in self._loaders:
-            self._loaders[phase] = DataLoader(
-                _DescriptorDataset(
-                    self._source,
-                    self.strategy,
-                    self.descriptors(phase),
-                    self.fitted_transform,
-                ),
-                batch_size=None,
-                shuffle=False,
-                collate_fn=_identity,
-                **loader_worker_options(
-                    num_workers=self.num_workers,
-                    pin_memory=False,
-                    persistent_workers=self.persistent_workers,
-                ),
+            dataset = _DescriptorDataset(
+                self._source,
+                self.strategy,
+                self.descriptors(phase),
+                self.fitted_transform,
+            )
+            options = loader_worker_options(
+                num_workers=self.num_workers,
+                pin_memory=False,
+                persistent_workers=self.persistent_workers,
+            )
+            self._loaders[phase] = (
+                _TrainSequenceLoader(self, dataset, **options)
+                if phase == "train"
+                else DataLoader(
+                    dataset,
+                    batch_size=None,
+                    shuffle=False,
+                    collate_fn=_identity,
+                    **options,
+                )
             )
         return self._loaders[phase]
 
@@ -1857,9 +2079,7 @@ class DiskGraphDataModule(LightningDataModule):
         """Use the explicitly supported test split for prediction identity."""
         return self._loader("test")
 
-    def close(self) -> None:
-        if self._closed:
-            return
+    def _shutdown_loaders(self) -> None:
         for loader in self._loaders.values():
             iterator = getattr(loader, "_iterator", None)
             shutdown = getattr(iterator, "_shutdown_workers", None)
@@ -1868,6 +2088,11 @@ class DiskGraphDataModule(LightningDataModule):
             if iterator is not None:
                 loader._iterator = None
         self._loaders.clear()
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._shutdown_loaders()
         if self._owner is not None:
             self._owner.close()
         self._closed = True
