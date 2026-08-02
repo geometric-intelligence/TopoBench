@@ -39,7 +39,6 @@ class GCNDGM(nn.Module):
             ("in_channels", in_channels),
             ("hidden_channels", hidden_channels),
             ("num_layers", num_layers),
-            ("k", k),
         ):
             if (
                 isinstance(value, bool)
@@ -47,6 +46,10 @@ class GCNDGM(nn.Module):
                 or value < 1
             ):
                 raise ValueError(f"{name} must be a positive integer")
+        if isinstance(k, bool) or not isinstance(k, Integral):
+            raise TypeError("k must be an integer")
+        if k < 2:
+            raise ValueError("k must be at least 2")
         self.k = int(k)
         self.structure_encoder = _StructureEncoder(
             int(in_channels),
@@ -152,8 +155,8 @@ class GCNDGM(nn.Module):
             edges.append(
                 torch.stack(
                     (
-                        nodes[local_sources.reshape(-1)],
                         nodes[local_targets.reshape(-1)],
+                        nodes[local_sources.reshape(-1)],
                     )
                 )
             )

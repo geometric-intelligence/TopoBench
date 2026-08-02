@@ -40,6 +40,12 @@ def test_forward_pass_replaces_native_features(sample_data: Data) -> None:
     assert output_data.dgm_aux.shape == (10, 64)
     assert "dgm_edge_index" in output_data
     assert "dgm_logprobs" in output_data
+    learned_edges = output_data.dgm_edge_index.squeeze(0)
+    incoming_queries = learned_edges[1].reshape(10, encoder.encoder.k)
+    torch.testing.assert_close(
+        incoming_queries,
+        torch.arange(10).unsqueeze(1).expand(-1, encoder.encoder.k),
+    )
 
 
 def test_dropout_configuration() -> None:
