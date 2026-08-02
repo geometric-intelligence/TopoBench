@@ -1,8 +1,11 @@
 """Preprocessor for datasets."""
 
+import inspect
 import json
 import os
+import tempfile
 import time
+from collections.abc import Mapping
 
 import torch
 import torch_geometric
@@ -11,7 +14,11 @@ from torch_geometric.data import Data, HeteroData
 from torch_geometric.io import fs
 from tqdm import tqdm
 
-from topobench.data.utils.common import ensure_serializable, make_hash
+from topobench.data.loaders.base import (
+    CACHE_SOURCE_ATTRIBUTE,
+    canonical_sha256,
+    normalize_cache_value,
+)
 from topobench.data.utils.split_utils import (
     load_inductive_splits,
     load_transductive_splits,
@@ -23,12 +30,114 @@ PreProcessorInput = (
     torch_geometric.data.Dataset | torch.utils.data.Dataset | SupportedData
 )
 
+_PROCESSED_CACHE_SCHEMA = "topobench.processed-cache"
+_PROCESSED_CACHE_SCHEMA_VERSION = 2
+_CACHE_RECORD_FILE_NAME = "cache_record.json"
+
 
 def _data_family(
     data: SupportedData,
 ) -> type[Data] | type[HeteroData]:
     """Return the concrete homogeneous or heterogeneous data family."""
     return HeteroData if isinstance(data, HeteroData) else Data
+
+
+def _dataset_cache_source(dataset: PreProcessorInput) -> dict:
+    """Read loader provenance or build a stable direct-dataset fallback."""
+    source = getattr(dataset, CACHE_SOURCE_ATTRIBUTE, None)
+    if source is not None:
+        return source
+    dataset_target = f"{type(dataset).__module__}.{type(dataset).__qualname__}"
+    cache_parameters = getattr(dataset, "cache_parameters", {})
+    if not isinstance(cache_parameters, Mapping):
+        raise TypeError(
+            "cache.source.loader.parameters: dataset.cache_parameters "
+            "must be a mapping"
+        )
+    return normalize_cache_value(
+        {
+            "dataset_selector": {
+                "data_domain": None,
+                "data_type": "direct",
+                "data_name": type(dataset).__name__,
+            },
+            "loader": {
+                "target": None,
+                "parameters": cache_parameters,
+            },
+            "feature_policy": getattr(dataset, "feature_policy", None),
+            "versions": {
+                "representation": getattr(
+                    dataset,
+                    "representation_version",
+                    None,
+                ),
+                "parser": getattr(dataset, "parser_version", None),
+                "dataset": dataset_target,
+            },
+        },
+        path="cache.source",
+    )
+
+
+def _effective_transform_step(
+    name,
+    transform_instance: DataTransform,
+    supplied_parameters: dict,
+    *,
+    device: str,
+) -> dict:
+    """Snapshot effective constructor inputs before transform execution."""
+    runtime_transform = getattr(transform_instance, "transform", None)
+    if runtime_transform is None:
+        target = None
+        effective_parameters = dict(supplied_parameters)
+    else:
+        transform_type = type(runtime_transform)
+        target = f"{transform_type.__module__}.{transform_type.__qualname__}"
+        effective_parameters = {}
+        try:
+            signature = inspect.signature(transform_type.__init__)
+        except (TypeError, ValueError):
+            signature = None
+        if signature is not None:
+            for parameter in signature.parameters.values():
+                if parameter.name == "self" or parameter.kind in {
+                    inspect.Parameter.VAR_POSITIONAL,
+                    inspect.Parameter.VAR_KEYWORD,
+                }:
+                    continue
+                if parameter.name in supplied_parameters:
+                    effective_parameters[parameter.name] = (
+                        supplied_parameters[parameter.name]
+                    )
+                elif parameter.default is not inspect.Parameter.empty:
+                    effective_parameters[parameter.name] = parameter.default
+        effective_parameters.update(
+            {
+                key: value
+                for key, value in supplied_parameters.items()
+                if key not in effective_parameters
+            }
+        )
+        captured_parameters = getattr(
+            runtime_transform,
+            "parameters",
+            None,
+        )
+        if isinstance(captured_parameters, Mapping):
+            for key in tuple(effective_parameters):
+                if key in captured_parameters:
+                    effective_parameters[key] = captured_parameters[key]
+    effective_parameters["preprocessor_device"] = device
+    return normalize_cache_value(
+        {
+            "name": name,
+            "target": target,
+            "parameters": effective_parameters,
+        },
+        path=f"transform.{name}",
+    )
 
 
 class PreProcessor(torch_geometric.data.InMemoryDataset):
@@ -78,7 +187,7 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
                 super().__init__(
                     self.processed_data_dir, None, pre_transform, **kwargs
                 )
-                self.save_transform_parameters()
+                self.save_cache_record()
 
             end_time = time.time()
             self.preprocessing_time = end_time - start_time
@@ -153,12 +262,12 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             config_items = transforms_config.items()
 
         pre_transforms_list = []
-        pre_transforms_dict = {}
+        transform_steps = []
 
         # Track where the graph currently lives in the pipeline
         current_device = "cpu"
 
-        for key, value in config_items:
+        for name, value in config_items:
             kwargs = dict(value)
 
             requested_device = kwargs.pop("preprocessor_device", "cpu")
@@ -170,7 +279,14 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             )
 
             transform_instance = DataTransform(**kwargs)
-            pre_transforms_dict[key] = transform_instance
+            transform_steps.append(
+                _effective_transform_step(
+                    name,
+                    transform_instance,
+                    kwargs,
+                    device=target_device,
+                )
+            )
 
             if target_device != current_device:
                 pre_transforms_list.append(ToDevice(target_device))
@@ -187,59 +303,70 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             pre_transforms_list
         )
 
-        self.set_processed_data_dir(
-            pre_transforms_dict, data_dir, transforms_config
-        )
+        self.set_processed_data_dir(data_dir, transform_steps)
         return pre_transforms
 
-    def set_processed_data_dir(
-        self, pre_transforms_dict, data_dir, transforms_config
-    ) -> None:
-        """Set the processed data directory.
-
-        Parameters
-        ----------
-        pre_transforms_dict : dict
-            Dictionary containing the pre-transforms.
-        data_dir : str
-            Path to the directory containing the data.
-        transforms_config : DictConfig
-            Configuration parameters for the transforms.
-        """
-        # Use self.transform_parameters to define unique save/load path for each transform parameters
-        repo_name = "_".join(list(transforms_config.keys()))
-        transforms_parameters = {
-            transform_name: transform.parameters
-            for transform_name, transform in pre_transforms_dict.items()
+    def set_processed_data_dir(self, data_dir, transform_steps) -> None:
+        """Select the processed directory from complete canonical provenance."""
+        source = _dataset_cache_source(self.dataset)
+        self.cache_record = {
+            "schema": _PROCESSED_CACHE_SCHEMA,
+            "schema_version": _PROCESSED_CACHE_SCHEMA_VERSION,
+            **source,
+            "transform": {"steps": transform_steps},
         }
-        params_hash = make_hash(transforms_parameters)
-        self.transforms_parameters = ensure_serializable(transforms_parameters)
-        self.processed_data_dir = os.path.join(
-            *[data_dir, repo_name, f"{params_hash}"]
+        self.cache_identity = canonical_sha256(self.cache_record)
+        self.processed_data_dir = os.path.join(data_dir, self.cache_identity)
+        self.cache_record_path = os.path.join(
+            self.processed_data_dir,
+            _CACHE_RECORD_FILE_NAME,
         )
 
-    def save_transform_parameters(self) -> None:
-        """Save the transform parameters."""
-        # Check if root/params_dict.json exists, if not, save it
-        path_transform_parameters = os.path.join(
-            self.processed_data_dir, "path_transform_parameters_dict.json"
-        )
-        if not os.path.exists(path_transform_parameters):
-            with open(path_transform_parameters, "w") as f:
-                json.dump(self.transforms_parameters, f, indent=4)
-        else:
-            # If path_transform_parameters exists, check if the transform_parameters are the same
-            with open(path_transform_parameters) as f:
-                saved_transform_parameters = json.load(f)
-
-            if saved_transform_parameters != self.transforms_parameters:
-                raise ValueError(
-                    "Different transform parameters for the same data_dir"
-                )
-
-            print(
-                f"Transform parameters are the same, using existing data_dir: {self.processed_data_dir}"
+    def _validate_existing_cache_record(self) -> None:
+        """Reject an unreadable or mismatched record at the selected digest."""
+        try:
+            with open(self.cache_record_path, encoding="utf-8") as file:
+                saved_record = json.load(file)
+        except (OSError, json.JSONDecodeError) as error:
+            raise ValueError(
+                "cache identity collision: existing cache record is unreadable"
+            ) from error
+        if saved_record != self.cache_record:
+            raise ValueError(
+                "cache identity collision: existing record does not match "
+                "the canonical cache record"
             )
+
+    def save_cache_record(self) -> None:
+        """Atomically persist readable provenance without overwriting a peer."""
+        if os.path.exists(self.cache_record_path):
+            self._validate_existing_cache_record()
+            return
+
+        descriptor, temporary_path = tempfile.mkstemp(
+            prefix=f".{_CACHE_RECORD_FILE_NAME}.",
+            dir=self.processed_data_dir,
+            text=True,
+        )
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+                json.dump(
+                    self.cache_record,
+                    file,
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+                file.write("\n")
+                file.flush()
+                os.fsync(file.fileno())
+            try:
+                os.link(temporary_path, self.cache_record_path)
+            except FileExistsError:
+                self._validate_existing_cache_record()
+        finally:
+            if os.path.exists(temporary_path):
+                os.unlink(temporary_path)
 
     def process(self) -> None:
         """Process and persist a homogeneous family of supported PyG data.

@@ -49,7 +49,8 @@ def make_synthetic_hypergraph_data(
             "num_hyperedges must satisfy 1 <= num_hyperedges <= num_nodes"
         )
 
-    generator = torch.Generator().manual_seed(seed)
+    generator = torch.Generator(device="cpu")
+    generator.manual_seed(seed)
     node_ids = torch.arange(num_nodes, dtype=torch.long)
     labels = node_ids % 2
     x = 0.05 * torch.randn(num_nodes, 4, generator=generator)
@@ -87,6 +88,19 @@ def make_synthetic_hypergraph_data(
 
 class SyntheticHypergraphDataset(InMemoryDataset):
     """Package one deterministic native hypergraph as a PyG dataset."""
+
+    feature_policy = "continuous"
+    representation_version = HYPERGRAPH_REPRESENTATION_VERSION
+    parser_version = "synthetic-hypergraph-v1"
+
+    @property
+    def cache_parameters(self) -> dict[str, int]:
+        """Return effective loader defaults that determine fixture content."""
+        return {
+            "seed": self.seed,
+            "num_nodes": self.num_fixture_nodes,
+            "num_hyperedges": self.num_fixture_hyperedges,
+        }
 
     def __init__(
         self,

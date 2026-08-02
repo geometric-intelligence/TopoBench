@@ -4,18 +4,36 @@ This test file provides extensive coverage of the PreProcessor class functionali
 including initialization, data transformations, split loading, and edge cases.
 """
 
+import copy
 import json
+import random
 import os
 import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+import numpy as np
 import torch
 import torch_geometric.data
 from omegaconf import DictConfig
 from torch_geometric.data import Data, HeteroData
 
-from topobench.data.datasets import SyntheticHeterogeneousDataset
+from topobench.data.datasets import (
+    SyntheticGraphDataset,
+    SyntheticHypergraphDataset,
+    SyntheticHeterogeneousDataset,
+)
+from topobench.data.loaders.base import (
+    AbstractLoader,
+    normalize_cache_value,
+)
+from topobench.data.loaders.graph.synthetic import (
+    SyntheticGraphDatasetLoader,
+)
+from topobench.data.loaders.hypergraph.synthetic import (
+    SyntheticHypergraphDatasetLoader,
+)
 from topobench.data.preprocessor.preprocessor import PreProcessor
 
 
@@ -95,6 +113,129 @@ def _assert_synthetic_heterodata_equal(
             expected[edge_type].edge_index,
             actual[edge_type].edge_index,
         )
+
+class _CacheRecordLoader(AbstractLoader):
+    """Return a local fixture while exercising the production loader seam."""
+
+    def load_dataset(self):
+        return SyntheticGraphDataset(
+            task="graph_classification",
+            seed=int(self.parameters.seed),
+        )
+
+
+class _AlternateCacheRecordLoader(_CacheRecordLoader):
+    """Semantically identical loader with a distinct exact target."""
+
+
+_GENERATION_PARAMETERS = {
+    "task": "triangle_counting",
+    "universe_parameters": {
+        "K": 20,
+        "feature_dim": 15,
+        "center_variance": 0.2,
+        "cluster_variance": 0.4,
+        "edge_propensity_variance": 1.0,
+        "seed": 42,
+    },
+    "family_parameters": {
+        "n_graphs": 1000,
+        "n_nodes_range": [50, 200],
+        "n_communities_range": [3, 7],
+        "homophily_range": [0.4, 0.8],
+        "avg_degree_range": [1.0, 2.0],
+        "degree_separation_range": [0.5, 1.0],
+        "power_law_exponent_range": [1.5, 2.5],
+        "seed": 42,
+    },
+}
+
+
+def _cache_parameters(tmp_path) -> dict:
+    """Return one fully resolved content-affecting loader configuration."""
+    return {
+        "data_dir": str(tmp_path / "cache"),
+        "data_domain": "graph",
+        "data_type": "synthetic",
+        "data_name": "SyntheticGraph",
+        "seed": 17,
+        "num_nodes": 12,
+        "num_hyperedges": 5,
+        "generation_parameters": copy.deepcopy(_GENERATION_PARAMETERS),
+        "feature_policy": "continuous",
+        "representation_version": "pyg-data-v1",
+        "parser_version": "synthetic-parser-v1",
+    }
+
+
+def _replace_nested(mapping: dict, path: str, value) -> None:
+    """Replace exactly one dotted configuration field."""
+    components = path.split(".")
+    current = mapping
+    for component in components[:-1]:
+        current = current[component]
+    current[components[-1]] = value
+
+
+def _processed_fixture(
+    tmp_path,
+    *,
+    mutation: tuple[str, object] | None = None,
+    loader_type=_CacheRecordLoader,
+    transform_name=None,
+    transform_value=1,
+    transform_key="identity",
+) -> PreProcessor:
+    """Load and process one cache-record fixture through the real seam."""
+    parameters = _cache_parameters(tmp_path)
+    if mutation is not None:
+        _replace_nested(parameters, *mutation)
+    loader = loader_type(DictConfig(parameters))
+    dataset, dataset_dir = loader.load()
+    transforms = DictConfig(
+        {
+            transform_key: {
+                "transform_name": transform_name,
+                "value": transform_value,
+            }
+        }
+    )
+    return PreProcessor(dataset, dataset_dir, transforms)
+
+def _processed_transform_config(
+    tmp_path,
+    transform_config: dict,
+) -> PreProcessor:
+    """Process one fixture using an exact transform configuration."""
+    loader = _CacheRecordLoader(DictConfig(_cache_parameters(tmp_path)))
+    dataset, dataset_dir = loader.load()
+    return PreProcessor(dataset, dataset_dir, DictConfig(transform_config))
+
+
+def _processed_direct(dataset, data_dir: Path) -> PreProcessor:
+    """Process a supported direct dataset under one shared cache root."""
+    return PreProcessor(
+        dataset,
+        str(data_dir),
+        DictConfig({"identity": {"transform_name": None, "value": 1}}),
+    )
+
+
+def _rng_states() -> tuple[object, tuple, torch.Tensor]:
+    """Snapshot all caller-global CPU RNG streams."""
+    return random.getstate(), np.random.get_state(), torch.random.get_rng_state()
+
+
+def _assert_rng_states_equal(
+    before: tuple[object, tuple, torch.Tensor],
+    after: tuple[object, tuple, torch.Tensor],
+) -> None:
+    """Compare Python, NumPy, and Torch RNG snapshots exactly."""
+    assert before[0] == after[0]
+    assert before[1][0] == after[1][0]
+    assert np.array_equal(before[1][1], after[1][1])
+    assert before[1][2:] == after[1][2:]
+    assert torch.equal(before[2], after[2])
 
 
 class TestPreProcessorBasic:
@@ -698,77 +839,499 @@ class TestPreProcessorLoad:
 class TestPreProcessorTransforms:
     """Test PreProcessor with transforms."""
 
-    def test_save_transform_parameters_new_file(self):
-        """Test saving transform parameters when file doesn't exist."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
-                preprocessor = PreProcessor(None, tmpdir, None)
-                preprocessor.processed_data_dir = tmpdir
-                preprocessor.transforms_parameters = {
-                    "transform1": {"param": "value"}
+    def test_readable_cache_record_is_stored_beside_digest(self, tmp_path):
+        """The digest directory contains the exact canonical readable record."""
+        preprocessor = _processed_fixture(tmp_path)
+
+        record_path = Path(preprocessor.cache_record_path)
+        assert record_path.parent == Path(preprocessor.processed_data_dir)
+        assert record_path.name == "cache_record.json"
+        assert record_path.parent.name == preprocessor.cache_identity
+        assert len(preprocessor.cache_identity) == 64
+        assert json.loads(record_path.read_text(encoding="utf-8")) == (
+            preprocessor.cache_record
+        )
+        assert list(record_path.parent.glob(".cache_record.json.*")) == []
+        assert preprocessor.cache_record == {
+            "schema": "topobench.processed-cache",
+            "schema_version": 2,
+            "dataset_selector": {
+                "data_domain": "graph",
+                "data_type": "synthetic",
+                "data_name": "SyntheticGraph",
+            },
+            "loader": {
+                "target": (
+                    "test.data.preprocess.test_preprocessor."
+                    "_CacheRecordLoader"
+                ),
+                "parameters": {
+                    **_cache_parameters(tmp_path),
+                    "task": "graph_classification",
+                },
+            },
+            "transform": {
+                "steps": [
+                    {
+                        "name": "identity",
+                        "target": None,
+                        "parameters": {
+                            "preprocessor_device": "cpu",
+                            "transform_name": None,
+                            "value": 1,
+                        },
+                    }
+                ]
+            },
+            "feature_policy": "continuous",
+            "versions": {
+                "representation": "pyg-data-v1",
+                "parser": "synthetic-parser-v1",
+            },
+        }
+
+    @pytest.mark.parametrize(
+        ("field", "different_value"),
+        [
+            ("data_name", "SyntheticGraphAlternate"),
+            ("seed", 18),
+            ("num_nodes", 13),
+            ("num_hyperedges", 6),
+            ("generation_parameters.task", "community_detection"),
+            ("generation_parameters.universe_parameters.K", 21),
+            ("generation_parameters.universe_parameters.feature_dim", 16),
+            (
+                "generation_parameters.universe_parameters.center_variance",
+                0.3,
+            ),
+            (
+                "generation_parameters.universe_parameters.cluster_variance",
+                0.5,
+            ),
+            (
+                "generation_parameters.universe_parameters."
+                "edge_propensity_variance",
+                0.9,
+            ),
+            ("generation_parameters.universe_parameters.seed", 43),
+            ("generation_parameters.family_parameters.n_graphs", 1001),
+            (
+                "generation_parameters.family_parameters.n_nodes_range",
+                [51, 200],
+            ),
+            (
+                "generation_parameters.family_parameters.n_communities_range",
+                [4, 7],
+            ),
+            (
+                "generation_parameters.family_parameters.homophily_range",
+                [0.5, 0.8],
+            ),
+            (
+                "generation_parameters.family_parameters.avg_degree_range",
+                [1.1, 2.0],
+            ),
+            (
+                "generation_parameters.family_parameters."
+                "degree_separation_range",
+                [0.6, 1.0],
+            ),
+            (
+                "generation_parameters.family_parameters."
+                "power_law_exponent_range",
+                [1.6, 2.5],
+            ),
+            ("generation_parameters.family_parameters.seed", 43),
+            ("feature_policy", "degree"),
+            ("representation_version", "pyg-data-v2"),
+            ("parser_version", "synthetic-parser-v2"),
+        ],
+    )
+    def test_each_content_field_changes_cache_identity(
+        self,
+        tmp_path,
+        field,
+        different_value,
+    ):
+        """Every independently varied source field receives a new identity."""
+        baseline = _processed_fixture(tmp_path)
+        varied = _processed_fixture(
+            tmp_path,
+            mutation=(field, different_value),
+        )
+
+        assert varied.cache_identity != baseline.cache_identity
+        assert varied.processed_data_dir != baseline.processed_data_dir
+
+    def test_exact_loader_target_changes_cache_identity(self, tmp_path):
+        """Runtime loader implementation is part of cache provenance."""
+        baseline = _processed_fixture(tmp_path)
+        varied = _processed_fixture(
+            tmp_path,
+            loader_type=_AlternateCacheRecordLoader,
+        )
+
+        assert varied.cache_identity != baseline.cache_identity
+        assert (
+            varied.cache_record["loader"]["target"]
+            != baseline.cache_record["loader"]["target"]
+        )
+
+    @pytest.mark.parametrize(
+        ("option", "different_value"),
+        [("target", "IdentityTransform"), ("value", 2)],
+    )
+    def test_transform_target_and_value_change_cache_identity(
+        self,
+        tmp_path,
+        option,
+        different_value,
+    ):
+        """Transform implementation and parameters are both fingerprinted."""
+        baseline = _processed_fixture(tmp_path)
+        kwargs = (
+            {"transform_name": different_value}
+            if option == "target"
+            else {"transform_value": different_value}
+        )
+        varied = _processed_fixture(tmp_path, **kwargs)
+
+        assert varied.cache_identity != baseline.cache_identity
+
+    def test_effective_transform_defaults_define_identity(self, tmp_path):
+        """Omitted and explicit-equivalent constructor defaults are identical."""
+        omitted = _processed_transform_config(
+            tmp_path,
+            {"degrees": {"transform_name": "NodeDegrees"}},
+        )
+        explicit = _processed_transform_config(
+            tmp_path,
+            {
+                "degrees": {
+                    "transform_name": "NodeDegrees",
+                    "selected_fields": ["edge_index"],
                 }
+            },
+        )
 
-                preprocessor.save_transform_parameters()
+        assert omitted.cache_identity == explicit.cache_identity
+        assert omitted.cache_record["transform"] == {
+            "steps": [
+                {
+                    "name": "degrees",
+                    "target": (
+                        "topobench.transforms.data_manipulations."
+                        "node_degrees.NodeDegrees"
+                    ),
+                    "parameters": {
+                        "preprocessor_device": "cpu",
+                        "selected_fields": ["edge_index"],
+                        "transform_name": "NodeDegrees",
+                    },
+                }
+            ]
+        }
+        for left, right in zip(omitted, explicit, strict=True):
+            assert torch.equal(left.node_degrees, right.node_degrees)
 
-                # Check if file was created
-                param_file = os.path.join(
-                    tmpdir, "path_transform_parameters_dict.json"
+        changed = _processed_transform_config(
+            tmp_path,
+            {
+                "degrees": {
+                    "transform_name": "NodeDegrees",
+                    "selected_fields": [],
+                }
+            },
+        )
+        assert changed.cache_identity != omitted.cache_identity
+
+    def test_transform_reserved_and_variadic_parameters_are_preserved(
+        self,
+        tmp_path,
+    ):
+        """Canonical transform steps retain all supplied variadic parameters."""
+        processed = _processed_transform_config(
+            tmp_path,
+            {
+                "identity": {
+                    "transform_name": "IdentityTransform",
+                    "_partial_": False,
+                    "_target_": "configured.target",
+                    "behavior_flag": {"enabled": True},
+                }
+            },
+        )
+
+        assert processed.cache_record["transform"]["steps"][0][
+            "parameters"
+        ] == {
+            "_partial_": False,
+            "_target_": "configured.target",
+            "behavior_flag": {"enabled": True},
+            "preprocessor_device": "cpu",
+            "transform_name": "IdentityTransform",
+        }
+
+    def test_direct_dataset_effective_defaults_share_readable_identity(
+        self,
+        tmp_path,
+    ):
+        """Direct datasets fingerprint normalized effective content defaults."""
+        cases = [
+            (
+                SyntheticGraphDataset(),
+                SyntheticGraphDataset(
+                    task="graph_classification",
+                    seed=0,
+                ),
+                {
+                    "task": "graph_classification",
+                    "seed": 0,
+                },
+            ),
+            (
+                SyntheticHypergraphDataset(),
+                SyntheticHypergraphDataset(
+                    seed=0,
+                    num_nodes=12,
+                    num_hyperedges=5,
+                ),
+                {
+                    "seed": 0,
+                    "num_nodes": 12,
+                    "num_hyperedges": 5,
+                },
+            ),
+        ]
+
+        for index, (omitted, explicit, expected) in enumerate(cases):
+            data_dir = tmp_path / f"direct-defaults-{index}"
+            omitted_processed = _processed_direct(omitted, data_dir)
+            explicit_processed = _processed_direct(explicit, data_dir)
+
+            assert (
+                omitted_processed.cache_identity
+                == explicit_processed.cache_identity
+            )
+            assert omitted_processed.cache_record["loader"] == {
+                "target": None,
+                "parameters": expected,
+            }
+            assert json.loads(
+                Path(omitted_processed.cache_record_path).read_text(
+                    encoding="utf-8"
                 )
-                assert os.path.exists(param_file)
+            ) == omitted_processed.cache_record
 
-                # Check file contents
-                with open(param_file, 'r') as f:
-                    saved_params = json.load(f)
-                assert saved_params == preprocessor.transforms_parameters
+    def test_direct_dataset_content_parameters_prevent_collisions(
+        self,
+        tmp_path,
+    ):
+        """Graph tasks and hypergraph seeds select distinct direct caches."""
+        transforms_root = tmp_path / "direct-content"
+        graph_classification = _processed_direct(
+            SyntheticGraphDataset(
+                task="graph_classification",
+                seed=11,
+            ),
+            transforms_root,
+        )
+        graph_regression = _processed_direct(
+            SyntheticGraphDataset(task="graph_regression", seed=11),
+            transforms_root,
+        )
+        hypergraph_seed_11 = _processed_direct(
+            SyntheticHypergraphDataset(seed=11),
+            transforms_root,
+        )
+        hypergraph_seed_12 = _processed_direct(
+            SyntheticHypergraphDataset(seed=12),
+            transforms_root,
+        )
 
-    def test_save_transform_parameters_existing_same(self, capsys):
-        """Test saving transform parameters when file exists with same params.
+        assert (
+            graph_classification.cache_identity
+            != graph_regression.cache_identity
+        )
+        assert (
+            graph_classification.cache_record["loader"]["parameters"]["task"]
+            == "graph_classification"
+        )
+        assert (
+            graph_regression.cache_record["loader"]["parameters"]["task"]
+            == "graph_regression"
+        )
+        assert (
+            hypergraph_seed_11.cache_identity
+            != hypergraph_seed_12.cache_identity
+        )
 
-        Parameters
-        ----------
-        capsys : pytest.CaptureFixture
-            Pytest fixture to capture stdout/stderr output.
-        """
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create existing params file
-            params = {"transform1": {"param": "value"}}
-            param_file = os.path.join(
-                tmpdir, "path_transform_parameters_dict.json"
-            )
-            with open(param_file, 'w') as f:
-                json.dump(params, f)
+    def test_same_config_reuses_identity_and_tensors(self, tmp_path):
+        """A cache hit reproduces the exact miss identity and tensors."""
+        miss = _processed_fixture(tmp_path)
+        hit = _processed_fixture(tmp_path)
 
-            with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
-                preprocessor = PreProcessor(None, tmpdir, None)
-                preprocessor.processed_data_dir = tmpdir
-                preprocessor.transforms_parameters = params
+        assert hit.cache_identity == miss.cache_identity
+        assert hit.processed_data_dir == miss.processed_data_dir
+        assert len(hit) == len(miss)
+        for left, right in zip(miss, hit, strict=True):
+            assert left.to_dict().keys() == right.to_dict().keys()
+            for key in left.to_dict():
+                assert torch.equal(left[key], right[key])
 
-                preprocessor.save_transform_parameters()
+    def test_cache_miss_and_hit_preserve_all_global_rng_states(
+        self,
+        tmp_path,
+    ):
+        """Loading and preprocessing never consumes caller-global RNG streams."""
+        for _ in ("miss", "hit"):
+            random.seed(901)
+            np.random.seed(902)
+            torch.manual_seed(903)
+            before = _rng_states()
 
-                # Check that message was printed
-                captured = capsys.readouterr()
-                assert "Transform parameters are the same" in captured.out
+            _processed_fixture(tmp_path)
 
-    def test_save_transform_parameters_existing_different(self):
-        """Test error when saving different transform parameters to same path."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create existing params file with different params
-            existing_params = {"transform1": {"param": "old_value"}}
-            param_file = os.path.join(
-                tmpdir, "path_transform_parameters_dict.json"
-            )
-            with open(param_file, 'w') as f:
-                json.dump(existing_params, f)
+            _assert_rng_states_equal(before, _rng_states())
 
-            with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
-                preprocessor = PreProcessor(None, tmpdir, None)
-                preprocessor.processed_data_dir = tmpdir
-                preprocessor.transforms_parameters = {
-                    "transform1": {"param": "new_value"}
-                }
+    def test_existing_mismatched_record_is_rejected_without_overwrite(
+        self,
+        tmp_path,
+    ):
+        """A digest collision cannot silently replace existing provenance."""
+        first = _processed_fixture(tmp_path)
+        record_path = Path(first.cache_record_path)
+        mismatch = {"schema": "mismatched", "schema_version": -1}
+        record_path.write_text(json.dumps(mismatch), encoding="utf-8")
 
-                with pytest.raises(ValueError, match="Different transform parameters"):
-                    preprocessor.save_transform_parameters()
+        with pytest.raises(ValueError, match="cache identity collision"):
+            _processed_fixture(tmp_path)
+
+        assert json.loads(record_path.read_text(encoding="utf-8")) == mismatch
+
+    def test_digest_component_prevents_transform_path_traversal(self, tmp_path):
+        """Untrusted transform labels never become path components."""
+        preprocessor = _processed_fixture(
+            tmp_path,
+            transform_key="../../escape",
+        )
+        expected_parent = (
+            tmp_path / "cache" / "SyntheticGraph"
+        ).resolve()
+
+        assert Path(preprocessor.processed_data_dir).parent.resolve() == (
+            expected_parent
+        )
+
+    def test_dataset_selector_cannot_escape_loader_root(self, tmp_path):
+        """A selector is provenance, never an unchecked filesystem path."""
+        parameters = _cache_parameters(tmp_path)
+        parameters["data_name"] = "../../escape"
+
+        with pytest.raises(
+            ValueError,
+            match="data_name must remain within data_dir",
+        ):
+            _CacheRecordLoader(DictConfig(parameters)).load()
+
+    @pytest.mark.parametrize("different_value", ["1000", 1000.0])
+    def test_canonical_identity_preserves_primitive_types(
+        self,
+        tmp_path,
+        different_value,
+    ):
+        """Canonical encoding never stringifies distinct primitive types."""
+        baseline = _processed_fixture(tmp_path)
+        varied = _processed_fixture(
+            tmp_path,
+            mutation=(
+                "generation_parameters.family_parameters.n_graphs",
+                different_value,
+            ),
+        )
+
+        assert varied.cache_identity != baseline.cache_identity
+
+    def test_canonical_container_tags_cannot_collide_with_mappings(self):
+        """A readable mapping cannot impersonate a tagged tuple."""
+        tuple_value = normalize_cache_value((1, 2), path="tuple")
+        mapping_value = normalize_cache_value(
+            {"__cache_type__": "tuple", "items": [1, 2]},
+            path="mapping",
+        )
+
+        assert mapping_value != tuple_value
+
+    @pytest.mark.parametrize(
+        ("loader_type", "domain", "data_name", "defaults"),
+        [
+            (
+                SyntheticGraphDatasetLoader,
+                "graph",
+                "SyntheticGraph",
+                {"seed": 0},
+            ),
+            (
+                SyntheticHypergraphDatasetLoader,
+                "hypergraph",
+                "SyntheticHypergraph",
+                {"seed": 0, "num_nodes": 12, "num_hyperedges": 5},
+            ),
+        ],
+    )
+    def test_omitted_and_explicit_synthetic_defaults_share_identity(
+        self,
+        tmp_path,
+        loader_type,
+        domain,
+        data_name,
+        defaults,
+    ):
+        """Effective content defaults are readable and canonical before hashing."""
+        base_parameters = {
+            "data_dir": str(tmp_path / "defaults"),
+            "data_domain": domain,
+            "data_type": "synthetic",
+            "data_name": data_name,
+        }
+        transforms = DictConfig(
+            {"identity": {"transform_name": None, "value": 1}}
+        )
+        results = []
+        for parameters in (
+            base_parameters,
+            {**base_parameters, **defaults},
+        ):
+            dataset, data_dir = loader_type(DictConfig(parameters)).load()
+            results.append(PreProcessor(dataset, data_dir, transforms))
+
+        omitted, explicit = results
+        assert omitted.cache_identity == explicit.cache_identity
+        for key, value in defaults.items():
+            assert omitted.cache_record["loader"]["parameters"][key] == value
+
+    def test_unsupported_loader_value_is_rejected_contextually(self, tmp_path):
+        """Unsupported values identify their exact configuration path."""
+        parameters = _cache_parameters(tmp_path)
+        parameters["unsupported"] = object()
+        config = DictConfig(parameters, flags={"allow_objects": True})
+
+        with pytest.raises(
+            TypeError,
+            match=r"loader\.parameters\.unsupported.*object",
+        ):
+            _CacheRecordLoader(config).load()
+
+    def test_unresolved_loader_config_is_rejected_contextually(self, tmp_path):
+        """Missing OmegaConf interpolation is never hashed as source text."""
+        parameters = _cache_parameters(tmp_path)
+        parameters["unresolved"] = "${missing.value}"
+
+        with pytest.raises(
+            ValueError,
+            match="loader parameters could not be fully resolved",
+        ):
+            _CacheRecordLoader(DictConfig(parameters)).load()
 
     def test_instantiate_pre_transform_with_liftings(self):
         """Test instantiate_pre_transform with liftings config."""
@@ -881,11 +1444,16 @@ class TestPreProcessorTransforms:
                         tmpdir, transforms_config
                     )
 
-                    # Verify set_processed_data_dir was called
-                    preprocessor.set_processed_data_dir.assert_called_once()
-                    call_args = preprocessor.set_processed_data_dir.call_args
-                    assert call_args[0][1] == tmpdir
-                    assert call_args[0][2] == transforms_config
+                    call_args = (
+                        preprocessor.set_processed_data_dir.call_args.args
+                    )
+                    assert call_args[0] == tmpdir
+                    assert call_args[1][0]["name"] == "transform1"
+                    assert call_args[1][0]["parameters"] == {
+                        "param1": "value1",
+                        "preprocessor_device": "cpu",
+                        "transform_name": "Transform1",
+                    }
 
     def test_instantiate_pre_transform_returns_compose(self):
         """Test that instantiate_pre_transform returns a Compose object."""

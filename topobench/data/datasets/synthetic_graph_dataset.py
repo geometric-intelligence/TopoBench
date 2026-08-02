@@ -88,6 +88,15 @@ class SyntheticGraphDataset(InMemoryDataset):
         Seed for a fixture-local random generator.
     """
 
+    feature_policy = "continuous"
+    representation_version = "pyg-data-v1"
+    parser_version = "synthetic-graph-v1"
+
+    @property
+    def cache_parameters(self) -> dict[str, int | str]:
+        """Return effective loader defaults that determine fixture content."""
+        return {"task": self.task, "seed": self.seed}
+
     def __init__(
         self,
         *,
@@ -102,7 +111,8 @@ class SyntheticGraphDataset(InMemoryDataset):
             raise ValueError(f"unsupported synthetic graph task: {task!r}")
         self.task = task
         self.seed = int(seed)
-        generator = torch.Generator().manual_seed(self.seed)
+        generator = torch.Generator(device="cpu")
+        generator.manual_seed(self.seed)
 
         if task == "node_classification":
             examples = [_node_classification_example(generator=generator)]

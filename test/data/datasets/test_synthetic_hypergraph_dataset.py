@@ -1,8 +1,10 @@
 """Tests for the deterministic native synthetic hypergraph dataset."""
 
 from __future__ import annotations
+import random
 
 import hydra
+import numpy as np
 import torch
 from omegaconf import DictConfig
 from torch_geometric.data import Dataset
@@ -31,20 +33,44 @@ def _assert_same_data(left: HypergraphData, right: HypergraphData) -> None:
         else:
             assert left_value == right_value
 
+def _rng_states() -> tuple[object, tuple, torch.Tensor]:
+    """Snapshot Python, NumPy, and Torch caller-global RNG streams."""
+    return random.getstate(), np.random.get_state(), torch.random.get_rng_state()
+
+
+def _assert_rng_states_equal(
+    before: tuple[object, tuple, torch.Tensor],
+    after: tuple[object, tuple, torch.Tensor],
+) -> None:
+    """Compare Python, NumPy, and Torch RNG snapshots exactly."""
+    assert before[0] == after[0]
+    assert before[1][0] == after[1][0]
+    assert np.array_equal(before[1][1], after[1][1])
+    assert before[1][2:] == after[1][2:]
+    assert torch.equal(before[2], after[2])
+
 
 def test_production_factory_is_deterministic_and_generator_local() -> None:
-    """Equal seeds reproduce data without consuming global RNG state."""
-    torch.manual_seed(123)
-    expected_next = torch.rand(4)
-    torch.manual_seed(123)
+    """Equal seeds reproduce data without consuming any global RNG state."""
+    random.seed(401)
+    np.random.seed(402)
+    torch.manual_seed(403)
+    before = _rng_states()
 
     first = make_synthetic_hypergraph_data(seed=11)
-    actual_next = torch.rand(4)
     second = make_synthetic_hypergraph_data(seed=11)
 
     _assert_same_data(first, second)
-    assert torch.equal(actual_next, expected_next)
+    _assert_rng_states_equal(before, _rng_states())
     assert validate_hypergraph_node_data(first, num_classes=2) is first
+
+
+def test_different_hypergraph_seeds_change_generated_features() -> None:
+    """Different local seeds produce observably different fixture content."""
+    first = make_synthetic_hypergraph_data(seed=11)
+    second = make_synthetic_hypergraph_data(seed=12)
+
+    assert not torch.equal(first.x, second.x)
 
 
 def test_fixture_clones_the_production_factory(
@@ -69,6 +95,9 @@ def test_synthetic_dataset_is_deterministic_and_native() -> None:
     assert len(first) == len(second) == 1
     left = first[0]
     right = second[0]
+    assert first.feature_policy == second.feature_policy == "continuous"
+    assert first.representation_version == left.representation_version
+    assert first.parser_version == "synthetic-hypergraph-v1"
     assert isinstance(left, HypergraphData)
     _assert_same_data(left, right)
     assert validate_hypergraph_node_data(left, num_classes=2) is left

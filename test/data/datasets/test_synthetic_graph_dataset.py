@@ -1,9 +1,11 @@
 """Tests for packaged deterministic native homogeneous graph fixtures."""
 
 from __future__ import annotations
+import random
 
 import hydra
 import pytest
+import numpy as np
 import torch
 from omegaconf import DictConfig
 from torch_geometric.data import Data, Dataset
@@ -11,6 +13,53 @@ from torch_geometric.data import Data, Dataset
 from topobench.data.datasets import SyntheticGraphDataset
 from topobench.data.loaders import SyntheticGraphDatasetLoader
 from topobench.data.splits import validate_transductive_masks
+
+def _rng_states() -> tuple[object, tuple, torch.Tensor]:
+    """Snapshot Python, NumPy, and Torch caller-global RNG streams."""
+    return random.getstate(), np.random.get_state(), torch.random.get_rng_state()
+
+
+def _assert_rng_states_equal(
+    before: tuple[object, tuple, torch.Tensor],
+    after: tuple[object, tuple, torch.Tensor],
+) -> None:
+    """Compare Python, NumPy, and Torch RNG snapshots exactly."""
+    assert before[0] == after[0]
+    assert before[1][0] == after[1][0]
+    assert np.array_equal(before[1][1], after[1][1])
+    assert before[1][2:] == after[1][2:]
+    assert torch.equal(before[2], after[2])
+
+
+@pytest.mark.parametrize(
+    "task",
+    ["graph_classification", "graph_regression", "node_classification"],
+)
+def test_synthetic_graph_generation_preserves_global_rng_states(task) -> None:
+    """Fixture generation uses only local RNG objects."""
+    random.seed(301)
+    np.random.seed(302)
+    torch.manual_seed(303)
+    before = _rng_states()
+
+    SyntheticGraphDataset(task=task, seed=19)
+
+    _assert_rng_states_equal(before, _rng_states())
+
+
+@pytest.mark.parametrize(
+    "task",
+    ["graph_classification", "graph_regression", "node_classification"],
+)
+def test_different_synthetic_graph_seeds_change_generated_features(task) -> None:
+    """Different local seeds produce observably different fixture content."""
+    first = SyntheticGraphDataset(task=task, seed=19)
+    second = SyntheticGraphDataset(task=task, seed=20)
+
+    assert any(
+        not torch.equal(left.x, right.x)
+        for left, right in zip(first, second, strict=True)
+    )
 
 
 @pytest.mark.parametrize(
@@ -31,6 +80,9 @@ def test_synthetic_graph_dataset_is_deterministic(
 
     assert len(first) == expected_length
     assert len(second) == expected_length
+    assert first.feature_policy == second.feature_policy == "continuous"
+    assert first.representation_version == "pyg-data-v1"
+    assert first.parser_version == "synthetic-graph-v1"
     for left, right in zip(first, second, strict=True):
         assert isinstance(left, Data)
         assert left.to_dict().keys() == right.to_dict().keys()
