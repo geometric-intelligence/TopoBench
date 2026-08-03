@@ -45,6 +45,7 @@ def test_native_graph_pipeline_runs_two_epochs_with_real_batches(
     assert result["observed_train_batch_size"] > 1
     assert {"train/loss", "val/loss"} <= result["fit_metrics"].keys()
     assert result["test_results"]
+    assert result["test_results"][0]["test/num_examples"] > 0
 
 
 @pytest.mark.download

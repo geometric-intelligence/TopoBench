@@ -522,3 +522,18 @@ class TestHeterogeneousNodeSupervisionAdapter:
                 _heterogeneous_batch(),
                 "Training",
             )
+
+
+def test_graph_selection_returns_loss_owning_tensor_aliases_without_copy() -> None:
+    """Graph supervision preserves the exact prediction and target objects."""
+    logits = torch.randn(3, 2, requires_grad=True)
+    targets = torch.tensor([0, 1, 0])
+    selected = DefaultSupervisionAdapter("graph").select(
+        {"logits": logits, "labels": targets},
+        Data(),
+        "Training",
+    )
+
+    assert selected.logits is logits
+    assert selected.targets is targets
+    assert selected.num_examples == 3

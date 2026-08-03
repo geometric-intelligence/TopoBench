@@ -178,11 +178,14 @@ def test_documented_synthetic_example_builds_and_forwards(
     model = instantiate_model(cfg, data_spec=pipeline_output.data_spec)
     assert isinstance(model, TBModel)
     model.eval()
-    model.state_str = "Training"
+    model.on_train_epoch_start()
     batch = next(iter(datamodule.train_dataloader()))
     assert isinstance(batch, HeteroData)
-    with torch.no_grad():
-        output = model.model_step(batch)
+    try:
+        with torch.no_grad():
+            output = model.model_step(batch)
+    finally:
+        model.abort_evaluation()
 
     assert math.isfinite(float(output["loss"]))
     expected_examples = (

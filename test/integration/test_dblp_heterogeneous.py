@@ -87,20 +87,27 @@ def test_real_dblp_smoke(tmp_path: Path) -> None:
         )
         model = instantiate_model(cfg, data_spec=spec)
         model.train()
-        model.state_str = "Training"
-        optimizer = model.configure_optimizers()["optimizer"]
-        batch = next(iter(datamodule.train_dataloader()))
-        optimizer.zero_grad(set_to_none=True)
-        loss = model.model_step(batch)["loss"]
+        model.on_train_epoch_start()
+        try:
+            optimizer = model.configure_optimizers()["optimizer"]
+            batch = next(iter(datamodule.train_dataloader()))
+            optimizer.zero_grad(set_to_none=True)
+            loss = model.model_step(batch)["loss"]
 
-        assert math.isfinite(float(loss.detach()))
-        loss.backward()
-        gradients = [
-            parameter.grad
-            for parameter in model.parameters()
-            if parameter.requires_grad and parameter.grad is not None
-        ]
-        assert gradients
-        assert all(torch.isfinite(gradient).all() for gradient in gradients)
-        assert any(torch.count_nonzero(gradient) > 0 for gradient in gradients)
-        optimizer.step()
+            assert math.isfinite(float(loss.detach()))
+            loss.backward()
+            gradients = [
+                parameter.grad
+                for parameter in model.parameters()
+                if parameter.requires_grad and parameter.grad is not None
+            ]
+            assert gradients
+            assert all(
+                torch.isfinite(gradient).all() for gradient in gradients
+            )
+            assert any(
+                torch.count_nonzero(gradient) > 0 for gradient in gradients
+            )
+            optimizer.step()
+        finally:
+            model.abort_evaluation()

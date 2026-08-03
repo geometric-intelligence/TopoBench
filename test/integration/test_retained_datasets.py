@@ -22,6 +22,7 @@ from topobench.data import (
 )
 from topobench.data.capabilities import GRAPH_DATASET_MANIFEST
 from topobench.data.loaders.graph.adme_datasets import ADMEDatasetLoader
+from topobench.evaluator.backends import UndefinedMetricError
 from topobench.utils.config_resolvers import register_all_resolvers
 from topobench.utils.model_instantiation import instantiate_model
 
@@ -422,20 +423,34 @@ def _execute_lifecycle(
     model = instantiate_model(cfg, data_spec=output.data_spec)
     model.train()
     model.state_str = "Training"
-    model_out = model.model_step(batch)
-    _assert_supervision_shapes(qualification, cfg, model_out)
+    model.on_train_epoch_start()
+    try:
+        model_out = model.model_step(batch)
+        _assert_supervision_shapes(qualification, cfg, model_out)
 
-    loss = model_out["loss"]
-    assert isinstance(loss, torch.Tensor)
-    assert loss.ndim == 0
-    assert math.isfinite(float(loss.detach()))
+        loss = model_out["loss"]
+        assert isinstance(loss, torch.Tensor)
+        assert loss.ndim == 0
+        assert math.isfinite(float(loss.detach()))
 
-    metrics = model.evaluator.compute()
-    assert metrics
-    for metric in metrics.values():
-        assert isinstance(metric, torch.Tensor)
-        assert metric.ndim == 0
-        assert torch.isfinite(metric)
+        try:
+            result = model.evaluator.snapshot()
+        except UndefinedMetricError as error:
+            assert error.num_examples > 0
+            assert error.reason in {
+                "binary_target_single_class",
+                "macro_target_missing_class",
+                "multiclass_target_missing_class",
+                "r2_constant_target",
+            }
+        else:
+            assert result.metrics
+            for metric in result.metrics.values():
+                if isinstance(metric, torch.Tensor):
+                    assert metric.ndim == 0
+                assert math.isfinite(float(metric))
+    finally:
+        model.abort_evaluation()
     return feature_batch, model, model_out
 
 

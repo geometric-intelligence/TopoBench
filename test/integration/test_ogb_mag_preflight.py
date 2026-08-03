@@ -200,24 +200,31 @@ def test_real_ogb_mag_sampled_preflight(tmp_path: Path) -> None:
         _prepare_memory_report(device)
         model = instantiate_model(cfg, data_spec=spec).to(device)
         model.train()
-        model.state_str = "Training"
-        optimizer = model.configure_optimizers()["optimizer"]
-        batch = _take_one(datamodule.train_dataloader()).to(device)
-        optimizer.zero_grad(set_to_none=True)
-        loss = model.model_step(batch)["loss"]
+        model.on_train_epoch_start()
+        try:
+            optimizer = model.configure_optimizers()["optimizer"]
+            batch = _take_one(datamodule.train_dataloader()).to(device)
+            optimizer.zero_grad(set_to_none=True)
+            loss = model.model_step(batch)["loss"]
 
-        assert math.isfinite(float(loss.detach()))
-        loss.backward()
-        gradients = [
-            parameter.grad
-            for parameter in model.parameters()
-            if parameter.requires_grad and parameter.grad is not None
-        ]
-        assert gradients
-        assert all(torch.isfinite(gradient).all() for gradient in gradients)
-        assert any(torch.count_nonzero(gradient) > 0 for gradient in gradients)
-        optimizer.step()
-        _report_accelerator_memory(model_name, device)
+            assert math.isfinite(float(loss.detach()))
+            loss.backward()
+            gradients = [
+                parameter.grad
+                for parameter in model.parameters()
+                if parameter.requires_grad and parameter.grad is not None
+            ]
+            assert gradients
+            assert all(
+                torch.isfinite(gradient).all() for gradient in gradients
+            )
+            assert any(
+                torch.count_nonzero(gradient) > 0 for gradient in gradients
+            )
+            optimizer.step()
+            _report_accelerator_memory(model_name, device)
+        finally:
+            model.abort_evaluation()
         del batch, gradients, loss, model, optimizer
         if device.type == "cuda":
             torch.cuda.empty_cache()

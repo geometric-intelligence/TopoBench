@@ -290,6 +290,17 @@ def test_full_batch_training_validation_checkpoint_and_best_rerun(
         HeterogeneousNodeDataModule,
     )
     assert objects["datamodule"].mode == "full_batch"
+    target_type = objects["datamodule"].spec.target_node_type
+    target_store = objects["datamodule"].data[target_type]
+    assert int(fit_metrics["train/num_examples"]) == int(
+        target_store.train_mask.sum()
+    )
+    assert int(fit_metrics["val/num_examples"]) == int(
+        target_store.val_mask.sum()
+    )
+    assert int(rerun_trainer.callback_metrics["test/num_examples"]) == int(
+        target_store.test_mask.sum()
+    )
 
 
 @pytest.mark.parametrize(
@@ -357,6 +368,17 @@ def test_neighbor_training_validation_checkpoint_and_best_rerun(
     expected_test_count = int(datamodule.data[target_type].test_mask.sum())
     assert test_batch_sizes == [4, 4, 2]
     assert sum(test_batch_sizes) == expected_test_count
+    target_store = datamodule.data[target_type]
+    assert int(fit_metrics["train/num_examples"]) == (
+        int(cfg.trainer.limit_train_batches)
+        * int(cfg.dataset.dataloader_params.batch_size)
+    )
+    assert int(fit_metrics["val/num_examples"]) == int(
+        target_store.val_mask.sum()
+    )
+    assert int(rerun_trainer.callback_metrics["test/num_examples"]) == (
+        expected_test_count
+    )
 
     rerun_sinks = [
         MagicMock(spec=WandbLogger),
@@ -541,9 +563,12 @@ def test_full_batch_best_rerun_logs_prefixed_finite_metrics(
         "loss",
         "accuracy",
         "auroc",
+        "auprc",
         "f1",
         "precision",
         "recall",
+        "somers_d",
+        "num_examples",
     }
     assert sink.log_metrics.call_count == 2
     assert all(
@@ -581,9 +606,11 @@ def _direct_model_loss(
     batch: Data | HeteroData,
 ) -> torch.Tensor:
     """Evaluate one fresh training-supervision batch without metric carryover."""
-    model.state_str = "Training"
-    output = model.model_step(batch)
-    model.evaluator.reset()
+    model.on_train_epoch_start()
+    try:
+        output = model.model_step(batch)
+    finally:
+        model.abort_evaluation()
     return output["loss"]
 
 
@@ -644,8 +671,11 @@ def _fixed_evaluation_signature(
 ) -> tuple[tuple[tuple[int, ...], ...], dict[str, float]]:
     """Evaluate one complete sampled phase and retain its seed/metric identity."""
     model.eval()
-    model.state_str = _phase_state(phase)
-    model.evaluator.reset()
+    {
+        "train": model.on_train_epoch_start,
+        "val": model.on_validation_epoch_start,
+        "test": model.on_test_epoch_start,
+    }[phase]()
     seed_batches: list[tuple[int, ...]] = []
     weighted_loss = 0.0
     total_examples = 0
@@ -664,10 +694,11 @@ def _fixed_evaluation_signature(
             weighted_loss += float(output["loss"]) * seed_count
             total_examples += seed_count
     assert total_examples > 0
-    metrics = {
-        name: float(value) for name, value in model.evaluator.compute().items()
-    }
-    model.evaluator.reset()
+    result = model.evaluator.snapshot()
+    metrics = {name: float(value) for name, value in result.metrics.items()}
+    metrics["num_examples"] = float(result.num_examples)
+    assert result.num_examples == total_examples
+    model.abort_evaluation()
     metrics["loss"] = weighted_loss / total_examples
     return tuple(seed_batches), metrics
 

@@ -99,14 +99,18 @@ def test_scalar_regression_preserves_exact_batch_target_shape_including_remainde
     datamodule, model = _build(cfg)
     observed_shapes: list[tuple[int, int]] = []
 
-    for batch in datamodule.train_dataloader():
-        model_out = model.model_step(batch)
-        expected = (int(batch.num_graphs), 1)
-        assert tuple(model_out["logits"].shape) == expected
-        assert tuple(model_out["labels"].shape) == expected
-        assert model_out["loss"].ndim == 0
-        assert torch.isfinite(model_out["loss"])
-        observed_shapes.append(expected)
+    model.on_train_epoch_start()
+    try:
+        for batch in datamodule.train_dataloader():
+            model_out = model.model_step(batch)
+            expected = (int(batch.num_graphs), 1)
+            assert tuple(model_out["logits"].shape) == expected
+            assert tuple(model_out["labels"].shape) == expected
+            assert model_out["loss"].ndim == 0
+            assert torch.isfinite(model_out["loss"])
+            observed_shapes.append(expected)
+    finally:
+        model.abort_evaluation()
 
     assert observed_shapes == [(3, 1), (3, 1), (2, 1)]
 
@@ -118,11 +122,17 @@ def test_every_declared_non_gcn_regressor_preserves_scalar_shape(
     cfg = _compose("SyntheticGraphRegression", model_selector)
     datamodule, model = _build(cfg)
     batch = next(iter(datamodule.train_dataloader()))
-
-    model_out = model.model_step(batch)
-    assert model_out["logits"].shape == model_out["labels"].shape
-    assert tuple(model_out["logits"].shape) == (int(batch.num_graphs), 1)
-    assert torch.isfinite(model_out["loss"])
+    model.on_train_epoch_start()
+    try:
+        model_out = model.model_step(batch)
+        assert model_out["logits"].shape == model_out["labels"].shape
+        assert tuple(model_out["logits"].shape) == (
+            int(batch.num_graphs),
+            1,
+        )
+        assert torch.isfinite(model_out["loss"])
+    finally:
+        model.abort_evaluation()
 
 
 @pytest.mark.parametrize("model_selector", ("gps", "nsd"))

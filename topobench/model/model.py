@@ -7,8 +7,15 @@ from typing import Any
 import torch
 from lightning import LightningModule
 from torch_geometric.data import Batch, Data, HeteroData
-from torchmetrics import MeanMetric
 
+from topobench.evaluator import (
+    AbstractEvaluator,
+    EvaluationBatch,
+    EvaluationContext,
+    EvaluationPassKind,
+    EvaluationResult,
+    EvaluationSplit,
+)
 from topobench.data.hypergraph import HypergraphData
 from topobench.dataloader.input_monitor import (
     InputMonitor,
@@ -67,8 +74,8 @@ class TBModel(LightningModule):
         The backbone wrapper class (default: None).
     feature_encoder : torch.nn.Module, optional
         The feature encoder (default: None).
-    evaluator : Any, optional
-        The evaluator class (default: None).
+    evaluator : AbstractEvaluator, optional
+        Typed evaluator lifecycle owned by this model (default: None).
     optimizer : Any, optional
         The optimizer class (default: None).
     supervision_adapter : SupervisionAdapter, optional
@@ -95,7 +102,7 @@ class TBModel(LightningModule):
         loss: torch.nn.Module,
         backbone_wrapper: torch.nn.Module | None = None,
         feature_encoder: torch.nn.Module | None = None,
-        evaluator: Any = None,
+        evaluator: AbstractEvaluator | None = None,
         optimizer: Any = None,
         supervision_adapter: SupervisionAdapter | None = None,
         execution_monitor: InputMonitor | None = None,
@@ -133,9 +140,9 @@ class TBModel(LightningModule):
             self.backbone = backbone_wrapper(backbone)
         self.readout = readout
 
-        # Evaluator
         self.evaluator = evaluator
-        self.train_metrics_logged = False
+        self._active_evaluation_context: EvaluationContext | None = None
+        self._next_validation_pass_kind: EvaluationPassKind = "fit_epoch"
         self._dataloader_optimizer_success_token = 0
         self._dataloader_evaluator_sequence = 0
         self._dataloader_evaluator_count = 0
@@ -152,11 +159,6 @@ class TBModel(LightningModule):
             else supervision_adapter
         )
 
-        # Tracking best so far validation accuracy
-        self.val_acc_best = MeanMetric()
-        self.metric_collector_val = []
-        self.metric_collector_val2 = []
-        self.metric_collector_test = []
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(backbone={self.backbone}, readout={self.readout}, loss={self.loss}, feature_encoder={self.feature_encoder})"
@@ -254,6 +256,9 @@ class TBModel(LightningModule):
         monitor = self.execution_monitor
         compute_token: OperationToken | None = None
         context = self._execution_context(batch) if monitor is not None else None
+        evaluation_context = self._active_evaluation_context
+        if evaluation_context is None:
+            raise RuntimeError("model_step requires an active evaluation phase")
         if monitor is not None:
             assert context is not None
             phase, split, sequence, epoch, global_step, digest, cuda_timing = (
@@ -272,6 +277,13 @@ class TBModel(LightningModule):
             batch["model_state"] = self.state_str
             model_out = self.forward(batch)
             model_out = self.process_outputs(model_out=model_out, batch=batch)
+            evaluation_batch = EvaluationBatch(
+                outputs=model_out["logits"],
+                targets=model_out["labels"],
+                num_examples=model_out["num_supervised_examples"],
+                context=evaluation_context,
+                sequence_id=getattr(batch, "sequence_id", None),
+            )
             model_out = self.loss(model_out=model_out, batch=batch)
         except BaseException:
             if monitor is not None and compute_token is not None:
@@ -283,6 +295,7 @@ class TBModel(LightningModule):
                     )
                 except Exception:
                     pass
+            self._abort_after_failure()
             raise
         if monitor is not None and compute_token is not None:
             examples = model_out.get("num_supervised_examples")
@@ -310,7 +323,7 @@ class TBModel(LightningModule):
                 cuda_timing=cuda_timing,
             )
         try:
-            self.evaluator.update(model_out)
+            self.evaluator.update(evaluation_batch)
         except BaseException:
             if monitor is not None and evaluator_token is not None:
                 try:
@@ -321,6 +334,7 @@ class TBModel(LightningModule):
                     )
                 except Exception:
                     pass
+            self._abort_after_failure()
             raise
         if monitor is not None and evaluator_token is not None:
             monitor.finish(evaluator_token)
@@ -329,104 +343,71 @@ class TBModel(LightningModule):
     def training_step(
         self, batch: Data | HeteroData, batch_idx: int
     ) -> torch.Tensor:
-        r"""Perform a single training step on a batch of data.
-
-        Parameters
-        ----------
-        batch : torch_geometric.data.Data or torch_geometric.data.HeteroData
-            Homogeneous or heterogeneous batch containing the model inputs.
-        batch_idx : int
-            The index of the current batch.
-
-        Returns
-        -------
-        torch.Tensor
-            A tensor of losses between model predictions and targets.
-        """
+        """Perform one failure-safe typed training step."""
+        del batch_idx
         self.state_str = "Training"
-        model_out = self.model_step(batch)
+        try:
+            model_out = self.model_step(batch)
+            loss_value = model_out["loss"].item()
+            self.log(
+                "train/loss",
+                loss_value,
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
+                batch_size=model_out["num_supervised_examples"],
+            )
+        except BaseException:
+            self._abort_after_failure()
+            raise
+
         sequence_id = getattr(batch, "sequence_id", None)
-        if sequence_id is not None:
-            if isinstance(sequence_id, bool) or not isinstance(
-                sequence_id,
-                Integral,
-            ):
-                raise TypeError("training batch sequence_id must be an integer")
-            sequence_id = int(sequence_id)
-            expected_sequence = self._dataloader_evaluator_sequence + 1
-            if sequence_id != expected_sequence:
-                raise ValueError(
-                    "training evaluator sequence expected "
-                    f"{expected_sequence}, received {sequence_id}"
-                )
-            self._dataloader_evaluator_sequence = sequence_id
-            self._dataloader_evaluator_count += 1
-
-        # Update and log metrics
-        loss_value = model_out["loss"].item()
-        # This reduction weight is local to the current process; see the class
-        # note for the intentionally unsupported globally weighted DDP case.
-        self.log(
-            "train/loss",
-            loss_value,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            batch_size=model_out["num_supervised_examples"],
-        )
-
-        # Return loss for backpropagation step
+        if (
+            sequence_id is not None
+            and not isinstance(sequence_id, bool)
+            and isinstance(sequence_id, Integral)
+        ):
+            self._dataloader_evaluator_sequence = int(sequence_id)
+        self._dataloader_evaluator_count += 1
         return model_out["loss"]
 
     def validation_step(
         self, batch: Data | HeteroData, batch_idx: int
     ) -> None:
-        r"""Perform a single validation step on a batch of data.
-
-        Parameters
-        ----------
-        batch : torch_geometric.data.Data or torch_geometric.data.HeteroData
-            Homogeneous or heterogeneous batch containing the model inputs.
-        batch_idx : int
-            The index of the current batch.
-        """
+        """Perform one failure-safe typed validation step."""
+        del batch_idx
         self.state_str = "Validation"
-        model_out = self.model_step(batch)
-
-        # Log Loss
-        loss_value = model_out["loss"].item()
-        self.log(
-            "val/loss",
-            loss_value,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            batch_size=model_out["num_supervised_examples"],
-        )
+        try:
+            model_out = self.model_step(batch)
+            self.log(
+                "val/loss",
+                model_out["loss"].item(),
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
+                batch_size=model_out["num_supervised_examples"],
+            )
+        except BaseException:
+            self._abort_after_failure()
+            raise
 
     def test_step(self, batch: Data | HeteroData, batch_idx: int) -> None:
-        r"""Perform a single test step on a batch of data.
-
-        Parameters
-        ----------
-        batch : torch_geometric.data.Data or torch_geometric.data.HeteroData
-            Homogeneous or heterogeneous batch containing the model inputs.
-        batch_idx : int
-            The index of the current batch.
-        """
+        """Perform one failure-safe typed test step."""
+        del batch_idx
         self.state_str = "Test"
-        model_out = self.model_step(batch)
-
-        # Log loss
-        loss_value = model_out["loss"].item()
-        self.log(
-            "test/loss",
-            loss_value,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            batch_size=model_out["num_supervised_examples"],
-        )
+        try:
+            model_out = self.model_step(batch)
+            self.log(
+                "test/loss",
+                model_out["loss"].item(),
+                on_step=False,
+                on_epoch=True,
+                prog_bar=True,
+                batch_size=model_out["num_supervised_examples"],
+            )
+        except BaseException:
+            self._abort_after_failure()
+            raise
 
     def process_outputs(
         self,
@@ -457,89 +438,154 @@ class TBModel(LightningModule):
         model_out["num_supervised_examples"] = supervised.num_examples
         return model_out
 
-    def log_metrics(self, mode=None):
-        r"""Log metrics.
+    def _evaluation_context(
+        self,
+        split: EvaluationSplit,
+        pass_kind: EvaluationPassKind,
+    ) -> EvaluationContext:
+        """Build the only context used by production steps and probes."""
+        task = getattr(self.evaluator, "task", None)
+        num_classes = getattr(self.evaluator, "num_classes", None)
+        if task not in {"classification", "regression"}:
+            raise TypeError("evaluator must expose a supported task")
+        if isinstance(num_classes, bool) or not isinstance(num_classes, int):
+            raise TypeError("evaluator must expose an integer num_classes")
+        return EvaluationContext(
+            split=split,
+            pass_kind=pass_kind,
+            policy="online" if split == "train" else "exact",
+            task=task,
+            num_classes=num_classes,
+        )
 
-        Parameters
-        ----------
-        mode : str, optional
-            The mode of the model, either "train", "val", or "test" (default: None).
-        """
-        metrics_dict = self.evaluator.compute()
+    def _begin_evaluation(
+        self,
+        split: EvaluationSplit,
+        pass_kind: EvaluationPassKind,
+    ) -> None:
+        """Open one model-owned evaluator context without phase overlap."""
+        if self._active_evaluation_context is not None:
+            raise RuntimeError(
+                "cannot begin an evaluation phase while another is active"
+            )
+        context = self._evaluation_context(split, pass_kind)
+        self._active_evaluation_context = context
+        try:
+            self.evaluator.begin(context)
+        except BaseException:
+            self._abort_after_failure()
+            raise
+        self.state_str = {
+            "train": "Training",
+            "val": "Validation",
+            "test": "Test",
+        }[split]
 
-        # Log current metrics
-        for key in metrics_dict:
+    def _log_evaluation_result(self, result: EvaluationResult) -> None:
+        """Publish finalized metrics and the exact phase count once."""
+        namespace = result.context.split
+        for name, value in result.metrics.items():
             self.log(
-                f"{mode}/{key}",
-                metrics_dict[key],
+                f"{namespace}/{name}",
+                value,
                 prog_bar=True,
                 on_step=False,
             )
+        self.log(
+            f"{namespace}/num_examples",
+            result.num_examples,
+            prog_bar=False,
+            on_step=False,
+        )
 
-        # Reset evaluator for next epoch
-        self.evaluator.reset()
+    def _finalize_evaluation(self, split: EvaluationSplit) -> None:
+        """Finalize and log exactly one matching active phase."""
+        context = self._active_evaluation_context
+        if context is None:
+            return
+        if context.split != split:
+            raise RuntimeError(
+                f"cannot finalize {split!r} while {context.split!r} is active"
+            )
+        try:
+            result = self.evaluator.finalize()
+        except BaseException:
+            self._abort_after_failure()
+            raise
+        self._active_evaluation_context = None
+        try:
+            self._log_evaluation_result(result)
+        except BaseException:
+            self._abort_after_failure(force=True)
+            raise
 
-    def on_validation_epoch_start(self) -> None:
-        r"""Hook called when a validation epoch begins.
+    def _abort_after_failure(self, *, force: bool = False) -> None:
+        """Clear evaluator and model phase state while preserving root errors."""
+        context = self._active_evaluation_context
+        state = getattr(self.evaluator, "state", None)
+        if not force and context is None and state not in {"active", "failed"}:
+            return
+        try:
+            self.evaluator.abort()
+        except RuntimeError:
+            if not force and context is not None:
+                raise
+        finally:
+            self._active_evaluation_context = None
 
-        According pytorch lightning documentation this hook is called at the beginning of the
-        validation epoch.
+    def abort_evaluation(self) -> None:
+        """Abort an active evaluator phase, including throwaway probes."""
+        self._abort_after_failure()
 
-        https://lightning.ai/docs/pytorch/stable/common/lightning_module.html#hooks
-
-        Note that the validation step is within the train epoch. Hence here we have to log the train metrics
-        before we reset the evaluator to start the validation loop.
-        """
-        # Log train metrics and reset evaluator
-        self.log_metrics(mode="train")
-        self.train_metrics_logged = True
-
-    def on_train_epoch_end(self) -> None:
-        r"""Lightning hook that is called when a train epoch ends.
-
-        This hook is used to log the train metrics.
-        """
-        # Log train metrics and reset evaluator
-        if not self.train_metrics_logged:
-            self.log_metrics(mode="train")
-            self.train_metrics_logged = True
-
-    def on_validation_epoch_end(self) -> None:
-        r"""Lightning hook that is called when a validation epoch ends.
-
-        This hook is used to log the validation metrics.
-        """
-        # Log validation metrics and reset evaluator
-        self.log_metrics(mode="val")
-
-    def on_test_epoch_end(self) -> None:
-        r"""Lightning hook that is called when a test epoch ends.
-
-        This hook is used to log the test metrics.
-        """
-        self.log_metrics(mode="test")
+    def set_next_validation_pass_kind(
+        self,
+        pass_kind: EvaluationPassKind,
+    ) -> None:
+        """Select one upcoming validation context without replacing hooks."""
+        if pass_kind not in {"fit_epoch", "selected_checkpoint"}:
+            raise ValueError(
+                "validation pass kind must be fit_epoch or selected_checkpoint"
+            )
+        if self._active_evaluation_context is not None:
+            raise RuntimeError(
+                "validation pass kind cannot change during an active phase"
+            )
+        self._next_validation_pass_kind = pass_kind
 
     def on_train_epoch_start(self) -> None:
-        r"""Lightning hook that is called when a train epoch begins.
+        """Begin the online training accumulation window."""
+        self._begin_evaluation("train", "fit_epoch")
 
-        This hook is used to reset the train metrics.
-        """
-        self.evaluator.reset()
-        self.train_metrics_logged = False
+    def on_validation_epoch_start(self) -> None:
+        """Close training once, then begin the requested validation pass."""
+        if (
+            self._active_evaluation_context is not None
+            and self._active_evaluation_context.split == "train"
+        ):
+            self._finalize_evaluation("train")
+        pass_kind = self._next_validation_pass_kind
+        self._begin_evaluation("val", pass_kind)
+        self._next_validation_pass_kind = "fit_epoch"
 
-    def on_val_epoch_start(self) -> None:
-        r"""Lightning hook that is called when a validation epoch begins.
+    def on_train_epoch_end(self) -> None:
+        """Finalize training when no validation loop already closed it."""
+        if (
+            self._active_evaluation_context is not None
+            and self._active_evaluation_context.split == "train"
+        ):
+            self._finalize_evaluation("train")
 
-        This hook is used to reset the validation metrics.
-        """
-        self.evaluator.reset()
+    def on_validation_epoch_end(self) -> None:
+        """Finalize the exact validation accumulation window."""
+        self._finalize_evaluation("val")
 
     def on_test_epoch_start(self) -> None:
-        r"""Lightning hook that is called when a test epoch begins.
+        """Begin exact selected-checkpoint testing."""
+        self._begin_evaluation("test", "selected_checkpoint")
 
-        This hook is used to reset the test metrics.
-        """
-        self.evaluator.reset()
+    def on_test_epoch_end(self) -> None:
+        """Finalize the exact selected-checkpoint test window."""
+        self._finalize_evaluation("test")
 
     def setup(self, stage: str) -> None:
         r"""Hook to call torch.compile.
@@ -683,9 +729,9 @@ class TBModel(LightningModule):
         ):
             raise TypeError("evaluator sequence and count must be integers")
         sequence_id, count = int(sequence_id), int(count)
-        if sequence_id < 0 or count != sequence_id:
+        if sequence_id < 0 or count < 0:
             raise ValueError(
-                "evaluator sequence/count must be equal non-negative values"
+                "evaluator sequence and count must be non-negative values"
             )
         state = _clone_evaluator_state(snapshot["state"])
         owner = self._dataloader_evaluator_owner()

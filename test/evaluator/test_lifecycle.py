@@ -33,6 +33,7 @@ class FakeBackend:
         self.update_calls = 0
         self.reset_calls = 0
         self.active_examples = 0
+        self.last_batch: EvaluationBatch | None = None
 
     def begin(self, context: EvaluationContext) -> None:
         self.context = context
@@ -40,6 +41,7 @@ class FakeBackend:
     def update(self, batch: EvaluationBatch) -> None:
         self.update_calls += 1
         self.active_examples += batch.num_examples
+        self.last_batch = batch
         if self.update_calls == self.fail_update_at:
             raise RuntimeError("backend update failed")
 
@@ -347,4 +349,30 @@ def test_snapshot_tensor_mutation_cannot_affect_backend_or_later_result() -> Non
     assert second.metrics["score"].item() == pytest.approx(0.75)
     assert first.metrics["score"].data_ptr() != backend_value.data_ptr()
     assert second.metrics["score"].data_ptr() != first.metrics["score"].data_ptr()
+    evaluator.abort()
+
+
+def test_backend_receives_exact_typed_batch_references_and_canonical_id() -> None:
+    """Lifecycle routing does not clone tensors or reinterpret sequence IDs."""
+    backend = FakeBackend()
+    evaluator = _evaluator(OrderedDict([("score", backend)]))
+    context = _context(split="train", policy="online")
+    outputs = torch.randn(2, 2, requires_grad=True)
+    targets = torch.tensor([0, 1])
+    batch = EvaluationBatch(
+        outputs=outputs,
+        targets=targets,
+        num_examples=2,
+        context=context,
+        sequence_id=("partition", 17),
+    )
+    evaluator.begin(context)
+
+    evaluator.update(batch)
+
+    assert backend.last_batch is batch
+    assert backend.last_batch.outputs is outputs
+    assert backend.last_batch.targets is targets
+    assert backend.last_batch.sequence_id == ("partition", 17)
+    assert evaluator.snapshot().num_examples == 2
     evaluator.abort()
