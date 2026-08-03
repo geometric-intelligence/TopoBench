@@ -1,6 +1,10 @@
 """Main entry point for training and testing models."""
 
+import hashlib
+from collections.abc import Mapping
+from contextlib import suppress
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import hydra
@@ -10,7 +14,6 @@ import torch
 from lightning import Callback, LightningDataModule, LightningModule, Trainer
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
 from lightning.pytorch.loggers import Logger
-from lightning.pytorch.loggers.wandb import WandbLogger
 from omegaconf import DictConfig, OmegaConf
 
 from topobench.callbacks.input_pipeline import (
@@ -18,6 +21,7 @@ from topobench.callbacks.input_pipeline import (
     create_input_monitor,
 )
 from topobench.domains import SUPPORTED_DOMAINS
+from topobench.evaluator import EvaluationResult
 from topobench.nn.capabilities import validate_graph_composition
 from topobench.preflight import PreflightRunner
 from topobench.utils import (
@@ -157,7 +161,9 @@ def _instantiate_execution_monitor(
         return None
     resolved = OmegaConf.to_container(monitor_configs[0], resolve=True)
     if not isinstance(resolved, dict):
-        raise TypeError("InputPipelineCallback config must resolve to a mapping")
+        raise TypeError(
+            "InputPipelineCallback config must resolve to a mapping"
+        )
     monitor_keys = {
         "event_log_path",
         "event_capacity",
@@ -173,9 +179,7 @@ def _instantiate_execution_monitor(
         "stall_action",
     }
     monitor_kwargs = {
-        key: value
-        for key, value in resolved.items()
-        if key in monitor_keys
+        key: value for key, value in resolved.items() if key in monitor_keys
     }
     return create_input_monitor(**monitor_kwargs)
 
@@ -314,6 +318,7 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
         "data_spec": pipeline_output.data_spec,
         "pipeline_output": pipeline_output,
         "preflight": preflight_result,
+        "selected_checkpoint_results": MappingProxyType({}),
     }
 
     if logger:
@@ -327,10 +332,12 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
         )
 
     train_metrics = trainer.callback_metrics
+    selected_checkpoint_results: Mapping[str, EvaluationResult] = (
+        MappingProxyType({})
+    )
     if cfg.get("test"):
         log.info("Starting testing!")
-
-        rerun_best_model_checkpoint(
+        selected_checkpoint_results = rerun_best_model_checkpoint(
             checkpoint_model=model,
             cfg=cfg,
             datamodule=datamodule,
@@ -338,15 +345,87 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
             callbacks=callbacks,
             logger=logger,
         )
+        object_dict["selected_checkpoint_results"] = (
+            selected_checkpoint_results
+        )
 
+    selected_metrics = {
+        name: value
+        for result in selected_checkpoint_results.values()
+        for name, value in _selected_checkpoint_payload(result).items()
+    }
     # The qualification bit remains authoritative even when preflight is
     # explicitly disabled under the experimental profile.
     metric_dict = {
         **train_metrics,
+        **selected_metrics,
         "qualified": preflight_result.qualified,
     }
 
     return metric_dict, object_dict
+
+
+def _selected_checkpoint_payload(
+    result: EvaluationResult,
+) -> dict[str, object]:
+    """Flatten only one authoritative result's scalar logger boundary."""
+    namespace = f"evaluations/best_checkpoint/{result.context.split}/"
+    return {
+        **{
+            f"{namespace}{name}": value
+            for name, value in result.metrics.items()
+        },
+        f"{namespace}num_examples": int(result.num_examples),
+    }
+
+
+def _publish_selected_checkpoint_result(
+    result: EvaluationResult,
+    loggers: list[Logger],
+) -> None:
+    """Publish the same result-derived payload to every configured logger."""
+    payload = _selected_checkpoint_payload(result)
+    log.info(payload)
+    for configured_logger in loggers:
+        log_metrics = getattr(configured_logger, "log_metrics", None)
+        if not callable(log_metrics):
+            raise TypeError(
+                "configured logger must expose a callable log_metrics boundary"
+            )
+        log_metrics(payload)
+
+
+def _take_selected_checkpoint_result(
+    checkpoint_model: LightningModule,
+    *,
+    split: str,
+    checkpoint_id: str,
+) -> EvaluationResult:
+    take_result = getattr(
+        checkpoint_model,
+        "take_selected_checkpoint_result",
+        None,
+    )
+    if not callable(take_result):
+        raise TypeError(
+            "checkpoint model must expose take_selected_checkpoint_result"
+        )
+    result = take_result(split)
+    if not isinstance(result, EvaluationResult):
+        raise TypeError("checkpoint model must return an EvaluationResult")
+    if (
+        result.context.split != split
+        or result.context.pass_kind != "selected_checkpoint"
+        or result.context.checkpoint_id != checkpoint_id
+    ):
+        raise RuntimeError(
+            "selected-checkpoint result context does not match the rerun"
+        )
+    if result.num_examples <= 0:
+        raise RuntimeError(
+            f"selected-checkpoint {split} result must not be empty"
+        )
+    return result
 
 
 def rerun_best_model_checkpoint(
@@ -356,54 +435,66 @@ def rerun_best_model_checkpoint(
     device: torch.device,
     callbacks: list[Callback],
     logger: list[Logger],
-) -> None:
-    """Rerun the best model checkpoint on validation and test datasets to log final metrics.
+) -> Mapping[str, EvaluationResult]:
+    """Load one validation-selected checkpoint and evaluate val and test."""
+    checkpoint_callbacks = [
+        callback
+        for callback in callbacks
+        if isinstance(callback, ModelCheckpoint)
+    ]
+    if len(checkpoint_callbacks) != 1:
+        raise RuntimeError(
+            "selected-checkpoint evaluation requires exactly one "
+            f"ModelCheckpoint callback, found {len(checkpoint_callbacks)}"
+        )
+    selected_checkpoint = checkpoint_callbacks[0]
+    if not selected_checkpoint.best_model_path:
+        raise RuntimeError(
+            "validation did not select a non-empty checkpoint path"
+        )
+    model_path = Path(selected_checkpoint.best_model_path)
+    if not model_path.is_file():
+        raise FileNotFoundError(
+            f"selected checkpoint does not exist: {model_path}"
+        )
+    with model_path.open("rb") as checkpoint_stream:
+        checkpoint_id = hashlib.file_digest(
+            checkpoint_stream,
+            "sha256",
+        ).hexdigest()
 
-    This function iterates through the callbacks to locate the `ModelCheckpoint`, loads the
-    best model weights, and runs a test pass on both the validation and test dataloaders.
-    Metrics are logged with `val_best_rerun/` and `test_best_rerun/` prefixes to ensure
-    metrics reflect the best model state rather than the final epoch.
+    checkpoint = torch.load(
+        model_path,
+        map_location="cpu",
+        weights_only=False,
+    )
+    if not isinstance(checkpoint, Mapping):
+        raise TypeError("selected checkpoint must contain a mapping")
+    state_dict = checkpoint.get("state_dict")
+    if not isinstance(state_dict, Mapping) or not state_dict:
+        raise ValueError(
+            "selected checkpoint must contain a non-empty state_dict"
+        )
+    checkpoint_model.load_state_dict(state_dict, strict=True)
+    checkpoint_model.to(device)
 
-    Parameters
-    ----------
-    checkpoint_model : LightningModule
-        The model instance to load weights into.
-    cfg : DictConfig
-        Configuration composed by Hydra.
-    datamodule : LightningDataModule
-        The data module providing `val_dataloader` and `test_dataloader`.
-    device : torch.device
-        The target device (CPU/GPU) for the model.
-    callbacks : list[Callback]
-        A list of callbacks to search for the `ModelCheckpoint`.
-    logger : list[Logger]
-        A list of loggers (e.g., WandbLogger) to record the re-run metrics.
-    """
-    for callback in callbacks:
-        if isinstance(callback, ModelCheckpoint):
-            log.info(
-                f"Loading best model from checkpoint at {callback.best_model_path}"
-            )
-            model_path = Path(callback.best_model_path)
-            ckpt = torch.load(
-                model_path, map_location="cpu", weights_only=False
-            )
+    bind_checkpoint_id = getattr(
+        checkpoint_model,
+        "set_selected_checkpoint_id",
+        None,
+    )
+    if not callable(bind_checkpoint_id):
+        raise TypeError(
+            "checkpoint model must expose set_selected_checkpoint_id"
+        )
+    bind_checkpoint_id(checkpoint_id)
 
-            checkpoint_model.load_state_dict(ckpt["state_dict"], strict=True)
-            checkpoint_model.to(device)
-            break  # there is only one checkpoint callback
-
-    # New trainer to log final metrics on validation set
-    # Because wandb displays validation metrics from the final, not the best epoch.
     checkpoint_trainer: Trainer = hydra.utils.instantiate(
         cfg.trainer,
         num_sanity_val_steps=0,
         enable_progress_bar=cfg.get("enable_progress_bar", True),
         logger=False,
     )
-
-    log.info("Re-testing best model checkpoint on validation set!")
-    val_loader = datamodule.val_dataloader()
     set_validation_pass_kind = getattr(
         checkpoint_model,
         "set_next_validation_pass_kind",
@@ -413,47 +504,77 @@ def rerun_best_model_checkpoint(
         raise TypeError(
             "checkpoint model must expose set_next_validation_pass_kind"
         )
+    set_test_pass_kind = getattr(
+        checkpoint_model,
+        "set_next_test_pass_kind",
+        None,
+    )
+    if not callable(set_test_pass_kind):
+        raise TypeError("checkpoint model must expose set_next_test_pass_kind")
+
+    log.info(
+        "Re-evaluating validation-selected checkpoint %s on validation",
+        checkpoint_id,
+    )
+    val_loader = datamodule.val_dataloader()
     set_validation_pass_kind("selected_checkpoint")
-    results = checkpoint_trainer.validate(
-        model=checkpoint_model, dataloaders=val_loader
+    try:
+        checkpoint_trainer.validate(
+            model=checkpoint_model,
+            dataloaders=val_loader,
+        )
+    except BaseException:
+        with suppress(RuntimeError):
+            set_validation_pass_kind("fit_epoch")
+        raise
+    val_result = _take_selected_checkpoint_result(
+        checkpoint_model,
+        split="val",
+        checkpoint_id=checkpoint_id,
     )
-    if results:
-        logged = {}
-        for k, v in results[0].items():
-            suffix = k.split("/", 1)[1] if "/" in k else k
-            logged[f"val_best_rerun/{suffix}"] = v
-        log.info(logged)
-        for lgr in logger:
-            if isinstance(lgr, WandbLogger):
-                lgr.log_metrics(logged)
+    _publish_selected_checkpoint_result(val_result, logger)
 
-    log.info("Re-testing best model checkpoint on test set!")
+    log.info(
+        "Re-evaluating validation-selected checkpoint %s on test",
+        checkpoint_id,
+    )
     test_loader = datamodule.test_dataloader()
-    results = checkpoint_trainer.test(
-        model=checkpoint_model, dataloaders=test_loader
+    set_test_pass_kind("selected_checkpoint")
+    try:
+        checkpoint_trainer.test(
+            model=checkpoint_model,
+            dataloaders=test_loader,
+        )
+    except BaseException:
+        with suppress(RuntimeError):
+            set_test_pass_kind("fit_epoch")
+        raise
+    test_result = _take_selected_checkpoint_result(
+        checkpoint_model,
+        split="test",
+        checkpoint_id=checkpoint_id,
     )
-    if results:
-        logged = {}
-        for k, v in results[0].items():
-            suffix = k.split("/", 1)[1] if "/" in k else k
-            logged[f"test_best_rerun/{suffix}"] = v
-        log.info(logged)
-        for lgr in logger:
-            if isinstance(lgr, WandbLogger):
-                lgr.log_metrics(logged)
+    _publish_selected_checkpoint_result(test_result, logger)
 
-    if (
-        cfg.get("delete_checkpoint_after_test", False)
-        and model_path
-        and model_path.exists()
-    ):
-        log.info(f"Cleaning up: Deleting checkpoint at {model_path}")
+    results: dict[str, EvaluationResult] = {
+        "val": val_result,
+        "test": test_result,
+    }
+    immutable_results: Mapping[str, EvaluationResult] = MappingProxyType(
+        results
+    )
+
+    if cfg.get("delete_checkpoint_after_test", False):
+        log.info("Cleaning up: Deleting checkpoint at %s", model_path)
         try:
             model_path.unlink()
-        except Exception as e:
+        except OSError as error:
             log.warning(
-                f"Failed to delete checkpoint at {model_path}. Error: {e}"
+                "Failed to delete checkpoint at %s. Error: %s",
+                model_path,
+                error,
             )
+    return immutable_results
 
 
 def count_number_of_parameters(

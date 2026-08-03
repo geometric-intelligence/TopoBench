@@ -18,6 +18,7 @@ from omegaconf import DictConfig
 
 import topobench.run as run_module
 from topobench.callbacks import BestEpochMetricsCallback
+from topobench.evaluator import EvaluationResult
 from topobench.utils.config_resolvers import register_all_resolvers
 
 
@@ -413,9 +414,9 @@ def _assert_finite_prefix(
 def _captured_rerun_metrics(
     sink: MagicMock,
     phase: str,
-) -> dict[str, float]:
-    """Extract one complete best-checkpoint rerun payload."""
-    prefix = f"{phase}_best_rerun/"
+) -> dict[str, object]:
+    """Extract one complete selected-checkpoint logger payload."""
+    prefix = f"evaluations/best_checkpoint/{phase}/"
     matching = [
         call.args[0]
         for call in sink.log_metrics.call_args_list
@@ -425,8 +426,8 @@ def _captured_rerun_metrics(
         and all(str(name).startswith(prefix) for name in call.args[0])
     ]
     assert len(matching) == 1
-    captured = {str(name): float(value) for name, value in matching[0].items()}
-    assert all(math.isfinite(value) for value in captured.values())
+    captured = {str(name): value for name, value in matching[0].items()}
+    assert all(math.isfinite(float(value)) for value in captured.values())
     return captured
 
 
@@ -482,15 +483,59 @@ def test_real_one_epoch_best_checkpoint_rerun_contract(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Train and rerun the selected checkpoint for every supported task family."""
+    """Train once and publish both canonical selected-checkpoint results."""
     cfg = _compose_lifecycle(family, selector_overrides, tmp_path)
     sink = MagicMock(spec=WandbLogger)
     real_rerun = run_module.rerun_best_model_checkpoint
+    captured: dict[str, object] = {}
 
-    def capture_real_rerun(**kwargs: Any) -> None:
+    def capture_real_rerun(
+        **kwargs: Any,
+    ) -> dict[str, EvaluationResult]:
         assert kwargs["logger"] == []
         kwargs["logger"] = [sink]
-        real_rerun(**kwargs)
+        checkpoint = _one_callback(kwargs["callbacks"], ModelCheckpoint)
+        selected_path = checkpoint.best_model_path
+        selected_score = checkpoint.best_model_score
+        if isinstance(selected_score, torch.Tensor):
+            selected_score = selected_score.detach().clone()
+        best_epoch = _one_callback(
+            kwargs["callbacks"],
+            BestEpochMetricsCallback,
+        )
+        validation_selection = (
+            best_epoch.best_epoch_number,
+            best_epoch.best_monitored_value,
+            dict(best_epoch.best_epoch_metrics),
+        )
+        checkpoint_model = kwargs["checkpoint_model"]
+        validation_start = checkpoint_model.on_validation_epoch_start.__func__
+        validation_end = checkpoint_model.on_validation_epoch_end.__func__
+
+        results = real_rerun(**kwargs)
+
+        assert checkpoint.best_model_path == selected_path
+        if isinstance(selected_score, torch.Tensor):
+            torch.testing.assert_close(
+                checkpoint.best_model_score,
+                selected_score,
+            )
+        else:
+            assert checkpoint.best_model_score == selected_score
+        assert (
+            best_epoch.best_epoch_number,
+            best_epoch.best_monitored_value,
+            best_epoch.best_epoch_metrics,
+        ) == validation_selection
+        assert (
+            checkpoint_model.on_validation_epoch_start.__func__
+            is validation_start
+        )
+        assert (
+            checkpoint_model.on_validation_epoch_end.__func__ is validation_end
+        )
+        captured["results"] = results
+        return results
 
     monkeypatch.setattr(
         run_module,
@@ -518,12 +563,46 @@ def test_real_one_epoch_best_checkpoint_rerun_contract(
     assert best_epoch.best_epoch_number == 0
     assert math.isfinite(float(best_epoch.best_monitored_value))
     _assert_finite_prefix(best_epoch.best_epoch_metrics, "val/")
+    assert all(
+        not name.startswith("evaluations/best_checkpoint/")
+        for name in best_epoch.best_epoch_metrics
+    )
+
+    selected = objects["selected_checkpoint_results"]
+    assert selected is captured["results"]
+    assert tuple(selected) == ("val", "test")
+    assert selected["val"] is not selected["test"]
+    checkpoint_ids = {
+        selected[split].context.checkpoint_id for split in ("val", "test")
+    }
+    assert len(checkpoint_ids) == 1
+    assert None not in checkpoint_ids
 
     assert sink.log_metrics.call_count == 2
-    val_metrics = _captured_rerun_metrics(sink, "val")
-    test_metrics = _captured_rerun_metrics(sink, "test")
-    assert val_metrics
-    assert test_metrics
+    for split in ("val", "test"):
+        result = selected[split]
+        assert result.context.split == split
+        assert result.context.pass_kind == "selected_checkpoint"
+        assert result.context.policy == "exact"
+        namespace = f"evaluations/best_checkpoint/{split}/"
+        logged = _captured_rerun_metrics(sink, split)
+        assert set(logged) == {
+            *(f"{namespace}{name}" for name in result.metrics),
+            f"{namespace}num_examples",
+        }
+        selected_output = {
+            name for name in fit_metrics if name.startswith(namespace)
+        }
+        assert selected_output == set(logged)
+        assert set(result.metrics).isdisjoint(result.provenance)
+        for name, value in result.metrics.items():
+            assert float(logged[f"{namespace}{name}"]) == float(value)
+            assert float(fit_metrics[f"{namespace}{name}"]) == float(value)
+        count_key = f"{namespace}num_examples"
+        assert logged[count_key] == result.num_examples
+        assert fit_metrics[count_key] == result.num_examples
+        assert type(logged[count_key]) is int
+        assert type(fit_metrics[count_key]) is int
 
     checkpoint_state = torch.load(
         checkpoint_path,

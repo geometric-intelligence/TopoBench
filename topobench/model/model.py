@@ -8,6 +8,13 @@ import torch
 from lightning import LightningModule
 from torch_geometric.data import Batch, Data, HeteroData
 
+from topobench.data.hypergraph import HypergraphData
+from topobench.dataloader.input_monitor import (
+    InputMonitor,
+    InputStallError,
+    MonitorOverflowError,
+    OperationToken,
+)
 from topobench.evaluator import (
     AbstractEvaluator,
     EvaluationBatch,
@@ -16,17 +23,6 @@ from topobench.evaluator import (
     EvaluationResult,
     EvaluationSplit,
 )
-from topobench.data.hypergraph import HypergraphData
-from topobench.dataloader.input_monitor import (
-    InputMonitor,
-    InputStallError,
-    MonitorOverflowError,
-    OperationToken,
-)
-from topobench.profiling.execution_events import (
-    ExecutionOperation,
-    ExecutionStatus,
-)
 from topobench.model.supervision import (
     DefaultSupervisionAdapter,
     SupervisionAdapter,
@@ -34,6 +30,10 @@ from topobench.model.supervision import (
 from topobench.nn.wrappers.graph.gnn_wrapper import (
     _bind_graph_batch_evidence,
     _prepare_graph_batch_evidence,
+)
+from topobench.profiling.execution_events import (
+    ExecutionOperation,
+    ExecutionStatus,
 )
 
 
@@ -45,10 +45,11 @@ def _clone_evaluator_state(value: object) -> object:
         return value.detach().cpu().clone()
     if isinstance(value, Mapping):
         if any(not isinstance(key, str) or not key for key in value):
-            raise TypeError("evaluator state mapping keys must be non-empty strings")
+            raise TypeError(
+                "evaluator state mapping keys must be non-empty strings"
+            )
         return {
-            key: _clone_evaluator_state(item)
-            for key, item in value.items()
+            key: _clone_evaluator_state(item) for key, item in value.items()
         }
     if isinstance(value, tuple):
         return tuple(_clone_evaluator_state(item) for item in value)
@@ -143,6 +144,12 @@ class TBModel(LightningModule):
         self.evaluator = evaluator
         self._active_evaluation_context: EvaluationContext | None = None
         self._next_validation_pass_kind: EvaluationPassKind = "fit_epoch"
+        self._next_test_pass_kind: EvaluationPassKind = "fit_epoch"
+        self._selected_checkpoint_id: str | None = None
+        self._pending_selected_results: dict[
+            EvaluationSplit,
+            EvaluationResult,
+        ] = {}
         self._dataloader_optimizer_success_token = 0
         self._dataloader_evaluator_sequence = 0
         self._dataloader_evaluator_count = 0
@@ -158,7 +165,6 @@ class TBModel(LightningModule):
             if supervision_adapter is None
             else supervision_adapter
         )
-
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(backbone={self.backbone}, readout={self.readout}, loss={self.loss}, feature_encoder={self.feature_encoder})"
@@ -255,10 +261,14 @@ class TBModel(LightningModule):
         r"""Perform a single model and evaluator step on native graph data."""
         monitor = self.execution_monitor
         compute_token: OperationToken | None = None
-        context = self._execution_context(batch) if monitor is not None else None
+        context = (
+            self._execution_context(batch) if monitor is not None else None
+        )
         evaluation_context = self._active_evaluation_context
         if evaluation_context is None:
-            raise RuntimeError("model_step requires an active evaluation phase")
+            raise RuntimeError(
+                "model_step requires an active evaluation phase"
+            )
         if monitor is not None:
             assert context is not None
             phase, split, sequence, epoch, global_step, digest, cuda_timing = (
@@ -299,7 +309,9 @@ class TBModel(LightningModule):
             raise
         if monitor is not None and compute_token is not None:
             examples = model_out.get("num_supervised_examples")
-            if isinstance(examples, bool) or not isinstance(examples, Integral):
+            if isinstance(examples, bool) or not isinstance(
+                examples, Integral
+            ):
                 examples = None
             monitor.finish_model_compute(
                 compute_token,
@@ -476,6 +488,11 @@ class TBModel(LightningModule):
             policy=selected_policy,
             task=task,
             num_classes=num_classes,
+            checkpoint_id=(
+                self._selected_checkpoint_id
+                if pass_kind == "selected_checkpoint"
+                else None
+            ),
         )
 
     def _begin_evaluation(
@@ -487,6 +504,22 @@ class TBModel(LightningModule):
         if self._active_evaluation_context is not None:
             raise RuntimeError(
                 "cannot begin an evaluation phase while another is active"
+            )
+        if (
+            pass_kind == "selected_checkpoint"
+            and self._selected_checkpoint_id is None
+        ):
+            raise RuntimeError(
+                "selected-checkpoint evaluation requires a bound "
+                "SHA-256 checkpoint digest"
+            )
+        if (
+            pass_kind == "selected_checkpoint"
+            and split in self._pending_selected_results
+        ):
+            raise RuntimeError(
+                f"selected-checkpoint {split} result must be consumed "
+                "before starting another pass"
             )
         context = self._evaluation_context(split, pass_kind)
         self._active_evaluation_context = context
@@ -538,6 +571,8 @@ class TBModel(LightningModule):
         except BaseException:
             self._abort_after_failure(force=True)
             raise
+        if context.pass_kind == "selected_checkpoint":
+            self._pending_selected_results[split] = result
 
     def _abort_after_failure(self, *, force: bool = False) -> None:
         """Clear evaluator and model phase state while preserving root errors."""
@@ -557,6 +592,53 @@ class TBModel(LightningModule):
         """Abort an active evaluator phase, including throwaway probes."""
         self._abort_after_failure()
 
+    def set_selected_checkpoint_id(self, checkpoint_id: str) -> None:
+        """Bind one validated checkpoint identity to final val/test contexts."""
+        if (
+            not isinstance(checkpoint_id, str)
+            or len(checkpoint_id) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in checkpoint_id
+            )
+        ):
+            raise ValueError(
+                "checkpoint_id must be a lowercase SHA-256 hex digest"
+            )
+        if self._active_evaluation_context is not None:
+            raise RuntimeError(
+                "checkpoint identity cannot change during an active phase"
+            )
+        if self._pending_selected_results:
+            raise RuntimeError(
+                "checkpoint identity cannot change with unconsumed results"
+            )
+        self._selected_checkpoint_id = checkpoint_id
+
+    def take_selected_checkpoint_result(
+        self,
+        split: EvaluationSplit,
+    ) -> EvaluationResult:
+        """Consume the one finalized selected-checkpoint result for a split."""
+        if split not in {"val", "test"}:
+            raise ValueError(
+                "selected-checkpoint result split must be val or test"
+            )
+        try:
+            result = self._pending_selected_results.pop(split)
+        except KeyError as error:
+            raise RuntimeError(
+                f"no finalized selected-checkpoint {split} result is available"
+            ) from error
+        if (
+            result.context.split != split
+            or result.context.pass_kind != "selected_checkpoint"
+        ):
+            raise RuntimeError(
+                "stored selected-checkpoint result context is inconsistent"
+            )
+        return result
+
     def set_next_validation_pass_kind(
         self,
         pass_kind: EvaluationPassKind,
@@ -572,6 +654,21 @@ class TBModel(LightningModule):
             )
         self._next_validation_pass_kind = pass_kind
 
+    def set_next_test_pass_kind(
+        self,
+        pass_kind: EvaluationPassKind,
+    ) -> None:
+        """Select one upcoming test context without replacing hooks."""
+        if pass_kind not in {"fit_epoch", "selected_checkpoint"}:
+            raise ValueError(
+                "test pass kind must be fit_epoch or selected_checkpoint"
+            )
+        if self._active_evaluation_context is not None:
+            raise RuntimeError(
+                "test pass kind cannot change during an active phase"
+            )
+        self._next_test_pass_kind = pass_kind
+
     def on_train_epoch_start(self) -> None:
         """Begin the online training accumulation window."""
         self._begin_evaluation("train", "fit_epoch")
@@ -584,8 +681,8 @@ class TBModel(LightningModule):
         ):
             self._finalize_evaluation("train")
         pass_kind = self._next_validation_pass_kind
-        self._begin_evaluation("val", pass_kind)
         self._next_validation_pass_kind = "fit_epoch"
+        self._begin_evaluation("val", pass_kind)
 
     def on_train_epoch_end(self) -> None:
         """Finalize training when no validation loop already closed it."""
@@ -600,8 +697,10 @@ class TBModel(LightningModule):
         self._finalize_evaluation("val")
 
     def on_test_epoch_start(self) -> None:
-        """Begin exact selected-checkpoint testing."""
-        self._begin_evaluation("test", "selected_checkpoint")
+        """Begin the requested ordinary or selected-checkpoint test pass."""
+        pass_kind = self._next_test_pass_kind
+        self._next_test_pass_kind = "fit_epoch"
+        self._begin_evaluation("test", pass_kind)
 
     def on_test_epoch_end(self) -> None:
         """Finalize the exact selected-checkpoint test window."""
@@ -661,7 +760,9 @@ class TBModel(LightningModule):
                 split="train",
                 epoch=epoch,
                 global_step=(
-                    getattr(getattr(self, "_trainer", None), "global_step", None)
+                    getattr(
+                        getattr(self, "_trainer", None), "global_step", None
+                    )
                 ),
                 cuda_timing=(
                     getattr(getattr(self, "device", None), "type", None)

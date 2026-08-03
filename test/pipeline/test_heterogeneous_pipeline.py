@@ -22,6 +22,7 @@ from omegaconf import DictConfig, OmegaConf
 from torch_geometric.data import Data, HeteroData
 
 from topobench.dataloader.heterogeneous import HeterogeneousNodeDataModule
+from topobench.evaluator import EvaluationResult
 from topobench.model import TBModel
 from topobench.run import rerun_best_model_checkpoint, run
 from topobench.utils import instantiate_callbacks
@@ -53,7 +54,6 @@ NEIGHBOR_EXPERIMENTS = (
         id="heterosage-neighbor",
     ),
 )
-_DIRECT_LOSS_REDUCTION_ABS_TOLERANCE = 1e-8
 
 
 def _compose(
@@ -129,7 +129,7 @@ def _logged_rerun_metrics(
     phase: str,
 ) -> dict[str, float]:
     """Return one phase's metrics from a mocked external W&B sink."""
-    prefix = f"{phase}_best_rerun/"
+    prefix = f"evaluations/best_checkpoint/{phase}/"
     matching = [
         call.args[0]
         for call in sink.log_metrics.call_args_list
@@ -259,6 +259,18 @@ def test_full_batch_training_validation_checkpoint_and_best_rerun(
     caplog.set_level(logging.INFO, logger="topobench.run")
 
     fit_metrics, objects = run(cfg)
+    selected = objects["selected_checkpoint_results"]
+    assert tuple(selected) == ("val", "test")
+    assert all(
+        isinstance(selected[split], EvaluationResult)
+        for split in ("val", "test")
+    )
+    assert selected["val"] is not selected["test"]
+    assert (
+        selected["val"].context.checkpoint_id
+        == selected["test"].context.checkpoint_id
+    )
+    assert selected["val"].context.checkpoint_id is not None
 
     _assert_finite_metrics(fit_metrics, prefix="train/")
     _assert_finite_metrics(fit_metrics, prefix="val/")
@@ -272,17 +284,23 @@ def test_full_batch_training_validation_checkpoint_and_best_rerun(
     assert best_path.stat().st_size > 0
 
     rerun_messages = [record.getMessage() for record in caplog.records]
-    assert any("val_best_rerun/" in message for message in rerun_messages)
-    assert any("test_best_rerun/" in message for message in rerun_messages)
+    assert any(
+        "evaluations/best_checkpoint/val/" in message
+        for message in rerun_messages
+    )
+    assert any(
+        "evaluations/best_checkpoint/test/" in message
+        for message in rerun_messages
+    )
 
     # The production rerun attaches the model to a dedicated trainer whose
     # final phase is test.
     rerun_model = objects["model"]
     rerun_trainer = rerun_model.trainer
     assert rerun_trainer is not fit_trainer
-    _assert_finite_metrics(
-        rerun_trainer.callback_metrics,
-        prefix="test/",
+    assert all(
+        math.isfinite(float(value))
+        for value in selected["test"].metrics.values()
     )
     assert rerun_model.state_str == "Test"
     assert isinstance(
@@ -298,9 +316,14 @@ def test_full_batch_training_validation_checkpoint_and_best_rerun(
     assert int(fit_metrics["val/num_examples"]) == int(
         target_store.val_mask.sum()
     )
-    assert int(rerun_trainer.callback_metrics["test/num_examples"]) == int(
-        target_store.test_mask.sum()
-    )
+    assert selected["val"].num_examples == int(target_store.val_mask.sum())
+    assert selected["test"].num_examples == int(target_store.test_mask.sum())
+    for split in ("val", "test"):
+        count = fit_metrics[
+            f"evaluations/best_checkpoint/{split}/num_examples"
+        ]
+        assert count == selected[split].num_examples
+        assert type(count) is int
 
 
 @pytest.mark.parametrize(
@@ -328,6 +351,13 @@ def test_neighbor_training_validation_checkpoint_and_best_rerun(
     caplog.set_level(logging.INFO, logger="topobench.run")
 
     fit_metrics, objects = run(cfg)
+    selected = objects["selected_checkpoint_results"]
+    assert tuple(selected) == ("val", "test")
+    assert all(
+        isinstance(selected[split], EvaluationResult)
+        for split in ("val", "test")
+    )
+    assert selected["val"] is not selected["test"]
 
     _assert_finite_metrics(fit_metrics, prefix="train/")
     _assert_finite_metrics(fit_metrics, prefix="val/")
@@ -342,13 +372,22 @@ def test_neighbor_training_validation_checkpoint_and_best_rerun(
     assert best_path.stat().st_size > 0
 
     rerun_messages = [record.getMessage() for record in caplog.records]
-    assert any("val_best_rerun/" in message for message in rerun_messages)
-    assert any("test_best_rerun/" in message for message in rerun_messages)
+    assert any(
+        "evaluations/best_checkpoint/val/" in message
+        for message in rerun_messages
+    )
+    assert any(
+        "evaluations/best_checkpoint/test/" in message
+        for message in rerun_messages
+    )
 
     rerun_model = objects["model"]
     rerun_trainer = rerun_model.trainer
     assert rerun_trainer is not fit_trainer
-    _assert_finite_metrics(rerun_trainer.callback_metrics, prefix="test/")
+    assert all(
+        math.isfinite(float(value))
+        for value in selected["test"].metrics.values()
+    )
     assert rerun_model.state_str == "Test"
 
     datamodule = objects["datamodule"]
@@ -376,23 +415,30 @@ def test_neighbor_training_validation_checkpoint_and_best_rerun(
     assert int(fit_metrics["val/num_examples"]) == int(
         target_store.val_mask.sum()
     )
-    assert int(rerun_trainer.callback_metrics["test/num_examples"]) == (
-        expected_test_count
-    )
+    assert selected["val"].num_examples == int(target_store.val_mask.sum())
+    assert selected["test"].num_examples == expected_test_count
+    selected_test_count = fit_metrics[
+        "evaluations/best_checkpoint/test/num_examples"
+    ]
+    assert selected_test_count == expected_test_count
+    assert type(selected_test_count) is int
 
     rerun_sinks = [
         MagicMock(spec=WandbLogger),
         MagicMock(spec=WandbLogger),
     ]
+    repeated_results: list[dict[str, EvaluationResult]] = []
     for sink in rerun_sinks:
         rng_before = torch.random.get_rng_state().clone()
-        rerun_best_model_checkpoint(
-            checkpoint_model=rerun_model,
-            cfg=cfg,
-            datamodule=datamodule,
-            device=torch.device("cpu"),
-            callbacks=objects["callbacks"],
-            logger=[sink],
+        repeated_results.append(
+            rerun_best_model_checkpoint(
+                checkpoint_model=rerun_model,
+                cfg=cfg,
+                datamodule=datamodule,
+                device=torch.device("cpu"),
+                callbacks=objects["callbacks"],
+                logger=[sink],
+            )
         )
         assert torch.equal(torch.random.get_rng_state(), rng_before)
         assert sink.log_metrics.call_count == 2
@@ -407,22 +453,25 @@ def test_neighbor_training_validation_checkpoint_and_best_rerun(
             phase=phase,
         )
         _assert_repeated_rerun_metrics(first_metrics, second_metrics)
+        assert repeated_results[0][phase] is not repeated_results[1][phase]
+        assert repeated_results[0][phase].context.split == phase
+        assert (
+            repeated_results[0][phase].context.pass_kind
+            == "selected_checkpoint"
+        )
+        assert repeated_results[0][phase].context.policy == "exact"
+        assert repeated_results[0][phase].num_examples == int(
+            first_metrics["num_examples"]
+        )
 
         _, direct_metrics = _fixed_evaluation_signature(
             rerun_model,
             datamodule,
             phase,
         )
+        direct_metrics.pop("loss")
         assert first_metrics.keys() == direct_metrics.keys()
-        for name in first_metrics:
-            if name == "loss":
-                assert first_metrics[name] == pytest.approx(
-                    direct_metrics[name],
-                    abs=_DIRECT_LOSS_REDUCTION_ABS_TOLERANCE,
-                    rel=0,
-                )
-            else:
-                assert first_metrics[name] == direct_metrics[name]
+        assert first_metrics == direct_metrics
 
 
 @pytest.mark.parametrize(
@@ -536,57 +585,81 @@ def test_neighbor_fixed_evaluation_repeats_batches_and_metrics(
         assert second_metrics == pytest.approx(first_metrics, abs=0.0, rel=0.0)
 
 
-def test_full_batch_best_rerun_logs_prefixed_finite_metrics(
+def test_full_batch_best_rerun_logs_authoritative_result_namespaces(
     tmp_path: Path,
 ) -> None:
-    """Log real validation and test reruns to only a mocked external sink."""
+    """Every external logger receives scalars from the returned result objects."""
     cfg = _compose(
         "heterogeneous_synthetic_hgt_full",
         tmp_path=tmp_path,
+        extra_overrides=(
+            "evaluator.policy.val=audit",
+            "evaluator.policy.test=audit",
+        ),
     )
     _, objects = run(cfg)
     checkpoint = _checkpoint_callback(objects["callbacks"])
     best_path = Path(checkpoint.best_model_path)
     assert best_path.is_file()
 
-    sink = MagicMock(spec=WandbLogger)
-    rerun_best_model_checkpoint(
+    sinks = [
+        MagicMock(spec=WandbLogger),
+        MagicMock(spec=CSVLogger),
+    ]
+    results = rerun_best_model_checkpoint(
         checkpoint_model=objects["model"],
         cfg=cfg,
         datamodule=objects["datamodule"],
         device=torch.device("cpu"),
         callbacks=objects["callbacks"],
-        logger=[sink],
+        logger=sinks,
     )
 
-    expected_suffixes = {
-        "loss",
-        "accuracy",
-        "auroc",
-        "auprc",
-        "f1",
-        "precision",
-        "recall",
-        "somers_d",
-        "num_examples",
-    }
-    assert sink.log_metrics.call_count == 2
+    assert tuple(results) == ("val", "test")
+    assert results["val"] is not results["test"]
+    assert all(sink.log_metrics.call_count == 2 for sink in sinks)
     assert all(
         len(call.args) == 1 and not call.kwargs
+        for sink in sinks
         for call in sink.log_metrics.call_args_list
     )
-    logged_calls = [call.args[0] for call in sink.log_metrics.call_args_list]
-    assert set(logged_calls[0]) == {
-        f"val_best_rerun/{suffix}" for suffix in expected_suffixes
-    }
-    assert set(logged_calls[1]) == {
-        f"test_best_rerun/{suffix}" for suffix in expected_suffixes
-    }
-    assert all(
-        math.isfinite(float(value))
-        for metrics in logged_calls
-        for value in metrics.values()
-    )
+    logged_calls = [
+        [call.args[0] for call in sink.log_metrics.call_args_list]
+        for sink in sinks
+    ]
+    for index, split in enumerate(("val", "test")):
+        result = results[split]
+        assert result.context.policy == "audit"
+        namespace = f"evaluations/best_checkpoint/{split}/"
+        logged = logged_calls[0][index]
+        assert logged_calls[0][index] == logged_calls[1][index]
+        assert set(logged) == {
+            *(f"{namespace}{name}" for name in result.metrics),
+            f"{namespace}num_examples",
+        }
+        assert {
+            "accuracy",
+            "auroc",
+            "auprc",
+            "somers_d",
+        } <= result.metrics.keys()
+        assert result.status["auroc"] == "exact"
+        assert result.status["auprc"] == "exact"
+        assert {
+            "auroc_online",
+            "auroc_online_abs_error",
+            "auprc_online",
+            "auprc_online_abs_error",
+            "somers_d_online",
+            "somers_d_online_abs_error",
+        } <= result.metrics.keys()
+        assert result.status["somers_d"] == "exact"
+        assert set(result.metrics).isdisjoint(result.provenance)
+        for name, value in result.metrics.items():
+            assert float(logged[f"{namespace}{name}"]) == float(value)
+        count_key = f"{namespace}num_examples"
+        assert logged[count_key] == result.num_examples
+        assert type(logged[count_key]) is int
 
     checkpoint_state = torch.load(
         best_path,
