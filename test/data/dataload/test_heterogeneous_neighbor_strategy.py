@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 import torch
 from torch_geometric.data import HeteroData
@@ -14,7 +16,6 @@ from topobench.dataloader.disk_graph import (
     HeterogeneousNeighborStrategy,
     SamplingCapabilityError,
 )
-
 
 WRITES = ("paper", "writes", "author")
 WRITTEN_BY = ("author", "written_by", "paper")
@@ -158,24 +159,41 @@ def test_materialization_matches_installed_neighborloader_in_exact_order() -> No
     )
 
 
-def test_incapable_stochastic_backend_is_rejected_without_global_rng_fallback() -> None:
-    """Installed PyG operators expose no local generator for truncated sampling."""
+def test_truncated_sampling_is_serialized_deterministic_and_rng_neutral() -> None:
+    """Finite PyG sampling is deterministic under concurrent strategy calls."""
     data = _choice_rich_data()
     stochastic = _fanout() | {WRITES: [2]}
-    with pytest.raises(
-        SamplingCapabilityError,
-        match="heterogeneous-neighbor.*local torch.Generator.*pyg-lib",
-    ):
-        HeterogeneousNeighborStrategy(
-            batch_size=1,
-            num_neighbors=stochastic,
-            seed=47,
-        ).setup(
-            data,
-            phase="train",
-            active_split_tag="primary",
-            shuffle=False,
+    strategy = HeterogeneousNeighborStrategy(
+        batch_size=1,
+        num_neighbors=stochastic,
+        seed=47,
+    )
+    descriptor = strategy.setup(
+        data,
+        phase="train",
+        active_split_tag="primary",
+        shuffle=False,
+    )[0]
+    torch.manual_seed(999)
+    global_state = torch.random.get_rng_state().clone()
+    expected = strategy.materialize(data, descriptor)
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        observed = tuple(
+            executor.map(
+                lambda _: strategy.materialize(data, descriptor),
+                range(8),
+            )
         )
+
+    assert torch.equal(torch.random.get_rng_state(), global_state)
+    assert expected[WRITES].edge_index.shape[1] <= 2
+    for batch in observed:
+        assert_heterogeneous_exact(batch, expected)
+
+
+def test_replace_sampling_is_rejected_without_local_generator_support() -> None:
+    data = _choice_rich_data()
     with pytest.raises(
         SamplingCapabilityError,
         match="replace=True.*deterministic",
@@ -185,6 +203,24 @@ def test_incapable_stochastic_backend_is_rejected_without_global_rng_fallback() 
             num_neighbors=_fanout(),
             replace=True,
             seed=47,
+        ).setup(
+            data,
+            phase="train",
+            active_split_tag="primary",
+            shuffle=False,
+        )
+
+
+def test_induced_sampling_is_rejected_without_native_hop_counts() -> None:
+    data = _choice_rich_data()
+    with pytest.raises(
+        SamplingCapabilityError,
+        match="induced.*hop counts",
+    ):
+        HeterogeneousNeighborStrategy(
+            batch_size=1,
+            num_neighbors=_fanout(),
+            subgraph_type="induced",
         ).setup(
             data,
             phase="train",

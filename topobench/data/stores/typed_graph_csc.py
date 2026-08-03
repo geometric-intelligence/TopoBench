@@ -1,8 +1,9 @@
 """Bounded, exact typed-relation joins and destination-oriented CSC storage.
 
 DuckDB and PyArrow are imported only when a relation build or semantic reopen is
-requested. Mapped edges remain in DuckDB's spill-capable pipeline and are
-consumed one configured record batch at a time into the sole adjacency layout.
+requested. Mapped edges stream one configured record batch at a time into the
+adjacency arrays; a scratch destination mmap and compact canonical permutation
+replace DuckDB's otherwise blocking joined-edge sort.
 """
 
 from __future__ import annotations
@@ -149,7 +150,10 @@ class TypedGraphRelationWriter:
                             "spill_subtree": "ephemeral/relation-spill-*",
                             "disk_requirements": coarse_requirements,
                             "exact_disk_requirements": exact_requirements,
-                            "bounded_memory": "O(record_batch_rows * declared_relation_width) plus DuckDB spill state",
+                            "canonical_permutation_bytes": exact_requirements[
+                                "max_canonical_permutation_bytes"
+                            ],
+                            "bounded_memory": "O(record_batch_rows * declared_relation_width + edge_count * sizeof(intp)) plus DuckDB spill state",
                         }
                         self._audit_snapshot_streams(
                             temporary_root,
@@ -335,11 +339,17 @@ class TypedGraphRelationWriter:
         evidence_reserve = 1024**2 + 8192 * (
             array_count + len(self.ingestor.source.spec.relations) + len(inventory.files)
         )
+        canonical_scratch_reserve = (
+            max(payload_bytes, relation_uncompressed)
+            + relation_rows * 32
+            + 2 * 1024**2
+        )
         estimated_relation = (
             payload_bytes
             + relation_uncompressed * 2
             + 512 * array_count
             + evidence_reserve
+            + canonical_scratch_reserve
         )
         snapshot_bytes = inventory.snapshot_bytes
         spill_bytes = max(
@@ -388,6 +398,8 @@ class TypedGraphRelationWriter:
         arrays: dict[str, dict[str, Any]] = {}
         exact_array_bytes = 0
         exact_payload_bytes = 0
+        max_canonical_permutation_bytes = 0
+        max_canonical_scratch_file_bytes = 0
         for internal_key in sorted(prepared):
             _, context = prepared[internal_key]
             colptr = _npy_storage_sizing(
@@ -437,6 +449,47 @@ class TypedGraphRelationWriter:
             exact_payload_bytes += sum(
                 int(record["payload_bytes"]) for record in records
             )
+            permutation_scratch = _npy_storage_sizing(
+                np.dtype("<i8"),
+                (context["edge_count"],),
+            )
+            key_row_bytes = 3 * np.dtype("<i8").itemsize
+            if context["edge_descriptor"] is not None:
+                key_row_bytes += np.dtype(
+                    context["edge_descriptor"]["storage_dtype"]
+                ).itemsize
+            key_row_groups = (
+                context["edge_count"]
+                + self.ingestor.source.spec.ingestion.record_batch_rows
+                - 1
+            ) // self.ingestor.source.spec.ingestion.record_batch_rows
+            key_file_upper_bound = (
+                context["edge_count"] * key_row_bytes
+                + key_row_groups * 64 * 1024
+                + 1024**2
+            )
+            reorder_records = [row]
+            if edge_id is not None:
+                reorder_records.append(edge_id)
+            reorder_records.extend(
+                fields[name] for name in sorted(fields)
+            )
+            max_reorder_file_bytes = max(
+                (
+                    int(record["file_bytes"])
+                    for record in reorder_records
+                ),
+                default=0,
+            )
+            max_canonical_scratch_file_bytes = max(
+                max_canonical_scratch_file_bytes,
+                int(permutation_scratch["file_bytes"])
+                + max(key_file_upper_bound, max_reorder_file_bytes),
+            )
+            max_canonical_permutation_bytes = max(
+                max_canonical_permutation_bytes,
+                int(context["edge_count"]) * np.dtype(np.intp).itemsize,
+            )
         evidence_reserve = int(
             coarse_requirements["relation_evidence_reserve_bytes"]
         )
@@ -445,7 +498,10 @@ class TypedGraphRelationWriter:
         snapshot_bytes = int(coarse_requirements["snapshot_bytes"])
         spill_bytes = int(coarse_requirements["spill_bytes"])
         temporary_peak_bytes = snapshot_bytes + spill_bytes
-        final_peak_bytes = task3_final_bytes + estimated_relation_bytes
+        final_build_bytes = (
+            estimated_relation_bytes + max_canonical_scratch_file_bytes
+        )
+        final_peak_bytes = task3_final_bytes + final_build_bytes
         same_filesystem = bool(coarse_requirements["same_filesystem"])
         return {
             "same_filesystem": same_filesystem,
@@ -466,14 +522,16 @@ class TypedGraphRelationWriter:
             "relation_rows": int(coarse_requirements["relation_rows"]),
             "snapshot_bytes": snapshot_bytes,
             "spill_bytes": spill_bytes,
+            "max_canonical_permutation_bytes": max_canonical_permutation_bytes,
+            "max_canonical_scratch_file_bytes": max_canonical_scratch_file_bytes,
             "final_peak_bytes": final_peak_bytes,
             "temporary_peak_bytes": temporary_peak_bytes,
             "resume_temporary_additional_bytes": temporary_peak_bytes,
             "shared_peak_bytes": final_peak_bytes
             + temporary_peak_bytes,
-            "final_additional_bytes": estimated_relation_bytes,
+            "final_additional_bytes": final_build_bytes,
             "temporary_additional_bytes": temporary_peak_bytes,
-            "shared_additional_bytes": estimated_relation_bytes
+            "shared_additional_bytes": final_build_bytes
             + temporary_peak_bytes,
             "arrays": arrays,
         }
@@ -707,50 +765,54 @@ class TypedGraphRelationWriter:
         relation_root.mkdir(parents=True, exist_ok=False)
         colptr_path = relation_root / "colptr.npy"
         row_path = relation_root / "row.npy"
+        int64_dtype = np.dtype("int64").newbyteorder("<")
         colptr = np.lib.format.open_memmap(
             colptr_path,
             mode="w+",
-            dtype=np.dtype("int64").newbyteorder("<"),
+            dtype=int64_dtype,
             shape=(destination_count + 1,),
         )
-        row = np.lib.format.open_memmap(
+        colptr[:] = 0
+        row_output = _open_npy_output(
             row_path,
-            mode="w+",
-            dtype=np.dtype("int64").newbyteorder("<"),
+            dtype=int64_dtype,
             shape=(edge_count,),
         )
-        colptr[:] = 0
-        edge_array: Any = None
         edge_path: Path | None = None
+        edge_output: Any = None
         if context["edge_descriptor"] is not None:
             edge_path = relation_root / "edge_id.npy"
-            edge_array = np.lib.format.open_memmap(
+            edge_output = _open_npy_output(
                 edge_path,
-                mode="w+",
-                dtype=np.dtype(context["edge_descriptor"]["storage_dtype"]),
+                dtype=np.dtype(
+                    context["edge_descriptor"]["storage_dtype"]
+                ),
                 shape=(edge_count,),
             )
-        field_arrays: dict[str, Any] = {}
         field_paths: dict[str, Path] = {}
+        field_outputs: dict[str, Any] = {}
         for ordinal, (field_name, descriptor) in enumerate(
             context["field_descriptors"].items()
         ):
             path = relation_root / "fields" / f"f{ordinal:04d}.npy"
             path.parent.mkdir(parents=True, exist_ok=True)
-            shape = (edge_count, *descriptor["value_shape"])
-            field_arrays[field_name] = np.lib.format.open_memmap(
-                path,
-                mode="w+",
-                dtype=np.dtype(descriptor["storage_dtype"]),
-                shape=shape,
-            )
             field_paths[field_name] = path
-
+            field_outputs[field_name] = _open_npy_output(
+                path,
+                dtype=np.dtype(descriptor["storage_dtype"]),
+                shape=(edge_count, *descriptor["value_shape"]),
+            )
+        key_path = relation_root / ".canonical_keys.parquet"
+        pa, pq, _ = _ingestion_module()._parquet_dependencies()
+        key_writer: Any = None
+        outputs = [
+            row_output,
+            *([edge_output] if edge_output is not None else []),
+            *field_outputs.values(),
+        ]
         offset = 0
-        last_destination = -1
-        previous_order: tuple[Any, ...] | None = None
         try:
-            reader = connection.execute(context["ordered_query"]).to_arrow_reader(
+            reader = connection.execute(context["stream_query"]).to_arrow_reader(
                 self.ingestor.source.spec.ingestion.record_batch_rows
             )
             for batch in reader:
@@ -773,71 +835,136 @@ class TypedGraphRelationWriter:
                     raise _artifact_error(
                         "CSC-BOUNDS-001: mapped relation endpoint is outside its exact type-local domain"
                     )
-                column = 2
-                edge_block: np.ndarray[Any, Any] | None = None
+                key_arrays = [batch.column(0), batch.column(1)]
+                key_names = ["destination_local", "source_local"]
                 if context["edge_descriptor"] is not None:
-                    edge_block = self._value_block(
-                        batch.column(column),
-                        context["edge_descriptor"],
-                        context="stable edge IDs",
+                    key_arrays.append(batch.column(2))
+                    key_names.append("stable_edge_id")
+                key_arrays.append(
+                    pa.array(
+                        np.arange(offset, offset + rows, dtype=np.int64),
+                        type=pa.int64(),
                     )
-                    edge_array[offset : offset + rows] = edge_block
+                )
+                key_names.append("source_position")
+                key_batch = pa.record_batch(key_arrays, names=key_names)
+                if key_writer is None:
+                    key_writer = pq.ParquetWriter(
+                        key_path,
+                        key_batch.schema,
+                        compression="zstd",
+                    )
+                key_writer.write_batch(
+                    key_batch,
+                    row_group_size=self.ingestor.source.spec.ingestion.record_batch_rows,
+                )
+                _write_npy_block(row_output, sources, dtype=int64_dtype)
+                np.add.at(colptr, destinations + 1, 1)
+                column = 2
+                if edge_output is not None:
+                    descriptor = context["edge_descriptor"]
+                    _write_npy_block(
+                        edge_output,
+                        self._value_block(
+                            batch.column(column),
+                            descriptor,
+                            context="stable edge IDs",
+                        ),
+                        dtype=np.dtype(descriptor["storage_dtype"]),
+                    )
                     column += 1
                 for field_name, descriptor in context["field_descriptors"].items():
-                    block = self._value_block(
-                        batch.column(column),
-                        descriptor,
-                        context=f"edge field {field_name!r}",
+                    _write_npy_block(
+                        field_outputs[field_name],
+                        self._value_block(
+                            batch.column(column),
+                            descriptor,
+                            context=f"edge field {field_name!r}",
+                        ),
+                        dtype=np.dtype(descriptor["storage_dtype"]),
                     )
-                    field_arrays[field_name][offset : offset + rows] = block
                     column += 1
-
-                for local_index in range(rows):
-                    destination = int(destinations[local_index])
-                    source = int(sources[local_index])
-                    edge_value = (
-                        _numpy_scalar(edge_block[local_index])
-                        if edge_block is not None
-                        else None
-                    )
-                    order = (
-                        (destination, source, edge_value)
-                        if edge_block is not None
-                        else (destination, source)
-                    )
-                    if previous_order is not None and order <= previous_order:
-                        raise _artifact_error(
-                            "CSC-ORDER-001: DuckDB relation stream is not in exact canonical order"
-                        )
-                    previous_order = order
-                    if destination != last_destination:
-                        if destination < last_destination:
-                            raise _artifact_error(
-                                "CSC-ORDER-001: destination ordinals decreased"
-                            )
-                        colptr[last_destination + 1 : destination + 1] = (
-                            offset + local_index
-                        )
-                        last_destination = destination
-                row[offset : offset + rows] = sources
                 offset += rows
+        finally:
+            for output in outputs:
+                output.close()
+            if key_writer is not None:
+                key_writer.close()
+        permutation_path = relation_root / ".canonical_permutation.npy"
+        try:
             if offset != edge_count:
                 raise _artifact_error(
                     f"EDGE-CARDINALITY-001: wrote {offset} edges, expected {edge_count}"
                 )
-            colptr[last_destination + 1 :] = edge_count
+            np.cumsum(colptr, out=colptr)
             colptr.flush()
-            row.flush()
-            if edge_array is not None:
-                edge_array.flush()
-            for array in field_arrays.values():
-                array.flush()
+            _close_memmap(colptr)
+            permutation_output = _open_npy_output(
+                permutation_path,
+                dtype=int64_dtype,
+                shape=(edge_count,),
+            )
+            sorted_count = 0
+            try:
+                if edge_count:
+                    key_view = f"canonical_keys_{uuid.uuid4().hex}"
+                    connection.read_parquet(str(key_path)).create_view(key_view)
+                    order = "destination_local, source_local"
+                    if context["edge_descriptor"] is not None:
+                        edge_order = (
+                            "encode(stable_edge_id)"
+                            if context["edge_descriptor"]["dtype"] == "string"
+                            else "stable_edge_id"
+                        )
+                        order = f"{order}, {edge_order}"
+                    reader = connection.execute(
+                        f"SELECT source_position FROM {_quote(key_view)} ORDER BY {order}"
+                    ).to_arrow_reader(
+                        self.ingestor.source.spec.ingestion.record_batch_rows
+                    )
+                    for batch in reader:
+                        rows = batch.num_rows
+                        self._observe_batch(rows)
+                        positions = self._primitive_block(
+                            batch.column(0),
+                            context="canonical source positions",
+                        )
+                        if (
+                            np.any(positions < 0)
+                            or np.any(positions >= edge_count)
+                        ):
+                            raise _artifact_error(
+                                "CSC-ORDER-001: canonical source position is outside the relation"
+                            )
+                        _write_npy_block(
+                            permutation_output,
+                            positions,
+                            dtype=int64_dtype,
+                        )
+                        sorted_count += rows
+                    del reader
+                    connection.execute(f"DROP VIEW {_quote(key_view)}")
+            finally:
+                permutation_output.close()
+            if sorted_count != edge_count:
+                raise _artifact_error(
+                    f"CSC-ORDER-001: canonicalized {sorted_count} edges, expected {edge_count}"
+                )
+            key_path.unlink(missing_ok=True)
+            permutation = np.load(
+                permutation_path,
+                mmap_mode="r",
+                allow_pickle=False,
+            )
+            self._reorder_array(row_path, permutation)
+            if edge_path is not None:
+                self._reorder_array(edge_path, permutation)
+            for path in field_paths.values():
+                self._reorder_array(path, permutation)
+            _close_memmap(permutation)
         finally:
-            del colptr
-            del row
-            if edge_array is not None:
-                del edge_array
-            field_arrays.clear()
+            key_path.unlink(missing_ok=True)
+            permutation_path.unlink(missing_ok=True)
         for path in (colptr_path, row_path, edge_path, *field_paths.values()):
             if path is not None:
                 _fsync_file(path)
@@ -1068,8 +1195,10 @@ class TypedGraphRelationWriter:
                     f"EDGE-DUPLICATE-ENDPOINT-001: relation {relation.relation!r} has ambiguous duplicate endpoints without a stable edge ID"
                 )
         else:
+            edge_column = _quote(relation.edge_id_column)
             edge_counts = connection.execute(
-                f"SELECT COUNT(*) FILTER (WHERE stable_edge_id IS NULL), COUNT(DISTINCT stable_edge_id) FROM {_quote(mapped_view)}"
+                f"SELECT COUNT(*) FILTER (WHERE {edge_column} IS NULL), "
+                f"COUNT(DISTINCT {edge_column}) FROM {_quote(source_view)}"
             ).fetchone()
             if edge_counts[0]:
                 raise _artifact_error(
@@ -1082,9 +1211,9 @@ class TypedGraphRelationWriter:
             if edge_descriptor["dtype"] == "string":
                 string_stats = connection.execute(
                     "SELECT COUNT(*) FILTER "
-                    "(WHERE ends_with(stable_edge_id, chr(0))), "
-                    "COALESCE(MAX(length(stable_edge_id)), 0) "
-                    f"FROM {_quote(mapped_view)}"
+                    f"(WHERE ends_with({edge_column}, chr(0))), "
+                    f"COALESCE(MAX(length({edge_column})), 0) "
+                    f"FROM {_quote(source_view)}"
                 ).fetchone()
                 if string_stats[0]:
                     raise _artifact_error(
@@ -1094,10 +1223,11 @@ class TypedGraphRelationWriter:
                 edge_descriptor["storage_dtype"] = np.dtype(
                     f"<U{max(1, int(string_stats[1]))}"
                 ).str
-        for ordinal, (field_name, descriptor) in enumerate(field_descriptors.items()):
-            alias = _quote(f"field_{ordinal:04d}")
+        for field_name, descriptor in field_descriptors.items():
+            source_field = _quote(field_name)
             null_count = connection.execute(
-                f"SELECT COUNT(*) FILTER (WHERE {alias} IS NULL) FROM {_quote(mapped_view)}"
+                f"SELECT COUNT(*) FILTER (WHERE {source_field} IS NULL) "
+                f"FROM {_quote(source_view)}"
             ).fetchone()[0]
             if null_count:
                 raise _artifact_error(
@@ -1105,7 +1235,8 @@ class TypedGraphRelationWriter:
                 )
             if descriptor["dtype"] in _FLOAT_DTYPES and descriptor["representation"] == "scalar":
                 invalid = connection.execute(
-                    f"SELECT COUNT(*) FILTER (WHERE NOT isfinite({alias})) FROM {_quote(mapped_view)}"
+                    f"SELECT COUNT(*) FILTER (WHERE NOT isfinite({source_field})) "
+                    f"FROM {_quote(source_view)}"
                 ).fetchone()[0]
                 if invalid:
                     raise _artifact_error(
@@ -1115,9 +1246,9 @@ class TypedGraphRelationWriter:
                 if descriptor["representation"] == "scalar":
                     string_stats = connection.execute(
                         "SELECT 0, COUNT(*) FILTER "
-                        f"(WHERE ends_with({alias}, chr(0))), "
-                        f"COALESCE(MAX(length({alias})), 0) "
-                        f"FROM {_quote(mapped_view)}"
+                        f"(WHERE ends_with({source_field}, chr(0))), "
+                        f"COALESCE(MAX(length({source_field})), 0) "
+                        f"FROM {_quote(source_view)}"
                     ).fetchone()
                 else:
                     string_stats = connection.execute(
@@ -1125,8 +1256,8 @@ class TypedGraphRelationWriter:
                         "COUNT(*) FILTER "
                         "(WHERE ends_with(value, chr(0))), "
                         "COALESCE(MAX(length(value)), 0) "
-                        f"FROM {_quote(mapped_view)}, "
-                        f"UNNEST({alias}) AS list_value(value)"
+                        f"FROM {_quote(source_view)}, "
+                        f"UNNEST({source_field}) AS list_value(value)"
                     ).fetchone()
                 if string_stats[0]:
                     raise _artifact_error(
@@ -1144,14 +1275,6 @@ class TypedGraphRelationWriter:
                     f"<U{max(1, int(string_stats[2]))}"
                 ).str
 
-        order = "destination_local, source_local"
-        if relation.edge_id_column is not None:
-            edge_order = (
-                "encode(stable_edge_id)"
-                if edge_descriptor["dtype"] == "string"
-                else "stable_edge_id"
-            )
-            order += f", {edge_order}"
         projected = ["destination_local", "source_local"]
         if relation.edge_id_column is not None:
             projected.append("stable_edge_id")
@@ -1159,8 +1282,8 @@ class TypedGraphRelationWriter:
             _quote(f"field_{ordinal:04d}")
             for ordinal in range(len(relation.edge_fields))
         )
-        ordered_query = (
-            f"SELECT {', '.join(projected)} FROM {_quote(mapped_view)} ORDER BY {order}"
+        stream_query = (
+            f"SELECT {', '.join(projected)} FROM {_quote(mapped_view)}"
         )
         source_files = self._source_records(relation.paths)
         schema_record = {
@@ -1170,7 +1293,7 @@ class TypedGraphRelationWriter:
             "schema_serialized_hex": schema.serialize().to_pybytes().hex(),
         }
         return {
-            "ordered_query": ordered_query,
+            "stream_query": stream_query,
             "edge_count": edge_count,
             "source_count": self.index_build.indexes[source_node.name].row_count,
             "destination_count": self.index_build.indexes[destination_node.name].row_count,
@@ -1334,12 +1457,25 @@ class TypedGraphRelationWriter:
         extra: Mapping[str, Any],
     ) -> dict[str, Any]:
         ingestion = _ingestion_module()
-        array = np.load(path, mmap_mode="r", allow_pickle=False)
+        with path.open("rb") as stream:
+            version = np.lib.format.read_magic(stream)
+            if version == (1, 0):
+                actual_shape, fortran_order, storage_dtype = (
+                    np.lib.format.read_array_header_1_0(stream)
+                )
+            elif version == (2, 0):
+                actual_shape, fortran_order, storage_dtype = (
+                    np.lib.format.read_array_header_2_0(stream)
+                )
+            else:
+                raise ValueError(f"unsupported NumPy format version {version!r}")
+        if fortran_order or actual_shape != shape:
+            raise ValueError(f"unexpected NumPy payload layout at {path}")
         return {
             **extra,
             "relative_path": path.relative_to(root).as_posix(),
             "dtype": dtype,
-            "storage_dtype": array.dtype.str,
+            "storage_dtype": storage_dtype.str,
             "shape": list(shape),
             "count": count,
             "byte_size": path.stat().st_size,
@@ -1406,6 +1542,44 @@ class TypedGraphRelationWriter:
             )
         return block
 
+    def _reorder_array(
+        self,
+        path: Path,
+        permutation: np.ndarray[Any, Any],
+    ) -> None:
+        batch_rows = self.ingestor.source.spec.ingestion.record_batch_rows
+        scratch_path = path.with_name(
+            f".{path.name}.canonical-{uuid.uuid4().hex}"
+        )
+        source: Any = None
+        output: Any = None
+        try:
+            source = np.load(path, mmap_mode="r", allow_pickle=False)
+            output = _open_npy_output(
+                scratch_path,
+                dtype=source.dtype,
+                shape=source.shape,
+            )
+            for start in range(0, len(permutation), batch_rows):
+                stop = min(len(permutation), start + batch_rows)
+                _write_npy_block(
+                    output,
+                    source[permutation[start:stop]],
+                    dtype=source.dtype,
+                )
+            output.close()
+            output = None
+            _close_memmap(source)
+            source = None
+            os.replace(scratch_path, path)
+        finally:
+            if output is not None:
+                output.close()
+            if source is not None:
+                _close_memmap(source)
+            scratch_path.unlink(missing_ok=True)
+
+
     def _observe_batch(self, rows: int) -> None:
         limit = self.ingestor.source.spec.ingestion.record_batch_rows
         if rows > limit:
@@ -1413,6 +1587,7 @@ class TypedGraphRelationWriter:
                 f"BATCH-BOUND-001: observed {rows} relation rows, configured maximum is {limit}"
             )
         self._max_batch_rows = max(self._max_batch_rows, rows)
+
     def _fsync_prepared_tree(self, root: Path) -> None:
         ingestion = _ingestion_module()
         directories = [root]
@@ -1808,6 +1983,14 @@ class TypedGraphRelationWriter:
             expected_shape=(edge_count,),
             alignment_code="CSC-ROW-001",
         )
+        colptr_path = _ingestion_module()._safe_artifact_path(
+            root,
+            colptr_record["relative_path"],
+        )
+        row_path = _ingestion_module()._safe_artifact_path(
+            root,
+            row_record["relative_path"],
+        )
         if len(colptr) == 0 or int(colptr[0]) != 0 or int(colptr[-1]) != edge_count:
             raise _artifact_error(
                 "CSC-COLPTR-001: colptr must begin at zero and end at edge count"
@@ -1822,15 +2005,30 @@ class TypedGraphRelationWriter:
                 raise _artifact_error("CSC-COLPTR-001: colptr is not monotonic")
             if len(block):
                 previous = int(block[-1])
+            del block
+            if start + batch_rows < len(colptr):
+                _close_memmap(colptr)
+                colptr = np.load(
+                    colptr_path,
+                    mmap_mode="r",
+                    allow_pickle=False,
+                )
         for start in range(0, edge_count, batch_rows):
             block = np.asarray(row[start : start + batch_rows])
             if np.any(block < 0) or np.any(block >= source_count):
                 raise _artifact_error(
                     "CSC-BOUNDS-001: row contains a source ordinal outside its type"
                 )
+            del block
+            if start + batch_rows < edge_count:
+                _close_memmap(row)
+                row = np.load(row_path, mmap_mode="r", allow_pickle=False)
+        _close_memmap(row)
+        row = np.load(row_path, mmap_mode="r", allow_pickle=False)
 
         edge_record = record.get("edge_id")
         edge_array: np.ndarray[Any, Any] | None = None
+        edge_path: Path | None = None
         if relation.edge_id_column is None:
             if edge_record is not None:
                 raise _artifact_error(
@@ -1844,6 +2042,10 @@ class TypedGraphRelationWriter:
                 edge_record,
                 expected_shape=(edge_count,),
                 alignment_code="EDGE-ID-ALIGNMENT-001",
+            )
+            edge_path = _ingestion_module()._safe_artifact_path(
+                root,
+                edge_record["relative_path"],
             )
             if edge_record.get("column") != relation.edge_id_column:
                 raise _artifact_error("RELATION-BINDING-001: edge ID role changed")
@@ -1873,13 +2075,27 @@ class TypedGraphRelationWriter:
                 expected_shape=tuple(shape),
                 alignment_code="EDGE-FIELD-ALIGNMENT-001",
             )
+            field_path = _ingestion_module()._safe_artifact_path(
+                root,
+                field_record["relative_path"],
+            )
             if np.issubdtype(array.dtype, np.floating):
                 for start in range(0, edge_count, batch_rows):
                     if not np.isfinite(array[start : start + batch_rows]).all():
                         raise _artifact_error(
                             f"EDGE-FIELD-FINITE-001: field {field_name!r} contains NaN or infinity"
                         )
+                    if start + batch_rows < edge_count:
+                        _close_memmap(array)
+                        array = np.load(
+                            field_path,
+                            mmap_mode="r",
+                            allow_pickle=False,
+                        )
+            _close_memmap(array)
 
+        resident_rows = 0
+        resident_destinations = 0
         for destination in range(destination_count):
             start = int(colptr[destination])
             stop = int(colptr[destination + 1])
@@ -1898,6 +2114,32 @@ class TypedGraphRelationWriter:
                             "CSC-ORDER-001: relation rows are not in canonical source/edge order"
                         )
                     previous_order = order
+                    resident_rows += 1
+                    if resident_rows >= batch_rows:
+                        _close_memmap(row)
+                        row = np.load(row_path, mmap_mode="r", allow_pickle=False)
+                        if edge_array is not None:
+                            assert edge_path is not None
+                            _close_memmap(edge_array)
+                            edge_array = np.load(
+                                edge_path,
+                                mmap_mode="r",
+                                allow_pickle=False,
+                            )
+                        resident_rows = 0
+            resident_destinations += 1
+            if resident_destinations >= batch_rows:
+                _close_memmap(colptr)
+                colptr = np.load(
+                    colptr_path,
+                    mmap_mode="r",
+                    allow_pickle=False,
+                )
+                resident_destinations = 0
+        _close_memmap(colptr)
+        _close_memmap(row)
+        if edge_array is not None:
+            _close_memmap(edge_array)
         self._validate_record_checksum(root, colptr_record)
         self._validate_record_checksum(root, row_record)
         if isinstance(edge_record, dict):
@@ -1966,6 +2208,8 @@ class TypedGraphRelationWriter:
         arrays: dict[str, dict[str, Any]] = {}
         file_bytes = 0
         payload_bytes = 0
+        max_canonical_permutation_bytes = 0
+        max_canonical_scratch_file_bytes = 0
         for key in sorted(relations):
             record = relations[key]
             colptr = _npy_storage_sizing(
@@ -2003,12 +2247,54 @@ class TypedGraphRelationWriter:
             payload_bytes += sum(
                 int(item["payload_bytes"]) for item in records
             )
+            permutation_scratch = _npy_storage_sizing(
+                np.dtype("<i8"),
+                (record["edge_count"],),
+            )
+            key_row_bytes = 3 * np.dtype("<i8").itemsize
+            if record["edge_id"] is not None:
+                key_row_bytes += np.dtype(
+                    record["edge_id"]["storage_dtype"]
+                ).itemsize
+            key_row_groups = (
+                record["edge_count"]
+                + self.ingestor.source.spec.ingestion.record_batch_rows
+                - 1
+            ) // self.ingestor.source.spec.ingestion.record_batch_rows
+            key_file_upper_bound = (
+                record["edge_count"] * key_row_bytes
+                + key_row_groups * 64 * 1024
+                + 1024**2
+            )
+            reorder_records = [row]
+            if edge_id is not None:
+                reorder_records.append(edge_id)
+            reorder_records.extend(
+                fields[name] for name in sorted(fields)
+            )
+            max_reorder_file_bytes = max(
+                (
+                    int(item["file_bytes"])
+                    for item in reorder_records
+                ),
+                default=0,
+            )
+            max_canonical_scratch_file_bytes = max(
+                max_canonical_scratch_file_bytes,
+                int(permutation_scratch["file_bytes"])
+                + max(key_file_upper_bound, max_reorder_file_bytes),
+            )
+            max_canonical_permutation_bytes = max(
+                max_canonical_permutation_bytes,
+                int(record["edge_count"]) * np.dtype(np.intp).itemsize,
+            )
         coarse = resource["disk_requirements"]
         evidence_reserve = int(
             coarse["relation_evidence_reserve_bytes"]
         )
         estimated = file_bytes + evidence_reserve
-        final_peak = int(coarse["task3_final_bytes"]) + estimated
+        final_build_bytes = estimated + max_canonical_scratch_file_bytes
+        final_peak = int(coarse["task3_final_bytes"]) + final_build_bytes
         temporary_peak = int(coarse["snapshot_bytes"]) + int(
             coarse["spill_bytes"]
         )
@@ -2027,18 +2313,27 @@ class TypedGraphRelationWriter:
             "relation_rows": int(coarse["relation_rows"]),
             "snapshot_bytes": int(coarse["snapshot_bytes"]),
             "spill_bytes": int(coarse["spill_bytes"]),
+            "max_canonical_permutation_bytes": max_canonical_permutation_bytes,
+            "max_canonical_scratch_file_bytes": max_canonical_scratch_file_bytes,
             "final_peak_bytes": final_peak,
             "temporary_peak_bytes": temporary_peak,
             "resume_temporary_additional_bytes": temporary_peak,
             "shared_peak_bytes": final_peak + temporary_peak,
-            "final_additional_bytes": estimated,
+            "final_additional_bytes": final_build_bytes,
             "temporary_additional_bytes": temporary_peak,
-            "shared_additional_bytes": estimated + temporary_peak,
+            "shared_additional_bytes": final_build_bytes + temporary_peak,
             "arrays": arrays,
         }
         if exact != expected:
             raise ingestion.ArtifactValidationError(
                 "DISK-EVIDENCE-001: exact array allocation evidence changed"
+            )
+        if (
+            resource.get("canonical_permutation_bytes")
+            != max_canonical_permutation_bytes
+        ):
+            raise ingestion.ArtifactValidationError(
+                "DISK-EVIDENCE-001: canonical permutation memory evidence changed"
             )
 
 
@@ -2222,36 +2517,50 @@ class TypedGraphRelationWriter:
                 raise _artifact_error(
                     f"RELATION-BINDING-001: edge field {field_name!r} schema changed"
                 )
-        colptr = np.load(
-            ingestion._safe_artifact_path(root, record["colptr"]["relative_path"]),
-            mmap_mode="r",
-            allow_pickle=False,
+        colptr_path = ingestion._safe_artifact_path(
+            root,
+            record["colptr"]["relative_path"],
         )
-        row = np.load(
-            ingestion._safe_artifact_path(root, record["row"]["relative_path"]),
-            mmap_mode="r",
-            allow_pickle=False,
+        row_path = ingestion._safe_artifact_path(
+            root,
+            record["row"]["relative_path"],
         )
-        edge = (
-            np.load(
-                ingestion._safe_artifact_path(root, record["edge_id"]["relative_path"]),
-                mmap_mode="r",
-                allow_pickle=False,
+        edge_path = (
+            ingestion._safe_artifact_path(
+                root,
+                record["edge_id"]["relative_path"],
             )
             if record["edge_id"] is not None
             else None
         )
-        fields = {
-            name: np.load(
-                ingestion._safe_artifact_path(root, value["relative_path"]),
-                mmap_mode="r",
-                allow_pickle=False,
-            )
+        field_paths = {
+            name: ingestion._safe_artifact_path(root, value["relative_path"])
             for name, value in record["fields"].items()
         }
+        colptr = np.load(colptr_path, mmap_mode="r", allow_pickle=False)
+        row = np.load(row_path, mmap_mode="r", allow_pickle=False)
+        edge = (
+            np.load(edge_path, mmap_mode="r", allow_pickle=False)
+            if edge_path is not None
+            else None
+        )
+        fields = {
+            name: np.load(path, mmap_mode="r", allow_pickle=False)
+            for name, path in field_paths.items()
+        }
         offset = 0
-        reader = connection.execute(context["ordered_query"]).to_arrow_reader(
-            self.ingestor.source.spec.ingestion.record_batch_rows
+        page_bytes = os.sysconf("SC_PAGE_SIZE")
+        lookup_arrays = 3 + int(edge is not None) + len(fields)
+        audit_resident_bytes = min(
+            4 * 1024**2,
+            self.ingestor.source.spec.ingestion.memory_limit_bytes // 16,
+        )
+        audit_batch_rows = min(
+            self.ingestor.source.spec.ingestion.record_batch_rows,
+            max(1, audit_resident_bytes // (page_bytes * lookup_arrays)),
+        )
+        reader = connection.execute(context["stream_query"]).to_arrow_reader(
+            audit_batch_rows
         )
         for batch in reader:
             rows = batch.num_rows
@@ -2262,37 +2571,68 @@ class TypedGraphRelationWriter:
             sources = self._primitive_block(
                 batch.column(1), context="audited source ordinals"
             )
-            if not np.array_equal(row[offset : offset + rows], sources):
-                raise _artifact_error(
-                    "RELATION-SEMANTIC-001: CSC row values differ from canonical source relation"
-                )
-            positions = range(offset, offset + rows)
-            if any(
-                not (
-                    int(colptr[int(destination)])
-                    <= position
-                    < int(colptr[int(destination) + 1])
-                )
-                for position, destination in zip(positions, destinations, strict=True)
+            if (
+                np.any(destinations < 0)
+                or np.any(destinations >= context["destination_count"])
+                or np.any(sources < 0)
+                or np.any(sources >= context["source_count"])
             ):
                 raise _artifact_error(
-                    "RELATION-SEMANTIC-001: CSC destinations differ from canonical source relation"
+                    "RELATION-SEMANTIC-001: source relation endpoints exceed canonical bounds"
                 )
             column = 2
+            edge_block: np.ndarray[Any, Any] | None = None
             if edge is not None:
                 edge_block = self._value_block(
                     batch.column(column),
                     context["edge_descriptor"],
                     context="audited stable edge IDs",
                 )
-                if not _arrays_bitwise_equal(
-                    edge[offset : offset + rows],
-                    edge_block,
+                column += 1
+            positions = np.empty(rows, dtype=np.int64)
+            for local_index in range(rows):
+                destination = int(destinations[local_index])
+                source = int(sources[local_index])
+                start = int(colptr[destination])
+                stop = int(colptr[destination + 1])
+                source_segment = row[start:stop]
+                left = int(np.searchsorted(source_segment, source, side="left"))
+                right = int(np.searchsorted(source_segment, source, side="right"))
+                if left == right:
+                    raise _artifact_error(
+                        "RELATION-SEMANTIC-001: source edge is absent from canonical CSC"
+                    )
+                if edge is None:
+                    if right - left != 1:
+                        raise _artifact_error(
+                            "RELATION-SEMANTIC-001: endpoint pair is ambiguous without stable edge IDs"
+                        )
+                    positions[local_index] = start + left
+                    continue
+                assert edge_block is not None
+                expected_edge = _numpy_scalar(edge_block[local_index])
+                edge_segment = edge[start + left : start + right]
+                edge_offset = int(
+                    np.searchsorted(edge_segment, expected_edge, side="left")
+                )
+                if (
+                    edge_offset >= len(edge_segment)
+                    or _numpy_scalar(edge_segment[edge_offset]) != expected_edge
                 ):
+                    raise _artifact_error(
+                        "RELATION-SEMANTIC-001: stable edge ID is absent from canonical CSC"
+                    )
+                positions[local_index] = start + left + edge_offset
+            if not np.array_equal(row[positions], sources):
+                raise _artifact_error(
+                    "RELATION-SEMANTIC-001: CSC row values differ from source relation"
+                )
+            if edge is not None:
+                assert edge_block is not None
+                if not _arrays_bitwise_equal(edge[positions], edge_block):
                     raise _artifact_error(
                         "RELATION-SEMANTIC-001: stable edge IDs differ from source relation"
                     )
-                column += 1
             for field_name, descriptor in context["field_descriptors"].items():
                 block = self._value_block(
                     batch.column(column),
@@ -2300,14 +2640,39 @@ class TypedGraphRelationWriter:
                     context=f"audited edge field {field_name!r}",
                 )
                 if not _arrays_bitwise_equal(
-                    fields[field_name][offset : offset + rows],
+                    fields[field_name][positions],
                     block,
                 ):
                     raise _artifact_error(
                         f"RELATION-SEMANTIC-001: field {field_name!r} differs from source relation"
                     )
                 column += 1
+            del source_segment
+            if edge is not None:
+                del edge_segment
             offset += rows
+            _close_memmap(row)
+            if edge is not None:
+                _close_memmap(edge)
+            for field in fields.values():
+                _close_memmap(field)
+            if offset < context["edge_count"]:
+                row = np.load(row_path, mmap_mode="r", allow_pickle=False)
+                edge = (
+                    np.load(edge_path, mmap_mode="r", allow_pickle=False)
+                    if edge_path is not None
+                    else None
+                )
+                fields = {
+                    name: np.load(path, mmap_mode="r", allow_pickle=False)
+                    for name, path in field_paths.items()
+                }
+        _close_memmap(colptr)
+        _close_memmap(row)
+        if edge is not None:
+            _close_memmap(edge)
+        for field in fields.values():
+            _close_memmap(field)
         if offset != context["edge_count"]:
             raise _artifact_error(
                 "RELATION-SEMANTIC-001: source relation cardinality changed"
@@ -2398,7 +2763,11 @@ def _relation_semantic_sha256(
 
     for role, name, component in components:
         path = root / component["relative_path"]
-        array = np.load(path, mmap_mode="r", allow_pickle=False)
+        dtype = np.dtype(component["storage_dtype"])
+        shape = tuple(component["shape"])
+        byte_length = dtype.itemsize
+        for extent in shape:
+            byte_length *= extent
         header = json.dumps(
             {
                 "role": role,
@@ -2406,7 +2775,7 @@ def _relation_semantic_sha256(
                 "logical_dtype": component["dtype"],
                 "storage_dtype": component["storage_dtype"],
                 "shape": component["shape"],
-                "byte_length": array.nbytes,
+                "byte_length": byte_length,
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -2422,11 +2791,37 @@ def _relation_semantic_sha256(
         _start_digest_frame(
             digest,
             role=f"component-bytes:{payload_role}",
-            byte_length=array.nbytes,
+            byte_length=byte_length,
         )
-        for start in range(0, len(array), batch_rows):
-            block = np.ascontiguousarray(array[start : start + batch_rows])
-            digest.update(memoryview(block).cast("B"))
+        with path.open("rb") as stream:
+            version = np.lib.format.read_magic(stream)
+            if version == (1, 0):
+                actual_shape, fortran_order, actual_dtype = (
+                    np.lib.format.read_array_header_1_0(stream)
+                )
+            elif version == (2, 0):
+                actual_shape, fortran_order, actual_dtype = (
+                    np.lib.format.read_array_header_2_0(stream)
+                )
+            else:
+                raise ValueError(f"unsupported NumPy format version {version!r}")
+            if (
+                fortran_order
+                or actual_shape != shape
+                or actual_dtype != dtype
+            ):
+                raise ValueError(f"unexpected NumPy payload layout at {path}")
+            row_bytes = dtype.itemsize
+            for extent in shape[1:]:
+                row_bytes *= extent
+            remaining = byte_length
+            read_bytes = max(row_bytes, batch_rows * row_bytes)
+            while remaining:
+                block = stream.read(min(remaining, read_bytes))
+                if not block:
+                    raise ValueError(f"truncated NumPy array payload at {path}")
+                digest.update(block)
+                remaining -= len(block)
     return digest.hexdigest()
 def _start_digest_frame(
     digest: Any,
@@ -2442,6 +2837,32 @@ def _start_digest_frame(
 
 
 def _array_content_sha256(path: Path, batch_rows: int) -> str:
+    with path.open("rb") as stream:
+        version = np.lib.format.read_magic(stream)
+        if version == (1, 0):
+            shape, fortran_order, dtype = (
+                np.lib.format.read_array_header_1_0(stream)
+            )
+        elif version == (2, 0):
+            shape, fortran_order, dtype = (
+                np.lib.format.read_array_header_2_0(stream)
+            )
+        else:
+            raise ValueError(f"unsupported NumPy format version {version!r}")
+        if not fortran_order:
+            row_bytes = dtype.itemsize
+            for extent in shape[1:]:
+                row_bytes *= extent
+            remaining = (shape[0] if shape else 1) * row_bytes
+            read_bytes = max(row_bytes, batch_rows * row_bytes)
+            digest = hashlib.sha256()
+            while remaining:
+                block = stream.read(min(remaining, read_bytes))
+                if not block:
+                    raise ValueError(f"truncated NumPy array payload at {path}")
+                digest.update(block)
+                remaining -= len(block)
+            return digest.hexdigest()
     array = np.load(path, mmap_mode="r", allow_pickle=False)
     digest = hashlib.sha256()
     for start in range(0, len(array), batch_rows):
@@ -2521,9 +2942,57 @@ def _numpy_dtype(dtype: str) -> np.dtype[Any]:
 def _numpy_scalar(value: Any) -> Any:
     return value.item() if isinstance(value, np.generic) else value
 
+def _close_memmap(array: np.ndarray[Any, Any]) -> None:
+    mapping = getattr(array, "_mmap", None)
+    if mapping is not None and not mapping.closed:
+        mapping.close()
+
+
 
 def _quote(value: str) -> str:
     return '"' + value.replace('"', '""') + '"'
+
+
+def _open_npy_output(
+    path: Path,
+    *,
+    dtype: np.dtype[Any],
+    shape: tuple[int, ...],
+) -> Any:
+    element_count = 1
+    for extent in shape:
+        element_count *= extent
+    with path.open("wb") as output:
+        np.lib.format.write_array_header_1_0(
+            output,
+            {
+                "descr": np.lib.format.dtype_to_descr(dtype),
+                "fortran_order": False,
+                "shape": shape,
+            },
+        )
+        data_offset = output.tell()
+        output.truncate(data_offset + element_count * dtype.itemsize)
+    stream = path.open("r+b", buffering=0)
+    stream.seek(data_offset)
+    return stream
+
+
+def _write_npy_block(
+    stream: Any,
+    block: np.ndarray[Any, Any],
+    *,
+    dtype: np.dtype[Any],
+) -> None:
+    contiguous = np.asarray(block, dtype=dtype, order="C")
+    if not contiguous.flags.c_contiguous:
+        contiguous = np.ascontiguousarray(contiguous)
+    remaining = memoryview(contiguous).cast("B")
+    while remaining:
+        written = stream.write(remaining)
+        if written is None or written <= 0:
+            raise OSError("failed to write NumPy array block")
+        remaining = remaining[written:]
 
 
 def _fsync_file(path: Path) -> None:

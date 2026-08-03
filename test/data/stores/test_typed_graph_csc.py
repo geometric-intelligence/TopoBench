@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from pathlib import Path
 from typing import Any
+import duckdb
 
 import numpy as np
 import pyarrow as pa
@@ -22,6 +24,8 @@ from topobench.data.loaders.parquet import (
     SupervisionSpec,
 )
 from topobench.data.stores.typed_graph_ingestion import ParquetTypedGraphIngestor
+from topobench.data.stores import typed_graph_csc as csc_module
+from topobench.data.stores.typed_graph_csc import TypedGraphRelationWriter
 
 
 def _write_table(path: Path, columns: dict[str, pa.Array]) -> None:
@@ -230,6 +234,102 @@ def _homogeneous_source(root: Path) -> ParquetTypedGraphSource:
     )
 
 
+
+def test_relation_writer_canonicalizes_an_unordered_bounded_stream(
+    tmp_path: Path,
+) -> None:
+    connection = duckdb.connect()
+    connection.execute(
+        "CREATE TABLE mapped(destination_local BIGINT, source_local BIGINT, "
+        "edge_id UBIGINT, weight FLOAT)"
+    )
+    connection.executemany(
+        "INSERT INTO mapped VALUES (?, ?, ?, ?)",
+        [
+            (2, 1, 50, 5.0),
+            (0, 2, 20, 2.0),
+            (1, 0, 30, 3.0),
+            (0, 1, 10, 1.0),
+            (2, 0, 40, 4.0),
+        ],
+    )
+    ingestor = SimpleNamespace(
+        source=SimpleNamespace(
+            spec=SimpleNamespace(
+                ingestion=SimpleNamespace(record_batch_rows=2),
+            )
+        )
+    )
+    writer = TypedGraphRelationWriter(
+        ingestor,
+        SimpleNamespace(),
+        SimpleNamespace(),
+    )
+    relation = SimpleNamespace(
+        relation=("source", "links", "destination"),
+        source_column="source_id",
+        destination_column="destination_id",
+        edge_id_column="edge_id",
+    )
+    context = {
+        "stream_query": (
+            "SELECT destination_local, source_local, edge_id, weight FROM mapped"
+        ),
+        "edge_count": 5,
+        "source_count": 3,
+        "destination_count": 3,
+        "source_internal_key": "n0000",
+        "destination_internal_key": "n0001",
+        "source_id_dtype": "int64",
+        "destination_id_dtype": "int64",
+        "edge_descriptor": {
+            "dtype": "uint64",
+            "storage_dtype": "<u8",
+            "arrow_type": "uint64",
+            "representation": "scalar",
+            "value_shape": (),
+        },
+        "field_descriptors": {
+            "weight": {
+                "dtype": "float32",
+                "storage_dtype": "<f4",
+                "arrow_type": "float",
+                "representation": "scalar",
+                "value_shape": (),
+            }
+        },
+        "source_files": [],
+        "source_sha256": "source-sha256",
+        "schema_record": {"schema_fingerprint": "schema-fingerprint"},
+    }
+    try:
+        record, _ = writer._write_one_relation(
+            tmp_path,
+            relation=relation,
+            internal_key="r0000",
+            context=context,
+            connection=connection,
+        )
+    finally:
+        connection.close()
+
+    np.testing.assert_array_equal(
+        np.load(tmp_path / record["colptr"]["relative_path"]),
+        np.array([0, 2, 3, 5], dtype="<i8"),
+    )
+    np.testing.assert_array_equal(
+        np.load(tmp_path / record["row"]["relative_path"]),
+        np.array([1, 2, 0, 0, 1], dtype="<i8"),
+    )
+    np.testing.assert_array_equal(
+        np.load(tmp_path / record["edge_id"]["relative_path"]),
+        np.array([10, 20, 30, 40, 50], dtype="<u8"),
+    )
+    np.testing.assert_array_equal(
+        np.load(tmp_path / record["fields"]["weight"]["relative_path"]),
+        np.array([1, 2, 3, 4, 5], dtype="<f4"),
+    )
+
 def _metadata(result: Any) -> dict[str, Any]:
     return json.loads(
         (result.artifact_root / "relations.json").read_text(encoding="utf-8")
@@ -263,6 +363,47 @@ def _relation_arrays(result: Any, key: str) -> dict[str, np.ndarray]:
             allow_pickle=False,
         )
     return arrays
+
+
+def test_relation_build_closes_internal_validation_mappings(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    source = _heterogeneous_source(tmp_path / "source")
+    opened: list[np.memmap] = []
+    original_load = np.load
+
+    def tracked_load(*args: Any, **kwargs: Any) -> Any:
+        array = original_load(*args, **kwargs)
+        path = Path(args[0])
+        if (
+            isinstance(array, np.memmap)
+            and "relations" in path.parts
+        ):
+            opened.append(array)
+        return array
+
+    monkeypatch.setattr(csc_module.np, "load", tracked_load)
+    result = ParquetTypedGraphIngestor(
+        source,
+        tmp_path / "stores",
+    ).build_relations()
+
+    assert opened
+    unclosed = [
+        str(array.filename)
+        for array in opened
+        if not array._mmap.closed
+    ]
+    assert not unclosed, unclosed
+    public = original_load(
+        result.artifact_root / "r0000/row.npy",
+        mmap_mode="r",
+        allow_pickle=False,
+    )
+    assert public.flags.writeable is False
+    assert public._mmap.closed is False
+    public._mmap.close()
 
 
 def test_writes_exact_heterogeneous_directed_relations_and_aligned_fields(

@@ -4,6 +4,13 @@ on:
   push:
     branches: ["main"]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      release_qualification:
+        description: Run mandatory CUDA and digest-pinned live-data release gates
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -51,3 +58,87 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           file: coverage.xml
           fail_ci_if_error: false
+
+  bounded-rss:
+    name: Bounded typed-Parquet RSS
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Install frozen qualification environment
+        run: uv sync --frozen --all-extras
+      - name: Qualify bounded conversion and partition RSS
+        env:
+          TOPOBENCH_QUALIFICATION_EVIDENCE_DIR: qualification-evidence
+        run: uv run python test/integration/qualify_typed_graph_rss.py
+      - name: Persist aggregate RSS evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: typed-graph-rss-qualification
+          path: qualification-evidence/typed-graph-rss-qualification.json
+          if-no-files-found: error
+
+  mandatory-cuda:
+    name: Mandatory typed graph CUDA release gate
+    if: github.event_name == 'workflow_dispatch' && inputs.release_qualification
+    runs-on: [self-hosted, linux, x64, cuda]
+    environment: release-qualification
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Install frozen CUDA qualification environment
+        run: uv sync --frozen --all-extras
+      - name: Qualify GCN and HGT overlap, parity, and statistics
+        env:
+          TOPOBENCH_QUALIFICATION_EVIDENCE_DIR: qualification-evidence
+        run: uv run python test/integration/qualify_typed_graph_cuda.py
+      - name: Persist aggregate CUDA evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: typed-graph-cuda-qualification
+          path: qualification-evidence/typed-graph-cuda-qualification.json
+          if-no-files-found: error
+
+  live-parquet-data:
+    name: Digest-pinned live Parquet release gate
+    if: github.event_name == 'workflow_dispatch' && inputs.release_qualification
+    runs-on: [self-hosted, linux, x64, live-data]
+    environment: release-qualification
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Install frozen live-data qualification environment
+        run: uv sync --frozen --all-extras
+      - name: Qualify representative real multi-file Parquet sources
+        env:
+          TOPOBENCH_RUN_LIVE_PARQUET: "1"
+          TOPOBENCH_REAL_PARQUET_GRAPH_URL: ${{ secrets.TOPOBENCH_REAL_PARQUET_GRAPH_URL }}
+          TOPOBENCH_REAL_PARQUET_GRAPH_SHA256: ${{ secrets.TOPOBENCH_REAL_PARQUET_GRAPH_SHA256 }}
+          TOPOBENCH_REAL_PARQUET_HETEROGENEOUS_URL: ${{ secrets.TOPOBENCH_REAL_PARQUET_HETEROGENEOUS_URL }}
+          TOPOBENCH_REAL_PARQUET_HETEROGENEOUS_SHA256: ${{ secrets.TOPOBENCH_REAL_PARQUET_HETEROGENEOUS_SHA256 }}
+          TOPOBENCH_QUALIFICATION_EVIDENCE_DIR: qualification-evidence
+        run: uv run pytest test/integration/test_real_parquet_graph.py test/integration/test_real_parquet_heterogeneous.py test/integration/test_retained_datasets.py -q
+      - name: Persist aggregate live-data evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: typed-graph-live-parquet-qualification
+          path: qualification-evidence/*.json
+          if-no-files-found: error

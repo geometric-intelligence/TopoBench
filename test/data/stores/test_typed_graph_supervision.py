@@ -5,8 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
+import duckdb
 import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -288,6 +290,116 @@ def test_node_classification_and_all_explicit_tags_are_exact_and_compact(tmp_pat
     assert provenance["alpha"]["version"] == np.__version__
     assert provenance["alpha"]["seed"] == 20260802
     assert not list(result.stage_root.rglob("*mask*"))
+
+
+def test_large_supervision_vector_streams_in_canonical_order_at_64_mib(
+    tmp_path: Path,
+) -> None:
+    row_count = 4_000_000
+    batch_rows = 8192
+    memory_limit = 64 * 1024**2
+    source_root = tmp_path / "source"
+    source_path = source_root / "nodes/targets.parquet"
+    mapping_path = tmp_path / "index/node_ids.parquet"
+    source_path.parent.mkdir(parents=True)
+    mapping_path.parent.mkdir(parents=True)
+    escaped_source = str(source_path).replace("'", "''")
+    escaped_mapping = str(mapping_path).replace("'", "''")
+    setup = duckdb.connect()
+    try:
+        setup.execute("SET threads = 1")
+        setup.execute(
+            f"COPY (SELECT {row_count} - 1 - i AS target_id, "
+            f"CAST(({row_count} - 1 - i) % 4 AS BIGINT) AS label "
+            f"FROM range({row_count}) rows(i)) TO '{escaped_source}' "
+            f"(FORMAT PARQUET, ROW_GROUP_SIZE {batch_rows})"
+        )
+        setup.execute(
+            "COPY (SELECT i AS local_ordinal, i AS external_id "
+            f"FROM range({row_count}) rows(i)) TO '{escaped_mapping}' "
+            f"(FORMAT PARQUET, ROW_GROUP_SIZE {batch_rows})"
+        )
+    finally:
+        setup.close()
+
+    schema = pq.ParquetFile(source_path).schema_arrow
+    source_sha256 = _sha256(source_path)
+    supervision = SimpleNamespace(
+        label_dtype="int64",
+        label_source="nodes",
+        label_paths=(),
+        label_id_column=None,
+        label_column="label",
+    )
+    target = SimpleNamespace(
+        name="target",
+        paths=("nodes/targets.parquet",),
+        id_column="target_id",
+        id_dtype="int64",
+    )
+    ingestor = SimpleNamespace(
+        source=SimpleNamespace(
+            spec=SimpleNamespace(
+                supervision=supervision,
+                ingestion=SimpleNamespace(record_batch_rows=batch_rows),
+            )
+        )
+    )
+    index_build = SimpleNamespace(
+        indexes={
+            "target": SimpleNamespace(
+                node_ids_path=mapping_path,
+                row_count=row_count,
+            )
+        },
+        inventory=SimpleNamespace(
+            files=(
+                SimpleNamespace(
+                    relative_path="nodes/targets.parquet",
+                    byte_size=source_path.stat().st_size,
+                    sha256=source_sha256,
+                    schema_fingerprint=hashlib.sha256(
+                        schema.serialize().to_pybytes()
+                    ).hexdigest(),
+                ),
+            )
+        ),
+    )
+    writer = arrays_module.TypedGraphArrayWriter(ingestor, index_build)
+    spill_root = tmp_path / "spill"
+    connection = duckdb.connect(str(tmp_path / "arrays.duckdb"))
+    try:
+        connection.execute("SET preserve_insertion_order = false")
+        connection.execute(f"SET memory_limit = '{memory_limit}B'")
+        connection.execute(f"SET temp_directory = '{spill_root}'")
+        connection.execute("SET threads = 1")
+        output_root = tmp_path / "arrays"
+        record = writer._write_supervision(
+            output_root,
+            target=target,
+            target_key="n0000",
+            snapshots={"nodes/targets.parquet": source_path},
+            connection=connection,
+            pa=pa,
+            pq=pq,
+        )
+    finally:
+        connection.close()
+
+    labels = np.load(
+        output_root / record["relative_path"],
+        mmap_mode="r",
+        allow_pickle=False,
+    )
+    assert labels.shape == (row_count,)
+    assert labels.dtype.str == "<i8"
+    for start in range(0, row_count, batch_rows):
+        stop = min(row_count, start + batch_rows)
+        np.testing.assert_array_equal(
+            labels[start:stop],
+            np.arange(start, stop, dtype=np.int64) % 4,
+        )
+    assert writer._max_batch_rows <= batch_rows
 
 
 def test_keyed_regression_is_joined_by_uint64_id_not_row_position(tmp_path: Path) -> None:

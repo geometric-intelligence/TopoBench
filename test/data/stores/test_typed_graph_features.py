@@ -248,6 +248,42 @@ def _replace_feature_record(
     return record
 
 
+def test_array_build_closes_internal_validation_mappings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _feature_source(tmp_path / "source")
+    opened: list[np.memmap] = []
+    original_load = np.load
+
+    def tracked_load(*args: Any, **kwargs: Any) -> Any:
+        array = original_load(*args, **kwargs)
+        path = Path(args[0])
+        if (
+            isinstance(array, np.memmap)
+            and "arrays" in path.parts
+        ):
+            opened.append(array)
+        return array
+
+    monkeypatch.setattr(arrays_module.np, "load", tracked_load)
+    result = ParquetTypedGraphIngestor(
+        source,
+        tmp_path / "stores",
+    ).build_arrays()
+
+    assert opened
+    assert all(array._mmap.closed for array in opened)
+    public = original_load(
+        result.artifact_root / "nodes/n0000/x.npy",
+        mmap_mode="r",
+        allow_pickle=False,
+    )
+    assert public.flags.writeable is False
+    assert public._mmap.closed is False
+    public._mmap.close()
+
+
 def test_streams_distinct_fixed_list_and_scalar_features_by_exact_ordinal(
     tmp_path: Path,
 ) -> None:

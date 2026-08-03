@@ -78,9 +78,13 @@ test = [
     "mypy",
     "pytest-mock"
 ]
+parquet = [
+    "duckdb==1.5.5",
+    "pyarrow==12.0.1",
+]
 
 dev = ["TopoBench[test, lint]"]
-all = ["TopoBench[dev, doc]"]
+all = ["TopoBench[dev, doc, parquet]"]
 
 [project.urls]
 homepage="https://geometric-intelligence.github.io/topobench/index.html"

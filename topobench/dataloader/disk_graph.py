@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import copy
-import inspect
 import hashlib
+import inspect
 import json
 import os
-import time
 import tempfile
-from contextlib import contextmanager
+import threading
+import time
 from collections.abc import Iterable, Iterator, Mapping, Sequence
-from dataclasses import dataclass, fields as dataclass_fields, is_dataclass, replace
+from contextlib import contextmanager, suppress
+from dataclasses import dataclass, is_dataclass, replace
+from dataclasses import fields as dataclass_fields
 from importlib import metadata
 from numbers import Integral
 from pathlib import Path
@@ -26,19 +28,24 @@ from torch_geometric.data import Data, HeteroData
 from torch_geometric.loader import NeighborLoader
 from torch_geometric.sampler import NeighborSampler
 
-from topobench.data.stores.materialized_partition import MaterializedHomogeneousPartition
-from topobench.data.stores.pyg_store import PyGTypedFeatureStore, PyGTypedGraphStore
+from topobench.data.stores.materialized_partition import (
+    MaterializedHomogeneousPartition,
+)
+from topobench.data.stores.pyg_store import (
+    PyGTypedFeatureStore,
+    PyGTypedGraphStore,
+)
 from topobench.data.stores.typed_graph_store import (
     TypedGraphStore,
     TypedGraphStoreState,
 )
 from topobench.data.stores.typed_partition_book import TypedPartitionBook
-from topobench.dataloader.graph import loader_worker_options
 from topobench.dataloader.device_prefetch import (
     DevicePrefetchLoader,
     PrefetchCapability,
     PrefetchLimits,
 )
+from topobench.dataloader.graph import loader_worker_options
 from topobench.dataloader.input_monitor import InputMonitor
 from topobench.dataloader.sequence_state import SequenceIdentity, SequenceState
 from topobench.profiling.execution_events import (
@@ -62,6 +69,7 @@ SamplingSource: TypeAlias = TypedGraphStore | MaterializedHomogeneousPartition |
 MaterializedSource: TypeAlias = MaterializedHomogeneousPartition | HeteroData
 _MAX_SEED = 2**63 - 1
 _PHASES: tuple[Phase, ...] = ("train", "val", "test")
+_PYG_SAMPLER_RNG_LOCK = threading.Lock()
 
 
 class SamplingCapabilityError(RuntimeError):
@@ -629,11 +637,17 @@ class HomogeneousClusterStrategy(_ClusterBase):
                 groups = _default_groups((int(assignment[int(i)]) for i in source.split_ids(tag, phase)), self.clusters_per_batch)
             else:
                 groups = self.partition_groups
-            participant = lambda ids: len(_store_nodes(source, source.node_types[0], ids))
+            def participant(ids: Sequence[int]) -> int:
+                return len(_store_nodes(source, source.node_types[0], ids))
         else:
             count = source.num_parts
             groups = _default_groups(source.partition_ids_for_phase(phase), self.clusters_per_batch) if self.partition_groups is None else self.partition_groups
-            participant = lambda ids: sum(int(source.partition.partptr[p + 1]) - int(source.partition.partptr[p]) for p in ids)
+            def participant(ids: Sequence[int]) -> int:
+                return sum(
+                    int(source.partition.partptr[partition + 1])
+                    - int(source.partition.partptr[partition])
+                    for partition in ids
+                )
         _validate_partitions(groups, count)
         groups = self._ordered(groups, shuffle, content, tag, phase)
         return tuple(self._descriptor(content, tag, phase, ordinal, group, (("node", participant(group)),)) for ordinal, group in enumerate(groups))
@@ -758,11 +772,13 @@ class HeterogeneousClusterStrategy(_ClusterBase):
         seeds = _phase_ids(source, target, tag, phase)
         if isinstance(source, TypedGraphStore):
             count, assignment, node_types = source.num_partitions, source.partition_assignment(target), source.node_types
-            select = lambda node_type, ids: _store_nodes(source, node_type, ids)
+            def select(node_type: str, ids: Sequence[int]) -> np.ndarray:
+                return _store_nodes(source, node_type, ids)
         else:
             assert self.partition_book is not None
             count, assignment, node_types = self.partition_book.num_partitions, self.partition_book.node_assignments[target], tuple(source.node_types)
-            select = lambda node_type, ids: _book_nodes(self.partition_book, node_type, ids)
+            def select(node_type: str, ids: Sequence[int]) -> np.ndarray:
+                return _book_nodes(self.partition_book, node_type, ids)
         groups = _default_groups((int(assignment[seed]) for seed in seeds), self.clusters_per_batch) if self.partition_groups is None else self.partition_groups
         _validate_partitions(groups, count)
         groups = self._ordered(groups, shuffle, content, tag, phase)
@@ -957,12 +973,14 @@ class HeterogeneousNeighborStrategy:
                 "materialized HeteroData by the installed NeighborSampler"
             )
         source = self._resolve_source(source)
-        fanout = self._resolved(source)
+        self._resolved(source)
+        if self.subgraph_type == "induced":
+            raise SamplingCapabilityError(
+                "heterogeneous-neighbor induced subgraphs cannot expose exact "
+                "per-hop counts without native sampler hop counts"
+            )
         if self.replace:
             raise SamplingCapabilityError("heterogeneous-neighbor replace=True cannot satisfy deterministic local-generator parity on the installed backend")
-        if any(value > 0 for values in fanout.values() for value in values):
-            versions = {"pyg-lib": _version("pyg-lib"), "torch-sparse": _version("torch-sparse")}
-            raise SamplingCapabilityError(f"heterogeneous-neighbor truncated fanout requires a local torch.Generator, but installed pyg-lib/torch-sparse operators expose process-global sampling RNG only; versions={versions!r}")
 
     def _options(self, source: TypedGraphStore | HeteroData) -> str:
         fanout = self._resolved(source)
@@ -997,12 +1015,13 @@ class HeterogeneousNeighborStrategy:
             raise ValueError("descriptor target node identity mismatch")
         data: HeteroData | tuple[PyGTypedFeatureStore, PyGTypedGraphStore] = (PyGTypedFeatureStore(source), PyGTypedGraphStore(source)) if isinstance(source, TypedGraphStore) else source
         generator = torch.Generator().manual_seed(descriptor.generator_seed)
+        resolved_fanout = self._resolved(source)
         sampler_fanout: Sequence[int] | Mapping[CanonicalRelation, Sequence[int]]
         sampler_fanout = (
             list(self._generic_fanout)
             if self.sample_direction == "backward"
             and self._generic_fanout is not None
-            else self._resolved(source)
+            else resolved_fanout
         )
         neighbor_sampler = NeighborSampler(
             data,
@@ -1012,7 +1031,7 @@ class HeterogeneousNeighborStrategy:
             sample_direction=self.sample_direction,
         )
         loader = NeighborLoader(data, input_nodes=(descriptor.target_node_type, torch.tensor(descriptor.target_seed_ids)), num_neighbors=sampler_fanout, batch_size=len(descriptor.target_seed_ids), shuffle=False, replace=self.replace, subgraph_type=self.subgraph_type, filter_per_worker=self.filter_per_worker, neighbor_sampler=neighbor_sampler, generator=generator)
-        with torch.random.fork_rng(devices=[]):
+        with _PYG_SAMPLER_RNG_LOCK, torch.random.fork_rng(devices=[]):
             torch.random.set_rng_state(generator.get_state())
             iterator = iter(loader)
             batch = next(iterator)
@@ -1021,11 +1040,19 @@ class HeterogeneousNeighborStrategy:
             except StopIteration:
                 pass
             else:
-                raise RuntimeError("one neighbor descriptor produced multiple batches")
+                raise RuntimeError(
+                    "one neighbor descriptor produced multiple batches"
+                )
         if isinstance(source, TypedGraphStore):
             _disk_neighbor_fields(source, batch, descriptor)
         target = descriptor.target_node_type
         assert target is not None
+        _attach_neighbor_sample_counts(
+            batch,
+            target_node_type=target,
+            seed_count=len(descriptor.target_seed_ids),
+            fanout=resolved_fanout,
+        )
         batch[target].supervised_mask = batch[target][f"{descriptor.phase}_mask"].clone()
         counts = {
             node_type: len(batch[node_type].n_id)
@@ -1067,6 +1094,99 @@ def _disk_neighbor_fields(store: TypedGraphStore, batch: HeteroData, descriptor:
             )
         for name in store._relation(relation)["fields"]:
             batch[relation][name] = _torch(store.relation_field(relation, name, ids))
+
+
+def _attach_neighbor_sample_counts(
+    batch: HeteroData,
+    *,
+    target_node_type: str,
+    seed_count: int,
+    fanout: Mapping[CanonicalRelation, Sequence[int]],
+) -> None:
+    """Restore exact hop counts omitted by the installed PyG sampler backend."""
+    node_present = {
+        node_type: "num_sampled_nodes" in batch[node_type]
+        for node_type in batch.node_types
+    }
+    edge_present = {
+        relation: "num_sampled_edges" in batch[relation]
+        for relation in batch.edge_types
+    }
+    native_node_counts = all(node_present.values())
+    native_edge_counts = all(edge_present.values())
+    if any(node_present.values()) and not native_node_counts:
+        raise RuntimeError(
+            "neighbor sampler returned inconsistent per-type node hop counts"
+        )
+    if any(edge_present.values()) and not native_edge_counts:
+        raise RuntimeError(
+            "neighbor sampler returned inconsistent per-type edge hop counts"
+        )
+    if native_node_counts and native_edge_counts:
+        return
+
+    hop_counts = {len(values) for values in fanout.values()}
+    if len(hop_counts) != 1:
+        raise RuntimeError("neighbor fanout must have one exact hop count")
+    num_hops = next(iter(hop_counts))
+    seen = {node_type: set() for node_type in batch.node_types}
+    seen[target_node_type].update(range(seed_count))
+    frontier = {node_type: set(values) for node_type, values in seen.items()}
+    sampled = {
+        node_type: [seed_count if node_type == target_node_type else 0]
+        for node_type in batch.node_types
+    }
+    sampled_edges = {
+        relation: [0] * num_hops for relation in batch.edge_types
+    }
+    relation_edges = {
+        relation: batch[relation].edge_index.t().tolist()
+        for relation in batch.edge_types
+    }
+
+    for hop in range(num_hops):
+        candidates = {node_type: set() for node_type in batch.node_types}
+        for relation, per_hop in fanout.items():
+            if per_hop[hop] == 0 or relation not in batch.edge_types:
+                continue
+            source_type, _, destination_type = relation
+            destination_frontier = frontier[destination_type]
+            if not destination_frontier:
+                continue
+            for source_index, destination_index in relation_edges[relation]:
+                if destination_index in destination_frontier:
+                    candidates[source_type].add(source_index)
+                    sampled_edges[relation][hop] += 1
+
+        next_frontier: dict[str, set[int]] = {}
+        for node_type in batch.node_types:
+            discovered = candidates[node_type].difference(seen[node_type])
+            sampled[node_type].append(len(discovered))
+            seen[node_type].update(discovered)
+            next_frontier[node_type] = discovered
+        frontier = next_frontier
+
+    for node_type in batch.node_types:
+        node_count = len(batch[node_type].n_id)
+        if len(seen[node_type]) != node_count:
+            raise RuntimeError(
+                "neighbor hop-count reconstruction did not cover sampled "
+                f"node type {node_type!r}: covered={len(seen[node_type])}, "
+                f"sampled={node_count}"
+            )
+        if not native_node_counts:
+            batch[node_type].num_sampled_nodes = sampled[node_type]
+    for relation in batch.edge_types:
+        edge_count = batch[relation].edge_index.shape[1]
+        reconstructed = sum(sampled_edges[relation])
+        if reconstructed != edge_count:
+            raise RuntimeError(
+                "neighbor hop-count reconstruction did not cover sampled "
+                f"relation {relation!r}: covered={reconstructed}, "
+                f"sampled={edge_count}"
+            )
+        if not native_edge_counts:
+            batch[relation].num_sampled_edges = sampled_edges[relation]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1471,7 +1591,7 @@ def _validate_witness(
     current = {
         (store_key, name): storage[name]
         for store_key, storage in stores
-        for name in storage.keys()
+        for name in storage
     }
     for location, expected in witness.metadata.items():
         value = current[location]
@@ -1629,7 +1749,7 @@ def _sequence_partition_identity(
 class _TrainSequenceSampler(Sampler[tuple[int, int]]):
     """Assign global sequence IDs in the parent while workers see immutable work."""
 
-    def __init__(self, owner: "DiskGraphDataModule") -> None:
+    def __init__(self, owner: DiskGraphDataModule) -> None:
         self.owner = owner
 
     def __iter__(self):
@@ -1706,8 +1826,8 @@ class _ExecutionEventLoader(DataLoader[NativeBatch]):
 
     def __init__(
         self,
-        owner: "DiskGraphDataModule | object",
-        dataset: "_DescriptorDataset",
+        owner: DiskGraphDataModule | object,
+        dataset: _DescriptorDataset,
         **kwargs: object,
     ) -> None:
         self.event_owner = owner
@@ -1734,8 +1854,8 @@ class _TrainSequenceLoader(DataLoader[NativeBatch]):
 
     def __init__(
         self,
-        owner: "DiskGraphDataModule",
-        dataset: "_DescriptorDataset",
+        owner: DiskGraphDataModule,
+        dataset: _DescriptorDataset,
         defer_delivery: bool = False,
         **kwargs: object,
     ) -> None:
@@ -1850,14 +1970,12 @@ class _DescriptorDataset(Dataset[NativeBatch]):
             batch = self.strategy.materialize(source, descriptor)
         except BaseException:
             if read_token is not None:
-                try:
+                with suppress(Exception):
                     monitor.finish(
                         read_token,
                         status=ExecutionStatus.ERROR,
                         evidence={"failure_stage": "materialize"},
                     )
-                except Exception:
-                    pass
             raise
         if worker_digest is not None and read_started_ns is not None:
             batch.execution_descriptor_digest = worker_digest
@@ -1930,14 +2048,12 @@ class _DescriptorDataset(Dataset[NativeBatch]):
             batch = _apply_fitted_transform(batch, self.fitted_transform)
         except BaseException:
             if transform_token is not None:
-                try:
+                with suppress(Exception):
                     monitor.finish(
                         transform_token,
                         status=ExecutionStatus.ERROR,
                         evidence={"failure_stage": "transform_apply"},
                     )
-                except Exception:
-                    pass
             raise
         if transform_token is not None:
             monitor.finish(transform_token)
@@ -2217,12 +2333,12 @@ class DiskGraphDataModule(LightningDataModule):
                 "label-consuming fitted transform requires supervised_fit capability"
             )
         max_rows = _integer(
-            getattr(transform, "max_batch_rows"),
+            transform.max_batch_rows,
             "fitted_transform.max_batch_rows",
             minimum=1,
         )
         max_bytes = _integer(
-            getattr(transform, "max_batch_bytes"),
+            transform.max_batch_bytes,
             "fitted_transform.max_batch_bytes",
             minimum=1,
         )
@@ -2264,15 +2380,13 @@ class DiskGraphDataModule(LightningDataModule):
             transform.finalize_fit(self.fitted_state_root)
         except BaseException:
             if token is not None:
-                try:
+                with suppress(Exception):
                     monitor.finish(
                         token,
                         status=ExecutionStatus.ERROR,
                         row_count=len(view.train_ids),
                         evidence={"failure_stage": "transform_fit"},
                     )
-                except Exception:
-                    pass
             raise
         if token is not None:
             monitor.finish(token, row_count=len(view.train_ids))
@@ -2361,25 +2475,21 @@ class DiskGraphDataModule(LightningDataModule):
                 self._ensure_sequence_state()
         except ValueError as error:
             if token is not None:
-                try:
+                with suppress(Exception):
                     monitor.finish(
                         token,
                         status=ExecutionStatus.ERROR,
                         evidence={"failure_stage": "descriptor_setup"},
                     )
-                except Exception:
-                    pass
             raise ValueError(f"{phase} phase setup failed: {error}") from error
         except BaseException:
             if token is not None:
-                try:
+                with suppress(Exception):
                     monitor.finish(
                         token,
                         status=ExecutionStatus.ERROR,
                         evidence={"failure_stage": "descriptor_setup"},
                     )
-                except Exception:
-                    pass
             raise
         if token is not None:
             monitor.finish(token, row_count=len(descriptors))

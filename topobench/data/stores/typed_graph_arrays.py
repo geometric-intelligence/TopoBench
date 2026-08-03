@@ -570,28 +570,29 @@ class TypedGraphArrayWriter:
                     )
 
         source_view = f"feature_source_{internal_key}"
-        mapping_view = f"feature_mapping_{internal_key}"
         connection.read_parquet([str(path) for path in paths]).create_view(source_view)
-        connection.read_parquet(str(self.index_build.indexes[node.name].node_ids_path)).create_view(mapping_view)
-        columns = ", ".join(
-            f"s.{_quote(column)}" for column in node.feature_columns
+        columns = ", ".join(_quote(column) for column in node.feature_columns)
+        order_expression = ingestion._canonical_external_id_order(
+            _quote(node.id_column),
+            node.id_dtype,
         )
+        # The index was built from these exact immutable node fragments with
+        # the same total order, so streaming row k is canonical ordinal k.
         query = (
-            f"SELECT m.local_ordinal, {columns} FROM {_quote(source_view)} s "
-            f"INNER JOIN {_quote(mapping_view)} m ON s.{_quote(node.id_column)} "
-            "IS NOT DISTINCT FROM m.external_id ORDER BY m.local_ordinal"
+            "SELECT CAST(row_number() OVER () - 1 AS BIGINT) AS local_ordinal, "
+            f"{columns} FROM (SELECT {_quote(node.id_column)}, {columns} "
+            f"FROM {_quote(source_view)} ORDER BY {order_expression})"
         )
         count = self.index_build.indexes[node.name].row_count
         path = root / "nodes" / internal_key / "x.npy"
         path.parent.mkdir(parents=True, exist_ok=False)
-        array = np.lib.format.open_memmap(
-            path,
-            mode="w+",
-            dtype=_numpy_dtype(node.feature_dtype),
-            shape=(count, node.feature_width),
-        )
+        storage_dtype = _numpy_dtype(node.feature_dtype)
         offset = 0
-        try:
+        with _open_npy_output(
+            path,
+            dtype=storage_dtype,
+            shape=(count, node.feature_width),
+        ) as output:
             reader = connection.execute(query).to_arrow_reader(
                 self.ingestor.source.spec.ingestion.record_batch_rows
             )
@@ -611,27 +612,45 @@ class TypedGraphArrayWriter:
                         raise ingestion.ArtifactValidationError(
                             f"FEATURE-NULL-001: node type {node.name!r} contains null list features"
                         )
-                    block = flattened.to_numpy(zero_copy_only=False).reshape(rows, node.feature_width)
-                    self._validate_finite(block, code="FEATURE-FINITE-001", context=f"node type {node.name!r}")
-                    array[offset : offset + rows] = block
+                    feature_block = flattened.to_numpy(
+                        zero_copy_only=False
+                    ).reshape(rows, node.feature_width)
+                    self._validate_finite(
+                        feature_block,
+                        code="FEATURE-FINITE-001",
+                        context=f"node type {node.name!r}",
+                    )
                 else:
-                    for column_index, column_name in enumerate(node.feature_columns, start=1):
+                    feature_block = np.empty(
+                        (rows, node.feature_width),
+                        dtype=storage_dtype,
+                    )
+                    for column_index, column_name in enumerate(
+                        node.feature_columns,
+                        start=1,
+                    ):
                         values = batch.column(column_index)
                         if values.null_count:
                             raise ingestion.ArtifactValidationError(
                                 f"FEATURE-NULL-001: node type {node.name!r} column {column_name!r} contains nulls"
                             )
-                        block = values.to_numpy(zero_copy_only=False)
-                        self._validate_finite(block, code="FEATURE-FINITE-001", context=f"node type {node.name!r}")
-                        array[offset : offset + rows, column_index - 1] = block
+                        column_block = values.to_numpy(zero_copy_only=False)
+                        self._validate_finite(
+                            column_block,
+                            code="FEATURE-FINITE-001",
+                            context=f"node type {node.name!r}",
+                        )
+                        feature_block[:, column_index - 1] = column_block
+                _write_npy_block(
+                    output,
+                    feature_block,
+                    dtype=storage_dtype,
+                )
                 offset += rows
             if offset != count:
                 raise ingestion.ArtifactValidationError(
                     f"FEATURE-ALIGNMENT-001: node type {node.name!r} resolved {offset} rows, expected {count}"
                 )
-            array.flush()
-        finally:
-            del array
         _fsync_file(path)
         source_records = self._source_records(node.paths)
         return self._array_record(
@@ -736,6 +755,11 @@ class TypedGraphArrayWriter:
             raise ingestion.ArtifactValidationError(
                 f"SUPERVISION-MISSING-001: {missing} target IDs have no supervision row"
             )
+        count = self.index_build.indexes[target.name].row_count
+        if row_count != count:
+            raise ingestion.ArtifactValidationError(
+                "SUPERVISION-ALIGNMENT-001: supervision cardinality differs from canonical target index"
+            )
         non_null_labels = connection.execute(
             f"SELECT COUNT({_quote(supervision.label_column)}) FROM {_quote(source_view)}"
         ).fetchone()[0]
@@ -759,12 +783,19 @@ class TypedGraphArrayWriter:
                 "minimum": int(minimum),
                 "maximum": int(maximum),
             }
-        query = (
-            f"SELECT m.local_ordinal, s.{_quote(supervision.label_column)} FROM {_quote(source_view)} s "
-            f"INNER JOIN {_quote(mapping_view)} m ON s.{_quote(id_column)} "
-            "IS NOT DISTINCT FROM m.external_id ORDER BY m.local_ordinal"
+        # Task 2 assigns local ordinals with this same total order. The
+        # null/duplicate/extra/missing checks above prove both sides are the
+        # same set, so row k in this stream is exactly mapping ordinal k.
+        order_expression = ingestion._canonical_external_id_order(
+            _quote(id_column),
+            target.id_dtype,
         )
-        count = self.index_build.indexes[target.name].row_count
+        query = (
+            "SELECT CAST(row_number() OVER () - 1 AS BIGINT) AS local_ordinal, "
+            f"{_quote(supervision.label_column)} FROM ("
+            f"SELECT {_quote(id_column)}, {_quote(supervision.label_column)} "
+            f"FROM {_quote(source_view)} ORDER BY {order_expression})"
+        )
         path = root / "nodes" / target_key / "y.npy"
         record = self._write_ordered_vector(
             root,
@@ -919,14 +950,13 @@ class TypedGraphArrayWriter:
     ) -> dict[str, Any]:
         ingestion = _ingestion_module()
         path.parent.mkdir(parents=True, exist_ok=True)
-        array = np.lib.format.open_memmap(
-            path,
-            mode="w+",
-            dtype=_numpy_dtype(logical_dtype),
-            shape=(count,),
-        )
+        storage_dtype = _numpy_dtype(logical_dtype)
         offset = 0
-        try:
+        with _open_npy_output(
+            path,
+            dtype=storage_dtype,
+            shape=(count,),
+        ) as output:
             reader = connection.execute(query).to_arrow_reader(
                 self.ingestor.source.spec.ingestion.record_batch_rows
             )
@@ -946,16 +976,13 @@ class TypedGraphArrayWriter:
                 block = values.to_numpy(zero_copy_only=False)
                 if finite_code is not None:
                     self._validate_finite(block, code=finite_code, context="target supervision")
-                array[offset : offset + rows] = block
+                _write_npy_block(output, block, dtype=storage_dtype)
                 offset += rows
             if offset != count:
                 code = alignment_code or "SPLIT-COUNT-001"
                 raise ingestion.ArtifactValidationError(
                     f"{code}: wrote {offset} values, expected {count}"
                 )
-            array.flush()
-        finally:
-            del array
         _fsync_file(path)
         return self._array_record(
             root,
@@ -1290,21 +1317,24 @@ class TypedGraphArrayWriter:
             mmap_mode="r",
             allow_pickle=False,
         )
-        if task == "classification":
-            if check_completion:
-                self._validate_classification_vocabulary(
-                    target_values,
-                    supervision.get("vocabulary"),
-                )
-            elif not isinstance(supervision.get("vocabulary"), dict):
+        try:
+            if task == "classification":
+                if check_completion:
+                    self._validate_classification_vocabulary(
+                        target_values,
+                        supervision.get("vocabulary"),
+                    )
+                elif not isinstance(supervision.get("vocabulary"), dict):
+                    raise ingestion.ArtifactValidationError(
+                        "TARGET-VOCABULARY-001: classification vocabulary "
+                        "evidence is absent"
+                    )
+            elif supervision.get("vocabulary") is not None:
                 raise ingestion.ArtifactValidationError(
-                    "TARGET-VOCABULARY-001: classification vocabulary "
-                    "evidence is absent"
+                    "TARGET-EVIDENCE-001: regression target carries a vocabulary"
                 )
-        elif supervision.get("vocabulary") is not None:
-            raise ingestion.ArtifactValidationError(
-                "TARGET-EVIDENCE-001: regression target carries a vocabulary"
-            )
+        finally:
+            _close_memmap(target_values)
         splits = metadata.get("splits")
         registry = self.ingestor.source.spec.supervision.split_registry
         if not isinstance(splits, dict) or set(splits) != {split.tag for split in registry.sets}:
@@ -1408,6 +1438,8 @@ class TypedGraphArrayWriter:
                     f"SPLIT-COVERAGE-001: complete split "
                     f"{split_spec.tag!r} is not the exact target population"
                 )
+            for array in arrays.values():
+                _close_memmap(array)
         expected_identity = {
             "array_behavior_version": _ARRAY_BEHAVIOR_VERSION,
             "input_fingerprint": self.index_build.inventory.source_fingerprint,
@@ -1458,6 +1490,7 @@ class TypedGraphArrayWriter:
             raise ingestion.ArtifactValidationError(
                 f"ARRAY-SHAPE-001: dtype/shape/count changed for {relative!r}"
             )
+        _close_memmap(array)
         if path.stat().st_size != record.get("byte_size") or ingestion._sha256_file(path) != record.get("file_sha256"):
             raise ingestion.ArtifactValidationError(
                 f"CHECKSUM-001: file checksum changed for {relative!r}"
@@ -1468,8 +1501,38 @@ class TypedGraphArrayWriter:
             )
         if finite:
             rows = self.ingestor.source.spec.ingestion.record_batch_rows
-            for start in range(0, array.shape[0], rows):
-                self._validate_finite(np.asarray(array[start : start + rows]), code="ARRAY-FINITE-001", context=relative)
+            with path.open("rb") as stream:
+                shape, fortran_order, dtype = _read_npy_header(stream)
+                if not fortran_order:
+                    row_elements = 1
+                    for extent in shape[1:]:
+                        row_elements *= extent
+                    for start in range(0, shape[0], rows):
+                        block_rows = min(rows, shape[0] - start)
+                        byte_count = (
+                            block_rows * row_elements * dtype.itemsize
+                        )
+                        payload = stream.read(byte_count)
+                        if len(payload) != byte_count:
+                            raise ingestion.ArtifactValidationError(
+                                f"CHECKSUM-001: truncated array payload for {relative!r}"
+                            )
+                        self._validate_finite(
+                            np.frombuffer(payload, dtype=dtype),
+                            code="ARRAY-FINITE-001",
+                            context=relative,
+                        )
+                    return
+            array = np.load(path, mmap_mode="r", allow_pickle=False)
+            try:
+                for start in range(0, array.shape[0], rows):
+                    self._validate_finite(
+                        np.asarray(array[start : start + rows]),
+                        code="ARRAY-FINITE-001",
+                        context=relative,
+                    )
+            finally:
+                _close_memmap(array)
 
 
     def _validate_classification_vocabulary(
@@ -1536,7 +1599,7 @@ class TypedGraphArrayWriter:
                     )
         finally:
             if seen is not None:
-                del seen
+                _close_memmap(seen)
             shutil.rmtree(temporary_root)
 
 def _ingestion_module() -> Any:
@@ -1590,12 +1653,85 @@ def _quote(value: str) -> str:
     return '"' + value.replace('"', '""') + '"'
 
 
+def _open_npy_output(
+    path: Path,
+    *,
+    dtype: np.dtype[Any],
+    shape: tuple[int, ...],
+) -> Any:
+    element_count = 1
+    for extent in shape:
+        element_count *= extent
+    with path.open("wb") as output:
+        np.lib.format.write_array_header_1_0(
+            output,
+            {
+                "descr": np.lib.format.dtype_to_descr(dtype),
+                "fortran_order": False,
+                "shape": shape,
+            },
+        )
+        data_offset = output.tell()
+        output.truncate(data_offset + element_count * dtype.itemsize)
+    stream = path.open("r+b", buffering=0)
+    stream.seek(data_offset)
+    return stream
+
+
+def _write_npy_block(
+    stream: Any,
+    block: np.ndarray[Any, Any],
+    *,
+    dtype: np.dtype[Any],
+) -> None:
+    contiguous = np.asarray(block, dtype=dtype, order="C")
+    if not contiguous.flags.c_contiguous:
+        contiguous = np.ascontiguousarray(contiguous)
+    remaining = memoryview(contiguous).cast("B")
+    while remaining:
+        written = stream.write(remaining)
+        if written is None or written <= 0:
+            raise OSError("failed to write NumPy array block")
+        remaining = remaining[written:]
+
+
+def _close_memmap(array: np.ndarray[Any, Any]) -> None:
+    mapping = getattr(array, "_mmap", None)
+    if mapping is not None and not mapping.closed:
+        mapping.close()
+
+
 def _fsync_file(path: Path) -> None:
     with path.open("rb") as stream:
         os.fsync(stream.fileno())
 
 
+def _read_npy_header(stream: Any) -> tuple[tuple[int, ...], bool, np.dtype[Any]]:
+    version = np.lib.format.read_magic(stream)
+    if version == (1, 0):
+        return np.lib.format.read_array_header_1_0(stream)
+    if version == (2, 0):
+        return np.lib.format.read_array_header_2_0(stream)
+    raise ValueError(f"unsupported NumPy format version {version!r}")
+
+
 def _array_content_sha(path: Path, batch_rows: int) -> str:
+    with path.open("rb") as stream:
+        shape, fortran_order, dtype = _read_npy_header(stream)
+        if not fortran_order:
+            row_bytes = dtype.itemsize
+            for extent in shape[1:]:
+                row_bytes *= extent
+            remaining = (shape[0] if shape else 1) * row_bytes
+            read_bytes = max(row_bytes, batch_rows * row_bytes)
+            digest = hashlib.sha256()
+            while remaining:
+                block = stream.read(min(remaining, read_bytes))
+                if not block:
+                    raise ValueError(f"truncated NumPy array payload at {path}")
+                digest.update(block)
+                remaining -= len(block)
+            return digest.hexdigest()
     array = np.load(path, mmap_mode="r", allow_pickle=False)
     digest = hashlib.sha256()
     for start in range(0, array.shape[0], batch_rows):

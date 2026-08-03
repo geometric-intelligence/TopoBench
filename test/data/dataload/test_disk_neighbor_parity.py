@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import shutil
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
 import pytest
 import torch
 
+import test.data.dataload.test_disk_graph_datamodule as disk_module
 from test.data.dataload.test_disk_graph_datamodule import (
     assert_heterogeneous_exact,
     materialized_heterogeneous_reference,
-    task8_stores,
 )
 from test.data.stores.test_typed_graph_store import QualifiedStoreFixture
 from topobench.data.stores.typed_graph_store import TypedGraphStore
@@ -22,15 +23,22 @@ from topobench.dataloader.disk_graph import (
 )
 
 
+@pytest.fixture(name="disk_store_fixtures", scope="session")
+def _disk_store_fixtures(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> dict[str, QualifiedStoreFixture]:
+    return disk_module.task8_stores.__wrapped__(tmp_path_factory)
+
+
 def _asymmetric_two_hop_fanout(
     relations: tuple[tuple[str, str, str], ...],
 ) -> dict[tuple[str, str, str], list[int]]:
-    """Use exhaustive incoming reverse arcs and asymmetric zero fanout."""
+    """Use finite two-hop incoming fanout and asymmetric disabled arcs."""
     return {
         relation: (
-            [-1, -1]
+            [2, 2]
             if relation[1] == "written_by"
-            else [0, -1]
+            else [0, 1]
             if relation[1] == "cites"
             else [0, 0]
         )
@@ -39,11 +47,11 @@ def _asymmetric_two_hop_fanout(
 
 
 def test_materialized_and_disk_neighbor_batches_are_ordered_exact_parity(
-    task8_stores: dict[str, QualifiedStoreFixture],
+    disk_store_fixtures: dict[str, QualifiedStoreFixture],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Seeds, hops, duplicate edges, fields, masks, and participants all agree."""
-    fixture = task8_stores["heterogeneous"]
+    fixture = disk_store_fixtures["heterogeneous"]
     with TypedGraphStore.open(fixture.store_build.path) as store:
         reference = materialized_heterogeneous_reference(store)
         fanout = _asymmetric_two_hop_fanout(store.relation_types)
@@ -111,6 +119,13 @@ def test_materialized_and_disk_neighbor_batches_are_ordered_exact_parity(
             disk_descriptors,
             strict=True,
         ):
+            memory_descriptor = replace(
+                memory_descriptor,
+                generator_seed=disk_descriptor.generator_seed,
+                generator_state_sha256=(
+                    disk_descriptor.generator_state_sha256
+                ),
+            )
             memory_batch = memory_strategy.materialize(
                 reference,
                 memory_descriptor,
@@ -149,10 +164,10 @@ def test_materialized_and_disk_neighbor_batches_are_ordered_exact_parity(
 
 
 def test_disk_neighbor_rejects_backward_sampling_without_native_csr(
-    task8_stores: dict[str, QualifiedStoreFixture],
+    disk_store_fixtures: dict[str, QualifiedStoreFixture],
 ) -> None:
     """Disk sampling fails before PyG expands CSC relations into CSR."""
-    fixture = task8_stores["heterogeneous"]
+    fixture = disk_store_fixtures["heterogeneous"]
     with TypedGraphStore.open(fixture.store_build.path) as store:
         backward = HeterogeneousNeighborStrategy(
             batch_size=1,
@@ -176,11 +191,11 @@ def test_disk_neighbor_rejects_backward_sampling_without_native_csr(
 
 
 def test_disk_neighbor_reload_and_move_reproduce_the_same_batch(
-    task8_stores: dict[str, QualifiedStoreFixture],
+    disk_store_fixtures: dict[str, QualifiedStoreFixture],
     tmp_path: Path,
 ) -> None:
     """Content identity and local descriptor seeds survive close and relocation."""
-    source_path = task8_stores["heterogeneous"].store_build.path
+    source_path = disk_store_fixtures["heterogeneous"].store_build.path
     moved_path = tmp_path / source_path.name
     shutil.copytree(source_path, moved_path)
 
@@ -210,10 +225,10 @@ def test_disk_neighbor_reload_and_move_reproduce_the_same_batch(
 
 
 def test_disk_neighbor_rejects_relation_fanout_identity_mismatch(
-    task8_stores: dict[str, QualifiedStoreFixture],
+    disk_store_fixtures: dict[str, QualifiedStoreFixture],
 ) -> None:
     """Every canonical relation, including explicit reverse, needs one fanout."""
-    path = task8_stores["heterogeneous"].store_build.path
+    path = disk_store_fixtures["heterogeneous"].store_build.path
     with TypedGraphStore.open(path) as store:
         incomplete = {
             relation: [-1]

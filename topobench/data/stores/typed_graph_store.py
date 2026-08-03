@@ -8,12 +8,15 @@ import os
 import platform
 import shutil
 import stat
+import subprocess
 import sys
+import tempfile
 import uuid
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Mapping, Sequence
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -21,23 +24,34 @@ from topobench.data.stores.qualification_checks import (
     CONTENT_HASH_VERSION,
     REPORT_FORMAT_VERSION,
     STORE_FORMAT_VERSION,
-    QualificationFailure,
     QualificationCheckResult,
+    QualificationFailure,
     QualificationReport,
     ValidatedStore,
+    _default_report_path,
+    _emit_qualification_results,
+    _hash_file,
     _open_npy,
+    _read_json_secure,
+    _safe_relative,
     _secure_descriptor,
+    _write_report,
     compute_content_identity,
     compute_metadata_binding,
-    split_fingerprint,
     qualification_check_set_fingerprint,
+    split_fingerprint,
     validate_store,
 )
 
 if TYPE_CHECKING:
     from topobench.data.stores.pyg_partitioner import TypedPartitionBuild
-    from topobench.data.stores.typed_graph_ingestion import ParquetTypedGraphIngestor
+    from topobench.data.stores.typed_graph_ingestion import (
+        ParquetTypedGraphIngestor,
+    )
 
+_BOUNDED_VALIDATION_FORMAT_VERSION = "typed-store-bounded-validation-v1"
+_BOUNDED_VALIDATION_RSS_LIMIT_BYTES = 320 * 1024**2
+_BOUNDED_VALIDATION_TIMEOUT_SECONDS = 900
 _PHASES = ("train", "val", "test")
 
 
@@ -60,7 +74,368 @@ class TypedGraphStoreBuild:
     cache_hit: bool
     quarantine_path: Path | None
     qualification_report: QualificationReport
+    validation_evidence: Mapping[str, Any]
     store: TypedGraphStore
+
+
+def _root_path_sha256(root: Path) -> str:
+    return hashlib.sha256(
+        str(root.resolve(strict=True)).encode("utf-8")
+    ).hexdigest()
+
+
+def _report_from_record(
+    record: Mapping[str, Any],
+    *,
+    root: Path,
+    report_path: Path,
+) -> QualificationReport:
+    if (
+        record.get("format_version") != REPORT_FORMAT_VERSION
+        or record.get("store_path") != str(root)
+        or record.get("report_path") != str(report_path)
+        or not isinstance(record.get("passed"), bool)
+        or not isinstance(record.get("checks"), list)
+    ):
+        raise ValueError("qualification report binding is malformed")
+    checks: list[QualificationCheckResult] = []
+    for item in record["checks"]:
+        if (
+            not isinstance(item, dict)
+            or not isinstance(item.get("check_id"), str)
+            or not isinstance(item.get("passed"), bool)
+            or not isinstance(item.get("evidence", {}), dict)
+        ):
+            raise ValueError("qualification report check is malformed")
+        checks.append(
+            QualificationCheckResult(
+                check_id=item["check_id"],
+                passed=item["passed"],
+                observed=item.get("observed"),
+                expected=item.get("expected"),
+                limit=item.get("limit"),
+                evidence=MappingProxyType(dict(item.get("evidence", {}))),
+                remediation=item.get("remediation", ""),
+            )
+        )
+    report = QualificationReport(
+        passed=record["passed"],
+        checks=tuple(checks),
+        report_path=report_path,
+        store_path=root,
+        format_version=record["format_version"],
+    )
+    if report.passed != all(check.passed for check in report.checks):
+        raise ValueError("qualification report status is inconsistent")
+    return report
+
+
+def _validation_worker_evidence(
+    completed: subprocess.CompletedProcess[str],
+    *,
+    root: Path,
+    root_sha256: str,
+    report_path: Path,
+) -> tuple[
+    Mapping[str, Any],
+    QualificationReport,
+    Mapping[str, Any] | None,
+    Mapping[str, tuple[int, int, int, int, int]],
+]:
+    lines = completed.stdout.splitlines()
+    if len(lines) != 1:
+        raise _artifact_error(
+            "VALIDATION-EVIDENCE-001: validation worker emitted malformed JSON"
+        )
+    try:
+        evidence = json.loads(lines[0])
+    except (json.JSONDecodeError, TypeError) as error:
+        raise _artifact_error(
+            "VALIDATION-EVIDENCE-001: validation worker emitted malformed JSON"
+        ) from error
+    required = {
+        "format_version",
+        "status",
+        "failure",
+        "validation_root_sha256",
+        "report_path",
+        "report_sha256",
+        "report_identity",
+        "manifest_sha256",
+        "manifest_identity",
+        "file_identities",
+        "memory",
+    }
+    if not isinstance(evidence, dict) or set(evidence) != required:
+        raise _artifact_error(
+            "VALIDATION-EVIDENCE-001: validation worker evidence schema changed"
+        )
+    memory = evidence["memory"]
+    memory_keys = {
+        "measurement_scope",
+        "baseline_rss_bytes",
+        "peak_rss_bytes",
+        "peak_rss_delta_bytes",
+        "declared_peak_rss_delta_limit_bytes",
+        "peak_rss_by_phase",
+    }
+    numeric_keys = (
+        "baseline_rss_bytes",
+        "peak_rss_bytes",
+        "peak_rss_delta_bytes",
+        "declared_peak_rss_delta_limit_bytes",
+    )
+    if (
+        evidence["format_version"] != _BOUNDED_VALIDATION_FORMAT_VERSION
+        or evidence["status"] not in {"passed", "failed"}
+        or evidence["validation_root_sha256"] != root_sha256
+        or evidence["report_path"] != str(report_path)
+        or not isinstance(memory, dict)
+        or set(memory) != memory_keys
+        or memory["measurement_scope"] != "isolated-validation-worker"
+        or any(
+            isinstance(memory[key], bool) or not isinstance(memory[key], int)
+            for key in numeric_keys
+        )
+        or memory["baseline_rss_bytes"] < 0
+        or memory["peak_rss_bytes"] < memory["baseline_rss_bytes"]
+        or memory["peak_rss_delta_bytes"]
+        != memory["peak_rss_bytes"] - memory["baseline_rss_bytes"]
+        or memory["declared_peak_rss_delta_limit_bytes"]
+        != _BOUNDED_VALIDATION_RSS_LIMIT_BYTES
+        or memory["peak_rss_by_phase"]
+        != {"canonical_validation": memory["peak_rss_bytes"]}
+    ):
+        raise _artifact_error(
+            "VALIDATION-EVIDENCE-001: validation worker evidence is inconsistent"
+        )
+    report_identity = evidence["report_identity"]
+    if (
+        not isinstance(report_identity, list)
+        or len(report_identity) != 5
+        or any(isinstance(value, bool) or not isinstance(value, int) for value in report_identity)
+    ):
+        raise _artifact_error(
+            "VALIDATION-EVIDENCE-001: report identity is malformed"
+        )
+    try:
+        report_sha256, _, observed_report_identity = _hash_file(report_path)
+    except OSError as error:
+        raise _artifact_error(
+            "VALIDATION-EVIDENCE-001: validation report cannot be reopened safely"
+        ) from error
+    if (
+        report_sha256 != evidence["report_sha256"]
+        or observed_report_identity != tuple(report_identity)
+    ):
+        raise _artifact_error(
+            "VALIDATION-EVIDENCE-001: validation report digest changed"
+        )
+    try:
+        report_record = _read_json_secure(
+            report_path,
+            tuple(report_identity),
+        )
+        report = _report_from_record(
+            report_record,
+            root=root,
+            report_path=report_path,
+        )
+    except (OSError, TypeError, ValueError) as error:
+        raise _artifact_error(
+            "VALIDATION-EVIDENCE-001: validation report is malformed"
+        ) from error
+    if evidence["status"] == "failed":
+        if completed.returncode != 2 or report.passed or not report.failures:
+            raise _artifact_error(
+                "VALIDATION-WORKER-001: validation worker failed its bounded contract"
+            )
+        raise QualificationFailure(report.failures[0], report.report_path)
+    if completed.returncode != 0 or not report.passed:
+        raise _artifact_error(
+            "VALIDATION-WORKER-001: validation worker exited nonzero"
+        )
+    if (
+        memory["peak_rss_delta_bytes"]
+        > memory["declared_peak_rss_delta_limit_bytes"]
+    ):
+        raise _artifact_error(
+            "VALIDATION-MEMORY-001: isolated validation exceeded 320 MiB"
+        )
+    manifest_identity = evidence["manifest_identity"]
+    if (
+        not isinstance(evidence["manifest_sha256"], str)
+        or len(evidence["manifest_sha256"]) != 64
+        or not isinstance(manifest_identity, list)
+        or len(manifest_identity) != 5
+        or any(isinstance(value, bool) or not isinstance(value, int) for value in manifest_identity)
+    ):
+        raise _artifact_error(
+            "VALIDATION-EVIDENCE-001: manifest identity is malformed"
+        )
+    manifest_path = root / "manifest.json"
+    try:
+        manifest_sha256, _, observed_manifest_identity = _hash_file(
+            manifest_path
+        )
+        manifest = _read_json_secure(
+            manifest_path,
+            tuple(manifest_identity),
+        )
+    except (OSError, TypeError, ValueError) as error:
+        raise _artifact_error(
+            "VALIDATION-EVIDENCE-001: manifest cannot be reopened safely"
+        ) from error
+    if (
+        manifest_sha256 != evidence["manifest_sha256"]
+        or observed_manifest_identity != tuple(manifest_identity)
+    ):
+        raise _artifact_error(
+            "VALIDATION-EVIDENCE-001: manifest digest changed"
+        )
+    raw_identities = evidence["file_identities"]
+    if not isinstance(raw_identities, dict):
+        raise _artifact_error(
+            "VALIDATION-EVIDENCE-001: file identities are malformed"
+        )
+    expected_relatives = {
+        "manifest.json",
+        *(
+            _safe_relative(record["relative_path"])
+            for record in manifest.get("files", ())
+            if isinstance(record, dict) and "relative_path" in record
+        ),
+    }
+    if set(raw_identities) != expected_relatives:
+        raise _artifact_error(
+            "VALIDATION-EVIDENCE-001: file identity set changed"
+        )
+    identities: dict[str, tuple[int, int, int, int, int]] = {}
+    for relative, raw_identity in raw_identities.items():
+        if (
+            not isinstance(raw_identity, list)
+            or len(raw_identity) != 5
+            or any(
+                isinstance(value, bool) or not isinstance(value, int)
+                for value in raw_identity
+            )
+        ):
+            raise _artifact_error(
+                "VALIDATION-EVIDENCE-001: file identity is malformed"
+            )
+        identity = tuple(raw_identity)
+        descriptor, observed = _secure_descriptor(root / relative)
+        try:
+            if _stat_identity(observed) != identity:
+                raise _artifact_error(
+                    "VALIDATION-EVIDENCE-001: validated file identity changed"
+                )
+        finally:
+            os.close(descriptor)
+        identities[relative] = identity
+    return evidence, report, manifest, MappingProxyType(identities)
+
+
+def _validate_store_bounded(
+    root: Path,
+    *,
+    expected_bindings: Mapping[str, Any],
+    require_directory_identity: bool,
+    execution_monitor: object | None = None,
+) -> tuple[ValidatedStore, Mapping[str, Any]]:
+    root = Path(root)
+    root_sha256 = _root_path_sha256(root)
+    report_path = _default_report_path(root)
+    request = {
+        "format_version": _BOUNDED_VALIDATION_FORMAT_VERSION,
+        "root_path": str(root.resolve(strict=True)),
+        "validation_root_sha256": root_sha256,
+        "expected_bindings": _normalized_json(expected_bindings),
+        "report_path": str(report_path),
+        "require_directory_identity": require_directory_identity,
+        "declared_peak_rss_delta_limit_bytes": (
+            _BOUNDED_VALIDATION_RSS_LIMIT_BYTES
+        ),
+    }
+    with tempfile.TemporaryDirectory(
+        prefix="topobench-bounded-validation-"
+    ) as temporary:
+        request_path = Path(temporary) / "request.json"
+        descriptor = os.open(
+            request_path,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+        )
+        try:
+            payload = json.dumps(
+                request,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            ).encode("utf-8")
+            os.write(descriptor, payload)
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        try:
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "topobench.data.stores.qualification_checks",
+                    "--bounded-validation-worker",
+                    str(request_path),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=_BOUNDED_VALIDATION_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise _artifact_error(
+                "VALIDATION-TIMEOUT-001: bounded validation worker timed out"
+            ) from error
+        if completed.returncode not in {0, 2} and not completed.stdout.strip():
+            detail = (
+                f"signal {-completed.returncode} (possible OOM)"
+                if completed.returncode < 0
+                else f"exit {completed.returncode} (possible OOM)"
+            )
+            raise _artifact_error(
+                "VALIDATION-WORKER-001: bounded validation worker "
+                f"terminated by {detail}"
+            )
+        evidence, report, manifest, identities = _validation_worker_evidence(
+            completed,
+            root=root,
+            root_sha256=root_sha256,
+            report_path=report_path,
+        )
+    assert manifest is not None
+    _emit_qualification_results(execution_monitor, report)
+    aggregate_evidence = MappingProxyType(
+        {
+            "format_version": evidence["format_version"],
+            "status": evidence["status"],
+            "validation_root_sha256": evidence[
+                "validation_root_sha256"
+            ],
+            "report_sha256": evidence["report_sha256"],
+            "manifest_sha256": evidence["manifest_sha256"],
+            "file_identity_count": len(identities),
+            "memory": MappingProxyType(dict(evidence["memory"])),
+        }
+    )
+    return (
+        ValidatedStore(
+            root,
+            MappingProxyType(dict(manifest)),
+            report,
+            identities,
+        ),
+        aggregate_evidence,
+    )
 
 
 class TypedGraphStoreWriter:
@@ -112,6 +487,9 @@ class TypedGraphStoreWriter:
                 candidate.mkdir(parents=False, exist_ok=False)
                 reopened = self._reopen_task1_6_locked()
                 self._materialize_candidate(candidate, reopened)
+                recovered_book = recovered_partition_build.book
+                if recovered_book is not original_partition_build.book:
+                    recovered_book.close()
                 return self._promote_candidate(candidate)
         finally:
             if candidate is not None and candidate.exists():
@@ -176,7 +554,7 @@ class TypedGraphStoreWriter:
         content_sha256 = compute_content_identity(manifest)
         manifest["content_sha256"] = content_sha256
         _write_json(manifest_path, manifest)
-        validate_store(
+        validated_candidate, candidate_validation = _validate_store_bounded(
             candidate,
             expected_bindings=self.task_bindings,
             require_directory_identity=False,
@@ -188,7 +566,7 @@ class TypedGraphStoreWriter:
             )
         if os.path.lexists(target):
             try:
-                existing = validate_store(
+                existing, target_validation = _validate_store_bounded(
                     target,
                     expected_bindings=self.task_bindings,
                     require_directory_identity=True,
@@ -198,7 +576,7 @@ class TypedGraphStoreWriter:
                 if target.is_symlink() or not target.is_dir():
                     raise _artifact_error(
                         "UNSAFE-STORE-001: colliding final path is not a real directory"
-                    )
+                    ) from None
                 quarantine = self.ingestor.store_root / (
                     f".quarantine-{content_sha256}-{uuid.uuid4().hex}"
                 )
@@ -218,6 +596,12 @@ class TypedGraphStoreWriter:
                     True,
                     None,
                     existing.report,
+                    MappingProxyType(
+                        {
+                            "candidate": candidate_validation,
+                            "target": target_validation,
+                        }
+                    ),
                     TypedGraphStore(existing),
                 )
         _make_read_only(candidate, movable_root=True)
@@ -226,11 +610,34 @@ class TypedGraphStoreWriter:
         target.chmod(0o555)
         _fsync_directory(target)
         _fsync_directory(self.ingestor.store_root)
-        promoted = validate_store(
+        promoted_report = replace(
+            validated_candidate.report,
+            checks=tuple(
+                replace(
+                    check,
+                    evidence=MappingProxyType(
+                        {
+                            key: (
+                                str(target)
+                                if key == "store_path"
+                                and value == str(candidate)
+                                else value
+                            )
+                            for key, value in check.evidence.items()
+                        }
+                    ),
+                )
+                for check in validated_candidate.report.checks
+            ),
+            store_path=target,
+        )
+        _write_report(promoted_report.report_path, promoted_report)
+        _emit_qualification_results(self.execution_monitor, promoted_report)
+        promoted = ValidatedStore(
             target,
-            expected_bindings=self.task_bindings,
-            require_directory_identity=True,
-            execution_monitor=self.execution_monitor,
+            validated_candidate.manifest,
+            promoted_report,
+            validated_candidate.file_identities,
         )
         return TypedGraphStoreBuild(
             target,
@@ -238,15 +645,24 @@ class TypedGraphStoreWriter:
             False,
             quarantine,
             promoted.report,
+            MappingProxyType({"candidate": candidate_validation}),
             TypedGraphStore(promoted),
         )
 
     def _reopen_task1_6_locked(self) -> dict[str, Any]:
         from topobench.data.stores import pyg_partitioner as partitioner_module
-        from topobench.data.stores import typed_graph_ingestion as ingestion_module
-        from topobench.data.stores.pyg_partitioner import TopologyOnlyPyGPartitioner
-        from topobench.data.stores.typed_graph_arrays import TypedGraphArrayWriter
-        from topobench.data.stores.typed_graph_csc import TypedGraphRelationWriter
+        from topobench.data.stores import (
+            typed_graph_ingestion as ingestion_module,
+        )
+        from topobench.data.stores.pyg_partitioner import (
+            TopologyOnlyPyGPartitioner,
+        )
+        from topobench.data.stores.typed_graph_arrays import (
+            TypedGraphArrayWriter,
+        )
+        from topobench.data.stores.typed_graph_csc import (
+            TypedGraphRelationWriter,
+        )
 
         inventory = self.partition_build.inventory
         pa, pq, duckdb = ingestion_module._parquet_dependencies()
@@ -272,37 +688,28 @@ class TypedGraphStoreWriter:
             duckdb=duckdb,
         )
         partitioner = TopologyOnlyPyGPartitioner(self.ingestor, relations)
-        assignments, identity, limits = partitioner_module._read_subtree(
+        book, identity, _limits = partitioner_module._read_subtree(
             partitioner.topology_context,
             self.partition_build.artifact_root,
         )
-        book = partitioner_module._qualified_book(
-            partitioner.topology_context,
-            assignments,
-            limits,
-            backend=identity["backend"],
-            estimated_resources=identity["estimated_resources"],
-            measured_resources=identity["measured_resources"],
-        )
-        if book.content_identity != self.partition_build.book.content_identity:
-            raise _artifact_error(
-                "PARTITION-FINGERPRINT-001: Task6 identity changed before finalization"
-            )
-        return {
-            "indexes": indexes,
-            "arrays": arrays,
-            "relations": relations,
-            "partitioner": partitioner,
-            "book": book,
-            "partition_identity": identity,
-            "limits": limits,
-        }
+        try:
+            if (
+                book.content_identity
+                != self.partition_build.book.content_identity
+            ):
+                raise _artifact_error(
+                    "PARTITION-FINGERPRINT-001: Task6 identity changed before "
+                    "finalization"
+                )
+            return {"partition_identity": identity}
+        finally:
+            book.close()
 
     def _materialize_candidate(self, root: Path, reopened: Mapping[str, Any]) -> None:
         stage = self.partition_build.stage_root
         arrays_metadata = _read_json(stage / "arrays" / "arrays.json")
         relation_metadata = _read_json(stage / "relations" / "relations.json")
-        book = reopened["book"]
+        book = self.partition_build.book
         files: list[dict[str, Any]] = []
         nodes: dict[str, dict[str, Any]] = {}
         node_name_to_key: dict[str, str] = {}
@@ -464,7 +871,7 @@ class TypedGraphStoreWriter:
             relations[key] = relation
 
         partition_nodes: dict[str, dict[str, Any]] = {}
-        for key, node in nodes.items():
+        for key in nodes:
             source_root = stage / "partitions" / "node_types" / key
             records: dict[str, Any] = {}
             for name, role in (
@@ -1368,13 +1775,17 @@ def _make_read_only(root: Path, *, movable_root: bool = False) -> None:
 
 
 def _artifact_error(message: str) -> Exception:
-    from topobench.data.stores.typed_graph_ingestion import ArtifactValidationError
+    from topobench.data.stores.typed_graph_ingestion import (
+        ArtifactValidationError,
+    )
 
     return ArtifactValidationError(message)
 
 
 def _external_id_failure(node_type: str, observed: Any, expected: Any) -> Any:
-    from topobench.data.stores.qualification_checks import QualificationCheckResult
+    from topobench.data.stores.qualification_checks import (
+        QualificationCheckResult,
+    )
 
     return QualificationCheckResult(
         "EXTERNAL-ID-SCHEMA-001",
@@ -1387,7 +1798,9 @@ def _external_id_failure(node_type: str, observed: Any, expected: Any) -> Any:
 
 
 def _lazy_array_failure(relative: str, observed: Any, expected: Any) -> Any:
-    from topobench.data.stores.qualification_checks import QualificationCheckResult
+    from topobench.data.stores.qualification_checks import (
+        QualificationCheckResult,
+    )
 
     return QualificationCheckResult(
         "ARRAY-CHECKSUM-001",

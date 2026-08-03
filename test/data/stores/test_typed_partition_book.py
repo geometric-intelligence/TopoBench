@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from topobench.data.stores import typed_partition_book as book_module
 from topobench.data.stores.typed_graph_ingestion import ArtifactValidationError, ParquetTypedGraphIngestor
 from topobench.data.stores.typed_partition_book import (
     PartitionStatistics,
@@ -129,3 +130,64 @@ def test_topology_fingerprint_hashes_memmaps_in_bounded_chunks(
     tracemalloc.stop()
 
     assert peak < 4 * 1024**2
+
+
+def test_trusted_construction_returns_fresh_unscanned_memmaps(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    drop_pages = book_module._drop_memmap_pages
+    released: list[np.ndarray] = []
+
+    def record_drop(value: np.ndarray) -> None:
+        if all(value is not item for item in released):
+            released.append(value)
+        drop_pages(value)
+
+    monkeypatch.setattr(
+        book_module,
+        "_drop_memmap_pages",
+        record_drop,
+    )
+    book = TypedPartitionBook._from_trusted_assignments(
+        storage_root=tmp_path / "book",
+        num_partitions=2,
+        node_assignments={
+            "node": np.array([0, 1, 0, 1], dtype=np.int64),
+        },
+        edge_ownership={
+            ("node", "links", "node"): np.array(
+                [0, 1, 0],
+                dtype=np.int64,
+            ),
+        },
+        topology_fingerprint="a" * 64,
+        source_binding={},
+        backend="pyg",
+        backend_version="test",
+        options={},
+        provenance={},
+        estimated_resources={},
+        measured_resources={},
+        statistics=PartitionStatistics.empty(2),
+        qualification_checks=(),
+    )
+    mapped = [
+        value
+        for mapping in (
+            book.node_assignments,
+            book.node_permutations,
+            book.node_inverse_permutations,
+            book.node_partptr,
+            book.edge_ownership,
+        )
+        for value in mapping.values()
+    ]
+    assert mapped and released
+    assert all(value._mmap.closed for value in released)
+    assert all(
+        all(value is not released_value for released_value in released)
+        and not value._mmap.closed
+        for value in mapped
+    )
+    book.close()

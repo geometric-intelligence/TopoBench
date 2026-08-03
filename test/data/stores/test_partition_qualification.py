@@ -144,6 +144,115 @@ def test_partition_subtree_publishes_resumes_and_revalidates_limits(tmp_path: Pa
         ingestor.build_partitions(limits=PartitionQualificationLimits(max_nodes_per_type={"paper": 2}))
 
 
+def test_partition_reopen_returns_fresh_unscanned_memmaps(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = asymmetric_typed_source(
+        tmp_path / "source",
+        memory_limit_bytes=1,
+        external_partition_map="external/manifest.json",
+    )
+    ingestor = ParquetTypedGraphIngestor(source, tmp_path / "stores")
+    partitioner = TopologyOnlyPyGPartitioner(
+        ingestor,
+        ingestor.build_relations(),
+    )
+    _write_external_map(partitioner)
+    published = ingestor.build_partitions(
+        limits=PartitionQualificationLimits()
+    )
+    published.book.close()
+    release_pages = partitioner_module._release_memmap_pages
+    released: list[np.ndarray] = []
+
+    def record_release(value: np.ndarray) -> None:
+        if all(value is not item for item in released):
+            released.append(value)
+        release_pages(value)
+
+    monkeypatch.setattr(
+        partitioner_module,
+        "_release_memmap_pages",
+        record_release,
+    )
+    book, _, _ = partitioner_module._read_subtree(
+        partitioner.topology_context,
+        published.artifact_root,
+    )
+    mapped = [
+        value
+        for mapping in (
+            book.node_assignments,
+            book.node_permutations,
+            book.node_inverse_permutations,
+            book.node_partptr,
+            book.edge_ownership,
+        )
+        for value in mapping.values()
+    ]
+    assert mapped and released
+    assert all(
+        getattr(value, "_mmap", None) is not None
+        and value._mmap.closed
+        for value in released
+    )
+    assert all(
+        all(value is not released_value for released_value in released)
+        and not value._mmap.closed
+        for value in mapped
+    )
+    book.close()
+
+
+def test_published_array_pair_pins_one_inode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "assignment.npy"
+    replacement = tmp_path / "replacement.npy"
+    np.save(path, np.array([1, 2, 3], dtype=np.int64))
+    original_memmap = np.memmap
+    swapped = False
+
+    def swap_after_first_map(
+        *args: object,
+        **kwargs: object,
+    ) -> np.memmap:
+        nonlocal swapped
+        value = original_memmap(*args, **kwargs)
+        if not swapped:
+            swapped = True
+            np.save(
+                replacement,
+                np.array([7, 8, 9], dtype=np.int64),
+            )
+            replacement.replace(path)
+        return value
+
+    monkeypatch.setattr(
+        partitioner_module.np,
+        "memmap",
+        swap_after_first_map,
+    )
+    validation, fresh = (
+        partitioner_module._load_published_array_pair(
+            path,
+            "assignment",
+        )
+    )
+    try:
+        np.testing.assert_array_equal(validation, [1, 2, 3])
+        np.testing.assert_array_equal(fresh, [1, 2, 3])
+        np.testing.assert_array_equal(
+            np.load(path, allow_pickle=False),
+            [7, 8, 9],
+        )
+    finally:
+        partitioner_module._close_memmap(validation)
+        partitioner_module._close_memmap(fresh)
+
+
 def test_tampered_partition_subtree_is_quarantined_and_rebuilt_only(tmp_path: Path) -> None:
     source = asymmetric_typed_source(tmp_path / "source", memory_limit_bytes=1, external_partition_map="external/manifest.json")
     ingestor = ParquetTypedGraphIngestor(source, tmp_path / "stores")

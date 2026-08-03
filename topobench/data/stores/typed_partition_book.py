@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import hashlib
+import mmap
+import shutil
 import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
@@ -253,6 +256,79 @@ def _readonly(value: Any, role: str) -> np.ndarray:
     result = np.array(array, dtype=np.int64, copy=True)
     result.flags.writeable = False
     return result
+_PARTITION_BOOK_CHUNK_ROWS = 64 * 1024
+
+
+def _close_memmap(value: Any) -> None:
+    mapping = getattr(value, "_mmap", None)
+    if mapping is not None and not mapping.closed:
+        mapping.close()
+
+
+def _drop_memmap_pages(value: Any) -> None:
+    value.flush()
+    mapping = getattr(value, "_mmap", None)
+    if (
+        mapping is not None
+        and hasattr(mapping, "madvise")
+        and hasattr(mmap, "MADV_DONTNEED")
+    ):
+        mapping.madvise(mmap.MADV_DONTNEED)
+
+
+def _trusted_vector(
+    path: Path,
+    value: Any,
+    role: str,
+) -> np.memmap:
+    array = np.asarray(value)
+    if array.dtype != np.dtype("int64") or array.ndim != 1:
+        raise _error(
+            "PARTITION-ID-001",
+            f"{role} must be one-dimensional int64",
+        )
+    output = np.lib.format.open_memmap(
+        path,
+        mode="w+",
+        dtype=np.int64,
+        shape=array.shape,
+    )
+    try:
+        for start in range(
+            0,
+            len(array),
+            _PARTITION_BOOK_CHUNK_ROWS,
+        ):
+            stop = min(
+                start + _PARTITION_BOOK_CHUNK_ROWS,
+                len(array),
+            )
+            output[start:stop] = array[start:stop]
+        _drop_memmap_pages(output)
+        output.flags.writeable = False
+        return output
+    except Exception:
+        _close_memmap(output)
+        raise
+
+
+def _ids_in_range(
+    value: np.ndarray,
+    num_partitions: int,
+) -> bool:
+    for start in range(
+        0,
+        len(value),
+        _PARTITION_BOOK_CHUNK_ROWS,
+    ):
+        stop = min(
+            start + _PARTITION_BOOK_CHUNK_ROWS,
+            len(value),
+        )
+        chunk = value[start:stop]
+        if np.any(chunk < 0) or np.any(chunk >= num_partitions):
+            return False
+    return True
 
 
 def _frame(digest: Any, role: str, payload: bytes) -> None:
@@ -312,6 +388,12 @@ class TypedPartitionBook:
     qualification_checks: tuple[QualificationCheck, ...]
     content_identity: str
 
+    _closed: bool = field(
+        default=False,
+        init=False,
+        repr=False,
+        compare=False,
+    )
     @classmethod
     def from_assignments(cls, *, num_partitions: int, node_assignments: Mapping[str, np.ndarray], edge_ownership: Mapping[CanonicalRelation, np.ndarray], topology_fingerprint: str, source_binding: Mapping[str, Any], backend: str, backend_version: str, options: Mapping[str, Any], provenance: Mapping[str, Any], estimated_resources: Mapping[str, Any], measured_resources: Mapping[str, Any], statistics: PartitionStatistics, qualification_checks: Sequence[QualificationCheck]) -> TypedPartitionBook:
         if isinstance(num_partitions, bool) or not isinstance(num_partitions, int) or num_partitions < 2:
@@ -343,23 +425,529 @@ class TypedPartitionBook:
         content = _identity(num_partitions, topology_fingerprint, assignments, ownership, options)
         book = cls(num_partitions, MappingProxyType(assignments), MappingProxyType(permutations), MappingProxyType(inverses), MappingProxyType(pointers), MappingProxyType(ownership), topology_fingerprint, _freeze(source_binding), backend, backend_version, _freeze(options), _freeze(provenance), _freeze(estimated_resources), _freeze(measured_resources), statistics, tuple(qualification_checks), content)
         return validate_typed_partition_book(book)
+    @classmethod
+    def _from_trusted_assignments(
+        cls,
+        *,
+        storage_root: Path,
+        num_partitions: int,
+        node_assignments: Mapping[str, np.ndarray],
+        edge_ownership: Mapping[CanonicalRelation, np.ndarray],
+        topology_fingerprint: str,
+        source_binding: Mapping[str, Any],
+        backend: str,
+        backend_version: str,
+        options: Mapping[str, Any],
+        provenance: Mapping[str, Any],
+        estimated_resources: Mapping[str, Any],
+        measured_resources: Mapping[str, Any],
+        statistics: PartitionStatistics,
+        qualification_checks: Sequence[QualificationCheck],
+        consume_inputs: bool = False,
+    ) -> TypedPartitionBook:
+        if (
+            isinstance(num_partitions, bool)
+            or not isinstance(num_partitions, int)
+            or num_partitions < 2
+        ):
+            raise _error(
+                "PARTITION-ID-001",
+                "num_partitions must exceed one",
+            )
+        if len(topology_fingerprint) != 64:
+            raise _error(
+                "PARTITION-FINGERPRINT-001",
+                "topology fingerprint is not SHA-256",
+            )
+        root = Path(storage_root)
+        root.mkdir(parents=True, exist_ok=False)
+        assignments: dict[str, np.ndarray] = {}
+        permutations: dict[str, np.ndarray] = {}
+        inverses: dict[str, np.ndarray] = {}
+        pointers: dict[str, np.ndarray] = {}
+        ownership: dict[CanonicalRelation, np.ndarray] = {}
+        opened: list[np.ndarray] = []
+        digest = hashlib.sha256()
+        _frame(digest, "format", b"typed-partition-book-v1")
+        _frame(digest, "parts", str(num_partitions).encode())
+        _frame(digest, "topology", topology_fingerprint.encode())
+        occupied = np.zeros(num_partitions, dtype=np.int64)
+
+        def fresh_vector(
+            path: Path,
+            prior: np.ndarray,
+        ) -> np.ndarray:
+            value = np.load(
+                path,
+                mmap_mode="r",
+                allow_pickle=False,
+            )
+            opened.append(value)
+            if (
+                value.dtype != prior.dtype
+                or value.shape != prior.shape
+                or value.flags.writeable
+            ):
+                raise _error(
+                    "PARTITION-ID-001",
+                    "trusted partition storage changed",
+                )
+            return value
+
+        try:
+            for index, name in enumerate(sorted(node_assignments)):
+                raw = node_assignments[name]
+                assignment_path = (
+                    root / f"node-{index:04d}-assignment.npy"
+                )
+                assignment = _trusted_vector(
+                    assignment_path,
+                    raw,
+                    f"assignment[{name!r}]",
+                )
+                opened.append(assignment)
+                if consume_inputs:
+                    _close_memmap(raw)
+                if not len(assignment) or not _ids_in_range(
+                    assignment,
+                    num_partitions,
+                ):
+                    raise _error(
+                        "PARTITION-ID-001",
+                        f"assignment[{name!r}] contains out-of-range IDs",
+                    )
+                counts = np.zeros(num_partitions, dtype=np.int64)
+                for start in range(
+                    0,
+                    len(assignment),
+                    _PARTITION_BOOK_CHUNK_ROWS,
+                ):
+                    stop = min(
+                        start + _PARTITION_BOOK_CHUNK_ROWS,
+                        len(assignment),
+                    )
+                    counts += np.bincount(
+                        assignment[start:stop],
+                        minlength=num_partitions,
+                    )
+                occupied += counts
+                _frame(digest, "node_type", name.encode())
+                _array_frame(digest, "assignment", assignment)
+                pointer_values = np.concatenate(
+                    ([0], np.cumsum(counts))
+                ).astype(np.int64, copy=False)
+                pointer_path = root / f"node-{index:04d}-partptr.npy"
+                pointer = _trusted_vector(
+                    pointer_path,
+                    pointer_values,
+                    f"partptr[{name!r}]",
+                )
+                opened.append(pointer)
+                permutation_path = (
+                    root / f"node-{index:04d}-permutation.npy"
+                )
+                permutation = np.lib.format.open_memmap(
+                    permutation_path,
+                    mode="w+",
+                    dtype=np.int64,
+                    shape=assignment.shape,
+                )
+                opened.append(permutation)
+                cursors = pointer_values[:-1].copy()
+                for start in range(
+                    0,
+                    len(assignment),
+                    _PARTITION_BOOK_CHUNK_ROWS,
+                ):
+                    stop = min(
+                        start + _PARTITION_BOOK_CHUNK_ROWS,
+                        len(assignment),
+                    )
+                    chunk = assignment[start:stop]
+                    for partition in range(num_partitions):
+                        local = np.flatnonzero(chunk == partition)
+                        count = len(local)
+                        cursor = int(cursors[partition])
+                        permutation[cursor : cursor + count] = (
+                            local + start
+                        )
+                        cursors[partition] += count
+                permutation.flush()
+                permutation.flags.writeable = False
+                for partition in range(num_partitions):
+                    begin = int(pointer_values[partition])
+                    end = int(pointer_values[partition + 1])
+                    previous = -1
+                    for start in range(
+                        begin,
+                        end,
+                        _PARTITION_BOOK_CHUNK_ROWS,
+                    ):
+                        stop = min(
+                            start + _PARTITION_BOOK_CHUNK_ROWS,
+                            end,
+                        )
+                        ids = permutation[start:stop]
+                        if (
+                            np.any(ids < 0)
+                            or np.any(ids >= len(assignment))
+                            or (len(ids) and int(ids[0]) <= previous)
+                            or np.any(ids[1:] <= ids[:-1])
+                            or np.any(
+                                assignment[ids] != partition
+                            )
+                        ):
+                            raise _error(
+                                "PARTITION-ID-001",
+                                f"derived arrays for {name!r} "
+                                "are inconsistent",
+                            )
+                        if len(ids):
+                            previous = int(ids[-1])
+                _close_memmap(assignment)
+                assignments[name] = fresh_vector(
+                    assignment_path,
+                    assignment,
+                )
+                inverse_path = root / f"node-{index:04d}-inverse.npy"
+                inverse = np.lib.format.open_memmap(
+                    inverse_path,
+                    mode="w+",
+                    dtype=np.int64,
+                    shape=permutation.shape,
+                )
+                opened.append(inverse)
+                for start in range(
+                    0,
+                    len(permutation),
+                    _PARTITION_BOOK_CHUNK_ROWS,
+                ):
+                    stop = min(
+                        start + _PARTITION_BOOK_CHUNK_ROWS,
+                        len(permutation),
+                    )
+                    ids = permutation[start:stop]
+                    inverse[ids] = np.arange(
+                        start,
+                        stop,
+                        dtype=np.int64,
+                    )
+                inverse.flush()
+                inverse.flags.writeable = False
+                for start in range(
+                    0,
+                    len(permutation),
+                    _PARTITION_BOOK_CHUNK_ROWS,
+                ):
+                    stop = min(
+                        start + _PARTITION_BOOK_CHUNK_ROWS,
+                        len(permutation),
+                    )
+                    ids = permutation[start:stop]
+                    if np.any(
+                        inverse[ids]
+                        != np.arange(start, stop, dtype=np.int64)
+                    ):
+                        raise _error(
+                            "PARTITION-ID-001",
+                            f"derived arrays for {name!r} "
+                            "are inconsistent",
+                        )
+                _close_memmap(permutation)
+                _close_memmap(inverse)
+                _close_memmap(pointer)
+                permutations[name] = fresh_vector(
+                    permutation_path,
+                    permutation,
+                )
+                inverses[name] = fresh_vector(
+                    inverse_path,
+                    inverse,
+                )
+                pointers[name] = fresh_vector(
+                    pointer_path,
+                    pointer,
+                )
+            if not assignments:
+                raise _error(
+                    "PARTITION-ID-001",
+                    "node assignments are empty",
+                )
+            if np.any(occupied == 0):
+                raise _error(
+                    "PARTITION-EMPTY-001",
+                    "every partition must own a node",
+                )
+            for index, key in enumerate(sorted(edge_ownership)):
+                raw = edge_ownership[key]
+                relation = _relation(key)
+                ownership_path = (
+                    root / f"relation-{index:04d}-ownership.npy"
+                )
+                value = _trusted_vector(
+                    ownership_path,
+                    raw,
+                    f"edge ownership[{key!r}]",
+                )
+                opened.append(value)
+                if consume_inputs:
+                    _close_memmap(raw)
+                if not _ids_in_range(value, num_partitions):
+                    raise _error(
+                        "PARTITION-ID-001",
+                        f"edge ownership[{key!r}] is out of range",
+                    )
+                _frame(
+                    digest,
+                    "relation",
+                    json.dumps(
+                        relation,
+                        separators=(",", ":"),
+                    ).encode(),
+                )
+                _array_frame(digest, "ownership", value)
+                _close_memmap(value)
+                ownership[relation] = fresh_vector(
+                    ownership_path,
+                    value,
+                )
+            _frame(
+                digest,
+                "options",
+                json.dumps(
+                    _jsonable(options),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode(),
+            )
+            return cls(
+                num_partitions,
+                MappingProxyType(assignments),
+                MappingProxyType(permutations),
+                MappingProxyType(inverses),
+                MappingProxyType(pointers),
+                MappingProxyType(ownership),
+                topology_fingerprint,
+                _freeze(source_binding),
+                backend,
+                backend_version,
+                _freeze(options),
+                _freeze(provenance),
+                _freeze(estimated_resources),
+                _freeze(measured_resources),
+                statistics,
+                tuple(qualification_checks),
+                digest.hexdigest(),
+            )
+        except Exception:
+            for value in opened:
+                _close_memmap(value)
+            shutil.rmtree(root, ignore_errors=True)
+            raise
+
+    @classmethod
+    def _from_precomputed(
+        cls,
+        *,
+        num_partitions: int,
+        node_assignments: Mapping[str, np.ndarray],
+        node_permutations: Mapping[str, np.ndarray],
+        node_inverse_permutations: Mapping[str, np.ndarray],
+        node_partptr: Mapping[str, np.ndarray],
+        edge_ownership: Mapping[CanonicalRelation, np.ndarray],
+        topology_fingerprint: str,
+        source_binding: Mapping[str, Any],
+        backend: str,
+        backend_version: str,
+        options: Mapping[str, Any],
+        provenance: Mapping[str, Any],
+        estimated_resources: Mapping[str, Any],
+        measured_resources: Mapping[str, Any],
+        statistics: PartitionStatistics,
+        qualification_checks: Sequence[QualificationCheck],
+        content_identity: str,
+    ) -> TypedPartitionBook:
+        content = _identity(
+            num_partitions,
+            topology_fingerprint,
+            node_assignments,
+            edge_ownership,
+            options,
+        )
+        if content != content_identity:
+            raise _error(
+                "PARTITION-FINGERPRINT-001",
+                "book identity is inconsistent",
+            )
+        book = cls(
+            num_partitions,
+            MappingProxyType(dict(node_assignments)),
+            MappingProxyType(dict(node_permutations)),
+            MappingProxyType(dict(node_inverse_permutations)),
+            MappingProxyType(dict(node_partptr)),
+            MappingProxyType(dict(edge_ownership)),
+            topology_fingerprint,
+            _freeze(source_binding),
+            backend,
+            backend_version,
+            _freeze(options),
+            _freeze(provenance),
+            _freeze(estimated_resources),
+            _freeze(measured_resources),
+            statistics,
+            tuple(qualification_checks),
+            content,
+        )
+        return validate_typed_partition_book(book)
+
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        seen: set[int] = set()
+        for values in (
+            self.node_assignments,
+            self.node_permutations,
+            self.node_inverse_permutations,
+            self.node_partptr,
+            self.edge_ownership,
+        ):
+            for value in values.values():
+                mapping = getattr(value, "_mmap", None)
+                if mapping is not None and id(mapping) not in seen:
+                    seen.add(id(mapping))
+                    _close_memmap(value)
+        object.__setattr__(self, "_closed", True)
 
 
-def validate_typed_partition_book(book: TypedPartitionBook) -> TypedPartitionBook:
+def validate_typed_partition_book(
+    book: TypedPartitionBook,
+) -> TypedPartitionBook:
     if not isinstance(book, TypedPartitionBook):
         raise TypeError("book must be TypedPartitionBook")
+    if book.closed:
+        raise _error("PARTITION-ID-001", "partition book is closed")
+    names = set(book.node_assignments)
+    if (
+        set(book.node_permutations) != names
+        or set(book.node_inverse_permutations) != names
+        or set(book.node_partptr) != names
+    ):
+        raise _error(
+            "PARTITION-ID-001",
+            "derived node mappings are incomplete",
+        )
     occupied = np.zeros(book.num_partitions, dtype=np.int64)
     for name, assignment in book.node_assignments.items():
-        occupied += np.bincount(assignment, minlength=book.num_partitions)
-        ordinal = np.arange(len(assignment), dtype=np.int64)
-        permutation = np.lexsort((ordinal, assignment))
-        pointer = np.concatenate(([0], np.cumsum(np.bincount(assignment, minlength=book.num_partitions))))
-        if assignment.flags.writeable or not np.array_equal(book.node_permutations[name], permutation) or not np.array_equal(book.node_inverse_permutations[name][permutation], ordinal) or not np.array_equal(book.node_partptr[name], pointer):
-            raise _error("PARTITION-ID-001", f"derived arrays for {name!r} are inconsistent")
+        if (
+            assignment.dtype != np.dtype("int64")
+            or assignment.ndim != 1
+            or assignment.flags.writeable
+            or not _ids_in_range(assignment, book.num_partitions)
+        ):
+            raise _error(
+                "PARTITION-ID-001",
+                f"assignment[{name!r}] is malformed",
+            )
+        counts = np.zeros(book.num_partitions, dtype=np.int64)
+        for start in range(
+            0,
+            len(assignment),
+            _PARTITION_BOOK_CHUNK_ROWS,
+        ):
+            stop = min(
+                start + _PARTITION_BOOK_CHUNK_ROWS,
+                len(assignment),
+            )
+            counts += np.bincount(
+                assignment[start:stop],
+                minlength=book.num_partitions,
+            )
+        occupied += counts
+        pointer = np.concatenate(([0], np.cumsum(counts)))
+        permutation = book.node_permutations[name]
+        inverse = book.node_inverse_permutations[name]
+        partptr = book.node_partptr[name]
+        if (
+            permutation.dtype != np.dtype("int64")
+            or permutation.ndim != 1
+            or len(permutation) != len(assignment)
+            or permutation.flags.writeable
+            or inverse.dtype != np.dtype("int64")
+            or inverse.ndim != 1
+            or len(inverse) != len(assignment)
+            or inverse.flags.writeable
+            or partptr.dtype != np.dtype("int64")
+            or partptr.ndim != 1
+            or partptr.flags.writeable
+            or not np.array_equal(partptr, pointer)
+        ):
+            raise _error(
+                "PARTITION-ID-001",
+                f"derived arrays for {name!r} are inconsistent",
+            )
+        for partition in range(book.num_partitions):
+            begin = int(pointer[partition])
+            end = int(pointer[partition + 1])
+            previous = -1
+            for start in range(
+                begin,
+                end,
+                _PARTITION_BOOK_CHUNK_ROWS,
+            ):
+                stop = min(
+                    start + _PARTITION_BOOK_CHUNK_ROWS,
+                    end,
+                )
+                ids = permutation[start:stop]
+                if (
+                    np.any(ids < 0)
+                    or np.any(ids >= len(assignment))
+                    or (len(ids) and int(ids[0]) <= previous)
+                    or np.any(ids[1:] <= ids[:-1])
+                    or np.any(assignment[ids] != partition)
+                    or np.any(
+                        inverse[ids]
+                        != np.arange(start, stop, dtype=np.int64)
+                    )
+                ):
+                    raise _error(
+                        "PARTITION-ID-001",
+                        f"derived arrays for {name!r} are inconsistent",
+                    )
+                if len(ids):
+                    previous = int(ids[-1])
     if np.any(occupied == 0):
-        raise _error("PARTITION-EMPTY-001", "every partition must own a node")
-    if book.content_identity != _identity(book.num_partitions, book.topology_fingerprint, book.node_assignments, book.edge_ownership, book.options):
-        raise _error("PARTITION-FINGERPRINT-001", "book identity is inconsistent")
+        raise _error(
+            "PARTITION-EMPTY-001",
+            "every partition must own a node",
+        )
+    for relation, ownership in book.edge_ownership.items():
+        _relation(relation)
+        if (
+            ownership.dtype != np.dtype("int64")
+            or ownership.ndim != 1
+            or ownership.flags.writeable
+            or not _ids_in_range(ownership, book.num_partitions)
+        ):
+            raise _error(
+                "PARTITION-ID-001",
+                f"edge ownership[{relation!r}] is malformed",
+            )
+    if book.content_identity != _identity(
+        book.num_partitions,
+        book.topology_fingerprint,
+        book.node_assignments,
+        book.edge_ownership,
+        book.options,
+    ):
+        raise _error(
+            "PARTITION-FINGERPRINT-001",
+            "book identity is inconsistent",
+        )
     return book
 
 

@@ -34,6 +34,14 @@ _PARQUET_EVIDENCE = (
     "test/data/stores/test_typed_graph_store.py::"
     "test_opens_homogeneous_and_heterogeneous_content_addressed_stores"
 )
+_PARQUET_RELEASE_EVIDENCE = (
+    "test/integration/test_real_parquet_graph.py::"
+    "test_real_multifile_parquet_graph_lifecycle",
+    "test/integration/test_real_parquet_heterogeneous.py::"
+    "test_real_multifile_parquet_heterogeneous_lifecycle",
+    "test/integration/qualify_typed_graph_rss.py",
+    "test/integration/qualify_typed_graph_cuda.py",
+)
 _DATA_NAME_OVERRIDES = {
     "graph/ZINC_OGB": "ZINC",
     "graph/cocitation_citeseer": "citeseer",
@@ -393,7 +401,7 @@ def _local_graph_dataset(
             )
         else:
             data.y = torch.tensor(
-                [[float(graph_index) / 10.0]],
+                [float(graph_index) / 10.0],
                 dtype=torch.float32,
             )
         graphs.append(data)
@@ -566,13 +574,21 @@ def test_qualification_manifest_keys_evidence_and_gates_are_consistent() -> (
         for key, row in DATASET_QUALIFICATION_MANIFEST.items()
         if row.evidence_test == _EVIDENCE_PREFIX
     }
-    assert len(_RETAINED_DATASET_PARAMETERS) == len(lifecycle_rows) == 43
-    assert len(DATASET_QUALIFICATION_MANIFEST) == 44
+    assert len(_RETAINED_DATASET_PARAMETERS) == len(lifecycle_rows) == 33
+    assert len(DATASET_QUALIFICATION_MANIFEST) == 34
     assert (
         DATASET_QUALIFICATION_MANIFEST[
             "graph/ParquetTypedGraph"
         ].evidence_test
         == _PARQUET_EVIDENCE
+    )
+    assert _PARQUET_RELEASE_EVIDENCE == (
+        "test/integration/test_real_parquet_graph.py::"
+        "test_real_multifile_parquet_graph_lifecycle",
+        "test/integration/test_real_parquet_heterogeneous.py::"
+        "test_real_multifile_parquet_heterogeneous_lifecycle",
+        "test/integration/qualify_typed_graph_rss.py",
+        "test/integration/qualify_typed_graph_cuda.py",
     )
     packaged = {
         row.selector
@@ -592,7 +608,7 @@ def test_qualification_manifest_keys_evidence_and_gates_are_consistent() -> (
             row.gate == "download"
             for row in DATASET_QUALIFICATION_MANIFEST.values()
         )
-        == 38
+        == 28
     )
     for (key, row), parameter in zip(
         lifecycle_rows.items(),

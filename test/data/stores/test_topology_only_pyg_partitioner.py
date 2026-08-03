@@ -13,12 +13,14 @@ import pytest
 import torch
 from torch_geometric.data import HeteroData
 from torch_geometric.distributed import Partitioner
+from torch_geometric.distributed.utils import as_str
 
 from topobench.data.loaders.parquet import (
     IngestionLimits, NodeTypeSpec, ParquetTypedGraphSource, ParquetTypedGraphSpec,
     PartitionSpec, RelationSpec, SplitRegistrySpec, SplitSetSpec, SupervisionSpec,
 )
 from topobench.data.stores.pyg_partitioner import (
+    CanonicalRelationTopology,
     PyGPartitionArtifactAdapter,
     TopologyOnlyPyGPartitioner,
     _partition_worker,
@@ -139,6 +141,172 @@ def test_real_pyg_generation_adapts_and_cleans_trusted_output(tmp_path: Path) ->
     assert not (
         partitioner.relation_build.stage_root / ".pyg-partition-work"
     ).exists()
+
+
+def test_trusted_adapter_streams_csc_and_mmaps_tensor_storage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    partitioner, _ = _build_partitioner(tmp_path)
+    original_load = torch.load
+    mmap_modes: list[Any] = []
+
+    def checked_load(*args: Any, **kwargs: Any) -> Any:
+        mmap_modes.append(kwargs.get("mmap"))
+        return original_load(*args, **kwargs)
+
+    def destination_must_not_materialize(
+        _relation: CanonicalRelationTopology,
+    ) -> np.ndarray:
+        raise AssertionError("adapter materialized full CSC destinations")
+
+    monkeypatch.setattr(torch, "load", checked_load)
+    monkeypatch.setattr(
+        CanonicalRelationTopology,
+        "destination",
+        property(destination_must_not_materialize),
+    )
+    book = partitioner.generate(PartitionQualificationLimits())
+    assert mmap_modes
+    assert all(mode is True for mode in mmap_modes)
+    book.close()
+def test_bounded_worker_matches_pyg_typed_maps_and_permutation(
+    tmp_path: Path,
+) -> None:
+    partitioner, _ = _build_partitioner(tmp_path)
+    topology = partitioner.topology_context
+    work_root = tmp_path / "bounded" / topology.fingerprint
+    work_root.mkdir(parents=True)
+    request_path = work_root / "request.json"
+    response_path = work_root / "response.json"
+    request_path.write_text(
+        json.dumps(
+            {
+                "format_version": "topology-only-pyg-worker-v1",
+                "fingerprint": topology.fingerprint,
+                "num_partitions": topology.num_partitions,
+                "recursive": topology.recursive,
+                "output_root": str(work_root / "output"),
+                "nodes": [
+                    {
+                        "internal_key": internal,
+                        "count": topology.node_counts[node_type],
+                    }
+                    for internal, node_type
+                    in topology.internal_node_types.items()
+                ],
+                "relations": [
+                    {
+                        "relation": list(relation),
+                        "internal_key": item.internal_key,
+                        "source_internal_key": item.source_internal_key,
+                        "destination_internal_key": item.destination_internal_key,
+                        "source_count": item.source_count,
+                        "destination_count": item.destination_count,
+                        "edge_count": item.edge_count,
+                        "colptr_path": str(item.colptr_path),
+                        "row_path": str(item.row_path),
+                    }
+                    for relation, item in topology.relations.items()
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    _partition_worker(str(request_path), str(response_path))
+    response = json.loads(response_path.read_text(encoding="utf-8"))
+    assert response["status"] == "ok", response
+
+    oracle_root = tmp_path / "oracle"
+    Partitioner(
+        partitioner.materialize_topology(),
+        num_parts=topology.num_partitions,
+        root=str(oracle_root),
+        recursive=topology.recursive,
+    ).generate_partition()
+    actual_root = work_root / "output"
+    assert json.loads(
+        (actual_root / "META.json").read_text(encoding="utf-8")
+    ) == json.loads((oracle_root / "META.json").read_text(encoding="utf-8"))
+
+    metadata = json.loads(
+        (oracle_root / "META.json").read_text(encoding="utf-8")
+    )
+    for internal in metadata["node_types"]:
+        actual = torch.load(
+            actual_root / "node_map" / f"{internal}.pt",
+            weights_only=True,
+        )
+        expected = torch.load(
+            oracle_root / "node_map" / f"{internal}.pt",
+            weights_only=True,
+        )
+        assert torch.equal(actual, expected)
+    for edge_type in metadata["edge_types"]:
+        filename = f"{as_str(tuple(edge_type))}.pt"
+        actual = torch.load(
+            actual_root / "edge_map" / filename,
+            weights_only=True,
+        )
+        expected = torch.load(
+            oracle_root / "edge_map" / filename,
+            weights_only=True,
+        )
+        assert torch.equal(actual, expected)
+    for partition in range(topology.num_partitions):
+        actual = torch.load(
+            actual_root / f"part_{partition}" / "node_feats.pt",
+            weights_only=True,
+        )
+        expected = torch.load(
+            oracle_root / f"part_{partition}" / "node_feats.pt",
+            weights_only=True,
+        )
+        assert actual.keys() == expected.keys()
+        for internal in actual:
+            assert torch.equal(
+                actual[internal]["global_id"],
+                expected[internal]["global_id"],
+            )
+            assert torch.equal(
+                actual[internal]["id"],
+                expected[internal]["id"],
+            )
+            assert actual[internal]["feats"] == expected[internal]["feats"]
+        actual_graph = torch.load(
+            actual_root / f"part_{partition}" / "graph.pt",
+            weights_only=True,
+        )
+        expected_graph = torch.load(
+            oracle_root / f"part_{partition}" / "graph.pt",
+            weights_only=True,
+        )
+        assert actual_graph.keys() == expected_graph.keys()
+        for edge_type in actual_graph:
+            assert actual_graph[edge_type]["size"] == expected_graph[
+                edge_type
+            ]["size"]
+            for field in ("edge_id", "row", "col"):
+                observed = actual_graph[edge_type][field]
+                reference = expected_graph[edge_type][field]
+                assert torch.equal(observed, reference), (
+                    partition,
+                    edge_type,
+                    field,
+                    observed,
+                    reference,
+                )
+        actual_edge_features = torch.load(
+            actual_root / f"part_{partition}" / "edge_feats.pt",
+            weights_only=False,
+        )
+        expected_edge_features = torch.load(
+            oracle_root / f"part_{partition}" / "edge_feats.pt",
+            weights_only=False,
+        )
+        assert actual_edge_features == expected_edge_features
+
+
 def test_adapter_cross_checks_part_membership_against_node_map(
     tmp_path: Path,
 ) -> None:

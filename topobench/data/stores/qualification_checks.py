@@ -9,25 +9,33 @@ from __future__ import annotations
 
 import hashlib
 import json
+import mmap as mmap_module
 import os
 import re
+import resource
 import stat
+import sys
 import tempfile
 import uuid
+from collections.abc import Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from types import MappingProxyType
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import numpy as np
-_FileIdentity = tuple[int, int, int, int, int]
 from numpy.lib import format as npy_format
+
+_FileIdentity = tuple[int, int, int, int, int]
 
 STORE_FORMAT_VERSION = "typed-graph-store-v1"
 CONTENT_HASH_VERSION = "typed-graph-store-content-v1"
 REPORT_FORMAT_VERSION = "typed-graph-qualification-v1"
 _PHASES = ("train", "val", "test")
 _CHUNK_ROWS = 64 * 1024
+_BOUNDED_VALIDATION_FORMAT_VERSION = "typed-store-bounded-validation-v1"
+_BOUNDED_VALIDATION_RSS_LIMIT_BYTES = 320 * 1024**2
 _MANIFEST_KEYS = {
     "format_version",
     "content_hash_version",
@@ -227,6 +235,17 @@ class _ArrayHandle:
             mmap.close()
         self.stream.close()
 
+
+def _discard_mapped_pages(value: np.ndarray) -> None:
+    """Release file-backed pages after each bounded validation chunk."""
+    mapped = getattr(value, "_mmap", None)
+    advice = getattr(mmap_module, "MADV_DONTNEED", None)
+    if mapped is None or advice is None:
+        return
+    try:
+        mapped.madvise(advice)
+    except (OSError, ValueError):
+        return
 
 def _json_value(value: Any) -> Any:
     if isinstance(value, Mapping):
@@ -582,9 +601,7 @@ def _open_npy(
         version = npy_format.read_magic(stream)
         if version == (1, 0):
             shape, fortran_order, dtype = npy_format.read_array_header_1_0(stream)
-        elif version == (2, 0):
-            shape, fortran_order, dtype = npy_format.read_array_header_2_0(stream)
-        elif version == (3, 0):
+        elif version == (2, 0) or version == (3, 0):
             shape, fortran_order, dtype = npy_format.read_array_header_2_0(stream)
         else:
             raise ValueError(f"unsupported npy version {version!r}")
@@ -790,6 +807,7 @@ def _validate_array_record(
                     evidence={"relative_path": relative, "row_start": start},
                     remediation="repair the source values and rebuild",
                 )
+            _discard_mapped_pages(handle.array)
     return handle
 
 
@@ -803,7 +821,193 @@ def _strictly_increasing(value: np.ndarray) -> bool:
             return False
         if len(chunk):
             previous = int(chunk[-1])
+        _discard_mapped_pages(value)
     return True
+
+def _nondecreasing(value: np.ndarray) -> bool:
+    previous: int | None = None
+    for start in range(0, len(value), _CHUNK_ROWS):
+        chunk = value[start : start + _CHUNK_ROWS]
+        if len(chunk) > 1 and np.any(chunk[1:] < chunk[:-1]):
+            return False
+        if previous is not None and len(chunk) and int(chunk[0]) < previous:
+            return False
+        if len(chunk):
+            previous = int(chunk[-1])
+        _discard_mapped_pages(value)
+    return True
+
+
+def _integer_values_within(
+    value: np.ndarray,
+    *,
+    minimum: int,
+    exclusive_maximum: int,
+) -> bool:
+    for start in range(0, len(value), _CHUNK_ROWS):
+        chunk = value[start : start + _CHUNK_ROWS]
+        if len(chunk) and (
+            int(chunk.min()) < minimum
+            or int(chunk.max()) >= exclusive_maximum
+        ):
+            return False
+        _discard_mapped_pages(value)
+    return True
+
+
+def _stable_permutation_matches(
+    assignments: np.ndarray,
+    permutation: np.ndarray,
+) -> bool:
+    previous_assignment: int | None = None
+    previous_ordinal: int | None = None
+    for start in range(0, len(permutation), _CHUNK_ROWS):
+        stop = min(start + _CHUNK_ROWS, len(permutation))
+        ordinals = np.asarray(permutation[start:stop])
+        ordered = np.asarray(assignments[ordinals])
+        if len(ordered):
+            if previous_assignment is not None and (
+                int(ordered[0]) < previous_assignment
+                or (
+                    int(ordered[0]) == previous_assignment
+                    and int(ordinals[0]) <= previous_ordinal
+                )
+            ):
+                return False
+            if len(ordered) > 1 and (
+                np.any(ordered[1:] < ordered[:-1])
+                or np.any(
+                    (ordered[1:] == ordered[:-1])
+                    & (ordinals[1:] <= ordinals[:-1])
+                )
+            ):
+                return False
+            previous_assignment = int(ordered[-1])
+            previous_ordinal = int(ordinals[-1])
+        _discard_mapped_pages(assignments)
+        _discard_mapped_pages(permutation)
+    return True
+
+
+def _inverse_round_trips(
+    inverse: np.ndarray,
+    permutation: np.ndarray,
+) -> bool:
+    for start in range(0, len(permutation), _CHUNK_ROWS):
+        stop = min(start + _CHUNK_ROWS, len(permutation))
+        ordinals = np.asarray(permutation[start:stop])
+        if not np.array_equal(
+            inverse[ordinals],
+            np.arange(start, stop, dtype=np.int64),
+        ):
+            return False
+        _discard_mapped_pages(inverse)
+        _discard_mapped_pages(permutation)
+    return True
+
+
+def _partition_counts(
+    assignments: np.ndarray,
+    *,
+    num_partitions: int,
+) -> np.ndarray:
+    counts = np.zeros(num_partitions, dtype=np.int64)
+    for start in range(0, len(assignments), _CHUNK_ROWS):
+        chunk = assignments[start : start + _CHUNK_ROWS]
+        counts += np.bincount(chunk, minlength=num_partitions)
+        _discard_mapped_pages(assignments)
+    return counts
+
+def _relation_rows_canonical(
+    pointers: np.ndarray,
+    *,
+    row_path: Path,
+    row_identity: _FileIdentity,
+    edge_id_path: Path | None,
+    edge_id_identity: _FileIdentity | None,
+) -> bool:
+    row_handle = _open_npy(row_path, row_identity)
+    edge_id_handle = (
+        None
+        if edge_id_path is None or edge_id_identity is None
+        else _open_npy(edge_id_path, edge_id_identity)
+    )
+    resident_rows = 0
+    try:
+        for destination in range(len(pointers) - 1):
+            start = int(pointers[destination])
+            end = int(pointers[destination + 1])
+            previous_row: int | None = None
+            previous_edge_id: Any | None = None
+            for chunk_start in range(start, end, _CHUNK_ROWS):
+                chunk_end = min(chunk_start + _CHUNK_ROWS, end)
+                row_chunk = row_handle.array[chunk_start:chunk_end]
+                edge_id_chunk = (
+                    None
+                    if edge_id_handle is None
+                    else edge_id_handle.array[chunk_start:chunk_end]
+                )
+                if len(row_chunk):
+                    first_row = int(row_chunk[0])
+                    first_edge_id = (
+                        None
+                        if edge_id_chunk is None
+                        else edge_id_chunk[0].item()
+                    )
+                    if previous_row is not None and (
+                        first_row < previous_row
+                        or (
+                            first_row == previous_row
+                            and (
+                                edge_id_chunk is None
+                                or first_edge_id is None
+                                or previous_edge_id is None
+                                or first_edge_id <= previous_edge_id
+                            )
+                        )
+                    ):
+                        return False
+                    if edge_id_chunk is None:
+                        if len(row_chunk) > 1 and np.any(
+                            row_chunk[1:] <= row_chunk[:-1]
+                        ):
+                            return False
+                    elif len(row_chunk) > 1:
+                        decreasing = row_chunk[1:] < row_chunk[:-1]
+                        equal = row_chunk[1:] == row_chunk[:-1]
+                        if np.any(decreasing) or np.any(
+                            equal
+                            & (edge_id_chunk[1:] <= edge_id_chunk[:-1])
+                        ):
+                            return False
+                    previous_row = int(row_chunk[-1])
+                    previous_edge_id = (
+                        None
+                        if edge_id_chunk is None
+                        else edge_id_chunk[-1].item()
+                    )
+                    resident_rows += len(row_chunk)
+                if resident_rows >= _CHUNK_ROWS and chunk_end < len(
+                    row_handle.array
+                ):
+                    row_handle.close()
+                    row_handle = _open_npy(row_path, row_identity)
+                    if edge_id_handle is not None:
+                        edge_id_handle.close()
+                        assert edge_id_path is not None
+                        assert edge_id_identity is not None
+                        edge_id_handle = _open_npy(
+                            edge_id_path,
+                            edge_id_identity,
+                        )
+                    resident_rows = 0
+            if destination % _CHUNK_ROWS == _CHUNK_ROWS - 1:
+                _discard_mapped_pages(pointers)
+        return True
+    finally:
+        row_handle.close()
+        if edge_id_handle is not None:
+            edge_id_handle.close()
 
 
 def _arrays_overlap(left: np.ndarray, right: np.ndarray) -> bool:
@@ -1012,6 +1216,12 @@ def _validate_relations(
                 expected={"source": source_count, "destination": destination_count},
                 remediation="rebuild relation cross-references",
             )
+        colptr_relative = relation["colptr"]["relative_path"]
+        row_relative = relation["row"]["relative_path"]
+        colptr_path = root / colptr_relative
+        row_path = root / row_relative
+        colptr_identity = checker.file_identities[colptr_relative]
+        row_identity = checker.file_identities[row_relative]
         colptr = _validate_array_record(root, relation["colptr"], files, checker)
         row = _validate_array_record(root, relation["row"], files, checker)
         edge_count = relation.get("edge_count")
@@ -1040,7 +1250,7 @@ def _validate_relations(
             len(pointers) == 0
             or int(pointers[0]) != 0
             or int(pointers[-1]) != edge_count
-            or not np.all(pointers[1:] >= pointers[:-1])
+            or not _nondecreasing(pointers)
         ):
             colptr.close()
             row.close()
@@ -1051,6 +1261,7 @@ def _validate_relations(
                 evidence={"relation": list(triple)},
                 remediation="rebuild relation CSC",
             )
+        colptr.close()
         for start in range(0, len(rows), _CHUNK_ROWS):
             chunk = rows[start : start + _CHUNK_ROWS]
             if len(chunk):
@@ -1066,11 +1277,18 @@ def _validate_relations(
                         evidence={"relation": list(triple), "edge_start": start},
                         remediation="rebuild endpoint mappings and CSC",
                     )
+            _discard_mapped_pages(rows)
+        row.close()
         edge_id_handle: _ArrayHandle | None = None
         edge_ids: np.ndarray | None = None
+        edge_id_path: Path | None = None
+        edge_id_identity: _FileIdentity | None = None
         if relation.get("edge_id") is not None:
             edge_id_handle = _validate_array_record(root, relation["edge_id"], files, checker)
             edge_ids = edge_id_handle.array
+            edge_id_relative = relation["edge_id"]["relative_path"]
+            edge_id_path = root / edge_id_relative
+            edge_id_identity = checker.file_identities[edge_id_relative]
             if edge_ids.shape[0] != edge_count:
                 actual_length = edge_ids.shape[0]
                 edge_id_handle.close()
@@ -1083,6 +1301,7 @@ def _validate_relations(
                     evidence={"relation": list(triple), "field": "edge_id"},
                     remediation="rebuild aligned edge IDs",
                 )
+            edge_id_handle.close()
         for field_name, field_record in relation.get("fields", {}).items():
             field = _validate_array_record(root, field_record, files, checker)
             if field.array.ndim == 0 or field.array.shape[0] != edge_count:
@@ -1100,26 +1319,17 @@ def _validate_relations(
                     remediation="rebuild aligned edge fields",
                 )
             field.close()
-        ordered = True
-        for destination in range(destination_count):
-            start = int(pointers[destination])
-            end = int(pointers[destination + 1])
-            segment = rows[start:end]
-            if len(segment) > 1:
-                if edge_ids is None:
-                    if np.any(segment[1:] <= segment[:-1]):
-                        ordered = False
-                        break
-                else:
-                    decreasing = segment[1:] < segment[:-1]
-                    equal = segment[1:] == segment[:-1]
-                    if np.any(decreasing) or np.any(equal & (edge_ids[start + 1 : end] <= edge_ids[start : end - 1])):
-                        ordered = False
-                        break
-        if edge_id_handle is not None:
-            edge_id_handle.close()
-        colptr.close()
-        row.close()
+        order_colptr = _open_npy(colptr_path, colptr_identity)
+        try:
+            ordered = _relation_rows_canonical(
+                order_colptr.array,
+                row_path=row_path,
+                row_identity=row_identity,
+                edge_id_path=edge_id_path,
+                edge_id_identity=edge_id_identity,
+            )
+        finally:
+            order_colptr.close()
         if not ordered:
             checker.fail(
                 "CSC-ORDER-001",
@@ -1332,7 +1542,11 @@ def _validate_partitions(
             if (
                 values.dtype != np.dtype("<i8")
                 or values.shape != (expected_length,)
-                or (len(values) and (int(values.min()) < 0 or int(values.max()) >= count))
+                or not _integer_values_within(
+                    values,
+                    minimum=0,
+                    exclusive_maximum=count,
+                )
             ):
                 permutation.close()
                 inverse.close()
@@ -1346,7 +1560,15 @@ def _validate_partitions(
                 )
             perm = permutation.array
             inv = inverse.array
-            if perm.dtype != np.dtype("<i8") or perm.shape != (expected_length,) or (len(perm) and (int(perm.min()) < 0 or int(perm.max()) >= expected_length)):
+            if (
+                perm.dtype != np.dtype("<i8")
+                or perm.shape != (expected_length,)
+                or not _integer_values_within(
+                    perm,
+                    minimum=0,
+                    exclusive_maximum=expected_length,
+                )
+            ):
                 actual = {"dtype": perm.dtype.str, "shape": list(perm.shape)}
                 permutation.close()
                 inverse.close()
@@ -1358,11 +1580,7 @@ def _validate_partitions(
                     evidence={"node_type": node["name"]},
                     remediation="rebuild derived partition permutations",
                 )
-            ordered_assignments = values[perm]
-            if len(ordered_assignments) > 1 and (
-                np.any(ordered_assignments[1:] < ordered_assignments[:-1])
-                or np.any((ordered_assignments[1:] == ordered_assignments[:-1]) & (perm[1:] <= perm[:-1]))
-            ):
+            if not _stable_permutation_matches(values, perm):
                 permutation.close()
                 inverse.close()
                 partptr.close()
@@ -1373,7 +1591,11 @@ def _validate_partitions(
                     evidence={"node_type": node["name"]},
                     remediation="rebuild derived partition permutations",
                 )
-            if inv.dtype != np.dtype("<i8") or inv.shape != (expected_length,) or not np.array_equal(inv[perm], np.arange(expected_length, dtype=np.int64)):
+            if (
+                inv.dtype != np.dtype("<i8")
+                or inv.shape != (expected_length,)
+                or not _inverse_round_trips(inv, perm)
+            ):
                 permutation.close()
                 inverse.close()
                 partptr.close()
@@ -1384,7 +1606,7 @@ def _validate_partitions(
                     evidence={"node_type": node["name"]},
                     remediation="rebuild derived inverse permutations",
                 )
-            counts = np.bincount(values, minlength=count)
+            counts = _partition_counts(values, num_partitions=count)
             expected_ptr = np.concatenate(([0], np.cumsum(counts))).astype(np.int64)
             if partptr.array.dtype != np.dtype("<i8") or not np.array_equal(partptr.array, expected_ptr):
                 actual = partptr.array.tolist()
@@ -1426,7 +1648,11 @@ def _validate_partitions(
             if (
                 ownership.array.dtype != np.dtype("<i8")
                 or ownership.array.shape != (relation["edge_count"],)
-                or (len(ownership.array) and (int(ownership.array.min()) < 0 or int(ownership.array.max()) >= count))
+                or not _integer_values_within(
+                    ownership.array,
+                    minimum=0,
+                    exclusive_maximum=count,
+                )
             ):
                 checker.fail(
                     "PARTITION-EDGE-OWNERSHIP-001",
@@ -1481,6 +1707,7 @@ def _partition_array_frame(digest: Any, role: str, value: np.ndarray) -> None:
         chunk = np.asarray(value[start : start + 128 * 1024], dtype=np.dtype("<i8"), order="C")
         digest.update(memoryview(chunk).cast("B"))
 
+        _discard_mapped_pages(value)
 
 def _validate_output_contract(
     manifest: Mapping[str, Any],
@@ -1926,15 +2153,13 @@ def _run_qualification(
         IndexError,
         json.JSONDecodeError,
     ) as error:
-        try:
+        with suppress(_CheckError):
             checker.fail(
                 "MANIFEST-001",
                 observed=f"{type(error).__name__}: {error}",
                 expected="complete internally consistent manifest",
                 remediation="rebuild or redownload the qualified store",
             )
-        except _CheckError:
-            pass
     finally:
         for handle in checker.handles:
             handle.close()
@@ -2000,6 +2225,126 @@ def validate_store(
         report,
         file_identities,
     )
+
+
+def _process_peak_rss_bytes() -> int:
+    observed = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return observed if sys.platform == "darwin" else observed * 1024
+
+
+def _validation_root_sha256(root: Path) -> str:
+    resolved = root.resolve(strict=True)
+    return hashlib.sha256(str(resolved).encode("utf-8")).hexdigest()
+
+
+def _bounded_validation_worker(request_path: Path) -> int:
+    request = _read_json_secure(request_path)
+    required = {
+        "format_version",
+        "root_path",
+        "validation_root_sha256",
+        "expected_bindings",
+        "report_path",
+        "require_directory_identity",
+        "declared_peak_rss_delta_limit_bytes",
+    }
+    if set(request) != required:
+        raise ValueError("bounded validation request has unexpected fields")
+    if request["format_version"] != _BOUNDED_VALIDATION_FORMAT_VERSION:
+        raise ValueError("bounded validation request version changed")
+    root = Path(request["root_path"])
+    root_sha256 = _validation_root_sha256(root)
+    if root_sha256 != request["validation_root_sha256"]:
+        raise ValueError("bounded validation root digest changed")
+    expected_bindings = request["expected_bindings"]
+    if not isinstance(expected_bindings, dict):
+        raise TypeError("bounded validation bindings must be a JSON object")
+    require_directory_identity = request["require_directory_identity"]
+    if not isinstance(require_directory_identity, bool):
+        raise TypeError("bounded directory identity flag must be boolean")
+    limit = request["declared_peak_rss_delta_limit_bytes"]
+    if limit != _BOUNDED_VALIDATION_RSS_LIMIT_BYTES:
+        raise ValueError("bounded validation memory limit changed")
+    report_path = Path(request["report_path"])
+    baseline_rss = _process_peak_rss_bytes()
+    report, manifest, file_identities = _run_qualification(
+        root,
+        expected_bindings=expected_bindings,
+        report_path=report_path,
+        require_directory_identity=require_directory_identity,
+        execution_monitor=None,
+    )
+    peak_rss = _process_peak_rss_bytes()
+    peak_delta = peak_rss - baseline_rss
+    report_sha256, _, report_identity = _hash_file(report_path)
+    passed = report.passed and manifest is not None
+    manifest_sha256: str | None = None
+    manifest_identity: _FileIdentity | None = None
+    if passed:
+        manifest_sha256, _, manifest_identity = _hash_file(
+            root / "manifest.json"
+        )
+    memory_passed = peak_delta <= limit
+    evidence = {
+        "format_version": _BOUNDED_VALIDATION_FORMAT_VERSION,
+        "status": "passed" if passed and memory_passed else "failed",
+        "failure": (
+            None
+            if passed and memory_passed
+            else (
+                "VALIDATION-MEMORY-001"
+                if not memory_passed
+                else report.failures[0].check_id
+            )
+        ),
+        "validation_root_sha256": root_sha256,
+        "report_path": str(report_path),
+        "report_sha256": report_sha256,
+        "report_identity": list(report_identity),
+        "manifest_sha256": manifest_sha256,
+        "manifest_identity": (
+            None if manifest_identity is None else list(manifest_identity)
+        ),
+        "file_identities": {
+            relative: list(identity)
+            for relative, identity in sorted(file_identities.items())
+        },
+        "memory": {
+            "measurement_scope": "isolated-validation-worker",
+            "baseline_rss_bytes": baseline_rss,
+            "peak_rss_bytes": peak_rss,
+            "peak_rss_delta_bytes": peak_delta,
+            "declared_peak_rss_delta_limit_bytes": limit,
+            "peak_rss_by_phase": {"canonical_validation": peak_rss},
+        },
+    }
+    sys.stdout.write(
+        json.dumps(
+            evidence,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        + "\n"
+    )
+    sys.stdout.flush()
+    if not memory_passed:
+        return 3
+    return 0 if passed else 2
+
+
+def _main() -> int:
+    if len(sys.argv) != 3 or sys.argv[1] != "--bounded-validation-worker":
+        raise SystemExit(
+            "usage: qualification_checks.py "
+            "--bounded-validation-worker REQUEST.json"
+        )
+    return _bounded_validation_worker(Path(sys.argv[2]))
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())
 
 
 __all__ = [
