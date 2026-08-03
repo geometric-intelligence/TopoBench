@@ -11,6 +11,7 @@ defaults:
   - optimizer: default
   - loss: default
   - evaluator: default
+  - preflight: default
   - callbacks: default
   - logger: csv
   - trainer: cpu
@@ -30,6 +31,9 @@ defaults:
 
 # task name, determines output directory path
 task_name: "train"
+
+# qualified runs require every mandatory static and execution preflight check
+execution_profile: qualified
 
 # tags to help you identify your experiments
 # you can overwrite this in experiment configs

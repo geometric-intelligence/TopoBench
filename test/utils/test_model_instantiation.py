@@ -674,7 +674,16 @@ def test_run_passes_pipeline_data_spec_to_central_helper(
         instantiate_model_mock,
         raising=False,
     )
-    monkeypatch.setattr(run_module, "instantiate_callbacks", lambda _: [])
+    preflight_result = SimpleNamespace(passed=True, qualified=True)
+    preflight_runner = MagicMock()
+    preflight_runner.return_value.validate_static.return_value = preflight_result
+    preflight_runner.return_value.run_probe.return_value = preflight_result
+    monkeypatch.setattr(run_module, "PreflightRunner", preflight_runner)
+    monkeypatch.setattr(
+        run_module,
+        "instantiate_callbacks",
+        lambda _, **kwargs: [],
+    )
     monkeypatch.setattr(run_module, "instantiate_loggers", lambda _: [])
 
     _, objects = run_module.run(cfg)

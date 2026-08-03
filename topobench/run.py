@@ -1,12 +1,10 @@
 """Main entry point for training and testing models."""
 
-import random
 from pathlib import Path
 from typing import Any
 
 import hydra
 import lightning as L
-import numpy as np
 import rootutils
 import torch
 from lightning import Callback, LightningDataModule, LightningModule, Trainer
@@ -15,8 +13,13 @@ from lightning.pytorch.loggers import Logger
 from lightning.pytorch.loggers.wandb import WandbLogger
 from omegaconf import DictConfig, OmegaConf
 
+from topobench.callbacks.input_pipeline import (
+    InputPipelineCallback,
+    create_input_monitor,
+)
 from topobench.domains import SUPPORTED_DOMAINS
 from topobench.nn.capabilities import validate_graph_composition
+from topobench.preflight import PreflightRunner
 from topobench.utils import (
     RankedLogger,
     extras,
@@ -130,6 +133,69 @@ def validate_domain_composition(cfg: DictConfig) -> str:
     return dataset_domain
 
 
+def _instantiate_execution_monitor(
+    callbacks_cfg: DictConfig | None,
+) -> object | None:
+    """Construct only the input monitor before pipeline conversion begins."""
+
+    if callbacks_cfg is None:
+        return None
+    if not isinstance(callbacks_cfg, DictConfig):
+        raise TypeError("Callbacks config must be a DictConfig!")
+    target = "topobench.callbacks.input_pipeline.InputPipelineCallback"
+    monitor_configs = [
+        callback
+        for callback in callbacks_cfg.values()
+        if isinstance(callback, DictConfig)
+        and callback.get("_target_") == target
+    ]
+    if len(monitor_configs) > 1:
+        raise ValueError(
+            "At most one InputPipelineCallback may own execution evidence"
+        )
+    if not monitor_configs:
+        return None
+    resolved = OmegaConf.to_container(monitor_configs[0], resolve=True)
+    if not isinstance(resolved, dict):
+        raise TypeError("InputPipelineCallback config must resolve to a mapping")
+    monitor_keys = {
+        "event_log_path",
+        "event_capacity",
+        "pending_cuda_capacity",
+        "overflow_policy",
+        "sample_every_n",
+        "sample_offset",
+        "warmup_steps",
+        "rolling_window_steps",
+        "max_input_stall_fraction",
+        "max_consecutive_starved_steps",
+        "patience_windows",
+        "stall_action",
+    }
+    monitor_kwargs = {
+        key: value
+        for key, value in resolved.items()
+        if key in monitor_keys
+    }
+    return create_input_monitor(**monitor_kwargs)
+
+
+def _shared_execution_monitor(
+    callbacks: list[Callback],
+) -> object | None:
+    """Return the sole callback-owned monitor for pre-training pipeline work."""
+    owners = [
+        callback
+        for callback in callbacks
+        if isinstance(callback, InputPipelineCallback)
+    ]
+    if len(owners) > 1:
+        raise ValueError(
+            "At most one InputPipelineCallback may own execution evidence"
+        )
+    return None if not owners else owners[0].monitor
+
+
 torch.set_num_threads(1)
 log = RankedLogger(__name__, rank_zero_only=True)
 
@@ -154,14 +220,8 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
     tuple[dict[str, Any], dict[str, Any]]
         A tuple with metrics and dict with all instantiated objects.
     """
-    # Set seed for random number generators in pytorch, numpy and python.random
+    # Lightning is the single authority for Python, NumPy, torch, and workers.
     L.seed_everything(cfg.seed, workers=True)
-    # Seed for torch
-    torch.manual_seed(cfg.seed)
-    # Seed for numpy
-    np.random.seed(cfg.seed)
-    # Seed for python random
-    random.seed(cfg.seed)
 
     if cfg.get("deterministic", False):
         # Enable cudnn deterministic algorithms for reproducibility
@@ -172,20 +232,49 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
             "Enabled cudnn.deterministic and torch.use_deterministic_algorithms"
         )
 
+    execution_monitor = _instantiate_execution_monitor(cfg.get("callbacks"))
     log.info(f"Instantiating data pipeline <{cfg.data_pipeline._target_}>")
-    pipeline = hydra.utils.instantiate(cfg.data_pipeline)
+    pipeline = hydra.utils.instantiate(
+        cfg.data_pipeline,
+        execution_monitor=execution_monitor,
+    )
     pipeline_output = pipeline.build(cfg)
     datamodule = pipeline_output.datamodule
 
-    # Model for us is Network + logic: inputs backbone, readout, losses
-    log.info(f"Instantiating model <{cfg.model._target_}>")
-    model: LightningModule = instantiate_model(
-        cfg,
-        data_spec=pipeline_output.data_spec,
+    def model_factory() -> LightningModule:
+        return instantiate_model(
+            cfg,
+            data_spec=pipeline_output.data_spec,
+        )
+
+    preflight = PreflightRunner(cfg, pipeline_output)
+    static_preflight = preflight.validate_static()
+    preflight_result = preflight.run_probe(
+        model_factory=model_factory,
+        static_result=static_preflight,
     )
 
+    # Discard probe RNG effects before constructing any production object.
+    L.seed_everything(cfg.seed, workers=True)
+
+    # Model for us is Network + logic: inputs backbone, readout, losses
+    log.info(f"Instantiating model <{cfg.model._target_}>")
+    model: LightningModule = model_factory()
+
     log.info("Instantiating callbacks...")
-    callbacks: list[Callback] = instantiate_callbacks(cfg.get("callbacks"))
+    callbacks: list[Callback] = instantiate_callbacks(
+        cfg.get("callbacks"),
+        input_pipeline_monitor=execution_monitor,
+    )
+    callback_monitor = _shared_execution_monitor(callbacks)
+    if callback_monitor is not execution_monitor:
+        raise RuntimeError(
+            "production InputPipelineCallback did not adopt the preflight monitor"
+        )
+    if execution_monitor is not None:
+        if hasattr(datamodule, "execution_monitor"):
+            datamodule.execution_monitor = execution_monitor
+        model.execution_monitor = execution_monitor
 
     log.info("Instantiating loggers...")
     logger: list[Logger] = instantiate_loggers(cfg.get("logger"))
@@ -223,6 +312,8 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
         "logger": logger,
         "trainer": trainer,
         "data_spec": pipeline_output.data_spec,
+        "pipeline_output": pipeline_output,
+        "preflight": preflight_result,
     }
 
     if logger:
@@ -248,8 +339,12 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
             logger=logger,
         )
 
-    # Merge train and test metrics
-    metric_dict = {**train_metrics}
+    # The qualification bit remains authoritative even when preflight is
+    # explicitly disabled under the experimental profile.
+    metric_dict = {
+        **train_metrics,
+        "qualified": preflight_result.qualified,
+    }
 
     return metric_dict, object_dict
 
@@ -309,8 +404,16 @@ def rerun_best_model_checkpoint(
 
     log.info("Re-testing best model checkpoint on validation set!")
     val_loader = datamodule.val_dataloader()
-    # TODO: Fix the issue with the on_validation_epoch_start hook as it is strictly attached to the training procedure.
-    checkpoint_model.on_validation_epoch_start = lambda: None
+    set_validation_pass_kind = getattr(
+        checkpoint_model,
+        "set_next_validation_pass_kind",
+        None,
+    )
+    if not callable(set_validation_pass_kind):
+        raise TypeError(
+            "checkpoint model must expose set_next_validation_pass_kind"
+        )
+    set_validation_pass_kind("selected_checkpoint")
     results = checkpoint_trainer.validate(
         model=checkpoint_model, dataloaders=val_loader
     )

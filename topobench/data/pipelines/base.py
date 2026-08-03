@@ -702,6 +702,7 @@ class AbstractDataPipeline(ABC):
                 sampling_strategy=strategy.name,
                 counts=counts,
                 fitted_state_root=fitted_state_root,
+                fitted_transform=fitted_transform,
                 qualification_report=qualification_report,
             )
             source_graph_id = store.content_sha256
@@ -880,6 +881,7 @@ class AbstractDataPipeline(ABC):
         sampling_strategy: str,
         counts: Mapping[str, int],
         fitted_state_root: Path | None,
+        fitted_transform: FittableTransform | None,
         qualification_report: QualificationReport,
     ) -> Mapping[str, object]:
         split = store._manifest["splits"][active_split_tag]
@@ -890,8 +892,14 @@ class AbstractDataPipeline(ABC):
                 "active_split_tag": active_split_tag,
                 "split_fingerprint": split["fingerprint"],
                 "sampling_strategy": sampling_strategy,
+                "sampler_backend": source.spec.partition.backend,
                 "supervision_counts": dict(counts),
                 "fitted_transform": source.spec.fitted_transform.name,
+                "fitted_transform_state_key": (
+                    None
+                    if fitted_transform is None
+                    else fitted_transform.state_key
+                ),
                 "fitted_state_root": (
                     None
                     if fitted_state_root is None

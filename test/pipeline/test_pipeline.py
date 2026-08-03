@@ -56,3 +56,11 @@ def test_real_graph_release_lifecycle(dataset: str) -> None:
     assert result["epochs_completed"] >= 1
     assert result["observed_train_batch_size"] > 1
     assert result["test_results"]
+
+
+def test_native_graph_run_configuration_enables_automatic_preflight() -> None:
+    cfg = _compose("SyntheticGraph", epochs=1)
+
+    assert cfg.execution_profile == "qualified"
+    assert cfg.preflight.enabled is True
+    assert cfg.preflight.execution_probe is True

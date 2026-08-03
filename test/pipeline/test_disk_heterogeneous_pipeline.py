@@ -217,6 +217,8 @@ def test_hydra_heterogeneous_descriptor_builds_native_neighbor_batches(
     assert output.provenance_input["sampling_strategy"] == (
         "heterogeneous-neighbor"
     )
+    assert output.provenance_input["sampler_backend"] == "pyg"
+    assert output.provenance_input["fitted_transform_state_key"] is None
 
     output.datamodule.setup("fit")
     batch = next(iter(output.datamodule.train_dataloader()))

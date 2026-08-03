@@ -10,7 +10,11 @@ from topobench.utils import pylogger
 log = pylogger.RankedLogger(__name__, rank_zero_only=True)
 
 
-def instantiate_callbacks(callbacks_cfg: DictConfig) -> list[Callback]:
+def instantiate_callbacks(
+    callbacks_cfg: DictConfig,
+    *,
+    input_pipeline_monitor: object | None = None,
+) -> list[Callback]:
     r"""Instantiate callbacks from config.
 
     Parameters
@@ -35,7 +39,14 @@ def instantiate_callbacks(callbacks_cfg: DictConfig) -> list[Callback]:
     for cb_conf in callbacks_cfg.values():
         if isinstance(cb_conf, DictConfig) and "_target_" in cb_conf:
             log.info(f"Instantiating callback <{cb_conf._target_}>")
-            callbacks.append(hydra.utils.instantiate(cb_conf))
+            kwargs = {}
+            if (
+                cb_conf._target_
+                == "topobench.callbacks.input_pipeline.InputPipelineCallback"
+                and input_pipeline_monitor is not None
+            ):
+                kwargs["monitor"] = input_pipeline_monitor
+            callbacks.append(hydra.utils.instantiate(cb_conf, **kwargs))
 
     return callbacks
 

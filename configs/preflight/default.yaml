@@ -1,0 +1,6 @@
+enabled: true
+execution_probe: true
+compile_probe: configured
+artifact_payload_probe: true
+prefetch_memory_ceiling_bytes: 536870912
+monitor_nan_policy: null

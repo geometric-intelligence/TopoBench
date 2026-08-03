@@ -35,6 +35,7 @@ from topobench.dataloader.disk_graph import (
     DiskGraphDataModule,
     HomogeneousClusterStrategy,
 )
+from topobench.profiling.execution_events import ExecutionOperation
 from topobench.run import run
 from topobench.utils.config_resolvers import register_all_resolvers
 from topobench.utils.model_instantiation import instantiate_model
@@ -328,6 +329,9 @@ def test_hydra_graph_descriptor_builds_the_standard_disk_pipeline(
     assert output.provenance_input is not None
     assert output.provenance_input["source_graph_id"] == output.source_graph_id
     assert output.provenance_input["active_split_tag"] == "default"
+    assert output.provenance_input["sampling_strategy"] == "homogeneous-cluster"
+    assert output.provenance_input["sampler_backend"] == "pyg"
+    assert output.provenance_input["fitted_transform_state_key"] is None
     assert output.provenance_input["supervision_counts"] == {
         "train": 1,
         "val": 1,
@@ -512,6 +516,12 @@ def test_ordinary_run_shares_one_callback_owned_monitor_before_ingestion(
     assert objects["pipeline_output"].execution_monitor is callback.monitor
     assert objects["datamodule"].execution_monitor is callback.monitor
     assert objects["model"].execution_monitor is callback.monitor
+    conversion_events = [
+        event
+        for event in callback.monitor.drain()
+        if event.operation is ExecutionOperation.CONVERSION
+    ]
+    assert conversion_events
 
 
 @pytest.mark.parametrize(

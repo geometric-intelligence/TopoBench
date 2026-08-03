@@ -28,6 +28,58 @@ from topobench.profiling.execution_events import (
 from topobench.profiling.local_event_log import FsyncPolicy, LocalEventLog
 
 
+def create_input_monitor(
+    event_log_path: str | Path,
+    *,
+    event_capacity: int = 4096,
+    pending_cuda_capacity: int = 256,
+    overflow_policy: OverflowPolicy | str = OverflowPolicy.WARN,
+    sample_every_n: int = 10,
+    sample_offset: int = 0,
+    warmup_steps: int = 20,
+    rolling_window_steps: int = 100,
+    max_input_stall_fraction: float = 0.05,
+    max_consecutive_starved_steps: int = 3,
+    patience_windows: int = 2,
+    stall_action: OverflowPolicy | str = OverflowPolicy.WARN,
+) -> InputMonitor:
+    """Create the monitor shared by pipeline construction and its callback."""
+
+    path = Path(event_log_path)
+
+    def resource_snapshot() -> ResourceSnapshot:
+        maximum_rss = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        if sys.platform != "darwin":
+            maximum_rss *= 1024
+        gpu_bytes: int | None = None
+        import torch
+
+        if torch.cuda.is_available():
+            gpu_bytes = int(torch.cuda.memory_allocated())
+        final_disk_bytes = path.stat().st_size if path.exists() else 0
+        return ResourceSnapshot(
+            rss_bytes=maximum_rss,
+            gpu_bytes=gpu_bytes,
+            final_disk_bytes=final_disk_bytes,
+        )
+
+    return InputMonitor(
+        resource_reader=resource_snapshot,
+        event_capacity=event_capacity,
+        pending_cuda_capacity=pending_cuda_capacity,
+        sample_every_n=sample_every_n,
+        sample_offset=sample_offset,
+        overflow_policy=overflow_policy,
+        warmup_steps=warmup_steps,
+        rolling_window_steps=rolling_window_steps,
+        max_input_stall_fraction=max_input_stall_fraction,
+        max_consecutive_starved_steps=max_consecutive_starved_steps,
+        patience_windows=patience_windows,
+        stall_action=stall_action,
+        report_reference=path.name,
+    )
+
+
 class InputPipelineCallback(Callback):
     """Own monitor startup, local persistence, aggregation, and cleanup."""
 
@@ -52,6 +104,7 @@ class InputPipelineCallback(Callback):
         stall_action: OverflowPolicy | str = OverflowPolicy.WARN,
         max_logger_metrics: int = 64,
         publish_every_n_flushes: int = 1,
+        monitor: InputMonitor | None = None,
     ) -> None:
         super().__init__()
         self.event_log_path = Path(event_log_path)
@@ -103,8 +156,30 @@ class InputPipelineCallback(Callback):
             publish_every_n_flushes,
             "publish_every_n_flushes",
         )
-        self._monitor = InputMonitor(
-            resource_reader=self._resource_snapshot,
+        if monitor is not None and not isinstance(monitor, InputMonitor):
+            raise TypeError("monitor must be an InputMonitor or None")
+        expected_monitor_values = {
+            "event_capacity": self.event_capacity,
+            "pending_cuda_capacity": self.pending_cuda_capacity,
+            "sample_every_n": self.sample_every_n,
+            "sample_offset": self.sample_offset,
+            "overflow_policy": self.overflow_policy,
+            "warmup_steps": self.warmup_steps,
+            "rolling_window_steps": self.rolling_window_steps,
+            "max_input_stall_fraction": self.max_input_stall_fraction,
+            "max_consecutive_starved_steps": self.max_consecutive_starved_steps,
+            "patience_windows": self.patience_windows,
+            "stall_action": self.stall_action,
+            "report_reference": self.event_log_path.name,
+        }
+        if monitor is not None:
+            for name, expected in expected_monitor_values.items():
+                if getattr(monitor, name) != expected:
+                    raise ValueError(
+                        f"adopted monitor {name} does not match callback config"
+                    )
+        self._monitor = monitor or create_input_monitor(
+            self.event_log_path,
             event_capacity=self.event_capacity,
             pending_cuda_capacity=self.pending_cuda_capacity,
             sample_every_n=self.sample_every_n,
@@ -116,7 +191,6 @@ class InputPipelineCallback(Callback):
             max_consecutive_starved_steps=self.max_consecutive_starved_steps,
             patience_windows=self.patience_windows,
             stall_action=self.stall_action,
-            report_reference=self.event_log_path.name,
         )
         self._event_log: LocalEventLog | None = None
         self._summary: ExecutionSummary | None = None
@@ -200,25 +274,6 @@ class InputPipelineCallback(Callback):
             return None
         return lambda: torch.cuda.Event(enable_timing=True)
 
-    def _resource_snapshot(self) -> ResourceSnapshot:
-        maximum_rss = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
-        if sys.platform != "darwin":
-            maximum_rss *= 1024
-        gpu_bytes: int | None = None
-        if self._monitor is not None and self._monitor.cuda_event_factory is not None:
-            import torch
-
-            gpu_bytes = int(torch.cuda.memory_allocated())
-        final_disk_bytes = (
-            self._event_log.path.stat().st_size
-            if self._event_log is not None and self._event_log.path.exists()
-            else 0
-        )
-        return ResourceSnapshot(
-            rss_bytes=maximum_rss,
-            gpu_bytes=gpu_bytes,
-            final_disk_bytes=final_disk_bytes,
-        )
 
     def _start(self, trainer: object, model: object) -> None:
         if self._closed:
