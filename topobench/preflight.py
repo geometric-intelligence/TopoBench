@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import copy
 import math
+import random
 import re
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Iterator
 
+import numpy as np
 import torch
 from lightning import LightningDataModule, LightningModule
 from omegaconf import DictConfig, OmegaConf
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch_geometric.data import Data, HeteroData
 
 from topobench.evaluator import EvaluationResult, UndefinedMetricError
@@ -269,7 +273,7 @@ class PreflightRunner:
         model_factory: Callable[[], LightningModule],
         static_result: PreflightResult,
     ) -> PreflightResult:
-        """Exercise real production model boundaries with throwaway state."""
+        """Exercise production boundaries with fully disposable runtime state."""
         if not isinstance(static_result, PreflightResult) or not static_result.passed:
             raise ValueError("static_result must be a passing PreflightResult")
         if static_result.enabled is False:
@@ -309,7 +313,14 @@ class PreflightRunner:
                 "return the production LightningDataModule from the data pipeline",
             )
 
+        runtime_state = _snapshot_runtime_state()
         model: LightningModule | None = None
+        optimizer: Optimizer | None = None
+        scheduler: object | None = None
+        scheduler_config: Mapping[str, Any] = {}
+        scheduler_stepped = False
+        phase_losses: dict[str, torch.Tensor] = {}
+        payloads: list[Mapping[str, object]] = []
         try:
             model = model_factory()
             if not isinstance(model, LightningModule):
@@ -323,6 +334,17 @@ class PreflightRunner:
 
             device = _configured_probe_device(self._resolved)
             model.to(device)
+            if "train" in phases:
+                configure_optimizers = getattr(model, "configure_optimizers", None)
+                if not callable(configure_optimizers):
+                    raise TypeError("throwaway model must configure an optimizer")
+                optimizer, scheduler, scheduler_config = _optimizer_components(
+                    configure_optimizers()
+                )
+            setup = getattr(model, "setup", None)
+            if callable(setup):
+                setup("fit" if "train" in phases else "test")
+
             with _representative_batches(datamodule, phases) as batches:
                 for phase in phases:
                     batch = batches[phase]
@@ -334,6 +356,12 @@ class PreflightRunner:
                     _start_evaluation_phase(model, phase)
                     model.train(phase == "train")
                     try:
+                        if phase == "train":
+                            if optimizer is None:
+                                raise RuntimeError(
+                                    "training probe has no throwaway optimizer"
+                                )
+                            optimizer.zero_grad(set_to_none=True)
                         context = (
                             torch.enable_grad()
                             if phase == "train"
@@ -343,7 +371,48 @@ class PreflightRunner:
                             model_out = model.model_step(transferred)
                         if not isinstance(model_out, Mapping):
                             raise TypeError("model_step must return a mapping")
-                        _require_finite_loss(model_out.get("loss"), phase)
+                        loss = _require_finite_loss(model_out.get("loss"), phase)
+                        phase_losses[phase] = loss.detach()
+                        payloads.append(
+                            _validate_nonpublishing_prediction_payload(
+                                model_out,
+                                phase=phase,
+                                device=device,
+                                pipeline_output=self._pipeline_output,
+                            )
+                        )
+                        if phase == "train":
+                            loss.backward()
+                            _require_finite_gradients(model)
+                            optimizer_closure = lambda: loss
+                            success_token_before = getattr(
+                                model,
+                                "dataloader_optimizer_success_token",
+                                None,
+                            )
+                            model.optimizer_step(
+                                epoch=0,
+                                batch_idx=0,
+                                optimizer=optimizer,
+                                optimizer_closure=optimizer_closure,
+                            )
+                            if isinstance(success_token_before, int):
+                                success_token_after = getattr(
+                                    model,
+                                    "dataloader_optimizer_success_token",
+                                    None,
+                                )
+                                if success_token_after != success_token_before + 1:
+                                    raise RuntimeError(
+                                        "model optimizer hook did not prove one successful step"
+                                    )
+                            if (
+                                scheduler is not None
+                                and scheduler_config.get("interval", "epoch")
+                                == "step"
+                            ):
+                                _step_probe_scheduler(scheduler, loss.detach())
+                                scheduler_stepped = True
                         try:
                             snapshot = model.evaluator.snapshot()
                         except UndefinedMetricError as error:
@@ -366,6 +435,26 @@ class PreflightRunner:
                                 )
                     finally:
                         model.abort_evaluation()
+
+            if (
+                scheduler is not None
+                and not scheduler_stepped
+                and "train" in phases
+            ):
+                scheduler_loss = phase_losses.get(
+                    "val",
+                    phase_losses.get("train"),
+                )
+                if scheduler_loss is None:
+                    raise RuntimeError(
+                        "scheduler probe requires a semantically valid loss"
+                    )
+                _step_probe_scheduler(scheduler, scheduler_loss)
+                scheduler_stepped = True
+            _validate_structured_probe_payloads(
+                payloads,
+                pipeline_output=self._pipeline_output,
+            )
         except Exception as error:
             if model is not None:
                 abort = getattr(model, "abort_evaluation", None)
@@ -377,10 +466,51 @@ class PreflightRunner:
             self._probe_failure(
                 static_result,
                 f"isolated execution probe failed: {type(error).__name__}: {error}",
-                "repair the reported data/model/supervision/loss/evaluator boundary",
+                "repair the reported data/model/supervision/loss/evaluator/optimizer boundary",
                 cause=error,
             )
+        finally:
+            if model is not None:
+                try:
+                    model.to(torch.device("cpu"))
+                except Exception:
+                    pass
+            scheduler = None
+            optimizer = None
+            model = None
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            _restore_runtime_state(runtime_state)
 
+        configured_compile = bool(
+            "train" in phases
+            and _select(self._resolved, "model.compile", False)
+        )
+        training_checks = (
+            (
+                PreflightCheck(
+                    "execution.gradient",
+                    True,
+                    "training loss produced nonempty finite gradients",
+                ),
+                PreflightCheck(
+                    "execution.optimizer",
+                    True,
+                    "throwaway optimizer constructed and completed one step",
+                ),
+                PreflightCheck(
+                    "execution.scheduler",
+                    True,
+                    (
+                        "configured scheduler constructed and stepped"
+                        if scheduler_stepped
+                        else "no scheduler was configured"
+                    ),
+                ),
+            )
+            if "train" in phases
+            else ()
+        )
         return PreflightResult(
             enabled=True,
             qualified=static_result.qualified,
@@ -389,7 +519,34 @@ class PreflightRunner:
                 PreflightCheck(
                     "execution.representative_batch",
                     True,
-                    "throwaway forward, supervision, loss, and typed metric update passed",
+                    "one non-committing native batch per enabled phase passed",
+                ),
+            )
+            + training_checks
+            + (
+                PreflightCheck(
+                    "execution.compile",
+                    True,
+                    (
+                        "configured compile path executed"
+                        if configured_compile
+                        else "compile disabled and no compile path requested"
+                    ),
+                ),
+                PreflightCheck(
+                    "execution.structured_checks",
+                    True,
+                    "bounded structured execution payload validated without emission",
+                ),
+                PreflightCheck(
+                    "execution.reproducibility_payload",
+                    True,
+                    "reproducibility payload validated without publication",
+                ),
+                PreflightCheck(
+                    "execution.prediction_payload",
+                    True,
+                    "prediction payload schema validated without publication",
                 ),
             ),
         )
@@ -1085,6 +1242,195 @@ def _is_sha256(value: object) -> bool:
     return isinstance(value, str) and _SHA256.fullmatch(value) is not None
 
 
+@dataclass(frozen=True, slots=True)
+class _RuntimeState:
+    python_rng: object
+    numpy_rng: object
+    torch_cpu_rng: torch.Tensor
+    torch_cuda_rng: tuple[torch.Tensor, ...]
+    default_dtype: torch.dtype
+    grad_enabled: bool
+    cudnn_benchmark: bool
+    cudnn_deterministic: bool
+    deterministic_algorithms: bool
+    deterministic_warn_only: bool
+    float32_matmul_precision: str
+
+
+def _snapshot_runtime_state() -> _RuntimeState:
+    return _RuntimeState(
+        python_rng=random.getstate(),
+        numpy_rng=copy.deepcopy(np.random.get_state()),
+        torch_cpu_rng=torch.random.get_rng_state().clone(),
+        torch_cuda_rng=tuple(
+            state.clone() for state in torch.cuda.get_rng_state_all()
+        ),
+        default_dtype=torch.get_default_dtype(),
+        grad_enabled=torch.is_grad_enabled(),
+        cudnn_benchmark=torch.backends.cudnn.benchmark,
+        cudnn_deterministic=torch.backends.cudnn.deterministic,
+        deterministic_algorithms=torch.are_deterministic_algorithms_enabled(),
+        deterministic_warn_only=(
+            torch.is_deterministic_algorithms_warn_only_enabled()
+        ),
+        float32_matmul_precision=torch.get_float32_matmul_precision(),
+    )
+
+
+def _restore_runtime_state(state: _RuntimeState) -> None:
+    random.setstate(state.python_rng)
+    np.random.set_state(state.numpy_rng)
+    torch.random.set_rng_state(state.torch_cpu_rng)
+    if state.torch_cuda_rng:
+        torch.cuda.set_rng_state_all(list(state.torch_cuda_rng))
+    torch.set_default_dtype(state.default_dtype)
+    torch.set_grad_enabled(state.grad_enabled)
+    torch.backends.cudnn.benchmark = state.cudnn_benchmark
+    torch.backends.cudnn.deterministic = state.cudnn_deterministic
+    torch.use_deterministic_algorithms(
+        state.deterministic_algorithms,
+        warn_only=state.deterministic_warn_only,
+    )
+    torch.set_float32_matmul_precision(state.float32_matmul_precision)
+
+
+def _optimizer_components(
+    configured: object,
+) -> tuple[Optimizer, object | None, Mapping[str, Any]]:
+    if isinstance(configured, Optimizer):
+        return configured, None, {}
+    if not isinstance(configured, Mapping):
+        raise TypeError(
+            "configure_optimizers must return one optimizer or a mapping"
+        )
+    optimizer = configured.get("optimizer")
+    if not isinstance(optimizer, Optimizer):
+        raise TypeError("configure_optimizers did not return one optimizer")
+    scheduler_value = configured.get("lr_scheduler")
+    if scheduler_value is None:
+        return optimizer, None, {}
+    if isinstance(scheduler_value, Mapping):
+        scheduler = scheduler_value.get("scheduler")
+        scheduler_config = scheduler_value
+    else:
+        scheduler = scheduler_value
+        scheduler_config = {}
+    if scheduler is None or not callable(getattr(scheduler, "step", None)):
+        raise TypeError("configured scheduler must expose step")
+    return optimizer, scheduler, scheduler_config
+
+
+def _step_probe_scheduler(
+    scheduler: object,
+    metric: torch.Tensor,
+) -> None:
+    step = getattr(scheduler, "step", None)
+    if not callable(step):
+        raise TypeError("configured scheduler must expose step")
+    if isinstance(scheduler, ReduceLROnPlateau):
+        step(float(metric.detach().cpu().item()))
+    else:
+        step()
+
+
+def _require_finite_gradients(model: LightningModule) -> None:
+    gradients = [
+        parameter.grad
+        for parameter in model.parameters()
+        if parameter.requires_grad and parameter.grad is not None
+    ]
+    if not gradients:
+        raise ValueError("training probe produced no gradients")
+    if any(not bool(torch.isfinite(gradient).all()) for gradient in gradients):
+        raise ValueError("training probe gradients are not finite")
+
+
+def _validate_nonpublishing_prediction_payload(
+    model_out: Mapping[str, Any],
+    *,
+    phase: str,
+    device: torch.device,
+    pipeline_output: object,
+) -> Mapping[str, object]:
+    logits = model_out.get("logits")
+    labels = model_out.get("labels")
+    if not isinstance(logits, torch.Tensor) or not isinstance(
+        labels,
+        torch.Tensor,
+    ):
+        raise TypeError("prediction payload requires tensor logits and labels")
+    if logits.ndim == 0 or labels.ndim == 0:
+        raise ValueError("prediction payload tensors require a leading dimension")
+    if logits.shape[0] != labels.shape[0]:
+        raise ValueError("prediction payload logits and labels are misaligned")
+    if not bool(torch.isfinite(logits).all()):
+        raise ValueError("prediction payload logits are not finite")
+    payload: dict[str, object] = {
+        "phase": phase,
+        "device": str(device),
+        "num_examples": int(labels.shape[0]),
+        "logit_shape": tuple(int(value) for value in logits.shape),
+        "label_shape": tuple(int(value) for value in labels.shape),
+        "logit_dtype": str(logits.dtype),
+        "label_dtype": str(labels.dtype),
+    }
+    resolver = getattr(pipeline_output, "prediction_identity_resolver", None)
+    if resolver is not None:
+        resolve = getattr(resolver, "resolve", None)
+        batch = model_out.get("batch")
+        if not callable(resolve) or not isinstance(batch, (Data, HeteroData)):
+            raise TypeError(
+                "prediction identity resolver requires the native model batch"
+            )
+        identities = resolve(batch, phase=phase)
+        if len(identities) != int(labels.shape[0]):
+            raise ValueError(
+                "prediction identities do not align with supervised outputs"
+            )
+        payload["canonical_identity_count"] = len(identities)
+    return payload
+
+
+def _canonical_probe_value(value: object) -> None:
+    if value is None or type(value) in {bool, int, float, str}:
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError("structured probe payload contains a nonfinite value")
+        return
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if not isinstance(key, str) or not key:
+                raise TypeError("structured probe payload keys must be strings")
+            _canonical_probe_value(item)
+        return
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        for item in value:
+            _canonical_probe_value(item)
+        return
+    raise TypeError(
+        f"structured probe payload contains {type(value).__name__}"
+    )
+
+
+def _validate_structured_probe_payloads(
+    payloads: Sequence[Mapping[str, object]],
+    *,
+    pipeline_output: object,
+) -> None:
+    if not payloads:
+        raise ValueError("execution probe produced no structured payloads")
+    reproducibility = {
+        "source_graph_id": getattr(pipeline_output, "source_graph_id", None),
+        "active_split_tag": getattr(
+            pipeline_output,
+            "active_split_tag",
+            None,
+        ),
+        "phase_count": len(payloads),
+    }
+    _canonical_probe_value(tuple(payloads))
+    _canonical_probe_value(reproducibility)
+
+
 def _configured_probe_device(cfg: Mapping[str, Any]) -> torch.device:
     accelerator = _select(cfg, "trainer.accelerator", "cpu")
     if accelerator == "auto":
@@ -1123,6 +1469,27 @@ def _representative_batches(
     datamodule: LightningDataModule,
     phases: Sequence[str],
 ) -> Iterator[dict[str, Data | HeteroData]]:
+    provider = getattr(datamodule, "noncommitting_probe_batches", None)
+    if callable(provider):
+        with provider(tuple(phases)) as provided:
+            if not isinstance(provided, Mapping):
+                raise TypeError(
+                    "noncommitting probe provider must yield a phase mapping"
+                )
+            if tuple(provided) != tuple(phases):
+                raise ValueError(
+                    "noncommitting probe provider returned unexpected phases"
+                )
+            batches = dict(provided)
+            if any(
+                not isinstance(batch, (Data, HeteroData))
+                for batch in batches.values()
+            ):
+                raise TypeError(
+                    "noncommitting probe provider must yield native batches"
+                )
+            yield batches
+        return
     state = _snapshot_datamodule(datamodule)
     iterators: list[Iterator[Any]] = []
     loaders: list[object] = []
@@ -1204,11 +1571,12 @@ def _start_evaluation_phase(model: LightningModule, phase: str) -> None:
     hook()
 
 
-def _require_finite_loss(value: object, phase: str) -> None:
+def _require_finite_loss(value: object, phase: str) -> torch.Tensor:
     if not isinstance(value, torch.Tensor) or value.numel() != 1:
         raise TypeError(f"{phase} loss must be a scalar tensor")
     if not math.isfinite(float(value.detach().cpu().item())):
         raise ValueError(f"{phase} loss is not finite")
+    return value
 
 
 __all__ = [

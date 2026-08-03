@@ -5,12 +5,13 @@ from __future__ import annotations
 import math
 import time
 from abc import ABC, abstractmethod
+from contextlib import AbstractContextManager
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from numbers import Integral, Real
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Literal, TypeAlias
+from typing import Any, Literal, Protocol, TypeAlias, runtime_checkable
 
 import hydra
 import torch
@@ -263,6 +264,18 @@ class PredictionIdentityResolver:
             if store.output_kind != self.output_kind:
                 raise ValueError("prediction identity store output kind changed")
             return tuple(store.external_ids(self.target_node_type, ordinals))
+
+
+@runtime_checkable
+class NonCommittingBatchProvider(Protocol):
+    """Data-module boundary for isolated representative phase batches."""
+
+    def noncommitting_probe_batches(
+        self,
+        phases: Sequence[Phase],
+    ) -> AbstractContextManager[Mapping[Phase, Data | HeteroData]]:
+        """Return one native batch per phase without advancing durable state."""
+        ...
 
 
 @dataclass(frozen=True)

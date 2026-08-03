@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import contextmanager
 from collections.abc import Iterator, Mapping, Sequence
 from importlib import metadata
 from numbers import Integral
@@ -553,6 +554,64 @@ class HeterogeneousNodeDataModule(LightningDataModule):
         if self.mode == "full_batch":
             return self._full_loader()
         return self._neighbor_loader(phase)
+
+    @contextmanager
+    def noncommitting_probe_batches(
+        self,
+        phases: Sequence[str],
+    ) -> Iterator[dict[str, HeteroData]]:
+        """Sample through a throwaway module without retaining loaders or RNG."""
+        requested = tuple(phases)
+        if not requested or any(
+            phase not in {"train", "val", "test"} for phase in requested
+        ):
+            raise ValueError("probe phases must contain train, val, and/or test")
+        rng_state = torch.random.get_rng_state().clone()
+        probe = HeterogeneousNodeDataModule(
+            self.data,
+            self.spec,
+            mode=self.mode,
+            batch_size=self.batch_size,
+            num_neighbors=self.num_neighbors,
+            num_workers=self.num_workers,
+            pin_memory=self.pin_memory,
+            persistent_workers=False,
+            train_shuffle=self.train_shuffle,
+            replace=self.replace,
+            subgraph_type=self.subgraph_type,
+            filter_per_worker=self.filter_per_worker,
+            evaluation_protocol=self.evaluation_protocol,
+            evaluation_seed=self.evaluation_seed,
+        )
+        iterators: list[Iterator[HeteroData]] = []
+        batches: dict[str, HeteroData] = {}
+        try:
+            for phase in requested:
+                loader = getattr(probe, f"{phase}_dataloader")()
+                iterator = iter(loader)
+                iterators.append(iterator)
+                try:
+                    batches[phase] = next(iterator)
+                except StopIteration as error:
+                    raise ValueError(
+                        f"{phase} dataloader has no representative batch"
+                    ) from error
+            yield batches
+        finally:
+            for iterator in iterators:
+                worker_iterator = getattr(iterator, "iterator", iterator)
+                shutdown = getattr(worker_iterator, "_shutdown_workers", None)
+                if callable(shutdown):
+                    shutdown()
+                close = getattr(iterator, "close", None)
+                if callable(close):
+                    close()
+            for loader in probe._evaluation_loaders.values():
+                close = getattr(loader, "close", None)
+                if callable(close):
+                    close()
+            probe._evaluation_loaders.clear()
+            torch.random.set_rng_state(rng_state)
 
     def train_dataloader(self) -> DataLoader | NeighborLoader:
         """Return a fresh training loader."""

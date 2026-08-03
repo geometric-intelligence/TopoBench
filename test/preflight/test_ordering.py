@@ -402,4 +402,20 @@ def test_isolated_probe_uses_real_model_supervision_loss_and_typed_evaluator() -
 
     assert result.passed is True
     assert result.qualified is True
-    assert result.checks[-1].check_id == "execution.representative_batch"
+    execution_checks = tuple(
+        check for check in result.checks if check.check_id.startswith("execution.")
+    )
+    assert tuple(check.check_id for check in execution_checks) == (
+        "execution.representative_batch",
+        "execution.gradient",
+        "execution.optimizer",
+        "execution.scheduler",
+        "execution.compile",
+        "execution.structured_checks",
+        "execution.reproducibility_payload",
+        "execution.prediction_payload",
+    )
+    assert all(check.passed for check in execution_checks)
+    assert len({check.check_id for check in execution_checks}) == len(
+        execution_checks
+    )

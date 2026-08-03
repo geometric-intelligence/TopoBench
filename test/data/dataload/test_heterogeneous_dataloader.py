@@ -14,6 +14,7 @@ import torch
 from omegaconf import OmegaConf
 from torch_geometric.data import HeteroData
 from torch_geometric.loader import DataLoader, NeighborLoader
+from test.preflight.test_data_probe import make_observations, run_probe
 
 from topobench.data.datasets import make_synthetic_heterogeneous_data
 from topobench.data.heterogeneous import (
@@ -1204,3 +1205,72 @@ def test_large_many_batch_evaluation_streams_before_sampler_exhaustion(
             for value in vars(owner).values()
         )
     iterator.close()
+
+
+def test_preflight_reads_each_full_batch_phase_without_mutating_graph(
+    heterogeneous_data: HeteroData,
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """Task8 probes all active phases through native full-graph loaders."""
+    datamodule = HeterogeneousNodeDataModule(
+        heterogeneous_data,
+        heterogeneous_spec,
+        mode="full_batch",
+    )
+    canonical_before = _batch_tensor_signature(heterogeneous_data)
+    observations = make_observations()
+
+    result = run_probe(datamodule, observations)
+
+    assert result.passed
+    assert [
+        event.removeprefix("forward:")
+        for event in observations["events"]
+        if event.startswith("forward:")
+    ] == ["train", "val", "test"]
+    assert _batch_tensor_signature(heterogeneous_data) == canonical_before
+
+
+def test_preflight_preserves_first_canonical_neighbor_batch_and_rng(
+    heterogeneous_data: HeteroData,
+    heterogeneous_spec: HeterogeneousDataSpec,
+) -> None:
+    """Task8 cannot advance the first shuffled production seed descriptor."""
+    control = HeterogeneousNodeDataModule(
+        heterogeneous_data,
+        heterogeneous_spec,
+        mode="neighbor",
+        num_neighbors=[3, 2],
+        batch_size=4,
+        train_shuffle=True,
+        evaluation_seed=73,
+    )
+    probed = HeterogeneousNodeDataModule(
+        heterogeneous_data,
+        heterogeneous_spec,
+        mode="neighbor",
+        num_neighbors=[3, 2],
+        batch_size=4,
+        train_shuffle=True,
+        evaluation_seed=73,
+    )
+
+    torch.manual_seed(448)
+    expected = _batch_tensor_signature(next(iter(control.train_dataloader())))
+    torch.manual_seed(448)
+    rng_before = torch.random.get_rng_state().clone()
+    descriptors_before = {
+        phase: probed.evaluation_settings_descriptor(phase)
+        for phase in ("val", "test")
+    }
+
+    result = run_probe(probed, make_observations())
+
+    assert result.passed
+    assert torch.equal(torch.random.get_rng_state(), rng_before)
+    actual = _batch_tensor_signature(next(iter(probed.train_dataloader())))
+    assert actual == expected
+    assert {
+        phase: probed.evaluation_settings_descriptor(phase)
+        for phase in ("val", "test")
+    } == descriptors_before

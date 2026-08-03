@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 from copy import copy
+from contextlib import contextmanager
 from dataclasses import dataclass
 from numbers import Integral
+from collections.abc import Iterator, Sequence
 from typing import Literal
 
 import torch
@@ -430,6 +432,49 @@ class GraphDataModule(LightningDataModule):
             shuffle=shuffle,
             **self.loader_kwargs,
         )
+
+    @contextmanager
+    def noncommitting_probe_batches(
+        self,
+        phases: Sequence[str],
+    ) -> Iterator[dict[str, Data]]:
+        """Yield one phase batch while restoring loader RNG and releasing workers."""
+        requested = tuple(phases)
+        if not requested or any(
+            phase not in {"train", "val", "test"} for phase in requested
+        ):
+            raise ValueError("probe phases must contain train, val, and/or test")
+        rng_state = torch.random.get_rng_state().clone()
+        iterators: list[Iterator[Data]] = []
+        batches: dict[str, Data] = {}
+        try:
+            for phase in requested:
+                loader = getattr(self, f"{phase}_dataloader")()
+                iterator = iter(loader)
+                iterators.append(iterator)
+                try:
+                    batch = next(iterator)
+                    disposable = batch.clone()
+                    batches[phase] = (
+                        mark_hypergraph_validated(disposable)
+                        if has_hypergraph_validation(batch)
+                        else disposable
+                    )
+                except StopIteration as error:
+                    raise ValueError(
+                        f"{phase} dataloader has no representative batch"
+                    ) from error
+            yield batches
+        finally:
+            for iterator in iterators:
+                worker_iterator = getattr(iterator, "iterator", iterator)
+                shutdown = getattr(worker_iterator, "_shutdown_workers", None)
+                if callable(shutdown):
+                    shutdown()
+                close = getattr(iterator, "close", None)
+                if callable(close):
+                    close()
+            torch.random.set_rng_state(rng_state)
 
     def train_dataloader(self) -> TorchDataLoader | GeometricDataLoader:
         """Return the training graph loader."""

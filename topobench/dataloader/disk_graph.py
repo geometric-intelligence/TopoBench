@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import copy
+import inspect
 import hashlib
 import json
 import os
 import time
-from collections.abc import Iterable, Mapping, Sequence
+import tempfile
+from contextlib import contextmanager
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, fields as dataclass_fields, is_dataclass, replace
 from importlib import metadata
 from numbers import Integral
@@ -1973,6 +1976,43 @@ def _identity(value: NativeBatch) -> NativeBatch:
     return value
 
 
+def _new_probe_transform(
+    transform: FittableTransform | None,
+) -> FittableTransform | None:
+    """Construct an unfitted transform with the same canonical configuration."""
+    if transform is None:
+        return None
+    config = dict(transform.canonical_config())
+    config.pop("variance_edge_convention", None)
+    signature = inspect.signature(type(transform))
+    explicit = {
+        name: value
+        for name, value in config.items()
+        if name in signature.parameters
+        and signature.parameters[name].kind
+        not in {
+            inspect.Parameter.VAR_POSITIONAL,
+            inspect.Parameter.VAR_KEYWORD,
+        }
+    }
+    attempts = (explicit, config, {})
+    last_error: TypeError | None = None
+    clone: object | None = None
+    for kwargs in attempts:
+        try:
+            clone = type(transform)(**kwargs)
+            break
+        except TypeError as error:
+            last_error = error
+    if not isinstance(clone, FittableTransform):
+        raise TypeError(
+            "fitted transform cannot construct an isolated probe instance"
+        ) from last_error
+    if clone.status is not FitStatus.UNFITTED:
+        raise RuntimeError("isolated fitted transform must start unfitted")
+    return clone
+
+
 class DiskGraphDataModule(LightningDataModule):
     """Own one validated source and one strategy across all phase loaders."""
 
@@ -2548,6 +2588,72 @@ class DiskGraphDataModule(LightningDataModule):
                     monitor_split=phase,
                 )
         return self._loaders[phase]
+
+    @contextmanager
+    def noncommitting_probe_batches(
+        self,
+        phases: Sequence[str],
+    ) -> Iterator[dict[str, NativeBatch]]:
+        """Materialize representative batches through a disposable runtime."""
+        requested = tuple(_phase(phase) for phase in phases)
+        if not requested:
+            raise ValueError("probe phases must not be empty")
+        source: str | Path | SamplingSource
+        if self._owner is None:
+            source = _clone_materialized(self._materialized_reference())
+        else:
+            source = self._owner.path
+        strategy = copy.deepcopy(self.strategy)
+        if hasattr(strategy, "_admission"):
+            strategy._admission = None
+        transform = _new_probe_transform(self.fitted_transform)
+        allow_fit = "train" in requested
+        iterators: list[Iterator[NativeBatch]] = []
+        probe: DiskGraphDataModule | None = None
+        with tempfile.TemporaryDirectory(prefix="topobench-preflight-fit-") as root:
+            try:
+                probe = DiskGraphDataModule(
+                    source,
+                    strategy,
+                    active_split_tag=self.active_split_tag,
+                    num_workers=0,
+                    persistent_workers=False,
+                    train_shuffle=self.train_shuffle,
+                    fitted_transform=transform,
+                    fitted_state_root=(
+                        (
+                            Path(root) / "fitted"
+                            if allow_fit
+                            else self.fitted_state_root
+                        )
+                        if transform is not None
+                        else None
+                    ),
+                    supervised_fit=self.supervised_fit,
+                    prefetch_limits=None,
+                    execution_monitor=None,
+                )
+                if transform is not None:
+                    probe._ensure_fitted(allow_fit=allow_fit)
+                batches: dict[str, NativeBatch] = {}
+                for phase in requested:
+                    loader = getattr(probe, f"{phase}_dataloader")()
+                    iterator = iter(loader)
+                    iterators.append(iterator)
+                    try:
+                        batches[phase] = next(iterator)
+                    except StopIteration as error:
+                        raise ValueError(
+                            f"{phase} dataloader has no representative batch"
+                        ) from error
+                yield batches
+            finally:
+                for iterator in iterators:
+                    close = getattr(iterator, "close", None)
+                    if callable(close):
+                        close()
+                if probe is not None:
+                    probe.close()
 
     def train_dataloader(self) -> DataLoader[NativeBatch] | DevicePrefetchLoader:
         return self._loader("train")
