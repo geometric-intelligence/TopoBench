@@ -152,6 +152,9 @@ class TypedPartitionBuild:
     stage_root: Path
     artifact_root: Path
     book: TypedPartitionBook
+    limits: PartitionQualificationLimits
+    binding: Mapping[str, Any]
+    evidence: Mapping[str, Any]
     resumed: bool
 
 
@@ -611,12 +614,31 @@ class TopologyOnlyPyGPartitioner:
                             limits,
                             work_parent=publish_parent,
                         )
+                        assignments, identity, stored_limits = _read_subtree(
+                            self.topology_context,
+                            artifact,
+                        )
+                        book = _qualified_book(
+                            self.topology_context,
+                            assignments,
+                            stored_limits,
+                            backend=identity["backend"],
+                            estimated_resources=identity[
+                                "estimated_resources"
+                            ],
+                            measured_resources=identity[
+                                "measured_resources"
+                            ],
+                        )
                     return TypedPartitionBuild(
-                        self.relation_build.inventory,
-                        self.relation_build.stage_root,
-                        artifact,
-                        book,
-                        True,
+                        inventory=self.relation_build.inventory,
+                        stage_root=self.relation_build.stage_root,
+                        artifact_root=artifact,
+                        book=book,
+                        limits=stored_limits,
+                        binding=_immutable_json(identity),
+                        evidence=_partition_evidence(book, stored_limits),
+                        resumed=True,
                     )
             try: book = self.generate(limits)
             except _ingestion().ArtifactValidationError:
@@ -636,7 +658,28 @@ class TopologyOnlyPyGPartitioner:
                 limits,
                 work_parent=publish_parent,
             )
-            return TypedPartitionBuild(self.relation_build.inventory, self.relation_build.stage_root, artifact, book, False)
+            assignments, identity, stored_limits = _read_subtree(
+                self.topology_context,
+                artifact,
+            )
+            reopened_book = _qualified_book(
+                self.topology_context,
+                assignments,
+                stored_limits,
+                backend=identity["backend"],
+                estimated_resources=identity["estimated_resources"],
+                measured_resources=identity["measured_resources"],
+            )
+            return TypedPartitionBuild(
+                inventory=self.relation_build.inventory,
+                stage_root=self.relation_build.stage_root,
+                artifact_root=artifact,
+                book=reopened_book,
+                limits=stored_limits,
+                binding=_immutable_json(identity),
+                evidence=_partition_evidence(reopened_book, stored_limits),
+                resumed=False,
+            )
 
 
 def _partition_worker(request_name: str, response_name: str) -> None:
@@ -1198,6 +1241,37 @@ def _identity_record(
         "content_identity": book.content_identity,
         "limits_fingerprint": limits.fingerprint,
     }
+
+
+def _immutable_json(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return MappingProxyType(
+            {
+                str(key): _immutable_json(item)
+                for key, item in value.items()
+            }
+        )
+    if isinstance(value, (list, tuple)):
+        return tuple(_immutable_json(item) for item in value)
+    return value
+
+
+def _partition_evidence(
+    book: TypedPartitionBook,
+    limits: PartitionQualificationLimits,
+) -> Mapping[str, Any]:
+    return _immutable_json(
+        {
+            "statistics": book.statistics.as_record(),
+            "qualification": {
+                "limits": limits.as_record(),
+                "checks": tuple(
+                    check.as_record()
+                    for check in book.qualification_checks
+                ),
+            },
+        }
+    )
 
 
 def _publish_subtree(

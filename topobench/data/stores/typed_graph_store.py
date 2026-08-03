@@ -87,7 +87,7 @@ class TypedGraphStoreWriter:
         self.execution_monitor = execution_monitor
 
     def build(self) -> TypedGraphStoreBuild:
-        """Reopen Task1-6 under its lock, validate, and atomically promote."""
+        """Reopen, validate, and promote under one content-addressed lock."""
         inventory = self.partition_build.inventory
         expected_stage = self.ingestor.stage_root(inventory)
         if (
@@ -97,87 +97,149 @@ class TypedGraphStoreWriter:
             raise _artifact_error(
                 "STALE-BINDING-001: Task6 build does not belong to this ingestor"
             )
+        original_partition_build = self.partition_build
+        recovered_partition_build = self._recover_partition_build()
+        self.partition_build = recovered_partition_build
+        inventory = recovered_partition_build.inventory
         staging_parent = self.ingestor.store_root / ".staging"
         staging_parent.mkdir(parents=True, exist_ok=True)
-        candidate = staging_parent / f"finalize-{uuid.uuid4().hex}"
-        quarantine: Path | None = None
-        candidate.mkdir(parents=False, exist_ok=False)
+        namespace = staging_parent / f".finalize-{expected_stage.name}"
+        candidate: Path | None = None
         try:
             with self.ingestor._build_lock(self.ingestor.lock_path(inventory)):
+                self._prepare_candidate_namespace(namespace)
+                candidate = namespace / f"finalize-{uuid.uuid4().hex}"
+                candidate.mkdir(parents=False, exist_ok=False)
                 reopened = self._reopen_task1_6_locked()
                 self._materialize_candidate(candidate, reopened)
-            manifest_path = candidate / "manifest.json"
-            manifest = _read_json(manifest_path)
-            content_sha256 = compute_content_identity(manifest)
-            manifest["content_sha256"] = content_sha256
-            _write_json(manifest_path, manifest)
-            validated = validate_store(
-                candidate,
-                expected_bindings=self.task_bindings,
-                require_directory_identity=False,
-            )
-            target = self.ingestor.store_root / content_sha256
-            if not _same_filesystem(candidate, self.ingestor.store_root):
-                raise _artifact_error(
-                    "PROMOTION-FILESYSTEM-001: final staging is not on the store filesystem"
-                )
-            if os.path.lexists(target):
-                try:
-                    existing = validate_store(
-                        target,
-                        expected_bindings=self.task_bindings,
-                        require_directory_identity=True,
-                        execution_monitor=self.execution_monitor,
-                    )
-                except QualificationFailure:
-                    if target.is_symlink() or not target.is_dir():
-                        raise _artifact_error(
-                            "UNSAFE-STORE-001: colliding final path is not a real directory"
-                        )
-                    quarantine = self.ingestor.store_root / (
-                        f".quarantine-{content_sha256}-{uuid.uuid4().hex}"
-                    )
-                    target.chmod(0o755)
-                    try:
-                        os.replace(target, quarantine)
-                    except BaseException:
-                        target.chmod(0o555)
-                        raise
-                    quarantine.chmod(0o555)
-                    _fsync_directory(self.ingestor.store_root)
-                else:
-                    shutil.rmtree(candidate)
-                    return TypedGraphStoreBuild(
-                        target,
-                        content_sha256,
-                        True,
-                        None,
-                        existing.report,
-                        TypedGraphStore(existing),
-                    )
-            _make_read_only(candidate, movable_root=True)
-            _fsync_tree(candidate)
-            os.replace(candidate, target)
-            target.chmod(0o555)
-            _fsync_directory(target)
-            _fsync_directory(self.ingestor.store_root)
-            promoted = validate_store(
-                target,
-                expected_bindings=self.task_bindings,
-                require_directory_identity=True,
-                execution_monitor=self.execution_monitor,
-            )
-            return TypedGraphStoreBuild(
-                target,
-                content_sha256,
-                False,
-                quarantine,
-                promoted.report,
-                TypedGraphStore(promoted),
-            )
+                return self._promote_candidate(candidate)
         finally:
-            if candidate.exists():
+            if candidate is not None and candidate.exists():
                 shutil.rmtree(candidate, ignore_errors=True)
+            recovered_book = recovered_partition_build.book
+            if recovered_book is not original_partition_build.book:
+                close = getattr(recovered_book, "close", None)
+                if callable(close):
+                    close()
+            self.partition_build = original_partition_build
+
+    def _recover_partition_build(self) -> TypedPartitionBuild:
+        """Revalidate Task6 before reusing its trusted finalization contract."""
+        trusted = self.partition_build
+        recovered = self.ingestor.build_partitions(limits=trusted.limits)
+        if (
+            recovered.book.content_identity
+            != trusted.book.content_identity
+            or recovered.limits != trusted.limits
+            or recovered.binding != trusted.binding
+            or recovered.evidence != trusted.evidence
+        ):
+            raise _artifact_error(
+                "PARTITION-FINGERPRINT-001: Task6 binding or evidence "
+                "changed before finalization"
+            )
+        return recovered
+
+    @staticmethod
+    def _prepare_candidate_namespace(namespace: Path) -> None:
+        """Remove same-identity crash remnants while its content lock is held."""
+        if os.path.lexists(namespace):
+            if namespace.is_symlink() or not namespace.is_dir():
+                raise _artifact_error(
+                    "UNSAFE-STAGING-001: finalization namespace is not a directory"
+                )
+            for child in namespace.iterdir():
+                if (
+                    child.name == ".qualification-reports"
+                    and not child.is_symlink()
+                    and child.is_dir()
+                ):
+                    continue
+                if (
+                    child.is_symlink()
+                    or not child.is_dir()
+                    or not child.name.startswith("finalize-")
+                ):
+                    raise _artifact_error(
+                        "UNSAFE-STAGING-001: unknown finalization candidate"
+                    )
+                shutil.rmtree(child)
+        else:
+            namespace.mkdir(parents=False, exist_ok=False)
+        _fsync_directory(namespace)
+
+    def _promote_candidate(self, candidate: Path) -> TypedGraphStoreBuild:
+        """Validate collision state and atomically replace it while locked."""
+        quarantine: Path | None = None
+        manifest_path = candidate / "manifest.json"
+        manifest = _read_json(manifest_path)
+        content_sha256 = compute_content_identity(manifest)
+        manifest["content_sha256"] = content_sha256
+        _write_json(manifest_path, manifest)
+        validate_store(
+            candidate,
+            expected_bindings=self.task_bindings,
+            require_directory_identity=False,
+        )
+        target = self.ingestor.store_root / content_sha256
+        if not _same_filesystem(candidate, self.ingestor.store_root):
+            raise _artifact_error(
+                "PROMOTION-FILESYSTEM-001: final staging is not on the store filesystem"
+            )
+        if os.path.lexists(target):
+            try:
+                existing = validate_store(
+                    target,
+                    expected_bindings=self.task_bindings,
+                    require_directory_identity=True,
+                    execution_monitor=self.execution_monitor,
+                )
+            except QualificationFailure:
+                if target.is_symlink() or not target.is_dir():
+                    raise _artifact_error(
+                        "UNSAFE-STORE-001: colliding final path is not a real directory"
+                    )
+                quarantine = self.ingestor.store_root / (
+                    f".quarantine-{content_sha256}-{uuid.uuid4().hex}"
+                )
+                target.chmod(0o755)
+                try:
+                    os.replace(target, quarantine)
+                except BaseException:
+                    target.chmod(0o555)
+                    raise
+                quarantine.chmod(0o555)
+                _fsync_directory(self.ingestor.store_root)
+            else:
+                shutil.rmtree(candidate)
+                return TypedGraphStoreBuild(
+                    target,
+                    content_sha256,
+                    True,
+                    None,
+                    existing.report,
+                    TypedGraphStore(existing),
+                )
+        _make_read_only(candidate, movable_root=True)
+        _fsync_tree(candidate)
+        os.replace(candidate, target)
+        target.chmod(0o555)
+        _fsync_directory(target)
+        _fsync_directory(self.ingestor.store_root)
+        promoted = validate_store(
+            target,
+            expected_bindings=self.task_bindings,
+            require_directory_identity=True,
+            execution_monitor=self.execution_monitor,
+        )
+        return TypedGraphStoreBuild(
+            target,
+            content_sha256,
+            False,
+            quarantine,
+            promoted.report,
+            TypedGraphStore(promoted),
+        )
 
     def _reopen_task1_6_locked(self) -> dict[str, Any]:
         from topobench.data.stores import pyg_partitioner as partitioner_module

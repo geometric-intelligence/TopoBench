@@ -1,9 +1,37 @@
 """Callback to track all metrics at the epoch when the monitored metric is best."""
 
 import contextlib
+from collections.abc import Mapping
+from numbers import Real
 
 from lightning import Callback
 from lightning.pytorch.callbacks import ModelCheckpoint
+
+_CALLBACK_STATE_FORMAT = "best-epoch-metrics-v1"
+_CALLBACK_STATE_KEYS = frozenset(
+    {
+        "format_version",
+        "monitor_metric",
+        "mode",
+        "best_monitored_value",
+        "best_epoch_metrics",
+        "best_epoch_number",
+        "current_epoch_train_metrics",
+    }
+)
+
+
+def _metric_state(value, name):
+    if not isinstance(value, Mapping):
+        raise TypeError(f"{name} must be a mapping")
+    result = {}
+    for key, item in value.items():
+        if not isinstance(key, str) or not key:
+            raise TypeError(f"{name} keys must be non-empty strings")
+        if isinstance(item, bool) or not isinstance(item, Real):
+            raise TypeError(f"{name}[{key!r}] must be a real scalar")
+        result[key] = item
+    return result
 
 
 class BestEpochMetricsCallback(Callback):
@@ -45,6 +73,65 @@ class BestEpochMetricsCallback(Callback):
         self.best_epoch_number = None
         self.checkpoint_callback = None
         self.current_epoch_train_metrics = {}
+
+    def state_dict(self):
+        """Persist the selected epoch across production ``ckpt_path`` resume."""
+        return {
+            "format_version": _CALLBACK_STATE_FORMAT,
+            "monitor_metric": self.monitor_metric,
+            "mode": self.mode,
+            "best_monitored_value": self.best_monitored_value,
+            "best_epoch_metrics": dict(self.best_epoch_metrics),
+            "best_epoch_number": self.best_epoch_number,
+            "current_epoch_train_metrics": dict(
+                self.current_epoch_train_metrics
+            ),
+        }
+
+    def load_state_dict(self, state_dict):
+        """Restore only state belonging to this exact monitor policy."""
+        if not isinstance(state_dict, Mapping):
+            raise TypeError("best-epoch callback state must be a mapping")
+        actual = frozenset(state_dict)
+        if actual != _CALLBACK_STATE_KEYS:
+            raise ValueError(
+                "best-epoch callback state keys must match exactly; "
+                f"missing={sorted(_CALLBACK_STATE_KEYS - actual)!r}, "
+                f"extra={sorted(actual - _CALLBACK_STATE_KEYS)!r}"
+            )
+        if state_dict["format_version"] != _CALLBACK_STATE_FORMAT:
+            raise ValueError(
+                "unsupported best-epoch callback state version "
+                f"{state_dict['format_version']!r}"
+            )
+        if state_dict["monitor_metric"] != self.monitor_metric:
+            raise ValueError("best-epoch monitor identity mismatch")
+        if state_dict["mode"] != self.mode:
+            raise ValueError("best-epoch mode identity mismatch")
+        best_value = state_dict["best_monitored_value"]
+        if best_value is not None and (
+            isinstance(best_value, bool) or not isinstance(best_value, Real)
+        ):
+            raise TypeError("best_monitored_value must be a real scalar or None")
+        best_epoch = state_dict["best_epoch_number"]
+        if best_epoch is not None and (
+            isinstance(best_epoch, bool)
+            or not isinstance(best_epoch, int)
+            or best_epoch < 0
+        ):
+            raise TypeError(
+                "best_epoch_number must be a non-negative integer or None"
+            )
+        self.best_monitored_value = best_value
+        self.best_epoch_metrics = _metric_state(
+            state_dict["best_epoch_metrics"],
+            "best_epoch_metrics",
+        )
+        self.best_epoch_number = best_epoch
+        self.current_epoch_train_metrics = _metric_state(
+            state_dict["current_epoch_train_metrics"],
+            "current_epoch_train_metrics",
+        )
 
     def on_train_start(self, trainer, pl_module):
         """Find and store reference to ModelCheckpoint callback for checkpoint path.

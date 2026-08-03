@@ -215,6 +215,158 @@ def _state_tensors(root: object) -> tuple[Tensor, ...]:
     return tuple(value for value in reachable_objects(root) if isinstance(value, Tensor))
 
 
+def _clone_checkpoint_state(
+    value: Any,
+    *,
+    tensor_device: torch.device | str | None = None,
+) -> Any:
+    """Clone checkpoint-safe values without mutable tensor aliases."""
+    if isinstance(value, Tensor):
+        detached = value.detach()
+        if tensor_device is not None:
+            detached = detached.to(tensor_device)
+        return detached.clone()
+    if isinstance(value, Mapping):
+        return {
+            key: _clone_checkpoint_state(item, tensor_device=tensor_device)
+            for key, item in value.items()
+        }
+    if isinstance(value, tuple):
+        return tuple(
+            _clone_checkpoint_state(item, tensor_device=tensor_device)
+            for item in value
+        )
+    if isinstance(value, list):
+        return [
+            _clone_checkpoint_state(item, tensor_device=tensor_device)
+            for item in value
+        ]
+    if isinstance(value, (str, int, float, bool, type(None))):
+        return value
+    raise TypeError(
+        "evaluator checkpoint state may contain only mappings, sequences, "
+        "primitive scalars, and tensors"
+    )
+
+
+def _metric_type_name(metric: Metric) -> str:
+    metric_type = type(metric)
+    return f"{metric_type.__module__}.{metric_type.__qualname__}"
+
+
+def _torch_metric_state_dict(metric: Metric) -> dict[str, Any]:
+    """Serialize all TorchMetrics states, including non-persistent defaults."""
+    return {
+        "format_version": "torch-metric-state-v1",
+        "metric_type": _metric_type_name(metric),
+        "update_count": metric.update_count,
+        "metric_state": _clone_checkpoint_state(
+            metric.metric_state,
+            tensor_device="cpu",
+        ),
+    }
+
+
+def _load_torch_metric_state_dict(
+    metric: Metric,
+    state_dict: Mapping[str, Any],
+) -> None:
+    """Restore all TorchMetrics states onto the metric's configured device."""
+    expected = {
+        "format_version",
+        "metric_type",
+        "update_count",
+        "metric_state",
+    }
+    if set(state_dict) != expected:
+        raise ValueError("TorchMetrics state_dict keys do not match schema")
+    if state_dict["format_version"] != "torch-metric-state-v1":
+        raise ValueError("unsupported TorchMetrics state_dict format_version")
+    if state_dict["metric_type"] != _metric_type_name(metric):
+        raise ValueError("TorchMetrics state type does not match construction")
+    update_count = state_dict["update_count"]
+    if (
+        isinstance(update_count, bool)
+        or not isinstance(update_count, int)
+        or update_count < 0
+    ):
+        raise ValueError(
+            "TorchMetrics update_count must be a non-negative integer"
+        )
+    serialized = state_dict["metric_state"]
+    current = metric.metric_state
+    if not isinstance(serialized, Mapping):
+        raise TypeError("TorchMetrics metric_state must be a mapping")
+    if set(serialized) != set(current):
+        raise ValueError("TorchMetrics metric_state keys do not match metric")
+
+    nonnegative_states = {
+        "tp",
+        "fp",
+        "tn",
+        "fn",
+        "confmat",
+        "total",
+        "sum_abs_error",
+        "sum_squared_error",
+        "residual",
+    }
+    for name, current_value in current.items():
+        serialized_value = serialized[name]
+        if isinstance(current_value, Tensor):
+            if not isinstance(serialized_value, Tensor):
+                raise TypeError(
+                    f"TorchMetrics state {name!r} must be a tensor"
+                )
+            if serialized_value.dtype != current_value.dtype:
+                raise ValueError(
+                    f"TorchMetrics state {name!r} tensor dtype does not match"
+                )
+            if (
+                serialized_value.shape != current_value.shape
+                and not (
+                    serialized_value.numel() == 1
+                    and current_value.numel() == 1
+                )
+            ):
+                raise ValueError(
+                    f"TorchMetrics state {name!r} tensor shape does not match"
+                )
+            if not bool(torch.isfinite(serialized_value).all()):
+                raise ValueError(
+                    f"TorchMetrics state {name!r} must be finite"
+                )
+            if name in nonnegative_states and bool(
+                (serialized_value < 0).any()
+            ):
+                raise ValueError(
+                    f"TorchMetrics state {name!r} must be non-negative"
+                )
+        elif not isinstance(serialized_value, list):
+            raise TypeError(f"TorchMetrics state {name!r} must be a list")
+        elif any(
+            not isinstance(item, Tensor)
+            or not bool(torch.isfinite(item).all())
+            for item in serialized_value
+        ):
+            raise ValueError(
+                f"TorchMetrics list state {name!r} must contain finite tensors"
+            )
+
+    restored = _clone_checkpoint_state(
+        serialized,
+        tensor_device=metric.device,
+    )
+    metric.reset()
+    for name, restored_value in restored.items():
+        setattr(metric, name, restored_value)
+    metric._update_count = update_count
+    metric._computed = None
+    metric._forward_cache = None
+    metric._cache = None
+    metric._is_synced = False
+
+
 class TorchMetricBackend:
     """Adapter hiding a public stateful TorchMetrics implementation."""
 
@@ -245,6 +397,64 @@ class TorchMetricBackend:
     @property
     def state_tensors(self) -> tuple[Tensor, ...]:
         return _state_tensors(self._metric)
+
+    def state_dict(self) -> dict[str, Any]:
+        """Return every detached TorchMetrics state on CPU."""
+        return _torch_metric_state_dict(self._metric)
+
+    def load_state_dict(
+        self,
+        state_dict: Mapping[str, Any],
+        *,
+        strict: bool,
+    ) -> None:
+        """Restore every TorchMetrics state onto the configured device."""
+        if strict is not True:
+            raise TypeError("strict must be True")
+        if not isinstance(state_dict, Mapping):
+            raise TypeError("metric state_dict must be a mapping")
+        _load_torch_metric_state_dict(self._metric, state_dict)
+
+
+def _backend_type_name(backend: MetricBackend) -> str:
+    backend_type = type(backend)
+    return f"{backend_type.__module__}.{backend_type.__qualname__}"
+
+
+def _backend_state_dict(backend: MetricBackend) -> dict[str, Any]:
+    state_method = getattr(backend, "state_dict", None)
+    if not callable(state_method):
+        raise TypeError(
+            f"Metric backend {_backend_type_name(backend)!r} does not support "
+            "strict checkpoint state"
+        )
+    state = state_method()
+    if not isinstance(state, Mapping):
+        raise TypeError("metric backend state_dict must return a mapping")
+    return {
+        "backend_type": _backend_type_name(backend),
+        "state": _clone_checkpoint_state(state, tensor_device="cpu"),
+    }
+
+
+def _load_backend_state_dict(
+    backend: MetricBackend,
+    state_dict: Mapping[str, Any],
+) -> None:
+    if set(state_dict) != {"backend_type", "state"}:
+        raise ValueError("metric backend state keys do not match schema")
+    if state_dict["backend_type"] != _backend_type_name(backend):
+        raise ValueError("metric backend state type does not match construction")
+    state = state_dict["state"]
+    if not isinstance(state, Mapping):
+        raise TypeError("metric backend state must be a mapping")
+    load_method = getattr(backend, "load_state_dict", None)
+    if not callable(load_method):
+        raise TypeError(
+            f"Metric backend {_backend_type_name(backend)!r} does not support "
+            "strict checkpoint state"
+        )
+    load_method(_clone_checkpoint_state(state), strict=True)
 
 
 class _FunctionalExactMetric:
@@ -432,6 +642,32 @@ class OnlineRankingBackend:
     def retained_bytes(self) -> int:
         return owned_tensor_bytes(self.metrics)
 
+    def state_dict(self) -> dict[str, Any]:
+        """Return every bounded ranking state detached on CPU."""
+        return {
+            name: _torch_metric_state_dict(metric)
+            for name, metric in self.metrics.items()
+        }
+
+    def load_state_dict(
+        self,
+        state_dict: Mapping[str, Any],
+        *,
+        strict: bool,
+    ) -> None:
+        """Restore bounded ranking metrics with exact key validation."""
+        if strict is not True:
+            raise TypeError("strict must be True")
+        if not isinstance(state_dict, Mapping):
+            raise TypeError("online ranking state_dict must be a mapping")
+        if set(state_dict) != set(self.metrics):
+            raise ValueError("online ranking state keys do not match metrics")
+        for name, metric in self.metrics.items():
+            item = state_dict[name]
+            if not isinstance(item, Mapping):
+                raise TypeError("online ranking metric state must be a mapping")
+            _load_torch_metric_state_dict(metric, item)
+
 
 @dataclass(frozen=True)
 class BackendSnapshot(Mapping[str, Tensor]):
@@ -554,6 +790,7 @@ class MetricPolicyBackend:
         self.max_exact_ranking_bytes = max_exact_ranking_bytes
         self.undefined_metric_policy = undefined_metric_policy
         self._device_explicit = device is not None
+        self._auto_device_pending = not self._device_explicit
         resolved_device = torch.device("cpu" if device is None else device)
         if resolved_device.type == "cuda" and resolved_device.index is None:
             resolved_device = torch.device("cuda", torch.cuda.current_device())
@@ -659,6 +896,7 @@ class MetricPolicyBackend:
         self._fixed_views = staged_views
         self.exact_ranking_backend = staged_exact
         self.online_ranking_backend = staged_online
+        self._auto_device_pending = not self._device_explicit
 
     def _move_streaming_state(self, device: torch.device) -> None:
         self.device = device
@@ -667,11 +905,12 @@ class MetricPolicyBackend:
         if self.online_ranking_backend is not None:
             self.online_ranking_backend.to(device)
         self._support.to(device)
+        self._auto_device_pending = False
 
     def update(self, batch: EvaluationBatch) -> None:
         if self.context is None:
             raise RuntimeError("MetricPolicyBackend.update requires begin")
-        if not self._device_explicit and self._support.num_examples == 0:
+        if self._auto_device_pending:
             self._move_streaming_state(batch.outputs.device)
         if batch.outputs.device != self.device or batch.targets.device != self.device:
             raise ValueError(f"batch tensors must be on evaluation device {self.device}")
@@ -868,6 +1107,225 @@ class MetricPolicyBackend:
         }
         return BackendSnapshot(values, statuses, support, reasons, provenance)
 
+    def state_dict(self) -> dict[str, Any]:
+        """Serialize an active online backend using checkpoint-safe values."""
+        context = self.context
+        if context is None or self.policy != "online":
+            raise RuntimeError(
+                "evaluator checkpointing requires an active online backend"
+            )
+        fixed = {
+            name: _backend_state_dict(backend)
+            for name, backend in self._fixed.items()
+        }
+        return {
+            "format_version": "metric-policy-backend-state-v1",
+            "context": {
+                "split": context.split,
+                "pass_kind": context.pass_kind,
+                "policy": context.policy,
+                "task": context.task,
+                "num_classes": context.num_classes,
+                "expected_num_examples": context.expected_num_examples,
+                "vocabulary_id": context.vocabulary_id,
+                "model_id": context.model_id,
+                "checkpoint_id": context.checkpoint_id,
+                "qualified": context.qualified,
+            },
+            "fixed": fixed,
+            "online_ranking": (
+                None
+                if self.online_ranking_backend is None
+                else self.online_ranking_backend.state_dict()
+            ),
+            "support": {
+                "num_examples": self._support.num_examples,
+                "class_counts": (
+                    None
+                    if self._support.class_counts is None
+                    else self._support.class_counts.detach().clone()
+                ),
+                "target_sum": self._support.target_sum.detach().clone(),
+                "target_square_sum": (
+                    self._support.target_square_sum.detach().clone()
+                ),
+            },
+        }
+
+    def load_state_dict(
+        self,
+        state_dict: Mapping[str, Any],
+        *,
+        strict: bool,
+    ) -> None:
+        """Restore one active online backend after exact schema validation."""
+        if strict is not True:
+            raise TypeError("strict must be True")
+        if not isinstance(state_dict, Mapping):
+            raise TypeError("backend state_dict must be a mapping")
+        expected = {
+            "format_version",
+            "context",
+            "fixed",
+            "online_ranking",
+            "support",
+        }
+        if set(state_dict) != expected:
+            raise ValueError("backend state_dict keys do not match schema")
+        if state_dict["format_version"] != "metric-policy-backend-state-v1":
+            raise ValueError("unsupported backend state_dict format_version")
+        context_record = state_dict["context"]
+        if not isinstance(context_record, Mapping):
+            raise TypeError("backend context state must be a mapping")
+        context_keys = {
+            "split",
+            "pass_kind",
+            "policy",
+            "task",
+            "num_classes",
+            "expected_num_examples",
+            "vocabulary_id",
+            "model_id",
+            "checkpoint_id",
+            "qualified",
+        }
+        if set(context_record) != context_keys:
+            raise ValueError("backend context state keys do not match schema")
+        context = EvaluationContext(**dict(context_record))
+        if context.policy != "online":
+            raise ValueError("backend checkpoint context must use online policy")
+        if context.task != self.task or context.num_classes != self.num_classes:
+            raise ValueError(
+                "backend checkpoint context does not match construction"
+            )
+        fixed = state_dict["fixed"]
+        support = state_dict["support"]
+        if not isinstance(fixed, Mapping):
+            raise TypeError("backend fixed state must be a mapping")
+        if not isinstance(support, Mapping):
+            raise TypeError("backend support state must be a mapping")
+        if set(support) != {
+            "num_examples",
+            "class_counts",
+            "target_sum",
+            "target_square_sum",
+        }:
+            raise ValueError("backend support state keys do not match schema")
+        num_examples = support["num_examples"]
+        if (
+            isinstance(num_examples, bool)
+            or not isinstance(num_examples, int)
+            or num_examples < 0
+        ):
+            raise ValueError(
+                "backend support num_examples must be a non-negative integer"
+            )
+        class_counts = support["class_counts"]
+        target_sum = support["target_sum"]
+        target_square_sum = support["target_square_sum"]
+        if not isinstance(target_sum, Tensor) or not isinstance(
+            target_square_sum, Tensor
+        ):
+            raise TypeError("backend support sums must be tensors")
+        if target_sum.ndim != 0 or target_square_sum.ndim != 0:
+            raise ValueError("backend support sums must be scalar tensors")
+        if (
+            target_sum.dtype != torch.float64
+            or target_square_sum.dtype != torch.float64
+        ):
+            raise ValueError("backend support sums must use float64 dtype")
+        if not bool(torch.isfinite(target_sum)) or not bool(
+            torch.isfinite(target_square_sum)
+        ):
+            raise ValueError("backend support sums must be finite")
+        if bool(target_square_sum < 0):
+            raise ValueError(
+                "backend target_square_sum must be non-negative"
+            )
+        if self.task == "classification":
+            if not isinstance(class_counts, Tensor):
+                raise TypeError(
+                    "classification class_counts must be a tensor"
+                )
+            if class_counts.dtype != torch.long:
+                raise ValueError(
+                    "classification class_counts must use long dtype"
+                )
+            if tuple(class_counts.shape) != (self.num_classes,):
+                raise ValueError(
+                    "classification class_counts shape does not match classes"
+                )
+            if bool((class_counts < 0).any()):
+                raise ValueError(
+                    "classification class_counts must be non-negative"
+                )
+            if int(class_counts.sum()) != num_examples:
+                raise ValueError(
+                    "backend class_counts do not match classification support"
+                )
+        elif class_counts is not None:
+            raise ValueError("regression backend class_counts must be None")
+        staged = MetricPolicyBackend(
+            task=self.task,
+            num_classes=self.num_classes,
+            metrics=self.metric_names,
+            custom_specs=self.custom_specs,
+            ranking_thresholds=self.ranking_thresholds,
+            max_exact_ranking_bytes=self.max_exact_ranking_bytes,
+            undefined_metric_policy=self.undefined_metric_policy,
+            device=self.device if self._device_explicit else None,
+            prediction_views_factory=self.prediction_views_factory,
+        )
+        staged.begin(context)
+        if set(fixed) != set(staged._fixed):
+            raise ValueError(
+                "backend fixed state keys do not match configured metrics"
+            )
+        for name, backend in staged._fixed.items():
+            item = fixed[name]
+            if not isinstance(item, Mapping):
+                raise TypeError("fixed metric state must be a mapping")
+            _load_backend_state_dict(backend, item)
+        ranking_state = state_dict["online_ranking"]
+        if staged.online_ranking_backend is None:
+            if ranking_state is not None:
+                raise ValueError(
+                    "unexpected online ranking checkpoint state"
+                )
+        else:
+            if not isinstance(ranking_state, Mapping):
+                raise TypeError(
+                    "online ranking checkpoint state must be a mapping"
+                )
+            staged.online_ranking_backend.load_state_dict(
+                ranking_state,
+                strict=True,
+            )
+        staged._support.num_examples = num_examples
+        staged._support.class_counts = (
+            None
+            if class_counts is None
+            else class_counts.detach().to(staged.device).clone()
+        )
+        staged._support.target_sum = (
+            target_sum.detach().to(staged.device).clone()
+        )
+        staged._support.target_square_sum = (
+            target_square_sum.detach().to(staged.device).clone()
+        )
+        staged._support._cached_support = None
+
+        self.device = staged.device
+        self.policy = staged.policy
+        self.context = staged.context
+        self._specs = staged._specs
+        self._fixed = staged._fixed
+        self._fixed_views = staged._fixed_views
+        self.exact_ranking_backend = staged.exact_ranking_backend
+        self.online_ranking_backend = staged.online_ranking_backend
+        self._support = staged._support
+        self._auto_device_pending = staged._auto_device_pending
+
     def reset(self) -> None:
         for backend in self._fixed.values():
             backend.reset()
@@ -885,6 +1343,7 @@ class MetricPolicyBackend:
         self._support = _SupportTracker(
             self.task, self.num_classes, self.device
         )
+        self._auto_device_pending = not self._device_explicit
 
     @property
     def retained_bytes(self) -> int:

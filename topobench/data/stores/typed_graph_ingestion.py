@@ -111,6 +111,10 @@ class ArtifactValidationError(RuntimeError):
     """An input, staging artifact, or completion record is not trustworthy."""
 
 
+class _StageChecksumError(ArtifactValidationError):
+    """A completed addressed stage contains bytes that fail its own checksum."""
+
+
 class SourceMutationError(ArtifactValidationError):
     """Inventoried source identity changed before mapping completed."""
 
@@ -319,8 +323,37 @@ class ParquetTypedGraphIngestor:
     @_monitored_stage("conversion", "publish")
     def build(self) -> ExternalNodeIndexBuild:
         """Inventory and build all type-local indexes."""
+        # A checksum failure is the one recoverable resume defect: the failed
+        # attempt quarantines the addressed stage while holding its content
+        # lock, so one clean retry cannot reuse any of the corrupted bytes.
+        # Every semantic, source, dependency, and safety failure still
+        # propagates without retry.
         inventory = self.inventory()
-        return self.build_external_node_indexes(inventory)
+        try:
+            return self.build_external_node_indexes(inventory)
+        except _StageChecksumError:
+            return self.build_external_node_indexes(inventory)
+
+    def _validated_indexes(
+        self,
+        index_build: ExternalNodeIndexBuild | None,
+    ) -> ExternalNodeIndexBuild:
+        """Reopen an addressed index stage or rebuild one checksum-corrupt stage."""
+        if index_build is None:
+            return self.build()
+        if not isinstance(index_build, ExternalNodeIndexBuild):
+            raise TypeError("index_build must be an ExternalNodeIndexBuild")
+        expected_stage = self.stage_root(index_build.inventory)
+        if index_build.stage_root != expected_stage:
+            raise ArtifactValidationError(
+                "COMPLETION-EVIDENCE-001: external-ID index stage does not "
+                "belong to this ingestor"
+            )
+        try:
+            return self.build_external_node_indexes(index_build.inventory)
+        except _StageChecksumError:
+            return self.build()
+
 
     @_monitored_stage("conversion", "arrays")
     def build_arrays(
@@ -328,20 +361,7 @@ class ParquetTypedGraphIngestor:
         index_build: ExternalNodeIndexBuild | None = None,
     ) -> TypedGraphArrayBuild:
         """Stream typed features, target labels, and every registered split."""
-        if index_build is None:
-            validated_indexes = self.build()
-        else:
-            if not isinstance(index_build, ExternalNodeIndexBuild):
-                raise TypeError("index_build must be an ExternalNodeIndexBuild")
-            expected_stage = self.stage_root(index_build.inventory)
-            if index_build.stage_root != expected_stage:
-                raise ArtifactValidationError(
-                    "COMPLETION-EVIDENCE-001: external-ID index stage does not "
-                    "belong to this ingestor"
-                )
-            validated_indexes = self.build_external_node_indexes(
-                index_build.inventory
-            )
+        validated_indexes = self._validated_indexes(index_build)
         from topobench.data.stores.typed_graph_arrays import (
             TypedGraphArrayWriter,
         )
@@ -354,20 +374,7 @@ class ParquetTypedGraphIngestor:
         index_build: ExternalNodeIndexBuild | None = None,
     ) -> TypedGraphRelationBuild:
         """Stream every canonical directed relation into one verified CSC subtree."""
-        if index_build is None:
-            validated_indexes = self.build()
-        else:
-            if not isinstance(index_build, ExternalNodeIndexBuild):
-                raise TypeError("index_build must be an ExternalNodeIndexBuild")
-            expected_stage = self.stage_root(index_build.inventory)
-            if index_build.stage_root != expected_stage:
-                raise ArtifactValidationError(
-                    "COMPLETION-EVIDENCE-001: external-ID index stage does not "
-                    "belong to this ingestor"
-                )
-            validated_indexes = self.build_external_node_indexes(
-                index_build.inventory
-            )
+        validated_indexes = self._validated_indexes(index_build)
         arrays_completion = (
             validated_indexes.stage_root
             / "arrays"
@@ -851,8 +858,9 @@ class ParquetTypedGraphIngestor:
                     f"ID-DUPLICATE-001: node type {node.name!r} has duplicate "
                     "external IDs, including across fragments"
                 )
-            order_expression = (
-                "encode(external_id)" if node.id_dtype == "string" else "external_id"
+            order_expression = _canonical_external_id_order(
+                "external_id",
+                node.id_dtype,
             )
             connection.execute(
                 "CREATE TABLE mapping AS SELECT external_id, "
@@ -979,6 +987,19 @@ class ParquetTypedGraphIngestor:
         _fsync_directory(stage_root.parent)
         return pending_complete
 
+    @staticmethod
+    def _task6_owned_artifact(relative: str) -> bool:
+        """Identify downstream Task6 paths excluded from Task2-4 evidence."""
+        return (
+            relative == "partitions"
+            or relative.startswith("partitions/")
+            or relative.startswith(".partitions-quarantine-")
+            or relative.startswith(".partitions-tmp-")
+            or relative == ".pyg-partition-work"
+            or relative.startswith(".pyg-partition-work/")
+        )
+
+
     def _resume(
         self,
         inventory: SourceInventory,
@@ -1045,7 +1066,8 @@ class ParquetTypedGraphIngestor:
         core_outputs = {
             relative: checksum
             for relative, checksum in outputs.items()
-            if not (
+            if not self._task6_owned_artifact(relative)
+            and not (
                 pending_complete_relations
                 and relative.startswith("relations/")
             )
@@ -1054,13 +1076,7 @@ class ParquetTypedGraphIngestor:
         observed_files: set[str] = set()
         for path in stage_root.rglob("*"):
             relative = path.relative_to(stage_root).as_posix()
-            if (
-                relative == "partitions"
-                or relative.startswith("partitions/")
-                or relative.startswith(".partitions-quarantine-")
-                or relative.startswith(".partitions-tmp-")
-                or relative.startswith(".pyg-partition-work/")
-            ):
+            if self._task6_owned_artifact(relative):
                 # Task6 owns and fully validates these downstream subtrees
                 # under this same content lock. They are not Task2-4 outputs.
                 continue
@@ -1089,7 +1105,7 @@ class ParquetTypedGraphIngestor:
             )
         for relative, expected_checksum in core_outputs.items():
             if _sha256_file(_safe_artifact_path(stage_root, relative)) != expected_checksum:
-                raise ArtifactValidationError(
+                raise _StageChecksumError(
                     f"CHECKSUM-001: staging artifact checksum mismatch for {relative!r}"
                 )
 
@@ -1161,7 +1177,7 @@ class ParquetTypedGraphIngestor:
                 )
             for relative, checksum in per_outputs.items():
                 if _sha256_file(_safe_artifact_path(root, relative)) != checksum:
-                    raise ArtifactValidationError(
+                    raise _StageChecksumError(
                         f"CHECKSUM-001: per-type checksum mismatch for {node_name!r}"
                     )
             parquet_file = pq.ParquetFile(index.node_ids_path)
@@ -1215,10 +1231,9 @@ class ParquetTypedGraphIngestor:
                     "OR mapping.local_ordinal IS NULL "
                     "OR reverse.external_id IS DISTINCT FROM mapping.external_id"
                 ).fetchone()[0]
-                order_expression = (
-                    "encode(external_id)"
-                    if node.id_dtype == "string"
-                    else "external_id"
+                order_expression = _canonical_external_id_order(
+                    "external_id",
+                    node.id_dtype,
                 )
                 canonical_mismatches = connection.execute(
                     "SELECT COUNT(*) FROM ("
@@ -1326,11 +1341,14 @@ class ParquetTypedGraphIngestor:
                 or not isinstance(created_ns, int)
             ):
                 return False
-            age_seconds = (time.time_ns() - created_ns) / 1_000_000_000
-            if age_seconds <= self.lock_stale_seconds:
-                return False
-            if hostname == socket.gethostname() and _pid_is_alive(pid):
-                return False
+            same_host = hostname == socket.gethostname()
+            if same_host:
+                if _pid_is_alive(pid):
+                    return False
+            else:
+                age_seconds = (time.time_ns() - created_ns) / 1_000_000_000
+                if age_seconds <= self.lock_stale_seconds:
+                    return False
             current = path.stat(follow_symlinks=False)
             inspected_identity = (
                 inspected.st_dev,
@@ -1477,6 +1495,12 @@ def _normalized_dataclass(value: Any) -> Any:
 
 def _quote_identifier(value: str) -> str:
     return '"' + value.replace('"', '""') + '"'
+
+
+def _canonical_external_id_order(expression: str, dtype: str) -> str:
+    if dtype not in _SUPPORTED_ID_DTYPES:
+        raise ValueError(f"unsupported external-ID dtype {dtype!r}")
+    return f"encode({expression})" if dtype == "string" else expression
 
 
 def _sha256_json(value: Any) -> str:

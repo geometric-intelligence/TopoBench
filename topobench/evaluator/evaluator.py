@@ -251,6 +251,168 @@ class TBEvaluator(AbstractEvaluator):
             f"num_classes={self.num_classes}, metrics={self.metric_names!r})"
         )
 
+    def state_dict(self) -> dict[str, Any]:
+        """Serialize the active online evaluator for mid-epoch resume."""
+        context = self._require_active("state_dict")
+        if context.policy != "online":
+            raise RuntimeError(
+                "evaluator checkpointing requires an active online context"
+            )
+        if (
+            self._metric_backend is None
+            or set(self._backends) != {"metrics"}
+        ):
+            raise TypeError(
+                "evaluator checkpointing requires the owned metric backend"
+            )
+        return {
+            "format_version": "tb-evaluator-state-v1",
+            "task": self.task,
+            "num_classes": self.num_classes,
+            "metric_names": self.metric_names,
+            "lifecycle_state": "active",
+            "context": {
+                "split": context.split,
+                "pass_kind": context.pass_kind,
+                "policy": context.policy,
+                "task": context.task,
+                "num_classes": context.num_classes,
+                "expected_num_examples": context.expected_num_examples,
+                "vocabulary_id": context.vocabulary_id,
+                "model_id": context.model_id,
+                "checkpoint_id": context.checkpoint_id,
+                "qualified": context.qualified,
+            },
+            "num_examples": self._num_examples,
+            "backend": self._metric_backend.state_dict(),
+        }
+
+    def load_state_dict(
+        self,
+        state_dict: Mapping[str, Any],
+        *,
+        strict: bool,
+    ) -> None:
+        """Restore an active online evaluator with exact configuration identity."""
+        if strict is not True:
+            raise TypeError("strict must be True")
+        if not isinstance(state_dict, Mapping):
+            raise TypeError("evaluator state_dict must be a mapping")
+        expected = {
+            "format_version",
+            "task",
+            "num_classes",
+            "metric_names",
+            "lifecycle_state",
+            "context",
+            "num_examples",
+            "backend",
+        }
+        if set(state_dict) != expected:
+            raise ValueError("evaluator state_dict keys do not match schema")
+        if state_dict["format_version"] != "tb-evaluator-state-v1":
+            raise ValueError("unsupported evaluator state_dict format_version")
+        if state_dict["task"] != self.task:
+            raise ValueError("evaluator state task does not match construction")
+        if state_dict["num_classes"] != self.num_classes:
+            raise ValueError(
+                "evaluator state num_classes does not match construction"
+            )
+        metric_names = state_dict["metric_names"]
+        if (
+            not isinstance(metric_names, (list, tuple))
+            or tuple(metric_names) != self.metric_names
+        ):
+            raise ValueError(
+                "evaluator state metric_names do not match construction"
+            )
+        if state_dict["lifecycle_state"] != "active":
+            raise ValueError("evaluator checkpoint lifecycle_state must be active")
+        context_record = state_dict["context"]
+        if not isinstance(context_record, Mapping):
+            raise TypeError("evaluator context state must be a mapping")
+        context_keys = {
+            "split",
+            "pass_kind",
+            "policy",
+            "task",
+            "num_classes",
+            "expected_num_examples",
+            "vocabulary_id",
+            "model_id",
+            "checkpoint_id",
+            "qualified",
+        }
+        if set(context_record) != context_keys:
+            raise ValueError("evaluator context state keys do not match schema")
+        context = EvaluationContext(**dict(context_record))
+        if (
+            context.policy != "online"
+            or context.task != self.task
+            or context.num_classes != self.num_classes
+        ):
+            raise ValueError(
+                "evaluator checkpoint context does not match construction"
+            )
+        if (
+            self.policy is not None
+            and self.policy[context.split] != context.policy
+        ):
+            raise ValueError(
+                "evaluator checkpoint context violates configured split policy"
+            )
+        num_examples = state_dict["num_examples"]
+        if (
+            isinstance(num_examples, bool)
+            or not isinstance(num_examples, int)
+            or num_examples < 0
+        ):
+            raise ValueError(
+                "evaluator state num_examples must be a non-negative integer"
+            )
+        backend_state = state_dict["backend"]
+        if not isinstance(backend_state, Mapping):
+            raise TypeError("evaluator backend state must be a mapping")
+        backend_context = backend_state.get("context")
+        if (
+            not isinstance(backend_context, Mapping)
+            or dict(backend_context) != dict(context_record)
+        ):
+            raise ValueError(
+                "evaluator and backend checkpoint contexts must match"
+            )
+        support = backend_state.get("support")
+        if (
+            not isinstance(support, Mapping)
+            or support.get("num_examples") != num_examples
+        ):
+            raise ValueError(
+                "evaluator and backend example counts must match"
+            )
+        if (
+            self._metric_backend is None
+            or set(self._backends) != {"metrics"}
+        ):
+            raise TypeError(
+                "evaluator restore requires the owned metric backend"
+            )
+        if not (
+            self._state == "active" and self._context == context
+        ) and (self._state != "idle" or self._context is not None):
+            raise RuntimeError(
+                "evaluator restore requires an idle or matching active evaluator"
+            )
+        self._metric_backend.load_state_dict(backend_state, strict=True)
+        if self._metric_backend.context != context:
+            raise RuntimeError(
+                "restored backend context violated validated checkpoint state"
+            )
+        self._context = context
+        self._num_examples = num_examples
+        self._allow_idle_abort = False
+        self._state = "active"
+
+
     def begin(self, context: EvaluationContext) -> None:
         if self._state != "idle":
             raise RuntimeError("begin requires an idle evaluator")
