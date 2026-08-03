@@ -6,7 +6,7 @@ import hashlib
 import json
 import os
 from collections.abc import Callable, Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -51,10 +51,8 @@ def _same_open_file(
 
 def _close_descriptors(descriptors: Mapping[str, int]) -> None:
     for descriptor in descriptors.values():
-        try:
+        with suppress(OSError):
             os.close(descriptor)
-        except OSError:
-            pass
 
 
 @dataclass(slots=True)
