@@ -237,6 +237,9 @@ def test_disk_graph_datamodule_runs_multiworker_final_batch_and_closes(
     assert module._owner._store is None
 
     module.teardown("fit")
+    assert module.closed is False
+    assert module._owner._store is None
+    module.close()
     assert module.closed
 
 def test_materialized_module_multiworker_uses_admitted_snapshot(

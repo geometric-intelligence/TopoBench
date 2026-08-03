@@ -1,6 +1,5 @@
 """Tests for KeepSelectedTargetIndices transform."""
 
-import pytest
 import torch
 from torch_geometric.data import Data
 

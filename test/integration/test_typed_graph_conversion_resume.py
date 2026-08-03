@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import multiprocessing
-from dataclasses import replace
-import json
 import hashlib
+import json
+import multiprocessing
 import os
-from pathlib import Path
 import threading
+from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import pyarrow as pa
@@ -29,7 +29,6 @@ from topobench.data.loaders.parquet import (
 from topobench.data.stores.pyg_partitioner import TopologyOnlyPyGPartitioner
 from topobench.data.stores.typed_graph_ingestion import (
     ArtifactValidationError,
-    ConcurrentBuildError,
     ParquetTypedGraphIngestor,
 )
 from topobench.data.stores.typed_graph_store import (
@@ -40,7 +39,6 @@ from topobench.data.stores.typed_graph_store import (
 from topobench.data.stores.typed_partition_book import (
     PartitionQualificationLimits,
 )
-
 
 _COMMITTED_SUBTREES = {
     "index": ("mappings",),
@@ -95,7 +93,9 @@ def _resume_through_promotion(
     relations = ingestor.build_relations(indexes)
     partitioner = TopologyOnlyPyGPartitioner(ingestor, relations)
     _external_partition_map(partitioner)
-    partitions = ingestor.build_partitions(limits=PartitionQualificationLimits())
+    partitions = ingestor.build_partitions(
+        limits=PartitionQualificationLimits()
+    )
     store_build = TypedGraphStoreWriter(ingestor, partitions).build()
     return indexes, arrays, relations, partitions, store_build
 
@@ -113,7 +113,7 @@ def _publish_then_exit(
     indexes = ingestor.build()
     if boundary == "index":
         os._exit(_ABRUPT_EXIT_CODE)
-    arrays = ingestor.build_arrays(indexes)
+    ingestor.build_arrays(indexes)
     if boundary == "arrays":
         os._exit(_ABRUPT_EXIT_CODE)
     relations = ingestor.build_relations(indexes)
@@ -128,6 +128,7 @@ def _publish_then_exit(
         os._exit(_ABRUPT_EXIT_CODE)
     TypedGraphStoreWriter(ingestor, partitions).build()
     os._exit(_ABRUPT_EXIT_CODE)
+
 
 def _materialize_candidate_then_exit(
     source: ParquetTypedGraphSource,
@@ -153,7 +154,9 @@ def _materialize_candidate_then_exit(
 
     TypedGraphStoreWriter._materialize_candidate = materialize_then_exit
     TypedGraphStoreWriter(ingestor, partitions).build()
-    raise AssertionError("candidate materialization did not terminate the process")
+    raise AssertionError(
+        "candidate materialization did not terminate the process"
+    )
 
 
 def _partial_final_copy_then_exit(
@@ -181,7 +184,9 @@ def _partial_final_copy_then_exit(
 
     writer._copy_file = copy_then_exit
     writer.build()
-    raise AssertionError("partial candidate copy did not terminate the process")
+    raise AssertionError(
+        "partial candidate copy did not terminate the process"
+    )
 
 
 @pytest.mark.parametrize("boundary", tuple(_COMMITTED_SUBTREES))
@@ -229,6 +234,7 @@ def test_clean_restart_reuses_every_checksum_validated_conversion_boundary(
     with TypedGraphStore.open(published.path) as reopened:
         assert reopened.content_sha256 == published.content_sha256
     published.store.close()
+
 
 @pytest.mark.parametrize(
     "boundary",
@@ -398,7 +404,9 @@ def test_exact_identity_change_never_reuses_an_addressed_stage(
     baseline_stage = baseline_ingestor.stage_root(baseline_inventory)
     baseline_ingestor.build_external_node_indexes(baseline_inventory)
 
-    changed_source = _mutated_source(axis, baseline_source, tmp_path, monkeypatch)
+    changed_source = _mutated_source(
+        axis, baseline_source, tmp_path, monkeypatch
+    )
     changed_ingestor = ParquetTypedGraphIngestor(changed_source, store_root)
     changed_inventory = changed_ingestor.inventory()
     changed_stage = changed_ingestor.stage_root(changed_inventory)
@@ -415,13 +423,19 @@ def test_failed_final_copy_is_invisible_and_exact_retry_promotes_once(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    ingestor = ParquetTypedGraphIngestor(_source(tmp_path / "source"), tmp_path / "stores")
+    ingestor = ParquetTypedGraphIngestor(
+        _source(tmp_path / "source"), tmp_path / "stores"
+    )
     indexes = ingestor.build()
     relations = ingestor.build_relations(indexes)
     partitioner = TopologyOnlyPyGPartitioner(ingestor, relations)
     _external_partition_map(partitioner)
-    partitions = ingestor.build_partitions(limits=PartitionQualificationLimits())
-    stage_before = _snapshot(partitions.stage_root, _COMMITTED_SUBTREES["partition"])
+    partitions = ingestor.build_partitions(
+        limits=PartitionQualificationLimits()
+    )
+    stage_before = _snapshot(
+        partitions.stage_root, _COMMITTED_SUBTREES["partition"]
+    )
     writer = TypedGraphStoreWriter(ingestor, partitions)
     real_copy = writer._copy_file
     copied = 0
@@ -437,7 +451,10 @@ def test_failed_final_copy_is_invisible_and_exact_retry_promotes_once(
     with pytest.raises(OSError, match="qualification crash"):
         writer.build()
 
-    assert _snapshot(partitions.stage_root, _COMMITTED_SUBTREES["partition"]) == stage_before
+    assert (
+        _snapshot(partitions.stage_root, _COMMITTED_SUBTREES["partition"])
+        == stage_before
+    )
     assert not list(ingestor.store_root.glob("[0-9a-f]" * 64))
     assert not list((ingestor.store_root / ".staging").glob("finalize-*"))
 
@@ -451,22 +468,28 @@ def test_failed_final_copy_is_invisible_and_exact_retry_promotes_once(
     repeated.store.close()
 
 
-def test_final_promotion_lock_covers_validation_collision_and_atomic_replace(
+def test_final_promotion_serializes_same_identity_publication(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A second publisher cannot enter after materialization but before rename."""
-    ingestor = ParquetTypedGraphIngestor(_source(tmp_path / "source"), tmp_path / "stores")
+    """A second publisher waits and reuses the first authoritative result."""
+    ingestor = ParquetTypedGraphIngestor(
+        _source(tmp_path / "source"), tmp_path / "stores"
+    )
     indexes = ingestor.build()
     relations = ingestor.build_relations(indexes)
     partitioner = TopologyOnlyPyGPartitioner(ingestor, relations)
     _external_partition_map(partitioner)
-    partitions = ingestor.build_partitions(limits=PartitionQualificationLimits())
+    partitions = ingestor.build_partitions(
+        limits=PartitionQualificationLimits()
+    )
     first_writer = TypedGraphStoreWriter(ingestor, partitions)
     second_writer = TypedGraphStoreWriter(ingestor, partitions)
-    real_validate = store_module.validate_store
+    real_validate = store_module._validate_store_bounded
     first_candidate_ready = threading.Event()
     release_first = threading.Event()
+    second_started = threading.Event()
+    second_done = threading.Event()
     paused = False
 
     def pause_first_candidate(path: str | Path, **kwargs: Any) -> Any:
@@ -478,35 +501,73 @@ def test_final_promotion_lock_covers_validation_collision_and_atomic_replace(
             assert release_first.wait(timeout=10)
         return real_validate(path, **kwargs)
 
-    monkeypatch.setattr(store_module, "validate_store", pause_first_candidate)
+    monkeypatch.setattr(
+        store_module,
+        "_validate_store_bounded",
+        pause_first_candidate,
+    )
     first_result: list[TypedGraphStoreBuild] = []
-    first_errors: list[BaseException] = []
+    second_result: list[TypedGraphStoreBuild] = []
+    errors: list[BaseException] = []
 
-    def publish_first() -> None:
+    def publish(
+        writer: TypedGraphStoreWriter,
+        results: list[TypedGraphStoreBuild],
+        *,
+        started: threading.Event | None = None,
+        done: threading.Event | None = None,
+    ) -> None:
+        if started is not None:
+            started.set()
         try:
-            first_result.append(first_writer.build())
+            results.append(writer.build())
         except BaseException as error:
-            first_errors.append(error)
+            errors.append(error)
+        finally:
+            if done is not None:
+                done.set()
 
-    thread = threading.Thread(target=publish_first, daemon=True)
-    thread.start()
+    first = threading.Thread(
+        target=publish,
+        args=(first_writer, first_result),
+        daemon=True,
+    )
+    first.start()
     assert first_candidate_ready.wait(timeout=10)
+    second = threading.Thread(
+        target=publish,
+        args=(second_writer, second_result),
+        kwargs={"started": second_started, "done": second_done},
+        daemon=True,
+    )
+    second.start()
     try:
-        with pytest.raises(ConcurrentBuildError, match="BUILD-LOCK-001"):
-            second_writer.build()
+        assert second_started.wait(timeout=10)
+        assert not second_done.is_set()
     finally:
         release_first.set()
-        thread.join(timeout=10)
+    first.join(timeout=60)
+    second.join(timeout=60)
 
-    assert not thread.is_alive()
-    assert first_errors == []
-    assert len(first_result) == 1
-    assert first_result[0].path.is_dir()
-    assert not list((ingestor.store_root / ".staging").glob("finalize-*"))
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert errors == []
+    assert len(first_result) == len(second_result) == 1
+    assert first_result[0].cache_hit is False
+    assert second_result[0].cache_hit is True
+    assert second_result[0].path == first_result[0].path
+    assert not tuple(
+        path
+        for path in (ingestor.store_root / ".staging").rglob("finalize-*")
+        if path.is_dir()
+    )
     first_result[0].store.close()
+    second_result[0].store.close()
 
 
-@pytest.mark.parametrize("entry_point", ("arrays", "relations", "finalization"))
+@pytest.mark.parametrize(
+    "entry_point", ("arrays", "relations", "finalization")
+)
 def test_every_public_stage_entry_quarantines_checksum_failure_and_rebinds(
     tmp_path: Path,
     entry_point: str,
@@ -549,7 +610,9 @@ def test_every_public_stage_entry_quarantines_checksum_failure_and_rebinds(
     if entry_point != "finalization":
         assert result.stage_root == indexes.stage_root
     quarantines = tuple(
-        indexes.stage_root.parent.glob(f".{indexes.stage_root.name}.quarantine-*")
+        indexes.stage_root.parent.glob(
+            f".{indexes.stage_root.name}.quarantine-*"
+        )
     )
     assert len(quarantines) == 1
     assert not mapping.read_bytes().endswith(b"corrupt")
@@ -573,7 +636,8 @@ def test_finalization_validates_task6_evidence_before_reusing_trusted_limits(
     qualification = json.loads(qualification_path.read_text(encoding="utf-8"))
     qualification["limits"]["max_total_size_bytes"] = 10**12
     qualification_path.write_text(
-        json.dumps(qualification, sort_keys=True, separators=(",", ":")) + "\n",
+        json.dumps(qualification, sort_keys=True, separators=(",", ":"))
+        + "\n",
         encoding="utf-8",
     )
     observed_limits: list[PartitionQualificationLimits] = []
@@ -591,11 +655,9 @@ def test_finalization_validates_task6_evidence_before_reusing_trusted_limits(
     promoted = TypedGraphStoreWriter(ingestor, partitions).build()
 
     assert observed_limits == [trusted_limits]
-    assert len(
-        tuple(
-            partitions.stage_root.glob(".partitions-quarantine-*")
-        )
-    ) == 1
+    assert (
+        len(tuple(partitions.stage_root.glob(".partitions-quarantine-*"))) == 1
+    )
     promoted.store.close()
 
 
@@ -619,9 +681,7 @@ def test_finalization_rejects_complete_task6_metadata_mismatch(
     changed = dict(getattr(partitions, changed_field))
     changed["task14_mismatch"] = True
     mismatched = replace(partitions, **{changed_field: changed})
-    mapping = next(
-        (indexes.stage_root / "mappings").rglob("node_ids.parquet")
-    )
+    mapping = next((indexes.stage_root / "mappings").rglob("node_ids.parquet"))
     mapping.write_bytes(mapping.read_bytes() + b"corrupt")
     monkeypatch.setattr(
         ingestor,
@@ -678,6 +738,8 @@ def test_dead_same_host_lock_and_final_candidate_are_recovered_immediately(
     ingestor = ParquetTypedGraphIngestor(source, store_root)
     _, _, _, partitions, initial = _resume_through_promotion(ingestor)
     initial.store.close()
+    writer = TypedGraphStoreWriter(ingestor, partitions)
+    writer._publication_receipt_path().unlink()
     context = multiprocessing.get_context("spawn")
     process = context.Process(
         target=crash_target,
@@ -691,7 +753,7 @@ def test_dead_same_host_lock_and_final_candidate_are_recovered_immediately(
     exit_code = process.exitcode
     process.close()
     assert exit_code == _ABRUPT_EXIT_CODE
-    lock_path = ingestor.lock_path(partitions.inventory)
+    lock_path = writer._publication_lock_path()
     assert lock_path.is_file()
     candidates = tuple(
         path
@@ -700,7 +762,7 @@ def test_dead_same_host_lock_and_final_candidate_are_recovered_immediately(
     )
     assert len(candidates) == 1
 
-    resumed = TypedGraphStoreWriter(ingestor, partitions).build()
+    resumed = writer.build()
 
     assert resumed.cache_hit is True
     assert not lock_path.exists()
@@ -709,12 +771,15 @@ def test_dead_same_host_lock_and_final_candidate_are_recovered_immediately(
         for path in (store_root / ".staging").rglob("finalize-*")
         if path.is_dir()
     )
+    resumed.store.close()
 
 
 def test_corrupt_completed_stage_is_quarantined_without_reusing_bad_bytes(
     tmp_path: Path,
 ) -> None:
-    ingestor = ParquetTypedGraphIngestor(_source(tmp_path / "source"), tmp_path / "stores")
+    ingestor = ParquetTypedGraphIngestor(
+        _source(tmp_path / "source"), tmp_path / "stores"
+    )
     first = ingestor.build()
     mapping = next((first.stage_root / "mappings").rglob("node_ids.parquet"))
     os.chmod(mapping, 0o600)
@@ -725,5 +790,7 @@ def test_corrupt_completed_stage_is_quarantined_without_reusing_bad_bytes(
     assert rebuilt.resumed is False
     assert rebuilt.stage_root == first.stage_root
     assert rebuilt.indexes
-    assert list(first.stage_root.parent.glob(f".{first.stage_root.name}.quarantine-*"))
+    assert list(
+        first.stage_root.parent.glob(f".{first.stage_root.name}.quarantine-*")
+    )
     assert not mapping.read_bytes().endswith(b"corrupt")

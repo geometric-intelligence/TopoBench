@@ -18,7 +18,9 @@ class TestCombinedEncodings:
 
     def setup_method(self):
         """Set up test fixtures before each test method."""
-        self.edge_index = torch.tensor([[0, 1, 2, 1, 2, 0], [1, 2, 0, 0, 1, 2]])
+        self.edge_index = torch.tensor(
+            [[0, 1, 2, 1, 2, 0], [1, 2, 0, 0, 1, 2]]
+        )
         self.x = torch.randn(3, 5)
         self.num_nodes = 3
 
@@ -26,13 +28,18 @@ class TestCombinedEncodings:
 
     def test_encoding_sets_defined(self):
         """Test that encoding sets are properly defined."""
-        assert PSE_ENCODINGS == {"LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE"}
-        assert FE_ENCODINGS == {"HKFE", "KHopFE", "SheafConnLapPE", "PPRFE"}
+        assert {
+            "LapPE",
+            "RWSE",
+            "ElectrostaticPE",
+            "HKdiagSE",
+        } == PSE_ENCODINGS
+        assert {"HKFE", "KHopFE", "SheafConnLapPE", "PPRFE"} == FE_ENCODINGS
         assert ALL_ENCODINGS == PSE_ENCODINGS | FE_ENCODINGS
 
     def test_encoding_sets_no_overlap(self):
         """Test that PSE and FE sets don't overlap."""
-        assert PSE_ENCODINGS & FE_ENCODINGS == set()
+        assert set() == PSE_ENCODINGS & FE_ENCODINGS
 
     # ========== Initialization Tests ==========
 
@@ -50,7 +57,9 @@ class TestCombinedEncodings:
 
     def test_initialization_with_mixed(self):
         """Test initialization with mixed FE and PSE encodings."""
-        transform = CombinedEncodings(encodings=["HKFE", "LapPE", "KHopFE", "RWSE"])
+        transform = CombinedEncodings(
+            encodings=["HKFE", "LapPE", "KHopFE", "RWSE"]
+        )
         assert transform.fe_encodings == ["HKFE", "KHopFE"]
         assert transform.pse_encodings == ["LapPE", "RWSE"]
 
@@ -74,8 +83,7 @@ class TestCombinedEncodings:
             "LapPE": {"max_pe_dim": 4},
         }
         transform = CombinedEncodings(
-            encodings=["HKFE", "LapPE"],
-            parameters=params
+            encodings=["HKFE", "LapPE"], parameters=params
         )
         assert transform.parameters == params
 
@@ -87,8 +95,14 @@ class TestCombinedEncodings:
             "HKFE": {"kernel_param_HKFE": (1, 5), "concat_to_x": False},
             "KHopFE": {"max_hop": 3, "concat_to_x": False},
         }
-        transform = CombinedEncodings(encodings=["HKFE", "KHopFE"], parameters=params)
-        data = Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
+        transform = CombinedEncodings(
+            encodings=["HKFE", "KHopFE"], parameters=params
+        )
+        data = Data(
+            x=self.x.clone(),
+            edge_index=self.edge_index,
+            num_nodes=self.num_nodes,
+        )
 
         result = transform(data)
 
@@ -103,8 +117,14 @@ class TestCombinedEncodings:
             "LapPE": {"max_pe_dim": 4, "concat_to_x": False},
             "RWSE": {"max_pe_dim": 4, "concat_to_x": False},
         }
-        transform = CombinedEncodings(encodings=["LapPE", "RWSE"], parameters=params)
-        data = Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
+        transform = CombinedEncodings(
+            encodings=["LapPE", "RWSE"], parameters=params
+        )
+        data = Data(
+            x=self.x.clone(),
+            edge_index=self.edge_index,
+            num_nodes=self.num_nodes,
+        )
 
         result = transform(data)
 
@@ -117,8 +137,14 @@ class TestCombinedEncodings:
             "HKFE": {"kernel_param_HKFE": (1, 5), "concat_to_x": True},
             "LapPE": {"max_pe_dim": 4, "concat_to_x": True},
         }
-        transform = CombinedEncodings(encodings=["HKFE", "LapPE"], parameters=params)
-        data = Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
+        transform = CombinedEncodings(
+            encodings=["HKFE", "LapPE"], parameters=params
+        )
+        data = Data(
+            x=self.x.clone(),
+            edge_index=self.edge_index,
+            num_nodes=self.num_nodes,
+        )
 
         result = transform(data)
 
@@ -131,8 +157,14 @@ class TestCombinedEncodings:
             "HKFE": {"kernel_param_HKFE": (1, 5), "concat_to_x": False},
             "LapPE": {"max_pe_dim": 4, "concat_to_x": False},
         }
-        transform = CombinedEncodings(encodings=["HKFE", "LapPE"], parameters=params)
-        data = Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
+        transform = CombinedEncodings(
+            encodings=["HKFE", "LapPE"], parameters=params
+        )
+        data = Data(
+            x=self.x.clone(),
+            edge_index=self.edge_index,
+            num_nodes=self.num_nodes,
+        )
 
         result = transform(data)
 
@@ -150,17 +182,30 @@ class TestCombinedEncodings:
         }
 
         # PSE listed first, but FE should still run first
-        transform = CombinedEncodings(encodings=["LapPE", "HKFE"], parameters=params)
+        transform = CombinedEncodings(
+            encodings=["LapPE", "HKFE"], parameters=params
+        )
 
         # Compute HKFE alone for comparison
         from topobench.transforms.data_manipulations import CombinedFEs
+
         fe_only = CombinedFEs(
             encodings=["HKFE"],
-            parameters={"HKFE": {"kernel_param_HKFE": (1, 5), "concat_to_x": False}}
+            parameters={
+                "HKFE": {"kernel_param_HKFE": (1, 5), "concat_to_x": False}
+            },
         )
 
-        data1 = Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
-        data2 = Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data1 = Data(
+            x=self.x.clone(),
+            edge_index=self.edge_index,
+            num_nodes=self.num_nodes,
+        )
+        data2 = Data(
+            x=self.x.clone(),
+            edge_index=self.edge_index,
+            num_nodes=self.num_nodes,
+        )
 
         result_combined = transform(data1)
         result_fe_only = fe_only(data2)
@@ -171,7 +216,11 @@ class TestCombinedEncodings:
     def test_empty_encodings_list(self):
         """Test forward with empty encodings list."""
         transform = CombinedEncodings(encodings=[])
-        data = Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x.clone(),
+            edge_index=self.edge_index,
+            num_nodes=self.num_nodes,
+        )
 
         result = transform(data)
 
@@ -186,10 +235,13 @@ class TestCombinedEncodings:
             "RWSE": {"max_pe_dim": 4, "concat_to_x": False},
         }
         transform = CombinedEncodings(
-            encodings=["HKFE", "KHopFE", "LapPE", "RWSE"],
-            parameters=params
+            encodings=["HKFE", "KHopFE", "LapPE", "RWSE"], parameters=params
         )
-        data = Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x.clone(),
+            edge_index=self.edge_index,
+            num_nodes=self.num_nodes,
+        )
 
         result = transform(data)
 
@@ -204,8 +256,14 @@ class TestCombinedEncodings:
             "HKFE": {"kernel_param_HKFE": (1, 5), "concat_to_x": True},
             "LapPE": {"max_pe_dim": 4, "concat_to_x": True},
         }
-        transform = CombinedEncodings(encodings=["HKFE", "LapPE"], parameters=params)
-        data = Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
+        transform = CombinedEncodings(
+            encodings=["HKFE", "LapPE"], parameters=params
+        )
+        data = Data(
+            x=self.x.clone(),
+            edge_index=self.edge_index,
+            num_nodes=self.num_nodes,
+        )
 
         result = transform(data)
 
@@ -215,14 +273,21 @@ class TestCombinedEncodings:
     def test_with_sheaf_encoding(self):
         """Test with SheafConnLapPE encoding."""
         params = {
-            "SheafConnLapPE": {"max_pe_dim": 6, "stalk_dim": 3, "concat_to_x": False},
+            "SheafConnLapPE": {
+                "max_pe_dim": 6,
+                "stalk_dim": 3,
+                "concat_to_x": False,
+            },
             "LapPE": {"max_pe_dim": 4, "concat_to_x": False},
         }
         transform = CombinedEncodings(
-            encodings=["SheafConnLapPE", "LapPE"],
-            parameters=params
+            encodings=["SheafConnLapPE", "LapPE"], parameters=params
         )
-        data = Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x.clone(),
+            edge_index=self.edge_index,
+            num_nodes=self.num_nodes,
+        )
 
         result = transform(data)
 
@@ -262,7 +327,9 @@ class TestSelectDestinationEncodings:
 
     def test_select_multiple_encodings(self):
         """Test selecting multiple encodings."""
-        transform = SelectDestinationEncodings(encodings=["HKFE", "LapPE", "RWSE"])
+        transform = SelectDestinationEncodings(
+            encodings=["HKFE", "LapPE", "RWSE"]
+        )
 
         data = Data(
             x=torch.randn(self.num_total, 5),
@@ -280,7 +347,9 @@ class TestSelectDestinationEncodings:
 
     def test_missing_encoding_raises(self):
         """Test that missing encoding raises ValueError."""
-        transform = SelectDestinationEncodings(encodings=["HKFE", "MissingEnc"])
+        transform = SelectDestinationEncodings(
+            encodings=["HKFE", "MissingEnc"]
+        )
 
         data = Data(
             x=torch.randn(self.num_total, 5),
@@ -295,7 +364,9 @@ class TestSelectDestinationEncodings:
         transform = SelectDestinationEncodings(encodings=["HKFE"])
 
         # Create data with known values
-        hkfe_data = torch.arange(self.num_total * 4).reshape(self.num_total, 4).float()
+        hkfe_data = (
+            torch.arange(self.num_total * 4).reshape(self.num_total, 4).float()
+        )
         data = Data(
             x=torch.randn(self.num_total, 5),
             HKFE=hkfe_data,
@@ -304,7 +375,7 @@ class TestSelectDestinationEncodings:
         result = transform(data, self.num_dst)
 
         # Should have first 3 rows
-        expected_hkfe = hkfe_data[:self.num_dst]
+        expected_hkfe = hkfe_data[: self.num_dst]
         assert torch.equal(result.HKFE, expected_hkfe)
 
     def test_x_none_handling(self):

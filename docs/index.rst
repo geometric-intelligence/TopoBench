@@ -33,14 +33,15 @@ create and synchronize the ``uv`` environment:
 
    git clone https://github.com/geometric-intelligence/topobench.git
    cd topobench
-   source uv_env_setup.sh cpu
+   source uv_env_setup.sh
 
-Use ``cu118`` or ``cu121`` instead of ``cpu`` when that build matches the
-machine. In an existing compatible environment, synchronize directly:
+The committed lock selects CPU packages on macOS and CUDA 12.1 packages on
+Linux. The setup script does not modify ``pyproject.toml`` or ``uv.lock``. In
+an existing compatible environment, perform the same immutable sync directly:
 
 .. code-block:: bash
 
-   uv sync --all-extras
+   uv sync --frozen --all-extras
 
 Run the current product
 -----------------------

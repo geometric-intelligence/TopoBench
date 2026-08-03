@@ -2,8 +2,8 @@
 
 import pytest
 import torch
-import numpy as np
 from torch_geometric.data import Data
+
 from topobench.transforms.data_manipulations import LapPE
 
 
@@ -26,7 +26,7 @@ class TestLapPE:
             max_pe_dim=16,
             include_eigenvalues=True,
             include_first=True,
-            concat_to_x=False
+            concat_to_x=False,
         )
         assert transform.max_pe_dim == 16
         assert transform.include_eigenvalues is True
@@ -45,14 +45,18 @@ class TestLapPE:
         # Check that LapPE was concatenated to x
         assert transformed.x is not None
         assert transformed.x.shape[0] == 3  # num_nodes
-        assert transformed.x.shape[1] == 1 + self.transform.max_pe_dim  # original + LapPE
+        assert (
+            transformed.x.shape[1] == 1 + self.transform.max_pe_dim
+        )  # original + LapPE
 
         # Check that original features are preserved
         assert torch.equal(transformed.x[:, 0:1], x)
 
         # Check that LapPE features are not all zeros
         lappe_features = transformed.x[:, 1:]
-        assert not torch.allclose(lappe_features, torch.zeros_like(lappe_features))
+        assert not torch.allclose(
+            lappe_features, torch.zeros_like(lappe_features)
+        )
 
     def test_forward_no_concat(self):
         """Test transform when concat_to_x is False."""
@@ -91,7 +95,9 @@ class TestLapPE:
         # Check that LapPE is all zeros for empty graph
         assert transformed.x is not None
         assert transformed.x.shape == (5, self.transform.max_pe_dim)
-        assert torch.allclose(transformed.x, torch.zeros(5, self.transform.max_pe_dim))
+        assert torch.allclose(
+            transformed.x, torch.zeros(5, self.transform.max_pe_dim)
+        )
 
     def test_single_node_graph(self):
         """Test transform on a graph with a single node."""
@@ -103,7 +109,9 @@ class TestLapPE:
         # Check that LapPE is all zeros for single node
         assert transformed.x is not None
         assert transformed.x.shape == (1, self.transform.max_pe_dim)
-        assert torch.allclose(transformed.x, torch.zeros(1, self.transform.max_pe_dim))
+        assert torch.allclose(
+            transformed.x, torch.zeros(1, self.transform.max_pe_dim)
+        )
 
     def test_disconnected_graph(self):
         """Test transform on a disconnected graph."""
@@ -136,9 +144,7 @@ class TestLapPE:
         # Complete graph on 4 nodes
         edges = []
         for i in range(4):
-            for j in range(4):
-                if i != j:
-                    edges.append([i, j])
+            edges.extend([[i, j] for j in range(4) if i != j])
         edge_index = torch.tensor(edges).t()
         data = Data(edge_index=edge_index, num_nodes=4)
 
@@ -184,7 +190,9 @@ class TestLapPE:
 
     def test_include_eigenvalues(self):
         """Test transform with include_eigenvalues=True."""
-        transform = LapPE(max_pe_dim=8, include_eigenvalues=True, concat_to_x=False)
+        transform = LapPE(
+            max_pe_dim=8, include_eigenvalues=True, concat_to_x=False
+        )
         edge_index = torch.tensor([[0, 1, 2], [1, 2, 0]])
         data = Data(edge_index=edge_index, num_nodes=3)
 
@@ -199,11 +207,15 @@ class TestLapPE:
         data = Data(edge_index=edge_index, num_nodes=3)
 
         # Test with include_first=False (default)
-        transform_exclude = LapPE(max_pe_dim=4, include_first=False, concat_to_x=False)
+        transform_exclude = LapPE(
+            max_pe_dim=4, include_first=False, concat_to_x=False
+        )
         transformed_exclude = transform_exclude(data)
 
         # Test with include_first=True
-        transform_include = LapPE(max_pe_dim=4, include_first=True, concat_to_x=False)
+        transform_include = LapPE(
+            max_pe_dim=4, include_first=True, concat_to_x=False
+        )
         transformed_include = transform_include(data)
 
         # Both should have the same shape (due to padding)
@@ -211,7 +223,9 @@ class TestLapPE:
         assert transformed_include.LapPE.shape == (3, 4)
 
         # The encodings should be different
-        assert not torch.allclose(transformed_exclude.LapPE, transformed_include.LapPE)
+        assert not torch.allclose(
+            transformed_exclude.LapPE, transformed_include.LapPE
+        )
 
     def test_orthogonality_of_eigenvectors(self):
         """Test that eigenvectors are approximately orthogonal."""
@@ -226,7 +240,9 @@ class TestLapPE:
         gram = lappe.T @ lappe
         # Check if non-diagonal elements are close to zero
         gram_offdiag = gram - torch.diag(torch.diag(gram))
-        assert torch.allclose(gram_offdiag, torch.zeros_like(gram_offdiag), atol=0.1)
+        assert torch.allclose(
+            gram_offdiag, torch.zeros_like(gram_offdiag), atol=0.1
+        )
 
     def test_sign_consistency(self):
         """Test that sign ambiguity resolution is applied."""
@@ -266,10 +282,9 @@ class TestLapPE:
     def test_chain_graph(self):
         """Test transform on a chain/path graph."""
         # Chain: 0-1-2-3-4
-        edge_index = torch.tensor([
-            [0, 1, 1, 2, 2, 3, 3, 4],
-            [1, 0, 2, 1, 3, 2, 4, 3]
-        ])
+        edge_index = torch.tensor(
+            [[0, 1, 1, 2, 2, 3, 3, 4], [1, 0, 2, 1, 3, 2, 4, 3]]
+        )
         data = Data(edge_index=edge_index, num_nodes=5)
 
         transform = LapPE(max_pe_dim=4, concat_to_x=False)
@@ -281,18 +296,13 @@ class TestLapPE:
         # For a symmetric chain, end nodes should have similar encodings
         # (though potentially with opposite signs)
         assert torch.allclose(
-            transformed.LapPE[0].abs(),
-            transformed.LapPE[4].abs(),
-            atol=0.1
+            transformed.LapPE[0].abs(), transformed.LapPE[4].abs(), atol=0.1
         )
 
     def test_star_graph(self):
         """Test transform on a star graph (one central node connected to all others)."""
         # Star graph: node 0 is center, connected to nodes 1, 2, 3
-        edge_index = torch.tensor([
-            [0, 1, 0, 2, 0, 3],
-            [1, 0, 2, 0, 3, 0]
-        ])
+        edge_index = torch.tensor([[0, 1, 0, 2, 0, 3], [1, 0, 2, 0, 3, 0]])
         data = Data(edge_index=edge_index, num_nodes=4)
 
         transform = LapPE(max_pe_dim=4, concat_to_x=False)
@@ -304,15 +314,18 @@ class TestLapPE:
         # Leaf nodes should have similar magnitude encodings (up to sign)
         # In a star graph, leaf nodes are structurally equivalent
         norms_leaves = torch.norm(transformed.LapPE[1:], dim=1)
-        assert torch.allclose(norms_leaves, norms_leaves.mean() * torch.ones_like(norms_leaves), atol=0.15)
+        assert torch.allclose(
+            norms_leaves,
+            norms_leaves.mean() * torch.ones_like(norms_leaves),
+            atol=0.15,
+        )
 
     def test_cycle_graph(self):
         """Test transform on a cycle graph."""
         # Cycle: 0-1-2-3-0
-        edge_index = torch.tensor([
-            [0, 1, 1, 2, 2, 3, 3, 0],
-            [1, 0, 2, 1, 3, 2, 0, 3]
-        ])
+        edge_index = torch.tensor(
+            [[0, 1, 1, 2, 2, 3, 3, 0], [1, 0, 2, 1, 3, 2, 0, 3]]
+        )
         data = Data(edge_index=edge_index, num_nodes=4)
 
         transform = LapPE(max_pe_dim=4, concat_to_x=False)
@@ -323,7 +336,9 @@ class TestLapPE:
 
         # All nodes in a regular cycle should have similar magnitude encodings
         norms = torch.norm(transformed.LapPE, dim=1)
-        assert torch.allclose(norms, norms.mean() * torch.ones_like(norms), atol=0.1)
+        assert torch.allclose(
+            norms, norms.mean() * torch.ones_like(norms), atol=0.1
+        )
 
     def test_device_consistency(self):
         """Test that LapPE respects the device of input data."""
@@ -352,7 +367,7 @@ class TestLapPE:
             edge_index=edge_index,
             y=y,
             custom_attr=custom_attr,
-            num_nodes=3
+            num_nodes=3,
         )
 
         transformed = self.transform(data)
@@ -384,7 +399,7 @@ class TestLapPE:
             max_pe_dim=4,
             include_eigenvalues=True,
             include_first=True,
-            concat_to_x=False
+            concat_to_x=False,
         )
         edge_index = torch.tensor([[0, 1, 1, 2, 2, 3], [1, 0, 2, 1, 3, 2]])
         data = Data(edge_index=edge_index, num_nodes=4)
@@ -392,13 +407,17 @@ class TestLapPE:
         transformed = transform(data)
 
         # Extract eigenvalues (second half of the encoding)
-        eigenvalues = transformed.LapPE[0, 4:]  # All nodes should have same eigenvalues
+        eigenvalues = transformed.LapPE[
+            0, 4:
+        ]  # All nodes should have same eigenvalues
 
         # Check that non-zero eigenvalues are in ascending order
         non_zero_mask = eigenvalues > 1e-6
         if non_zero_mask.sum() > 1:
             non_zero_eigenvalues = eigenvalues[non_zero_mask]
-            assert torch.all(non_zero_eigenvalues[1:] >= non_zero_eigenvalues[:-1] - 1e-5)
+            assert torch.all(
+                non_zero_eigenvalues[1:] >= non_zero_eigenvalues[:-1] - 1e-5
+            )
 
     def test_numerical_stability(self):
         """Test transform on potentially problematic cases for numerical stability."""
@@ -416,10 +435,7 @@ class TestLapPE:
     def test_undirected_graph_symmetry(self):
         """Test LapPE on undirected graph exhibits expected symmetries."""
         # Symmetric graph: 0-1-2-1-0 (bidirectional edges forming a triangle)
-        edge_index = torch.tensor([
-            [0, 1, 1, 2, 2, 0],
-            [1, 0, 2, 1, 0, 2]
-        ])
+        edge_index = torch.tensor([[0, 1, 1, 2, 2, 0], [1, 0, 2, 1, 0, 2]])
         data = Data(edge_index=edge_index, num_nodes=3)
 
         transform = LapPE(max_pe_dim=4, concat_to_x=False)
@@ -492,9 +508,7 @@ class TestLapPE:
             Whether to include the first eigenvector in the encoding.
         """
         transform = LapPE(
-            max_pe_dim=4,
-            include_first=include_first,
-            concat_to_x=False
+            max_pe_dim=4, include_first=include_first, concat_to_x=False
         )
         edge_index = torch.tensor([[0, 1, 1, 2], [1, 0, 2, 1]])
         data = Data(edge_index=edge_index, num_nodes=3)
@@ -517,7 +531,7 @@ class TestLapPE:
         transform = LapPE(
             max_pe_dim=max_pe_dim,
             include_eigenvalues=include_eigenvalues,
-            concat_to_x=False
+            concat_to_x=False,
         )
         edge_index = torch.tensor([[0, 1, 1, 2], [1, 0, 2, 1]])
         data = Data(edge_index=edge_index, num_nodes=3)
@@ -538,5 +552,8 @@ class TestLapPE:
 
         captured = capsys.readouterr()
         # Verify that some debug information was printed
-        assert "LapPE Debug Report" in captured.out or "method" in captured.out.lower()
+        assert (
+            "LapPE Debug Report" in captured.out
+            or "method" in captured.out.lower()
+        )
         assert transformed.x.shape == (3, 2)

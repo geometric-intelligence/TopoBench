@@ -107,6 +107,7 @@ parameters:
 
 split_params:
   learning_setting: transductive
+  split_type: fixed
   source: explicit_registry
 
 dataloader_params:

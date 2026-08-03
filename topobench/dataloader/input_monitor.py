@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import resource
 import sys
 import threading
@@ -11,10 +12,9 @@ from collections import deque
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
 
 from topobench.profiling.execution_events import (
     ExecutionEvent,
@@ -32,7 +32,7 @@ ResourceReader = Callable[[], "ResourceSnapshot"]
 CudaEventFactory = Callable[[], object]
 
 
-class OverflowPolicy(str, Enum):
+class OverflowPolicy(StrEnum):
     """Explicit handling for bounded event and pending-timing queues."""
 
     WARN = "warn"
@@ -41,11 +41,10 @@ class OverflowPolicy(str, Enum):
 
 class MonitorOverflowError(RuntimeError):
     """Raised when a configured error policy encounters bounded overflow."""
+
+
 class InputStallError(RuntimeError):
     """Raised after the configured number of sustained starvation windows."""
-
-
-
 
 
 def _integer(
@@ -130,8 +129,14 @@ class QueueSnapshot:
             (self.device_depth, self.device_configured_depth),
             (self.device_bytes, self.device_configured_bytes),
         ):
-            if current is not None and configured is not None and current > configured:
-                raise ValueError("current queue occupancy exceeds configured bound")
+            if (
+                current is not None
+                and configured is not None
+                and current > configured
+            ):
+                raise ValueError(
+                    "current queue occupancy exceeds configured bound"
+                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,6 +186,7 @@ class _PendingCuda:
     token: OperationToken
     completion: _Completion
 
+
 @dataclass(slots=True)
 class _StepTiming:
     host_wait_ns: int = 0
@@ -188,8 +194,6 @@ class _StepTiming:
     optimizer_ns: int = 0
     model_seen: bool = False
     optimizer_seen: bool = False
-
-
 
 
 def _default_wall() -> datetime:
@@ -261,15 +265,27 @@ def _resource_values(
         }
     return {
         "rss_bytes": after.rss_bytes,
-        "rss_delta_bytes": _delta(after.rss_bytes, None if before is None else before.rss_bytes),
+        "rss_delta_bytes": _delta(
+            after.rss_bytes, None if before is None else before.rss_bytes
+        ),
         "pinned_bytes": after.pinned_bytes,
-        "pinned_delta_bytes": _delta(after.pinned_bytes, None if before is None else before.pinned_bytes),
+        "pinned_delta_bytes": _delta(
+            after.pinned_bytes, None if before is None else before.pinned_bytes
+        ),
         "gpu_bytes": after.gpu_bytes,
-        "gpu_delta_bytes": _delta(after.gpu_bytes, None if before is None else before.gpu_bytes),
+        "gpu_delta_bytes": _delta(
+            after.gpu_bytes, None if before is None else before.gpu_bytes
+        ),
         "temp_disk_bytes": after.temp_disk_bytes,
-        "temp_disk_delta_bytes": _delta(after.temp_disk_bytes, None if before is None else before.temp_disk_bytes),
+        "temp_disk_delta_bytes": _delta(
+            after.temp_disk_bytes,
+            None if before is None else before.temp_disk_bytes,
+        ),
         "final_disk_bytes": after.final_disk_bytes,
-        "final_disk_delta_bytes": _delta(after.final_disk_bytes, None if before is None else before.final_disk_bytes),
+        "final_disk_delta_bytes": _delta(
+            after.final_disk_bytes,
+            None if before is None else before.final_disk_bytes,
+        ),
     }
 
 
@@ -282,7 +298,9 @@ def _safe_check_value(value: object, name: str) -> Primitive | PrimitiveMap:
         return value.name
     if isinstance(value, Mapping):
         return redact_mapping(value)
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+    if isinstance(value, Sequence) and not isinstance(
+        value, (str, bytes, bytearray)
+    ):
         return MappingProxyType({"count": len(value)})
     return f"[{type(value).__name__}]"
 
@@ -319,21 +337,29 @@ class InputMonitor:
         try:
             policy = OverflowPolicy(overflow_policy)
         except (TypeError, ValueError) as error:
-            raise ValueError("overflow_policy must be warn or error") from error
+            raise ValueError(
+                "overflow_policy must be warn or error"
+            ) from error
         self._wall_clock = wall_clock
         self._monotonic_ns = monotonic_ns
         self._resource_reader = resource_reader
         self.cuda_event_factory = cuda_event_factory
-        self.event_capacity = _integer(event_capacity, "event_capacity", minimum=1)
+        self.event_capacity = _integer(
+            event_capacity, "event_capacity", minimum=1
+        )
         self.pending_cuda_capacity = _integer(
             pending_cuda_capacity,
             "pending_cuda_capacity",
             minimum=1,
         )
-        self.sample_every_n = _integer(sample_every_n, "sample_every_n", minimum=1)
+        self.sample_every_n = _integer(
+            sample_every_n, "sample_every_n", minimum=1
+        )
         self.sample_offset = _integer(sample_offset, "sample_offset")
         if self.sample_offset >= self.sample_every_n:
-            raise ValueError("sample_offset must be smaller than sample_every_n")
+            raise ValueError(
+                "sample_offset must be smaller than sample_every_n"
+            )
         self.overflow_policy = policy
         self.warmup_steps = _integer(warmup_steps, "warmup_steps")
         self.rolling_window_steps = _integer(
@@ -346,7 +372,9 @@ class InputMonitor:
             or not isinstance(max_input_stall_fraction, (int, float))
             or not 0 <= float(max_input_stall_fraction) <= 1
         ):
-            raise ValueError("max_input_stall_fraction must be between zero and one")
+            raise ValueError(
+                "max_input_stall_fraction must be between zero and one"
+            )
         self.max_input_stall_fraction = float(max_input_stall_fraction)
         self.max_consecutive_starved_steps = _integer(
             max_consecutive_starved_steps,
@@ -399,7 +427,9 @@ class InputMonitor:
 
     def _sampled(self, descriptor_sequence: int | None) -> bool:
         if descriptor_sequence is not None:
-            return descriptor_sequence % self.sample_every_n == self.sample_offset
+            return (
+                descriptor_sequence % self.sample_every_n == self.sample_offset
+            )
         self._sample_serial += 1
         return self._sample_serial % self.sample_every_n == self.sample_offset
 
@@ -461,7 +491,9 @@ class InputMonitor:
             }
         ):
             return
-        timing = self._step_timings.setdefault(event.global_step, _StepTiming())
+        timing = self._step_timings.setdefault(
+            event.global_step, _StepTiming()
+        )
         if event.operation is ExecutionOperation.HOST_WAIT:
             timing.host_wait_ns += event.duration_ns
         elif event.operation is ExecutionOperation.MODEL_COMPUTE:
@@ -541,8 +573,6 @@ class InputMonitor:
             raise InputStallError(message)
         warnings.warn(message, ResourceWarning, stacklevel=4)
 
-
-
     def _enqueue(self, event: ExecutionEvent) -> bool:
         if len(self._events) >= self.event_capacity:
             self.dropped_event_count += 1
@@ -561,7 +591,10 @@ class InputMonitor:
             if (
                 not isinstance(prehashed, str)
                 or len(prehashed) != 64
-                or any(character not in "0123456789abcdef" for character in prehashed)
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in prehashed
+                )
             ):
                 raise ValueError(
                     "descriptor_digest_value must be a lowercase SHA-256"
@@ -750,7 +783,9 @@ class InputMonitor:
             remediation=completion.remediation,
             report_reference=completion.report_reference,
             **_queue_values(completion.queue or token.queue),
-            **_resource_values(token.resource_before, completion.resource_after),
+            **_resource_values(
+                token.resource_before, completion.resource_after
+            ),
         )
 
     def finish(
@@ -805,7 +840,9 @@ class InputMonitor:
                 self._open_tokens.add(token.serial)
             raise
         if token.cuda_end is None:
-            event = self._event(token, completion, completion.end_ns - token.start_ns)
+            event = self._event(
+                token, completion, completion.end_ns - token.start_ns
+            )
             with self._lock:
                 self._enqueue(event)
             return event
@@ -854,9 +891,13 @@ class InputMonitor:
                     raise TypeError("CUDA completion event must expose query")
                 if query() is not True:
                     break
-                elapsed = getattr(pending.token.cuda_start, "elapsed_time", None)
+                elapsed = getattr(
+                    pending.token.cuda_start, "elapsed_time", None
+                )
                 if not callable(elapsed):
-                    raise TypeError("CUDA start event must expose elapsed_time")
+                    raise TypeError(
+                        "CUDA start event must expose elapsed_time"
+                    )
                 milliseconds = float(elapsed(pending.token.cuda_end))
                 if milliseconds < 0:
                     raise ValueError("CUDA elapsed time must be non-negative")
@@ -1003,7 +1044,9 @@ class InputMonitor:
         )
         now = _integer(self._monotonic_ns(), "monotonic clock")
         with self._lock:
-            ready = None if digest is None else self._ready_times.pop(digest, None)
+            ready = (
+                None if digest is None else self._ready_times.pop(digest, None)
+            )
             prior_end = self._last_compute_end_ns
         if prior_end is not None and ready is not None and ready > prior_end:
             self.record(
@@ -1072,7 +1115,9 @@ class InputMonitor:
         return self.record(
             ExecutionOperation.VALIDATION,
             phase="qualification",
-            status=(ExecutionStatus.SUCCESS if passed else ExecutionStatus.ERROR),
+            status=(
+                ExecutionStatus.SUCCESS if passed else ExecutionStatus.ERROR
+            ),
             check_id=getattr(result, "check_id", None),
             check_passed=passed,
             check_expected=getattr(result, "expected", None),
@@ -1101,7 +1146,7 @@ class InputMonitor:
                             }
                         ),
                     )
-                    try:
+                    with contextlib.suppress(MonitorOverflowError):
                         self._enqueue(
                             self._event(
                                 pending.token,
@@ -1109,8 +1154,6 @@ class InputMonitor:
                                 completion.end_ns - pending.token.start_ns,
                             )
                         )
-                    except MonitorOverflowError:
-                        pass
             finally:
                 self._open_tokens.clear()
                 self._ready_times.clear()

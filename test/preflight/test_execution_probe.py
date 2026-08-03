@@ -90,7 +90,9 @@ def test_probe_routes_raw_step_through_model_optimizer_hook_once() -> None:
     assert observations["optimizer_success_token"] == 1
 
 
-def test_probe_rejects_nonfinite_gradients_even_when_forward_loss_is_finite() -> None:
+def test_probe_rejects_nonfinite_gradients_even_when_forward_loss_is_finite() -> (
+    None
+):
     datamodule = StatefulPhaseDataModule()
     observations = make_observations()
     runner, static_result, _ = qualified_runner(datamodule)
@@ -114,7 +116,9 @@ def test_probe_uses_configured_compile_path_without_production_compile_cost(
     observations = make_observations()
     compile_calls: list[nn.Module] = []
 
-    def compile_boundary(module: nn.Module, *args: Any, **kwargs: Any) -> nn.Module:
+    def compile_boundary(
+        module: nn.Module, *args: Any, **kwargs: Any
+    ) -> nn.Module:
         del args, kwargs
         compile_calls.append(module)
         return module
@@ -147,7 +151,9 @@ def test_test_only_probe_uses_test_setup_without_optimizer_or_compile(
     observations = make_observations()
     compile_calls: list[nn.Module] = []
 
-    def compile_boundary(module: nn.Module, *args: Any, **kwargs: Any) -> nn.Module:
+    def compile_boundary(
+        module: nn.Module, *args: Any, **kwargs: Any
+    ) -> nn.Module:
         del args, kwargs
         compile_calls.append(module)
         return module
@@ -230,7 +236,9 @@ def test_compile_graph_execution_error_fails_preflight(
         )
 
 
-def test_probe_reports_nonpublishing_payload_and_structured_check_validation() -> None:
+def test_probe_reports_nonpublishing_payload_and_structured_check_validation() -> (
+    None
+):
     datamodule = StatefulPhaseDataModule()
     observations = make_observations()
     runner, static_result, _ = qualified_runner(datamodule)
@@ -254,7 +262,9 @@ def test_probe_reports_nonpublishing_payload_and_structured_check_validation() -
     assert all(isinstance(check, dict) for check in record["checks"])
 
 
-def test_successful_probe_discards_throwaway_model_optimizer_and_scheduler() -> None:
+def test_successful_probe_discards_throwaway_model_optimizer_and_scheduler() -> (
+    None
+):
     datamodule = StatefulPhaseDataModule()
     observations = make_observations()
     references: dict[str, weakref.ReferenceType[Any]] = {}
@@ -281,7 +291,9 @@ def test_successful_probe_discards_throwaway_model_optimizer_and_scheduler() -> 
     assert all(reference() is None for reference in references.values())
 
 
-def test_probe_uses_native_batch_and_does_not_replace_production_data() -> None:
+def test_probe_uses_native_batch_and_does_not_replace_production_data() -> (
+    None
+):
     datamodule = StatefulPhaseDataModule()
     canonical = datamodule.batch
     canonical_x = canonical.x.clone()

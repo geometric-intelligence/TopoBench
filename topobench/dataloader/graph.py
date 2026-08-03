@@ -1,16 +1,17 @@
 """Native PyG batching for homogeneous graph data."""
 
 from __future__ import annotations
-from copy import copy
+
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from copy import copy
 from dataclasses import dataclass
 from numbers import Integral
-from collections.abc import Iterator, Sequence
 from typing import Literal
 
 import torch
-from torch import Tensor
 from lightning import LightningDataModule
+from torch import Tensor
 from torch.utils.data import DataLoader as TorchDataLoader
 from torch.utils.data import Dataset, Subset
 from torch_geometric.data import Data
@@ -210,8 +211,7 @@ def require_hypergraph_validation(
         return marker.context
 
     device_transfer = all(
-        current.device != snapshot.device
-        for snapshot, current in replacements
+        current.device != snapshot.device for snapshot, current in replacements
     )
     pin_transfer = all(
         current.device == snapshot.device
@@ -443,7 +443,9 @@ class GraphDataModule(LightningDataModule):
         if not requested or any(
             phase not in {"train", "val", "test"} for phase in requested
         ):
-            raise ValueError("probe phases must contain train, val, and/or test")
+            raise ValueError(
+                "probe phases must contain train, val, and/or test"
+            )
         rng_state = torch.random.get_rng_state().clone()
         iterators: list[Iterator[Data]] = []
         batches: dict[str, Data] = {}

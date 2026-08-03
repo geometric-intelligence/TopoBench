@@ -1,10 +1,12 @@
 """Configuration-driven data-pipeline boundaries."""
 
+from topobench.data.capabilities import RuntimeDataCapability
+
 from .base import (
     AbstractDataPipeline,
     CanonicalPredictionIdentity,
     DataPipelineOutput,
-    PredictionIdentityResolver,
+    PredictionRowAdapter,
     is_parquet_typed_graph_config,
 )
 from .default import DefaultDataPipeline
@@ -15,7 +17,8 @@ __all__ = [
     "AbstractDataPipeline",
     "CanonicalPredictionIdentity",
     "DataPipelineOutput",
-    "PredictionIdentityResolver",
+    "RuntimeDataCapability",
+    "PredictionRowAdapter",
     "is_parquet_typed_graph_config",
     "DefaultDataPipeline",
     "HeterogeneousNodeDataPipeline",

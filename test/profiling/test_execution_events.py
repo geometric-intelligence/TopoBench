@@ -1,6 +1,7 @@
 """Contracts for schema-versioned structured execution evidence."""
 
 from __future__ import annotations
+
 from dataclasses import FrozenInstanceError, replace
 from datetime import UTC, datetime
 
@@ -65,7 +66,9 @@ def _event(
     )
 
 
-def test_every_declared_operation_round_trips_with_all_resource_fields() -> None:
+def test_every_declared_operation_round_trips_with_all_resource_fields() -> (
+    None
+):
     expected = {
         "conversion",
         "partition",
@@ -102,7 +105,9 @@ def test_every_declared_operation_round_trips_with_all_resource_fields() -> None
         assert ExecutionEvent.from_record(record) == event
 
 
-def test_schema_is_frozen_strict_and_rejects_unsafe_identifiers_or_values() -> None:
+def test_schema_is_frozen_strict_and_rejects_unsafe_identifiers_or_values() -> (
+    None
+):
     event = _event(ExecutionOperation.VALIDATION)
     with pytest.raises(FrozenInstanceError):
         event.phase = "mutated"  # type: ignore[misc]
@@ -131,7 +136,9 @@ def test_schema_is_frozen_strict_and_rejects_unsafe_identifiers_or_values() -> N
         ExecutionEvent.from_record(record)
 
 
-def test_descriptor_identity_and_recursive_redaction_never_disclose_raw_data() -> None:
+def test_descriptor_identity_and_recursive_redaction_never_disclose_raw_data() -> (
+    None
+):
     identity = {
         "store": "warehouse-alpha",
         "partition_ids": [8, 13],
@@ -202,7 +209,9 @@ def test_descriptor_identity_and_recursive_redaction_never_disclose_raw_data() -
     assert redacted["nested"]["safe_count"] == 2
 
 
-def test_summary_uses_nearest_rank_percentiles_and_canonical_evidence() -> None:
+def test_summary_uses_nearest_rank_percentiles_and_canonical_evidence() -> (
+    None
+):
     durations = (1, 2, 3, 4, 100)
     events = tuple(
         _event(
@@ -322,4 +331,9 @@ def test_summary_uses_nearest_rank_percentiles_and_canonical_evidence() -> None:
     assert model_only.conversion_records_per_second is None
     assert model_only.selected_read_records_per_second is None
     assert model_only.native_assembly_records_per_second is None
-    assert datetime.fromisoformat(events[0].wall_time_utc.replace("Z", "+00:00")).tzinfo is UTC
+    assert (
+        datetime.fromisoformat(
+            events[0].wall_time_utc.replace("Z", "+00:00")
+        ).tzinfo
+        is UTC
+    )

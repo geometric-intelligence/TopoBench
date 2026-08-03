@@ -9,11 +9,16 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import UTC, datetime
-from enum import Enum
+from enum import Enum, StrEnum
 from pathlib import PurePath, PureWindowsPath
 from types import MappingProxyType
 from typing import Any, TypeAlias
 from urllib.parse import urlsplit
+
+from topobench.utils.sanitization import (
+    contains_sensitive_assignment,
+    is_sensitive_key,
+)
 
 EVENT_SCHEMA_VERSION = "execution-event-v1"
 SUMMARY_SCHEMA_VERSION = "execution-summary-v1"
@@ -23,50 +28,19 @@ _MAX_MAP_DEPTH = 4
 _IDENTITY_REPR_LIMIT = 16_384
 _CHECK_ID = re.compile(r"^[A-Z][A-Z0-9]*(?:[-.][A-Z0-9]+)+$")
 _NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
-_KEY_SEPARATOR = re.compile(r"[^A-Za-z0-9]+")
-_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
-_SECRET_TOKENS = frozenset(
-    {
-        "auth",
-        "authorization",
-        "bearer",
-        "cookie",
-        "credential",
-        "key",
-        "password",
-        "secret",
-        "token",
-    }
-)
-_SECRET_COMPACT_NAMES = frozenset(
-    {
-        "accesskey",
-        "accesstoken",
-        "apikey",
-        "authtoken",
-        "bearercredential",
-        "bearertoken",
-        "clientsecret",
-        "secretkey",
-    }
-)
-_SECRET_VALUE = re.compile(
-    r"(?:authorization|bearer|access[\s_-]*token|api[\s_-]*key|"
-    r"client[\s_-]*secret|secret[\s_-]*key|token|password|secret|key|"
-    r"credentials?|auth|cookie)(?:\s+|[\s_-]*[=:]\s*)[^/&?#\s]+",
-    re.IGNORECASE,
-)
 _RAW_DATA_KEY = re.compile(
     r"(?:external_?ids?|partition_?ids?|seed_?lists?|seed_?ids?|predictions?|labels?|features?|tensors?|raw_?rows?|environment(?:_values?)?)$",
     re.IGNORECASE,
 )
-_IDENTITY_KEY = re.compile(r"(?:descriptor|store)[_-]?identity$", re.IGNORECASE)
+_IDENTITY_KEY = re.compile(
+    r"(?:descriptor|store)[_-]?identity$", re.IGNORECASE
+)
 
 Primitive: TypeAlias = None | bool | int | float | str
 PrimitiveMap: TypeAlias = Mapping[str, Any]
 
 
-class ExecutionOperation(str, Enum):
+class ExecutionOperation(StrEnum):
     """Stable operation identifiers spanning conversion through artifacts."""
 
     CONVERSION = "conversion"
@@ -86,7 +60,7 @@ class ExecutionOperation(str, Enum):
     ARTIFACT = "artifact"
 
 
-class ExecutionStatus(str, Enum):
+class ExecutionStatus(StrEnum):
     """Stable terminal states for one execution operation."""
 
     SUCCESS = "success"
@@ -96,10 +70,16 @@ class ExecutionStatus(str, Enum):
     SKIPPED = "skipped"
 
 
-def _bounded_string(value: object, name: str, *, allow_empty: bool = False) -> str:
+def _bounded_string(
+    value: object, name: str, *, allow_empty: bool = False
+) -> str:
     if not isinstance(value, str):
         raise TypeError(f"{name} must be a string")
-    if (not value and not allow_empty) or len(value) > _MAX_STRING or "\x00" in value:
+    if (
+        (not value and not allow_empty)
+        or len(value) > _MAX_STRING
+        or "\x00" in value
+    ):
         raise ValueError(f"{name} must be a bounded non-NUL string")
     return value
 
@@ -174,17 +154,24 @@ def _canonical_identity(value: object, depth: int = 0) -> object:
     if value is None or type(value) in {bool, int, float, str}:
         return value
     if isinstance(value, bytes):
-        return {"bytes_sha256": hashlib.sha256(value).hexdigest(), "size": len(value)}
+        return {
+            "bytes_sha256": hashlib.sha256(value).hexdigest(),
+            "size": len(value),
+        }
     if isinstance(value, Mapping):
         return {
             str(key): _canonical_identity(item, depth + 1)
-            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+            for key, item in sorted(
+                value.items(), key=lambda pair: str(pair[0])
+            )
         }
     if isinstance(value, (tuple, list)):
         return [_canonical_identity(item, depth + 1) for item in value]
     if is_dataclass(value) and not isinstance(value, type):
         return {
-            field.name: _canonical_identity(getattr(value, field.name), depth + 1)
+            field.name: _canonical_identity(
+                getattr(value, field.name), depth + 1
+            )
             for field in fields(value)
         }
     representation = repr(value)
@@ -204,25 +191,6 @@ def descriptor_digest(identity: object) -> str:
         ensure_ascii=True,
     ).encode("utf-8")
     return hashlib.sha256(canonical).hexdigest()
-
-
-def _secret_key(key: str) -> bool:
-    separated = _CAMEL_BOUNDARY.sub("_", key)
-    tokens = tuple(
-        token.lower()
-        for token in _KEY_SEPARATOR.sub("_", separated).split("_")
-        if token
-    )
-    normalized = {
-        token[:-1] if token.endswith("s") else token
-        for token in tokens
-    }
-    compact = "".join(tokens).lower()
-    return (
-        bool(normalized & _SECRET_TOKENS)
-        or compact in _SECRET_COMPACT_NAMES
-        or compact.endswith(("password", "credential"))
-    )
 
 
 def _redacted_uri_or_path(value: str) -> str | None:
@@ -245,9 +213,10 @@ def _redacted_uri_or_path(value: str) -> str | None:
     return None
 
 
-
-def _redacted_value(key: str, value: object, depth: int) -> Primitive | PrimitiveMap:
-    if _secret_key(key) or _RAW_DATA_KEY.search(key):
+def _redacted_value(
+    key: str, value: object, depth: int
+) -> Primitive | PrimitiveMap:
+    if is_sensitive_key(key) or _RAW_DATA_KEY.search(key):
         return "[redacted]"
     if _IDENTITY_KEY.search(key):
         return descriptor_digest(value)
@@ -256,7 +225,7 @@ def _redacted_value(key: str, value: object, depth: int) -> Primitive | Primitiv
     if type(value) is float:
         return _safe_float(value, key)
     if isinstance(value, str):
-        if _SECRET_VALUE.search(value):
+        if contains_sensitive_assignment(value):
             return "[redacted]"
         redacted_location = _redacted_uri_or_path(value)
         if redacted_location is not None:
@@ -266,7 +235,9 @@ def _redacted_value(key: str, value: object, depth: int) -> Primitive | Primitiv
         if depth >= _MAX_MAP_DEPTH:
             return MappingProxyType({"truncated": True})
         return redact_mapping(value, _depth=depth + 1)
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+    if isinstance(value, Sequence) and not isinstance(
+        value, (str, bytes, bytearray)
+    ):
         return MappingProxyType({"count": min(len(value), 2**63 - 1)})
     return f"[{type(value).__name__}]"[:_MAX_STRING]
 
@@ -285,6 +256,8 @@ def redact_mapping(
         key = str(raw_key)[:64] or "unnamed"
         redacted[key] = _redacted_value(key, item, _depth)
     return MappingProxyType(dict(sorted(redacted.items())))
+
+
 def _redact_strict_primitive(
     value: object,
     name: str,
@@ -295,9 +268,6 @@ def _redact_strict_primitive(
     if isinstance(frozen, str):
         return _redacted_value(name, frozen, 0)
     return frozen
-
-
-
 
 
 def _validate_wall_time(value: object) -> str:
@@ -328,7 +298,7 @@ def _optional_reference(value: object) -> str | None:
     result = _bounded_string(value, "report_reference")
     if PurePath(result).is_absolute() or "/" in result or "\\" in result:
         raise ValueError("report_reference must be one local basename")
-    if _SECRET_VALUE.search(result) or _secret_key(result):
+    if contains_sensitive_assignment(result) or is_sensitive_key(result):
         return "redacted-report"
     return result
 
@@ -387,17 +357,25 @@ class ExecutionEvent:
         try:
             operation = ExecutionOperation(self.operation)
         except (TypeError, ValueError) as error:
-            raise ValueError("operation must be a declared execution operation") from error
+            raise ValueError(
+                "operation must be a declared execution operation"
+            ) from error
         try:
             status = ExecutionStatus(self.status)
         except (TypeError, ValueError) as error:
-            raise ValueError("status must be a declared execution status") from error
+            raise ValueError(
+                "status must be a declared execution status"
+            ) from error
         object.__setattr__(self, "operation", operation)
         object.__setattr__(self, "status", status)
         object.__setattr__(self, "phase", _optional_name(self.phase, "phase"))
         object.__setattr__(self, "split", _optional_name(self.split, "split"))
-        object.__setattr__(self, "wall_time_utc", _validate_wall_time(self.wall_time_utc))
-        object.__setattr__(self, "monotonic_ns", _integer(self.monotonic_ns, "monotonic_ns"))
+        object.__setattr__(
+            self, "wall_time_utc", _validate_wall_time(self.wall_time_utc)
+        )
+        object.__setattr__(
+            self, "monotonic_ns", _integer(self.monotonic_ns, "monotonic_ns")
+        )
         for name in (
             "duration_ns",
             "epoch",
@@ -422,7 +400,9 @@ class ExecutionEvent:
             "temp_disk_bytes",
             "final_disk_bytes",
         ):
-            object.__setattr__(self, name, _optional_integer(getattr(self, name), name))
+            object.__setattr__(
+                self, name, _optional_integer(getattr(self, name), name)
+            )
         for name in (
             "rss_delta_bytes",
             "pinned_delta_bytes",
@@ -436,18 +416,29 @@ class ExecutionEvent:
                 _optional_integer(getattr(self, name), name, minimum=None),
             )
         if self.descriptor_digest is not None:
-            digest = _bounded_string(self.descriptor_digest, "descriptor_digest")
-            if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
-                raise ValueError("descriptor_digest must be a lowercase SHA-256")
+            digest = _bounded_string(
+                self.descriptor_digest, "descriptor_digest"
+            )
+            if len(digest) != 64 or any(
+                character not in "0123456789abcdef" for character in digest
+            ):
+                raise ValueError(
+                    "descriptor_digest must be a lowercase SHA-256"
+                )
             object.__setattr__(self, "descriptor_digest", digest)
         if type(self.sampled) is not bool:
             raise TypeError("sampled must be bool")
         if self.check_id is not None:
             check_id = _bounded_string(self.check_id, "check_id")
             if len(check_id) > 64 or not _CHECK_ID.fullmatch(check_id):
-                raise ValueError("check_id must be a stable uppercase identifier")
+                raise ValueError(
+                    "check_id must be a stable uppercase identifier"
+                )
             object.__setattr__(self, "check_id", check_id)
-        if self.check_passed is not None and type(self.check_passed) is not bool:
+        if (
+            self.check_passed is not None
+            and type(self.check_passed) is not bool
+        ):
             raise TypeError("check_passed must be bool or None")
         object.__setattr__(
             self,
@@ -472,25 +463,31 @@ class ExecutionEvent:
                     0,
                 ),
             )
-        object.__setattr__(self, "report_reference", _optional_reference(self.report_reference))
+        object.__setattr__(
+            self,
+            "report_reference",
+            _optional_reference(self.report_reference),
+        )
         if self.schema_version != EVENT_SCHEMA_VERSION:
-            raise ValueError(f"schema_version must be {EVENT_SCHEMA_VERSION!r}")
+            raise ValueError(
+                f"schema_version must be {EVENT_SCHEMA_VERSION!r}"
+            )
 
     def as_record(self) -> dict[str, Any]:
         """Return the exact canonical JSON-compatible schema record."""
 
         record: dict[str, Any] = {}
-        for field in fields(self):
-            value = getattr(self, field.name)
+        for schema_field in fields(self):
+            value = getattr(self, schema_field.name)
             if isinstance(value, Enum):
                 value = value.value
             elif isinstance(value, Mapping):
                 value = _plain(value)
-            record[field.name] = value
+            record[schema_field.name] = value
         return record
 
     @classmethod
-    def from_record(cls, record: Mapping[str, object]) -> "ExecutionEvent":
+    def from_record(cls, record: Mapping[str, object]) -> ExecutionEvent:
         """Strictly load exactly one current-version record."""
 
         if not isinstance(record, Mapping):
@@ -518,10 +515,15 @@ class OperationAggregate:
     p50_ns: int
     p95_ns: int
     p99_ns: int
+
     def __post_init__(self) -> None:
-        object.__setattr__(self, "operation", ExecutionOperation(self.operation))
+        object.__setattr__(
+            self, "operation", ExecutionOperation(self.operation)
+        )
         object.__setattr__(self, "status", ExecutionStatus(self.status))
-        object.__setattr__(self, "count", _integer(self.count, "count", minimum=1))
+        object.__setattr__(
+            self, "count", _integer(self.count, "count", minimum=1)
+        )
         for name in (
             "minimum_ns",
             "maximum_ns",
@@ -536,15 +538,17 @@ class OperationAggregate:
             )
         mean = _safe_float(self.mean_ns, "mean_ns")
         object.__setattr__(self, "mean_ns", mean)
-        if not (
-            self.minimum_ns
-            <= self.p50_ns
-            <= self.p95_ns
-            <= self.p99_ns
-            <= self.maximum_ns
-        ) or not self.minimum_ns <= mean <= self.maximum_ns:
+        if (
+            not (
+                self.minimum_ns
+                <= self.p50_ns
+                <= self.p95_ns
+                <= self.p99_ns
+                <= self.maximum_ns
+            )
+            or not self.minimum_ns <= mean <= self.maximum_ns
+        ):
             raise ValueError("aggregate duration statistics are inconsistent")
-
 
     def as_record(self) -> dict[str, object]:
         return {
@@ -558,8 +562,9 @@ class OperationAggregate:
             "p95_ns": self.p95_ns,
             "p99_ns": self.p99_ns,
         }
+
     @classmethod
-    def from_record(cls, record: Mapping[str, object]) -> "OperationAggregate":
+    def from_record(cls, record: Mapping[str, object]) -> OperationAggregate:
         expected = {
             "operation",
             "status",
@@ -574,9 +579,6 @@ class OperationAggregate:
         if not isinstance(record, Mapping) or set(record) != expected:
             raise ValueError("operation aggregate record has invalid keys")
         return cls(**dict(record))  # type: ignore[arg-type]
-
-
-
 
 
 @dataclass(frozen=True, slots=True)
@@ -611,6 +613,7 @@ class ExecutionSummary:
     temp_disk_peak_delta_bytes: int | None = None
     final_disk_peak_bytes: int | None = None
     final_disk_peak_delta_bytes: int | None = None
+
     def __post_init__(self) -> None:
         if not isinstance(self.aggregates, tuple) or any(
             not isinstance(aggregate, OperationAggregate)
@@ -622,11 +625,15 @@ class ExecutionSummary:
             for aggregate in self.aggregates
         )
         if keys != tuple(sorted(set(keys))):
-            raise ValueError("aggregate operation/status pairs must be unique and sorted")
+            raise ValueError(
+                "aggregate operation/status pairs must be unique and sorted"
+            )
         every = _integer(self.sample_every_n, "sample_every_n", minimum=1)
         offset = _integer(self.sample_offset, "sample_offset")
         if offset >= every:
-            raise ValueError("sample_offset must be smaller than sample_every_n")
+            raise ValueError(
+                "sample_offset must be smaller than sample_every_n"
+            )
         object.__setattr__(
             self,
             "dropped_event_count",
@@ -656,7 +663,9 @@ class ExecutionSummary:
             self.achieved_input_stall_fraction is not None
             and self.achieved_input_stall_fraction > 1
         ):
-            raise ValueError("achieved_input_stall_fraction must not exceed one")
+            raise ValueError(
+                "achieved_input_stall_fraction must not exceed one"
+            )
         for name in (
             "host_queue_peak_depth",
             "host_queue_peak_bytes",
@@ -688,7 +697,6 @@ class ExecutionSummary:
                 f"schema_version must be {SUMMARY_SCHEMA_VERSION!r}"
             )
 
-
     def for_operation(
         self,
         operation: ExecutionOperation,
@@ -702,7 +710,9 @@ class ExecutionSummary:
     def as_record(self) -> dict[str, object]:
         return {
             "schema_version": self.schema_version,
-            "aggregates": [aggregate.as_record() for aggregate in self.aggregates],
+            "aggregates": [
+                aggregate.as_record() for aggregate in self.aggregates
+            ],
             "sample_every_n": self.sample_every_n,
             "sample_offset": self.sample_offset,
             "dropped_event_count": self.dropped_event_count,
@@ -730,8 +740,9 @@ class ExecutionSummary:
             "final_disk_peak_bytes": self.final_disk_peak_bytes,
             "final_disk_peak_delta_bytes": self.final_disk_peak_delta_bytes,
         }
+
     @classmethod
-    def from_record(cls, record: Mapping[str, object]) -> "ExecutionSummary":
+    def from_record(cls, record: Mapping[str, object]) -> ExecutionSummary:
         expected = {
             "schema_version",
             "aggregates",
@@ -780,9 +791,7 @@ class ExecutionSummary:
             conversion_records_per_second=record[
                 "conversion_records_per_second"
             ],  # type: ignore[arg-type]
-            conversion_bytes_per_second=record[
-                "conversion_bytes_per_second"
-            ],  # type: ignore[arg-type]
+            conversion_bytes_per_second=record["conversion_bytes_per_second"],  # type: ignore[arg-type]
             selected_read_records_per_second=record[
                 "selected_read_records_per_second"
             ],  # type: ignore[arg-type]
@@ -814,9 +823,6 @@ class ExecutionSummary:
             final_disk_peak_delta_bytes=record["final_disk_peak_delta_bytes"],  # type: ignore[arg-type]
             schema_version=record["schema_version"],  # type: ignore[arg-type]
         )
-
-
-
 
 
 def _nearest_rank(values: Sequence[int], percentile: float) -> int:
@@ -870,10 +876,14 @@ def summarize_events(
     durations: dict[tuple[ExecutionOperation, ExecutionStatus], list[int]] = {}
     for event in events:
         if not isinstance(event, ExecutionEvent):
-            raise TypeError("summary input must contain ExecutionEvent instances")
+            raise TypeError(
+                "summary input must contain ExecutionEvent instances"
+            )
         canonical_records.append(event.as_record())
         if event.duration_ns is not None:
-            durations.setdefault((event.operation, event.status), []).append(event.duration_ns)
+            durations.setdefault((event.operation, event.status), []).append(
+                event.duration_ns
+            )
         if event.status is ExecutionStatus.SUCCESS:
             if event.operation is ExecutionOperation.HOST_WAIT:
                 host_wait_ns += event.duration_ns
@@ -928,7 +938,9 @@ def summarize_events(
         key=lambda record: (
             record["operation"],
             record["status"],
-            -1 if record["descriptor_sequence"] is None else record["descriptor_sequence"],
+            -1
+            if record["descriptor_sequence"] is None
+            else record["descriptor_sequence"],
             record["monotonic_ns"],
             record["wall_time_utc"],
         )
@@ -943,7 +955,8 @@ def summarize_events(
     ).hexdigest()
     aggregates: list[OperationAggregate] = []
     for (operation, status), raw_values in sorted(
-        durations.items(), key=lambda item: (item[0][0].value, item[0][1].value)
+        durations.items(),
+        key=lambda item: (item[0][0].value, item[0][1].value),
     ):
         values = sorted(raw_values)
         aggregates.append(
@@ -959,6 +972,7 @@ def summarize_events(
                 _nearest_rank(values, 0.99),
             )
         )
+
     def rate(operation: ExecutionOperation, value_index: int) -> float | None:
         values = throughput[operation]
         duration_ns = values[value_index + 1]
@@ -967,6 +981,7 @@ def summarize_events(
             if duration_ns == 0
             else values[value_index] / (duration_ns / 1_000_000_000)
         )
+
     stall_denominator = host_wait_ns + model_compute_ns
     stall_fraction = (
         None if stall_denominator == 0 else host_wait_ns / stall_denominator

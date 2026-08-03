@@ -6,10 +6,10 @@ import copy
 import math
 import random
 import re
-from collections.abc import Callable, Mapping, Sequence
-from contextlib import contextmanager
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
-from typing import Any, Iterator
+from typing import Any
 
 import numpy as np
 import torch
@@ -21,6 +21,7 @@ from torch_geometric.data import Data, HeteroData
 
 from topobench.evaluator import EvaluationResult, UndefinedMetricError
 from topobench.evaluator.base import AbstractEvaluator
+from topobench.evaluator.prediction import PredictionPayload
 from topobench.evaluator.registry import (
     BUILTIN_METRIC_SPECS,
     resolve_metric_specs,
@@ -93,9 +94,13 @@ class PreflightResult:
         ):
             raise TypeError("checks must be a tuple of PreflightCheck values")
         if not self.checks:
-            raise ValueError("preflight result must contain at least one check")
+            raise ValueError(
+                "preflight result must contain at least one check"
+            )
         if self.qualified and (not self.enabled or not self.passed):
-            raise ValueError("only an enabled, passing preflight can be qualified")
+            raise ValueError(
+                "only an enabled, passing preflight can be qualified"
+            )
 
     @property
     def passed(self) -> bool:
@@ -117,7 +122,9 @@ class PreflightError(RuntimeError):
 
     def __init__(self, result: PreflightResult) -> None:
         if not isinstance(result, PreflightResult) or result.passed:
-            raise ValueError("PreflightError requires a failing PreflightResult")
+            raise ValueError(
+                "PreflightError requires a failing PreflightResult"
+            )
         self.result = result
         failure = next(check for check in result.checks if not check.passed)
         super().__init__(f"{failure.check_id}: {failure.detail}")
@@ -253,7 +260,9 @@ class PreflightRunner:
         self._validate_distributed(resolved, checks, profile=profile)
         self._validate_checkpoint_monitor(resolved, checks)
         self._validate_artifact_loggers(resolved, checks)
-        self._validate_reproducibility_bundle(resolved, checks, profile=profile)
+        self._validate_reproducibility_bundle(
+            resolved, checks, profile=profile
+        )
         checks.append(
             PreflightCheck(
                 "static.configuration",
@@ -274,7 +283,10 @@ class PreflightRunner:
         static_result: PreflightResult,
     ) -> PreflightResult:
         """Exercise production boundaries with fully disposable runtime state."""
-        if not isinstance(static_result, PreflightResult) or not static_result.passed:
+        if (
+            not isinstance(static_result, PreflightResult)
+            or not static_result.passed
+        ):
             raise ValueError("static_result must be a passing PreflightResult")
         if static_result.enabled is False:
             return static_result
@@ -325,8 +337,12 @@ class PreflightRunner:
             model = model_factory()
             if not isinstance(model, LightningModule):
                 raise TypeError("model factory must return a LightningModule")
-            if not isinstance(getattr(model, "evaluator", None), AbstractEvaluator):
-                raise TypeError("throwaway model must own an AbstractEvaluator")
+            if not isinstance(
+                getattr(model, "evaluator", None), AbstractEvaluator
+            ):
+                raise TypeError(
+                    "throwaway model must own an AbstractEvaluator"
+                )
             if not callable(getattr(model, "model_step", None)):
                 raise TypeError("throwaway model must expose model_step")
             if not callable(getattr(model, "abort_evaluation", None)):
@@ -335,9 +351,13 @@ class PreflightRunner:
             device = _configured_probe_device(self._resolved)
             model.to(device)
             if "train" in phases:
-                configure_optimizers = getattr(model, "configure_optimizers", None)
+                configure_optimizers = getattr(
+                    model, "configure_optimizers", None
+                )
                 if not callable(configure_optimizers):
-                    raise TypeError("throwaway model must configure an optimizer")
+                    raise TypeError(
+                        "throwaway model must configure an optimizer"
+                    )
                 optimizer, scheduler, scheduler_config = _optimizer_components(
                     configure_optimizers()
                 )
@@ -352,7 +372,9 @@ class PreflightRunner:
                         raise TypeError(
                             f"{phase} representative batch must be native Data or HeteroData"
                         )
-                    transferred = model.transfer_batch_to_device(batch, device, 0)
+                    transferred = model.transfer_batch_to_device(
+                        batch, device, 0
+                    )
                     _start_evaluation_phase(model, phase)
                     model.train(phase == "train")
                     try:
@@ -371,7 +393,9 @@ class PreflightRunner:
                             model_out = model.model_step(transferred)
                         if not isinstance(model_out, Mapping):
                             raise TypeError("model_step must return a mapping")
-                        loss = _require_finite_loss(model_out.get("loss"), phase)
+                        loss = _require_finite_loss(
+                            model_out.get("loss"), phase
+                        )
                         phase_losses[phase] = loss.detach()
                         payloads.append(
                             _validate_nonpublishing_prediction_payload(
@@ -384,7 +408,12 @@ class PreflightRunner:
                         if phase == "train":
                             loss.backward()
                             _require_finite_gradients(model)
-                            optimizer_closure = lambda: loss
+
+                            def optimizer_closure(
+                                loss_value: torch.Tensor = loss,
+                            ) -> torch.Tensor:
+                                return loss_value
+
                             success_token_before = getattr(
                                 model,
                                 "dataloader_optimizer_success_token",
@@ -402,7 +431,10 @@ class PreflightRunner:
                                     "dataloader_optimizer_success_token",
                                     None,
                                 )
-                                if success_token_after != success_token_before + 1:
+                                if (
+                                    success_token_after
+                                    != success_token_before + 1
+                                ):
                                     raise RuntimeError(
                                         "model optimizer hook did not prove one successful step"
                                     )
@@ -459,10 +491,8 @@ class PreflightRunner:
             if model is not None:
                 abort = getattr(model, "abort_evaluation", None)
                 if callable(abort):
-                    try:
+                    with suppress(Exception):
                         abort()
-                    except Exception:
-                        pass
             self._probe_failure(
                 static_result,
                 f"isolated execution probe failed: {type(error).__name__}: {error}",
@@ -471,15 +501,21 @@ class PreflightRunner:
             )
         finally:
             if model is not None:
-                try:
+                with suppress(Exception):
                     model.to(torch.device("cpu"))
-                except Exception:
-                    pass
             scheduler = None
             optimizer = None
             model = None
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            optimizer_closure = None
+            scheduler_loss = None
+            phase_losses.clear()
+            loss = None
+            model_out = None
+            transferred = None
+            batch = None
+            batches = None
+            with suppress(Exception):
+                _purge_probe_device_cache(self._resolved)
             _restore_runtime_state(runtime_state)
 
         configured_compile = bool(
@@ -560,7 +596,10 @@ class PreflightRunner:
         dataset_task = _select(cfg, "dataset.parameters.task", _MISSING)
         if task is _MISSING:
             task = dataset_task
-        if not isinstance(task, str) or task not in {"classification", "regression"}:
+        if not isinstance(task, str) or task not in {
+            "classification",
+            "regression",
+        }:
             self._fail(
                 checks,
                 "static.evaluator.task",
@@ -727,20 +766,30 @@ class PreflightRunner:
         if registry is None:
             return
         if not isinstance(registry, Mapping):
-            self._split_failure(checks, "named split registry must be a mapping")
+            self._split_failure(
+                checks, "named split registry must be a mapping"
+            )
         active = registry.get("active")
         sets = registry.get("sets")
         if not isinstance(active, str) or not active:
-            self._split_failure(checks, "named split registry has no active tag")
+            self._split_failure(
+                checks, "named split registry has no active tag"
+            )
         if not isinstance(sets, Mapping) or not sets:
-            self._split_failure(checks, "named split registry has no split tags")
+            self._split_failure(
+                checks, "named split registry has no split tags"
+            )
         if active not in sets:
             self._split_failure(
                 checks,
                 f"active split tag {active!r} is not registered",
             )
         for tag, split in sets.items():
-            if not isinstance(tag, str) or not tag or not isinstance(split, Mapping):
+            if (
+                not isinstance(tag, str)
+                or not tag
+                or not isinstance(split, Mapping)
+            ):
                 self._split_failure(checks, "named split tag is malformed")
             phase_sources: dict[str, frozenset[str]] = {}
             for phase in _PHASES:
@@ -753,7 +802,9 @@ class PreflightRunner:
                     )
             for index, left in enumerate(_PHASES):
                 for right in _PHASES[index + 1 :]:
-                    overlap = phase_sources[left].intersection(phase_sources[right])
+                    overlap = phase_sources[left].intersection(
+                        phase_sources[right]
+                    )
                     if overlap:
                         self._split_failure(
                             checks,
@@ -767,8 +818,13 @@ class PreflightRunner:
                 f"selected split tag {selected!r} differs from active tag {active!r}",
             )
         active_record = sets[active]
-        if profile == "qualified" and active_record.get("qualified", True) is not True:
-            self._split_failure(checks, f"active split tag {active!r} is unqualified")
+        if (
+            profile == "qualified"
+            and active_record.get("qualified", True) is not True
+        ):
+            self._split_failure(
+                checks, f"active split tag {active!r} is unqualified"
+            )
 
     def _validate_validation_schedule(
         self,
@@ -778,10 +834,14 @@ class PreflightRunner:
         profile: str,
     ) -> None:
         interval = _select(cfg, "trainer.val_check_interval", None)
-        if profile == "qualified" and interval is not None and (
-            isinstance(interval, bool)
-            or not isinstance(interval, float)
-            or interval != 1.0
+        if (
+            profile == "qualified"
+            and interval is not None
+            and (
+                isinstance(interval, bool)
+                or not isinstance(interval, float)
+                or interval != 1.0
+            )
         ):
             self._fail(
                 checks,
@@ -803,7 +863,6 @@ class PreflightRunner:
                 "validation is restricted to the typed evaluator's epoch-end boundary",
             )
         )
-
 
     def _validate_pipeline_identities(
         self,
@@ -853,17 +912,32 @@ class PreflightRunner:
             )
         source_identity = getattr(output, "source_graph_id", None)
         recorded_source = provenance.get("source_graph_id")
-        if source_identity is not None:
-            if not _is_sha256(source_identity) or recorded_source != source_identity:
-                self._fail(
-                    checks,
-                    "static.store_identity",
-                    "store identity is malformed or stale against pipeline provenance",
-                    "reopen the exact content-addressed qualified store",
-                    enabled=True,
-                )
+        if source_identity is not None and recorded_source != source_identity:
+            self._fail(
+                checks,
+                "static.store_identity",
+                "pipeline store identity is stale against pipeline provenance",
+                "bind provenance to the exact source opened by the pipeline",
+                enabled=True,
+            )
+        if (
+            report is not None
+            and source_identity is not None
+            and not _is_sha256(source_identity)
+        ):
+            self._fail(
+                checks,
+                "static.store_identity",
+                "qualified store identity is malformed",
+                "reopen the exact content-addressed qualified store",
+                enabled=True,
+            )
+        if report is None:
+            return
         partition_identity = provenance.get("partition_book_identity")
-        if partition_identity is not None and not _is_sha256(partition_identity):
+        if partition_identity is not None and not _is_sha256(
+            partition_identity
+        ):
             self._fail(
                 checks,
                 "static.partition_book_identity",
@@ -912,7 +986,10 @@ class PreflightRunner:
             "dataset.loader.parameters.output_kind",
             None,
         )
-        if output_kind in {"homogeneous", "heterogeneous"} and partition_strategy in {
+        if output_kind in {
+            "homogeneous",
+            "heterogeneous",
+        } and partition_strategy in {
             "cluster",
             "neighbor",
         }:
@@ -953,7 +1030,10 @@ class PreflightRunner:
                     "load the training-only fitted state bound to this store and split",
                     enabled=True,
                 )
-        if profile == "qualified" and provenance.get("qualified_profile", True) is not True:
+        if (
+            profile == "qualified"
+            and provenance.get("qualified_profile", True) is not True
+        ):
             self._fail(
                 checks,
                 "static.pipeline_identity",
@@ -1022,7 +1102,9 @@ class PreflightRunner:
             if not isinstance(callback, Mapping):
                 continue
             target = callback.get("_target_", "")
-            if not isinstance(target, str) or not target.endswith("ModelCheckpoint"):
+            if not isinstance(target, str) or not target.endswith(
+                "ModelCheckpoint"
+            ):
                 continue
             monitor = callback.get("monitor")
             if not isinstance(monitor, str) or not monitor:
@@ -1049,8 +1131,129 @@ class PreflightRunner:
         checks: list[PreflightCheck],
     ) -> None:
         artifacts = _select(cfg, "evaluation_artifacts", None)
-        if not isinstance(artifacts, Mapping) or artifacts.get("enabled") is not True:
+        if (
+            not isinstance(artifacts, Mapping)
+            or artifacts.get("enabled") is not True
+        ):
             return
+        metadata_value = artifacts.get("metadata_fields", ())
+        if (
+            not isinstance(metadata_value, Sequence)
+            or isinstance(metadata_value, (str, bytes))
+            or any(
+                not isinstance(field, str) or not field
+                for field in metadata_value
+            )
+        ):
+            self._fail(
+                checks,
+                "static.evaluation_slices",
+                "evaluation artifact metadata_fields must be non-empty strings",
+                "declare every captured metadata column by name",
+                enabled=True,
+            )
+            metadata_fields = frozenset()
+        else:
+            metadata_fields = frozenset(metadata_value)
+        slice_value = artifacts.get("evaluation_slices", {})
+        if not isinstance(slice_value, Mapping):
+            self._fail(
+                checks,
+                "static.evaluation_slices",
+                "evaluation_slices must be a mapping",
+                "map each bounded metadata field to max_categories and min_rows",
+                enabled=True,
+            )
+            slice_value = {}
+        for field, spec in slice_value.items():
+            if not isinstance(field, str) or not field:
+                self._fail(
+                    checks,
+                    "static.evaluation_slices",
+                    "evaluation slice field names must be non-empty strings",
+                    "name a captured metadata column",
+                    enabled=True,
+                )
+                continue
+            if field not in metadata_fields:
+                self._fail(
+                    checks,
+                    "static.evaluation_slices",
+                    f"evaluation slice field {field!r} is absent from metadata_fields",
+                    "capture the slice field in evaluation_artifacts.metadata_fields",
+                    enabled=True,
+                )
+            if not isinstance(spec, Mapping):
+                self._fail(
+                    checks,
+                    "static.evaluation_slices",
+                    f"evaluation slice {field!r} must be a mapping",
+                    "set max_categories and min_rows",
+                    enabled=True,
+                )
+                continue
+            unknown = set(spec) - {
+                "max_categories",
+                "min_rows",
+                "vocabulary",
+            }
+            if unknown:
+                self._fail(
+                    checks,
+                    "static.evaluation_slices",
+                    f"evaluation slice {field!r} has unknown settings {sorted(unknown)!r}",
+                    "use max_categories, min_rows, and optional vocabulary",
+                    enabled=True,
+                )
+            for name in ("max_categories", "min_rows"):
+                value = spec.get(name)
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, int)
+                    or value <= 0
+                ):
+                    self._fail(
+                        checks,
+                        "static.evaluation_slices",
+                        f"evaluation slice {field!r} {name} must be a positive integer",
+                        f"set {name} to an explicit positive bound",
+                        enabled=True,
+                    )
+            vocabulary = spec.get("vocabulary")
+            if vocabulary is None:
+                continue
+            if (
+                isinstance(vocabulary, (str, bytes))
+                or not isinstance(vocabulary, Sequence)
+                or not vocabulary
+                or any(
+                    not isinstance(item, str) or not item
+                    for item in vocabulary
+                )
+            ):
+                self._fail(
+                    checks,
+                    "static.evaluation_slices",
+                    f"evaluation slice {field!r} vocabulary must contain non-empty strings",
+                    "declare a finite vocabulary of non-empty category names",
+                    enabled=True,
+                )
+            if len(vocabulary) != len(set(vocabulary)):
+                self._fail(
+                    checks,
+                    "static.evaluation_slices",
+                    f"evaluation slice {field!r} vocabulary contains duplicates",
+                    "declare each category exactly once",
+                    enabled=True,
+                )
+            if len(vocabulary) > spec["max_categories"]:
+                self._fail(
+                    checks,
+                    "static.evaluation_slices",
+                    f"evaluation slice {field!r} vocabulary exceeds max_categories",
+                    "increase max_categories or reduce the declared vocabulary",
+                    enabled=True,
+                )
         adapter = artifacts.get("adapter")
         if adapter is not None and (
             not isinstance(adapter, str)
@@ -1071,7 +1274,10 @@ class PreflightRunner:
             if not isinstance(logger, Mapping):
                 continue
             target = logger.get("_target_")
-            if isinstance(target, str) and target not in _SUPPORTED_ARTIFACT_LOGGERS:
+            if (
+                isinstance(target, str)
+                and target not in _SUPPORTED_ARTIFACT_LOGGERS
+            ):
                 unsupported.append(target)
         if unsupported:
             self._fail(
@@ -1111,7 +1317,9 @@ class PreflightRunner:
             else getattr(policy, "save_reproducibility_bundle", None)
         )
         provenance = (
-            None if output is None else getattr(output, "provenance_input", None)
+            None
+            if output is None
+            else getattr(output, "provenance_input", None)
         )
         recorded = (
             None
@@ -1169,7 +1377,14 @@ class PreflightRunner:
             enabled=static_result.enabled,
             qualified=False,
             checks=static_result.checks
-            + (PreflightCheck("execution.representative_batch", False, detail, remediation),),
+            + (
+                PreflightCheck(
+                    "execution.representative_batch",
+                    False,
+                    detail,
+                    remediation,
+                ),
+            ),
         )
         error = PreflightError(result)
         if cause is None:
@@ -1194,7 +1409,9 @@ def _custom_metric_declarations(
     configured = _select(cfg, "evaluator.custom_metrics", ())
     if configured is None:
         return {}
-    if isinstance(configured, (str, bytes)) or not isinstance(configured, Sequence):
+    if isinstance(configured, (str, bytes)) or not isinstance(
+        configured, Sequence
+    ):
         runner._fail(
             checks,
             "static.evaluator.custom_metrics",
@@ -1360,7 +1577,9 @@ def _validate_nonpublishing_prediction_payload(
     ):
         raise TypeError("prediction payload requires tensor logits and labels")
     if logits.ndim == 0 or labels.ndim == 0:
-        raise ValueError("prediction payload tensors require a leading dimension")
+        raise ValueError(
+            "prediction payload tensors require a leading dimension"
+        )
     if logits.shape[0] != labels.shape[0]:
         raise ValueError("prediction payload logits and labels are misaligned")
     if not bool(torch.isfinite(logits).all()):
@@ -1374,32 +1593,47 @@ def _validate_nonpublishing_prediction_payload(
         "logit_dtype": str(logits.dtype),
         "label_dtype": str(labels.dtype),
     }
-    resolver = getattr(pipeline_output, "prediction_identity_resolver", None)
-    if resolver is not None:
-        resolve = getattr(resolver, "resolve", None)
-        batch = model_out.get("batch")
-        if not callable(resolve) or not isinstance(batch, (Data, HeteroData)):
+    adapter = getattr(pipeline_output, "prediction_row_adapter", None)
+    prediction_payload = model_out.get("prediction_payload")
+    if prediction_payload is not None:
+        if adapter is None:
             raise TypeError(
-                "prediction identity resolver requires the native model batch"
+                "prediction payload requires the pipeline prediction row adapter"
             )
-        identities = resolve(batch, phase=phase)
-        if len(identities) != int(labels.shape[0]):
+        if not isinstance(prediction_payload, PredictionPayload):
+            raise TypeError(
+                "model prediction_payload must be a PredictionPayload"
+            )
+        if prediction_payload.num_rows != int(labels.shape[0]):
             raise ValueError(
-                "prediction identities do not align with supervised outputs"
+                "prediction payload does not align with supervised outputs"
             )
-        payload["canonical_identity_count"] = len(identities)
+        identity_names = tuple(prediction_payload.identity.columns)
+        if not identity_names or identity_names[0] != "split_ordinal":
+            raise ValueError(
+                "prediction payload must prepend split_ordinal identity"
+            )
+        if "split_ordinal" in prediction_payload.identity.key:
+            raise ValueError(
+                "split_ordinal must not replace the domain identity key"
+            )
+        payload["canonical_identity_count"] = prediction_payload.num_rows
     return payload
 
 
 def _canonical_probe_value(value: object) -> None:
     if value is None or type(value) in {bool, int, float, str}:
         if isinstance(value, float) and not math.isfinite(value):
-            raise ValueError("structured probe payload contains a nonfinite value")
+            raise ValueError(
+                "structured probe payload contains a nonfinite value"
+            )
         return
     if isinstance(value, Mapping):
         for key, item in value.items():
             if not isinstance(key, str) or not key:
-                raise TypeError("structured probe payload keys must be strings")
+                raise TypeError(
+                    "structured probe payload keys must be strings"
+                )
             _canonical_probe_value(item)
         return
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
@@ -1429,6 +1663,26 @@ def _validate_structured_probe_payloads(
     }
     _canonical_probe_value(tuple(payloads))
     _canonical_probe_value(reproducibility)
+
+
+def _purge_probe_device_cache(cfg: Mapping[str, Any]) -> None:
+    accelerator = _select(cfg, "trainer.accelerator", "cpu")
+    if accelerator == "auto":
+        if torch.cuda.is_available():
+            accelerator = "cuda"
+        elif torch.backends.mps.is_available():
+            accelerator = "mps"
+        else:
+            accelerator = "cpu"
+    if accelerator in {"gpu", "cuda"}:
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        return
+    if accelerator == "mps" and torch.backends.mps.is_available():
+        mps = getattr(torch, "mps", None)
+        empty_cache = getattr(mps, "empty_cache", None)
+        if callable(empty_cache):
+            empty_cache()
 
 
 def _configured_probe_device(cfg: Mapping[str, Any]) -> torch.device:
@@ -1550,11 +1804,15 @@ def _one_loader(value: object, phase: str) -> object:
     if isinstance(value, Mapping):
         values = tuple(value.values())
         if len(values) != 1:
-            raise ValueError(f"{phase} requires exactly one representative loader")
+            raise ValueError(
+                f"{phase} requires exactly one representative loader"
+            )
         return values[0]
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
         if len(value) != 1:
-            raise ValueError(f"{phase} requires exactly one representative loader")
+            raise ValueError(
+                f"{phase} requires exactly one representative loader"
+            )
         return value[0]
     return value
 

@@ -26,10 +26,13 @@ from torchmetrics.functional.classification import (
     binary_average_precision,
     multiclass_auroc,
 )
-from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError, R2Score
+from torchmetrics.regression import (
+    MeanAbsoluteError,
+    MeanSquaredError,
+    R2Score,
+)
 
 from .types import EvaluationBatch, EvaluationContext
-
 
 ONLINE_RANKING_THRESHOLDS = 512
 DEFAULT_MAX_EXACT_RANKING_BYTES = 512 * 1024 * 1024
@@ -47,7 +50,9 @@ class BackendFactoryContext:
     ranking_thresholds: int
     max_exact_ranking_bytes: int
     undefined_metric_policy: str
-    threshold_grid: Tensor | None = field(default=None, compare=False, repr=False)
+    threshold_grid: Tensor | None = field(
+        default=None, compare=False, repr=False
+    )
 
 
 @runtime_checkable
@@ -96,11 +101,23 @@ def estimate_exact_ranking_memory(
     safety_factor: float = DEFAULT_EXACT_MEMORY_SAFETY_FACTOR,
 ) -> ExactRankingMemoryEstimate:
     """Estimate one shared exact buffer plus the largest sequential workspace."""
-    if isinstance(num_examples, bool) or not isinstance(num_examples, int) or num_examples < 0:
+    if (
+        isinstance(num_examples, bool)
+        or not isinstance(num_examples, int)
+        or num_examples < 0
+    ):
         raise ValueError("num_examples must be a non-negative integer")
-    if isinstance(num_classes, bool) or not isinstance(num_classes, int) or num_classes < 2:
+    if (
+        isinstance(num_classes, bool)
+        or not isinstance(num_classes, int)
+        or num_classes < 2
+    ):
         raise ValueError("num_classes must be an integer of at least 2")
-    if not isinstance(safety_factor, (int, float)) or isinstance(safety_factor, bool) or safety_factor < 1:
+    if (
+        not isinstance(safety_factor, (int, float))
+        or isinstance(safety_factor, bool)
+        or safety_factor < 1
+    ):
         raise ValueError("safety_factor must be at least 1")
 
     score_width = 1 if num_classes == 2 else num_classes
@@ -112,9 +129,13 @@ def estimate_exact_ranking_memory(
     concatenation_bytes = retained_bytes
     sorting_bytes = score_bytes + num_examples * score_width * 8
     workspace_bytes = concatenation_bytes + sorting_bytes
-    estimated_peak_bytes = ceil((retained_bytes + workspace_bytes) * float(safety_factor))
+    estimated_peak_bytes = ceil(
+        (retained_bytes + workspace_bytes) * float(safety_factor)
+    )
     return ExactRankingMemoryEstimate(
-        layout="binary_positive_scores" if num_classes == 2 else "multiclass_probabilities",
+        layout="binary_positive_scores"
+        if num_classes == 2
+        else "multiclass_probabilities",
         num_examples=num_examples,
         num_classes=num_classes,
         score_dtype=score_dtype,
@@ -130,7 +151,15 @@ def estimate_exact_ranking_memory(
 class ExactRankingMemoryError(RuntimeError):
     """Raised before exact ranking state would exceed its declared ceiling."""
 
-    def __init__(self, *, split: str, observed_examples: int, projected_examples: int, projected_bytes: int, configured_limit: int) -> None:
+    def __init__(
+        self,
+        *,
+        split: str,
+        observed_examples: int,
+        projected_examples: int,
+        projected_bytes: int,
+        configured_limit: int,
+    ) -> None:
         self.split = split
         self.observed_examples = observed_examples
         self.projected_examples = projected_examples
@@ -148,7 +177,15 @@ class ExactRankingMemoryError(RuntimeError):
 class UndefinedMetricError(RuntimeError):
     """Structured failure for a mathematically undefined scalar metric."""
 
-    def __init__(self, *, metric: str, split: str, reason: str, support: Mapping[Any, Any], num_examples: int) -> None:
+    def __init__(
+        self,
+        *,
+        metric: str,
+        split: str,
+        reason: str,
+        support: Mapping[Any, Any],
+        num_examples: int,
+    ) -> None:
         self.metric = metric
         self.split = split
         self.reason = reason
@@ -181,7 +218,19 @@ def reachable_objects(root: object) -> tuple[object, ...]:
             for item in value:
                 visit(item)
             return
-        if isinstance(value, (str, bytes, int, float, bool, type(None), torch.dtype, torch.device)):
+        if isinstance(
+            value,
+            (
+                str,
+                bytes,
+                int,
+                float,
+                bool,
+                type(None),
+                torch.dtype,
+                torch.device,
+            ),
+        ):
             return
         attributes = getattr(value, "__dict__", None)
         if isinstance(attributes, dict):
@@ -212,7 +261,9 @@ def owned_tensor_bytes(root: object) -> int:
 
 
 def _state_tensors(root: object) -> tuple[Tensor, ...]:
-    return tuple(value for value in reachable_objects(root) if isinstance(value, Tensor))
+    return tuple(
+        value for value in reachable_objects(root) if isinstance(value, Tensor)
+    )
 
 
 def _clone_checkpoint_state(
@@ -322,20 +373,14 @@ def _load_torch_metric_state_dict(
                 raise ValueError(
                     f"TorchMetrics state {name!r} tensor dtype does not match"
                 )
-            if (
-                serialized_value.shape != current_value.shape
-                and not (
-                    serialized_value.numel() == 1
-                    and current_value.numel() == 1
-                )
+            if serialized_value.shape != current_value.shape and not (
+                serialized_value.numel() == 1 and current_value.numel() == 1
             ):
                 raise ValueError(
                     f"TorchMetrics state {name!r} tensor shape does not match"
                 )
             if not bool(torch.isfinite(serialized_value).all()):
-                raise ValueError(
-                    f"TorchMetrics state {name!r} must be finite"
-                )
+                raise ValueError(f"TorchMetrics state {name!r} must be finite")
             if name in nonnegative_states and bool(
                 (serialized_value < 0).any()
             ):
@@ -444,7 +489,9 @@ def _load_backend_state_dict(
     if set(state_dict) != {"backend_type", "state"}:
         raise ValueError("metric backend state keys do not match schema")
     if state_dict["backend_type"] != _backend_type_name(backend):
-        raise ValueError("metric backend state type does not match construction")
+        raise ValueError(
+            "metric backend state type does not match construction"
+        )
     state = state_dict["state"]
     if not isinstance(state, Mapping):
         raise TypeError("metric backend state must be a mapping")
@@ -465,7 +512,9 @@ class _FunctionalExactMetric:
         del predictions, targets
 
     def compute(self) -> Tensor:
-        raise RuntimeError("functional exact metrics compute through ExactRankingBackend")
+        raise RuntimeError(
+            "functional exact metrics compute through ExactRankingBackend"
+        )
 
     def reset(self) -> None:
         return None
@@ -517,7 +566,15 @@ class PredictionViews:
 class ExactRankingBackend:
     """One TopoBench-owned detached CPU buffer for exact ranking metrics."""
 
-    def __init__(self, *, num_classes: int, metrics: Sequence[str], split: str, max_bytes: int, expected_num_examples: int | None) -> None:
+    def __init__(
+        self,
+        *,
+        num_classes: int,
+        metrics: Sequence[str],
+        split: str,
+        max_bytes: int,
+        expected_num_examples: int | None,
+    ) -> None:
         self.num_classes = num_classes
         self.metrics = tuple(dict.fromkeys(metrics))
         self.split = split
@@ -528,14 +585,26 @@ class ExactRankingBackend:
         self._score_dtype = torch.float32
         self._target_dtype = torch.int64
         if expected_num_examples is not None:
-            self._guard(expected_num_examples, self._score_dtype, self._target_dtype)
+            self._guard(
+                expected_num_examples, self._score_dtype, self._target_dtype
+            )
 
     @property
     def binary_state_shared(self) -> bool:
         return self.num_classes == 2
 
-    def _guard(self, projected_examples: int, score_dtype: torch.dtype, target_dtype: torch.dtype) -> None:
-        estimate = estimate_exact_ranking_memory(num_examples=projected_examples, num_classes=self.num_classes, score_dtype=score_dtype, target_dtype=target_dtype)
+    def _guard(
+        self,
+        projected_examples: int,
+        score_dtype: torch.dtype,
+        target_dtype: torch.dtype,
+    ) -> None:
+        estimate = estimate_exact_ranking_memory(
+            num_examples=projected_examples,
+            num_classes=self.num_classes,
+            score_dtype=score_dtype,
+            target_dtype=target_dtype,
+        )
         if estimate.estimated_peak_bytes > self.max_bytes:
             raise ExactRankingMemoryError(
                 split=self.split,
@@ -560,8 +629,16 @@ class ExactRankingBackend:
         self._guard(projected, predictions.dtype, targets.dtype)
         detached_predictions = predictions.detach()
         detached_targets = targets.detach()
-        score_chunk = detached_predictions.clone() if detached_predictions.device.type == "cpu" else detached_predictions.to(device="cpu")
-        target_chunk = detached_targets.clone() if detached_targets.device.type == "cpu" else detached_targets.to(device="cpu")
+        score_chunk = (
+            detached_predictions.clone()
+            if detached_predictions.device.type == "cpu"
+            else detached_predictions.to(device="cpu")
+        )
+        target_chunk = (
+            detached_targets.clone()
+            if detached_targets.device.type == "cpu"
+            else detached_targets.to(device="cpu")
+        )
         self.score_chunks.append(score_chunk.contiguous())
         self.target_chunks.append(target_chunk.contiguous())
         self.num_examples = projected
@@ -574,11 +651,25 @@ class ExactRankingBackend:
         values: OrderedDict[str, Tensor] = OrderedDict()
         for name in self.metrics:
             if name == "auroc":
-                values[name] = binary_auroc(scores, targets, thresholds=None) if self.num_classes == 2 else multiclass_auroc(scores, targets, num_classes=self.num_classes, average="macro", thresholds=None)
+                values[name] = (
+                    binary_auroc(scores, targets, thresholds=None)
+                    if self.num_classes == 2
+                    else multiclass_auroc(
+                        scores,
+                        targets,
+                        num_classes=self.num_classes,
+                        average="macro",
+                        thresholds=None,
+                    )
+                )
             elif name == "auprc":
-                values[name] = binary_average_precision(scores, targets, thresholds=None)
+                values[name] = binary_average_precision(
+                    scores, targets, thresholds=None
+                )
             else:
-                raise RuntimeError(f"Unsupported exact ranking metric {name!r}")
+                raise RuntimeError(
+                    f"Unsupported exact ranking metric {name!r}"
+                )
         return values
 
     def reset(self) -> None:
@@ -591,7 +682,12 @@ class ExactRankingBackend:
         return owned_tensor_bytes((self.score_chunks, self.target_chunks))
 
     def estimate(self) -> ExactRankingMemoryEstimate:
-        return estimate_exact_ranking_memory(num_examples=self.num_examples, num_classes=self.num_classes, score_dtype=self._score_dtype, target_dtype=self._target_dtype)
+        return estimate_exact_ranking_memory(
+            num_examples=self.num_examples,
+            num_classes=self.num_classes,
+            score_dtype=self._score_dtype,
+            target_dtype=self._target_dtype,
+        )
 
     def reachable_objects(self) -> tuple[object, ...]:
         return reachable_objects(self)
@@ -600,15 +696,38 @@ class ExactRankingBackend:
 class OnlineRankingBackend:
     """Bounded stateful ranking metrics on one shared threshold grid."""
 
-    def __init__(self, *, num_classes: int, metrics: Sequence[str], threshold_count: int, device: torch.device) -> None:
-        if isinstance(threshold_count, bool) or not isinstance(threshold_count, int) or threshold_count < 2:
-            raise ValueError("ranking_thresholds must be an integer of at least 2")
+    def __init__(
+        self,
+        *,
+        num_classes: int,
+        metrics: Sequence[str],
+        threshold_count: int,
+        device: torch.device,
+    ) -> None:
+        if (
+            isinstance(threshold_count, bool)
+            or not isinstance(threshold_count, int)
+            or threshold_count < 2
+        ):
+            raise ValueError(
+                "ranking_thresholds must be an integer of at least 2"
+            )
         self.num_classes = num_classes
-        self.threshold_grid = torch.linspace(0.0, 1.0, threshold_count, device=device)
+        self.threshold_grid = torch.linspace(
+            0.0, 1.0, threshold_count, device=device
+        )
         modules: OrderedDict[str, Metric] = OrderedDict()
         for name in dict.fromkeys(metrics):
             if name == "auroc":
-                module: Metric = BinaryAUROC(thresholds=self.threshold_grid) if num_classes == 2 else MulticlassAUROC(num_classes=num_classes, average="macro", thresholds=self.threshold_grid)
+                module: Metric = (
+                    BinaryAUROC(thresholds=self.threshold_grid)
+                    if num_classes == 2
+                    else MulticlassAUROC(
+                        num_classes=num_classes,
+                        average="macro",
+                        thresholds=self.threshold_grid,
+                    )
+                )
             elif name == "auprc" and num_classes == 2:
                 module = BinaryAveragePrecision(thresholds=self.threshold_grid)
             else:
@@ -621,7 +740,9 @@ class OnlineRankingBackend:
             metric.update(predictions, targets)
 
     def compute(self) -> OrderedDict[str, Tensor]:
-        return OrderedDict((name, metric.compute()) for name, metric in self.metrics.items())
+        return OrderedDict(
+            (name, metric.compute()) for name, metric in self.metrics.items()
+        )
 
     def reset(self) -> None:
         for metric in self.metrics.values():
@@ -665,7 +786,9 @@ class OnlineRankingBackend:
         for name, metric in self.metrics.items():
             item = state_dict[name]
             if not isinstance(item, Mapping):
-                raise TypeError("online ranking metric state must be a mapping")
+                raise TypeError(
+                    "online ranking metric state must be a mapping"
+                )
             _load_torch_metric_state_dict(metric, item)
 
 
@@ -678,11 +801,17 @@ class BackendSnapshot(Mapping[str, Tensor]):
     provenance: Mapping[str, Any]
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "metrics", MappingProxyType(OrderedDict(self.metrics)))
+        object.__setattr__(
+            self, "metrics", MappingProxyType(OrderedDict(self.metrics))
+        )
         object.__setattr__(self, "status", MappingProxyType(dict(self.status)))
-        object.__setattr__(self, "support", MappingProxyType(dict(self.support)))
+        object.__setattr__(
+            self, "support", MappingProxyType(dict(self.support))
+        )
         object.__setattr__(self, "reason", MappingProxyType(dict(self.reason)))
-        object.__setattr__(self, "provenance", MappingProxyType(dict(self.provenance)))
+        object.__setattr__(
+            self, "provenance", MappingProxyType(dict(self.provenance))
+        )
 
     def __getitem__(self, key: str) -> Tensor:
         return self.metrics[key]
@@ -706,9 +835,7 @@ class _SupportTracker:
             if task == "classification"
             else None
         )
-        self.target_sum = torch.tensor(
-            0.0, dtype=torch.float64, device=device
-        )
+        self.target_sum = torch.tensor(0.0, dtype=torch.float64, device=device)
         self.target_square_sum = torch.tensor(
             0.0, dtype=torch.float64, device=device
         )
@@ -768,12 +895,22 @@ class MetricPolicyBackend:
         max_exact_ranking_bytes: int = DEFAULT_MAX_EXACT_RANKING_BYTES,
         undefined_metric_policy: str = "error",
         device: torch.device | str | None = None,
-        prediction_views_factory: Callable[[Tensor], PredictionViews] = PredictionViews,
+        prediction_views_factory: Callable[
+            [Tensor], PredictionViews
+        ] = PredictionViews,
     ) -> None:
         if undefined_metric_policy not in {"error", "nan"}:
-            raise ValueError("undefined_metric_policy must be 'error' or 'nan'")
-        if isinstance(max_exact_ranking_bytes, bool) or not isinstance(max_exact_ranking_bytes, int) or max_exact_ranking_bytes <= 0:
-            raise ValueError("max_exact_ranking_bytes must be a positive integer")
+            raise ValueError(
+                "undefined_metric_policy must be 'error' or 'nan'"
+            )
+        if (
+            isinstance(max_exact_ranking_bytes, bool)
+            or not isinstance(max_exact_ranking_bytes, int)
+            or max_exact_ranking_bytes <= 0
+        ):
+            raise ValueError(
+                "max_exact_ranking_bytes must be a positive integer"
+            )
         if (
             isinstance(ranking_thresholds, bool)
             or not isinstance(ranking_thresholds, int)
@@ -912,20 +1049,37 @@ class MetricPolicyBackend:
             raise RuntimeError("MetricPolicyBackend.update requires begin")
         if self._auto_device_pending:
             self._move_streaming_state(batch.outputs.device)
-        if batch.outputs.device != self.device or batch.targets.device != self.device:
-            raise ValueError(f"batch tensors must be on evaluation device {self.device}")
+        if (
+            batch.outputs.device != self.device
+            or batch.targets.device != self.device
+        ):
+            raise ValueError(
+                f"batch tensors must be on evaluation device {self.device}"
+            )
         if self.exact_ranking_backend is not None:
             self.exact_ranking_backend.guard_append(
                 batch.num_examples, batch.outputs.dtype, batch.targets.dtype
             )
         required_views = set(self._fixed_views.values())
-        if self.exact_ranking_backend is not None or self.online_ranking_backend is not None:
-            required_views.add("positive_probabilities" if self.num_classes == 2 else "probabilities")
+        if (
+            self.exact_ranking_backend is not None
+            or self.online_ranking_backend is not None
+        ):
+            required_views.add(
+                "positive_probabilities"
+                if self.num_classes == 2
+                else "probabilities"
+            )
         if "positive_probabilities" in required_views:
             required_views.add("probabilities")
         views = self.prediction_views_factory(batch.outputs.detach())
         materialized: dict[str, Tensor] = {}
-        for name in ("probabilities", "positive_probabilities", "hard_classes", "raw"):
+        for name in (
+            "probabilities",
+            "positive_probabilities",
+            "hard_classes",
+            "raw",
+        ):
             if name in required_views:
                 materialized[name] = getattr(views, name)
         detached_targets = batch.targets.detach()
@@ -934,7 +1088,11 @@ class MetricPolicyBackend:
                 materialized[self._fixed_views[name]].detach(),
                 detached_targets,
             )
-        ranking_view_name = "positive_probabilities" if self.num_classes == 2 else "probabilities"
+        ranking_view_name = (
+            "positive_probabilities"
+            if self.num_classes == 2
+            else "probabilities"
+        )
         if self.exact_ranking_backend is not None:
             self.exact_ranking_backend.update(
                 materialized[ranking_view_name], detached_targets
@@ -950,53 +1108,100 @@ class MetricPolicyBackend:
             return "empty_evaluation"
         if self.task == "classification":
             support = self._support.class_support()
-            if metric in {"auroc", "auprc", "somers_d"} and self.num_classes == 2 and any(count == 0 for count in support.values()):
+            if (
+                metric in {"auroc", "auprc", "somers_d"}
+                and self.num_classes == 2
+                and any(count == 0 for count in support.values())
+            ):
                 return "binary_target_single_class"
-            if metric == "auroc" and self.num_classes > 2 and any(count == 0 for count in support.values()):
+            if (
+                metric == "auroc"
+                and self.num_classes > 2
+                and any(count == 0 for count in support.values())
+            ):
                 return "multiclass_target_missing_class"
-            if metric in {"precision", "recall", "f1"} and any(count == 0 for count in support.values()):
+            if metric in {"precision", "recall", "f1"} and any(
+                count == 0 for count in support.values()
+            ):
                 return "macro_target_missing_class"
             return None
         if metric == "r2":
             if self._support.num_examples < 2:
                 return "r2_too_few_examples"
             count = self._support.num_examples
-            centered = float(self._support.target_square_sum) - float(self._support.target_sum) ** 2 / count
-            if abs(centered) <= torch.finfo(torch.float64).eps * max(1.0, abs(float(self._support.target_square_sum))):
+            centered = (
+                float(self._support.target_square_sum)
+                - float(self._support.target_sum) ** 2 / count
+            )
+            if abs(centered) <= torch.finfo(torch.float64).eps * max(
+                1.0, abs(float(self._support.target_square_sum))
+            ):
                 return "r2_constant_target"
         return None
 
     def _support_for(self, metric: str) -> Mapping[Any, Any]:
         del metric
-        return self._support.class_support() if self.task == "classification" else self._support.regression_support()
+        return (
+            self._support.class_support()
+            if self.task == "classification"
+            else self._support.regression_support()
+        )
 
     def _handle_undefined(self, metric: str, reason: str) -> Tensor:
         support = self._support_for(metric)
         if self.undefined_metric_policy == "error":
             assert self.context is not None
-            raise UndefinedMetricError(metric=metric, split=self.context.split, reason=reason, support=support, num_examples=self._support.num_examples)
+            raise UndefinedMetricError(
+                metric=metric,
+                split=self.context.split,
+                reason=reason,
+                support=support,
+                num_examples=self._support.num_examples,
+            )
         return torch.tensor(float("nan"), device=self.device)
 
-    def _compute_sources(self) -> tuple[OrderedDict[str, Tensor], OrderedDict[str, Tensor]]:
+    def _compute_sources(
+        self,
+    ) -> tuple[OrderedDict[str, Tensor], OrderedDict[str, Tensor]]:
         exact: OrderedDict[str, Tensor] = OrderedDict()
         online: OrderedDict[str, Tensor] = OrderedDict()
         for name, backend in self._fixed.items():
             reason = self._undefined_reason(name)
-            exact[name] = self._handle_undefined(name, reason) if reason else backend.compute()
-        ranking_names = list(dict.fromkeys(spec.derived_from or spec.name for spec in self._specs if spec.name in {"auroc", "auprc", "somers_d"}))
-        undefined_ranking = {name: self._undefined_reason(name) for name in ranking_names}
+            exact[name] = (
+                self._handle_undefined(name, reason)
+                if reason
+                else backend.compute()
+            )
+        ranking_names = list(
+            dict.fromkeys(
+                spec.derived_from or spec.name
+                for spec in self._specs
+                if spec.name in {"auroc", "auprc", "somers_d"}
+            )
+        )
+        undefined_ranking = {
+            name: self._undefined_reason(name) for name in ranking_names
+        }
         if self.exact_ranking_backend is not None:
             if any(undefined_ranking.values()):
                 for name in ranking_names:
                     reason = undefined_ranking[name]
-                    exact[name] = self._handle_undefined(name, reason) if reason else torch.tensor(float("nan"), device=self.device)
+                    exact[name] = (
+                        self._handle_undefined(name, reason)
+                        if reason
+                        else torch.tensor(float("nan"), device=self.device)
+                    )
             else:
                 exact.update(self.exact_ranking_backend.compute())
         if self.online_ranking_backend is not None:
             if any(undefined_ranking.values()):
                 for name in ranking_names:
                     reason = undefined_ranking[name]
-                    online[name] = self._handle_undefined(name, reason) if reason else torch.tensor(float("nan"), device=self.device)
+                    online[name] = (
+                        self._handle_undefined(name, reason)
+                        if reason
+                        else torch.tensor(float("nan"), device=self.device)
+                    )
             else:
                 online.update(self.online_ranking_backend.compute())
         return exact, online
@@ -1025,21 +1230,43 @@ class MetricPolicyBackend:
             else:
                 exact_value = exact.get(name)
                 online_value = online.get(name)
-            if self.policy == "online" and name in {"auroc", "auprc", "somers_d"}:
+            if self.policy == "online" and name in {
+                "auroc",
+                "auprc",
+                "somers_d",
+            }:
                 values[name] = online_value
                 statuses[name] = "undefined" if reason else "approximate"
                 thresholds[name] = self.ranking_thresholds
-            elif self.policy == "audit" and name in {"auroc", "auprc", "somers_d"}:
+            elif self.policy == "audit" and name in {
+                "auroc",
+                "auprc",
+                "somers_d",
+            }:
                 values[name] = exact_value
                 values[f"{name}_online"] = online_value
-                values[f"{name}_online_abs_error"] = torch.abs(exact_value - online_value)
-                for output_name in (name, f"{name}_online", f"{name}_online_abs_error"):
-                    statuses[output_name] = "undefined" if reason else ("exact" if output_name == name else "approximate")
+                values[f"{name}_online_abs_error"] = torch.abs(
+                    exact_value - online_value
+                )
+                for output_name in (
+                    name,
+                    f"{name}_online",
+                    f"{name}_online_abs_error",
+                ):
+                    statuses[output_name] = (
+                        "undefined"
+                        if reason
+                        else (
+                            "exact" if output_name == name else "approximate"
+                        )
+                    )
                     support[output_name] = self._support_for(name)
                     reasons[output_name] = reason
                 thresholds[name] = None
                 thresholds[f"{name}_online"] = self.ranking_thresholds
-                thresholds[f"{name}_online_abs_error"] = self.ranking_thresholds
+                thresholds[f"{name}_online_abs_error"] = (
+                    self.ranking_thresholds
+                )
                 continue
             else:
                 values[name] = exact_value
@@ -1068,10 +1295,11 @@ class MetricPolicyBackend:
         metric_semantics: dict[str, Mapping[str, Any]] = {}
         for spec in self._specs:
             output_names = [spec.name]
-            if (
-                self.policy == "audit"
-                and spec.name in {"auroc", "auprc", "somers_d"}
-            ):
+            if self.policy == "audit" and spec.name in {
+                "auroc",
+                "auprc",
+                "somers_d",
+            }:
                 output_names.extend(
                     (
                         f"{spec.name}_online",
@@ -1193,8 +1421,13 @@ class MetricPolicyBackend:
             raise ValueError("backend context state keys do not match schema")
         context = EvaluationContext(**dict(context_record))
         if context.policy != "online":
-            raise ValueError("backend checkpoint context must use online policy")
-        if context.task != self.task or context.num_classes != self.num_classes:
+            raise ValueError(
+                "backend checkpoint context must use online policy"
+            )
+        if (
+            context.task != self.task
+            or context.num_classes != self.num_classes
+        ):
             raise ValueError(
                 "backend checkpoint context does not match construction"
             )
@@ -1239,14 +1472,10 @@ class MetricPolicyBackend:
         ):
             raise ValueError("backend support sums must be finite")
         if bool(target_square_sum < 0):
-            raise ValueError(
-                "backend target_square_sum must be non-negative"
-            )
+            raise ValueError("backend target_square_sum must be non-negative")
         if self.task == "classification":
             if not isinstance(class_counts, Tensor):
-                raise TypeError(
-                    "classification class_counts must be a tensor"
-                )
+                raise TypeError("classification class_counts must be a tensor")
             if class_counts.dtype != torch.long:
                 raise ValueError(
                     "classification class_counts must use long dtype"
@@ -1289,9 +1518,7 @@ class MetricPolicyBackend:
         ranking_state = state_dict["online_ranking"]
         if staged.online_ranking_backend is None:
             if ranking_state is not None:
-                raise ValueError(
-                    "unexpected online ranking checkpoint state"
-                )
+                raise ValueError("unexpected online ranking checkpoint state")
         else:
             if not isinstance(ranking_state, Mapping):
                 raise TypeError(
@@ -1347,7 +1574,13 @@ class MetricPolicyBackend:
 
     @property
     def retained_bytes(self) -> int:
-        return owned_tensor_bytes((self._fixed, self.exact_ranking_backend, self.online_ranking_backend))
+        return owned_tensor_bytes(
+            (
+                self._fixed,
+                self.exact_ranking_backend,
+                self.online_ranking_backend,
+            )
+        )
 
     @property
     def fixed_state_tensors(self) -> tuple[Tensor, ...]:
@@ -1358,19 +1591,35 @@ class MetricPolicyBackend:
 
 
 def make_accuracy_backend(context: BackendFactoryContext) -> MetricBackend:
-    return TorchMetricBackend(MulticlassAccuracy(num_classes=context.num_classes, average="micro").to(context.device))
+    return TorchMetricBackend(
+        MulticlassAccuracy(
+            num_classes=context.num_classes, average="micro"
+        ).to(context.device)
+    )
 
 
 def make_precision_backend(context: BackendFactoryContext) -> MetricBackend:
-    return TorchMetricBackend(MulticlassPrecision(num_classes=context.num_classes, average="macro", zero_division=0).to(context.device))
+    return TorchMetricBackend(
+        MulticlassPrecision(
+            num_classes=context.num_classes, average="macro", zero_division=0
+        ).to(context.device)
+    )
 
 
 def make_recall_backend(context: BackendFactoryContext) -> MetricBackend:
-    return TorchMetricBackend(MulticlassRecall(num_classes=context.num_classes, average="macro", zero_division=0).to(context.device))
+    return TorchMetricBackend(
+        MulticlassRecall(
+            num_classes=context.num_classes, average="macro", zero_division=0
+        ).to(context.device)
+    )
 
 
 def make_f1_backend(context: BackendFactoryContext) -> MetricBackend:
-    return TorchMetricBackend(MulticlassF1Score(num_classes=context.num_classes, average="macro", zero_division=0).to(context.device))
+    return TorchMetricBackend(
+        MulticlassF1Score(
+            num_classes=context.num_classes, average="macro", zero_division=0
+        ).to(context.device)
+    )
 
 
 def make_mae_backend(context: BackendFactoryContext) -> MetricBackend:
@@ -1378,11 +1627,15 @@ def make_mae_backend(context: BackendFactoryContext) -> MetricBackend:
 
 
 def make_mse_backend(context: BackendFactoryContext) -> MetricBackend:
-    return TorchMetricBackend(MeanSquaredError(squared=True).to(context.device))
+    return TorchMetricBackend(
+        MeanSquaredError(squared=True).to(context.device)
+    )
 
 
 def make_rmse_backend(context: BackendFactoryContext) -> MetricBackend:
-    return TorchMetricBackend(MeanSquaredError(squared=False).to(context.device))
+    return TorchMetricBackend(
+        MeanSquaredError(squared=False).to(context.device)
+    )
 
 
 def make_r2_backend(context: BackendFactoryContext) -> MetricBackend:
@@ -1402,13 +1655,27 @@ def make_exact_auprc_backend(context: BackendFactoryContext) -> MetricBackend:
 def make_online_auroc_backend(context: BackendFactoryContext) -> MetricBackend:
     thresholds = context.threshold_grid
     if thresholds is None:
-        thresholds = torch.linspace(0.0, 1.0, context.ranking_thresholds, device=context.device)
-    metric: Metric = BinaryAUROC(thresholds=thresholds) if context.num_classes == 2 else MulticlassAUROC(num_classes=context.num_classes, average="macro", thresholds=thresholds)
+        thresholds = torch.linspace(
+            0.0, 1.0, context.ranking_thresholds, device=context.device
+        )
+    metric: Metric = (
+        BinaryAUROC(thresholds=thresholds)
+        if context.num_classes == 2
+        else MulticlassAUROC(
+            num_classes=context.num_classes,
+            average="macro",
+            thresholds=thresholds,
+        )
+    )
     return TorchMetricBackend(metric.to(context.device))
 
 
 def make_online_auprc_backend(context: BackendFactoryContext) -> MetricBackend:
     thresholds = context.threshold_grid
     if thresholds is None:
-        thresholds = torch.linspace(0.0, 1.0, context.ranking_thresholds, device=context.device)
-    return TorchMetricBackend(BinaryAveragePrecision(thresholds=thresholds).to(context.device))
+        thresholds = torch.linspace(
+            0.0, 1.0, context.ranking_thresholds, device=context.device
+        )
+    return TorchMetricBackend(
+        BinaryAveragePrecision(thresholds=thresholds).to(context.device)
+    )

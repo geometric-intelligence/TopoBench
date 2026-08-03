@@ -1,189 +1,350 @@
-"""Focused cache and RNG contracts for the production GraphUniverse loader."""
-
-from __future__ import annotations
+"""Security tests for GraphUniverse child-to-parent materialization."""
 
 import json
-import random
+import math
+import pickle
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
 import pytest
 import torch
-from graph_universe import GraphUniverseDataset
-from omegaconf import DictConfig, OmegaConf
+from torch_geometric.data import Data
+
+import topobench.data.loaders.graph.graph_universe_loader as loader_module
 
 from topobench.data.loaders.graph.graph_universe_loader import (
-    GraphUniverseDatasetLoader,
+    _graphs_from_npz,
+    _materialize_in_isolated_process,
 )
-from topobench.data.preprocessor import PreProcessor
 
 
-def _parameters(tmp_path) -> DictConfig:
-    """Return a tiny but real GraphUniverse generation configuration."""
-    return DictConfig(
-        {
-            "data_dir": str(tmp_path / "graph-universe"),
-            "data_domain": "graph",
-            "data_type": "GraphUniverse",
-            "data_name": "GraphUniverse",
-            "generation_parameters": {
-                "task": "triangle_counting",
-                "universe_parameters": {
-                    "K": 4,
-                    "feature_dim": 3,
-                    "center_variance": 0.2,
-                    "cluster_variance": 0.4,
-                    "edge_propensity_variance": 0.5,
-                    "seed": 17,
-                },
-                "family_parameters": {
-                    "n_graphs": 2,
-                    "n_nodes_range": [8, 9],
-                    "n_communities_range": [2, 3],
-                    "homophily_range": [0.4, 0.6],
-                    "avg_degree_range": [1.0, 1.5],
-                    "degree_separation_range": [0.5, 0.8],
-                    "power_law_exponent_range": [2.0, 2.5],
-                    "seed": 17,
-                },
-            },
-        }
-    )
+def _write_marker(path: str) -> dict[str, object]:
+    Path(path).write_text("executed", encoding="utf-8")
+    return {"version": "graph-universe-ipc-v2", "graphs": []}
 
 
-def _rng_states() -> tuple[object, tuple, torch.Tensor]:
-    """Snapshot Python, NumPy, and Torch caller-global RNG streams."""
-    return random.getstate(), np.random.get_state(), torch.random.get_rng_state()
+class _ReducerCanary:
+    def __init__(self, marker: Path) -> None:
+        self.marker = marker
+
+    def __reduce__(self):
+        return _write_marker, (str(self.marker),)
 
 
-def _assert_rng_states_equal(
-    before: tuple[object, tuple, torch.Tensor],
-    after: tuple[object, tuple, torch.Tensor],
+def _write_safe_result(
+    path: Path,
+    records: list[dict[str, np.ndarray]],
+    *,
+    extra_arrays: dict[str, np.ndarray] | None = None,
 ) -> None:
-    """Compare all caller-global RNG streams exactly."""
-    assert before[0] == after[0]
-    assert before[1][0] == after[1][0]
-    assert np.array_equal(before[1][1], after[1][1])
-    assert before[1][2:] == after[1][2:]
-    assert torch.equal(before[2], after[2])
-
-
-def _preprocess(tmp_path) -> PreProcessor:
-    """Exercise production generation and processed caching end to end."""
-    loader = GraphUniverseDatasetLoader(_parameters(tmp_path))
-    dataset, data_dir = loader.load()
-    transforms = DictConfig(
-        {"identity": {"transform_name": None, "value": 1}}
-    )
-    return PreProcessor(dataset, data_dir, transforms)
-
-
-def test_graph_universe_miss_and_hit_preserve_rng_and_cache_provenance(
-    tmp_path,
-) -> None:
-    """Real generation is isolated and the complete source record is reused."""
-    processed = []
-    for _ in ("miss", "hit"):
-        random.seed(701)
-        np.random.seed(702)
-        torch.manual_seed(703)
-        before = _rng_states()
-
-        processed.append(_preprocess(tmp_path))
-
-        _assert_rng_states_equal(before, _rng_states())
-
-    miss, hit = processed
-    assert miss.cache_identity == hit.cache_identity
-    assert len(miss) == len(hit) == 2
-    for left, right in zip(miss, hit, strict=True):
-        assert left.to_dict().keys() == right.to_dict().keys()
-        for key in left.to_dict():
-            assert torch.equal(left[key], right[key])
-
-    expected_parameters = OmegaConf.to_container(
-        _parameters(tmp_path),
-        resolve=True,
-    )
-    assert miss.cache_record["dataset_selector"] == {
-        "data_domain": "graph",
-        "data_type": "GraphUniverse",
-        "data_name": "GraphUniverse",
+    arrays: dict[str, np.ndarray] = {}
+    graph_descriptors = []
+    for index, record in enumerate(records):
+        descriptors = {}
+        for key in ("edge_index", "x", "y"):
+            name = f"graph_{index}_{key}"
+            array = record[key]
+            arrays[name] = array
+            descriptors[key] = {
+                "array": name,
+                "dtype": array.dtype.str,
+                "shape": list(array.shape),
+            }
+        graph_descriptors.append(descriptors)
+    metadata = {
+        "version": "graph-universe-ipc-v2",
+        "schema": "static-pyg-data-v1",
+        "graphs": graph_descriptors,
     }
-    assert miss.cache_record["loader"] == {
-        "target": (
-            "topobench.data.loaders.graph.graph_universe_loader."
-            "GraphUniverseDatasetLoader"
+    arrays["metadata"] = np.frombuffer(
+        json.dumps(
+            metadata,
+            allow_nan=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8"),
+        dtype=np.uint8,
+    )
+    if extra_arrays is not None:
+        arrays.update(extra_arrays)
+    with path.open("wb") as stream:
+        np.savez(stream, **arrays)
+
+
+def test_valid_graph_universe_npz_round_trips_as_static_data(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    record = {
+        "x": np.ones((3, 2), dtype=np.float32),
+        "edge_index": np.array([[0, 1], [1, 2]], dtype=np.int64),
+        "y": np.array([1.0], dtype=np.float32),
+    }
+
+    def publish_valid_result(
+        command: list[str],
+        *,
+        check: bool,
+        stderr,
+        timeout: int,
+    ) -> subprocess.CompletedProcess:
+        del check, stderr, timeout
+        _write_safe_result(Path(command[-1]), [record])
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(subprocess, "run", publish_valid_result)
+
+    dataset = _materialize_in_isolated_process(
+        tmp_path / "GraphUniverse",
+        {},
+    )
+    graph = dataset[0]
+
+    assert type(graph) is Data
+    assert torch.equal(graph.edge_index, torch.from_numpy(record["edge_index"]))
+    assert torch.equal(graph.x, torch.from_numpy(record["x"]))
+    assert torch.equal(graph.y, torch.from_numpy(record["y"]))
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "error_type", "message"),
+    [
+        (
+            "edge_index",
+            np.array([[0], [1]], dtype=np.int32),
+            TypeError,
+            "edge_index must use int64",
         ),
-        "parameters": expected_parameters,
-    }
-    assert miss.cache_record["feature_policy"] == "continuous"
-    assert miss.cache_record["versions"] == {
-        "representation": "pyg-data-v1",
-        "parser": "graph-universe-v1",
-    }
-    assert list(
-        (tmp_path / "graph-universe").glob(".graph-universe-*")
-    ) == []
-
-
-@pytest.mark.parametrize("failure", ["error", "timeout"])
-def test_partial_child_artifact_cannot_poison_canonical_root(
-    tmp_path,
-    monkeypatch,
-    failure,
+        (
+            "x",
+            np.ones(3, dtype=np.float32),
+            ValueError,
+            "x must have shape",
+        ),
+        (
+            "y",
+            np.array([np.inf], dtype=np.float32),
+            ValueError,
+            "y must contain only finite values",
+        ),
+    ],
+)
+def test_parent_rejects_invalid_graph_arrays(
+    tmp_path: Path,
+    key: str,
+    value: np.ndarray,
+    error_type: type[Exception],
+    message: str,
 ) -> None:
-    """Failed isolated generation is erased before a genuine retry."""
-    loader = GraphUniverseDatasetLoader(_parameters(tmp_path))
+    record = {
+        "edge_index": np.array([[0, 1], [1, 2]], dtype=np.int64),
+        "x": np.ones((3, 2), dtype=np.float32),
+        "y": np.array([1.0], dtype=np.float32),
+    }
+    record[key] = value
+    result_path = tmp_path / "result.npz"
+    _write_safe_result(result_path, [record])
 
-    def fail_after_partial_artifact(command, **kwargs):
-        child_root = Path(command[3])
-        parameters = json.loads(
-            Path(command[4]).read_text(encoding="utf-8")
-        )
-        dataset_name = GraphUniverseDataset.get_dataset_dir(None, parameters)
-        partial_dir = child_root / dataset_name
-        partial_dir.mkdir(parents=True, exist_ok=True)
-        (partial_dir / "data.pt").write_bytes(b"partial")
-        (partial_dir / "metadata.json").write_text(
-            '{"partial": true}',
-            encoding="utf-8",
-        )
-        if failure == "timeout":
-            raise subprocess.TimeoutExpired(command, kwargs["timeout"])
-        raise subprocess.CalledProcessError(23, command)
+    with pytest.raises(error_type, match=message):
+        _graphs_from_npz(result_path)
 
-    with monkeypatch.context() as child:
-        child.setattr(subprocess, "run", fail_after_partial_artifact)
-        with pytest.raises(RuntimeError, match="GraphUniverse generation"):
-            loader.load_dataset()
 
-    canonical_root = Path(_parameters(tmp_path).data_dir)
-    assert list(canonical_root.rglob("data.pt")) == []
-    assert list(canonical_root.rglob("metadata.json")) == []
-    assert list(canonical_root.glob(".graph-universe-*")) == []
-
-    temporary_roots = []
-    real_run = subprocess.run
-
-    def capture_temporary_root(command, **kwargs):
-        temporary_roots.append(Path(command[3]).parent)
-        return real_run(command, **kwargs)
-
-    with monkeypatch.context() as child:
-        child.setattr(subprocess, "run", capture_temporary_root)
-        regenerated = loader.load_dataset()
-
-    assert len(regenerated) == 2
-    assert Path(regenerated.raw_dir) == canonical_root / "GraphUniverse"
-    assert regenerated.root == str(canonical_root)
-    assert regenerated.name == "GraphUniverse"
-    assert Path(regenerated.processed_dir) == canonical_root / "GraphUniverse"
-    assert len(temporary_roots) == 1
-    assert not temporary_roots[0].exists()
-    assert all(
-        str(temporary_roots[0]) not in repr(value)
-        for value in vars(regenerated).values()
+def test_parent_rejects_symlinked_npz(tmp_path: Path) -> None:
+    target_path = tmp_path / "target.npz"
+    result_path = tmp_path / "result.npz"
+    _write_safe_result(
+        target_path,
+        [
+            {
+                "edge_index": np.array([[0], [1]], dtype=np.int64),
+                "x": np.ones((2, 1), dtype=np.float32),
+                "y": np.array([0], dtype=np.int64),
+            }
+        ],
     )
-    assert list(canonical_root.rglob("data.pt")) == []
+    result_path.symlink_to(target_path)
+
+    with pytest.raises(ValueError, match="regular file|symlink"):
+        _graphs_from_npz(result_path)
+
+
+def test_parent_rejects_path_replacement_between_preflight_and_decode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result_path = tmp_path / "result.npz"
+    replacement_path = tmp_path / "replacement.npz"
+    record = {
+        "edge_index": np.array([[0], [1]], dtype=np.int64),
+        "x": np.ones((2, 1), dtype=np.float32),
+        "y": np.array([0], dtype=np.int64),
+    }
+    _write_safe_result(result_path, [record])
+    _write_safe_result(
+        replacement_path,
+        [{**record, "x": np.zeros((2, 1), dtype=np.float32)}],
+    )
+    preflight = loader_module._preflight_npz
+
+    def replace_after_preflight(payload: bytes):
+        headers = preflight(payload)
+        replacement_path.replace(result_path)
+        return headers
+
+    monkeypatch.setattr(
+        loader_module,
+        "_preflight_npz",
+        replace_after_preflight,
+    )
+
+    with pytest.raises(ValueError, match="changed during validation"):
+        _graphs_from_npz(result_path)
+
+
+def test_parent_rejects_in_place_mutation_between_preflight_and_decode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result_path = tmp_path / "result.npz"
+    record = {
+        "edge_index": np.array([[0], [1]], dtype=np.int64),
+        "x": np.ones((2, 1), dtype=np.float32),
+        "y": np.array([0], dtype=np.int64),
+    }
+    _write_safe_result(result_path, [record])
+    preflight = loader_module._preflight_npz
+
+    def mutate_after_preflight(payload: bytes):
+        headers = preflight(payload)
+        _write_safe_result(
+            result_path,
+            [{**record, "x": np.zeros((3, 2), dtype=np.float32)}],
+        )
+        return headers
+
+    monkeypatch.setattr(
+        loader_module,
+        "_preflight_npz",
+        mutate_after_preflight,
+    )
+
+    with pytest.raises(ValueError, match="changed during validation"):
+        _graphs_from_npz(result_path)
+
+
+@pytest.mark.parametrize(
+    ("field", "error_type", "message"),
+    [
+        ("dtype", TypeError, "loaded dtype does not match preflight"),
+        ("shape", ValueError, "loaded shape does not match preflight"),
+        ("byte_size", ValueError, "loaded byte size does not match preflight"),
+    ],
+)
+def test_parent_rejects_loaded_array_descriptor_mismatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    error_type: type[Exception],
+    message: str,
+) -> None:
+    result_path = tmp_path / "result.npz"
+    _write_safe_result(
+        result_path,
+        [
+            {
+                "edge_index": np.array([[0], [1]], dtype=np.int64),
+                "x": np.ones((2, 1), dtype=np.float32),
+                "y": np.array([0], dtype=np.int64),
+            }
+        ],
+    )
+    preflight = loader_module._preflight_npz
+
+    def alter_descriptor_after_preflight(payload: bytes):
+        headers = preflight(payload)
+        descriptor = headers["graph_0_x"]
+        dtype, shape = descriptor[:2]
+        byte_size = (
+            descriptor[2]
+            if len(descriptor) == 3
+            else math.prod(shape) * dtype.itemsize
+        )
+        if field == "dtype":
+            dtype = np.dtype(np.float64)
+        elif field == "shape":
+            shape = (shape[0] + 1, *shape[1:])
+        else:
+            byte_size += dtype.itemsize
+        headers["graph_0_x"] = (dtype, shape, byte_size)
+        return headers
+
+    monkeypatch.setattr(
+        loader_module,
+        "_preflight_npz",
+        alter_descriptor_after_preflight,
+    )
+
+    with pytest.raises(error_type, match=message):
+        _graphs_from_npz(result_path)
+
+
+def test_parent_rejects_unexpected_graph_array_members(
+    tmp_path: Path,
+) -> None:
+    result_path = tmp_path / "result.npz"
+    _write_safe_result(
+        result_path,
+        [
+            {
+                "edge_index": np.array([[0], [1]], dtype=np.int64),
+                "x": np.ones((2, 1), dtype=np.float32),
+                "y": np.array([0], dtype=np.int64),
+            }
+        ],
+        extra_arrays={"graph_0_code": np.array([1], dtype=np.int64)},
+    )
+
+    with pytest.raises(ValueError, match="unexpected array members"):
+        _graphs_from_npz(result_path)
+
+
+def _write_pickle_payload(path: Path, payload: object) -> None:
+    with path.open("wb") as stream:
+        pickle.dump(payload, stream)
+
+
+def _write_torch_payload(path: Path, payload: object) -> None:
+    torch.save(payload, path)
+
+
+@pytest.mark.parametrize(
+    "serializer",
+    [_write_pickle_payload, _write_torch_payload],
+    ids=["pickle", "torch"],
+)
+def test_parent_rejects_executable_payload_without_execution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    serializer: Callable[[Path, object], None],
+) -> None:
+    marker = tmp_path / "executed.txt"
+
+    def write_poisoned_result(
+        command: list[str],
+        *,
+        check: bool,
+        stderr,
+        timeout: int,
+    ) -> subprocess.CompletedProcess:
+        del check, stderr, timeout
+        serializer(Path(command[-1]), _ReducerCanary(marker))
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(subprocess, "run", write_poisoned_result)
+
+    with pytest.raises(ValueError):
+        _materialize_in_isolated_process(tmp_path / "GraphUniverse", {})
+
+    assert not marker.exists()

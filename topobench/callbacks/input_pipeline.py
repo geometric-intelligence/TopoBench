@@ -109,7 +109,9 @@ class InputPipelineCallback(Callback):
         super().__init__()
         self.event_log_path = Path(event_log_path)
         self.max_log_bytes = self._positive(max_log_bytes, "max_log_bytes")
-        self.max_log_records = self._positive(max_log_records, "max_log_records")
+        self.max_log_records = self._positive(
+            max_log_records, "max_log_records"
+        )
         self.max_rotations = self._nonnegative(max_rotations, "max_rotations")
         self.fsync_policy = FsyncPolicy(fsync_policy)
         self.event_capacity = self._positive(event_capacity, "event_capacity")
@@ -124,7 +126,9 @@ class InputPipelineCallback(Callback):
         )
         self.sample_offset = self._nonnegative(sample_offset, "sample_offset")
         if self.sample_offset >= self.sample_every_n:
-            raise ValueError("sample_offset must be smaller than sample_every_n")
+            raise ValueError(
+                "sample_offset must be smaller than sample_every_n"
+            )
         self.warmup_steps = self._nonnegative(warmup_steps, "warmup_steps")
         self.rolling_window_steps = self._positive(
             rolling_window_steps,
@@ -243,8 +247,7 @@ class InputPipelineCallback(Callback):
         aggregates = record["aggregates"]
         assert isinstance(aggregates, list)
         record["aggregates"] = tuple(
-            MappingProxyType(dict(aggregate))
-            for aggregate in aggregates
+            MappingProxyType(dict(aggregate)) for aggregate in aggregates
         )
         return MappingProxyType(record)
 
@@ -274,10 +277,11 @@ class InputPipelineCallback(Callback):
             return None
         return lambda: torch.cuda.Event(enable_timing=True)
 
-
     def _start(self, trainer: object, model: object) -> None:
         if self._closed:
-            raise RuntimeError("InputPipelineCallback cannot restart after teardown")
+            raise RuntimeError(
+                "InputPipelineCallback cannot restart after teardown"
+            )
         self._checkpoint_metric_guard(trainer)
         cuda_event_factory = self._cuda_event_factory(model)
         if (
@@ -300,9 +304,9 @@ class InputPipelineCallback(Callback):
             if callable(attach):
                 attach(self._monitor)
             else:
-                setattr(datamodule, "execution_monitor", self._monitor)
+                datamodule.execution_monitor = self._monitor
             self._attached_datamodule = datamodule
-        setattr(model, "execution_monitor", self._monitor)
+        model.execution_monitor = self._monitor
         self._attached_model = model
 
     def setup(self, trainer: object, pl_module: object, stage: str) -> None:
@@ -316,12 +320,16 @@ class InputPipelineCallback(Callback):
     @staticmethod
     def _loggers(trainer: object) -> tuple[object, ...]:
         loggers = getattr(trainer, "loggers", None)
-        if isinstance(loggers, Sequence) and not isinstance(loggers, (str, bytes)):
+        if isinstance(loggers, Sequence) and not isinstance(
+            loggers, (str, bytes)
+        ):
             return tuple(logger for logger in loggers if logger is not None)
         logger = getattr(trainer, "logger", None)
         return () if logger is None else (logger,)
 
-    def _logger_metrics(self, summary: ExecutionSummary) -> dict[str, int | float]:
+    def _logger_metrics(
+        self, summary: ExecutionSummary
+    ) -> dict[str, int | float]:
         metrics: dict[str, int | float] = {
             "system/events/dropped": summary.dropped_event_count,
             "system/events/rotated_files": summary.rotated_file_count,
@@ -381,7 +389,9 @@ class InputPipelineCallback(Callback):
                 return metrics
             metrics[key] = value
         for aggregate in summary.aggregates:
-            prefix = f"system/{aggregate.operation.value}/{aggregate.status.value}"
+            prefix = (
+                f"system/{aggregate.operation.value}/{aggregate.status.value}"
+            )
             values: tuple[tuple[str, int | float], ...] = (
                 (f"{prefix}/count", aggregate.count),
                 (f"{prefix}/minimum_ns", aggregate.minimum_ns),
@@ -415,9 +425,6 @@ class InputPipelineCallback(Callback):
                     stacklevel=2,
                 )
 
-
-
-
     def _update_summary(self, trainer: object) -> ExecutionSummary:
         summary = summarize_events(
             self.event_log.retained_events,
@@ -431,14 +438,12 @@ class InputPipelineCallback(Callback):
         )
         self._summary = summary
         if self._attached_datamodule is not None:
-            setattr(
-                self._attached_datamodule,
-                "execution_summary",
-                summary,
-            )
+            self._attached_datamodule.execution_summary = summary
         return summary
 
-    def flush(self, trainer: object, *, publish: bool = True) -> ExecutionSummary:
+    def flush(
+        self, trainer: object, *, publish: bool = True
+    ) -> ExecutionSummary:
         """Persist local events first, then optionally publish bounded aggregates."""
 
         if self._monitor is None or self._event_log is None:
@@ -489,7 +494,9 @@ class InputPipelineCallback(Callback):
     def on_train_epoch_end(self, trainer: object, pl_module: object) -> None:
         self.flush(trainer)
 
-    def on_validation_epoch_end(self, trainer: object, pl_module: object) -> None:
+    def on_validation_epoch_end(
+        self, trainer: object, pl_module: object
+    ) -> None:
         self.flush(trainer)
 
     def on_test_epoch_end(self, trainer: object, pl_module: object) -> None:
@@ -532,7 +539,11 @@ class InputPipelineCallback(Callback):
     @staticmethod
     def _optional_trainer_integer(trainer: object, name: str) -> int | None:
         value = getattr(trainer, name, None)
-        return None if isinstance(value, bool) or not isinstance(value, int) else value
+        return (
+            None
+            if isinstance(value, bool) or not isinstance(value, int)
+            else value
+        )
 
     def on_train_end(self, trainer: object, pl_module: object) -> None:
         if self._monitor is None:
@@ -546,11 +557,7 @@ class InputPipelineCallback(Callback):
         )
         self.flush(trainer)
         if self._summary is not None and self._attached_model is not None:
-            setattr(
-                self._attached_model,
-                "execution_summary",
-                self._summary,
-            )
+            self._attached_model.execution_summary = self._summary
 
     def on_exception(
         self,
@@ -574,20 +581,19 @@ class InputPipelineCallback(Callback):
         datamodule = self._attached_datamodule
         if (
             datamodule is not None
-            and getattr(datamodule, "execution_monitor", None)
-            is self._monitor
+            and getattr(datamodule, "execution_monitor", None) is self._monitor
         ):
             detach = getattr(datamodule, "set_execution_monitor", None)
             if callable(detach):
                 detach(None)
             else:
-                setattr(datamodule, "execution_monitor", None)
+                datamodule.execution_monitor = None
         model = self._attached_model
         if (
             model is not None
             and getattr(model, "execution_monitor", None) is self._monitor
         ):
-            setattr(model, "execution_monitor", None)
+            model.execution_monitor = None
         self._attached_datamodule = None
         self._attached_model = None
 

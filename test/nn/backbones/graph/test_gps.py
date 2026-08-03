@@ -2,8 +2,7 @@
 
 import pytest
 import torch
-import torch_geometric
-from torch_geometric.data import Data, Batch
+from torch_geometric.data import Batch
 
 from topobench.nn.backbones.graph.gps import GPSEncoder, RedrawProjection
 
@@ -22,7 +21,7 @@ class TestRedrawProjection:
             input_dim=self.input_dim,
             hidden_dim=self.hidden_dim,
             num_layers=2,
-            attn_type="multihead"
+            attn_type="multihead",
         )
 
         redraw = RedrawProjection(model, redraw_interval=10)
@@ -33,9 +32,7 @@ class TestRedrawProjection:
     def test_initialization_no_interval(self):
         """Test initialization with no redraw interval."""
         model = GPSEncoder(
-            input_dim=self.input_dim,
-            hidden_dim=self.hidden_dim,
-            num_layers=2
+            input_dim=self.input_dim, hidden_dim=self.hidden_dim, num_layers=2
         )
 
         redraw = RedrawProjection(model, redraw_interval=None)
@@ -48,7 +45,7 @@ class TestRedrawProjection:
             input_dim=self.input_dim,
             hidden_dim=self.hidden_dim,
             num_layers=2,
-            attn_type="performer"
+            attn_type="performer",
         )
         model.eval()
 
@@ -63,9 +60,7 @@ class TestRedrawProjection:
     def test_redraw_projections_no_interval(self):
         """Test that projections are not redrawn when interval is None."""
         model = GPSEncoder(
-            input_dim=self.input_dim,
-            hidden_dim=self.hidden_dim,
-            num_layers=2
+            input_dim=self.input_dim, hidden_dim=self.hidden_dim, num_layers=2
         )
         model.train()
 
@@ -82,7 +77,7 @@ class TestRedrawProjection:
             input_dim=self.input_dim,
             hidden_dim=self.hidden_dim,
             num_layers=2,
-            attn_type="performer"
+            attn_type="performer",
         )
         model.train()
 
@@ -126,8 +121,7 @@ class TestGPSEncoder:
     def test_initialization_default(self):
         """Test default initialization of GPSEncoder."""
         model = GPSEncoder(
-            input_dim=self.input_dim,
-            hidden_dim=self.hidden_dim
+            input_dim=self.input_dim, hidden_dim=self.hidden_dim
         )
 
         assert model.input_dim == self.input_dim
@@ -147,7 +141,7 @@ class TestGPSEncoder:
             heads=8,
             dropout=0.2,
             attn_type="performer",
-            local_conv_type="gin"
+            local_conv_type="gin",
         )
 
         assert model.num_layers == 3
@@ -162,7 +156,7 @@ class TestGPSEncoder:
             input_dim=self.input_dim,
             hidden_dim=self.hidden_dim,
             num_layers=2,
-            local_conv_type="pna"
+            local_conv_type="pna",
         )
 
         assert len(model.convs) == 2
@@ -173,7 +167,7 @@ class TestGPSEncoder:
             GPSEncoder(
                 input_dim=self.input_dim,
                 hidden_dim=self.hidden_dim,
-                local_conv_type="invalid_type"
+                local_conv_type="invalid_type",
             )
 
     def test_forward_basic(self, simple_graph_0):
@@ -188,15 +182,13 @@ class TestGPSEncoder:
         x = self._prepare_features(simple_graph_0.num_nodes)
 
         model = GPSEncoder(
-            input_dim=self.hidden_dim,
-            hidden_dim=self.hidden_dim,
-            num_layers=2
+            input_dim=self.hidden_dim, hidden_dim=self.hidden_dim, num_layers=2
         )
 
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -214,15 +206,10 @@ class TestGPSEncoder:
         x = self._prepare_features(simple_graph_0.num_nodes)
 
         model = GPSEncoder(
-            input_dim=self.hidden_dim,
-            hidden_dim=self.hidden_dim,
-            num_layers=2
+            input_dim=self.hidden_dim, hidden_dim=self.hidden_dim, num_layers=2
         )
 
-        out = model(
-            x=x,
-            edge_index=simple_graph_0.edge_index
-        )
+        out = model(x=x, edge_index=simple_graph_0.edge_index)
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
 
@@ -240,7 +227,7 @@ class TestGPSEncoder:
             input_dim=self.hidden_dim,
             hidden_dim=self.hidden_dim,
             num_layers=2,
-            use_edge_attr=True
+            use_edge_attr=True,
         )
 
         # Create dummy edge attributes
@@ -250,7 +237,7 @@ class TestGPSEncoder:
             x=x,
             edge_index=simple_graph_0.edge_index,
             edge_attr=edge_attr,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -270,13 +257,13 @@ class TestGPSEncoder:
             hidden_dim=self.hidden_dim,
             num_layers=2,
             heads=4,
-            attn_type="multihead"
+            attn_type="multihead",
         )
 
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -297,13 +284,13 @@ class TestGPSEncoder:
             num_layers=2,
             heads=4,
             attn_type="performer",
-            redraw_interval=5
+            redraw_interval=5,
         )
 
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -323,13 +310,13 @@ class TestGPSEncoder:
             input_dim=self.hidden_dim,
             hidden_dim=self.hidden_dim,
             num_layers=2,
-            local_conv_type="pna"
+            local_conv_type="pna",
         )
 
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -348,13 +335,13 @@ class TestGPSEncoder:
             model = GPSEncoder(
                 input_dim=self.hidden_dim,
                 hidden_dim=self.hidden_dim,
-                num_layers=num_layers
+                num_layers=num_layers,
             )
 
             out = model(
                 x=x,
                 edge_index=simple_graph_0.edge_index,
-                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
             )
 
             assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -375,13 +362,13 @@ class TestGPSEncoder:
                 input_dim=self.hidden_dim,
                 hidden_dim=self.hidden_dim,
                 num_layers=2,
-                heads=heads
+                heads=heads,
             )
 
             out = model(
                 x=x,
                 edge_index=simple_graph_0.edge_index,
-                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
             )
 
             assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -401,13 +388,13 @@ class TestGPSEncoder:
                 input_dim=self.hidden_dim,
                 hidden_dim=self.hidden_dim,
                 num_layers=2,
-                dropout=dropout
+                dropout=dropout,
             )
 
             out = model(
                 x=x,
                 edge_index=simple_graph_0.edge_index,
-                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
             )
 
             assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -426,14 +413,14 @@ class TestGPSEncoder:
             input_dim=self.hidden_dim,
             hidden_dim=self.hidden_dim,
             num_layers=2,
-            attn_type="performer"
+            attn_type="performer",
         )
         model.train()
 
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -453,14 +440,14 @@ class TestGPSEncoder:
             input_dim=self.hidden_dim,
             hidden_dim=self.hidden_dim,
             num_layers=2,
-            attn_type="performer"
+            attn_type="performer",
         )
         model.eval()
 
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -475,16 +462,16 @@ class TestGPSEncoder:
             Test graph fixture.
         """
         model = GPSEncoder(
-            input_dim=self.hidden_dim,
-            hidden_dim=self.hidden_dim,
-            num_layers=2
+            input_dim=self.hidden_dim, hidden_dim=self.hidden_dim, num_layers=2
         )
 
-        x = self._prepare_features(simple_graph_0.num_nodes).requires_grad_(True)
+        x = self._prepare_features(simple_graph_0.num_nodes).requires_grad_(
+            True
+        )
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         # Compute loss and backward
@@ -495,7 +482,11 @@ class TestGPSEncoder:
         # propagate through all layers, so we only check that backward() runs without error)
         assert x.grad is not None
         # At least some parameters should have gradients
-        has_grad = any(param.grad is not None for param in model.parameters() if param.requires_grad)
+        has_grad = any(
+            param.grad is not None
+            for param in model.parameters()
+            if param.requires_grad
+        )
         assert has_grad, "No gradients computed for any model parameters"
 
     def test_batched_graphs(self, simple_graph_0, simple_graph_1):
@@ -512,18 +503,14 @@ class TestGPSEncoder:
         x = self._prepare_features(expected_nodes)
 
         model = GPSEncoder(
-            input_dim=self.hidden_dim,
-            hidden_dim=self.hidden_dim,
-            num_layers=2
+            input_dim=self.hidden_dim, hidden_dim=self.hidden_dim, num_layers=2
         )
 
         # Create batch
         batch_data = Batch.from_data_list([simple_graph_0, simple_graph_1])
 
         out = model(
-            x=x,
-            edge_index=batch_data.edge_index,
-            batch=batch_data.batch
+            x=x, edge_index=batch_data.edge_index, batch=batch_data.batch
         )
 
         assert out.shape == (expected_nodes, self.hidden_dim)
@@ -531,9 +518,7 @@ class TestGPSEncoder:
     def test_empty_graph(self):
         """Test forward pass with empty graph."""
         model = GPSEncoder(
-            input_dim=self.hidden_dim,
-            hidden_dim=self.hidden_dim,
-            num_layers=2
+            input_dim=self.hidden_dim, hidden_dim=self.hidden_dim, num_layers=2
         )
         # Set to eval mode to avoid batch norm issues with single node
         model.eval()
@@ -549,9 +534,7 @@ class TestGPSEncoder:
     def test_large_graph(self):
         """Test forward pass with a larger graph."""
         model = GPSEncoder(
-            input_dim=self.hidden_dim,
-            hidden_dim=self.hidden_dim,
-            num_layers=2
+            input_dim=self.hidden_dim, hidden_dim=self.hidden_dim, num_layers=2
         )
 
         num_nodes = 100
@@ -574,21 +557,19 @@ class TestGPSEncoder:
         """
         x = self._prepare_features(simple_graph_0.num_nodes)
 
-        attn_kwargs = {
-            "dropout": 0.2
-        }
+        attn_kwargs = {"dropout": 0.2}
 
         model = GPSEncoder(
             input_dim=self.hidden_dim,
             hidden_dim=self.hidden_dim,
             num_layers=2,
-            attn_kwargs=attn_kwargs
+            attn_kwargs=attn_kwargs,
         )
 
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -607,7 +588,7 @@ class TestGPSEncoder:
             input_dim=self.hidden_dim,
             hidden_dim=self.hidden_dim,
             num_layers=2,
-            dropout=0.5
+            dropout=0.5,
         )
         model.eval()
 
@@ -615,13 +596,13 @@ class TestGPSEncoder:
         out1 = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         out2 = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert torch.allclose(out1, out2)
@@ -641,16 +622,16 @@ class TestGPSEncoder:
             hidden_dim=self.hidden_dim,
             num_layers=2,
             attn_type="performer",
-            redraw_interval=2
+            redraw_interval=2,
         )
         model.train()
 
         # Call forward multiple times
-        for i in range(5):
+        for _i in range(5):
             out = model(
                 x=x,
                 edge_index=simple_graph_0.edge_index,
-                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
             )
             assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
 
@@ -666,15 +647,13 @@ class TestGPSEncoder:
             x = self._prepare_features(simple_graph_0.num_nodes, hidden_dim)
 
             model = GPSEncoder(
-                input_dim=hidden_dim,
-                hidden_dim=hidden_dim,
-                num_layers=2
+                input_dim=hidden_dim, hidden_dim=hidden_dim, num_layers=2
             )
 
             out = model(
                 x=x,
                 edge_index=simple_graph_0.edge_index,
-                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
             )
 
             assert out.shape == (simple_graph_0.num_nodes, hidden_dim)
@@ -691,9 +670,7 @@ class TestGPSEncoder:
             pytest.skip("CUDA not available")
 
         model = GPSEncoder(
-            input_dim=self.hidden_dim,
-            hidden_dim=self.hidden_dim,
-            num_layers=2
+            input_dim=self.hidden_dim, hidden_dim=self.hidden_dim, num_layers=2
         )
         model = model.cuda()
 
@@ -722,13 +699,13 @@ class TestGPSEncoder:
         model = GPSEncoder(
             input_dim=self.hidden_dim,
             hidden_dim=self.hidden_dim,
-            num_layers=num_layers
+            num_layers=num_layers,
         )
 
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -751,13 +728,13 @@ class TestGPSEncoder:
             input_dim=self.hidden_dim,
             hidden_dim=self.hidden_dim,
             num_layers=2,
-            attn_type=attn_type
+            attn_type=attn_type,
         )
 
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -779,13 +756,13 @@ class TestGPSEncoder:
             input_dim=self.hidden_dim,
             hidden_dim=self.hidden_dim,
             num_layers=2,
-            local_conv_type=local_conv_type
+            local_conv_type=local_conv_type,
         )
 
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -801,9 +778,7 @@ class TestGPSEncoder:
         x = self._prepare_features(simple_graph_0.num_nodes)
 
         model = GPSEncoder(
-            input_dim=self.hidden_dim,
-            hidden_dim=self.hidden_dim,
-            num_layers=2
+            input_dim=self.hidden_dim, hidden_dim=self.hidden_dim, num_layers=2
         )
 
         out = model(
@@ -811,7 +786,7 @@ class TestGPSEncoder:
             edge_index=simple_graph_0.edge_index,
             batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
             unused_kwarg="test",
-            another_unused=123
+            another_unused=123,
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)

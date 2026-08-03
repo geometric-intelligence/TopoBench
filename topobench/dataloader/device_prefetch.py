@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import queue
 import threading
@@ -10,11 +11,13 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from numbers import Integral
 from types import MappingProxyType
-from typing import Any, Literal, TypeAlias
+from typing import Literal, TypeAlias
 
 import torch
 from torch import Tensor
+from torch.utils.data import DataLoader
 from torch_geometric.data import Data, HeteroData
+
 from topobench.dataloader.input_monitor import (
     InputMonitor,
     MonitorOverflowError,
@@ -42,7 +45,13 @@ class PrefetchLimitError(ValueError):
 class PrefetchError(RuntimeError):
     """Attach lifecycle phase and sampling identity to a prefetch failure."""
 
-    def __init__(self, phase: str, sequence: int, descriptor: object, cause: BaseException) -> None:
+    def __init__(
+        self,
+        phase: str,
+        sequence: int,
+        descriptor: object,
+        cause: BaseException,
+    ) -> None:
         self.phase = phase
         self.sequence = sequence
         self.descriptor = descriptor
@@ -77,15 +86,21 @@ def _node_caps(value: object) -> Mapping[str, int]:
     elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
         items = value
     else:
-        raise TypeError("max_nodes_per_type must be a mapping or pair sequence")
+        raise TypeError(
+            "max_nodes_per_type must be a mapping or pair sequence"
+        )
     result: dict[str, int] = {}
     for item in items:
         try:
             key, cap = item
         except (TypeError, ValueError) as error:
-            raise TypeError("max_nodes_per_type must contain (node_type, cap) pairs") from error
+            raise TypeError(
+                "max_nodes_per_type must contain (node_type, cap) pairs"
+            ) from error
         if not isinstance(key, str) or not key:
-            raise TypeError("max_nodes_per_type keys must be non-empty strings")
+            raise TypeError(
+                "max_nodes_per_type keys must be non-empty strings"
+            )
         if key in result:
             raise ValueError(f"duplicate node type cap {key!r}")
         result[key] = _integer(cap, f"max_nodes_per_type[{key!r}]")
@@ -109,17 +124,23 @@ def _relation_caps(value: object) -> Mapping[CanonicalRelation, int]:
     elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
         items = value
     else:
-        raise TypeError("max_edges_per_relation must be a mapping or pair sequence")
+        raise TypeError(
+            "max_edges_per_relation must be a mapping or pair sequence"
+        )
     result: dict[CanonicalRelation, int] = {}
     for item in items:
         try:
             raw_relation, cap = item
         except (TypeError, ValueError) as error:
-            raise TypeError("max_edges_per_relation must contain (relation, cap) pairs") from error
+            raise TypeError(
+                "max_edges_per_relation must contain (relation, cap) pairs"
+            ) from error
         relation = _canonical_relation(raw_relation)
         if relation in result:
             raise ValueError(f"duplicate relation cap {relation!r}")
-        result[relation] = _integer(cap, f"max_edges_per_relation[{relation!r}]")
+        result[relation] = _integer(
+            cap, f"max_edges_per_relation[{relation!r}]"
+        )
     return MappingProxyType(dict(sorted(result.items())))
 
 
@@ -132,7 +153,9 @@ class PrefetchLimits:
     max_batch_nodes: int
     max_batch_edges: int
     max_nodes_per_type: Mapping[str, int] = field(default_factory=dict)
-    max_edges_per_relation: Mapping[CanonicalRelation, int] = field(default_factory=dict)
+    max_edges_per_relation: Mapping[CanonicalRelation, int] = field(
+        default_factory=dict
+    )
     max_host_batch_bytes: int = 0
     max_device_batch_bytes: int = 0
     max_host_queue_bytes: int = 0
@@ -151,19 +174,33 @@ class PrefetchLimits:
             ("max_host_queue_bytes", 0),
             ("max_device_queue_bytes", 0),
         ):
-            object.__setattr__(self, name, _integer(getattr(self, name), name, minimum=minimum))
-        object.__setattr__(self, "max_nodes_per_type", _node_caps(self.max_nodes_per_type))
-        object.__setattr__(self, "max_edges_per_relation", _relation_caps(self.max_edges_per_relation))
-        host_worst = _optional_integer(self.worst_case_host_bytes, "worst_case_host_bytes")
-        device_worst = _optional_integer(self.worst_case_device_bytes, "worst_case_device_bytes")
+            object.__setattr__(
+                self,
+                name,
+                _integer(getattr(self, name), name, minimum=minimum),
+            )
+        object.__setattr__(
+            self, "max_nodes_per_type", _node_caps(self.max_nodes_per_type)
+        )
+        object.__setattr__(
+            self,
+            "max_edges_per_relation",
+            _relation_caps(self.max_edges_per_relation),
+        )
+        host_worst = _optional_integer(
+            self.worst_case_host_bytes, "worst_case_host_bytes"
+        )
+        device_worst = _optional_integer(
+            self.worst_case_device_bytes, "worst_case_device_bytes"
+        )
         object.__setattr__(self, "worst_case_host_bytes", host_worst)
         object.__setattr__(self, "worst_case_device_bytes", device_worst)
         if host_worst is not None:
             if host_worst > self.max_host_batch_bytes:
-                raise ValueError("worst_case_host_bytes exceeds max_host_batch_bytes")
-            live_host_slots = (
-                self.host_queue_depth + self.device_queue_depth
-            )
+                raise ValueError(
+                    "worst_case_host_bytes exceeds max_host_batch_bytes"
+                )
+            live_host_slots = self.host_queue_depth + self.device_queue_depth
             if host_worst * live_host_slots > self.max_host_queue_bytes:
                 raise ValueError(
                     "worst_case_host_bytes across the host queue and live CUDA "
@@ -171,8 +208,13 @@ class PrefetchLimits:
                 )
         if device_worst is not None:
             if device_worst > self.max_device_batch_bytes:
-                raise ValueError("worst_case_device_bytes exceeds max_device_batch_bytes")
-            if device_worst * self.device_queue_depth > self.max_device_queue_bytes:
+                raise ValueError(
+                    "worst_case_device_bytes exceeds max_device_batch_bytes"
+                )
+            if (
+                device_worst * self.device_queue_depth
+                > self.max_device_queue_bytes
+            ):
                 raise ValueError(
                     "worst_case_device_bytes times device queue depth exceeds the device queue budget"
                 )
@@ -207,31 +249,41 @@ class PrefetchCapability:
     def __post_init__(self) -> None:
         device = _device(self.device)
         cuda_available = _strict_bool(self.cuda_available, "cuda_available")
-        pin_supported = _strict_bool(self.pin_memory_supported, "pin_memory_supported")
+        pin_supported = _strict_bool(
+            self.pin_memory_supported, "pin_memory_supported"
+        )
         if device.type == "cuda":
             if not cuda_available or not torch.cuda.is_available():
-                raise RuntimeError("CUDA required for device prefetch, but CUDA is unavailable")
+                raise RuntimeError(
+                    "CUDA required for device prefetch, but CUDA is unavailable"
+                )
             count = torch.cuda.device_count()
             index = 0 if device.index is None else device.index
             if index < 0 or index >= count:
-                raise ValueError(f"CUDA device index {index} is outside [0, {count})")
+                raise ValueError(
+                    f"CUDA device index {index} is outside [0, {count})"
+                )
             if not pin_supported:
                 raise RuntimeError("CUDA prefetch requires pinned host memory")
             device = torch.device("cuda", index)
         object.__setattr__(self, "device", device)
 
     @classmethod
-    def detect(cls, device: object = "cpu") -> "PrefetchCapability":
+    def detect(cls, device: object = "cpu") -> PrefetchCapability:
         """Resolve a real runtime capability for one requested output device."""
         resolved = _device(device)
         available = bool(torch.cuda.is_available())
         if resolved.type == "cuda":
             if not available:
-                raise RuntimeError("CUDA required for device prefetch, but CUDA is unavailable")
+                raise RuntimeError(
+                    "CUDA required for device prefetch, but CUDA is unavailable"
+                )
             index = 0 if resolved.index is None else resolved.index
             count = torch.cuda.device_count()
             if index >= count:
-                raise ValueError(f"CUDA device index {index} is outside [0, {count})")
+                raise ValueError(
+                    f"CUDA device index {index} is outside [0, {count})"
+                )
             resolved = torch.device("cuda", index)
         return cls(resolved, available, resolved.type == "cuda")
 
@@ -289,7 +341,12 @@ class _RawComponent:
 
 def _storage_key(tensor: Tensor) -> StorageKey:
     storage = tensor.untyped_storage()
-    return (tensor.device.type, tensor.device.index, int(storage._cdata), int(storage.nbytes()))
+    return (
+        tensor.device.type,
+        tensor.device.index,
+        int(storage._cdata),
+        int(storage.nbytes()),
+    )
 
 
 def _sparse_components(tensor: Tensor) -> tuple[tuple[str, Tensor], ...]:
@@ -342,8 +399,21 @@ def _raw_components(batch: NativeBatch) -> tuple[_RawComponent, ...]:
         for nested_path, tensor in _nested_tensors(value, base_path):
             layout = str(tensor.layout)
             for component, dense in _sparse_components(tensor):
-                field_path = nested_path if not component else f"{nested_path}.{component}"
-                values.append(_RawComponent(scope, owner, field_path, component or None, layout, dense))
+                field_path = (
+                    nested_path
+                    if not component
+                    else f"{nested_path}.{component}"
+                )
+                values.append(
+                    _RawComponent(
+                        scope,
+                        owner,
+                        field_path,
+                        component or None,
+                        layout,
+                        dense,
+                    )
+                )
 
     if isinstance(batch, HeteroData):
         for key, value in sorted(batch._global_store.items()):
@@ -383,7 +453,9 @@ def _batch_counts(
             count = store.num_nodes
             if count is None:
                 raise ValueError(f"node type {store._key!r} has no node count")
-            nodes.append((store._key, _integer(count, f"nodes[{store._key!r}]")))
+            nodes.append(
+                (store._key, _integer(count, f"nodes[{store._key!r}]"))
+            )
         edges: list[tuple[CanonicalRelation, int]] = []
         for store in sorted(batch.edge_stores, key=lambda item: item._key):
             relation = _canonical_relation(store._key)
@@ -410,7 +482,9 @@ def estimate_batch_bytes(batch: NativeBatch) -> BatchByteEstimate:
     """Count all native graph tensor storages once without densifying sparse data."""
     node_counts, edge_counts = _batch_counts(batch)
     node_bytes: dict[str, int] = {name: 0 for name, _ in node_counts}
-    edge_bytes: dict[CanonicalRelation | str, int] = {name: 0 for name, _ in edge_counts}
+    edge_bytes: dict[CanonicalRelation | str, int] = {
+        name: 0 for name, _ in edge_counts
+    }
     global_bytes = 0
     seen: set[StorageKey] = set()
     fields: list[TensorFieldEstimate] = []
@@ -466,13 +540,18 @@ def _descriptor(batch: object) -> object:
 
 def _sequence(batch: object, fallback: int) -> int:
     value = getattr(batch, "sequence_id", fallback)
-    if isinstance(value, bool) or not isinstance(value, Integral) or int(value) < 1:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, Integral)
+        or int(value) < 1
+    ):
         return fallback
     return int(value)
 
 
 def _all_component_tensors(batch: NativeBatch) -> tuple[Tensor, ...]:
     return tuple(component.tensor for component in _raw_components(batch))
+
 
 def _cuda_source_mode(
     batch: NativeBatch,
@@ -529,7 +608,13 @@ def _admit(
         )
     tensors = _all_component_tensors(batch)
     if capability.device.type != "cuda":
-        non_cpu = sorted({str(tensor.device) for tensor in tensors if tensor.device.type != "cpu"})
+        non_cpu = sorted(
+            {
+                str(tensor.device)
+                for tensor in tensors
+                if tensor.device.type != "cpu"
+            }
+        )
         if non_cpu:
             raise PrefetchLimitError(
                 "host-only prefetch requires CPU batches for Lightning-owned transfer, "
@@ -559,13 +644,20 @@ def _map_nested(
             object_cache[identity] = map_tensor(value)
         return object_cache[identity]
     if isinstance(value, tuple) and hasattr(value, "_fields"):
-        return type(value)(*(_map_nested(item, map_tensor, object_cache) for item in value))
+        return type(value)(
+            *(_map_nested(item, map_tensor, object_cache) for item in value)
+        )
     if isinstance(value, tuple):
-        return tuple(_map_nested(item, map_tensor, object_cache) for item in value)
+        return tuple(
+            _map_nested(item, map_tensor, object_cache) for item in value
+        )
     if isinstance(value, list):
         return [_map_nested(item, map_tensor, object_cache) for item in value]
     if isinstance(value, Mapping):
-        return {key: _map_nested(item, map_tensor, object_cache) for key, item in value.items()}
+        return {
+            key: _map_nested(item, map_tensor, object_cache)
+            for key, item in value.items()
+        }
     return value
 
 
@@ -579,7 +671,9 @@ class _TensorTransformer:
         storage_bytes = int(storage.nbytes())
         element_size = tensor.element_size()
         if storage_bytes % element_size:
-            raise TypeError("shared storage size is incompatible with tensor dtype")
+            raise TypeError(
+                "shared storage size is incompatible with tensor dtype"
+            )
         flat = torch.empty(0, dtype=tensor.dtype, device=tensor.device)
         return flat.set_(storage, 0, (storage_bytes // element_size,), (1,))
 
@@ -598,7 +692,9 @@ class _TensorTransformer:
         else:
             storage_bytes = int(transformed.untyped_storage().nbytes())
             if storage_bytes % tensor.element_size():
-                raise TypeError("shared storage size is incompatible with tensor dtype")
+                raise TypeError(
+                    "shared storage size is incompatible with tensor dtype"
+                )
             base = torch.empty(
                 0,
                 dtype=tensor.dtype,
@@ -609,12 +705,19 @@ class _TensorTransformer:
                 (storage_bytes // tensor.element_size(),),
                 (1,),
             )
-        return base.as_strided(tuple(tensor.size()), tuple(tensor.stride()), tensor.storage_offset())
+        return base.as_strided(
+            tuple(tensor.size()),
+            tuple(tensor.stride()),
+            tensor.storage_offset(),
+        )
 
     def __call__(self, tensor: Tensor) -> Tensor:
         if tensor.layout == torch.strided:
             return self._strided(tensor)
-        components = {name: self._strided(component) for name, component in _sparse_components(tensor)}
+        components = {
+            name: self._strided(component)
+            for name, component in _sparse_components(tensor)
+        }
         common = {
             "size": tuple(tensor.size()),
             "dtype": tensor.dtype,
@@ -630,24 +733,38 @@ class _TensorTransformer:
             )
         if tensor.layout == torch.sparse_csr:
             return torch.sparse_csr_tensor(
-                components["crow_indices"], components["col_indices"], components["values"], **common
+                components["crow_indices"],
+                components["col_indices"],
+                components["values"],
+                **common,
             )
         if tensor.layout == torch.sparse_csc:
             return torch.sparse_csc_tensor(
-                components["ccol_indices"], components["row_indices"], components["values"], **common
+                components["ccol_indices"],
+                components["row_indices"],
+                components["values"],
+                **common,
             )
         if tensor.layout == torch.sparse_bsr:
             return torch.sparse_bsr_tensor(
-                components["crow_indices"], components["col_indices"], components["values"], **common
+                components["crow_indices"],
+                components["col_indices"],
+                components["values"],
+                **common,
             )
         if tensor.layout == torch.sparse_bsc:
             return torch.sparse_bsc_tensor(
-                components["ccol_indices"], components["row_indices"], components["values"], **common
+                components["ccol_indices"],
+                components["row_indices"],
+                components["values"],
+                **common,
             )
         raise TypeError(f"unsupported tensor layout {tensor.layout}")
 
 
-def _map_batch(batch: NativeBatch, transform: _TensorTransformer, *, shallow_copy: bool) -> NativeBatch:
+def _map_batch(
+    batch: NativeBatch, transform: _TensorTransformer, *, shallow_copy: bool
+) -> NativeBatch:
     output = copy.copy(batch) if shallow_copy else batch
     cache: dict[int, Tensor] = {}
     for store in output.stores:
@@ -678,14 +795,18 @@ def _prepare_host(
 
 
 def _move_cuda(batch: NativeBatch, target: torch.device) -> NativeBatch:
-    if all(tensor.device == target for tensor in _all_component_tensors(batch)):
+    if all(
+        tensor.device == target for tensor in _all_component_tensors(batch)
+    ):
         return batch
 
     def move(flat: Tensor) -> Tensor:
         if flat.device == target:
             return flat
         if flat.device.type != "cpu":
-            raise ValueError(f"cannot transfer {flat.device} tensor to {target}")
+            raise ValueError(
+                f"cannot transfer {flat.device} tensor to {target}"
+            )
         if not flat.is_pinned():
             raise RuntimeError("CUDA H2D source tensor is not pinned")
         return flat.to(device=target, non_blocking=True)
@@ -725,10 +846,12 @@ class _DeviceSlot:
 class DevicePrefetchIterator(Iterator[NativeBatch]):
     """One owned producer and one ordered consumer-side CUDA ring."""
 
-    def __init__(self, owner: "DevicePrefetchLoader") -> None:
+    def __init__(self, owner: DevicePrefetchLoader) -> None:
         self._owner = owner
         self._source = owner.source
-        self._queue: queue.Queue[_HostItem] = queue.Queue(maxsize=owner.limits.host_queue_depth)
+        self._queue: queue.Queue[_HostItem] = queue.Queue(
+            maxsize=owner.limits.host_queue_depth
+        )
         self._queue_slots = threading.BoundedSemaphore(
             owner.limits.host_queue_depth
         )
@@ -767,6 +890,7 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
     @property
     def closed(self) -> bool:
         return self._closed
+
     def _monitor_queue(self) -> QueueSnapshot:
         with self._condition:
             host_bytes = self._host_queued_bytes
@@ -854,12 +978,15 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
             evidence={"prefetch_mode": self._owner.status.mode},
         )
 
-
-    def __iter__(self) -> "DevicePrefetchIterator":
+    def __iter__(self) -> DevicePrefetchIterator:
         return self
 
     def _set_error(
-        self, phase: str, sequence: int, descriptor: object, cause: BaseException
+        self,
+        phase: str,
+        sequence: int,
+        descriptor: object,
+        cause: BaseException,
     ) -> None:
         with self._condition:
             if self._producer_error is None:
@@ -875,13 +1002,16 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
         with self._condition:
             while (
                 not self._stop.is_set()
-                and self._host_queued_bytes + byte_count > self._owner.limits.max_host_queue_bytes
+                and self._host_queued_bytes + byte_count
+                > self._owner.limits.max_host_queue_bytes
             ):
                 self._condition.wait(0.05)
             if self._stop.is_set():
                 return False
             self._host_queued_bytes += byte_count
-            self.max_host_queued_bytes = max(self.max_host_queued_bytes, self._host_queued_bytes)
+            self.max_host_queued_bytes = max(
+                self.max_host_queued_bytes, self._host_queued_bytes
+            )
             return True
 
     def _release_host(self, byte_count: int) -> None:
@@ -917,7 +1047,9 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
                 source_iterator = iter(self._source)
                 self._source_iterator = source_iterator
             except BaseException as cause:
-                self._set_error("host_producer", fallback_sequence, last_descriptor, cause)
+                self._set_error(
+                    "host_producer", fallback_sequence, last_descriptor, cause
+                )
                 return
             while not self._stop.is_set():
                 try:
@@ -925,7 +1057,12 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
                 except StopIteration:
                     break
                 except BaseException as cause:
-                    self._set_error("host_producer", fallback_sequence, last_descriptor, cause)
+                    self._set_error(
+                        "host_producer",
+                        fallback_sequence,
+                        last_descriptor,
+                        cause,
+                    )
                     break
                 sequence = _sequence(batch, fallback_sequence)
                 descriptor = _descriptor(batch)
@@ -945,7 +1082,9 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
                         self._owner.capability,
                     )
                 except BaseException as cause:
-                    self._set_error("host_admission", sequence, descriptor, cause)
+                    self._set_error(
+                        "host_admission", sequence, descriptor, cause
+                    )
                     break
                 if not self._acquire_host(estimate.host_bytes):
                     break
@@ -1069,9 +1208,12 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
         target = self._owner.capability.device
         self.transfer_stream = torch.cuda.Stream(device=target)
         self.completion_events = tuple(
-            torch.cuda.Event() for _ in range(self._owner.limits.device_queue_depth)
+            torch.cuda.Event()
+            for _ in range(self._owner.limits.device_queue_depth)
         )
-        self._slots = [_DeviceSlot(event=event) for event in self.completion_events]
+        self._slots = [
+            _DeviceSlot(event=event) for event in self.completion_events
+        ]
         self._free_slots.extend(range(len(self._slots)))
 
     def _schedule(self, item: _HostItem, slot_index: int) -> None:
@@ -1171,12 +1313,20 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
                     return
                 if item is None:
                     return
-            if self._device_queued_bytes + item.estimate.total_bytes > self._owner.limits.max_device_queue_bytes:
+            if (
+                self._device_queued_bytes + item.estimate.total_bytes
+                > self._owner.limits.max_device_queue_bytes
+            ):
                 if not self._ring:
                     cause = PrefetchLimitError(
                         f"batch device bytes {item.estimate.total_bytes} exceed remaining device queue budget"
                     )
-                    error = PrefetchError("device_admission", item.sequence, item.descriptor, cause)
+                    error = PrefetchError(
+                        "device_admission",
+                        item.sequence,
+                        item.descriptor,
+                        cause,
+                    )
                     self._pending_host = item
                     self.close()
                     raise error from cause
@@ -1188,7 +1338,9 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
                 self._schedule(item, slot_index)
             except BaseException as cause:
                 self._release_host(item.estimate.host_bytes)
-                error = PrefetchError("device_transfer", item.sequence, item.descriptor, cause)
+                error = PrefetchError(
+                    "device_transfer", item.sequence, item.descriptor, cause
+                )
                 self._free_slots.appendleft(slot_index)
                 self.close()
                 raise error from cause
@@ -1202,7 +1354,6 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
             and not self._ring
         ):
             self._exhausted = True
-
 
     def _deliver_callback(self, batch: NativeBatch) -> None:
         try:
@@ -1300,18 +1451,17 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
     def _shutdown_source(self) -> None:
         if not self._owner.owns_source:
             return
-        for iterator in (self._source_iterator, getattr(self._source, "_iterator", None)):
+        for iterator in (
+            self._source_iterator,
+            getattr(self._source, "_iterator", None),
+        ):
             shutdown = getattr(iterator, "_shutdown_workers", None)
             if callable(shutdown):
-                try:
+                with contextlib.suppress(RuntimeError, TypeError, ValueError):
                     shutdown()
-                except (RuntimeError, TypeError, ValueError):
-                    pass
         if getattr(self._source, "_iterator", None) is not None:
-            try:
+            with contextlib.suppress(AttributeError, TypeError):
                 self._source._iterator = None  # type: ignore[attr-defined]
-            except (AttributeError, TypeError):
-                pass
 
     def _drain_host(self) -> None:
         while True:
@@ -1331,16 +1481,17 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
         self._drain_host()
         with self._condition:
             self._condition.notify_all()
-        if self._producer_thread.is_alive() and threading.current_thread() is not self._producer_thread:
+        if (
+            self._producer_thread.is_alive()
+            and threading.current_thread() is not self._producer_thread
+        ):
             self._producer_thread.join()
         self._drain_host()
         if self._owner.owns_source:
             close = getattr(self._source_iterator, "close", None)
             if callable(close):
-                try:
+                with contextlib.suppress(RuntimeError, ValueError):
                     close()
-                except (RuntimeError, ValueError):
-                    pass
         if self.transfer_stream is not None:
             self.transfer_stream.synchronize()
         if self._pending_host is not None:
@@ -1368,17 +1519,15 @@ class DevicePrefetchIterator(Iterator[NativeBatch]):
             self._owner._iterator_finished(self)
         return
 
-    def __enter__(self) -> "DevicePrefetchIterator":
+    def __enter__(self) -> DevicePrefetchIterator:
         return self
 
     def __exit__(self, *exc_info: object) -> None:
         self.close()
 
     def __del__(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self.close()
-        except Exception:
-            pass
 
 
 class DevicePrefetchLoader(Iterable[NativeBatch]):
@@ -1403,18 +1552,43 @@ class DevicePrefetchLoader(Iterable[NativeBatch]):
             raise TypeError("source must be a finite iterable")
         if not isinstance(limits, PrefetchLimits):
             raise TypeError("limits must be PrefetchLimits")
-        if capability is not None and not isinstance(capability, PrefetchCapability):
+        # Multiprocess DataLoader primes ``prefetch_factor * num_workers``
+        # tasks; each worker fetches a complete batch and puts it on the
+        # shared result queue before this loader can estimate or reserve bytes.
+        if isinstance(source, DataLoader) and source.num_workers != 0:
+            raise ValueError(
+                "DevicePrefetchLoader requires num_workers=0 for PyTorch "
+                "DataLoader sources because the worker result queue receives "
+                "materialized batches before host-byte admission"
+            )
+        if capability is not None and not isinstance(
+            capability, PrefetchCapability
+        ):
             raise TypeError("capability must be PrefetchCapability")
-        if capability is not None and device is not None and _device(device) != capability.device:
+        if (
+            capability is not None
+            and device is not None
+            and _device(device) != capability.device
+        ):
             raise ValueError("device and injected capability disagree")
-        resolved = capability if capability is not None else PrefetchCapability.detect("cpu" if device is None else device)
+        resolved = (
+            capability
+            if capability is not None
+            else PrefetchCapability.detect("cpu" if device is None else device)
+        )
         if resolved.device.type == "cuda":
             if limits.device_queue_depth < 1:
-                raise ValueError("CUDA prefetch requires device_queue_depth of at least one")
+                raise ValueError(
+                    "CUDA prefetch requires device_queue_depth of at least one"
+                )
             if limits.max_device_queue_bytes < 1:
-                raise ValueError("CUDA prefetch requires a device queue budget")
+                raise ValueError(
+                    "CUDA prefetch requires a device queue budget"
+                )
         elif limits.device_queue_depth != 0:
-            raise ValueError("device_queue_depth must be zero for CPU/MPS host-only prefetch")
+            raise ValueError(
+                "device_queue_depth must be zero for CPU/MPS host-only prefetch"
+            )
         if pin_memory is not None and not callable(pin_memory):
             raise TypeError("pin_memory must be callable")
         if type(owns_source) is not bool:
@@ -1527,17 +1701,15 @@ class DevicePrefetchLoader(Iterable[NativeBatch]):
             self._active.clear()
             self._iterator_condition.notify_all()
 
-    def __enter__(self) -> "DevicePrefetchLoader":
+    def __enter__(self) -> DevicePrefetchLoader:
         return self
 
     def __exit__(self, *exc_info: object) -> None:
         self.close()
 
     def __del__(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self.close()
-        except Exception:
-            pass
 
 
 __all__ = [

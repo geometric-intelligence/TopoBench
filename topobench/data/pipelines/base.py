@@ -2,24 +2,35 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
+import struct
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Iterable, Mapping, Sequence
 from contextlib import AbstractContextManager
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from numbers import Integral, Real
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Literal, Protocol, TypeAlias, runtime_checkable
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Literal,
+    Protocol,
+    TypeAlias,
+    runtime_checkable,
+)
 
 import hydra
+import numpy as np
 import torch
 from lightning import LightningDataModule
 from omegaconf import DictConfig, OmegaConf
 from torch import Tensor
 from torch_geometric.data import Data, HeteroData
 
+from topobench.data.capabilities import RuntimeDataCapability, qualify_dataset
 from topobench.data.heterogeneous import HeterogeneousDataSpec
 from topobench.data.loaders.parquet import (
     ParquetTypedGraphLoader,
@@ -35,14 +46,403 @@ from topobench.data.stores.typed_graph_store import (
 )
 from topobench.transforms.fittable import FittableTransform
 
+if TYPE_CHECKING:
+    from topobench.evaluator.prediction import (
+        PredictionIdentity,
+        PredictionPayload,
+    )
+
 Phase: TypeAlias = Literal["train", "val", "test"]
-CanonicalPredictionIdentity: TypeAlias = (
-    tuple[str, int] | tuple[str, str, int]
-)
+CanonicalPredictionIdentity: TypeAlias = tuple[str, int] | tuple[str, str, int]
 _PHASES: tuple[Phase, ...] = ("train", "val", "test")
 _PARQUET_LOADER_TARGET = (
     "topobench.data.loaders.parquet.ParquetTypedGraphLoader"
 )
+
+_NATIVE_SPLIT_FIELDS = frozenset({"train_mask", "val_mask", "test_mask"})
+
+
+def _observed_classification_count(
+    label_tensors: Iterable[Tensor | np.ndarray],
+) -> int:
+    """Return the observed zero-based class vocabulary size."""
+    maximum: int | None = None
+    for labels in label_tensors:
+        if isinstance(labels, Tensor):
+            if labels.numel() == 0:
+                continue
+            current = int(labels.max().item())
+        elif isinstance(labels, np.ndarray):
+            if labels.size == 0:
+                continue
+            current = int(np.max(labels))
+        else:
+            raise TypeError(
+                "classification labels must be tensors or NumPy arrays"
+            )
+        maximum = current if maximum is None else max(maximum, current)
+    if maximum is None:
+        raise ValueError("classification labels must not be empty")
+    return maximum + 1
+
+
+def _fingerprint_frame(
+    digest: Any,
+    label: str,
+    payload: bytes | memoryview,
+) -> None:
+    """Append one unambiguous labeled field to a streaming digest."""
+    encoded_label = label.encode("utf-8")
+    digest.update(len(encoded_label).to_bytes(4, "big"))
+    digest.update(encoded_label)
+    digest.update(len(payload).to_bytes(8, "big"))
+    digest.update(payload)
+
+
+def _fingerprint_text(digest: Any, label: str, value: str) -> None:
+    _fingerprint_frame(digest, label, value.encode("utf-8"))
+
+
+def _fingerprint_tensor(digest: Any, value: Tensor) -> None:
+    """Stream one tensor without constructing a whole-tensor byte string."""
+    _fingerprint_text(digest, "value.type", "tensor")
+    _fingerprint_text(digest, "tensor.dtype", str(value.dtype))
+    _fingerprint_text(digest, "tensor.layout", str(value.layout))
+    _fingerprint_frame(
+        digest,
+        "tensor.shape",
+        b"".join(int(size).to_bytes(8, "big") for size in value.shape),
+    )
+    if value.device.type == "meta":
+        raise ValueError("native provenance cannot fingerprint meta tensors")
+    if value.is_quantized:
+        _fingerprint_text(digest, "tensor.qscheme", str(value.qscheme()))
+        if value.qscheme() in {
+            torch.per_channel_affine,
+            torch.per_channel_affine_float_qparams,
+            torch.per_channel_symmetric,
+        }:
+            _fingerprint_value(digest, value.q_per_channel_scales())
+            _fingerprint_value(digest, value.q_per_channel_zero_points())
+            _fingerprint_value(digest, value.q_per_channel_axis())
+        else:
+            _fingerprint_value(digest, value.q_scale())
+            _fingerprint_value(digest, value.q_zero_point())
+        _fingerprint_value(digest, value.int_repr())
+        return
+    if value.layout != torch.strided:
+        sparse = value.detach().to(device="cpu").to_sparse_coo().coalesce()
+        _fingerprint_value(digest, sparse.indices())
+        _fingerprint_value(digest, sparse.values())
+        return
+    contiguous = (
+        value.detach()
+        .to(device="cpu")
+        .resolve_conj()
+        .resolve_neg()
+        .contiguous()
+    )
+    if type(contiguous) is not Tensor:
+        contiguous = contiguous.as_subclass(Tensor)
+    raw = contiguous.reshape(-1).view(torch.uint8).numpy()
+    _fingerprint_frame(digest, "tensor.bytes", memoryview(raw).cast("B"))
+
+
+def _mapping_key_order(value: object) -> tuple[object, ...]:
+    """Return a deterministic order for supported structured mapping keys."""
+    if value is None:
+        return ("none",)
+    if isinstance(value, bool):
+        return ("bool", int(value))
+    if isinstance(value, Integral):
+        return ("int", int(value))
+    if isinstance(value, Real):
+        return ("float", struct.pack(">d", float(value)))
+    if isinstance(value, str):
+        return ("str", value)
+    if isinstance(value, tuple):
+        return ("tuple", *(_mapping_key_order(item) for item in value))
+    raise TypeError(
+        "native provenance mapping keys must be scalar values or tuples"
+    )
+
+
+def _fingerprint_value(digest: Any, value: object) -> None:
+    """Stream one deterministic structured value into ``digest``."""
+    if isinstance(value, Tensor):
+        _fingerprint_tensor(digest, value)
+        return
+    if isinstance(value, np.ndarray):
+        if value.dtype.hasobject:
+            raise TypeError(
+                "native provenance cannot fingerprint object arrays"
+            )
+        _fingerprint_text(digest, "value.type", "ndarray")
+        _fingerprint_text(digest, "array.dtype", value.dtype.str)
+        _fingerprint_frame(
+            digest,
+            "array.shape",
+            b"".join(int(size).to_bytes(8, "big") for size in value.shape),
+        )
+        contiguous = np.ascontiguousarray(value)
+        _fingerprint_frame(
+            digest,
+            "array.bytes",
+            memoryview(contiguous).cast("B"),
+        )
+        return
+    if isinstance(value, np.generic):
+        _fingerprint_value(digest, value.item())
+        return
+    if value is None:
+        _fingerprint_text(digest, "value.type", "none")
+        return
+    if isinstance(value, bool):
+        _fingerprint_text(digest, "value.type", "bool")
+        _fingerprint_frame(digest, "bool", b"\x01" if value else b"\x00")
+        return
+    if isinstance(value, Integral):
+        _fingerprint_text(digest, "value.type", "int")
+        _fingerprint_text(digest, "int", str(int(value)))
+        return
+    if isinstance(value, Real):
+        _fingerprint_text(digest, "value.type", "float")
+        _fingerprint_frame(digest, "float", struct.pack(">d", float(value)))
+        return
+    if isinstance(value, str):
+        _fingerprint_text(digest, "value.type", "str")
+        _fingerprint_text(digest, "str", value)
+        return
+    if isinstance(value, bytes):
+        _fingerprint_text(digest, "value.type", "bytes")
+        _fingerprint_frame(digest, "bytes", value)
+        return
+    if isinstance(value, Mapping):
+        _fingerprint_text(digest, "value.type", "mapping")
+        items = sorted(
+            value.items(), key=lambda item: _mapping_key_order(item[0])
+        )
+        _fingerprint_value(digest, len(items))
+        for key, item in items:
+            _fingerprint_value(digest, key)
+            _fingerprint_value(digest, item)
+        return
+    if isinstance(value, Sequence):
+        _fingerprint_text(digest, "value.type", "sequence")
+        _fingerprint_value(digest, len(value))
+        for item in value:
+            _fingerprint_value(digest, item)
+        return
+    raise TypeError(
+        "native provenance cannot fingerprint value of type "
+        f"{type(value).__name__}"
+    )
+
+
+def _fingerprint_store(
+    digest: Any,
+    *,
+    store_kind: str,
+    store_key: object,
+    store: object,
+) -> None:
+    """Hash one PyG store with split masks omitted from content identity."""
+    _fingerprint_text(digest, "store.kind", store_kind)
+    _fingerprint_value(digest, store_key)
+    keys = sorted(
+        str(key)
+        for key in store.keys()  # type: ignore[attr-defined]  # noqa: SIM118
+        if str(key) not in _NATIVE_SPLIT_FIELDS
+    )
+    _fingerprint_value(digest, len(keys))
+    for key in keys:
+        _fingerprint_text(digest, "store.key", key)
+        _fingerprint_value(
+            digest,
+            store[key],  # type: ignore[index]
+        )
+
+
+def _fingerprint_data(digest: Any, data: Data | HeteroData) -> None:
+    """Hash the sorted public schema and content of one native PyG value."""
+    if isinstance(data, HeteroData):
+        _fingerprint_text(digest, "data.type", "HeteroData")
+        stores: list[tuple[str, object, object]] = []
+        for store in data.stores:
+            key = getattr(store, "_key", None)
+            if key is None:
+                stores.append(("global", (), store))
+            elif isinstance(key, str):
+                stores.append(("node", key, store))
+            elif isinstance(key, tuple):
+                stores.append(
+                    ("edge", tuple(str(item) for item in key), store)
+                )
+            else:
+                raise TypeError(
+                    "native heterogeneous stores require canonical string keys"
+                )
+        stores.sort(key=lambda item: (item[0], _mapping_key_order(item[1])))
+        _fingerprint_value(digest, len(stores))
+        for store_kind, store_key, store in stores:
+            _fingerprint_store(
+                digest,
+                store_kind=store_kind,
+                store_key=store_key,
+                store=store,
+            )
+        return
+    if not isinstance(data, Data):
+        raise TypeError("native provenance requires PyG Data or HeteroData")
+    _fingerprint_text(digest, "data.type", "Data")
+    _fingerprint_store(
+        digest,
+        store_kind="data",
+        store_key=(),
+        store=data,
+    )
+
+
+def _canonical_identity(
+    value: object,
+    *,
+    field_name: str,
+    expected_size: int | None = None,
+) -> Tensor:
+    """Return one canonical integer identity vector on the CPU."""
+    if (
+        not isinstance(value, Tensor)
+        or value.dtype == torch.bool
+        or value.is_floating_point()
+        or value.is_complex()
+        or value.ndim != 1
+        or (expected_size is not None and value.numel() != expected_size)
+    ):
+        raise ValueError(
+            f"{field_name} must be an aligned rank-one integer tensor"
+        )
+    identities = value.detach().to(device="cpu", dtype=torch.long)
+    return identities
+
+
+def _native_provenance_fingerprints(
+    phase_datasets: Mapping[str, object],
+    *,
+    output_kind: str,
+    target_node_type: str = "",
+) -> Mapping[str, str]:
+    """Fingerprint observed native content and canonical split membership."""
+    if frozenset(phase_datasets) != frozenset(_PHASES):
+        raise ValueError(
+            f"native phase datasets must contain exactly {_PHASES!r}"
+        )
+    content_digest = hashlib.sha256()
+    split_digest = hashlib.sha256()
+    _fingerprint_text(content_digest, "convention", "native-content-v1")
+    _fingerprint_text(content_digest, "output.kind", output_kind)
+    _fingerprint_text(split_digest, "convention", "native-split-v1")
+    _fingerprint_text(split_digest, "output.kind", output_kind)
+
+    if output_kind == "graph":
+        records: list[tuple[int, bytes]] = []
+        for phase in _PHASES:
+            dataset = phase_datasets[phase]
+            if dataset is None:
+                raise ValueError(f"{phase} split must not be empty")
+            _fingerprint_text(split_digest, "phase", phase)
+            dataset_size = len(dataset)  # type: ignore[arg-type]
+            _fingerprint_value(split_digest, dataset_size)
+            for index in range(dataset_size):
+                data = dataset[index]  # type: ignore[index]
+                if not isinstance(data, Data):
+                    raise TypeError(
+                        "native graph provenance requires PyG Data samples"
+                    )
+                sample_id = _canonical_identity(
+                    getattr(data, "sample_id", None),
+                    field_name="sample_id",
+                    expected_size=1,
+                )
+                identity = int(sample_id.item())
+                _fingerprint_value(split_digest, identity)
+                record = hashlib.sha256()
+                _fingerprint_text(record, "convention", "native-record-v1")
+                _fingerprint_data(record, data)
+                records.append((identity, record.digest()))
+        records.sort(key=lambda item: item[0])
+        _fingerprint_value(content_digest, len(records))
+        for identity, observed_data in records:
+            _fingerprint_value(content_digest, identity)
+            _fingerprint_frame(
+                content_digest,
+                "observed.data",
+                observed_data,
+            )
+    else:
+        train = phase_datasets["train"]
+        if train is None or len(train) != 1:  # type: ignore[arg-type]
+            raise ValueError(
+                "native node provenance requires one shared graph"
+            )
+        data = train[0]  # type: ignore[index]
+        if output_kind == "heterogeneous":
+            if not isinstance(data, HeteroData):
+                raise TypeError(
+                    "heterogeneous provenance requires native HeteroData"
+                )
+            if target_node_type not in data.node_types:
+                raise ValueError(
+                    f"missing target node type {target_node_type!r}"
+                )
+            target_store = data[target_node_type]
+            mask_store = target_store
+            count = int(target_store.num_nodes)
+            identities = _canonical_identity(
+                target_store.get("n_id"),
+                field_name=f"{target_node_type}.n_id",
+                expected_size=count,
+            )
+        else:
+            if not isinstance(data, Data):
+                raise TypeError(
+                    f"{output_kind} provenance requires native PyG Data"
+                )
+            count = int(data.num_nodes)
+            mask_store = data
+            identities = _canonical_identity(
+                getattr(data, "global_nid", None),
+                field_name="global_nid",
+                expected_size=count,
+            )
+        _fingerprint_value(content_digest, 1)
+        _fingerprint_data(content_digest, data)
+        for phase in _PHASES:
+            mask = mask_store.get(f"{phase}_mask")
+            if (
+                not isinstance(mask, Tensor)
+                or mask.dtype != torch.bool
+                or mask.ndim != 1
+                or mask.numel() != identities.numel()
+            ):
+                raise ValueError(
+                    f"{phase}_mask must align to canonical identities"
+                )
+            members = identities[mask.detach().to(device="cpu")]
+            _fingerprint_text(split_digest, "phase", phase)
+            _fingerprint_value(split_digest, members)
+
+    observed_content = content_digest.digest()
+    source = hashlib.sha256(b"topobench-native-source-v1\0")
+    source.update(observed_content)
+    dataset = hashlib.sha256(b"topobench-native-dataset-v1\0")
+    dataset.update(observed_content)
+    return MappingProxyType(
+        {
+            "source_fingerprint": source.hexdigest(),
+            "dataset_fingerprint": dataset.hexdigest(),
+            "split_fingerprint": split_digest.hexdigest(),
+        }
+    )
 
 
 def is_parquet_typed_graph_config(cfg: DictConfig) -> bool:
@@ -53,6 +453,55 @@ def is_parquet_typed_graph_config(cfg: DictConfig) -> bool:
     )
 
 
+def native_prediction_row_adapter(
+    cfg: DictConfig,
+    *,
+    output_kind: str,
+    target_node_type: str = "",
+    sampling_strategy: str,
+) -> tuple[str, PredictionRowAdapter]:
+    """Build one deterministic native adapter from declared dataset semantics."""
+    source_name = OmegaConf.select(
+        cfg,
+        "dataset.loader.parameters.data_name",
+        default=None,
+    )
+    if not isinstance(source_name, str) or not source_name:
+        source_name = OmegaConf.select(cfg, "dataset.selector", default=None)
+    if not isinstance(source_name, str) or not source_name:
+        raise ValueError(
+            "native prediction rows require a declared non-empty data_name"
+        )
+    requested_metadata = tuple(
+        OmegaConf.select(
+            cfg,
+            "evaluation_artifacts.metadata_fields",
+            default=(),
+        )
+        or ()
+    )
+    if set(requested_metadata).difference({"source"}):
+        raise ValueError(
+            "native prediction metadata is restricted to the source allowlist"
+        )
+    parameters = cfg.dataset.parameters
+    adapter = PredictionRowAdapter(
+        source_graph_id=source_name,
+        output_kind=output_kind,
+        target_node_type=target_node_type,
+        sampling_strategy=sampling_strategy,
+        task=str(parameters.get("task", "classification")),
+        task_level=str(parameters.get("task_level", "node")),
+        class_vocabulary=tuple(parameters.get("class_vocabulary", ())),
+        units=parameters.get("units"),
+        metadata_fields=requested_metadata,
+        source_metadata=(
+            {"source": source_name} if requested_metadata else {}
+        ),
+    )
+    return source_name, adapter
+
+
 def _phase(value: object) -> Phase:
     if not isinstance(value, str) or value not in _PHASES:
         raise ValueError(f"phase must be one of {_PHASES!r}")
@@ -61,7 +510,9 @@ def _phase(value: object) -> Phase:
 
 def _identity_tensor(value: object, *, field_name: str) -> Tensor:
     if not isinstance(value, Tensor):
-        raise TypeError(f"prediction identity field {field_name} must be a tensor")
+        raise TypeError(
+            f"prediction identity field {field_name} must be a tensor"
+        )
     if value.ndim != 1:
         raise ValueError(
             f"prediction identity field {field_name} must be rank one"
@@ -74,47 +525,417 @@ def _identity_tensor(value: object, *, field_name: str) -> Tensor:
 
 
 @dataclass(frozen=True, slots=True)
-class PredictionIdentityResolver:
-    """Resolve batch-local predictions to stable store and external identities.
+class PredictionRowAdapter:
+    """Convert the one supervised selection into canonical prediction rows.
 
-    Canonical identities remain integer-only and are safe to carry beside model
-    outputs. External identifiers are restored explicitly and lazily through the
-    qualified store, which is the sole PyArrow boundary.
+    Disk-backed instances also retain the qualified store resolver needed to
+    restore external identifiers at export. Native and disk paths otherwise
+    share this one adapter contract.
     """
 
-    store_path: Path
-    store_state: TypedGraphStoreState
     source_graph_id: str
     output_kind: str
-    target_node_type: str
-    sampling_strategy: str
+    target_node_type: str = ""
+    sampling_strategy: str = ""
+    task: str = "classification"
+    task_level: str = "node"
+    class_vocabulary: tuple[str, ...] = ()
+    units: str | None = None
+    metadata_fields: tuple[str, ...] = ()
+    source_metadata: Mapping[str, int | str] = field(default_factory=dict)
+    store_path: Path | None = None
+    store_state: TypedGraphStoreState | None = None
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "store_path", Path(self.store_path))
-        if not isinstance(self.store_state, TypedGraphStoreState):
-            raise TypeError("store_state must be a TypedGraphStoreState")
-        if Path(self.store_state.root) != self.store_path:
-            raise ValueError("prediction identity store state/path mismatch")
-        if self.output_kind not in {"homogeneous", "heterogeneous"}:
-            raise ValueError("output_kind must be homogeneous or heterogeneous")
-        for name in (
-            "source_graph_id",
-            "target_node_type",
-            "sampling_strategy",
+        if (
+            not isinstance(self.source_graph_id, str)
+            or not self.source_graph_id
         ):
-            value = getattr(self, name)
-            if not isinstance(value, str) or not value:
-                raise ValueError(f"{name} must be a non-empty string")
-        expected_strategy_prefix = {
-            "homogeneous": "homogeneous-",
-            "heterogeneous": "heterogeneous-",
-        }[self.output_kind]
-        if not self.sampling_strategy.startswith(expected_strategy_prefix):
+            raise ValueError("source_graph_id must be a non-empty string")
+        if self.output_kind not in {
+            "graph",
+            "homogeneous",
+            "heterogeneous",
+            "hypergraph",
+        }:
             raise ValueError(
-                "prediction identity output/strategy mismatch: "
-                f"output_kind={self.output_kind!r}, "
-                f"strategy={self.sampling_strategy!r}"
+                "output_kind must be graph, homogeneous, heterogeneous, or "
+                "hypergraph"
             )
+        if self.task not in {"classification", "regression"}:
+            raise ValueError("task must be classification or regression")
+        if self.task_level not in {"graph", "node", "node_inductive"}:
+            raise ValueError(
+                "task_level must be graph, node, or node_inductive"
+            )
+        if self.output_kind == "heterogeneous":
+            if (
+                not isinstance(self.target_node_type, str)
+                or not self.target_node_type
+            ):
+                raise ValueError(
+                    "heterogeneous prediction rows require target_node_type"
+                )
+        elif self.target_node_type and not isinstance(
+            self.target_node_type, str
+        ):
+            raise TypeError("target_node_type must be a string")
+        if not isinstance(self.sampling_strategy, str):
+            raise TypeError("sampling_strategy must be a string")
+        if self.store_path is None and self.store_state is not None:
+            raise ValueError("store_state requires store_path")
+        if self.store_path is not None:
+            object.__setattr__(self, "store_path", Path(self.store_path))
+            if not isinstance(self.store_state, TypedGraphStoreState):
+                raise TypeError(
+                    "disk prediction rows require TypedGraphStoreState"
+                )
+            if Path(self.store_state.root) != self.store_path:
+                raise ValueError(
+                    "prediction identity store state/path mismatch"
+                )
+            expected_prefix = {
+                "homogeneous": "homogeneous-",
+                "heterogeneous": "heterogeneous-",
+            }.get(self.output_kind)
+            if (
+                expected_prefix is None
+                or not self.sampling_strategy.startswith(expected_prefix)
+            ):
+                raise ValueError(
+                    "prediction identity output/strategy mismatch: "
+                    f"output_kind={self.output_kind!r}, "
+                    f"strategy={self.sampling_strategy!r}"
+                )
+        if not isinstance(self.class_vocabulary, tuple) or any(
+            not isinstance(label, str) or not label
+            for label in self.class_vocabulary
+        ):
+            raise TypeError(
+                "class_vocabulary must be a tuple of non-empty strings"
+            )
+        if self.units is not None and (
+            not isinstance(self.units, str) or not self.units
+        ):
+            raise ValueError("units must be a non-empty string or None")
+        if (
+            not isinstance(self.metadata_fields, tuple)
+            or len(set(self.metadata_fields)) != len(self.metadata_fields)
+            or any(
+                not isinstance(name, str) or not name
+                for name in self.metadata_fields
+            )
+        ):
+            raise ValueError(
+                "metadata_fields must contain unique non-empty names"
+            )
+        if not isinstance(self.source_metadata, Mapping):
+            raise TypeError("source_metadata must be a mapping")
+        unknown_metadata = set(self.source_metadata).difference(
+            self.metadata_fields
+        )
+        missing_metadata = set(self.metadata_fields).difference(
+            self.source_metadata
+        )
+        if unknown_metadata or missing_metadata:
+            raise ValueError(
+                "source_metadata must exactly match allowlisted metadata_fields"
+            )
+        normalized_metadata: dict[str, int | str] = {}
+        for name, value in self.source_metadata.items():
+            if (
+                not isinstance(name, str)
+                or not name
+                or isinstance(value, bool)
+                or not isinstance(value, (Integral, str))
+                or (isinstance(value, str) and not value)
+            ):
+                raise TypeError(
+                    "source metadata values must be non-empty strings or integers"
+                )
+            normalized_metadata[name] = (
+                int(value) if isinstance(value, Integral) else value
+            )
+        object.__setattr__(
+            self,
+            "source_metadata",
+            MappingProxyType(normalized_metadata),
+        )
+
+    @staticmethod
+    def _row_indices(supervised: object) -> Tensor:
+        row_indices = getattr(supervised, "row_indices", None)
+        count = getattr(supervised, "num_examples", None)
+        if (
+            not isinstance(row_indices, Tensor)
+            or row_indices.dtype != torch.long
+            or row_indices.ndim != 1
+            or type(count) is not int
+            or row_indices.numel() != count
+        ):
+            raise TypeError(
+                "supervised rows require aligned rank-one torch.long row_indices"
+            )
+        return row_indices
+
+    @staticmethod
+    def _take_rows(
+        value: object,
+        row_indices: Tensor,
+        *,
+        count: int,
+        field_name: str,
+        require_exact_count: bool = False,
+    ) -> Tensor | np.ndarray:
+        if isinstance(value, Tensor):
+            value = _identity_tensor(value, field_name=field_name)
+            if require_exact_count and value.numel() != count:
+                raise ValueError(
+                    f"prediction identity field {field_name} is not aligned "
+                    "to supervised rows"
+                )
+            if value.numel() == count:
+                return value
+            indices = row_indices.to(device=value.device)
+            if indices.numel() and int(indices.max().item()) >= value.numel():
+                raise ValueError(
+                    f"prediction identity field {field_name} is not aligned "
+                    "to supervised rows"
+                )
+            return value.index_select(0, indices)
+        if isinstance(value, np.ndarray):
+            if value.ndim != 1 or value.dtype.hasobject:
+                raise ValueError(
+                    f"prediction identity field {field_name} must be a "
+                    "non-object rank-one array"
+                )
+            if require_exact_count and len(value) != count:
+                raise ValueError(
+                    f"prediction identity field {field_name} is not aligned "
+                    "to supervised rows"
+                )
+            if len(value) == count:
+                return value
+            indices = row_indices.detach().cpu().numpy()
+            if indices.size and int(indices.max()) >= len(value):
+                raise ValueError(
+                    f"prediction identity field {field_name} is not aligned "
+                    "to supervised rows"
+                )
+            return value[indices]
+        if isinstance(value, (tuple, list)):
+            array = np.asarray(value)
+            return PredictionRowAdapter._take_rows(
+                array,
+                row_indices,
+                count=count,
+                field_name=field_name,
+                require_exact_count=require_exact_count,
+            )
+        raise TypeError(
+            f"prediction identity field {field_name} must be a tensor or array"
+        )
+
+    @staticmethod
+    def _external_id_column(
+        values: Sequence[int | str],
+        *,
+        count: int,
+    ) -> np.ndarray:
+        if len(values) != count:
+            raise ValueError(
+                "restored external_id values must be aligned to canonical rows"
+            )
+        if len(values) == 0:
+            column = np.empty(0, dtype=np.int64)
+        elif all(
+            isinstance(value, Integral) and not isinstance(value, bool)
+            for value in values
+        ) or all(isinstance(value, str) and bool(value) for value in values):
+            column = np.asarray(values)
+        else:
+            raise TypeError(
+                "restored external_id values must contain only integers or "
+                "non-empty strings"
+            )
+        if (
+            column.ndim != 1
+            or len(column) != count
+            or column.dtype.kind not in {"i", "u", "U", "S"}
+        ):
+            raise TypeError(
+                "restored external_id values must form a typed rank-one array"
+            )
+        return column
+
+    def _identity(
+        self,
+        batch: Data | HeteroData,
+        row_indices: Tensor,
+        count: int,
+        split_ordinal_start: int,
+    ) -> PredictionIdentity:
+        from topobench.evaluator.prediction import PredictionIdentity
+
+        split_ordinals = np.arange(
+            split_ordinal_start,
+            split_ordinal_start + count,
+            dtype=np.int64,
+        )
+
+        if self.output_kind == "graph":
+            if not isinstance(batch, Data):
+                raise TypeError("graph prediction rows require native Data")
+            sample_id = self._take_rows(
+                getattr(batch, "sample_id", None),
+                row_indices,
+                count=count,
+                field_name="sample_id",
+                require_exact_count=True,
+            )
+            return PredictionIdentity(
+                columns={
+                    "split_ordinal": split_ordinals,
+                    "sample_id": sample_id,
+                },
+                key=("sample_id",),
+            )
+
+        if self.output_kind in {"homogeneous", "hypergraph"}:
+            if not isinstance(batch, Data):
+                raise TypeError(
+                    f"{self.output_kind} prediction rows require native Data"
+                )
+            global_nid = self._take_rows(
+                getattr(batch, "global_nid", None),
+                row_indices,
+                count=count,
+                field_name="global_nid",
+            )
+            identity = PredictionIdentity(
+                columns={
+                    "split_ordinal": split_ordinals,
+                    "source_graph_id": np.full(count, self.source_graph_id),
+                    "global_nid": global_nid,
+                },
+                key=("source_graph_id", "global_nid"),
+            )
+        else:
+            if not isinstance(batch, HeteroData):
+                raise TypeError(
+                    "heterogeneous prediction rows require HeteroData"
+                )
+            if self.target_node_type not in batch.node_types:
+                raise ValueError(
+                    f"batch has no target node type {self.target_node_type!r}"
+                )
+            n_id = self._take_rows(
+                batch[self.target_node_type].get("n_id"),
+                row_indices,
+                count=count,
+                field_name=f"{self.target_node_type}.n_id",
+            )
+            identity = PredictionIdentity(
+                columns={
+                    "split_ordinal": split_ordinals,
+                    "source_graph_id": np.full(count, self.source_graph_id),
+                    "target_node_type": np.full(
+                        count,
+                        self.target_node_type,
+                    ),
+                    "n_id": n_id,
+                },
+                key=("source_graph_id", "target_node_type", "n_id"),
+            )
+
+        if self.store_path is None:
+            return identity
+        external_ids = self.restore_external_ids(identity.rows)
+        external_id = self._external_id_column(external_ids, count=count)
+        return PredictionIdentity(
+            columns={**identity.columns, "external_id": external_id},
+            key=identity.key,
+        )
+
+    def adapt(
+        self,
+        batch: Data | HeteroData,
+        supervised: object,
+        *,
+        phase: Phase,
+        split_ordinal_start: int = 0,
+    ) -> PredictionPayload:
+        """Build one payload from already-selected logits and targets."""
+        _phase(phase)
+        if isinstance(split_ordinal_start, bool) or not isinstance(
+            split_ordinal_start, Integral
+        ):
+            raise TypeError("split_ordinal_start must be an integer")
+        split_ordinal_start = int(split_ordinal_start)
+        if split_ordinal_start < 0:
+            raise ValueError("split_ordinal_start must be non-negative")
+        from topobench.evaluator.prediction import PredictionPayload
+
+        logits = getattr(supervised, "logits", None)
+        targets = getattr(supervised, "targets", None)
+        count = getattr(supervised, "num_examples", None)
+        if (
+            not isinstance(logits, Tensor)
+            or not isinstance(targets, Tensor)
+            or type(count) is not int
+            or logits.ndim == 0
+            or targets.ndim == 0
+            or logits.shape[0] != count
+            or targets.shape[0] != count
+        ):
+            raise TypeError(
+                "supervised logits and targets must be aligned tensors"
+            )
+        row_indices = self._row_indices(supervised)
+        identity = self._identity(
+            batch,
+            row_indices,
+            count,
+            split_ordinal_start,
+        )
+        prediction = (
+            torch.softmax(logits, dim=-1)
+            if self.task == "classification"
+            else logits
+        )
+        vocabulary = self.class_vocabulary
+        if self.task == "classification" and not vocabulary:
+            if logits.ndim != 2:
+                raise ValueError(
+                    "classification logits must have shape [N, C]"
+                )
+            vocabulary = tuple(str(index) for index in range(logits.shape[1]))
+        columns: dict[str, Tensor | np.ndarray] = {
+            "target": targets,
+            "raw_output": logits,
+        }
+        metadata: dict[str, Mapping[str, object]] = {
+            "target": {"role": "target"},
+            "raw_output": {"role": "raw_output"},
+            "prediction": {"role": "prediction"},
+        }
+        for name in self.metadata_fields:
+            columns[name] = np.full(count, self.source_metadata[name])
+            metadata[name] = {
+                "role": "metadata",
+                "vocabulary": (self.source_metadata[name],),
+            }
+        return PredictionPayload(
+            identity=identity,
+            prediction=prediction,
+            columns=columns,
+            column_metadata=metadata,
+            output_semantics={
+                "task": self.task,
+                "class_vocabulary": vocabulary,
+                "units": self.units,
+            },
+        )
 
     def resolve(
         self,
@@ -122,7 +943,11 @@ class PredictionIdentityResolver:
         *,
         phase: Phase,
     ) -> tuple[CanonicalPredictionIdentity, ...]:
-        """Return canonical identities aligned to the phase-owned predictions."""
+        """Compatibility API for existing qualified disk identity callers."""
+        if self.store_path is None:
+            raise RuntimeError(
+                "resolve is only available for disk-backed adapters"
+            )
         selected_phase = _phase(phase)
         descriptor = getattr(batch, "sampling_descriptor", None)
         descriptor_content = getattr(descriptor, "content_sha256", None)
@@ -211,16 +1036,41 @@ class PredictionIdentityResolver:
 
     def restore_external_ids(
         self,
-        identities: Sequence[CanonicalPredictionIdentity],
+        identities: Sequence[Sequence[int | str]],
     ) -> tuple[int | str, ...]:
-        """Restore exact external IDs for already-selected canonical identities."""
+        """Restore external IDs only after canonical rows reach export."""
         if isinstance(identities, (str, bytes)) or not isinstance(
             identities,
             Sequence,
         ):
             raise TypeError("identities must be an ordered sequence")
+        if self.output_kind == "graph":
+            external_ids: list[int | str] = []
+            for index, identity in enumerate(identities):
+                if (
+                    isinstance(identity, (str, bytes))
+                    or not isinstance(identity, Sequence)
+                    or len(identity) != 1
+                ):
+                    raise ValueError(
+                        f"canonical identity at index {index} has the wrong shape"
+                    )
+                value = identity[0]
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, (Integral, str))
+                    or (isinstance(value, str) and not value)
+                ):
+                    raise TypeError(
+                        f"canonical identity at index {index} has an invalid "
+                        "sample ID"
+                    )
+                external_ids.append(
+                    int(value) if isinstance(value, Integral) else value
+                )
+            return tuple(external_ids)
         ordinals: list[int] = []
-        expected_size = 2 if self.output_kind == "homogeneous" else 3
+        expected_size = 2 if self.output_kind != "heterogeneous" else 3
         for index, identity in enumerate(identities):
             if (
                 isinstance(identity, (str, bytes))
@@ -254,6 +1104,9 @@ class PredictionIdentityResolver:
                 )
             ordinals.append(int(ordinal_value))
 
+        if self.store_path is None:
+            return tuple(ordinals)
+        assert self.store_state is not None
         with TypedGraphStore.from_state(self.store_state) as store:
             if store.content_sha256 != self.source_graph_id:
                 raise ValueError(
@@ -262,7 +1115,9 @@ class PredictionIdentityResolver:
                     f"received {store.content_sha256!r}"
                 )
             if store.output_kind != self.output_kind:
-                raise ValueError("prediction identity store output kind changed")
+                raise ValueError(
+                    "prediction identity store output kind changed"
+                )
             return tuple(store.external_ids(self.target_node_type, ordinals))
 
 
@@ -284,16 +1139,17 @@ class DataPipelineOutput:
 
     The frozen container prevents replacing its references. It does not freeze
     the Lightning data module itself, whose internal state remains mutable for
-    framework lifecycle hooks. ``HeterogeneousDataSpec`` is independently
-    immutable.
+    framework lifecycle hooks. ``HeterogeneousDataSpec`` and
+    ``RuntimeDataCapability`` are independently immutable.
     """
 
     datamodule: LightningDataModule
     preprocessing_time: float
     data_spec: HeterogeneousDataSpec | None = None
+    capability_spec: RuntimeDataCapability | None = None
     source_graph_id: str | None = None
     active_split_tag: str | None = None
-    prediction_identity_resolver: PredictionIdentityResolver | None = None
+    prediction_row_adapter: PredictionRowAdapter | None = None
     fitted_transform: FittableTransform | None = None
     fitted_state_root: Path | None = None
     reproducibility_policy: ReproducibilitySpec | None = None
@@ -313,6 +1169,13 @@ class DataPipelineOutput:
         ):
             raise TypeError(
                 "data_spec must be a HeterogeneousDataSpec or None"
+            )
+        if self.capability_spec is not None and not isinstance(
+            self.capability_spec,
+            RuntimeDataCapability,
+        ):
+            raise TypeError(
+                "capability_spec must be a RuntimeDataCapability or None"
             )
         if isinstance(self.preprocessing_time, bool) or not isinstance(
             self.preprocessing_time,
@@ -334,19 +1197,28 @@ class DataPipelineOutput:
         for name, value in optional_strings.items():
             if value is not None and (not isinstance(value, str) or not value):
                 raise ValueError(f"{name} must be a non-empty string or None")
-        if self.prediction_identity_resolver is not None and not isinstance(
-            self.prediction_identity_resolver,
-            PredictionIdentityResolver,
+        if self.prediction_row_adapter is not None and not isinstance(
+            self.prediction_row_adapter,
+            PredictionRowAdapter,
         ):
             raise TypeError(
-                "prediction_identity_resolver must be a "
-                "PredictionIdentityResolver or None"
+                "prediction_row_adapter must be a PredictionRowAdapter or None"
+            )
+        if (
+            self.prediction_row_adapter is not None
+            and self.source_graph_id
+            != self.prediction_row_adapter.source_graph_id
+        ):
+            raise ValueError(
+                "source_graph_id must match the prediction row adapter"
             )
         if self.fitted_transform is not None and not isinstance(
             self.fitted_transform,
             FittableTransform,
         ):
-            raise TypeError("fitted_transform must implement FittableTransform")
+            raise TypeError(
+                "fitted_transform must implement FittableTransform"
+            )
         if self.fitted_state_root is not None:
             object.__setattr__(
                 self,
@@ -425,12 +1297,16 @@ class AbstractDataPipeline(ABC):
         if active_split_tag is not None and (
             not isinstance(active_split_tag, str) or not active_split_tag
         ):
-            raise ValueError("active_split_tag must be a non-empty string or None")
+            raise ValueError(
+                "active_split_tag must be a non-empty string or None"
+            )
         if fitted_transform is not None and not isinstance(
             fitted_transform,
             FittableTransform,
         ):
-            raise TypeError("fitted_transform must implement FittableTransform")
+            raise TypeError(
+                "fitted_transform must implement FittableTransform"
+            )
         if execution_monitor is not None and (
             not callable(getattr(execution_monitor, "begin", None))
             or not callable(getattr(execution_monitor, "finish", None))
@@ -492,6 +1368,7 @@ class AbstractDataPipeline(ABC):
             raise ValueError(
                 "expected_output_kind must be homogeneous or heterogeneous"
             )
+        qualification = qualify_dataset(cfg.dataset)
         configured_domain = OmegaConf.select(
             cfg,
             "dataset.loader.parameters.data_domain",
@@ -558,13 +1435,10 @@ class AbstractDataPipeline(ABC):
                 "dataset.loader.parameters.partition.backend="
                 f"{backend_name!r}"
             )
-        if (
-            backend_name == "pyg"
-            and (
-                isinstance(partition_count, bool)
-                or not isinstance(partition_count, Integral)
-                or int(partition_count) < 2
-            )
+        if backend_name == "pyg" and (
+            isinstance(partition_count, bool)
+            or not isinstance(partition_count, Integral)
+            or int(partition_count) < 2
         ):
             raise ValueError(
                 "dataset.loader.parameters.partition.num_partitions must be "
@@ -622,7 +1496,9 @@ class AbstractDataPipeline(ABC):
         from topobench.data.stores.typed_graph_ingestion import (
             ParquetTypedGraphIngestor,
         )
-        from topobench.data.stores.typed_graph_store import TypedGraphStoreWriter
+        from topobench.data.stores.typed_graph_store import (
+            TypedGraphStoreWriter,
+        )
 
         ingestor = ParquetTypedGraphIngestor(
             source,
@@ -681,30 +1557,120 @@ class AbstractDataPipeline(ABC):
                 )
                 for phase in _PHASES
             }
-            data_spec = (
+            observed_num_classes = (
                 None
-                if expected_output_kind == "homogeneous"
-                else HeterogeneousDataSpec(
+                if qualification.task != "classification"
+                else _observed_classification_count(
+                    (store.node_labels(store._manifest["target_node_type"]),)
+                )
+            )
+            store_feature_widths = tuple(
+                (
+                    node_type,
+                    int(store._node(node_type)["feature_width"]),
+                )
+                for node_type in store.node_types
+            )
+            if (
+                fitted_transform is not None
+                and fitted_transform.spec.target_field == "x"
+            ):
+                transformed_node_type = fitted_transform.spec.target_node_type
+                if transformed_node_type is None:
+                    if store.output_kind != "homogeneous":
+                        raise ValueError(
+                            "heterogeneous fitted transforms require an explicit "
+                            "target node type"
+                        )
+                    transformed_node_type = store.node_types[0]
+                if transformed_node_type not in store.node_types:
+                    raise ValueError(
+                        "fitted transform target node type is absent from the "
+                        "typed graph store"
+                    )
+                transformed_width = int(fitted_transform.n_components)
+                store_feature_widths = tuple(
+                    (
+                        node_type,
+                        transformed_width
+                        if node_type == transformed_node_type
+                        else width,
+                    )
+                    for node_type, width in store_feature_widths
+                )
+            feature_widths = (
+                (("node", store_feature_widths[0][1]),)
+                if store.output_kind == "homogeneous"
+                else store_feature_widths
+            )
+            observed_domain = {
+                "homogeneous": "graph",
+                "heterogeneous": "heterogeneous",
+            }[store.output_kind]
+            capability_spec = RuntimeDataCapability(
+                selector=qualification.selector,
+                data_domain=observed_domain,
+                output_kind=store.output_kind,
+                feature_widths=feature_widths,
+                num_classes=observed_num_classes,
+                target_node_type=store._manifest["target_node_type"],
+            )
+            if expected_output_kind == "homogeneous":
+                cfg.model.feature_encoder.in_channels = feature_widths[0][1]
+                data_spec = None
+            else:
+                if observed_num_classes is None:
+                    raise ValueError(
+                        "heterogeneous Parquet supervision must be classification"
+                    )
+                data_spec = HeterogeneousDataSpec(
                     node_types=store.node_types,
                     edge_types=store.relation_types,
                     target_node_type=store._manifest["target_node_type"],
-                    num_classes=int(cfg.dataset.parameters.num_classes),
-                    input_channels=tuple(
-                        (
-                            node_type,
-                            int(store._node(node_type)["feature_width"]),
-                        )
-                        for node_type in store.node_types
-                    ),
+                    num_classes=observed_num_classes,
+                    input_channels=store_feature_widths,
                 )
+            requested_metadata = tuple(
+                OmegaConf.select(
+                    cfg,
+                    "evaluation_artifacts.metadata_fields",
+                    default=(),
+                )
+                or ()
             )
-            resolver = PredictionIdentityResolver(
+            if set(requested_metadata).difference({"source"}):
+                raise ValueError(
+                    "disk prediction metadata is restricted to the source "
+                    "allowlist"
+                )
+            source_name = OmegaConf.select(
+                cfg,
+                "dataset.loader.parameters.data_name",
+                default=store.content_sha256,
+            )
+            if not isinstance(source_name, str) or not source_name:
+                raise ValueError(
+                    "disk prediction metadata requires a declared source name"
+                )
+            adapter = PredictionRowAdapter(
                 store_path=store.path,
                 store_state=store_state,
                 source_graph_id=store.content_sha256,
                 output_kind=store.output_kind,
                 target_node_type=store._manifest["target_node_type"],
                 sampling_strategy=strategy.name,
+                task=str(cfg.dataset.parameters.get("task", "classification")),
+                task_level=str(
+                    cfg.dataset.parameters.get("task_level", "node")
+                ),
+                class_vocabulary=tuple(
+                    cfg.dataset.parameters.get("class_vocabulary", ())
+                ),
+                units=cfg.dataset.parameters.get("units"),
+                metadata_fields=requested_metadata,
+                source_metadata=(
+                    {"source": source_name} if requested_metadata else {}
+                ),
             )
             if qualification_report is None:
                 qualification_report = store.qualification_report
@@ -724,9 +1690,10 @@ class AbstractDataPipeline(ABC):
             datamodule=datamodule,
             preprocessing_time=time.perf_counter() - started,
             data_spec=data_spec,
+            capability_spec=capability_spec,
             source_graph_id=source_graph_id,
             active_split_tag=active_split_tag,
-            prediction_identity_resolver=resolver,
+            prediction_row_adapter=adapter,
             fitted_transform=fitted_transform,
             fitted_state_root=fitted_state_root,
             reproducibility_policy=spec.reproducibility,
@@ -750,7 +1717,9 @@ class AbstractDataPipeline(ABC):
                 )
             return None, None
 
-        from topobench.transforms.incremental_pca import IncrementalPCATransform
+        from topobench.transforms.incremental_pca import (
+            IncrementalPCATransform,
+        )
 
         if not isinstance(self.fitted_transform, IncrementalPCATransform):
             raise ValueError(
@@ -816,7 +1785,10 @@ class AbstractDataPipeline(ABC):
                 "descriptor backend/count="
                 f"{(source.spec.partition.backend, source.spec.partition.num_partitions)!r}"
             )
-        if store.active_split_tag != source.spec.supervision.split_registry.active_tag:
+        if (
+            store.active_split_tag
+            != source.spec.supervision.split_registry.active_tag
+        ):
             raise ValueError(
                 "Parquet store/active split mismatch: "
                 f"store={store.active_split_tag!r}, descriptor="
@@ -923,9 +1895,7 @@ class AbstractDataPipeline(ABC):
                 ),
                 "profiling_enabled": source.spec.profiling.enabled,
                 "qualified_profile": self.qualified_profile,
-                "qualification_report": str(
-                    qualification_report.report_path
-                ),
+                "qualification_report": str(qualification_report.report_path),
             }
         )
 

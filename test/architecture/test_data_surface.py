@@ -13,7 +13,6 @@ from topobench.data.utils.hypergraph_io import (
 )
 from topobench.dataloader import GraphDataModule, HeterogeneousNodeDataModule
 
-
 PACKAGE_ROOT = Path(topobench.__file__).parent
 LOADER_ROOT = PACKAGE_ROOT / "data" / "loaders"
 SUPPORTED_LOADER_PACKAGES = {"graph", "heterogeneous", "hypergraph"}
@@ -39,15 +38,9 @@ NARROW_SYMBOL_OWNERS = {
     "ensure_serializable": {"topobench.data.utils.common"},
     "incidence_pairs": {"topobench.data.utils.hypergraph_io"},
     "inductive_split_views": {"topobench.data.splits"},
-    "load_hypergraph_content_dataset": {
-        "topobench.data.utils.hypergraph_io"
-    },
-    "load_hypergraph_npz_dataset": {
-        "topobench.data.utils.hypergraph_io"
-    },
-    "validate_hypergraph_npz_assets": {
-        "topobench.data.utils.hypergraph_io"
-    },
+    "load_hypergraph_content_dataset": {"topobench.data.utils.hypergraph_io"},
+    "load_hypergraph_npz_dataset": {"topobench.data.utils.hypergraph_io"},
+    "validate_hypergraph_npz_assets": {"topobench.data.utils.hypergraph_io"},
     "make_hash": {"topobench.data.utils.common"},
     "validate_transductive_masks": {"topobench.data.splits"},
 }
@@ -55,7 +48,10 @@ NARROW_SYMBOL_OWNERS = {
 
 def _production_trees():
     for path in sorted(PACKAGE_ROOT.rglob("*.py")):
-        yield path, ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        yield (
+            path,
+            ast.parse(path.read_text(encoding="utf-8"), filename=str(path)),
+        )
 
 
 def test_loader_packages_match_the_supported_domains() -> None:
@@ -77,9 +73,15 @@ def test_legacy_batching_symbols_are_not_imported_or_exported() -> None:
             if isinstance(node, ast.ImportFrom):
                 imported = {alias.name for alias in node.names}
                 if imported & FORBIDDEN_SYMBOLS:
-                    violations.append((path, node.lineno, imported & FORBIDDEN_SYMBOLS))
+                    violations.append(
+                        (path, node.lineno, imported & FORBIDDEN_SYMBOLS)
+                    )
             elif isinstance(node, (ast.Assign, ast.AnnAssign)):
-                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                targets = (
+                    node.targets
+                    if isinstance(node, ast.Assign)
+                    else [node.target]
+                )
                 if not any(
                     isinstance(target, ast.Name) and target.id == "__all__"
                     for target in targets
@@ -92,7 +94,9 @@ def test_legacy_batching_symbols_are_not_imported_or_exported() -> None:
                     and isinstance(child.value, str)
                 }
                 if exported & FORBIDDEN_SYMBOLS:
-                    violations.append((path, node.lineno, exported & FORBIDDEN_SYMBOLS))
+                    violations.append(
+                        (path, node.lineno, exported & FORBIDDEN_SYMBOLS)
+                    )
 
     assert violations == []
 
@@ -106,9 +110,11 @@ def test_production_imports_do_not_reference_removed_data_modules() -> None:
                 if node.module in FORBIDDEN_MODULES:
                     violations.append((path, node.lineno, node.module))
             elif isinstance(node, ast.Import):
-                for alias in node.names:
-                    if alias.name in FORBIDDEN_MODULES:
-                        violations.append((path, node.lineno, alias.name))
+                violations.extend(
+                    (path, node.lineno, alias.name)
+                    for alias in node.names
+                    if alias.name in FORBIDDEN_MODULES
+                )
 
     assert violations == []
 
@@ -123,18 +129,31 @@ def test_dependency_light_data_symbols_use_their_narrow_owners() -> None:
             for alias in node.names:
                 owners = NARROW_SYMBOL_OWNERS.get(alias.name)
                 if owners is not None and node.module not in owners:
-                    violations.append((path, node.lineno, alias.name, node.module))
+                    violations.append(
+                        (path, node.lineno, alias.name, node.module)
+                    )
 
     assert violations == []
 
 
-def test_native_datamodules_and_safe_hypergraph_parsers_remain_public() -> None:
+def test_native_datamodules_and_safe_hypergraph_parsers_remain_public() -> (
+    None
+):
     """Pruning retains native batching and non-executable parser formats."""
     assert GraphDataModule.__name__ == "GraphDataModule"
-    assert HeterogeneousNodeDataModule.__name__ == "HeterogeneousNodeDataModule"
+    assert (
+        HeterogeneousNodeDataModule.__name__ == "HeterogeneousNodeDataModule"
+    )
     assert dataloader.__all__ == [
+        "DiskGraphDataModule",
         "GraphDataModule",
+        "GraphSamplingStrategy",
+        "HeterogeneousClusterStrategy",
+        "HeterogeneousNeighborStrategy",
         "HeterogeneousNodeDataModule",
+        "HomogeneousClusterStrategy",
+        "SamplingCapabilityError",
+        "SamplingDescriptor",
     ]
     assert data_utils.__all__ == [
         "ArchiveLimits",

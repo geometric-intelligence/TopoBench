@@ -20,9 +20,7 @@ def _context(task: str, num_classes: int) -> EvaluationContext:
 def test_scalar_regression_accepts_only_equal_floating_n_by_one(
     batch_size: int,
 ) -> None:
-    evaluator = TBEvaluator(
-        task="regression", num_classes=1, metrics=["mae"]
-    )
+    evaluator = TBEvaluator(task="regression", num_classes=1, metrics=["mae"])
     evaluator.begin(_context("regression", 1))
     evaluator.update(
         EvaluationBatch(
@@ -52,9 +50,7 @@ def test_scalar_regression_accepts_only_equal_floating_n_by_one(
 def test_scalar_regression_rejects_broadcast_and_dtype_variants(
     outputs: torch.Tensor, targets: torch.Tensor, message: str
 ) -> None:
-    evaluator = TBEvaluator(
-        task="regression", num_classes=1, metrics=["mae"]
-    )
+    evaluator = TBEvaluator(task="regression", num_classes=1, metrics=["mae"])
     evaluator.begin(_context("regression", 1))
 
     with pytest.raises((TypeError, ValueError), match=message):

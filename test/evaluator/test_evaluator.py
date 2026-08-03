@@ -18,11 +18,11 @@ def test_unsupported_tasks_fail_during_construction(task: str) -> None:
 
 
 @pytest.mark.parametrize("metric", ["auprc", "somers_d"])
-def test_binary_only_metrics_reject_nonbinary_vocabularies(metric: str) -> None:
+def test_binary_only_metrics_reject_nonbinary_vocabularies(
+    metric: str,
+) -> None:
     with pytest.raises(ValueError, match="num_classes == 2"):
-        TBEvaluator(
-            task="classification", num_classes=3, metrics=[metric]
-        )
+        TBEvaluator(task="classification", num_classes=3, metrics=[metric])
 
 
 @pytest.mark.parametrize(
@@ -38,9 +38,7 @@ def test_binary_only_metrics_reject_nonbinary_vocabularies(metric: str) -> None:
 )
 def test_removed_metric_names_fail_during_construction(metric: str) -> None:
     with pytest.raises(ValueError, match="Unsupported metric"):
-        TBEvaluator(
-            task="classification", num_classes=3, metrics=[metric]
-        )
+        TBEvaluator(task="classification", num_classes=3, metrics=[metric])
 
 
 def test_duplicate_metrics_fail_during_construction() -> None:
@@ -166,7 +164,10 @@ def test_audit_result_integrates_expanded_metric_keys_and_metadata() -> None:
     assert result.status["accuracy"] == "exact"
     assert result.status["auroc"] == "exact"
     assert result.status["auroc_online"] == "approximate"
-    assert result.provenance["exact_ranking_memory"]["binary_state_shared"] is True
+    assert (
+        result.provenance["exact_ranking_memory"]["binary_state_shared"]
+        is True
+    )
 
 
 def test_evaluator_exposes_only_topobench_composite_backend_state() -> None:

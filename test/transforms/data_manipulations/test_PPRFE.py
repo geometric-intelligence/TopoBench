@@ -12,7 +12,9 @@ class TestPPRFE:
 
     def setup_method(self):
         """Set up test fixtures before each test method."""
-        self.edge_index = torch.tensor([[0, 1, 1, 2, 2, 0], [1, 0, 2, 1, 0, 2]])
+        self.edge_index = torch.tensor(
+            [[0, 1, 1, 2, 2, 0], [1, 0, 2, 1, 0, 2]]
+        )
         self.x = torch.randn(3, 5)
         self.num_nodes = 3
 
@@ -51,7 +53,9 @@ class TestPPRFE:
     def test_output_shape_concat(self):
         """Test output shape with concat_to_x=True."""
         t = PPRFE(alpha_param_PPRFE=(0.1, 5), concat_to_x=True)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         out = t(data)
 
@@ -61,7 +65,11 @@ class TestPPRFE:
     def test_output_shape_separate(self):
         """Test output shape with concat_to_x=False."""
         t = PPRFE(alpha_param_PPRFE=(0.1, 5), concat_to_x=False)
-        data = Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x.clone(),
+            edge_index=self.edge_index,
+            num_nodes=self.num_nodes,
+        )
 
         out = t(data)
 
@@ -75,7 +83,11 @@ class TestPPRFE:
         """Test different fe_dim values."""
         for num_alphas in [3, 5, 10, 20]:
             t = PPRFE(alpha_param_PPRFE=(0.1, num_alphas), concat_to_x=False)
-            data = Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
+            data = Data(
+                x=self.x.clone(),
+                edge_index=self.edge_index,
+                num_nodes=self.num_nodes,
+            )
 
             out = t(data)
 
@@ -120,7 +132,9 @@ class TestPPRFE:
     def test_no_nan_values(self):
         """Test that output contains no NaN values."""
         t = PPRFE(alpha_param_PPRFE=(0.1, 10), concat_to_x=False)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         out = t(data)
 
@@ -129,7 +143,9 @@ class TestPPRFE:
     def test_no_inf_values(self):
         """Test that output contains no Inf values."""
         t = PPRFE(alpha_param_PPRFE=(0.1, 10), concat_to_x=False)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         out = t(data)
 
@@ -138,7 +154,9 @@ class TestPPRFE:
     def test_output_dtype_float32(self):
         """Test that output dtype is float32."""
         t = PPRFE(alpha_param_PPRFE=(0.1, 5), concat_to_x=False)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         out = t(data)
 
@@ -148,8 +166,14 @@ class TestPPRFE:
 
     def test_with_self_loop(self):
         """Test with self_loop=True."""
-        t = PPRFE(alpha_param_PPRFE=(0.1, 5), concat_to_x=False, self_loop=True)
-        data = Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
+        t = PPRFE(
+            alpha_param_PPRFE=(0.1, 5), concat_to_x=False, self_loop=True
+        )
+        data = Data(
+            x=self.x.clone(),
+            edge_index=self.edge_index,
+            num_nodes=self.num_nodes,
+        )
 
         out = t(data)
 
@@ -158,8 +182,14 @@ class TestPPRFE:
 
     def test_without_self_loop(self):
         """Test with self_loop=False."""
-        t = PPRFE(alpha_param_PPRFE=(0.1, 5), concat_to_x=False, self_loop=False)
-        data = Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
+        t = PPRFE(
+            alpha_param_PPRFE=(0.1, 5), concat_to_x=False, self_loop=False
+        )
+        data = Data(
+            x=self.x.clone(),
+            edge_index=self.edge_index,
+            num_nodes=self.num_nodes,
+        )
 
         out = t(data)
 
@@ -168,11 +198,23 @@ class TestPPRFE:
 
     def test_self_loop_affects_output(self):
         """Test that self_loop parameter affects the output."""
-        t_with = PPRFE(alpha_param_PPRFE=(0.1, 5), concat_to_x=False, self_loop=True)
-        t_without = PPRFE(alpha_param_PPRFE=(0.1, 5), concat_to_x=False, self_loop=False)
+        t_with = PPRFE(
+            alpha_param_PPRFE=(0.1, 5), concat_to_x=False, self_loop=True
+        )
+        t_without = PPRFE(
+            alpha_param_PPRFE=(0.1, 5), concat_to_x=False, self_loop=False
+        )
 
-        data_with = Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
-        data_without = Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data_with = Data(
+            x=self.x.clone(),
+            edge_index=self.edge_index,
+            num_nodes=self.num_nodes,
+        )
+        data_without = Data(
+            x=self.x.clone(),
+            edge_index=self.edge_index,
+            num_nodes=self.num_nodes,
+        )
 
         out_with = t_with(data_with)
         out_without = t_without(data_without)
@@ -184,8 +226,14 @@ class TestPPRFE:
 
     def test_aggregation_mean(self):
         """Test mean aggregation."""
-        t = PPRFE(alpha_param_PPRFE=(0.1, 5), concat_to_x=False, aggregation="mean")
-        data = Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
+        t = PPRFE(
+            alpha_param_PPRFE=(0.1, 5), concat_to_x=False, aggregation="mean"
+        )
+        data = Data(
+            x=self.x.clone(),
+            edge_index=self.edge_index,
+            num_nodes=self.num_nodes,
+        )
 
         out = t(data)
 
@@ -193,8 +241,14 @@ class TestPPRFE:
 
     def test_aggregation_sum(self):
         """Test sum aggregation."""
-        t = PPRFE(alpha_param_PPRFE=(0.1, 5), concat_to_x=False, aggregation="sum")
-        data = Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
+        t = PPRFE(
+            alpha_param_PPRFE=(0.1, 5), concat_to_x=False, aggregation="sum"
+        )
+        data = Data(
+            x=self.x.clone(),
+            edge_index=self.edge_index,
+            num_nodes=self.num_nodes,
+        )
 
         out = t(data)
 
@@ -202,8 +256,14 @@ class TestPPRFE:
 
     def test_aggregation_max(self):
         """Test max aggregation."""
-        t = PPRFE(alpha_param_PPRFE=(0.1, 5), concat_to_x=False, aggregation="max")
-        data = Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
+        t = PPRFE(
+            alpha_param_PPRFE=(0.1, 5), concat_to_x=False, aggregation="max"
+        )
+        data = Data(
+            x=self.x.clone(),
+            edge_index=self.edge_index,
+            num_nodes=self.num_nodes,
+        )
 
         out = t(data)
 
@@ -211,8 +271,14 @@ class TestPPRFE:
 
     def test_aggregation_min(self):
         """Test min aggregation."""
-        t = PPRFE(alpha_param_PPRFE=(0.1, 5), concat_to_x=False, aggregation="min")
-        data = Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
+        t = PPRFE(
+            alpha_param_PPRFE=(0.1, 5), concat_to_x=False, aggregation="min"
+        )
+        data = Data(
+            x=self.x.clone(),
+            edge_index=self.edge_index,
+            num_nodes=self.num_nodes,
+        )
 
         out = t(data)
 
@@ -220,12 +286,24 @@ class TestPPRFE:
 
     def test_aggregations_produce_different_results(self):
         """Test that different aggregations produce different results."""
-        data = Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
+        Data(
+            x=self.x.clone(),
+            edge_index=self.edge_index,
+            num_nodes=self.num_nodes,
+        )
 
         results = {}
         for agg in ["mean", "sum", "max", "min"]:
-            t = PPRFE(alpha_param_PPRFE=(0.1, 5), concat_to_x=False, aggregation=agg)
-            out = t(Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes))
+            t = PPRFE(
+                alpha_param_PPRFE=(0.1, 5), concat_to_x=False, aggregation=agg
+            )
+            out = t(
+                Data(
+                    x=self.x.clone(),
+                    edge_index=self.edge_index,
+                    num_nodes=self.num_nodes,
+                )
+            )
             results[agg] = out.PPRFE.clone()
 
         # At least some pairs should be different
@@ -279,13 +357,17 @@ class TestPPRFE:
     def test_device_consistency_cpu(self):
         """Test that output is on the same CPU device as input."""
         t = PPRFE(alpha_param_PPRFE=(0.1, 5), concat_to_x=False)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         out = t(data)
 
         assert out.PPRFE.device == self.edge_index.device
 
-    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+    @pytest.mark.skipif(
+        not torch.cuda.is_available(), reason="CUDA not available"
+    )
     def test_device_consistency_cuda(self):
         """Test that output is on the same CUDA device as input."""
         t = PPRFE(alpha_param_PPRFE=(0.1, 5), concat_to_x=False)
@@ -322,7 +404,11 @@ class TestPPRFE:
         """Test that original features are at the start when concatenating."""
         t = PPRFE(alpha_param_PPRFE=(0.1, 5), concat_to_x=True)
         x_orig = self.x.clone()
-        data = Data(x=x_orig.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=x_orig.clone(),
+            edge_index=self.edge_index,
+            num_nodes=self.num_nodes,
+        )
 
         out = t(data)
 
@@ -332,7 +418,9 @@ class TestPPRFE:
     def test_debug_mode(self, capsys):
         """Test PPRFE with debug=True."""
         t = PPRFE(alpha_param_PPRFE=(0.1, 5), debug=True)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         # This should run without error and print debug info
         out = t(data)

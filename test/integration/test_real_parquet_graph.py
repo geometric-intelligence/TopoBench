@@ -77,7 +77,9 @@ def _require_live_bundle(tmp_path: Path) -> tuple[Path, Mapping[str, Any]]:
     with zipfile.ZipFile(archive) as bundle:
         members = bundle.infolist()
         if not members or len(members) > _MAX_MEMBERS:
-            pytest.fail("live graph bundle member count is outside the declared bound")
+            pytest.fail(
+                "live graph bundle member count is outside the declared bound"
+            )
         total = 0
         for member in members:
             relative = PurePosixPath(member.filename)
@@ -86,39 +88,56 @@ def _require_live_bundle(tmp_path: Path) -> tuple[Path, Mapping[str, Any]]:
                 or not relative.parts
                 or any(part in {"", ".", ".."} for part in relative.parts)
             ):
-                pytest.fail(f"unsafe live graph member path {member.filename!r}")
+                pytest.fail(
+                    f"unsafe live graph member path {member.filename!r}"
+                )
             mode = member.external_attr >> 16
             if stat.S_ISLNK(mode):
-                pytest.fail(f"live graph bundle contains symlink {member.filename!r}")
+                pytest.fail(
+                    f"live graph bundle contains symlink {member.filename!r}"
+                )
             total += member.file_size
             if total > _MAX_DOWNLOAD_BYTES:
-                pytest.fail("live graph uncompressed bundle exceeds its byte bound")
+                pytest.fail(
+                    "live graph uncompressed bundle exceeds its byte bound"
+                )
             destination = extracted.joinpath(*relative.parts)
             destination.parent.mkdir(parents=True, exist_ok=True)
             if member.is_dir():
                 destination.mkdir(exist_ok=True)
                 continue
-            with bundle.open(member) as source, destination.open("xb") as target:
+            with (
+                bundle.open(member) as source,
+                destination.open("xb") as target,
+            ):
                 while chunk := source.read(1024 * 1024):
                     target.write(chunk)
     contract_path = extracted / _CONTRACT_NAME
     if not contract_path.is_file():
         pytest.fail(f"live graph bundle is missing {_CONTRACT_NAME}")
-    contract = _mapping(json.loads(contract_path.read_text(encoding="utf-8")), "root")
+    contract = _mapping(
+        json.loads(contract_path.read_text(encoding="utf-8")), "root"
+    )
     if contract.get("format_version") != _CONTRACT_VERSION:
         pytest.fail("live graph qualification contract version is unsupported")
     if contract.get("output_kind") != "homogeneous":
-        pytest.fail("live graph qualification contract must declare homogeneous output")
+        pytest.fail(
+            "live graph qualification contract must declare homogeneous output"
+        )
     return extracted, contract
 
 
 def _source_from_contract(root: Path, contract: Mapping[str, Any]) -> Any:
-    parameters = dict(_mapping(contract.get("loader_parameters"), "loader_parameters"))
+    parameters = dict(
+        _mapping(contract.get("loader_parameters"), "loader_parameters")
+    )
     source_subdirectory = contract.get("source_subdirectory", "source")
     if not isinstance(source_subdirectory, str) or not source_subdirectory:
         pytest.fail("source_subdirectory must be a non-empty relative path")
     relative = PurePosixPath(source_subdirectory)
-    if relative.is_absolute() or any(part in {"", ".", ".."} for part in relative.parts):
+    if relative.is_absolute() or any(
+        part in {"", ".", ".."} for part in relative.parts
+    ):
         pytest.fail("source_subdirectory escapes the downloaded bundle")
     parameters["source_root"] = str(root.joinpath(*relative.parts))
     parameters["data_domain"] = "graph"
@@ -132,9 +151,13 @@ def _assert_source_contract(source: Any, contract: Mapping[str, Any]) -> None:
     expectations = _mapping(contract.get("expectations"), "expectations")
     spec = source.spec
     if len(spec.files) < 6:
-        pytest.fail("representative live graph source must contain multiple node/edge/split files")
+        pytest.fail(
+            "representative live graph source must contain multiple node/edge/split files"
+        )
     if len(spec.supervision.split_registry.sets) < 2:
-        pytest.fail("representative live graph source must provide several named split triplets")
+        pytest.fail(
+            "representative live graph source must provide several named split triplets"
+        )
     assert spec.output_kind == "homogeneous"
     assert spec.reproducibility.save_reproducibility_bundle is True
     assert tuple(node.name for node in spec.node_types) == tuple(
@@ -144,7 +167,9 @@ def _assert_source_contract(source: Any, contract: Mapping[str, Any]) -> None:
         tuple(value) for value in expectations["relations"]
     )
     expected_roles = _mapping(expectations["semantic_roles"], "semantic_roles")
-    assert expected_roles["target_node_type"] == spec.supervision.target_node_type
+    assert (
+        expected_roles["target_node_type"] == spec.supervision.target_node_type
+    )
     assert expected_roles["label_column"] == spec.supervision.label_column
     assert expected_roles["label_dtype"] == spec.supervision.label_dtype
     assert expectations["num_classes"] == NUM_CLASSES
@@ -160,7 +185,9 @@ def _assert_store_semantics(
 ) -> tuple[str, ...]:
     expectations = _mapping(contract["expectations"], "expectations")
     node_counts = _mapping(expectations["node_counts"], "node_counts")
-    relation_counts = _mapping(expectations["relation_counts"], "relation_counts")
+    relation_counts = _mapping(
+        expectations["relation_counts"], "relation_counts"
+    )
     assert tuple(store.node_types) == tuple(expectations["node_types"])
     assert tuple(store.relation_types) == tuple(
         tuple(value) for value in expectations["relations"]
@@ -183,7 +210,10 @@ def _assert_store_semantics(
         for sample in rows_value:
             source = int(sample["source_internal_id"])
             destination = int(sample["destination_internal_id"])
-            start, stop = int(colptr[destination]), int(colptr[destination + 1])
+            start, stop = (
+                int(colptr[destination]),
+                int(colptr[destination + 1]),
+            )
             assert source in row[start:stop].tolist()
 
     split_counts = _mapping(expectations["split_counts"], "split_counts")
@@ -195,17 +225,24 @@ def _assert_store_semantics(
             assert len(ids) == phases[phase]
             assert len(np.unique(ids)) == len(ids)
 
-    samples = _mapping(expectations["external_id_samples"], "external_id_samples")
+    samples = _mapping(
+        expectations["external_id_samples"], "external_id_samples"
+    )
     raw_sentinels: list[str] = []
     for node_type, rows_value in samples.items():
         if not isinstance(rows_value, list) or not rows_value:
             pytest.fail(f"external_id_samples.{node_type} must be non-empty")
-        internal = np.array([int(row["internal_id"]) for row in rows_value], dtype=np.int64)
+        internal = np.array(
+            [int(row["internal_id"]) for row in rows_value], dtype=np.int64
+        )
         expected = [row["external_id"] for row in rows_value]
         assert store.external_ids(node_type, internal) == expected
         raw_sentinels.extend(str(value) for value in expected)
         feature_rows = store.node_features(node_type, internal)
-        assert feature_rows.shape == (len(internal), store._node(node_type)["feature_width"])
+        assert feature_rows.shape == (
+            len(internal),
+            store._node(node_type)["feature_width"],
+        )
         assert np.isfinite(feature_rows).all()
         assert feature_rows.flags.writeable is False
         if node_type == store._manifest["target_node_type"]:
@@ -214,7 +251,9 @@ def _assert_store_semantics(
             assert int(labels.min()) >= 0
             assert int(labels.max()) < NUM_CLASSES
     if not any(len(value) >= 8 for value in raw_sentinels):
-        pytest.fail("live graph contract needs a distinctive raw-ID redaction sentinel")
+        pytest.fail(
+            "live graph contract needs a distinctive raw-ID redaction sentinel"
+        )
     return tuple(raw_sentinels)
 
 
@@ -232,14 +271,16 @@ def _finite_native_step(batch: Data) -> tuple[float, float]:
     logits = model(batch.x, batch.edge_index)
     mask = batch.supervised_mask
     assert bool(mask.any())
-    loss = torch.nn.functional.cross_entropy(logits[mask], batch.y[mask].long())
+    loss = torch.nn.functional.cross_entropy(
+        logits[mask], batch.y[mask].long()
+    )
     loss.backward()
     optimizer.step()
-    accuracy = float((logits[mask].argmax(dim=-1) == batch.y[mask]).float().mean())
+    accuracy = float(
+        (logits[mask].argmax(dim=-1) == batch.y[mask]).float().mean()
+    )
     assert math.isfinite(float(loss.detach())) and math.isfinite(accuracy)
     return float(loss.detach()), accuracy
-
-
 
 
 def _write_aggregate_evidence(
@@ -253,7 +294,9 @@ def _write_aggregate_evidence(
     accuracy: float,
     strategy_state: Mapping[str, Any],
 ) -> None:
-    evidence_root_value = os.environ.get("TOPOBENCH_QUALIFICATION_EVIDENCE_DIR")
+    evidence_root_value = os.environ.get(
+        "TOPOBENCH_QUALIFICATION_EVIDENCE_DIR"
+    )
     if not evidence_root_value:
         return
     evidence_root = Path(evidence_root_value)
@@ -264,7 +307,9 @@ def _write_aggregate_evidence(
         "status": "passed",
         "dataset": contract["dataset_name"],
         "output_kind": "homogeneous",
-        "source_fingerprint": store._manifest["source_binding"]["source_fingerprint"],
+        "source_fingerprint": store._manifest["source_binding"][
+            "source_fingerprint"
+        ],
         "store_fingerprint": store.content_sha256,
         "partition_book_identity": store.partition_book_identity,
         "schema_roles": expectations["semantic_roles"],
@@ -295,8 +340,12 @@ def test_real_multifile_parquet_graph_lifecycle(
     source = _source_from_contract(root, contract)
     _assert_source_contract(source, contract)
 
-    ingestor = ParquetTypedGraphIngestor(source, tmp_path / "stores", threads=1)
-    partition = ingestor.build_partitions(limits=PartitionQualificationLimits())
+    ingestor = ParquetTypedGraphIngestor(
+        source, tmp_path / "stores", threads=1
+    )
+    partition = ingestor.build_partitions(
+        limits=PartitionQualificationLimits()
+    )
     fresh = TypedGraphStoreWriter(ingestor, partition).build()
     assert fresh.cache_hit is False
     raw_ids = _assert_store_semantics(fresh.store, contract)
@@ -328,7 +377,9 @@ def test_real_multifile_parquet_graph_lifecycle(
     loss, accuracy = _finite_native_step(batch)
     module.close()
 
-    replay_partition = ingestor.build_partitions(limits=PartitionQualificationLimits())
+    replay_partition = ingestor.build_partitions(
+        limits=PartitionQualificationLimits()
+    )
     replay = TypedGraphStoreWriter(ingestor, replay_partition).build()
     assert replay.cache_hit is True
     assert replay.content_sha256 == fresh.content_sha256
@@ -336,7 +387,9 @@ def test_real_multifile_parquet_graph_lifecycle(
     replay.store.close()
     with TypedGraphStore.from_state(state) as reopened:
         assert reopened.content_sha256 == fresh.content_sha256
-        assert reopened.partition_book_identity == partition.book.content_identity
+        assert (
+            reopened.partition_book_identity == partition.book.content_identity
+        )
         _assert_store_semantics(reopened, contract)
         _write_aggregate_evidence(
             reopened,
@@ -354,8 +407,10 @@ def test_real_multifile_parquet_graph_lifecycle(
     fresh.store.close()
 
     captured = capsys.readouterr()
-    emitted = captured.out + captured.err + "\n".join(
-        record.getMessage() for record in caplog.records
+    emitted = (
+        captured.out
+        + captured.err
+        + "\n".join(record.getMessage() for record in caplog.records)
     )
     for raw_id in raw_ids:
         assert raw_id not in emitted

@@ -2,36 +2,80 @@ default_language_version:
   python: python3.11
 
 repos:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+  - repo: local
     hooks:
       - id: end-of-file-fixer
+        name: end-of-file-fixer
+        entry: uv run --frozen --extra lint end-of-file-fixer
+        language: system
+        types: [text]
       - id: trailing-whitespace
-        args:
-          - --markdown-linebreak-ext=md
+        name: trailing-whitespace
+        entry: uv run --frozen --extra lint trailing-whitespace-fixer
+        language: system
+        types: [text]
+        args: [--markdown-linebreak-ext=md]
       - id: fix-byte-order-marker
+        name: fix-byte-order-marker
+        entry: uv run --frozen --extra lint fix-byte-order-marker
+        language: system
+        types: [text]
       - id: check-case-conflict
+        name: check-case-conflict
+        entry: uv run --frozen --extra lint check-case-conflict
+        language: system
       - id: check-merge-conflict
+        name: check-merge-conflict
+        entry: uv run --frozen --extra lint check-merge-conflict
+        language: system
       - id: check-ast
+        name: check-ast
+        entry: uv run --frozen --extra lint check-ast
+        language: system
+        types: [python]
       - id: check-json
+        name: check-json
+        entry: uv run --frozen --extra lint check-json
+        language: system
+        types: [json]
       - id: check-yaml
+        name: check-yaml
+        entry: uv run --frozen --extra lint check-yaml
+        language: system
+        types: [yaml]
       - id: check-symlinks
+        name: check-symlinks
+        entry: uv run --frozen --extra lint check-symlinks
+        language: system
       - id: mixed-line-ending
-        args:
-          - --fix=no
+        name: mixed-line-ending
+        entry: uv run --frozen --extra lint mixed-line-ending
+        language: system
+        types: [text]
+        args: [--fix=no]
       - id: check-added-large-files
-        args:
-          - --maxkb=2048
+        name: check-added-large-files
+        entry: uv run --frozen --extra lint check-added-large-files
+        language: system
+        args: [--maxkb=2048]
       - id: requirements-txt-fixer
-
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.9
-    hooks:
+        name: requirements-txt-fixer
+        entry: uv run --frozen --extra lint requirements-txt-fixer
+        language: system
+        files: requirements.*\.txt$
       - id: ruff-format
+        name: ruff-format
+        entry: uv run --frozen --extra lint ruff format --force-exclude
+        language: system
+        types_or: [python, pyi]
       - id: ruff
-
-  - repo: https://github.com/numpy/numpydoc
-    rev: v1.8.0
-    hooks:
+        name: ruff
+        entry: uv run --frozen --extra lint ruff check --force-exclude
+        language: system
+        types_or: [python, pyi]
       - id: numpydoc-validation
+        name: numpydoc-validation
+        entry: uv run --frozen --extra lint numpydoc lint
+        language: system
+        types: [python]
         exclude: ^(test/|tutorials/|notebooks/|scripts/|docs/|2026_tdl_challenge/)

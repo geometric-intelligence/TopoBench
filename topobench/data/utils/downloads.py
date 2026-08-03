@@ -54,12 +54,14 @@ class ArchiveLimits:
             "max_expansion_ratio",
         ):
             value = getattr(self, field_name)
-            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or value <= 0
+            ):
                 raise ValueError(f"{field_name} must be a positive integer")
         if self.max_member_bytes > self.max_total_bytes:
-            raise ValueError(
-                "max_member_bytes cannot exceed max_total_bytes"
-            )
+            raise ValueError("max_member_bytes cannot exceed max_total_bytes")
 
 
 def _validate_https_url(url: str) -> None:
@@ -93,7 +95,9 @@ class RemoteArchive:
     def __post_init__(self) -> None:
         _validate_https_url(self.url)
         if _SHA256_PATTERN.fullmatch(self.sha256) is None:
-            raise ValueError("sha256 must be exactly 64 lowercase hexadecimal digits")
+            raise ValueError(
+                "sha256 must be exactly 64 lowercase hexadecimal digits"
+            )
         if (
             isinstance(self.size_bytes, bool)
             or not isinstance(self.size_bytes, int)
@@ -240,7 +244,9 @@ def _private_binary_output(path: Path) -> Iterator[BinaryIO]:
 
 def _resolve_redirect_url(current_url: str, location: object) -> str:
     if not isinstance(location, str) or not location.strip():
-        raise ValueError("redirect response is missing a valid Location header")
+        raise ValueError(
+            "redirect response is missing a valid Location header"
+        )
     try:
         redirected_url = urljoin(current_url, location.strip())
     except (TypeError, ValueError) as error:
@@ -335,7 +341,9 @@ def _validate_content_length(
     try:
         declared_size = int(declared_value)
     except ValueError as error:
-        raise ValueError("Content-Length must be a non-negative integer") from error
+        raise ValueError(
+            "Content-Length must be a non-negative integer"
+        ) from error
     if declared_size < 0:
         raise ValueError("Content-Length must be a non-negative integer")
     if declared_size > asset.limits.max_compressed_bytes:
@@ -354,7 +362,9 @@ def _extract_bounded_archive(
     if asset.archive_format == "zip":
         with zipfile.ZipFile(archive_path) as archive:
             members = _validated_zip_members(archive, asset)
-            _extract_zip_members(archive, members, extraction_root, asset.limits)
+            _extract_zip_members(
+                archive, members, extraction_root, asset.limits
+            )
         return
 
     with tarfile.open(archive_path, mode="r:*") as archive:
@@ -438,7 +448,9 @@ def _validate_zip_member_type(
             f"archive member {info.filename!r} is not a regular file or directory"
         )
     if info.flag_bits & 0x1:
-        raise ValueError(f"encrypted archive member {info.filename!r} is unsupported")
+        raise ValueError(
+            f"encrypted archive member {info.filename!r} is unsupported"
+        )
 
 
 def _validate_member_path(
@@ -447,7 +459,9 @@ def _validate_member_path(
 ) -> PurePosixPath:
     if not name or "\x00" in name or "\\" in name:
         raise ValueError(f"unsafe archive member path: {name!r}")
-    normalized_name = name[:-1] if is_directory and name.endswith("/") else name
+    normalized_name = (
+        name[:-1] if is_directory and name.endswith("/") else name
+    )
     if (
         normalized_name in {"", "."}
         or normalized_name.startswith("/")
@@ -545,7 +559,9 @@ def _extract_tar_members(
         assert isinstance(source_info, tarfile.TarInfo)
         source = archive.extractfile(source_info)
         if source is None:
-            raise ValueError(f"regular archive member {member.name!r} has no data")
+            raise ValueError(
+                f"regular archive member {member.name!r} has no data"
+            )
         with source:
             _write_extracted_file(source, target, member.size, limits)
 
@@ -560,13 +576,19 @@ def _write_extracted_file(
     with _private_binary_output(target) as output:
         while chunk := source.read(EXTRACTION_CHUNK_BYTES):
             if len(chunk) > expected_size - written:
-                raise ValueError("archive member expanded beyond declared size")
+                raise ValueError(
+                    "archive member expanded beyond declared size"
+                )
             if len(chunk) > limits.max_member_bytes - written:
-                raise ValueError("archive member crossed the per-member byte limit")
+                raise ValueError(
+                    "archive member crossed the per-member byte limit"
+                )
             output.write(chunk)
             written += len(chunk)
         if written != expected_size:
-            raise ValueError("archive member expanded size differs from metadata")
+            raise ValueError(
+                "archive member expanded size differs from metadata"
+            )
         output.flush()
         os.fsync(output.fileno())
 
@@ -586,7 +608,9 @@ def _asset_receipt_bytes(asset: RemoteArchive) -> bytes:
         "url": asset.url,
     }
     return (
-        json.dumps(document, allow_nan=False, separators=(",", ":"), sort_keys=True)
+        json.dumps(
+            document, allow_nan=False, separators=(",", ":"), sort_keys=True
+        )
         + "\n"
     ).encode("utf-8")
 

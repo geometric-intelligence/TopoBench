@@ -2,10 +2,11 @@
 
 import torch
 from torch_geometric.data import Data
+
 from topobench.transforms.data_manipulations import (
+    NodeDegrees,
     NodeFeaturesToFloat,
     OneHotDegreeFeatures,
-    NodeDegrees,
 )
 
 
@@ -17,7 +18,7 @@ class TestFeatureTransforms:
         self.data = Data(
             num_nodes=4,
             x=torch.tensor([[10], [20], [30], [40]]),
-            edge_index=torch.tensor([[0, 0, 0, 2], [1, 2, 3, 3]])
+            edge_index=torch.tensor([[0, 0, 0, 2], [1, 2, 3, 3]]),
         )
 
         self.node_degrees = NodeDegrees(selected_fields=["edge_index"])
@@ -33,9 +34,9 @@ class TestFeatureTransforms:
         """Test node degrees calculation."""
         data = self.node_degrees(self.data.clone())
         expected_degrees = torch.tensor([[3], [0], [1], [0]]).float()
-        assert (
-            data.node_degrees == expected_degrees
-        ).all(), "Node degrees do not match"
+        assert (data.node_degrees == expected_degrees).all(), (
+            "Node degrees do not match"
+        )
 
     def test_node_feature_float(self):
         """Test node features to float conversion."""
@@ -46,10 +47,12 @@ class TestFeatureTransforms:
         """Test one-hot degree features encoding."""
         data = self.node_degrees(self.data.clone())
         data = self.one_hot_degree_features(data)
-        expected_vals = torch.tensor([
-            [0, 0, 0, 1],
-            [1, 0, 0, 0],
-            [0, 1, 0, 0],
-            [1, 0, 0, 0],
-        ])
+        expected_vals = torch.tensor(
+            [
+                [0, 0, 0, 1],
+                [1, 0, 0, 0],
+                [0, 1, 0, 0],
+                [1, 0, 0, 0],
+            ]
+        )
         assert (data.one_hot_degree == expected_vals).all()

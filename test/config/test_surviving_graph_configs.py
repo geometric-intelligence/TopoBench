@@ -11,10 +11,16 @@ from hydra.core.hydra_config import HydraConfig
 from hydra.errors import MissingConfigException
 from omegaconf import DictConfig, open_dict
 
-from topobench.data.capabilities import GRAPH_DATASET_MANIFEST
+from topobench.data.capabilities import (
+    GRAPH_DATASET_MANIFEST,
+    RuntimeDataCapability,
+    qualify_dataset,
+)
 from topobench.nn.capabilities import (
     GRAPH_MODEL_CAPABILITIES,
+    CapabilityValidation,
     compatible_graph_models,
+    validate_capability_composition,
     validate_graph_composition,
 )
 from topobench.utils.config_resolvers import register_all_resolvers
@@ -56,6 +62,27 @@ def _compose(dataset: str, model: str) -> DictConfig:
         return cfg
 
 
+def _observed_capability_validation(
+    cfg: DictConfig,
+) -> CapabilityValidation:
+    qualification = qualify_dataset(cfg.dataset)
+    observed = RuntimeDataCapability(
+        selector=qualification.selector,
+        data_domain="graph",
+        output_kind=(
+            "graph" if qualification.task_level == "graph" else "homogeneous"
+        ),
+        feature_widths=(("node", cfg.model.feature_encoder.in_channels),),
+        num_classes=(
+            qualification.num_classes
+            if qualification.task == "classification"
+            else None
+        ),
+        target_node_type=qualification.target_node_type,
+    )
+    return validate_capability_composition(cfg, observed=observed)
+
+
 @pytest.mark.parametrize(
     ("dataset_selector", "model_selector"),
     VALID_PAIRS,
@@ -88,7 +115,11 @@ def test_every_declared_graph_pair_resolves_and_instantiates_without_data_spec(
         "reject",
     }
 
-    model = instantiate_model(cfg, data_spec=None)
+    model = instantiate_model(
+        cfg,
+        data_spec=None,
+        capability_validation=_observed_capability_validation(cfg),
+    )
     assert model.backbone.edge_modes == {
         "edge_attr": GRAPH_MODEL_CAPABILITIES[model_selector].edge_attr_mode,
         "edge_weight": GRAPH_MODEL_CAPABILITIES[
@@ -104,7 +135,11 @@ def test_packaged_nsd_uses_an_exact_stalk_width_composition() -> None:
     assert cfg.model.backbone.hidden_dim == 64
     assert cfg.model.backbone.d == 4
 
-    model = instantiate_model(cfg, data_spec=None)
+    model = instantiate_model(
+        cfg,
+        data_spec=None,
+        capability_validation=_observed_capability_validation(cfg),
+    )
     encoder = model.backbone.backbone
     assert encoder.sheaf_config["hidden_channels"] == 16
     assert encoder.sheaf_model.hidden_dim == 64
@@ -166,7 +201,7 @@ def test_rejected_edge_field_pair_fails_before_model_construction() -> None:
     cfg = _compose("MUTAG", "gin")
 
     with pytest.raises(ValueError, match=r"dataset.*edge_attr.*model"):
-        instantiate_model(cfg, data_spec=None)
+        validate_capability_composition(cfg)
 
 
 def test_missing_explicit_edge_mode_fails_with_model_path() -> None:
@@ -178,7 +213,7 @@ def test_missing_explicit_edge_mode_fails_with_model_path() -> None:
         ValueError,
         match=r"model\.backbone_wrapper\.edge_attr_mode",
     ):
-        instantiate_model(cfg, data_spec=None)
+        validate_capability_composition(cfg)
 
 
 def test_cross_domain_default_transform_is_rejected() -> None:

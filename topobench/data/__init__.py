@@ -4,7 +4,10 @@ from .capabilities import (
     GRAPH_DATASET_MANIFEST,
     GraphDatasetCapability,
     GraphTaskContract,
+    RuntimeDataCapability,
+    qualify_dataset,
     qualify_graph_dataset,
+    qualify_heterogeneous_dataset,
 )
 from .heterogeneous import (
     HeterogeneousDataSpec,
@@ -20,13 +23,17 @@ from .hypergraph import (
 from .qualification import (
     DATASET_QUALIFICATION_MANIFEST,
     DatasetQualification,
+    SplitType,
 )
 
 __all__ = [
     "GRAPH_DATASET_MANIFEST",
     "GraphDatasetCapability",
     "GraphTaskContract",
+    "RuntimeDataCapability",
+    "qualify_dataset",
     "qualify_graph_dataset",
+    "qualify_heterogeneous_dataset",
     "HeterogeneousDataSpec",
     "validate_heterogeneous_node_data",
     "HYPERGRAPH_CACHE_FILENAME",
@@ -36,4 +43,5 @@ __all__ = [
     "validate_hypergraph_structure",
     "DATASET_QUALIFICATION_MANIFEST",
     "DatasetQualification",
+    "SplitType",
 ]

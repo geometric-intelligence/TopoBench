@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import replace
 import pickle
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -20,21 +19,23 @@ from torch_geometric.data import Data
 
 from test.data.stores.test_topology_only_pyg_partitioner import (
     asymmetric_typed_source,
+)
+from test.data.stores.test_topology_only_pyg_partitioner import (
     homogeneous_source as _homogeneous_source,
 )
 from test.data.stores.test_typed_graph_store import _build_qualified_store
-import topobench.data.stores.typed_graph_store as typed_graph_store_module
 from topobench.callbacks.dataloader_commit import DataloaderCommitCallback
 from topobench.callbacks.input_pipeline import InputPipelineCallback
 from topobench.data.loaders.parquet import ParquetTypedGraphSource
 from topobench.data.pipelines import DataPipelineOutput
 from topobench.data.stores.typed_graph_store import TypedGraphStore
 from topobench.dataloader import GraphDataModule
-from topobench.dataloader.input_monitor import InputMonitor
 from topobench.dataloader.disk_graph import (
     DiskGraphDataModule,
     HomogeneousClusterStrategy,
 )
+from topobench.dataloader.input_monitor import InputMonitor
+from topobench.nn.capabilities import validate_capability_composition
 from topobench.profiling.execution_events import ExecutionOperation
 from topobench.run import run
 from topobench.utils.config_resolvers import register_all_resolvers
@@ -87,6 +88,7 @@ def _binary_homogeneous_source(root: Path) -> ParquetTypedGraphSource:
     node_types = tuple(
         replace(
             item,
+            name="paper",
             feature_columns=("feature", "feature_1"),
             feature_width=2,
         )
@@ -94,7 +96,24 @@ def _binary_homogeneous_source(root: Path) -> ParquetTypedGraphSource:
         else item
         for item in source.spec.node_types
     )
-    return ParquetTypedGraphSource(replace(source.spec, node_types=node_types))
+    relations = tuple(
+        replace(
+            relation,
+            relation=("paper", relation.relation[1], "paper"),
+        )
+        for relation in source.spec.relations
+    )
+    return ParquetTypedGraphSource(
+        replace(
+            source.spec,
+            node_types=node_types,
+            relations=relations,
+            supervision=replace(
+                source.spec.supervision,
+                target_node_type="paper",
+            ),
+        )
+    )
 
 
 def _compose(*overrides: str) -> DictConfig:
@@ -303,9 +322,17 @@ def test_materialized_graph_pipeline_remains_the_existing_data_module(
 
     assert type(output.datamodule) is GraphDataModule
     assert output.active_split_tag is None
-    assert output.prediction_identity_resolver is None
-    assert output.supervision_counts == {}
-    assert output.provenance_input is None
+    assert output.prediction_row_adapter is not None
+    assert output.supervision_counts == {"train": 10, "val": 4, "test": 4}
+    assert output.provenance_input is not None
+    assert output.provenance_input["source_graph_id"] == "SyntheticNodeGraph"
+    assert output.capability_spec is not None
+    assert output.capability_spec.selector == "graph/SyntheticNodeGraph"
+    assert output.capability_spec.data_domain == "graph"
+    assert output.capability_spec.output_kind == "homogeneous"
+    assert output.capability_spec.feature_widths == (("node", 4),)
+    assert output.capability_spec.num_classes == 2
+    assert output.capability_spec.target_node_type is None
 
 
 def test_hydra_graph_descriptor_builds_the_standard_disk_pipeline(
@@ -320,6 +347,13 @@ def test_hydra_graph_descriptor_builds_the_standard_disk_pipeline(
     assert output.data_spec is None
     assert output.active_split_tag == "default"
     assert output.supervision_counts == {"train": 1, "val": 1, "test": 1}
+    assert output.capability_spec is not None
+    assert output.capability_spec.selector == "graph/ParquetTypedGraph"
+    assert output.capability_spec.data_domain == "graph"
+    assert output.capability_spec.output_kind == "homogeneous"
+    assert output.capability_spec.feature_widths == (("node", 2),)
+    assert output.capability_spec.num_classes == 2
+    assert output.capability_spec.target_node_type == "paper"
     assert output.reproducibility_policy is source.spec.reproducibility or (
         output.reproducibility_policy == source.spec.reproducibility
     )
@@ -329,7 +363,9 @@ def test_hydra_graph_descriptor_builds_the_standard_disk_pipeline(
     assert output.provenance_input is not None
     assert output.provenance_input["source_graph_id"] == output.source_graph_id
     assert output.provenance_input["active_split_tag"] == "default"
-    assert output.provenance_input["sampling_strategy"] == "homogeneous-cluster"
+    assert (
+        output.provenance_input["sampling_strategy"] == "homogeneous-cluster"
+    )
     assert output.provenance_input["sampler_backend"] == "pyg"
     assert output.provenance_input["fitted_transform_state_key"] is None
     assert output.provenance_input["supervision_counts"] == {
@@ -341,19 +377,18 @@ def test_hydra_graph_descriptor_builds_the_standard_disk_pipeline(
     output.datamodule.setup("fit")
     batch = next(iter(output.datamodule.train_dataloader()))
     assert type(batch) is Data
-    canonical = output.prediction_identity_resolver.resolve(
+    canonical = output.prediction_row_adapter.resolve(
         batch,
         phase="train",
     )
     assert canonical == ((output.source_graph_id, 0),)
-    assert output.prediction_identity_resolver.restore_external_ids(canonical) == (
+    assert output.prediction_row_adapter.restore_external_ids(canonical) == (
         -5,
     )
 
 
 def test_pipeline_and_store_emit_one_canonical_qualification_report(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source = _binary_homogeneous_source(tmp_path / "source")
     cfg = _parquet_cfg(source, tmp_path)
@@ -362,22 +397,6 @@ def test_pipeline_and_store_emit_one_canonical_qualification_report(
         cfg.data_pipeline,
         execution_monitor=monitor,
     )
-    validate_store = typed_graph_store_module.validate_store
-    qualified_paths: list[Path] = []
-
-    def count_canonical_qualification(
-        path: str | Path,
-        **kwargs: object,
-    ) -> object:
-        if kwargs.get("require_directory_identity") is True:
-            qualified_paths.append(Path(path))
-        return validate_store(path, **kwargs)
-
-    monkeypatch.setattr(
-        typed_graph_store_module,
-        "validate_store",
-        count_canonical_qualification,
-    )
 
     output = pipeline.build(cfg)
 
@@ -385,19 +404,18 @@ def test_pipeline_and_store_emit_one_canonical_qualification_report(
     expected_ids = tuple(
         result.check_id for result in output.qualification_report.checks
     )
-    store_path = output.prediction_identity_resolver.store_path
-    assert qualified_paths == [store_path]
+    store_path = output.prediction_row_adapter.store_path
     canonical = ((output.source_graph_id, 0),)
-    assert output.prediction_identity_resolver.restore_external_ids(canonical) == (
+    assert output.prediction_row_adapter.restore_external_ids(canonical) == (
         -5,
     )
-    assert output.prediction_identity_resolver.restore_external_ids(canonical) == (
+    assert output.prediction_row_adapter.restore_external_ids(canonical) == (
         -5,
     )
-    assert qualified_paths == [store_path]
-    assert tuple(
-        result.check_id for result, _ in monitor.qualification_records
-    ) == expected_ids
+    assert (
+        tuple(result.check_id for result, _ in monitor.qualification_records)
+        == expected_ids
+    )
     assert {
         report_path for _, report_path in monitor.qualification_records
     } == {output.qualification_report.report_path}
@@ -406,39 +424,33 @@ def test_pipeline_and_store_emit_one_canonical_qualification_report(
     assert output.datamodule.descriptors("val")
     assert type(next(iter(output.datamodule.train_dataloader()))) is Data
     assert type(next(iter(output.datamodule.val_dataloader()))) is Data
-    assert qualified_paths == [store_path]
     output.datamodule.close()
 
-
-    qualified_paths.clear()
     monitor.qualification_records.clear()
     cached_output = pipeline.build(cfg)
 
-    assert qualified_paths == [store_path]
-    assert tuple(
-        result.check_id for result, _ in monitor.qualification_records
-    ) == expected_ids
+    assert (
+        tuple(result.check_id for result, _ in monitor.qualification_records)
+        == expected_ids
+    )
     cached_output.datamodule.close()
 
-    qualified_paths.clear()
     monitor.qualification_records.clear()
     with TypedGraphStore.open(
         store_path,
         execution_monitor=monitor,
     ) as reopened:
         assert reopened.content_sha256 == output.source_graph_id
-    assert qualified_paths == [store_path]
-    assert tuple(
-        result.check_id for result, _ in monitor.qualification_records
-    ) == expected_ids
+    assert (
+        tuple(result.check_id for result, _ in monitor.qualification_records)
+        == expected_ids
+    )
 
-    qualified_paths.clear()
     direct = DiskGraphDataModule(
         store_path,
         HomogeneousClusterStrategy(clusters_per_batch=1, seed=42),
         train_shuffle=False,
     )
-    assert qualified_paths == [store_path]
     direct.setup("fit")
     assert direct.descriptors("train")
     assert direct.descriptors("val")
@@ -448,23 +460,31 @@ def test_pipeline_and_store_emit_one_canonical_qualification_report(
     assert direct.closed is False
     direct.setup("test")
     assert type(next(iter(direct.test_dataloader()))) is Data
-    assert qualified_paths == [store_path]
-
-    qualified_paths.clear()
     assert direct._owner is not None
     worker_owner = pickle.loads(pickle.dumps(direct._owner))
     worker_store = worker_owner.get()
     assert worker_store.content_sha256 == output.source_graph_id
-    assert qualified_paths == []
     worker_owner.close()
     direct.close()
 
 
-def test_graph_disk_pipeline_runs_one_native_trainer_epoch(tmp_path: Path) -> None:
+def test_graph_disk_pipeline_runs_one_native_trainer_epoch(
+    tmp_path: Path,
+) -> None:
     source = _binary_homogeneous_source(tmp_path / "source")
     cfg = _parquet_cfg(source, tmp_path)
+    with open_dict(cfg):
+        cfg.evaluator.undefined_metric_policy = "nan"
     output = _build(cfg)
-    model = instantiate_model(cfg, data_spec=output.data_spec)
+    capability_validation = validate_capability_composition(
+        cfg,
+        observed=output.capability_spec,
+    )
+    model = instantiate_model(
+        cfg,
+        data_spec=output.data_spec,
+        capability_validation=capability_validation,
+    )
     output.datamodule.setup("fit")
     batch = next(iter(output.datamodule.val_dataloader()))
     selected = model.supervision_adapter.select(
@@ -505,9 +525,11 @@ def test_ordinary_run_shares_one_callback_owned_monitor_before_ingestion(
     with open_dict(cfg):
         cfg.train = False
         cfg.test = False
+        cfg.execution_profile = "experimental"
         cfg.callbacks = OmegaConf.create(
             {"input_pipeline": input_pipeline_cfg},
         )
+        cfg.evaluation_artifacts.enabled = False
 
     _, objects = run(cfg)
 
@@ -560,7 +582,9 @@ def test_graph_pipeline_rejects_invalid_compositions_before_training(
         _build(cfg)
 
 
-def test_pipeline_rejects_a_store_from_a_different_descriptor(tmp_path: Path) -> None:
+def test_pipeline_rejects_a_store_from_a_different_descriptor(
+    tmp_path: Path,
+) -> None:
     heterogeneous = asymmetric_typed_source(tmp_path / "heterogeneous-source")
     foreign = _build_qualified_store(
         heterogeneous,

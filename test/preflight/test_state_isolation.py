@@ -110,9 +110,7 @@ def test_probe_restores_global_runtime_datamodule_and_sampler_state(
         assert torch.get_default_dtype() == dtype_before
         assert torch.backends.cudnn.benchmark == benchmark_before
         assert torch.backends.cudnn.deterministic == deterministic_before
-        assert (
-            torch.are_deterministic_algorithms_enabled() == algorithm_before
-        )
+        assert torch.are_deterministic_algorithms_enabled() == algorithm_before
         assert datamodule.state_dict() == datamodule_before
         assert _tree(tmp_path) == artifacts_before
     finally:

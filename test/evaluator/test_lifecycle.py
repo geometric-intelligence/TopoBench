@@ -19,10 +19,7 @@ class FakeBackend:
         fail_update_at: int | None = None,
         reset_failures: int = 0,
         output: (
-            float
-            | torch.Tensor
-            | Mapping[str, float | torch.Tensor]
-            | None
+            float | torch.Tensor | Mapping[str, float | torch.Tensor] | None
         ) = None,
     ) -> None:
         self.value = value
@@ -141,9 +138,7 @@ def test_uneven_batches_accumulate_exact_num_examples(
     batch_sizes: list[int],
 ) -> None:
     evaluator = _evaluator()
-    evaluator.begin(
-        _context(expected_num_examples=sum(batch_sizes))
-    )
+    evaluator.begin(_context(expected_num_examples=sum(batch_sizes)))
 
     for batch_size in batch_sizes:
         evaluator.update(_batch(batch_size))
@@ -334,7 +329,9 @@ def test_reset_failure_keeps_context_failed_until_retry_abort_succeeds(
     assert result.num_examples == 1
 
 
-def test_snapshot_tensor_mutation_cannot_affect_backend_or_later_result() -> None:
+def test_snapshot_tensor_mutation_cannot_affect_backend_or_later_result() -> (
+    None
+):
     backend_value = torch.tensor(0.75, requires_grad=True)
     backend = FakeBackend(output=backend_value)
     evaluator = _evaluator(OrderedDict([("score", backend)]))
@@ -348,11 +345,15 @@ def test_snapshot_tensor_mutation_cannot_affect_backend_or_later_result() -> Non
     assert backend_value.item() == pytest.approx(0.75)
     assert second.metrics["score"].item() == pytest.approx(0.75)
     assert first.metrics["score"].data_ptr() != backend_value.data_ptr()
-    assert second.metrics["score"].data_ptr() != first.metrics["score"].data_ptr()
+    assert (
+        second.metrics["score"].data_ptr() != first.metrics["score"].data_ptr()
+    )
     evaluator.abort()
 
 
-def test_backend_receives_exact_typed_batch_references_and_canonical_id() -> None:
+def test_backend_receives_exact_typed_batch_references_and_canonical_id() -> (
+    None
+):
     """Lifecycle routing does not clone tensors or reinterpret sequence IDs."""
     backend = FakeBackend()
     evaluator = _evaluator(OrderedDict([("score", backend)]))

@@ -2,7 +2,11 @@
 
 import pytest
 import torch
-from torchmetrics.classification import BinaryAUROC, BinaryAveragePrecision, MulticlassAUROC
+from torchmetrics.classification import (
+    BinaryAUROC,
+    BinaryAveragePrecision,
+    MulticlassAUROC,
+)
 
 from topobench.evaluator import EvaluationBatch, EvaluationContext, TBEvaluator
 from topobench.evaluator.backends import (
@@ -41,7 +45,9 @@ def _classification_batch(count: int, classes: int = 2) -> EvaluationBatch:
 
 def test_decomposable_state_bytes_do_not_grow_with_examples():
     backend = MetricPolicyBackend(
-        task="classification", num_classes=3, metrics=["accuracy", "precision", "recall", "f1"]
+        task="classification",
+        num_classes=3,
+        metrics=["accuracy", "precision", "recall", "f1"],
     )
     backend.begin(_context("online", classes=3, split="train"))
     backend.update(_classification_batch(9, classes=3))
@@ -68,14 +74,20 @@ def test_thresholded_online_ranking_state_is_bounded_in_population():
 
 @pytest.mark.parametrize("classes", [2, 5])
 def test_exact_retained_bytes_grow_by_recorded_layout(classes):
-    backend = MetricPolicyBackend(task="classification", num_classes=classes, metrics=["auroc"])
+    backend = MetricPolicyBackend(
+        task="classification", num_classes=classes, metrics=["auroc"]
+    )
     backend.begin(_context("exact", classes=classes))
     backend.update(_classification_batch(3, classes))
     first = backend.exact_ranking_backend.retained_bytes
     backend.update(_classification_batch(7, classes))
     second = backend.exact_ranking_backend.retained_bytes
-    estimate3 = estimate_exact_ranking_memory(num_examples=3, num_classes=classes)
-    estimate10 = estimate_exact_ranking_memory(num_examples=10, num_classes=classes)
+    estimate3 = estimate_exact_ranking_memory(
+        num_examples=3, num_classes=classes
+    )
+    estimate10 = estimate_exact_ranking_memory(
+        num_examples=10, num_classes=classes
+    )
     assert first == estimate3.retained_bytes
     assert second == estimate10.retained_bytes
     assert second > first
@@ -83,13 +95,17 @@ def test_exact_retained_bytes_grow_by_recorded_layout(classes):
 
 def test_binary_auroc_auprc_somers_share_exact_observations():
     backend = MetricPolicyBackend(
-        task="classification", num_classes=2, metrics=["auroc", "auprc", "somers_d"]
+        task="classification",
+        num_classes=2,
+        metrics=["auroc", "auprc", "somers_d"],
     )
     backend.begin(_context("exact"))
     backend.update(_classification_batch(11))
     exact = backend.exact_ranking_backend
     assert len(exact.score_chunks) == len(exact.target_chunks) == 1
-    assert exact.retained_bytes == 11 * (torch.tensor(0.0).element_size() + torch.tensor(0).element_size())
+    assert exact.retained_bytes == 11 * (
+        torch.tensor(0.0).element_size() + torch.tensor(0).element_size()
+    )
     assert exact.binary_state_shared is True
 
 
@@ -100,7 +116,11 @@ def test_every_tensor_reachable_from_exact_backend_is_cpu_and_accounted():
     backend.begin(_context("exact", classes=3))
     backend.update(_classification_batch(13, classes=3))
     exact = backend.exact_ranking_backend
-    tensors = [value for value in exact.reachable_objects() if isinstance(value, torch.Tensor)]
+    tensors = [
+        value
+        for value in exact.reachable_objects()
+        if isinstance(value, torch.Tensor)
+    ]
     assert tensors
     assert all(tensor.device.type == "cpu" for tensor in tensors)
     unique_bytes = {}
@@ -112,31 +132,48 @@ def test_every_tensor_reachable_from_exact_backend_is_cpu_and_accounted():
 
 def test_no_stateful_exact_ranking_metric_holds_hidden_observations():
     backend = MetricPolicyBackend(
-        task="classification", num_classes=2, metrics=["auroc", "auprc", "somers_d"]
+        task="classification",
+        num_classes=2,
+        metrics=["auroc", "auprc", "somers_d"],
     )
     backend.begin(_context("exact"))
     backend.update(_classification_batch(10))
     assert not any(
-        isinstance(value, (BinaryAUROC, BinaryAveragePrecision, MulticlassAUROC))
+        isinstance(
+            value, (BinaryAUROC, BinaryAveragePrecision, MulticlassAUROC)
+        )
         for value in backend.reachable_objects()
     )
 
 
 def test_exact_snapshot_does_not_duplicate_retained_storage():
-    backend = MetricPolicyBackend(task="classification", num_classes=2, metrics=["auroc", "auprc"])
+    backend = MetricPolicyBackend(
+        task="classification", num_classes=2, metrics=["auroc", "auprc"]
+    )
     backend.begin(_context("exact"))
     backend.update(_classification_batch(20))
     exact = backend.exact_ranking_backend
-    pointers_before = tuple(tensor.data_ptr() for tensor in (*exact.score_chunks, *exact.target_chunks))
+    pointers_before = tuple(
+        tensor.data_ptr()
+        for tensor in (*exact.score_chunks, *exact.target_chunks)
+    )
     bytes_before = exact.retained_bytes
     snapshot = backend.compute()
     assert set(snapshot) == {"auroc", "auprc"}
-    assert tuple(tensor.data_ptr() for tensor in (*exact.score_chunks, *exact.target_chunks)) == pointers_before
+    assert (
+        tuple(
+            tensor.data_ptr()
+            for tensor in (*exact.score_chunks, *exact.target_chunks)
+        )
+        == pointers_before
+    )
     assert exact.retained_bytes == bytes_before
 
 
 def test_reset_releases_all_exact_chunk_references():
-    backend = MetricPolicyBackend(task="classification", num_classes=2, metrics=["auroc"])
+    backend = MetricPolicyBackend(
+        task="classification", num_classes=2, metrics=["auroc"]
+    )
     backend.begin(_context("exact"))
     backend.update(_classification_batch(8))
     assert backend.exact_ranking_backend.retained_bytes > 0
@@ -146,7 +183,9 @@ def test_reset_releases_all_exact_chunk_references():
 
 
 def test_finalize_and_abort_release_evaluator_exact_state():
-    evaluator = TBEvaluator("classification", num_classes=2, metrics=["auroc", "auprc"])
+    evaluator = TBEvaluator(
+        "classification", num_classes=2, metrics=["auroc", "auprc"]
+    )
     evaluator.begin(_context("exact", expected=8))
     evaluator.update(_classification_batch(8))
     backend = evaluator.metric_backend
@@ -194,7 +233,9 @@ def test_known_expected_count_fails_memory_guard_before_state_allocation():
 
 
 def test_unknown_count_runtime_guard_rejects_before_offending_append():
-    limit = estimate_exact_ranking_memory(num_examples=4, num_classes=3).estimated_peak_bytes
+    limit = estimate_exact_ranking_memory(
+        num_examples=4, num_classes=3
+    ).estimated_peak_bytes
     backend = MetricPolicyBackend(
         task="classification",
         num_classes=3,
@@ -204,7 +245,10 @@ def test_unknown_count_runtime_guard_rejects_before_offending_append():
     backend.begin(_context("exact", classes=3, expected=None))
     backend.update(_classification_batch(3, classes=3))
     exact = backend.exact_ranking_backend
-    pointers = tuple(tensor.data_ptr() for tensor in (*exact.score_chunks, *exact.target_chunks))
+    pointers = tuple(
+        tensor.data_ptr()
+        for tensor in (*exact.score_chunks, *exact.target_chunks)
+    )
     with pytest.raises(ExactRankingMemoryError) as caught:
         backend.update(_classification_batch(2, classes=3))
     message = str(caught.value)
@@ -212,7 +256,13 @@ def test_unknown_count_runtime_guard_rejects_before_offending_append():
     assert "projected_examples=5" in message
     assert f"configured_limit={limit}" in message
     assert exact.num_examples == 3
-    assert tuple(tensor.data_ptr() for tensor in (*exact.score_chunks, *exact.target_chunks)) == pointers
+    assert (
+        tuple(
+            tensor.data_ptr()
+            for tensor in (*exact.score_chunks, *exact.target_chunks)
+        )
+        == pointers
+    )
 
 
 @pytest.mark.parametrize(

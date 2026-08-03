@@ -1,4 +1,4 @@
-"""Immutable native graph model capabilities and composition validation."""
+"""Immutable model capabilities and exact composition validation."""
 
 from __future__ import annotations
 
@@ -8,21 +8,26 @@ from types import MappingProxyType
 from typing import Any, Literal
 
 from topobench.data.capabilities import (
-    FeaturePolicy,
     GRAPH_DATASET_MANIFEST,
+    DatasetQualification,
+    FeaturePolicy,
     GraphDatasetCapability,
     GraphTaskContract,
+    RuntimeDataCapability,
     configured_graph_feature_width,
+    qualify_dataset,
     qualify_graph_dataset,
 )
 
 EdgeMode = Literal["consume", "ignore", "reject"]
 _EDGE_MODES = frozenset({"consume", "ignore", "reject"})
+_MODEL_TARGET = "topobench.model.TBModel"
 _GRAPH_NODE_ENCODER = "topobench.nn.encoders.GraphNodeFeatureEncoder"
 _GNN_WRAPPER = "topobench.nn.wrappers.GNNWrapper"
 _GRAPH_MLP_WRAPPER = "topobench.nn.wrappers.GraphMLPWrapper"
 _NO_READOUT = "topobench.nn.readouts.NoReadOut"
 _MLP_READOUT = "topobench.nn.readouts.MLPReadout"
+_GRAPH_MLP_LOSS = "topobench.loss.model.GraphMLPLoss"
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +42,9 @@ class GraphModelCapability:
     backbone_target: str
     wrapper_target: str
     readout_target: str
+    backbone_loss_target: str | None = None
+    model_target: str = _MODEL_TARGET
+    feature_encoder_target: str = _GRAPH_NODE_ENCODER
     requires_node_count: bool = False
 
     def __post_init__(self) -> None:
@@ -152,6 +160,7 @@ _ROWS = (
         backbone_target="topobench.nn.backbones.GraphMLP",
         wrapper_target=_GRAPH_MLP_WRAPPER,
         readout_target=_NO_READOUT,
+        backbone_loss_target=_GRAPH_MLP_LOSS,
     ),
     GraphModelCapability(
         selector="gcn_dgm",
@@ -281,6 +290,49 @@ def _required_value(
     if key not in parent:
         raise ValueError(f"{child_path} is required")
     return parent[key]
+
+
+def _apply_fitted_feature_width(
+    cfg: Mapping[str, Any],
+    widths: tuple[tuple[str, int], ...],
+) -> tuple[tuple[str, int], ...]:
+    """Apply a configured fitted projection to its runtime feature width."""
+    data_pipeline = cfg.get("data_pipeline")
+    if not isinstance(data_pipeline, Mapping):
+        return widths
+    transform = data_pipeline.get("fitted_transform")
+    if (
+        not isinstance(transform, Mapping)
+        or transform.get("target_field") != "x"
+    ):
+        return widths
+    target_node_type = transform.get("target_node_type")
+    if not isinstance(target_node_type, str) or not target_node_type:
+        raise ValueError(
+            "data_pipeline.fitted_transform.target_node_type is required for "
+            "heterogeneous feature projection"
+        )
+    n_components = transform.get("n_components")
+    if isinstance(n_components, bool) or not isinstance(n_components, int):
+        raise TypeError(
+            "data_pipeline.fitted_transform.n_components must be an integer"
+        )
+    if n_components < 1:
+        raise ValueError(
+            "data_pipeline.fitted_transform.n_components must be positive"
+        )
+    if target_node_type not in dict(widths):
+        raise ValueError(
+            "data_pipeline.fitted_transform.target_node_type is absent from "
+            "the dataset feature declaration"
+        )
+    return tuple(
+        (
+            node_type,
+            n_components if node_type == target_node_type else width,
+        )
+        for node_type, width in widths
+    )
 
 
 def _qualified_capability(
@@ -484,16 +536,23 @@ def _validated_pair(
         dataset,
         model_selector,
     )
+    model_target = _required_value(model, "_target_", path="model")
+    if model_target != model_capability.model_target:
+        raise ValueError(
+            "model._target_ must be "
+            f"{model_capability.model_target!r}, got {model_target!r}"
+        )
     encoder = _required_mapping(model, "feature_encoder", path="model")
     encoder_target = _required_value(
         encoder,
         "_target_",
         path="model.feature_encoder",
     )
-    if encoder_target != _GRAPH_NODE_ENCODER:
+    if encoder_target != model_capability.feature_encoder_target:
         raise ValueError(
             "model.feature_encoder._target_ must be "
-            f"{_GRAPH_NODE_ENCODER!r}, got {encoder_target!r}"
+            f"{model_capability.feature_encoder_target!r}, got "
+            f"{encoder_target!r}"
         )
     expected_in_channels = _expected_feature_width(
         dataset,
@@ -530,6 +589,23 @@ def _validated_pair(
             f"model.backbone._target_ must be "
             f"{model_capability.backbone_target!r}, got {backbone_target!r}"
         )
+    if model_capability.backbone_loss_target is not None:
+        backbone_loss = _required_mapping(
+            backbone,
+            "loss",
+            path="model.backbone",
+        )
+        backbone_loss_target = _required_value(
+            backbone_loss,
+            "_target_",
+            path="model.backbone.loss",
+        )
+        if backbone_loss_target != model_capability.backbone_loss_target:
+            raise ValueError(
+                "model.backbone.loss._target_ must be "
+                f"{model_capability.backbone_loss_target!r}, got "
+                f"{backbone_loss_target!r}"
+            )
     if model_selector == "gcn_dgm":
         _validate_gcn_dgm_scale(dataset_capability, backbone)
     wrapper = _required_mapping(model, "backbone_wrapper", path="model")
@@ -578,6 +654,441 @@ def validate_graph_composition(
     return dataset_capability, model_capability
 
 
+@dataclass(frozen=True, slots=True)
+class ModelCapability:
+    """Exact construction contract for one qualified model selector."""
+
+    selector: str
+    data_domain: str
+    output_kind: str
+    tasks: frozenset[GraphTaskContract]
+    feature_policies: frozenset[str]
+    pipeline_target: str
+    model_target: str
+    feature_encoder_target: str
+    backbone_target: str
+    wrapper_target: str
+    readout_target: str
+    supervision_adapter_target: str | None = None
+
+    def __post_init__(self) -> None:
+        expected_outputs = {
+            "graph": "homogeneous",
+            "heterogeneous": "heterogeneous",
+            "hypergraph": "hypergraph",
+        }
+        if self.data_domain not in expected_outputs:
+            raise ValueError("model capability data_domain is unsupported")
+        expected_selector = (
+            f"{self.data_domain}/{self.selector.rsplit('/', 1)[-1]}"
+        )
+        if self.selector != expected_selector:
+            raise ValueError(
+                "model capability selector must be data_domain/model_name"
+            )
+        if self.output_kind != expected_outputs[self.data_domain]:
+            raise ValueError(
+                "model capability output_kind contradicts data_domain"
+            )
+        if not self.tasks:
+            raise ValueError("model capability tasks must not be empty")
+        if not self.feature_policies:
+            raise ValueError(
+                "model capability feature_policies must not be empty"
+            )
+        targets = (
+            self.pipeline_target,
+            self.model_target,
+            self.feature_encoder_target,
+            self.backbone_target,
+            self.wrapper_target,
+            self.readout_target,
+        )
+        if any(
+            not isinstance(target, str) or not target for target in targets
+        ):
+            raise ValueError(
+                "model capability targets must be non-empty strings"
+            )
+        if self.supervision_adapter_target is not None and (
+            not isinstance(self.supervision_adapter_target, str)
+            or not self.supervision_adapter_target
+        ):
+            raise ValueError(
+                "supervision_adapter_target must be a non-empty string or None"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class CapabilityValidation:
+    """The qualified static pair and optional reconciled runtime evidence."""
+
+    dataset: DatasetQualification
+    model: ModelCapability
+    observed: RuntimeDataCapability | None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.dataset, DatasetQualification):
+            raise TypeError("dataset must be a DatasetQualification")
+        if not isinstance(self.model, ModelCapability):
+            raise TypeError("model must be a ModelCapability")
+        if self.observed is not None and not isinstance(
+            self.observed,
+            RuntimeDataCapability,
+        ):
+            raise TypeError("observed must be a RuntimeDataCapability or None")
+
+
+_GRAPH_PIPELINE = "topobench.data.pipelines.DefaultDataPipeline"
+_HETEROGENEOUS_PIPELINE = (
+    "topobench.data.pipelines.HeterogeneousNodeDataPipeline"
+)
+_HYPERGRAPH_PIPELINE = "topobench.data.pipelines.HypergraphNodeDataPipeline"
+_HETEROGENEOUS_ENCODER = (
+    "topobench.nn.encoders.HeterogeneousNodeFeatureEncoder"
+)
+_HETEROGENEOUS_WRAPPER = (
+    "topobench.nn.wrappers.heterogeneous.HeterogeneousWrapper"
+)
+_HETEROGENEOUS_READOUT = "topobench.nn.readouts.HeterogeneousNodeReadout"
+_HETEROGENEOUS_ADAPTER = "topobench.model.HeterogeneousNodeSupervisionAdapter"
+_HETEROGENEOUS_TASKS = frozenset({_NODE_CLASSIFICATION})
+_HETEROGENEOUS_FEATURES = frozenset(
+    {"continuous_per_node_type", "continuous_with_constant_fill"}
+)
+_HYPERGRAPH_FEATURES = frozenset({"continuous"})
+_MODEL_ROWS = (
+    *(
+        ModelCapability(
+            selector=f"graph/{row.selector}",
+            data_domain="graph",
+            output_kind="homogeneous",
+            tasks=row.tasks,
+            feature_policies=frozenset(row.feature_policies),
+            pipeline_target=_GRAPH_PIPELINE,
+            model_target=row.model_target,
+            feature_encoder_target=row.feature_encoder_target,
+            backbone_target=row.backbone_target,
+            wrapper_target=row.wrapper_target,
+            readout_target=row.readout_target,
+        )
+        for row in GRAPH_MODEL_CAPABILITIES.values()
+    ),
+    ModelCapability(
+        selector="heterogeneous/hgt",
+        data_domain="heterogeneous",
+        output_kind="heterogeneous",
+        tasks=_HETEROGENEOUS_TASKS,
+        feature_policies=_HETEROGENEOUS_FEATURES,
+        pipeline_target=_HETEROGENEOUS_PIPELINE,
+        model_target=_MODEL_TARGET,
+        feature_encoder_target=_HETEROGENEOUS_ENCODER,
+        backbone_target=("topobench.nn.backbones.heterogeneous.HGTBackbone"),
+        wrapper_target=_HETEROGENEOUS_WRAPPER,
+        readout_target=_HETEROGENEOUS_READOUT,
+        supervision_adapter_target=_HETEROGENEOUS_ADAPTER,
+    ),
+    ModelCapability(
+        selector="heterogeneous/heterosage",
+        data_domain="heterogeneous",
+        output_kind="heterogeneous",
+        tasks=_HETEROGENEOUS_TASKS,
+        feature_policies=_HETEROGENEOUS_FEATURES,
+        pipeline_target=_HETEROGENEOUS_PIPELINE,
+        model_target=_MODEL_TARGET,
+        feature_encoder_target=_HETEROGENEOUS_ENCODER,
+        backbone_target=(
+            "topobench.nn.backbones.heterogeneous.HeteroSAGEBackbone"
+        ),
+        wrapper_target=_HETEROGENEOUS_WRAPPER,
+        readout_target=_HETEROGENEOUS_READOUT,
+        supervision_adapter_target=_HETEROGENEOUS_ADAPTER,
+    ),
+    ModelCapability(
+        selector="hypergraph/edgnn",
+        data_domain="hypergraph",
+        output_kind="hypergraph",
+        tasks=_HETEROGENEOUS_TASKS,
+        feature_policies=_HYPERGRAPH_FEATURES,
+        pipeline_target=_HYPERGRAPH_PIPELINE,
+        model_target=_MODEL_TARGET,
+        feature_encoder_target=_GRAPH_NODE_ENCODER,
+        backbone_target="topobench.nn.backbones.EDGNN",
+        wrapper_target="topobench.nn.wrappers.HypergraphWrapper",
+        readout_target=_MLP_READOUT,
+    ),
+    ModelCapability(
+        selector="hypergraph/hypergraph_conv",
+        data_domain="hypergraph",
+        output_kind="hypergraph",
+        tasks=_HETEROGENEOUS_TASKS,
+        feature_policies=_HYPERGRAPH_FEATURES,
+        pipeline_target=_HYPERGRAPH_PIPELINE,
+        model_target=_MODEL_TARGET,
+        feature_encoder_target=_GRAPH_NODE_ENCODER,
+        backbone_target="topobench.nn.backbones.HypergraphConvBackbone",
+        wrapper_target="topobench.nn.wrappers.HypergraphWrapper",
+        readout_target=_MLP_READOUT,
+    ),
+)
+MODEL_CAPABILITY_MANIFEST: Mapping[str, ModelCapability] = MappingProxyType(
+    {row.selector: row for row in _MODEL_ROWS}
+)
+
+
+def _qualification_domain(dataset: DatasetQualification) -> str:
+    """Return the exact domain encoded by one qualified dataset selector."""
+    domain, separator, name = dataset.selector.partition("/")
+    if (
+        separator != "/"
+        or not name
+        or domain not in {"graph", "heterogeneous", "hypergraph"}
+    ):
+        raise ValueError(
+            f"qualified dataset selector is invalid: {dataset.selector!r}"
+        )
+    return domain
+
+
+def _validate_component_targets(
+    model: Mapping[str, Any],
+    capability: ModelCapability,
+) -> None:
+    """Reject every non-graph component outside its exact public target."""
+    targets = (
+        ("feature_encoder", capability.feature_encoder_target),
+        ("backbone", capability.backbone_target),
+        ("backbone_wrapper", capability.wrapper_target),
+        ("readout", capability.readout_target),
+    )
+    for component, expected in targets:
+        configured = _required_mapping(model, component, path="model")
+        actual = _required_value(
+            configured, "_target_", path=f"model.{component}"
+        )
+        if actual != expected:
+            raise ValueError(
+                f"model.{component}._target_ must be {expected!r}, "
+                f"got {actual!r}"
+            )
+
+    if capability.supervision_adapter_target is not None:
+        configured = _required_mapping(
+            model,
+            "supervision_adapter",
+            path="model",
+        )
+        actual = _required_value(
+            configured,
+            "_target_",
+            path="model.supervision_adapter",
+        )
+        if actual != capability.supervision_adapter_target:
+            raise ValueError(
+                "model.supervision_adapter._target_ must be "
+                f"{capability.supervision_adapter_target!r}, got {actual!r}"
+            )
+
+
+def _validate_observed_capability(
+    cfg: Mapping[str, Any],
+    dataset_cfg: Mapping[str, Any],
+    dataset: DatasetQualification,
+    model: ModelCapability,
+    observed: RuntimeDataCapability,
+) -> None:
+    """Reconcile loader-observed metadata with qualified static evidence."""
+    if observed.selector != dataset.selector:
+        raise ValueError(
+            f"observed.selector must be {dataset.selector!r}, "
+            f"got {observed.selector!r}"
+        )
+    if observed.data_domain != model.data_domain:
+        raise ValueError(
+            f"observed.data_domain must be {model.data_domain!r}, "
+            f"got {observed.data_domain!r}"
+        )
+    expected_output_kind = (
+        "graph"
+        if model.data_domain == "graph" and dataset.task_level == "graph"
+        else model.output_kind
+    )
+    if observed.output_kind != expected_output_kind:
+        raise ValueError(
+            f"observed.output_kind must be {expected_output_kind!r}, "
+            f"got {observed.output_kind!r}"
+        )
+
+    if model.data_domain == "graph":
+        configured_model = _required_mapping(cfg, "model", path="cfg")
+        feature_encoder = _required_mapping(
+            configured_model,
+            "feature_encoder",
+            path="model",
+        )
+        configured_width = _required_value(
+            feature_encoder,
+            "in_channels",
+            path="model.feature_encoder",
+        )
+        if isinstance(configured_width, bool) or not isinstance(
+            configured_width, int
+        ):
+            raise TypeError(
+                "model.feature_encoder.in_channels must resolve to an integer"
+            )
+        if configured_width <= 0:
+            raise ValueError(
+                "model.feature_encoder.in_channels must resolve to a "
+                "positive integer"
+            )
+        expected_widths = (("node", configured_width),)
+    else:
+        expected_widths = _apply_fitted_feature_width(
+            cfg,
+            dataset.feature_widths,
+        )
+    if tuple(sorted(observed.feature_widths)) != tuple(
+        sorted(expected_widths)
+    ):
+        raise ValueError(
+            f"observed.feature_widths must be {expected_widths!r}, "
+            f"got {observed.feature_widths!r}"
+        )
+    expected_num_classes = (
+        dataset.num_classes if dataset.task == "classification" else None
+    )
+    if observed.num_classes != expected_num_classes:
+        raise ValueError(
+            f"observed.num_classes must be {expected_num_classes!r}, "
+            f"got {observed.num_classes!r}"
+        )
+    if observed.target_node_type != dataset.target_node_type:
+        raise ValueError(
+            "observed.target_node_type must be "
+            f"{dataset.target_node_type!r}, "
+            f"got {observed.target_node_type!r}"
+        )
+
+
+def validate_capability_composition(
+    cfg: Mapping[str, Any],
+    *,
+    observed: RuntimeDataCapability | None = None,
+) -> CapabilityValidation:
+    """Validate one exact dataset, pipeline, and model construction boundary."""
+    if not isinstance(cfg, Mapping):
+        raise TypeError("cfg must be a mapping")
+    if observed is not None and not isinstance(
+        observed,
+        RuntimeDataCapability,
+    ):
+        raise TypeError("observed must be a RuntimeDataCapability or None")
+
+    dataset_cfg = _required_mapping(cfg, "dataset", path="cfg")
+    model_cfg = _required_mapping(cfg, "model", path="cfg")
+    pipeline_cfg = _required_mapping(cfg, "data_pipeline", path="cfg")
+    dataset = qualify_dataset(dataset_cfg)
+    if not isinstance(dataset, DatasetQualification):
+        raise TypeError("qualify_dataset must return a DatasetQualification")
+    dataset_domain = _qualification_domain(dataset)
+
+    model_domain = _required_value(
+        model_cfg,
+        "model_domain",
+        path="model",
+    )
+    if model_domain != dataset_domain:
+        raise ValueError(
+            "dataset.loader.parameters.data_domain and model.model_domain "
+            "must match; cross-domain lifting is unsupported: "
+            f"dataset={dataset_domain!r}, model={model_domain!r}"
+        )
+    model_name = _required_value(model_cfg, "model_name", path="model")
+    if not isinstance(model_name, str):
+        raise TypeError("model.model_name must be a string")
+    selector = f"{model_domain}/{model_name}"
+    try:
+        model = MODEL_CAPABILITY_MANIFEST[selector]
+    except KeyError as error:
+        raise ValueError(
+            f"model.model_name={model_name!r} forms unqualified selector "
+            f"{selector!r}"
+        ) from error
+
+    pipeline_target = _required_value(
+        pipeline_cfg,
+        "_target_",
+        path="cfg.data_pipeline",
+    )
+    if not isinstance(pipeline_target, str):
+        raise TypeError(
+            "cfg.data_pipeline._target_ must be a string, "
+            f"got {type(pipeline_target).__name__}"
+        )
+    if pipeline_target != model.pipeline_target:
+        raise ValueError(
+            "cfg.data_pipeline._target_ must be "
+            f"{model.pipeline_target!r}, got {pipeline_target!r}"
+        )
+    model_target = _required_value(model_cfg, "_target_", path="model")
+    if model_target != model.model_target:
+        raise ValueError(
+            f"model._target_ must be {model.model_target!r}, "
+            f"got {model_target!r}"
+        )
+
+    task = GraphTaskContract(
+        task=dataset.task,
+        task_level=dataset.task_level,
+        learning_setting=dataset.split_mode,
+    )
+    if task not in model.tasks:
+        raise ValueError(
+            "dataset.parameters.task, dataset.parameters.task_level, and "
+            "dataset.split_params.learning_setting form unsupported "
+            f"contract {task!r} for model.model_name={model_name!r}"
+        )
+    if dataset.feature_policy not in model.feature_policies:
+        raise ValueError(
+            "dataset.parameters.feature_policy="
+            f"{dataset.feature_policy!r} is unsupported by "
+            f"model.model_name={model_name!r}"
+        )
+
+    if dataset_domain == "graph":
+        graph_dataset, graph_model = validate_graph_composition(
+            dataset_cfg,
+            model_cfg,
+        )
+        if dataset.selector != f"graph/{graph_dataset.selector}":
+            raise ValueError(
+                "graph dataset qualification disagrees with graph "
+                f"capability selector {graph_dataset.selector!r}"
+            )
+        if model.selector != f"graph/{graph_model.selector}":
+            raise ValueError(
+                "graph model qualification disagrees with graph "
+                f"capability selector {graph_model.selector!r}"
+            )
+    else:
+        _validate_component_targets(model_cfg, model)
+
+    if observed is not None:
+        _validate_observed_capability(
+            cfg,
+            dataset_cfg,
+            dataset,
+            model,
+            observed,
+        )
+    return CapabilityValidation(
+        dataset=dataset,
+        model=model,
+        observed=observed,
+    )
+
+
 def compatible_graph_models(
     dataset: GraphDatasetCapability,
 ) -> tuple[GraphModelCapability, ...]:
@@ -608,10 +1119,14 @@ def validated_edge_weight_mode(
 
 
 __all__ = [
+    "CapabilityValidation",
     "EdgeMode",
     "GRAPH_MODEL_CAPABILITIES",
+    "MODEL_CAPABILITY_MANIFEST",
     "GraphModelCapability",
+    "ModelCapability",
     "compatible_graph_models",
+    "validate_capability_composition",
     "validate_graph_composition",
     "validated_edge_attr_mode",
     "validated_graph_feature_width",

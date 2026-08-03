@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from copy import copy
 from collections.abc import Mapping, Sequence
-
+from copy import copy
 from numbers import Integral
 
 import torch
@@ -30,12 +29,12 @@ class GraphNodeFeatureEncoder(AbstractFeatureEncoder):
         Width of the input ``data.x`` tensor.
     out_channels : int
         Width assigned to the encoded ``data.x`` tensor.
+    dropout : float, default=0.0
+        Dropout probability applied after projection and activation.
     encoding_mode : {"continuous", "categorical_one_hot"}, default="continuous"
         Representation supplied in ``data.x`` before batch-local encoding.
     categorical_cardinalities : sequence of int, optional
         Per-column category counts. Required for categorical one-hot mode.
-    dropout : float, default=0.0
-        Dropout probability applied after projection and activation.
     """
 
     def __init__(
@@ -57,8 +56,7 @@ class GraphNodeFeatureEncoder(AbstractFeatureEncoder):
         out_channels = int(out_channels)
         if encoding_mode not in {"continuous", "categorical_one_hot"}:
             raise ValueError(
-                "encoding_mode must be 'continuous' or "
-                "'categorical_one_hot'"
+                "encoding_mode must be 'continuous' or 'categorical_one_hot'"
             )
         if encoding_mode == "categorical_one_hot":
             if categorical_cardinalities is None:
@@ -66,15 +64,12 @@ class GraphNodeFeatureEncoder(AbstractFeatureEncoder):
                     "categorical_cardinalities are required for "
                     "categorical_one_hot encoding"
                 )
-            if (
-                isinstance(
-                    categorical_cardinalities,
-                    (str, bytes, Mapping),
-                )
-                or not isinstance(
-                    categorical_cardinalities,
-                    (Sequence, ListConfig),
-                )
+            if isinstance(
+                categorical_cardinalities,
+                (str, bytes, Mapping),
+            ) or not isinstance(
+                categorical_cardinalities,
+                (Sequence, ListConfig),
             ):
                 raise TypeError(
                     "categorical_cardinalities must be an ordered sequence"
@@ -135,9 +130,7 @@ class GraphNodeFeatureEncoder(AbstractFeatureEncoder):
                 f"data.x must have exactly {self.in_channels} input columns"
             )
         if x.layout not in {torch.strided, torch.sparse_coo}:
-            raise TypeError(
-                "sparse data.x must use torch sparse COO layout"
-            )
+            raise TypeError("sparse data.x must use torch sparse COO layout")
         is_sparse = x.layout == torch.sparse_coo
         if is_sparse:
             if self.encoding_mode != "continuous":

@@ -76,8 +76,7 @@ def _resolve_exact_config(
 ) -> int:
     if max_exact_ranking_bytes is not None:
         raise ValueError(
-            "max_exact_ranking_bytes is removed; "
-            "use exact.max_ranking_bytes"
+            "max_exact_ranking_bytes is removed; use exact.max_ranking_bytes"
         )
     if exact is None:
         return DEFAULT_MAX_EXACT_RANKING_BYTES
@@ -95,9 +94,7 @@ def _resolve_exact_config(
         or not isinstance(byte_limit, int)
         or byte_limit <= 0
     ):
-        raise ValueError(
-            "exact.max_ranking_bytes must be a positive integer"
-        )
+        raise ValueError("exact.max_ranking_bytes must be a positive integer")
     return byte_limit
 
 
@@ -121,7 +118,9 @@ class TBEvaluator(AbstractEvaluator):
         device: torch.device | str | None = None,
     ) -> None:
         if task not in _SUPPORTED_TASKS:
-            raise ValueError("Supported tasks are exactly: classification, regression")
+            raise ValueError(
+                "Supported tasks are exactly: classification, regression"
+            )
         if isinstance(num_classes, bool) or not isinstance(num_classes, int):
             raise TypeError("num_classes must be an integer, not a boolean")
         if task == "classification" and num_classes < 2:
@@ -174,7 +173,9 @@ class TBEvaluator(AbstractEvaluator):
                     for name in set(audit_names)
                     if audit_names.count(name) > 1
                 )
-                raise ValueError(f"Generated audit-key collision: {collisions}")
+                raise ValueError(
+                    f"Generated audit-key collision: {collisions}"
+                )
             metric_backend = MetricPolicyBackend(
                 task=task,
                 num_classes=num_classes,
@@ -214,6 +215,7 @@ class TBEvaluator(AbstractEvaluator):
         self._context: EvaluationContext | None = None
         self._num_examples = 0
         self._allow_idle_abort = False
+        self._selected_result_provenance: Mapping[str, Any] | None = None
 
     @property
     def state(self) -> str:
@@ -245,6 +247,33 @@ class TBEvaluator(AbstractEvaluator):
             )
         return self._metric_backend
 
+    def configure_selected_result_provenance(
+        self,
+        provenance: Mapping[str, Any] | None,
+    ) -> None:
+        """Bind immutable provenance for the next selected result while idle."""
+        if self._state != "idle":
+            raise RuntimeError(
+                "selected-result provenance can change only while idle"
+            )
+        if provenance is None:
+            self._selected_result_provenance = None
+            return
+        if not isinstance(provenance, Mapping):
+            raise TypeError("selected-result provenance must be a mapping")
+        normalized: dict[str, Any] = {}
+        for name, value in provenance.items():
+            if not isinstance(name, str) or not name:
+                raise ValueError(
+                    "selected-result provenance keys must be non-empty strings"
+                )
+            if name == "num_examples":
+                raise ValueError(
+                    "num_examples is evaluator-owned selected-result provenance"
+                )
+            normalized[name] = value
+        self._selected_result_provenance = MappingProxyType(normalized)
+
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}(task={self.task!r}, "
@@ -258,10 +287,7 @@ class TBEvaluator(AbstractEvaluator):
             raise RuntimeError(
                 "evaluator checkpointing requires an active online context"
             )
-        if (
-            self._metric_backend is None
-            or set(self._backends) != {"metrics"}
-        ):
+        if self._metric_backend is None or set(self._backends) != {"metrics"}:
             raise TypeError(
                 "evaluator checkpointing requires the owned metric backend"
             )
@@ -313,7 +339,9 @@ class TBEvaluator(AbstractEvaluator):
         if state_dict["format_version"] != "tb-evaluator-state-v1":
             raise ValueError("unsupported evaluator state_dict format_version")
         if state_dict["task"] != self.task:
-            raise ValueError("evaluator state task does not match construction")
+            raise ValueError(
+                "evaluator state task does not match construction"
+            )
         if state_dict["num_classes"] != self.num_classes:
             raise ValueError(
                 "evaluator state num_classes does not match construction"
@@ -327,7 +355,9 @@ class TBEvaluator(AbstractEvaluator):
                 "evaluator state metric_names do not match construction"
             )
         if state_dict["lifecycle_state"] != "active":
-            raise ValueError("evaluator checkpoint lifecycle_state must be active")
+            raise ValueError(
+                "evaluator checkpoint lifecycle_state must be active"
+            )
         context_record = state_dict["context"]
         if not isinstance(context_record, Mapping):
             raise TypeError("evaluator context state must be a mapping")
@@ -344,7 +374,9 @@ class TBEvaluator(AbstractEvaluator):
             "qualified",
         }
         if set(context_record) != context_keys:
-            raise ValueError("evaluator context state keys do not match schema")
+            raise ValueError(
+                "evaluator context state keys do not match schema"
+            )
         context = EvaluationContext(**dict(context_record))
         if (
             context.policy != "online"
@@ -374,10 +406,9 @@ class TBEvaluator(AbstractEvaluator):
         if not isinstance(backend_state, Mapping):
             raise TypeError("evaluator backend state must be a mapping")
         backend_context = backend_state.get("context")
-        if (
-            not isinstance(backend_context, Mapping)
-            or dict(backend_context) != dict(context_record)
-        ):
+        if not isinstance(backend_context, Mapping) or dict(
+            backend_context
+        ) != dict(context_record):
             raise ValueError(
                 "evaluator and backend checkpoint contexts must match"
             )
@@ -386,19 +417,14 @@ class TBEvaluator(AbstractEvaluator):
             not isinstance(support, Mapping)
             or support.get("num_examples") != num_examples
         ):
-            raise ValueError(
-                "evaluator and backend example counts must match"
-            )
-        if (
-            self._metric_backend is None
-            or set(self._backends) != {"metrics"}
-        ):
+            raise ValueError("evaluator and backend example counts must match")
+        if self._metric_backend is None or set(self._backends) != {"metrics"}:
             raise TypeError(
                 "evaluator restore requires the owned metric backend"
             )
-        if not (
-            self._state == "active" and self._context == context
-        ) and (self._state != "idle" or self._context is not None):
+        if not (self._state == "active" and self._context == context) and (
+            self._state != "idle" or self._context is not None
+        ):
             raise RuntimeError(
                 "evaluator restore requires an idle or matching active evaluator"
             )
@@ -412,13 +438,15 @@ class TBEvaluator(AbstractEvaluator):
         self._allow_idle_abort = False
         self._state = "active"
 
-
     def begin(self, context: EvaluationContext) -> None:
         if self._state != "idle":
             raise RuntimeError("begin requires an idle evaluator")
         if not isinstance(context, EvaluationContext):
             raise TypeError("context must be an EvaluationContext")
-        if context.task != self.task or context.num_classes != self.num_classes:
+        if (
+            context.task != self.task
+            or context.num_classes != self.num_classes
+        ):
             raise ValueError(
                 "EvaluationContext task and vocabulary must match construction"
             )
@@ -470,7 +498,9 @@ class TBEvaluator(AbstractEvaluator):
     def finalize(self) -> EvaluationResult:
         context = self._require_active("finalize")
         if self._num_examples == 0 and self._metric_backend is None:
-            raise RuntimeError("finalize requires at least one supervised example")
+            raise RuntimeError(
+                "finalize requires at least one supervised example"
+            )
         if (
             context.expected_num_examples is not None
             and self._num_examples != context.expected_num_examples
@@ -530,9 +560,13 @@ class TBEvaluator(AbstractEvaluator):
                     "classification output class dimension must equal num_classes"
                 )
             if not outputs.is_floating_point():
-                raise TypeError("classification outputs must be floating tensors")
+                raise TypeError(
+                    "classification outputs must be floating tensors"
+                )
             if targets.dtype != torch.long:
-                raise TypeError("classification targets must have dtype torch.long")
+                raise TypeError(
+                    "classification targets must have dtype torch.long"
+                )
             if not torch.isfinite(outputs).all():
                 raise ValueError("classification outputs must be finite")
             if bool(torch.any(targets < 0)) or bool(
@@ -554,8 +588,13 @@ class TBEvaluator(AbstractEvaluator):
                 "regression outputs and targets must have equal shape [N, 1]"
             )
         if not outputs.is_floating_point() or not targets.is_floating_point():
-            raise TypeError("regression outputs and targets must be floating tensors")
-        if not torch.isfinite(outputs).all() or not torch.isfinite(targets).all():
+            raise TypeError(
+                "regression outputs and targets must be floating tensors"
+            )
+        if (
+            not torch.isfinite(outputs).all()
+            or not torch.isfinite(targets).all()
+        ):
             raise ValueError("regression outputs and targets must be finite")
 
     def _build_result(self, context: EvaluationContext) -> EvaluationResult:
@@ -569,7 +608,9 @@ class TBEvaluator(AbstractEvaluator):
             if isinstance(output, Mapping):
                 for metric_name, value in output.items():
                     if metric_name in computed:
-                        raise ValueError(f"Duplicate computed metric {metric_name!r}")
+                        raise ValueError(
+                            f"Duplicate computed metric {metric_name!r}"
+                        )
                     computed[metric_name] = value
                 if isinstance(output, BackendSnapshot):
                     status.update(output.status)
@@ -578,7 +619,9 @@ class TBEvaluator(AbstractEvaluator):
                     provenance.update(output.provenance)
             else:
                 if backend_name in computed:
-                    raise ValueError(f"Duplicate computed metric {backend_name!r}")
+                    raise ValueError(
+                        f"Duplicate computed metric {backend_name!r}"
+                    )
                 computed[backend_name] = output
 
         output_order: list[str] = []
@@ -605,6 +648,20 @@ class TBEvaluator(AbstractEvaluator):
         )
         for name in output_order:
             status.setdefault(name, default_status)
+        if (
+            context.pass_kind == "selected_checkpoint"
+            and self._selected_result_provenance is not None
+        ):
+            overlap = set(provenance).intersection(
+                self._selected_result_provenance
+            )
+            if overlap:
+                raise ValueError(
+                    "selected-result provenance duplicates backend fields: "
+                    f"{sorted(overlap)}"
+                )
+            provenance.update(self._selected_result_provenance)
+            provenance["num_examples"] = self._num_examples
         return EvaluationResult(
             metrics=ordered,
             num_examples=self._num_examples,
@@ -636,3 +693,4 @@ class TBEvaluator(AbstractEvaluator):
         self._num_examples = 0
         self._state = "idle"
         self._allow_idle_abort = allow_idle_abort
+        self._selected_result_provenance = None

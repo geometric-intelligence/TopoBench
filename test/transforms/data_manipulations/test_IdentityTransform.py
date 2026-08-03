@@ -1,8 +1,8 @@
 """Test IdentityTransform class."""
 
-import pytest
 import torch
 from torch_geometric.data import Data
+
 from topobench.transforms.data_manipulations import IdentityTransform
 
 
@@ -66,7 +66,7 @@ class TestIdentityTransform:
             num_nodes=2,
             custom_tensor=custom_tensor,
             custom_string=custom_string,
-            custom_int=custom_int
+            custom_int=custom_int,
         )
 
         transformed = self.transform(data)
@@ -84,8 +84,8 @@ class TestIdentityTransform:
         """Test transform on an empty graph."""
         data = Data(
             x=torch.tensor([], dtype=torch.float).reshape((0, 1)),
-            edge_index=torch.tensor([[],[]]),
-            num_nodes=0
+            edge_index=torch.tensor([[], []]),
+            num_nodes=0,
         )
 
         transformed = self.transform(data)
@@ -109,7 +109,7 @@ class TestIdentityTransform:
             x=x,
             edge_index=edge_index,
             edge_attr=edge_attr,
-            num_nodes=num_nodes
+            num_nodes=num_nodes,
         )
 
         transformed = self.transform(data)
@@ -124,18 +124,21 @@ class TestIdentityTransform:
         data = Data(
             x=torch.tensor([[1.0], [2.0]]),
             edge_index=torch.tensor([[0, 1], [1, 0]]),
-            num_nodes=2
+            num_nodes=2,
         )
 
         transformed = self.transform(data)
 
         # Check key attributes remain equal
-        for key in data.keys():  # Changed from data.keys to data.keys()
+        for key in data:  # Changed from data.keys to data.keys()
             assert hasattr(transformed, key)
             if torch.is_tensor(getattr(data, key)):
-                assert torch.equal(getattr(transformed, key), getattr(data, key))
+                assert torch.equal(
+                    getattr(transformed, key), getattr(data, key)
+                )
             else:
                 assert getattr(transformed, key) == getattr(data, key)
+
     def test_with_different_dtypes(self):
         """Test transform with different data types."""
         data = Data(
@@ -143,7 +146,7 @@ class TestIdentityTransform:
             y=torch.tensor([1.0, 2.0], dtype=torch.float),
             z=torch.tensor([True, False], dtype=torch.bool),
             edge_index=torch.tensor([[0, 1], [1, 0]]),
-            num_nodes=2
+            num_nodes=2,
         )
 
         transformed = self.transform(data)

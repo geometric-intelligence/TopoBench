@@ -39,9 +39,18 @@ def test_hypergraph_conv_returns_node_embeddings_with_gradients() -> None:
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [
-        ({"in_channels": 0, "hidden_channels": 4, "num_layers": 1}, "in_channels"),
-        ({"in_channels": 3, "hidden_channels": 0, "num_layers": 1}, "hidden_channels"),
-        ({"in_channels": 3, "hidden_channels": 4, "num_layers": 0}, "num_layers"),
+        (
+            {"in_channels": 0, "hidden_channels": 4, "num_layers": 1},
+            "in_channels",
+        ),
+        (
+            {"in_channels": 3, "hidden_channels": 0, "num_layers": 1},
+            "hidden_channels",
+        ),
+        (
+            {"in_channels": 3, "hidden_channels": 4, "num_layers": 0},
+            "num_layers",
+        ),
         (
             {
                 "in_channels": 3,

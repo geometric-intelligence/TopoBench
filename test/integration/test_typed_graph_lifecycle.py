@@ -5,9 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 from test.data.stores.test_topology_only_pyg_partitioner import (
     asymmetric_typed_source,
@@ -18,7 +18,6 @@ from topobench.data.stores.typed_graph_store import (
     TypedGraphStore,
     TypedGraphStoreWriter,
 )
-
 
 PROJECT_ROOT = Path(__file__).parents[2]
 
@@ -151,4 +150,7 @@ print(json.dumps(result, sort_keys=True))
 
     with TypedGraphStore.open(moved_path) as final:
         assert final.content_sha256 == identity
-        assert final.partition_book_identity == observed["partition_book_identity"]
+        assert (
+            final.partition_book_identity
+            == observed["partition_book_identity"]
+        )

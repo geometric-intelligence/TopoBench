@@ -128,7 +128,9 @@ def test_gcn_dgm_supported_k_trains_structure_and_temperature(k: int) -> None:
     assert torch.count_nonzero(temperature_gradient)
 
 
-def test_gcn_dgm_edges_are_selected_neighbor_to_query_and_incoming_normalized() -> None:
+def test_gcn_dgm_edges_are_selected_neighbor_to_query_and_incoming_normalized() -> (
+    None
+):
     model = GCNDGM(
         in_channels=1,
         hidden_channels=2,
@@ -394,7 +396,9 @@ def test_gcn_dgm_selects_without_grad_then_recomputes_pair_gradients(
     assert torch.count_nonzero(gradient)
 
 
-def test_gcn_dgm_workspace_bound_includes_k_feature_state_and_large_integers() -> None:
+def test_gcn_dgm_workspace_bound_includes_k_feature_state_and_large_integers() -> (
+    None
+):
     small_k = GCNDGM.estimate_workspace_bytes(
         node_count=64,
         query_chunk_size=1,
@@ -452,7 +456,9 @@ def test_gcn_dgm_rejects_node_bound_before_distance_allocation(
         ),
     )
 
-    with pytest.raises(ValueError, match=r"node count 17 exceeds max_nodes=16"):
+    with pytest.raises(
+        ValueError, match=r"node count 17 exceeds max_nodes=16"
+    ):
         model._learned_edges(
             torch.randn(17, 2),
             torch.zeros(17, dtype=torch.long),

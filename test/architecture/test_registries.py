@@ -46,6 +46,7 @@ EXPECTED_HYPERGRAPH_LOADERS = {
     "HypergraphDatasetLoader",
     "SyntheticHypergraphDatasetLoader",
 }
+EXPECTED_SHARED_LOADERS = {"ParquetTypedGraphLoader"}
 
 
 def _assert_explicit_registry(
@@ -73,7 +74,9 @@ def test_dataset_exports_have_only_surviving_dataset_classes() -> None:
 
 
 def test_loader_registries_have_only_surviving_loader_classes() -> None:
-    _assert_explicit_registry(graph_loaders.GRAPH_LOADERS, EXPECTED_GRAPH_LOADERS)
+    _assert_explicit_registry(
+        graph_loaders.GRAPH_LOADERS, EXPECTED_GRAPH_LOADERS
+    )
     _assert_explicit_registry(
         heterogeneous_loaders.HETEROGENEOUS_LOADERS,
         EXPECTED_HETEROGENEOUS_LOADERS,
@@ -86,26 +89,34 @@ def test_loader_registries_have_only_surviving_loader_classes() -> None:
         loaders.LOADER_CLASSES,
         EXPECTED_GRAPH_LOADERS
         | EXPECTED_HETEROGENEOUS_LOADERS
-        | EXPECTED_HYPERGRAPH_LOADERS,
+        | EXPECTED_HYPERGRAPH_LOADERS
+        | EXPECTED_SHARED_LOADERS,
     )
 
 
-def test_surviving_yaml_loader_targets_resolve_through_explicit_registries() -> None:
+def test_surviving_yaml_loader_targets_resolve_through_explicit_registries() -> (
+    None
+):
     config_root = Path(__file__).parents[2] / "configs" / "dataset"
     targets = {
         document["loader"]["_target_"]
         for domain in ("graph", "heterogeneous", "hypergraph")
         for config_path in (config_root / domain).glob("*.yaml")
-        if (document := yaml.safe_load(config_path.read_text(encoding="utf-8")))
+        if (
+            document := yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        )
     }
 
-    assert {target.rsplit(".", 1)[1] for target in targets} == set(
-        loaders.LOADER_CLASSES
-    )
+    target_names = {target.rsplit(".", 1)[1] for target in targets}
+    assert target_names <= set(loaders.LOADER_CLASSES)
+    assert target_names >= EXPECTED_SHARED_LOADERS
     for target in targets:
         module_name, class_name = target.rsplit(".", 1)
         target_module = importlib.import_module(module_name)
-        assert getattr(target_module, class_name) is loaders.LOADER_CLASSES[class_name]
+        assert (
+            getattr(target_module, class_name)
+            is loaders.LOADER_CLASSES[class_name]
+        )
 
 
 def test_backbone_registry_has_only_surviving_local_models() -> None:

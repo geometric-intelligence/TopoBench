@@ -1,66 +1,137 @@
-"""Unit tests for config instantiators."""
+"""Tests for general utility functions."""
+
+from pathlib import Path
 
 import pytest
-import hydra
-from omegaconf import OmegaConf, DictConfig
 import torch
-from unittest.mock import MagicMock
+from omegaconf import DictConfig, OmegaConf
+
+from topobench.utils import utils as utils_module
 from topobench.utils.utils import extras, get_metric_value, task_wrapper
 
-# initialize(config_path="../../configs", job_name="job")
 
-class TestUtils:
-    """Test config instantiators."""
+def test_get_metric_value() -> None:
+    """A configured metric is converted to a scalar value."""
+    metric_dict = {"accuracy": torch.tensor([90])}
 
-    def setup_method(self):
-        """Setup method."""
-        hydra.core.global_hydra.GlobalHydra.instance().clear()
-        self.metric_dict = {'accuracy': torch.tensor([90])}
-        hydra.initialize(version_base="1.3", config_path="../../configs", job_name="job")
-        self.cfg = hydra.compose(config_name="run.yaml", overrides=["extras.ignore_warnings=True","tags=False"], return_hydra_config=True)
+    assert get_metric_value(metric_dict, "accuracy") == 90.0
+    assert get_metric_value(metric_dict, None) is None
 
-    def test_get_metric_value(self):
-        """Test get_metric_value."""
-        out = get_metric_value(self.metric_dict, "accuracy")
-        assert out == 90.
-
-        with pytest.raises(Exception) as e:
-            get_metric_value(self.metric_dict, "some_metric")
-
-        out = get_metric_value(self.metric_dict, None)
-        assert out is None
-
-    def test_extras(self):
-        """Test extras."""
-        # extras(self.cfg)
-        extras({})
+    with pytest.raises(Exception, match="Metric value not found"):
+        get_metric_value(metric_dict, "some_metric")
 
 
-    def test_task_wrapper(self):
-        """Test task_wrapper."""
-        d = DictConfig({'paths': {'output_dir': 'logs/'}})
+def test_extras_redacts_credentials_from_all_config_tree_outputs(
+    tmp_path, capsys
+) -> None:
+    """Config printing never exposes nested credential values."""
+    canaries = (
+        "api-key-canary-738ef",
+        "token-canary-315ca",
+        "password-canary-942bd",
+        "secret-canary-671fa",
+    )
+    cfg = OmegaConf.create(
+        {
+            "paths": {"output_dir": str(tmp_path)},
+            "extras": {
+                "ignore_warnings": False,
+                "enforce_tags": False,
+                "print_config": True,
+            },
+            "service": {
+                "safe_setting": "visible-public-value",
+                "credentials": {
+                    "Api_Key_primary": canaries[0],
+                    "nested": {
+                        "AUTH_TOKEN_backup": canaries[1],
+                        "databasePassword": canaries[2],
+                        "client_SECRET_value": canaries[3],
+                    },
+                },
+                "credential_reference": "${service.credentials.Api_Key_primary}",
+            },
+        }
+    )
+    source_config = OmegaConf.to_container(cfg, resolve=False)
 
-        def task_func(cfg: DictConfig):
-            """Task function for testing task_wrapper.
+    extras(cfg)
 
-            Parameters
-            ----------
-            cfg : DictConfig
-                A DictConfig object containing the config tree.
+    console_output = capsys.readouterr()
+    console_text = console_output.out + console_output.err
+    config_tree_text = (tmp_path / "config_tree.log").read_text(
+        encoding="utf-8"
+    )
 
-            Returns
-            -------
-            dict[str, Any], dict[str, Any]
-                The metric and object dictionaries.
-            """
-            return {'accuracy': torch.tensor([90])}, {'model': 'model'}
+    for output in (console_text, config_tree_text):
+        assert "visible-public-value" in output
+        assert "<redacted>" in output
+        for canary in canaries:
+            assert canary not in output
+
+    assert OmegaConf.to_container(cfg, resolve=False) == source_config
 
 
-        out = task_wrapper(task_func)(d)
+def test_hydra_does_not_persist_raw_config_snapshots() -> None:
+    """Generated run metadata must not bypass application redaction."""
+    config_path = (
+        Path(__file__).parents[2] / "configs" / "hydra" / "default.yaml"
+    )
 
-        assert out[0]['accuracy'] == 90., "Metric dictionary not returned correctly."
-        assert out[1]['model'] == 'model', "Object dictionary not returned correctly."
+    hydra_config = OmegaConf.load(config_path)
 
-        mock_task_func = MagicMock(side_effect=Exception("Test exception"))
-        with pytest.raises(Exception, match="Test exception"):
-            task_wrapper(mock_task_func)(d)
+    assert hydra_config.output_subdir is None
+
+
+def test_task_wrapper_returns_task_results(monkeypatch, tmp_path) -> None:
+    """The wrapper preserves successful task results."""
+    monkeypatch.setattr(utils_module, "find_spec", lambda _name: None)
+    cfg = DictConfig({"paths": {"output_dir": str(tmp_path)}})
+
+    def task_func(*, cfg: DictConfig):
+        assert cfg.paths.output_dir == str(tmp_path)
+        return {"accuracy": torch.tensor([90])}, {"model": "model"}
+
+    metric_dict, object_dict = task_wrapper(task_func)(cfg)
+
+    assert metric_dict["accuracy"] == 90.0
+    assert object_dict["model"] == "model"
+
+
+def test_task_wrapper_redacts_credential_alias_in_output_dir_log(
+    monkeypatch, caplog
+) -> None:
+    """The final output-directory message cannot resolve credential aliases."""
+    canary = "output-dir-api-key-canary-247fa"
+    cfg = OmegaConf.create(
+        {
+            "service": {"api_key": canary},
+            "paths": {"output_dir": "${service.api_key}"},
+            "unrelated": "${missing.value}",
+        }
+    )
+    monkeypatch.setattr(utils_module, "find_spec", lambda _name: None)
+    caplog.set_level("INFO", logger="topobench.utils.utils")
+
+    task_wrapper(lambda *, cfg: ({}, {}))(cfg)
+
+    def failing_task(*, cfg: DictConfig) -> None:
+        raise RuntimeError("expected failure")
+
+    with pytest.raises(RuntimeError, match="expected failure"):
+        task_wrapper(failing_task)(cfg)
+
+    assert canary not in caplog.text
+    assert caplog.text.count("Output dir: <redacted>") == 2
+
+
+def test_task_wrapper_reraises_task_exception(monkeypatch, tmp_path) -> None:
+    """The wrapper does not swallow a task failure."""
+    monkeypatch.setattr(utils_module, "find_spec", lambda _name: None)
+    cfg = DictConfig({"paths": {"output_dir": str(tmp_path)}})
+
+    def failing_task(*, cfg: DictConfig):
+        raise RuntimeError("Test exception")
+
+    with pytest.raises(RuntimeError, match="Test exception"):
+        task_wrapper(failing_task)(cfg)

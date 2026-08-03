@@ -6,6 +6,8 @@ import sys
 import warnings
 from typing import Any
 
+import torch
+
 # PyG treats PyArrow as optional, but its package initializer otherwise imports
 # it eagerly. Mask that optional dependency only while importing the protocol
 # classes; explicit external-ID restoration remains the sole PyArrow boundary.
@@ -13,15 +15,22 @@ _mask_pyarrow = "pyarrow" not in sys.modules
 if _mask_pyarrow:
     sys.modules["pyarrow"] = None
 try:
-    from torch_geometric.data import EdgeAttr, FeatureStore, GraphStore, TensorAttr
-    from torch_geometric.data.graph_store import EdgeLayout
+    from torch_geometric.data import (
+        EdgeAttr,
+        FeatureStore,
+        GraphStore,
+        TensorAttr,
+    )
     from torch_geometric.data.feature_store import _FieldStatus
+    from torch_geometric.data.graph_store import EdgeLayout
 finally:
     if _mask_pyarrow:
         sys.modules.pop("pyarrow", None)
-import torch
 
-from topobench.data.stores.typed_graph_store import TypedGraphStore, _row_indices
+from topobench.data.stores.typed_graph_store import (  # noqa: E402
+    TypedGraphStore,
+    _row_indices,
+)
 
 
 class _SafeTensorAttr(TensorAttr):
@@ -66,7 +75,9 @@ class PyGTypedFeatureStore(FeatureStore):
     def _get_tensor_size(self, attr: TensorAttr) -> tuple[int, ...] | None:
         try:
             node = self.store._node(attr.group_name)
-            record = node[attr.attr_name] if attr.attr_name in {"x", "y"} else None
+            record = (
+                node[attr.attr_name] if attr.attr_name in {"x", "y"} else None
+            )
         except (KeyError, TypeError):
             return None
         if record is None:
@@ -83,13 +94,12 @@ class PyGTypedFeatureStore(FeatureStore):
         return (selected, *shape[1:])
 
     def get_all_tensor_attrs(self) -> list[TensorAttr]:
-        attrs: list[TensorAttr] = []
-        for node in self.store._manifest["nodes"].values():
-            node_type = node["name"]
-            attrs.append(TensorAttr(node_type, "x", None))
-            if node["y"] is not None:
-                attrs.append(TensorAttr(node_type, "y", None))
-        return attrs
+        return [
+            TensorAttr(node["name"], name, None)
+            for node in self.store._manifest["nodes"].values()
+            for name in ("x", "y")
+            if name == "x" or node["y"] is not None
+        ]
 
 
 class PyGTypedGraphStore(GraphStore):
@@ -115,7 +125,9 @@ class PyGTypedGraphStore(GraphStore):
         expected = self._attr_by_type().get(tuple(edge_attr.edge_type))
         if expected is None:
             return None
-        if edge_attr.size is not None and tuple(edge_attr.size) != tuple(expected.size):
+        if edge_attr.size is not None and tuple(edge_attr.size) != tuple(
+            expected.size
+        ):
             return None
         relation = tuple(expected.edge_type)
         self.store._ensure_open()
@@ -139,18 +151,16 @@ class PyGTypedGraphStore(GraphStore):
         raise PermissionError("immutable typed graph store is read-only")
 
     def get_all_edge_attrs(self) -> list[EdgeAttr]:
-        attrs: list[EdgeAttr] = []
         manifest = self.store._manifest
-        for record in manifest["relations"].values():
-            attrs.append(
-                EdgeAttr(
-                    tuple(record["relation"]),
-                    EdgeLayout.CSC,
-                    is_sorted=True,
-                    size=(record["source_count"], record["destination_count"]),
-                )
+        return [
+            EdgeAttr(
+                tuple(record["relation"]),
+                EdgeLayout.CSC,
+                is_sorted=True,
+                size=(record["source_count"], record["destination_count"]),
             )
-        return attrs
+            for record in manifest["relations"].values()
+        ]
 
     def _attr_by_type(self) -> dict[tuple[str, str, str], EdgeAttr]:
         return {

@@ -6,7 +6,11 @@ from dataclasses import FrozenInstanceError
 import pytest
 import torch
 
-from topobench.evaluator import EvaluationBatch, EvaluationContext, EvaluationResult
+from topobench.evaluator import (
+    EvaluationBatch,
+    EvaluationContext,
+    EvaluationResult,
+)
 
 
 def _context(**overrides: object) -> EvaluationContext:
@@ -104,9 +108,7 @@ def test_batch_preserves_tensor_storage_identity() -> None:
     outputs = torch.randn(3, 2, requires_grad=True)
     targets = torch.tensor([0, 1, 0])
 
-    batch = EvaluationBatch(
-        outputs=outputs, targets=targets, num_examples=3
-    )
+    batch = EvaluationBatch(outputs=outputs, targets=targets, num_examples=3)
 
     assert batch.outputs.data_ptr() == outputs.data_ptr()
     assert batch.targets.data_ptr() == targets.data_ptr()
@@ -134,7 +136,9 @@ def test_result_rejects_invalid_observed_counts(value: object) -> None:
         )
 
 
-def test_result_allows_zero_observed_examples_for_explicit_empty_results() -> None:
+def test_result_allows_zero_observed_examples_for_explicit_empty_results() -> (
+    None
+):
     result = EvaluationResult(
         metrics={"mae": float("nan")},
         num_examples=0,
@@ -162,16 +166,16 @@ def test_result_rejects_invalid_metric_status(status: str) -> None:
         )
 
 
-def test_result_mapping_is_ordered_deeply_immutable_and_separates_count() -> None:
+def test_result_mapping_is_ordered_deeply_immutable_and_separates_count() -> (
+    None
+):
     result = EvaluationResult(
         metrics=OrderedDict(
             [("recall", torch.tensor(0.75)), ("accuracy", 0.8)]
         ),
         num_examples=3,
         context=_context(),
-        status=OrderedDict(
-            [("recall", "exact"), ("accuracy", "exact")]
-        ),
+        status=OrderedDict([("recall", "exact"), ("accuracy", "exact")]),
         support={"recall": {"classes": [0, 1]}},
         reason={"recall": None},
         provenance={"backend": {"name": "fake", "thresholds": [0.1, 0.9]}},

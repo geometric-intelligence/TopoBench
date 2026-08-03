@@ -1,8 +1,5 @@
 """Test SheafConnLapPE (Sheaf Connection Laplacian Positional Encoding) Transform."""
 
-import warnings
-
-import numpy as np
 import pytest
 import torch
 from torch_geometric.data import Data
@@ -16,7 +13,9 @@ class TestSheafConnLapPE:
     def setup_method(self):
         """Set up test fixtures before each test method."""
         # max_pe_dim=9 is divisible by stalk_dim=3 → k=3 eigenvectors
-        self.transform = SheafConnLapPE(max_pe_dim=9, stalk_dim=3, concat_to_x=True)
+        self.transform = SheafConnLapPE(
+            max_pe_dim=9, stalk_dim=3, concat_to_x=True
+        )
 
     # ── Initialisation ────────────────────────────────────────────────────────
 
@@ -31,7 +30,7 @@ class TestSheafConnLapPE:
         )
         assert t.max_pe_dim == 12
         assert t.stalk_dim == 4
-        assert t.k == 3          # 12 // 4
+        assert t.k == 3  # 12 // 4
         assert t.include_first is True
         assert t.concat_to_x is False
         assert t.eps == 1e-5
@@ -107,7 +106,9 @@ class TestSheafConnLapPE:
         data = Data(x=x, edge_index=edge_index, num_nodes=3)
 
         out = t(data)
-        assert not torch.allclose(out.SheafConnLapPE, torch.zeros_like(out.SheafConnLapPE))
+        assert not torch.allclose(
+            out.SheafConnLapPE, torch.zeros_like(out.SheafConnLapPE)
+        )
 
     # ── Edge cases ────────────────────────────────────────────────────────────
 
@@ -195,20 +196,22 @@ class TestSheafConnLapPE:
     def test_sign_canonicalisation(self):
         """Verify that the max-abs entry of each eigenvector block is non-negative."""
         t = SheafConnLapPE(max_pe_dim=9, stalk_dim=3, concat_to_x=False)
-        edge_index = torch.tensor([[0, 1, 1, 2, 2, 3, 3, 0], [1, 0, 2, 1, 3, 2, 0, 3]])
+        edge_index = torch.tensor(
+            [[0, 1, 1, 2, 2, 3, 3, 0], [1, 0, 2, 1, 3, 2, 0, 3]]
+        )
         x = torch.randn(4, 5)
         data = Data(x=x, edge_index=edge_index, num_nodes=4)
 
         out = t(data)
-        pe = out.SheafConnLapPE   # (n, max_pe_dim)
+        pe = out.SheafConnLapPE  # (n, max_pe_dim)
 
         # Each block of stalk_dim columns corresponds to one eigenvector reshaped.
         # The max-abs entry within each block-column should be positive.
         d = t.stalk_dim
         k = t.k
         for i in range(k):
-            block = pe[:, i * d:(i + 1) * d]   # (n, d)
-            if block.abs().max() > 1e-6:         # skip zero padding blocks
+            block = pe[:, i * d : (i + 1) * d]  # (n, d)
+            if block.abs().max() > 1e-6:  # skip zero padding blocks
                 flat = block.reshape(-1)
                 max_idx = flat.abs().argmax()
                 assert flat[max_idx] >= 0, (
@@ -283,7 +286,9 @@ class TestSheafConnLapPE:
             pytest.skip("CUDA not available")
 
         t = SheafConnLapPE(max_pe_dim=9, stalk_dim=3, concat_to_x=False)
-        edge_index = torch.tensor([[0, 1, 1, 2, 2, 0], [1, 0, 2, 1, 0, 2]]).cuda()
+        edge_index = torch.tensor(
+            [[0, 1, 1, 2, 2, 0], [1, 0, 2, 1, 0, 2]]
+        ).cuda()
         x = torch.randn(3, 5).cuda()
         data = Data(x=x, edge_index=edge_index, num_nodes=3)
 
@@ -300,7 +305,9 @@ class TestSheafConnLapPE:
         x = torch.randn(3, 5)
         y = torch.tensor([0, 1, 0])
         custom = torch.tensor([10, 20, 30])
-        data = Data(x=x, edge_index=edge_index, y=y, custom=custom, num_nodes=3)
+        data = Data(
+            x=x, edge_index=edge_index, y=y, custom=custom, num_nodes=3
+        )
 
         out = t(data)
 
@@ -310,13 +317,16 @@ class TestSheafConnLapPE:
 
     # ── Parametrised tests ────────────────────────────────────────────────────
 
-    @pytest.mark.parametrize("max_pe_dim,stalk_dim", [
-        (3, 3),
-        (6, 3),
-        (9, 3),
-        (8, 4),
-        (6, 2),
-    ])
+    @pytest.mark.parametrize(
+        "max_pe_dim,stalk_dim",
+        [
+            (3, 3),
+            (6, 3),
+            (9, 3),
+            (8, 4),
+            (6, 2),
+        ],
+    )
     def test_parametrised_dimensions(self, max_pe_dim, stalk_dim):
         """Verify PE shape is always (num_nodes, max_pe_dim) for valid param pairs.
 
@@ -327,7 +337,9 @@ class TestSheafConnLapPE:
         stalk_dim : int
             Stalk dimension for the connection Laplacian.
         """
-        t = SheafConnLapPE(max_pe_dim=max_pe_dim, stalk_dim=stalk_dim, concat_to_x=False)
+        t = SheafConnLapPE(
+            max_pe_dim=max_pe_dim, stalk_dim=stalk_dim, concat_to_x=False
+        )
         edge_index = torch.tensor([[0, 1, 1, 2, 2, 0], [1, 0, 2, 1, 0, 2]])
         x = torch.randn(3, max(stalk_dim + 1, 5))
         data = Data(x=x, edge_index=edge_index, num_nodes=3)

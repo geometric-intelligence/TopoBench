@@ -35,7 +35,10 @@ class MeanPredictionBackend:
 
     @property
     def retained_bytes(self) -> int:
-        return self.total.numel() * self.total.element_size() + self.count.numel() * self.count.element_size()
+        return (
+            self.total.numel() * self.total.element_size()
+            + self.count.numel() * self.count.element_size()
+        )
 
 
 def _custom_spec(
@@ -43,7 +46,9 @@ def _custom_spec(
     *,
     online: bool = True,
 ) -> MetricSpec:
-    factory = lambda context: MeanPredictionBackend()
+    def factory(context):
+        return MeanPredictionBackend()
+
     return MetricSpec(
         name=name,
         tasks=frozenset({"regression"}),

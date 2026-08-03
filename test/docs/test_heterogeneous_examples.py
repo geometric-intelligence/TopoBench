@@ -15,6 +15,7 @@ from torch_geometric.data import HeteroData
 
 from topobench.dataloader.heterogeneous import HeterogeneousNodeDataModule
 from topobench.model import TBModel
+from topobench.nn.capabilities import validate_capability_composition
 from topobench.utils.config_resolvers import register_all_resolvers
 from topobench.utils.model_instantiation import instantiate_model
 
@@ -175,7 +176,14 @@ def test_documented_synthetic_example_builds_and_forwards(
     assert datamodule.mode == mode
     assert pipeline_output.data_spec is not None
 
-    model = instantiate_model(cfg, data_spec=pipeline_output.data_spec)
+    model = instantiate_model(
+        cfg,
+        data_spec=pipeline_output.data_spec,
+        capability_validation=validate_capability_composition(
+            cfg,
+            observed=pipeline_output.capability_spec,
+        ),
+    )
     assert isinstance(model, TBModel)
     model.eval()
     model.on_train_epoch_start()

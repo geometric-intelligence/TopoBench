@@ -49,4 +49,7 @@ class TestElectrostaticPE:
         out = t(small_graph)
         captured = capsys.readouterr()
         assert "ElectrostaticPE Debug Report" in captured.out
-        assert out.x.shape == (small_graph.num_nodes, small_graph.x.shape[1] + 7)
+        assert out.x.shape == (
+            small_graph.num_nodes,
+            small_graph.x.shape[1] + 7,
+        )

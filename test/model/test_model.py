@@ -1,14 +1,14 @@
 """Unit and integration tests for TBModel supervision handling."""
 
 import builtins
-from dataclasses import dataclass, field
 import importlib
+from dataclasses import dataclass, field
 from typing import Any
 from unittest.mock import MagicMock
 
-from lightning import Trainer
 import pytest
 import torch
+from lightning import Trainer
 from torch import nn
 from torch_geometric.data import Data, HeteroData
 from torch_geometric.loader import DataLoader
@@ -252,6 +252,31 @@ class TestAdapterIntegration:
         assert model.supervision_adapter is adapter
         assert "supervision_adapter" not in model.hparams
 
+    def test_runtime_objects_are_not_serialized_as_hyperparameters(self):
+        """Keep selected checkpoints compatible with weights-only loading."""
+        loss = MagicMock()
+        evaluator = MagicMock()
+        optimizer = MagicMock()
+        model = TBModel(
+            backbone=MagicMock(),
+            readout=MagicMock(task_level="node"),
+            loss=loss,
+            evaluator=evaluator,
+            optimizer=optimizer,
+        )
+
+        assert {
+            "backbone",
+            "backbone_wrapper",
+            "readout",
+            "loss",
+            "feature_encoder",
+            "evaluator",
+            "optimizer",
+            "supervision_adapter",
+            "execution_monitor",
+        }.isdisjoint(model.hparams)
+
     def test_process_outputs_delegates_then_mutates_only_contract_fields(self):
         """The compatibility entry point applies, rather than duplicates, selection."""
         selected = SupervisedBatch(
@@ -281,7 +306,9 @@ class TestAdapterIntegration:
         assert result["num_supervised_examples"] == 1
         assert result["untouched"] is untouched
 
-    def test_model_step_selects_once_and_updates_with_loss_owning_tensors(self):
+    def test_model_step_selects_once_and_updates_with_loss_owning_tensors(
+        self,
+    ):
         """The evaluator receives the one adapter selection used by loss."""
         selected = SupervisedBatch(
             torch.randn(2, 2, requires_grad=True),
@@ -721,7 +748,7 @@ def test_phase_contexts_finalize_once_and_do_not_leak() -> None:
     ] == [
         ("train", "fit_epoch", "online"),
         ("val", "fit_epoch", "exact"),
-        ("test", "selected_checkpoint", "exact"),
+        ("test", "fit_epoch", "exact"),
     ]
     count_calls = [
         call
@@ -736,7 +763,9 @@ def test_phase_contexts_finalize_once_and_do_not_leak() -> None:
     assert evaluator.active_context is None
 
 
-def test_unequal_batches_log_one_exact_phase_total_and_keep_canonical_ids() -> None:
+def test_unequal_batches_log_one_exact_phase_total_and_keep_canonical_ids() -> (
+    None
+):
     """Finalization sums selected rows without imposing worker arrival order."""
     evaluator = _RecordingEvaluator()
     model, _, _ = _boundary_model(evaluator=evaluator)
@@ -781,7 +810,9 @@ def test_every_batch_failure_aborts_without_count_or_phase_leak(
     if failure_stage == "forward":
         model.forward.side_effect = RuntimeError("forward failed")
     elif failure_stage == "supervision":
-        adapter.select = MagicMock(side_effect=RuntimeError("selection failed"))
+        adapter.select = MagicMock(
+            side_effect=RuntimeError("selection failed")
+        )
     elif failure_stage == "loss":
         model.loss.side_effect = RuntimeError("loss failed")
     elif failure_stage == "log":
@@ -820,10 +851,13 @@ def test_model_has_no_legacy_metric_state_or_direct_torchmetrics_import(
         fromlist: tuple[str, ...] = (),
         level: int = 0,
     ) -> object:
-        if name.startswith("torchmetrics") and (
-            globals or {}
-        ).get("__name__") == "topobench.model.model":
-            raise AssertionError("topobench.model imported TorchMetrics directly")
+        if (
+            name.startswith("torchmetrics")
+            and (globals or {}).get("__name__") == "topobench.model.model"
+        ):
+            raise AssertionError(
+                "topobench.model imported TorchMetrics directly"
+            )
         return original_import(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", guarded_import)
@@ -831,7 +865,9 @@ def test_model_has_no_legacy_metric_state_or_direct_torchmetrics_import(
     importlib.reload(module)
 
 
-def test_phase_start_hook_binds_supervision_state_for_trainer_free_probe() -> None:
+def test_phase_start_hook_binds_supervision_state_for_trainer_free_probe() -> (
+    None
+):
     """The shared probe boundary selects the phase without duplicate setup."""
     evaluator = _RecordingEvaluator()
     model = TBModel(
@@ -874,6 +910,7 @@ def test_phase_start_hook_binds_supervision_state_for_trainer_free_probe() -> No
 def test_selected_validation_pass_kind_is_explicit_and_one_shot() -> None:
     """A checkpoint rerun cannot contaminate later fit validation contexts."""
     model, _, evaluator = _boundary_model()
+    model.set_selected_checkpoint_id("a" * 64)
     model.set_next_validation_pass_kind("selected_checkpoint")
 
     model.on_validation_epoch_start()

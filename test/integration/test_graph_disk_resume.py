@@ -16,9 +16,9 @@ from omegaconf import DictConfig, open_dict
 from test.callbacks.test_dataloader_commit import (
     _CommitDataModule,
     _CommitModel,
-    _FakeTrainer,
     _deliver,
     _descriptors,
+    _FakeTrainer,
 )
 from test.pipeline.test_disk_graph_pipeline import (
     _binary_homogeneous_source,
@@ -30,8 +30,8 @@ from topobench.callbacks.dataloader_commit import DataloaderCommitCallback
 from topobench.data.pipelines import DataPipelineOutput
 from topobench.evaluator import TBEvaluator
 from topobench.evaluator.types import EvaluationBatch, EvaluationContext
+from topobench.nn.capabilities import validate_capability_composition
 from topobench.utils.model_instantiation import instantiate_model
-
 
 INTERRUPTION_BOUNDARIES = (
     "issue",
@@ -64,7 +64,7 @@ _BEST_EPOCH_STATE_KEYS = {
     "current_epoch_train_metrics",
 }
 _SEED = 310_519
-_MAX_EPOCHS = 2
+_MAX_EPOCHS = 3
 
 
 class _BoundaryCrash(RuntimeError):
@@ -96,6 +96,21 @@ class _ResumeObservation:
 
 
 @dataclass(frozen=True, slots=True)
+class _BoundaryObservation:
+    committed_state: Mapping[str, object]
+    issued: tuple[int, ...]
+    prepared: tuple[int, ...]
+    delivered: tuple[int, ...]
+    consumed: tuple[int, ...]
+    pending_group: tuple[int, ...]
+    evaluator_snapshot: Mapping[str, object]
+    batch_start_evaluator_snapshot: Mapping[str, object] | None
+    optimizer_token: int
+    optimizer_state: Mapping[str, object]
+    global_step: int
+
+
+@dataclass(frozen=True, slots=True)
 class _LifecycleCase:
     source: object
     store_path: Path
@@ -110,10 +125,34 @@ class _DurableCheckpoint(Callback):
     def __init__(self, path: Path) -> None:
         super().__init__()
         self.path = path
+        self._installed = False
 
     def _save(self, trainer: Trainer) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         trainer.save_checkpoint(self.path)
+
+    def setup(
+        self,
+        trainer: Trainer,
+        pl_module: object,
+        stage: str,
+    ) -> None:
+        del pl_module
+        if stage != "fit" or self._installed:
+            return
+        self._installed = True
+        checkpoint = _one(trainer.callbacks, ModelCheckpoint)
+        original = checkpoint.on_train_epoch_end
+
+        def save_after_selection(
+            trainer: Trainer,
+            pl_module: object,
+        ) -> None:
+            original(trainer, pl_module)
+            self._save(trainer)
+
+        checkpoint.on_train_epoch_end = save_after_selection
+
 
     def on_train_batch_end(
         self,
@@ -125,15 +164,6 @@ class _DurableCheckpoint(Callback):
     ) -> None:
         del pl_module, outputs, batch, batch_idx
         self._save(trainer)
-
-    def on_validation_end(
-        self,
-        trainer: Trainer,
-        pl_module: object,
-    ) -> None:
-        del pl_module
-        if not trainer.sanity_checking:
-            self._save(trainer)
 
 
 class _ResumeProbe(Callback):
@@ -188,15 +218,71 @@ class _InterruptAtBoundary(Callback):
         self.boundary = boundary
         self.target_sequence = target_sequence
         self.checkpoint_path = checkpoint_path
+        self.unsafe_checkpoint_path = checkpoint_path.with_name(
+            f"{boundary}-in-flight.ckpt"
+        )
+        self.observation: _BoundaryObservation | None = None
+        self.checkpoint_rejected = False
         self._installed = False
+
+    def _capture(self, trainer: Trainer, pl_module: object) -> None:
+        module = trainer.datamodule
+        state = module.sequence_state
+        commit = next(
+            callback
+            for callback in trainer.callbacks
+            if isinstance(callback, DataloaderCommitCallback)
+        )
+        baseline = commit._active_batch_evaluator_snapshot
+        self.observation = _BoundaryObservation(
+            committed_state=_clone(module.state_dict()),
+            issued=tuple(state.issued),
+            prepared=tuple(state.prepared),
+            delivered=tuple(state.delivered),
+            consumed=tuple(state.consumed),
+            pending_group=tuple(state.pending_group),
+            evaluator_snapshot=_clone(
+                pl_module.dataloader_evaluator_snapshot()
+            ),
+            batch_start_evaluator_snapshot=(
+                None if baseline is None else _clone(baseline)
+            ),
+            optimizer_token=int(pl_module.dataloader_optimizer_success_token),
+            global_step=int(trainer.global_step),
+            optimizer_state=_clone(trainer.optimizers[0].state_dict()),
+        )
 
     def _crash(self) -> None:
         raise _BoundaryCrash(
             f"interrupted after {self.boundary} sequence {self.target_sequence}"
         )
 
-    def _save_and_crash(self, trainer: Trainer) -> None:
+    def _save_and_crash(
+        self,
+        trainer: Trainer,
+        pl_module: object,
+    ) -> None:
         trainer.save_checkpoint(self.checkpoint_path)
+        self._capture(trainer, pl_module)
+        self._crash()
+
+    def _reject_and_crash(
+        self,
+        trainer: Trainer,
+        pl_module: object,
+    ) -> None:
+        self._capture(trainer, pl_module)
+        try:
+            trainer.save_checkpoint(self.unsafe_checkpoint_path)
+        except RuntimeError as error:
+            if "uncommitted training work" not in str(error):
+                raise
+            self.checkpoint_rejected = True
+        else:
+            raise AssertionError(
+                f"{self.boundary} in-flight checkpoint was published"
+            )
+        assert not self.unsafe_checkpoint_path.exists()
         self._crash()
 
     def setup(
@@ -216,7 +302,7 @@ class _InterruptAtBoundary(Callback):
             def issue(descriptor: object) -> int:
                 sequence_id = original(descriptor)
                 if sequence_id == target:
-                    self._save_and_crash(trainer)
+                    self._save_and_crash(trainer, pl_module)
                 return sequence_id
 
             module.issue_descriptor = issue
@@ -226,7 +312,7 @@ class _InterruptAtBoundary(Callback):
             def prepare(sequence_id: int, descriptor: object) -> None:
                 original(sequence_id, descriptor)
                 if sequence_id == target:
-                    self._save_and_crash(trainer)
+                    self._save_and_crash(trainer, pl_module)
 
             module.prepare_sequence = prepare
         elif self.boundary == "evaluator":
@@ -238,24 +324,10 @@ class _InterruptAtBoundary(Callback):
                     getattr(pl_module, "state_str", None) == "Training"
                     and getattr(batch, "sequence_id", None) == target
                 ):
-                    self._save_and_crash(trainer)
+                    self._reject_and_crash(trainer, pl_module)
                 return result
 
             pl_module.model_step = model_step
-        elif self.boundary == "optimizer":
-            pass
-        elif self.boundary == "commit":
-            original = module.commit_optimizer_step
-
-            def commit_optimizer_step(**kwargs: object) -> bool:
-                committed = original(**kwargs)
-                snapshot = kwargs["evaluator_snapshot"]
-                if committed and int(snapshot["sequence_id"]) == target:
-                    trainer.save_checkpoint(self.checkpoint_path)
-                    self._crash()
-                return committed
-
-            module.commit_optimizer_step = commit_optimizer_step
 
     def on_train_batch_start(
         self,
@@ -264,11 +336,12 @@ class _InterruptAtBoundary(Callback):
         batch: object,
         batch_idx: int,
     ) -> None:
-        del pl_module, batch_idx
-        if self.boundary != "consume":
-            return
-        if self.target_sequence in trainer.datamodule.sequence_state.consumed:
-            self._save_and_crash(trainer)
+        del batch_idx
+        if (
+            self.boundary == "consume"
+            and getattr(batch, "sequence_id", None) == self.target_sequence
+        ):
+            self._save_and_crash(trainer, pl_module)
 
     def on_train_batch_end(
         self,
@@ -278,12 +351,13 @@ class _InterruptAtBoundary(Callback):
         batch: object,
         batch_idx: int,
     ) -> None:
-        del pl_module, outputs, batch_idx
-        if (
-            self.boundary == "optimizer"
-            and getattr(batch, "sequence_id", None) == self.target_sequence
-        ):
-            self._save_and_crash(trainer)
+        del outputs, batch_idx
+        if getattr(batch, "sequence_id", None) != self.target_sequence:
+            return
+        if self.boundary == "optimizer":
+            self._reject_and_crash(trainer, pl_module)
+        elif self.boundary == "commit":
+            self._save_and_crash(trainer, pl_module)
 
 
 def _clone(value: Any) -> Any:
@@ -326,7 +400,7 @@ def _callbacks(
             target_sequence,
             durable_path,
         )
-        callbacks.append(controller)
+        callbacks.insert(0 if boundary == "optimizer" else 2, controller)
     callbacks.append(
         ModelCheckpoint(
             dirpath=root / "selected",
@@ -367,8 +441,8 @@ def _predictions(
     tuple[tuple[object, ...], ...],
 ]:
     output.datamodule.setup("validate")
-    resolver = output.prediction_identity_resolver
-    assert resolver is not None
+    adapter = output.prediction_row_adapter
+    assert adapter is not None
     logits: list[torch.Tensor] = []
     identities: list[tuple[object, ...]] = []
     external_ids: list[tuple[object, ...]] = []
@@ -382,13 +456,11 @@ def _predictions(
                 batch,
                 "Validation",
             )
-            canonical = resolver.resolve(batch, phase="val")
+            canonical = adapter.resolve(batch, phase="val")
             assert len(canonical) == supervised.num_examples
             logits.append(supervised.logits.detach().cpu().clone())
             identities.append(tuple(canonical))
-            external_ids.append(
-                tuple(resolver.restore_external_ids(canonical))
-            )
+            external_ids.append(tuple(adapter.restore_external_ids(canonical)))
     return tuple(logits), tuple(identities), tuple(external_ids)
 
 
@@ -402,7 +474,9 @@ def _profile(
     best = _one(callbacks, BestEpochMetricsCallback)
     selected_path = Path(checkpoint.best_model_path)
     assert selected_path.is_file()
-    selected = torch.load(selected_path, map_location="cpu", weights_only=False)
+    selected = torch.load(
+        selected_path, map_location="cpu", weights_only=False
+    )
     logits, identities, external_ids = _predictions(output, model)
     schedulers = tuple(
         _clone(item.scheduler.state_dict())
@@ -451,7 +525,14 @@ def _run_complete(
 ) -> _RunProfile:
     seed_everything(_SEED, workers=True)
     output = _build(cfg)
-    model = instantiate_model(cfg, data_spec=output.data_spec)
+    model = instantiate_model(
+        cfg,
+        data_spec=output.data_spec,
+        capability_validation=validate_capability_composition(
+            cfg,
+            observed=output.capability_spec,
+        ),
+    )
     callbacks, _ = _callbacks(root, probe=probe)
     trainer = _trainer(root, callbacks)
     trainer.fit(
@@ -474,7 +555,14 @@ def _run_interrupted(
     output = _build(cfg)
     descriptors = tuple(output.datamodule.descriptors("train"))
     target_sequence = len(descriptors) + 1
-    model = instantiate_model(cfg, data_spec=output.data_spec)
+    model = instantiate_model(
+        cfg,
+        data_spec=output.data_spec,
+        capability_validation=validate_capability_composition(
+            cfg,
+            observed=output.capability_spec,
+        ),
+    )
     callbacks, durable_path = _callbacks(
         root / "crashed",
         boundary=boundary,
@@ -490,23 +578,20 @@ def _run_interrupted(
 
     best = _one(callbacks, BestEpochMetricsCallback)
     commit = _one(callbacks, DataloaderCommitCallback)
+    controller = _one(callbacks, _InterruptAtBoundary)
     durable = torch.load(durable_path, map_location="cpu", weights_only=False)
     callback_state = durable["callbacks"][best.state_key]
     assert set(callback_state) == _BEST_EPOCH_STATE_KEYS
     assert callback_state["best_epoch_number"] == 0
     assert callback_state["best_monitored_value"] is not None
     committed_state = durable["callbacks"][commit.state_key]["data_module"]
-    if boundary == "optimizer":
-        assert committed_state["committed_cursor"] == target_sequence
-        assert committed_state["committed_global_step"] == target_sequence
-        assert (
-            committed_state["committed_evaluator_sequence"]
-            == target_sequence
-        )
-        assert (
-            committed_state["committed_evaluator_count"]
-            == target_sequence
-        )
+    _assert_boundary_transition(
+        controller,
+        durable,
+        committed_state,
+        boundary,
+        target_sequence,
+    )
     output.datamodule.close()
 
     probe = _ResumeProbe()
@@ -526,22 +611,19 @@ def _run_interrupted(
         restored_evaluator["count"]
         == committed_state["committed_evaluator_count"]
     )
-    if boundary in {"optimizer", "commit"}:
-        _assert_bitwise(
-            restored_evaluator["state"],
-            committed_state["committed_evaluator_state"],
-            "restored_active_evaluator.state",
-        )
-    else:
-        restored_state = restored_evaluator["state"]
-        committed_evaluator_state = committed_state[
-            "committed_evaluator_state"
-        ]
-        assert (
-            restored_state.keys()
-            == committed_evaluator_state.keys()
-        )
+    restored_state = restored_evaluator["state"]
+    committed_evaluator_state = committed_state["committed_evaluator_state"]
+    assert restored_state.keys() == committed_evaluator_state.keys()
+    committed_cursor = int(committed_state["committed_cursor"])
+    epoch_complete = committed_cursor % len(descriptors) == 0
+    if epoch_complete and boundary != "commit":
         assert restored_state["num_examples"] == 0
+    else:
+        _assert_bitwise(
+            restored_state,
+            committed_evaluator_state,
+            "restored_post_commit_evaluator",
+        )
     _assert_bitwise(
         probe.observation.state,
         committed_state,
@@ -552,7 +634,9 @@ def _run_interrupted(
 
 def _assert_bitwise(left: Any, right: Any, path: str = "profile") -> None:
     if isinstance(left, torch.Tensor) or isinstance(right, torch.Tensor):
-        assert isinstance(left, torch.Tensor) and isinstance(right, torch.Tensor)
+        assert isinstance(left, torch.Tensor) and isinstance(
+            right, torch.Tensor
+        )
         assert left.dtype == right.dtype, path
         assert left.shape == right.shape, path
         assert torch.equal(left, right), path
@@ -575,6 +659,137 @@ def _assert_bitwise(left: Any, right: Any, path: str = "profile") -> None:
     assert left == right, path
 
 
+def _bitwise_equal(left: Any, right: Any) -> bool:
+    try:
+        _assert_bitwise(left, right)
+    except AssertionError:
+        return False
+    return True
+
+
+def _assert_boundary_transition(
+    controller: _InterruptAtBoundary,
+    durable: Mapping[str, object],
+    committed_state: Mapping[str, object],
+    boundary: str,
+    target_sequence: int,
+) -> None:
+    observation = controller.observation
+    assert observation is not None
+    previous_sequence = target_sequence - 1
+    interrupted_cursor = (
+        target_sequence if boundary == "commit" else previous_sequence
+    )
+    assert observation.committed_state["committed_cursor"] == (
+        interrupted_cursor
+    )
+    assert observation.committed_state["committed_global_step"] == (
+        interrupted_cursor
+    )
+    assert (
+        observation.committed_state["committed_sampler_state"]["cursor"]
+        == interrupted_cursor
+    )
+    assert committed_state["committed_cursor"] == interrupted_cursor
+    assert committed_state["committed_evaluator_sequence"] == (
+        interrupted_cursor
+    )
+    assert committed_state["committed_evaluator_count"] == interrupted_cursor
+    assert committed_state["committed_global_step"] == interrupted_cursor
+    assert committed_state["committed_sampler_state"]["cursor"] == (
+        interrupted_cursor
+    )
+    assert durable["global_step"] == interrupted_cursor
+    assert len(durable["optimizer_states"]) == 1
+    saved_optimizer = durable["optimizer_states"][0]
+    if boundary != "optimizer":
+        _assert_bitwise(
+            observation.optimizer_state,
+            saved_optimizer,
+            "durable_optimizer",
+        )
+
+    target_was_issued = target_sequence in observation.issued
+    target_was_prepared = target_sequence in observation.prepared
+    target_was_delivered = target_sequence in observation.delivered
+    target_was_consumed = target_sequence in observation.consumed
+    target_is_pending = target_sequence in observation.pending_group
+    evaluator = observation.evaluator_snapshot
+    committed_evaluator = observation.committed_state[
+        "committed_evaluator_state"
+    ]
+
+    if boundary in {"issue", "prepare", "consume", "evaluator"}:
+        assert observation.optimizer_token == previous_sequence
+        assert observation.global_step == previous_sequence
+
+    if boundary == "issue":
+        assert target_was_issued
+        assert not target_was_prepared
+        assert not target_was_delivered
+        assert not target_was_consumed
+        assert not target_is_pending
+    elif boundary == "prepare":
+        assert target_was_issued and target_was_prepared
+        assert not target_was_delivered
+        assert not target_was_consumed
+        assert not target_is_pending
+    elif boundary == "consume":
+        assert (
+            target_was_issued
+            and target_was_prepared
+            and target_was_delivered
+            and target_was_consumed
+            and target_is_pending
+        )
+        assert evaluator["sequence_id"] == previous_sequence
+        assert evaluator["count"] == previous_sequence
+        assert observation.batch_start_evaluator_snapshot is not None
+        _assert_bitwise(
+            evaluator,
+            observation.batch_start_evaluator_snapshot,
+            "consume_evaluator",
+        )
+    elif boundary == "evaluator":
+        assert target_was_consumed and target_is_pending
+        assert evaluator["sequence_id"] == previous_sequence
+        assert evaluator["count"] == previous_sequence
+        assert observation.batch_start_evaluator_snapshot is not None
+        assert not _bitwise_equal(
+            evaluator,
+            observation.batch_start_evaluator_snapshot,
+        )
+        assert controller.checkpoint_rejected
+    elif boundary == "optimizer":
+        assert target_was_consumed and target_is_pending
+        assert evaluator["sequence_id"] == target_sequence
+        assert evaluator["count"] == target_sequence
+        assert observation.batch_start_evaluator_snapshot is not None
+        assert not _bitwise_equal(
+            evaluator,
+            observation.batch_start_evaluator_snapshot,
+        )
+        assert observation.optimizer_token == target_sequence
+        assert observation.global_step == target_sequence
+        assert controller.checkpoint_rejected
+    else:
+        assert boundary == "commit"
+        assert not target_was_issued
+        assert not target_was_prepared
+        assert not target_was_delivered
+        assert not target_was_consumed
+        assert not target_is_pending
+        assert evaluator["sequence_id"] == target_sequence
+        assert evaluator["count"] == target_sequence
+        assert observation.optimizer_token == target_sequence
+        assert observation.global_step == target_sequence
+        _assert_bitwise(
+            evaluator["state"],
+            committed_evaluator,
+            "post_commit_evaluator",
+        )
+
+
 def _assert_numeric_mapping(
     observed: Mapping[str, float],
     expected: Mapping[str, float],
@@ -593,8 +808,8 @@ def _descriptor_participants(
 ) -> tuple[tuple[tuple[int, ...], tuple[int, ...]], ...]:
     return tuple(
         (
-            tuple(getattr(descriptor, "partition_ids")),
-            tuple(getattr(descriptor, "target_seed_ids")),
+            tuple(descriptor.partition_ids),
+            tuple(descriptor.target_seed_ids),
         )
         for descriptor in descriptors
     )
@@ -628,12 +843,12 @@ def _assert_resume_equivalent(
         )
 
     descriptor_count = len(reference.train_descriptors)
-    expected_cursor = descriptor_count + (
-        boundary in {"optimizer", "commit"}
-    )
+    expected_cursor = descriptor_count + int(boundary == "commit")
     assert resume.state["committed_cursor"] == expected_cursor
     assert resume.state["committed_evaluator_sequence"] == expected_cursor
     assert resume.state["committed_evaluator_count"] == expected_cursor
+    assert resume.state["committed_global_step"] == expected_cursor
+    assert resume.state["committed_sampler_state"]["cursor"] == expected_cursor
     expected_remaining = reference.train_descriptors[
         expected_cursor % descriptor_count :
     ]
@@ -659,31 +874,49 @@ def _assert_resume_equivalent(
         assert identity[key] == final_identity[key]
 
 
-def test_pending_accumulation_checkpoint_keeps_earliest_rng_boundary() -> None:
+def test_pending_accumulation_checkpoint_is_rejected() -> None:
     descriptors = _descriptors()
     module = _CommitDataModule()
     model = _CommitModel()
     callback = DataloaderCommitCallback()
     trainer = _FakeTrainer(module, [callback])
     callback.setup(trainer, model, "fit")
-    torch.manual_seed(_SEED)
 
     first_id = _deliver(module.sequence_state, descriptors[0])
     first_batch = type("Batch", (), {"sequence_id": first_id})()
-    expected_rng = torch.get_rng_state().clone()
     callback.on_train_batch_start(trainer, model, first_batch, 0)
-    torch.rand(4)
     second_id = _deliver(module.sequence_state, descriptors[1])
     second_batch = type("Batch", (), {"sequence_id": second_id})()
     callback.on_train_batch_start(trainer, model, second_batch, 1)
 
-    checkpoint_rng = callback._checkpoint_rng_state()
+    with pytest.raises(RuntimeError, match="uncommitted training work"):
+        callback._checkpoint_rng_state()
 
     assert module.sequence_state.pending_group == (first_id, second_id)
-    assert torch.equal(checkpoint_rng["torch_cpu"], expected_rng)
 
 
-def test_optimizer_advanced_checkpoint_commits_exact_pending_sequence() -> None:
+def test_evaluator_mutation_cannot_masquerade_as_pristine_consume() -> None:
+    descriptor = _descriptors()[0]
+    module = _CommitDataModule()
+    model = _CommitModel()
+    callback = DataloaderCommitCallback()
+    trainer = _FakeTrainer(module, [callback])
+    callback.setup(trainer, model, "fit")
+    sequence_id = _deliver(module.sequence_state, descriptor)
+    batch = type("Batch", (), {"sequence_id": sequence_id})()
+    callback.on_train_batch_start(trainer, model, batch, 0)
+    model.state = {"sum": torch.tensor(1.0)}
+
+    with pytest.raises(RuntimeError, match="uncommitted training work"):
+        callback.state_dict()
+
+    assert module.sequence_state.committed_cursor == 0
+    assert module.sequence_state.pending_group == (sequence_id,)
+
+
+def test_optimizer_advanced_checkpoint_is_rejected_until_commit_callback() -> (
+    None
+):
     descriptors = _descriptors()
     module = _CommitDataModule()
     model = _CommitModel()
@@ -698,14 +931,20 @@ def test_optimizer_advanced_checkpoint_commits_exact_pending_sequence() -> None:
     model.dataloader_optimizer_success_token = 1
     trainer.global_step = 1
 
-    checkpoint = callback.state_dict()
+    with pytest.raises(RuntimeError, match="uncommitted training work"):
+        callback.state_dict()
 
-    assert checkpoint["data_module"]["committed_cursor"] == sequence_id
-    assert checkpoint["data_module"]["committed_global_step"] == 1
-    assert checkpoint["data_module"]["committed_evaluator_sequence"] == sequence_id
-    assert module.sequence_state.pending_group == ()
+    assert module.sequence_state.committed_cursor == 0
+    assert module.sequence_state.committed_global_step == 0
+    assert module.sequence_state.pending_group == (sequence_id,)
     callback.on_train_batch_end(trainer, model, None, batch, 0)
     assert module.sequence_state.committed_cursor == sequence_id
+    assert module.sequence_state.committed_global_step == sequence_id
+    assert module.sequence_state.committed_evaluator_sequence == sequence_id
+    assert (
+        module.sequence_state.committed_sampler_state["cursor"] == sequence_id
+    )
+    assert module.sequence_state.pending_group == ()
 
 
 def _state_tensors(value: object) -> tuple[torch.Tensor, ...]:
@@ -719,14 +958,14 @@ def _state_tensors(value: object) -> tuple[torch.Tensor, ...]:
         )
     if isinstance(value, (list, tuple)):
         return tuple(
-            tensor
-            for item in value
-            for tensor in _state_tensors(item)
+            tensor for item in value for tensor in _state_tensors(item)
         )
     return ()
 
 
-def test_active_online_evaluator_state_round_trips_without_mutable_alias() -> None:
+def test_active_online_evaluator_state_round_trips_without_mutable_alias() -> (
+    None
+):
     context = EvaluationContext(
         split="train",
         pass_kind="fit_epoch",
@@ -778,10 +1017,14 @@ def test_active_online_evaluator_state_round_trips_without_mutable_alias() -> No
     observed = resumed.finalize()
     assert observed.context == expected.context
     assert observed.num_examples == expected.num_examples == 4
-    assert torch.equal(observed.metrics["accuracy"], expected.metrics["accuracy"])
+    assert torch.equal(
+        observed.metrics["accuracy"], expected.metrics["accuracy"]
+    )
 
 
-def test_evaluator_state_restore_rejects_schema_and_configuration_mismatch() -> None:
+def test_evaluator_state_restore_rejects_schema_and_configuration_mismatch() -> (
+    None
+):
     context = EvaluationContext(
         split="train",
         pass_kind="fit_epoch",
@@ -839,7 +1082,7 @@ def homogeneous_lifecycle(
     source = _binary_homogeneous_source(root / "source")
     built_cfg = _homogeneous_lifecycle_config(source, root / "build")
     built = _build(built_cfg)
-    store_path = built.prediction_identity_resolver.store_path
+    store_path = built.prediction_row_adapter.store_path
     built.datamodule.close()
 
     def config_factory(run_root: Path, path: Path) -> DictConfig:

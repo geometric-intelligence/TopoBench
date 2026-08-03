@@ -1,6 +1,5 @@
 """Unit tests for the optimizer manager class."""
 
-import pytest
 import torch
 
 from topobench.optimizer import TBOptimizer
@@ -14,13 +13,16 @@ class TestTBOptimizer:
         self.optimizer_config_with_scheduler = {
             "optimizer_id": "Adam",
             "parameters": {"lr": 0.001},
-            "scheduler": {"scheduler_id": "StepLR", "scheduler_params": {"step_size": 30, "gamma": 0.1}}
+            "scheduler": {
+                "scheduler_id": "StepLR",
+                "scheduler_params": {"step_size": 30, "gamma": 0.1},
+            },
         }
         self.optimizer_config_without_scheduler = {
             "optimizer_id": "Adam",
-            "parameters": {"lr": 0.001}
+            "parameters": {"lr": 0.001},
         }
-        self.params = {torch.Tensor([0,3,4])}
+        self.params = {torch.Tensor([0, 3, 4])}
 
     def test_configure_optimizer(self):
         """Test the configure_optimizer method."""

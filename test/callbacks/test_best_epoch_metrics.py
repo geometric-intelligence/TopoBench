@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 from collections.abc import Mapping
 from pathlib import Path
@@ -16,9 +18,11 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers.wandb import WandbLogger
 from omegaconf import DictConfig
 
+import topobench.callbacks as callback_module
 import topobench.run as run_module
 from topobench.callbacks import BestEpochMetricsCallback
 from topobench.evaluator import EvaluationResult
+from topobench.utils import get_metric_value
 from topobench.utils.config_resolvers import register_all_resolvers
 
 
@@ -359,10 +363,14 @@ def _compose_lifecycle(
     overrides = [
         *selector_overrides,
         "callbacks=default",
+        "evaluation_artifacts=default",
+        "optimized_metric=best_epoch/val/loss",
         "logger=[]",
         "paths=test",
         f"paths.output_dir={output_dir}",
         f"paths.work_dir={output_dir}",
+        f"paths.data_dir={tmp_path / 'datasets'}",
+        f"++paths.cache_dir={tmp_path / 'cache'}",
         f"trainer.default_root_dir={output_dir}",
         "trainer.max_epochs=1",
         "trainer.min_epochs=1",
@@ -429,6 +437,21 @@ def _captured_rerun_metrics(
     captured = {str(name): value for name, value in matching[0].items()}
     assert all(math.isfinite(float(value)) for value in captured.values())
     return captured
+
+
+def _file_sha256(path: Path) -> str:
+    """Hash one retained artifact without depending on manifest claims."""
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def _artifact_tree(root: Path) -> dict[Path, str]:
+    """Snapshot every authoritative artifact file for no-publication checks."""
+    return {
+        path.relative_to(root): _file_sha256(path)
+        for path in root.rglob("*")
+        if path.is_file()
+    }
 
 
 def _assert_batch_contract(
@@ -503,6 +526,18 @@ def test_real_one_epoch_best_checkpoint_rerun_contract(
             kwargs["callbacks"],
             BestEpochMetricsCallback,
         )
+        artifact_callback = _one_callback(
+            kwargs["callbacks"],
+            callback_module.SelectedCheckpointArtifactCallback,
+        )
+        artifact_root = (
+            Path(kwargs["cfg"].paths.output_dir)
+            / "evaluations"
+            / "best_checkpoint"
+        )
+        assert dict(artifact_callback.publications) == {}
+        assert not artifact_root.exists()
+        captured["artifact_callback"] = artifact_callback
         validation_selection = (
             best_epoch.best_epoch_number,
             best_epoch.best_monitored_value,
@@ -567,6 +602,18 @@ def test_real_one_epoch_best_checkpoint_rerun_contract(
         not name.startswith("evaluations/best_checkpoint/")
         for name in best_epoch.best_epoch_metrics
     )
+    assert fit_metrics["best_epoch"] == best_epoch.best_epoch_number
+    for name, value in best_epoch.best_epoch_metrics.items():
+        returned_name = f"best_epoch/{name}"
+        assert returned_name in fit_metrics
+        assert float(fit_metrics[returned_name]) == float(value)
+    optimized_value = get_metric_value(
+        metric_dict=fit_metrics,
+        metric_name=cfg.optimized_metric,
+    )
+    assert optimized_value == pytest.approx(
+        float(best_epoch.best_epoch_metrics["val/loss"])
+    )
 
     selected = objects["selected_checkpoint_results"]
     assert selected is captured["results"]
@@ -577,6 +624,18 @@ def test_real_one_epoch_best_checkpoint_rerun_contract(
     }
     assert len(checkpoint_ids) == 1
     assert None not in checkpoint_ids
+    checkpoint_sha256 = _file_sha256(checkpoint_path)
+    assert checkpoint_ids == {checkpoint_sha256}
+    artifact_callback = captured["artifact_callback"]
+    assert artifact_callback is _one_callback(
+        objects["callbacks"],
+        callback_module.SelectedCheckpointArtifactCallback,
+    )
+    publications = artifact_callback.publications
+    assert tuple(publications) == ("val", "test")
+    assert publications["val"] is not publications["test"]
+    publication_paths: dict[str, set[Path]] = {}
+    publication_logger_names: dict[str, set[str]] = {}
 
     assert sink.log_metrics.call_count == 2
     for split in ("val", "test"):
@@ -585,6 +644,78 @@ def test_real_one_epoch_best_checkpoint_rerun_contract(
         assert result.context.pass_kind == "selected_checkpoint"
         assert result.context.policy == "exact"
         namespace = f"evaluations/best_checkpoint/{split}/"
+        publication = publications[split]
+        split_root = (
+            Path(cfg.paths.output_dir)
+            / "evaluations"
+            / "best_checkpoint"
+            / split
+        )
+        metrics_path = Path(publication.metrics_file.path)
+        manifest_path = Path(publication.manifest_file.path)
+        shard_paths = tuple(
+            Path(shard.path) for shard in publication.shard_files
+        )
+        assert publication.split == split
+        assert publication.checkpoint_sha256 == checkpoint_sha256
+        assert publication.num_examples == result.num_examples
+        assert metrics_path == split_root / "metrics.json"
+        assert manifest_path == split_root / "predictions" / "manifest.json"
+        assert shard_paths
+        assert all(
+            path.parent == manifest_path.parent
+            and path.name.startswith("part-")
+            and path.suffix == ".npz"
+            for path in shard_paths
+        )
+        artifact_files = (
+            publication.metrics_file,
+            publication.manifest_file,
+            *publication.shard_files,
+        )
+        assert all(Path(file.path).is_file() for file in artifact_files)
+        assert all(
+            _file_sha256(Path(file.path)) == file.sha256
+            for file in artifact_files
+        )
+        expected_logger_names = (
+            f"best-checkpoint-{split}-metrics",
+            f"best-checkpoint-{split}-predictions-manifest",
+            *(
+                f"best-checkpoint-{split}-predictions-{path.stem}"
+                for path in shard_paths
+            ),
+        )
+        assert (
+            tuple(file.registration_name for file in artifact_files)
+            == expected_logger_names
+        )
+        publication_paths[split] = {Path(file.path) for file in artifact_files}
+        publication_logger_names[split] = set(expected_logger_names)
+
+        metrics_document = json.loads(metrics_path.read_text())
+        manifest_document = json.loads(manifest_path.read_text())
+        assert metrics_document["split"] == split
+        assert type(metrics_document["num_examples"]) is int
+        assert metrics_document["num_examples"] == result.num_examples
+        assert metrics_document["metrics"].keys() == result.metrics.keys()
+        for name, value in result.metrics.items():
+            assert float(metrics_document["metrics"][name]) == float(value)
+        assert manifest_document["split"] == split
+        assert manifest_document["checkpoint"]["sha256"] == checkpoint_sha256
+        assert manifest_document["observed_rows"] == result.num_examples
+        assert len(manifest_document["shards"]) == len(shard_paths)
+        assert {shard["sha256"] for shard in manifest_document["shards"]} == {
+            shard.sha256 for shard in publication.shard_files
+        }
+
+        manifest_path_key = f"{namespace}predictions/manifest_path"
+        manifest_digest_key = f"{namespace}predictions/manifest_sha256"
+        assert Path(fit_metrics[manifest_path_key]) == manifest_path
+        assert (
+            fit_metrics[manifest_digest_key]
+            == publication.manifest_file.sha256
+        )
         logged = _captured_rerun_metrics(sink, split)
         assert set(logged) == {
             *(f"{namespace}{name}" for name in result.metrics),
@@ -593,7 +724,11 @@ def test_real_one_epoch_best_checkpoint_rerun_contract(
         selected_output = {
             name for name in fit_metrics if name.startswith(namespace)
         }
-        assert selected_output == set(logged)
+        assert selected_output == {
+            *logged,
+            manifest_path_key,
+            manifest_digest_key,
+        }
         assert set(result.metrics).isdisjoint(result.provenance)
         for name, value in result.metrics.items():
             assert float(logged[f"{namespace}{name}"]) == float(value)
@@ -603,6 +738,15 @@ def test_real_one_epoch_best_checkpoint_rerun_contract(
         assert fit_metrics[count_key] == result.num_examples
         assert type(logged[count_key]) is int
         assert type(fit_metrics[count_key]) is int
+
+    assert publication_paths["val"].isdisjoint(publication_paths["test"])
+    assert publication_logger_names["val"].isdisjoint(
+        publication_logger_names["test"]
+    )
+    assert (
+        Path(publications["val"].manifest_file.path).parent
+        != Path(publications["test"].manifest_file.path).parent
+    )
 
     checkpoint_state = torch.load(
         checkpoint_path,
@@ -617,3 +761,20 @@ def test_real_one_epoch_best_checkpoint_rerun_contract(
     )
 
     _assert_batch_contract(family, objects)
+    if family == "graph_classification":
+        artifact_root = (
+            Path(cfg.paths.output_dir) / "evaluations" / "best_checkpoint"
+        )
+        publications_before_ad_hoc_test = artifact_callback.publications
+        artifacts_before_ad_hoc_test = _artifact_tree(artifact_root)
+        rerun_trainer = objects["model"].trainer
+        assert artifact_callback in rerun_trainer.callbacks
+        rerun_trainer.test(
+            model=objects["model"],
+            dataloaders=objects["datamodule"].test_dataloader(),
+            verbose=False,
+        )
+        assert (
+            artifact_callback.publications == publications_before_ad_hoc_test
+        )
+        assert _artifact_tree(artifact_root) == artifacts_before_ad_hoc_test

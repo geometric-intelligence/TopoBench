@@ -10,8 +10,8 @@ from omegaconf import DictConfig, open_dict
 
 from test.integration.test_graph_disk_resume import (
     INTERRUPTION_BOUNDARIES,
-    _LifecycleCase,
     _assert_resume_equivalent,
+    _LifecycleCase,
     _run_complete,
     _run_interrupted,
 )
@@ -47,6 +47,8 @@ def _config(
         store_path=store_path,
         fitted_transform=True,
     )
+    with open_dict(cfg):
+        cfg.execution_profile = "experimental"
     with open_dict(cfg.dataset.parameters):
         cfg.dataset.parameters.metrics = ["accuracy"]
     if mode == "cluster":
@@ -67,9 +69,9 @@ def heterogeneous_lifecycle(
     source = _source(root / "source", mode)
     built_cfg = _config(source, root / "build", None, mode)
     built = _build(built_cfg)
-    resolver = built.prediction_identity_resolver
-    assert resolver is not None
-    store_path = resolver.store_path
+    adapter = built.prediction_row_adapter
+    assert adapter is not None
+    store_path = adapter.store_path
     built.datamodule.close()
 
     def config_factory(run_root: Path, path: Path) -> DictConfig:

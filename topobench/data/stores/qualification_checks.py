@@ -141,7 +141,9 @@ class QualificationReport:
 class QualificationFailure(RuntimeError):
     """Raised after a structured qualification report records a failure."""
 
-    def __init__(self, result: QualificationCheckResult, report_path: Path) -> None:
+    def __init__(
+        self, result: QualificationCheckResult, report_path: Path
+    ) -> None:
         self.result = result
         self.check_id = result.check_id
         self.report_path = report_path
@@ -246,6 +248,7 @@ def _discard_mapped_pages(value: np.ndarray) -> None:
         mapped.madvise(advice)
     except (OSError, ValueError):
         return
+
 
 def _json_value(value: Any) -> Any:
     if isinstance(value, Mapping):
@@ -443,28 +446,39 @@ def _expected_file_role(relative: str) -> tuple[str, str] | None:
             return role.format(*match.groups()), kind
     return None
 
+
 def _safe_numpy_dtype(value: str) -> bool:
     try:
         dtype = np.dtype(value)
     except (TypeError, ValueError):
         return False
-    return dtype.fields is None and dtype.subdtype is None and dtype.kind in {
-        "b",
-        "i",
-        "u",
-        "f",
-    }
+    return (
+        dtype.fields is None
+        and dtype.subdtype is None
+        and dtype.kind
+        in {
+            "b",
+            "i",
+            "u",
+            "f",
+        }
+    )
 
 
-
-def split_fingerprint(tag: str, split: Mapping[str, Any], arrays: Mapping[str, np.ndarray]) -> str:
+def split_fingerprint(
+    tag: str, split: Mapping[str, Any], arrays: Mapping[str, np.ndarray]
+) -> str:
     """Hash split semantics and exact phase IDs with stable framing."""
     digest = hashlib.sha256()
     _frame(digest, "format", b"typed-store-split-v1")
     _frame(digest, "tag", tag.encode("utf-8"))
     _frame(digest, "coverage", str(split["coverage"]).encode("ascii"))
     _frame(digest, "qualified", b"1" if split["qualified"] else b"0")
-    _frame(digest, "population", str(split["supervision_population"]).encode("ascii"))
+    _frame(
+        digest,
+        "population",
+        str(split["supervision_population"]).encode("ascii"),
+    )
     for phase in _PHASES:
         _array_frame(digest, phase, arrays[phase])
     return digest.hexdigest()
@@ -482,11 +496,20 @@ def _array_frame(digest: Any, role: str, value: np.ndarray) -> None:
         digest.update(np.asarray(array, order="C").tobytes(order="C"))
         return
     for start in range(0, array.shape[0], _CHUNK_ROWS):
-        digest.update(np.asarray(array[start : start + _CHUNK_ROWS], order="C").tobytes(order="C"))
+        digest.update(
+            np.asarray(array[start : start + _CHUNK_ROWS], order="C").tobytes(
+                order="C"
+            )
+        )
 
 
 def _safe_relative(value: Any) -> str:
-    if not isinstance(value, str) or not value or "\x00" in value or "\\" in value:
+    if (
+        not isinstance(value, str)
+        or not value
+        or "\x00" in value
+        or "\\" in value
+    ):
         raise ValueError("unsafe relative path")
     posix = PurePosixPath(value)
     windows = PureWindowsPath(value)
@@ -546,7 +569,9 @@ def _read_json_secure(
             chunks.append(chunk)
             total += len(chunk)
         after = os.fstat(descriptor)
-        if total != before.st_size or _stat_identity(before) != _stat_identity(after):
+        if total != before.st_size or _stat_identity(before) != _stat_identity(
+            after
+        ):
             raise OSError("file changed while reading")
         value = json.loads(b"".join(chunks).decode("utf-8"))
         if not isinstance(value, dict):
@@ -578,7 +603,9 @@ def _hash_file(path: Path) -> tuple[str, int, _FileIdentity]:
             digest.update(chunk)
             total += len(chunk)
         after = os.fstat(descriptor)
-        if total != before.st_size or _stat_identity(before) != _stat_identity(after):
+        if total != before.st_size or _stat_identity(before) != _stat_identity(
+            after
+        ):
             raise OSError("file changed while hashing")
         return digest.hexdigest(), total, _stat_identity(before)
     finally:
@@ -600,9 +627,13 @@ def _open_npy(
     try:
         version = npy_format.read_magic(stream)
         if version == (1, 0):
-            shape, fortran_order, dtype = npy_format.read_array_header_1_0(stream)
+            shape, fortran_order, dtype = npy_format.read_array_header_1_0(
+                stream
+            )
         elif version == (2, 0) or version == (3, 0):
-            shape, fortran_order, dtype = npy_format.read_array_header_2_0(stream)
+            shape, fortran_order, dtype = npy_format.read_array_header_2_0(
+                stream
+            )
         else:
             raise ValueError(f"unsupported npy version {version!r}")
         offset = stream.tell()
@@ -624,7 +655,9 @@ def _open_npy(
         raise
 
 
-def _file_records(manifest: Mapping[str, Any], checker: _Checker) -> dict[str, dict[str, Any]]:
+def _file_records(
+    manifest: Mapping[str, Any], checker: _Checker
+) -> dict[str, dict[str, Any]]:
     raw = manifest.get("files")
     if not isinstance(raw, list):
         checker.fail(
@@ -685,10 +718,7 @@ def _file_records(manifest: Mapping[str, Any], checker: _Checker) -> dict[str, d
             )
             or (
                 kind == "npy"
-                and (
-                    not item["shape"]
-                    or not _safe_numpy_dtype(item["dtype"])
-                )
+                and (not item["shape"] or not _safe_numpy_dtype(item["dtype"]))
             )
         ):
             checker.fail(
@@ -717,10 +747,18 @@ def _scan_file_set(root: Path, checker: _Checker) -> tuple[set[str], set[str]]:
                 )
             observed_directories.add(relative)
             continue
-        if not stat.S_ISREG(status.st_mode) or status.st_nlink != 1 or path.is_symlink():
+        if (
+            not stat.S_ISREG(status.st_mode)
+            or status.st_nlink != 1
+            or path.is_symlink()
+        ):
             checker.fail(
                 "ARTIFACT-TYPE-001",
-                observed={"path": relative, "mode": status.st_mode, "links": status.st_nlink},
+                observed={
+                    "path": relative,
+                    "mode": status.st_mode,
+                    "links": status.st_nlink,
+                },
                 expected="one uniquely linked regular file",
                 remediation="remove special/link artifacts and rebuild",
             )
@@ -744,7 +782,11 @@ def _validate_array_record(
     checker: _Checker,
 ) -> _ArrayHandle:
     relative = record.get("relative_path")
-    if not isinstance(relative, str) or relative not in files or not _same_record(record, files[relative]):
+    if (
+        not isinstance(relative, str)
+        or relative not in files
+        or not _same_record(record, files[relative])
+    ):
         checker.fail(
             "MANIFEST-001",
             observed=record,
@@ -762,7 +804,10 @@ def _validate_array_record(
         checker.fail(
             "ARRAY-SHAPE-001",
             observed=f"{relative}: {error}",
-            expected={"dtype": record.get("dtype"), "shape": record.get("shape")},
+            expected={
+                "dtype": record.get("dtype"),
+                "shape": record.get("shape"),
+            },
             remediation="rebuild the array from source",
         )
     actual_dtype = handle.array.dtype
@@ -796,9 +841,13 @@ def _validate_array_record(
             evidence={"relative_path": relative},
             remediation="rebuild the complete aligned array",
         )
-    if record.get("finite") is True and np.issubdtype(actual_dtype, np.floating):
+    if record.get("finite") is True and np.issubdtype(
+        actual_dtype, np.floating
+    ):
         for start in range(0, handle.array.shape[0], _CHUNK_ROWS):
-            if not np.isfinite(handle.array[start : start + _CHUNK_ROWS]).all():
+            if not np.isfinite(
+                handle.array[start : start + _CHUNK_ROWS]
+            ).all():
                 handle.close()
                 checker.fail(
                     "ARRAY-FINITE-001",
@@ -824,6 +873,7 @@ def _strictly_increasing(value: np.ndarray) -> bool:
         _discard_mapped_pages(value)
     return True
 
+
 def _nondecreasing(value: np.ndarray) -> bool:
     previous: int | None = None
     for start in range(0, len(value), _CHUNK_ROWS):
@@ -847,8 +897,7 @@ def _integer_values_within(
     for start in range(0, len(value), _CHUNK_ROWS):
         chunk = value[start : start + _CHUNK_ROWS]
         if len(chunk) and (
-            int(chunk.min()) < minimum
-            or int(chunk.max()) >= exclusive_maximum
+            int(chunk.min()) < minimum or int(chunk.max()) >= exclusive_maximum
         ):
             return False
         _discard_mapped_pages(value)
@@ -918,6 +967,7 @@ def _partition_counts(
         _discard_mapped_pages(assignments)
     return counts
 
+
 def _relation_rows_canonical(
     pointers: np.ndarray,
     *,
@@ -976,8 +1026,7 @@ def _relation_rows_canonical(
                         decreasing = row_chunk[1:] < row_chunk[:-1]
                         equal = row_chunk[1:] == row_chunk[:-1]
                         if np.any(decreasing) or np.any(
-                            equal
-                            & (edge_id_chunk[1:] <= edge_id_chunk[:-1])
+                            equal & (edge_id_chunk[1:] <= edge_id_chunk[:-1])
                         ):
                             return False
                     previous_row = int(row_chunk[-1])
@@ -1109,7 +1158,9 @@ def _validate_nodes(
                 )
             handle.close()
         node_ids = node.get("node_ids")
-        if not isinstance(node_ids, dict) or not _same_record(node_ids, files.get(node_ids.get("relative_path"), {})):
+        if not isinstance(node_ids, dict) or not _same_record(
+            node_ids, files.get(node_ids.get("relative_path"), {})
+        ):
             checker.fail(
                 "MANIFEST-001",
                 observed=node_ids,
@@ -1181,7 +1232,9 @@ def _validate_relations(
                 expected="exact typed canonical relation record",
                 remediation="rebuild relation metadata",
             )
-        triple_raw = relation.get("relation") if isinstance(relation, dict) else None
+        triple_raw = (
+            relation.get("relation") if isinstance(relation, dict) else None
+        )
         if (
             not isinstance(triple_raw, list)
             or len(triple_raw) != 3
@@ -1208,12 +1261,23 @@ def _validate_relations(
             )
         seen.add(triple)
         source_count = nodes[relation["source_internal_key"]]["count"]
-        destination_count = nodes[relation["destination_internal_key"]]["count"]
-        if relation.get("source_count") != source_count or relation.get("destination_count") != destination_count:
+        destination_count = nodes[relation["destination_internal_key"]][
+            "count"
+        ]
+        if (
+            relation.get("source_count") != source_count
+            or relation.get("destination_count") != destination_count
+        ):
             checker.fail(
                 "MANIFEST-001",
-                observed={"source": relation.get("source_count"), "destination": relation.get("destination_count")},
-                expected={"source": source_count, "destination": destination_count},
+                observed={
+                    "source": relation.get("source_count"),
+                    "destination": relation.get("destination_count"),
+                },
+                expected={
+                    "source": source_count,
+                    "destination": destination_count,
+                },
                 remediation="rebuild relation cross-references",
             )
         colptr_relative = relation["colptr"]["relative_path"]
@@ -1222,7 +1286,9 @@ def _validate_relations(
         row_path = root / row_relative
         colptr_identity = checker.file_identities[colptr_relative]
         row_identity = checker.file_identities[row_relative]
-        colptr = _validate_array_record(root, relation["colptr"], files, checker)
+        colptr = _validate_array_record(
+            root, relation["colptr"], files, checker
+        )
         row = _validate_array_record(root, relation["row"], files, checker)
         edge_count = relation.get("edge_count")
         if (
@@ -1240,7 +1306,10 @@ def _validate_relations(
             checker.fail(
                 "ARRAY-SHAPE-001",
                 observed=actual,
-                expected={"colptr": [destination_count + 1], "row": [edge_count]},
+                expected={
+                    "colptr": [destination_count + 1],
+                    "row": [edge_count],
+                },
                 evidence={"relation": list(triple)},
                 remediation="rebuild canonical CSC arrays",
             )
@@ -1273,8 +1342,14 @@ def _validate_relations(
                     checker.fail(
                         "CSC-ROW-BOUNDS-001",
                         observed={"minimum": minimum, "maximum": maximum},
-                        limit={"minimum": 0, "exclusive_maximum": source_count},
-                        evidence={"relation": list(triple), "edge_start": start},
+                        limit={
+                            "minimum": 0,
+                            "exclusive_maximum": source_count,
+                        },
+                        evidence={
+                            "relation": list(triple),
+                            "edge_start": start,
+                        },
                         remediation="rebuild endpoint mappings and CSC",
                     )
             _discard_mapped_pages(rows)
@@ -1284,7 +1359,9 @@ def _validate_relations(
         edge_id_path: Path | None = None
         edge_id_identity: _FileIdentity | None = None
         if relation.get("edge_id") is not None:
-            edge_id_handle = _validate_array_record(root, relation["edge_id"], files, checker)
+            edge_id_handle = _validate_array_record(
+                root, relation["edge_id"], files, checker
+            )
             edge_ids = edge_id_handle.array
             edge_id_relative = relation["edge_id"]["relative_path"]
             edge_id_path = root / edge_id_relative
@@ -1397,18 +1474,28 @@ def _validate_splits(
         handles: dict[str, _ArrayHandle] = {}
         try:
             for phase in _PHASES:
-                handle = _validate_array_record(root, phases[phase], files, checker)
+                handle = _validate_array_record(
+                    root, phases[phase], files, checker
+                )
                 handles[phase] = handle
                 values = handle.array
                 if (
                     values.dtype != np.dtype("<i8")
                     or values.ndim != 1
-                    or (len(values) and (int(values[0]) < 0 or int(values[-1]) >= population))
+                    or (
+                        len(values)
+                        and (
+                            int(values[0]) < 0 or int(values[-1]) >= population
+                        )
+                    )
                     or not _strictly_increasing(values)
                 ):
                     checker.fail(
                         "SPLIT-ID-001",
-                        observed={"dtype": values.dtype.str, "shape": list(values.shape)},
+                        observed={
+                            "dtype": values.dtype.str,
+                            "shape": list(values.shape),
+                        },
                         limit={"minimum": 0, "exclusive_maximum": population},
                         evidence={"tag": tag, "phase": phase},
                         remediation="rebuild sorted unique type-local split IDs",
@@ -1426,7 +1513,10 @@ def _validate_splits(
                     remediation="repair the split registry and rebuild",
                 )
             union_count = sum(len(handles[phase].array) for phase in _PHASES)
-            if split.get("coverage") == "complete" and union_count != population:
+            if (
+                split.get("coverage") == "complete"
+                and union_count != population
+            ):
                 checker.fail(
                     "SPLIT-COVERAGE-001",
                     observed=union_count,
@@ -1511,7 +1601,9 @@ def _validate_partitions(
     if not isinstance(node_records, dict) or set(node_records) != set(nodes):
         checker.fail(
             "PARTITION-ID-001",
-            observed=list(node_records) if isinstance(node_records, dict) else node_records,
+            observed=list(node_records)
+            if isinstance(node_records, dict)
+            else node_records,
             expected=list(nodes),
             remediation="publish assignments for every node type",
         )
@@ -1520,11 +1612,12 @@ def _validate_partitions(
     try:
         for key, node in nodes.items():
             record = node_records[key]
-            if (
-                not isinstance(record, dict)
-                or set(record)
-                != {"assignment", "permutation", "inverse", "partptr"}
-            ):
+            if not isinstance(record, dict) or set(record) != {
+                "assignment",
+                "permutation",
+                "inverse",
+                "partptr",
+            }:
                 checker.fail(
                     "MANIFEST-SCHEMA-001",
                     observed=record,
@@ -1532,10 +1625,18 @@ def _validate_partitions(
                     evidence={"node_type": node["name"]},
                     remediation="rebuild partition metadata",
                 )
-            assignment = _validate_array_record(root, record["assignment"], files, checker)
-            permutation = _validate_array_record(root, record["permutation"], files, checker)
-            inverse = _validate_array_record(root, record["inverse"], files, checker)
-            partptr = _validate_array_record(root, record["partptr"], files, checker)
+            assignment = _validate_array_record(
+                root, record["assignment"], files, checker
+            )
+            permutation = _validate_array_record(
+                root, record["permutation"], files, checker
+            )
+            inverse = _validate_array_record(
+                root, record["inverse"], files, checker
+            )
+            partptr = _validate_array_record(
+                root, record["partptr"], files, checker
+            )
             assignment_handles[key] = assignment
             expected_length = node["count"]
             values = assignment.array
@@ -1553,7 +1654,10 @@ def _validate_partitions(
                 partptr.close()
                 checker.fail(
                     "PARTITION-ID-001",
-                    observed={"dtype": values.dtype.str, "shape": list(values.shape)},
+                    observed={
+                        "dtype": values.dtype.str,
+                        "shape": list(values.shape),
+                    },
                     limit={"minimum": 0, "exclusive_maximum": count},
                     evidence={"node_type": node["name"]},
                     remediation="restore the qualified assignment",
@@ -1576,7 +1680,11 @@ def _validate_partitions(
                 checker.fail(
                     "PARTITION-PERMUTATION-001",
                     observed=actual,
-                    expected={"dtype": "<i8", "shape": [expected_length], "bijection": True},
+                    expected={
+                        "dtype": "<i8",
+                        "shape": [expected_length],
+                        "bijection": True,
+                    },
                     evidence={"node_type": node["name"]},
                     remediation="rebuild derived partition permutations",
                 )
@@ -1607,8 +1715,12 @@ def _validate_partitions(
                     remediation="rebuild derived inverse permutations",
                 )
             counts = _partition_counts(values, num_partitions=count)
-            expected_ptr = np.concatenate(([0], np.cumsum(counts))).astype(np.int64)
-            if partptr.array.dtype != np.dtype("<i8") or not np.array_equal(partptr.array, expected_ptr):
+            expected_ptr = np.concatenate(([0], np.cumsum(counts))).astype(
+                np.int64
+            )
+            if partptr.array.dtype != np.dtype("<i8") or not np.array_equal(
+                partptr.array, expected_ptr
+            ):
                 actual = partptr.array.tolist()
                 permutation.close()
                 inverse.close()
@@ -1623,19 +1735,22 @@ def _validate_partitions(
             permutation.close()
             inverse.close()
             partptr.close()
-        if not isinstance(relation_records, dict) or set(relation_records) != set(relations):
+        if not isinstance(relation_records, dict) or set(
+            relation_records
+        ) != set(relations):
             checker.fail(
                 "PARTITION-EDGE-OWNERSHIP-001",
-                observed=list(relation_records) if isinstance(relation_records, dict) else relation_records,
+                observed=list(relation_records)
+                if isinstance(relation_records, dict)
+                else relation_records,
                 expected=list(relations),
                 remediation="publish edge ownership for every relation",
             )
         for key, relation in relations.items():
             relation_record = relation_records[key]
-            if (
-                not isinstance(relation_record, dict)
-                or set(relation_record) != {"edge_partition"}
-            ):
+            if not isinstance(relation_record, dict) or set(
+                relation_record
+            ) != {"edge_partition"}:
                 checker.fail(
                     "MANIFEST-SCHEMA-001",
                     observed=relation_record,
@@ -1643,7 +1758,9 @@ def _validate_partitions(
                     evidence={"relation": relation["relation"]},
                     remediation="rebuild partition metadata",
                 )
-            ownership = _validate_array_record(root, relation_records[key]["edge_partition"], files, checker)
+            ownership = _validate_array_record(
+                root, relation_records[key]["edge_partition"], files, checker
+            )
             ownership_handles[key] = ownership
             if (
                 ownership.array.dtype != np.dtype("<i8")
@@ -1656,12 +1773,17 @@ def _validate_partitions(
             ):
                 checker.fail(
                     "PARTITION-EDGE-OWNERSHIP-001",
-                    observed={"dtype": ownership.array.dtype.str, "shape": list(ownership.array.shape)},
+                    observed={
+                        "dtype": ownership.array.dtype.str,
+                        "shape": list(ownership.array.shape),
+                    },
                     limit={"minimum": 0, "exclusive_maximum": count},
                     evidence={"relation": relation["relation"]},
                     remediation="restore qualified edge ownership",
                 )
-        expected_identity = _partition_identity(partition, nodes, relations, assignment_handles, ownership_handles)
+        expected_identity = _partition_identity(
+            partition, nodes, relations, assignment_handles, ownership_handles
+        )
         if partition.get("content_identity") != expected_identity:
             checker.fail(
                 "PARTITION-FINGERPRINT-001",
@@ -1670,7 +1792,10 @@ def _validate_partitions(
                 remediation="restore the accepted Task6 partition book",
             )
     finally:
-        for handle in (*assignment_handles.values(), *ownership_handles.values()):
+        for handle in (
+            *assignment_handles.values(),
+            *ownership_handles.values(),
+        ):
             handle.close()
 
 
@@ -1688,9 +1813,15 @@ def _partition_identity(
     for key, node in sorted(nodes.items(), key=lambda item: item[1]["name"]):
         _frame(digest, "node_type", node["name"].encode())
         _partition_array_frame(digest, "assignment", assignments[key].array)
-    relation_items = sorted(relations.items(), key=lambda item: tuple(item[1]["relation"]))
+    relation_items = sorted(
+        relations.items(), key=lambda item: tuple(item[1]["relation"])
+    )
     for key, relation in relation_items:
-        _frame(digest, "relation", json.dumps(relation["relation"], separators=(",", ":")).encode())
+        _frame(
+            digest,
+            "relation",
+            json.dumps(relation["relation"], separators=(",", ":")).encode(),
+        )
         _partition_array_frame(digest, "ownership", ownership[key].array)
     _frame(digest, "options", _canonical_json(partition["options"]))
     return digest.hexdigest()
@@ -1704,10 +1835,13 @@ def _partition_array_frame(digest: Any, role: str, value: np.ndarray) -> None:
     digest.update(name)
     digest.update((value.size * 8).to_bytes(8, "big"))
     for start in range(0, value.size, 128 * 1024):
-        chunk = np.asarray(value[start : start + 128 * 1024], dtype=np.dtype("<i8"), order="C")
+        chunk = np.asarray(
+            value[start : start + 128 * 1024], dtype=np.dtype("<i8"), order="C"
+        )
         digest.update(memoryview(chunk).cast("B"))
 
         _discard_mapped_pages(value)
+
 
 def _validate_output_contract(
     manifest: Mapping[str, Any],
@@ -1797,7 +1931,12 @@ def _validate_metadata_records(
             root / "build_environment.json",
             checker.file_identities.get("build_environment.json"),
         )
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
+    except (
+        OSError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        ValueError,
+    ) as error:
         checker.fail(
             "BUILD-ENVIRONMENT-001",
             observed=str(error),
@@ -1826,7 +1965,10 @@ def _validate_metadata_records(
         set(environment) != environment_keys
         or environment.get("format_version")
         != "typed-graph-build-environment-v1"
-        or any(not isinstance(environment.get(key), str) for key in required_strings)
+        or any(
+            not isinstance(environment.get(key), str)
+            for key in required_strings
+        )
         or any(
             environment.get(key) is not None
             and not isinstance(environment.get(key), str)
@@ -1839,7 +1981,9 @@ def _validate_metadata_records(
         or not isinstance(environment.get("dependency_versions"), dict)
         or any(
             not isinstance(key, str) or not isinstance(value, str)
-            for key, value in environment.get("dependency_versions", {}).items()
+            for key, value in environment.get(
+                "dependency_versions", {}
+            ).items()
         )
         or environment.get("dependency_versions")
         != manifest["source_binding"]["dependency_versions"]
@@ -1888,7 +2032,12 @@ def _validate_metadata_records(
             root / "qualification_report.json",
             checker.file_identities.get("qualification_report.json"),
         )
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
+    except (
+        OSError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        ValueError,
+    ) as error:
         checker.fail(
             "QUALIFICATION-REPORT-001",
             observed=str(error),
@@ -1963,18 +2112,32 @@ def _validate(
             manifest_identity,
         )
         checker.file_identities["manifest.json"] = manifest_identity
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
+    except (
+        OSError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        ValueError,
+    ) as error:
         checker.fail(
             "MANIFEST-001",
             observed=str(error),
             expected="safe versioned manifest.json",
             remediation="rebuild or redownload the complete store",
         )
-    if manifest.get("format_version") != STORE_FORMAT_VERSION or manifest.get("content_hash_version") != CONTENT_HASH_VERSION:
+    if (
+        manifest.get("format_version") != STORE_FORMAT_VERSION
+        or manifest.get("content_hash_version") != CONTENT_HASH_VERSION
+    ):
         checker.fail(
             "VERSION-001",
-            observed={"format": manifest.get("format_version"), "content": manifest.get("content_hash_version")},
-            expected={"format": STORE_FORMAT_VERSION, "content": CONTENT_HASH_VERSION},
+            observed={
+                "format": manifest.get("format_version"),
+                "content": manifest.get("content_hash_version"),
+            },
+            expected={
+                "format": STORE_FORMAT_VERSION,
+                "content": CONTENT_HASH_VERSION,
+            },
             remediation="use a producer and consumer supporting the same store version",
         )
     _validate_manifest_schema(manifest, checker)
@@ -2023,8 +2186,15 @@ def _validate(
         if digest != record["sha256"] or size != record["byte_size"]:
             checker.fail(
                 "CHECKSUM-001",
-                observed={"path": relative, "sha256": digest, "byte_size": size},
-                expected={"sha256": record["sha256"], "byte_size": record["byte_size"]},
+                observed={
+                    "path": relative,
+                    "sha256": digest,
+                    "byte_size": size,
+                },
+                expected={
+                    "sha256": record["sha256"],
+                    "byte_size": record["byte_size"],
+                },
                 remediation="restore the checksum-pinned artifact",
             )
     nodes, _ = _validate_nodes(root, manifest, files, checker)
@@ -2035,11 +2205,15 @@ def _validate(
     _validate_metadata_records(root, manifest, checker)
     source_binding = manifest.get("source_binding")
     partition_binding = manifest["partition"].get("source_binding")
-    if not isinstance(source_binding, dict) or partition_binding != source_binding.get("task6_source_binding"):
+    if not isinstance(
+        source_binding, dict
+    ) or partition_binding != source_binding.get("task6_source_binding"):
         checker.fail(
             "STALE-BINDING-001",
             observed=partition_binding,
-            expected=source_binding.get("task6_source_binding") if isinstance(source_binding, dict) else source_binding,
+            expected=source_binding.get("task6_source_binding")
+            if isinstance(source_binding, dict)
+            else source_binding,
             remediation="finalize again from one exact Task1-6 build",
         )
     actual_bindings = manifest.get("task_bindings")
@@ -2121,7 +2295,6 @@ def _emit_qualification_results(
             raise
 
 
-
 def _run_qualification(
     root: Path,
     *,
@@ -2176,8 +2349,10 @@ def _run_qualification(
     )
     _write_report(destination, report)
     _emit_qualification_results(execution_monitor, report)
-    return report, validated_manifest, MappingProxyType(
-        dict(checker.file_identities)
+    return (
+        report,
+        validated_manifest,
+        MappingProxyType(dict(checker.file_identities)),
     )
 
 

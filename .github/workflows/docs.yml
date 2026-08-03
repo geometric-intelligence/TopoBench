@@ -14,22 +14,24 @@ concurrency:
   group: topobench-docs-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
-permissions:
-  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         python-version: ["3.11"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       # 1. Setup uv
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
@@ -62,7 +64,7 @@ jobs:
       # 5. Deploy — push the build into the topobench/ folder of the org Pages repo,
       # which is what actually serves https://geometric-intelligence.github.io/topobench/.
       - name: Deploy Docs
-        uses: JamesIves/github-pages-deploy-action@v4
+        uses: JamesIves/github-pages-deploy-action@d92aa235d04922e8f08b40ce78cc5442fcfbfa2f # v4
         if: ${{ github.ref == 'refs/heads/main' && github.repository == 'geometric-intelligence/topobench' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
         with:
           branch: main

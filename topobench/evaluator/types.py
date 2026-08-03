@@ -10,6 +10,8 @@ from typing import Any, Literal, TypeAlias
 
 import torch
 
+from .prediction import PredictionPayload
+
 EvaluationTask: TypeAlias = Literal["classification", "regression"]
 EvaluationSplit: TypeAlias = Literal["train", "val", "test"]
 EvaluationPassKind: TypeAlias = Literal["fit_epoch", "selected_checkpoint"]
@@ -34,7 +36,9 @@ def _require_int(name: str, value: object, *, positive: bool = True) -> int:
     return value
 
 
-def _require_literal(name: str, value: object, allowed: frozenset[str]) -> None:
+def _require_literal(
+    name: str, value: object, allowed: frozenset[str]
+) -> None:
     if value not in allowed:
         choices = ", ".join(sorted(allowed))
         raise ValueError(f"{name} must be one of: {choices}")
@@ -83,9 +87,7 @@ class EvaluationContext:
         if self.task == "regression" and self.num_classes != 1:
             raise ValueError("regression num_classes must be 1")
         if self.expected_num_examples is not None:
-            _require_int(
-                "expected_num_examples", self.expected_num_examples
-            )
+            _require_int("expected_num_examples", self.expected_num_examples)
         _require_optional_identity("vocabulary_id", self.vocabulary_id)
         _require_optional_identity("model_id", self.model_id)
         _require_optional_identity("checkpoint_id", self.checkpoint_id)
@@ -102,6 +104,7 @@ class EvaluationBatch:
     num_examples: int
     context: EvaluationContext | None = None
     sequence_id: Hashable | None = None
+    prediction_payload: PredictionPayload | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.outputs, torch.Tensor) or not isinstance(
@@ -110,7 +113,9 @@ class EvaluationBatch:
             raise TypeError("outputs and targets must be tensors")
         count = _require_int("num_examples", self.num_examples)
         if self.outputs.ndim == 0 or self.targets.ndim == 0:
-            raise ValueError("outputs and targets must have leading dimensions")
+            raise ValueError(
+                "outputs and targets must have leading dimensions"
+            )
         if self.outputs.shape[0] != count or self.targets.shape[0] != count:
             raise ValueError(
                 "num_examples must equal both leading tensor dimensions"
@@ -123,7 +128,29 @@ class EvaluationBatch:
             try:
                 hash(self.sequence_id)
             except TypeError as error:
-                raise TypeError("sequence_id must be hashable or None") from error
+                raise TypeError(
+                    "sequence_id must be hashable or None"
+                ) from error
+        if self.prediction_payload is not None:
+            payload = self.prediction_payload
+            if not isinstance(payload, PredictionPayload):
+                raise TypeError(
+                    "prediction_payload must be a PredictionPayload or None"
+                )
+            if payload.num_rows != count:
+                raise ValueError(
+                    "prediction_payload rows must align with num_examples"
+                )
+            if payload.columns["target"] is not self.targets:
+                raise ValueError(
+                    "prediction_payload target must be the exact EvaluationBatch "
+                    "targets alias"
+                )
+            if payload.columns["raw_output"] is not self.outputs:
+                raise ValueError(
+                    "prediction_payload raw_output must be the exact "
+                    "EvaluationBatch outputs alias"
+                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,11 +206,11 @@ class EvaluationResult:
                 )
         for name, value in self.reason.items():
             if value is not None and not isinstance(value, str):
-                raise TypeError(f"reason for {name!r} must be a string or None")
+                raise TypeError(
+                    f"reason for {name!r} must be a string or None"
+                )
 
-        object.__setattr__(
-            self, "metrics", MappingProxyType(ordered_metrics)
-        )
+        object.__setattr__(self, "metrics", MappingProxyType(ordered_metrics))
         object.__setattr__(self, "status", _deep_freeze(self.status))
         object.__setattr__(self, "support", _deep_freeze(self.support))
         object.__setattr__(self, "reason", _deep_freeze(self.reason))

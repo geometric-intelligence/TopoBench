@@ -27,7 +27,9 @@ EDGE_FIELD_COUNT = int(
     os.environ.get("TOPOBENCH_TYPED_RSS_EDGE_FIELD_COUNT", "1")
 )
 EDGE_FIELDS = tuple(f"weight_{index:02d}" for index in range(EDGE_FIELD_COUNT))
-RECORD_BATCH_ROWS = int(os.environ.get("TOPOBENCH_TYPED_RSS_BATCH_ROWS", "8192"))
+RECORD_BATCH_ROWS = int(
+    os.environ.get("TOPOBENCH_TYPED_RSS_BATCH_ROWS", "8192")
+)
 RSS_DELTA_LIMIT_BYTES = int(
     os.environ.get("TOPOBENCH_TYPED_RSS_DELTA_LIMIT_BYTES", str(320 * _MIB))
 )
@@ -53,7 +55,9 @@ def _rss_bytes() -> int:
 
 
 def _directory_bytes(root: Path) -> int:
-    return sum(path.stat().st_size for path in root.rglob("*") if path.is_file())
+    return sum(
+        path.stat().st_size for path in root.rglob("*") if path.is_file()
+    )
 
 
 def _feature_batch(start: int, count: int, width: int) -> Any:
@@ -134,7 +138,9 @@ def _write_edge_files(
 
     paths: list[str] = []
     boundary = math.ceil(count / 2)
-    for file_index, (begin, end) in enumerate(((0, boundary), (boundary, count))):
+    for file_index, (begin, end) in enumerate(
+        ((0, boundary), (boundary, count))
+    ):
         relative = f"relations/{name}-{file_index:02d}.parquet"
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -179,13 +185,17 @@ def _write_edge_files(
     return tuple(paths)
 
 
-def _write_splits(root: Path, *, id_column: str, count: int) -> tuple[str, str, str]:
+def _write_splits(
+    root: Path, *, id_column: str, count: int
+) -> tuple[str, str, str]:
     import pyarrow as pa
     import pyarrow.parquet as pq
 
     values = (0, count // 2, count - 1)
     paths: list[str] = []
-    for phase, identifier in zip(("train", "val", "test"), values, strict=True):
+    for phase, identifier in zip(
+        ("train", "val", "test"), values, strict=True
+    ):
         relative = f"splits/primary-{phase}.parquet"
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -329,7 +339,9 @@ def _source(root: Path, kind: str) -> Any:
                 target_node_type="node",
                 label_column="label",
                 label_dtype="int64",
-                split_registry=SplitRegistrySpec(active_tag="primary", sets=(split,)),
+                split_registry=SplitRegistrySpec(
+                    active_tag="primary", sets=(split,)
+                ),
             ),
             **common,
         )
@@ -365,7 +377,10 @@ def _source(root: Path, kind: str) -> Any:
         relations=(
             RelationSpec(
                 relation=("author", "writes", "paper"),
-                paths=("relations/writes-00.parquet", "relations/writes-01.parquet"),
+                paths=(
+                    "relations/writes-00.parquet",
+                    "relations/writes-01.parquet",
+                ),
                 source_column="src",
                 destination_column="dst",
                 edge_id_column="edge_id",
@@ -384,7 +399,10 @@ def _source(root: Path, kind: str) -> Any:
             ),
             RelationSpec(
                 relation=("paper", "cites", "paper"),
-                paths=("relations/cites-00.parquet", "relations/cites-01.parquet"),
+                paths=(
+                    "relations/cites-00.parquet",
+                    "relations/cites-01.parquet",
+                ),
                 source_column="src",
                 destination_column="dst",
                 edge_id_column="edge_id",
@@ -395,7 +413,9 @@ def _source(root: Path, kind: str) -> Any:
             target_node_type="author",
             label_column="label",
             label_dtype="int64",
-            split_registry=SplitRegistrySpec(active_tag="primary", sets=(split,)),
+            split_registry=SplitRegistrySpec(
+                active_tag="primary", sets=(split,)
+            ),
         ),
         **common,
     )
@@ -403,8 +423,12 @@ def _source(root: Path, kind: str) -> Any:
     return ParquetTypedGraphSource(spec)
 
 
-def _resource_metadata(stage_root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
-    arrays = json.loads((stage_root / "arrays/arrays.json").read_text(encoding="utf-8"))
+def _resource_metadata(
+    stage_root: Path,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    arrays = json.loads(
+        (stage_root / "arrays/arrays.json").read_text(encoding="utf-8")
+    )
     relations = json.loads(
         (stage_root / "relations/relations.json").read_text(encoding="utf-8")
     )
@@ -420,17 +444,26 @@ def _assert_semantics(store: Any, kind: str) -> dict[str, Any]:
     features = store.node_features(target, selected_ids)
     columns = np.arange(FEATURE_WIDTH, dtype=np.float32)
     expected = np.stack(
-        [((float(identifier) % 997.0) + (columns % 31.0)) / 997.0 for identifier in selected_ids]
+        [
+            ((float(identifier) % 997.0) + (columns % 31.0)) / 997.0
+            for identifier in selected_ids
+        ]
     ).astype(np.float32)
     np.testing.assert_array_equal(features, expected)
-    np.testing.assert_array_equal(store.node_labels(target, selected_ids), selected_ids % 4)
+    np.testing.assert_array_equal(
+        store.node_labels(target, selected_ids), selected_ids % 4
+    )
     assert store.external_ids(target, selected_ids) == selected_ids.tolist()
-    for phase, expected_id in zip(("train", "val", "test"), selected_ids, strict=True):
+    for phase, expected_id in zip(
+        ("train", "val", "test"), selected_ids, strict=True
+    ):
         np.testing.assert_array_equal(
             store.split_ids("primary", phase),
             np.array([expected_id], dtype=np.int64),
         )
-    assert tuple(store.node_types) == (("node",) if kind == "homogeneous" else ("author", "paper"))
+    assert tuple(store.node_types) == (
+        ("node",) if kind == "homogeneous" else ("author", "paper")
+    )
     expected_relations = (
         (("node", "links", "node"),)
         if kind == "homogeneous"
@@ -462,19 +495,19 @@ def _assert_semantics(store: Any, kind: str) -> dict[str, Any]:
         for edge_position in (0, 1, relation_edge_count - 1):
             if relation[1] == "writes":
                 expected_source = edge_position % (NODE_ROWS // 2)
-                expected_destination = (
-                    edge_position * 7 + 3
-                ) % (NODE_ROWS - NODE_ROWS // 2)
+                expected_destination = (edge_position * 7 + 3) % (
+                    NODE_ROWS - NODE_ROWS // 2
+                )
             elif relation[1] == "written_by":
-                expected_source = (
-                    edge_position * 7 + 3
-                ) % (NODE_ROWS - NODE_ROWS // 2)
+                expected_source = (edge_position * 7 + 3) % (
+                    NODE_ROWS - NODE_ROWS // 2
+                )
                 expected_destination = edge_position % (NODE_ROWS // 2)
             elif kind == "heterogeneous":
                 expected_source = edge_position % (NODE_ROWS - NODE_ROWS // 2)
-                expected_destination = (
-                    edge_position * 7 + 3
-                ) % (NODE_ROWS - NODE_ROWS // 2)
+                expected_destination = (edge_position * 7 + 3) % (
+                    NODE_ROWS - NODE_ROWS // 2
+                )
             else:
                 expected_source = edge_position % NODE_ROWS
                 expected_destination = (edge_position * 7 + 3) % NODE_ROWS
@@ -522,11 +555,14 @@ def _assert_semantics(store: Any, kind: str) -> dict[str, Any]:
         "relation_mmap_count": relation_mmap_count,
     }
 
+
 def _plain_evidence(value: Any) -> Any:
     if isinstance(value, Mapping):
         return {
             str(key): _plain_evidence(item)
-            for key, item in sorted(value.items(), key=lambda item: str(item[0]))
+            for key, item in sorted(
+                value.items(), key=lambda item: str(item[0])
+            )
         }
     if isinstance(value, (tuple, list)):
         return [_plain_evidence(item) for item in value]
@@ -613,9 +649,17 @@ def _worker(root: Path, kind: str, logical_payload_bytes: int) -> None:
         semantic = _assert_semantics(store, kind)
         mapped_file_count = len(store.mapped_paths)
     phase_peak_rss["semantic_reads"] = _rss_bytes()
-    arrays_resource, relations_resource = _resource_metadata(partition_build.stage_root)
-    assert arrays_resource["duckdb_memory_limit_bytes"] == DUCKDB_MEMORY_LIMIT_BYTES
-    assert relations_resource["duckdb_memory_limit_bytes"] == DUCKDB_MEMORY_LIMIT_BYTES
+    arrays_resource, relations_resource = _resource_metadata(
+        partition_build.stage_root
+    )
+    assert (
+        arrays_resource["duckdb_memory_limit_bytes"]
+        == DUCKDB_MEMORY_LIMIT_BYTES
+    )
+    assert (
+        relations_resource["duckdb_memory_limit_bytes"]
+        == DUCKDB_MEMORY_LIMIT_BYTES
+    )
     assert arrays_resource["max_record_batch_rows"] <= RECORD_BATCH_ROWS
     assert relations_resource["max_record_batch_rows"] <= RECORD_BATCH_ROWS
     assert arrays_resource["snapshot_persisted"] is False
@@ -629,9 +673,15 @@ def _worker(root: Path, kind: str, logical_payload_bytes: int) -> None:
     measured_partition = dict(partition_build.book.measured_resources)
     estimated_partition = dict(partition_build.book.estimated_resources)
     assert measured_partition["measurement_scope"] == "isolated-worker"
-    assert measured_partition["peak_rss_bytes"] <= estimated_partition["peak_memory_bytes"]
+    assert (
+        measured_partition["peak_rss_bytes"]
+        <= estimated_partition["peak_memory_bytes"]
+    )
     assert measured_partition["peak_rss_bytes"] <= PARTITION_MEMORY_LIMIT_BYTES
-    assert measured_partition["temporary_disk_bytes"] <= estimated_partition["temporary_disk_bytes"]
+    assert (
+        measured_partition["temporary_disk_bytes"]
+        <= estimated_partition["temporary_disk_bytes"]
+    )
     store_validation = {
         "first_store": _plain_evidence(first.validation_evidence),
         "replay_store": _plain_evidence(replay.validation_evidence),
@@ -674,8 +724,12 @@ def _worker(root: Path, kind: str, logical_payload_bytes: int) -> None:
             "baseline_rss_bytes": baseline_rss,
             "peak_rss_bytes": peak_rss,
             "rss_delta_bytes": peak_rss - baseline_rss,
-            "partition_estimated_peak_rss_bytes": estimated_partition["peak_memory_bytes"],
-            "partition_measured_peak_rss_bytes": measured_partition["peak_rss_bytes"],
+            "partition_estimated_peak_rss_bytes": estimated_partition[
+                "peak_memory_bytes"
+            ],
+            "partition_measured_peak_rss_bytes": measured_partition[
+                "peak_rss_bytes"
+            ],
             "partition_measurement": _plain_evidence(measured_partition),
             "peak_rss_by_phase": {
                 "conversion_and_store": peak_rss,
@@ -690,10 +744,16 @@ def _worker(root: Path, kind: str, logical_payload_bytes: int) -> None:
         "disk": {
             "inventory_estimated_final_bytes": partition_build.inventory.estimated_final_bytes,
             "inventory_estimated_temporary_bytes": partition_build.inventory.estimated_temporary_bytes,
-            "partition_estimated_temporary_bytes": estimated_partition["temporary_disk_bytes"],
-            "partition_measured_temporary_bytes": measured_partition["temporary_disk_bytes"],
+            "partition_estimated_temporary_bytes": estimated_partition[
+                "temporary_disk_bytes"
+            ],
+            "partition_measured_temporary_bytes": measured_partition[
+                "temporary_disk_bytes"
+            ],
             "final_store_bytes": _directory_bytes(replay.path),
-            "retained_stage_bytes": _directory_bytes(partition_build.stage_root),
+            "retained_stage_bytes": _directory_bytes(
+                partition_build.stage_root
+            ),
         },
         "cache": {
             "content_sha256": replay.content_sha256,
@@ -754,10 +814,7 @@ def _bounded_worker_stderr(stderr: str) -> str:
     """Return useful bounded diagnostics without fixture external identifiers."""
     redacted_lines: list[str] = []
     for line in stderr.splitlines():
-        if (
-            "Out of Memory Error:" in line
-            or "PARTITION-MEMORY-" in line
-        ):
+        if "Out of Memory Error:" in line or "PARTITION-MEMORY-" in line:
             safe_line = line
         else:
             safe_line = re.sub(
@@ -775,7 +832,9 @@ def _bounded_worker_stderr(stderr: str) -> str:
     return redacted[-8192:].strip() or "<no worker stderr>"
 
 
-def _run_one(root: Path, kind: str, logical_payload_bytes: int) -> dict[str, Any]:
+def _run_one(
+    root: Path, kind: str, logical_payload_bytes: int
+) -> dict[str, Any]:
     completed = subprocess.run(
         [
             sys.executable,
@@ -797,7 +856,9 @@ def _run_one(root: Path, kind: str, logical_payload_bytes: int) -> dict[str, Any
         )
     evidence = json.loads(completed.stdout.strip().splitlines()[-1])
     minimum_payload = math.ceil(RSS_DELTA_LIMIT_BYTES * PAYLOAD_TO_RSS_FACTOR)
-    observed_payload = evidence["fixture"]["logical_feature_and_mapped_edge_bytes"]
+    observed_payload = evidence["fixture"][
+        "logical_feature_and_mapped_edge_bytes"
+    ]
     if observed_payload <= minimum_payload:
         raise SystemExit(
             "RSS fixture is too small: logical mapped-edge plus feature payload "
@@ -815,9 +876,15 @@ def _run_one(root: Path, kind: str, logical_payload_bytes: int) -> dict[str, Any
             f"{json.dumps(partition_measurement, sort_keys=True)}"
         )
     if evidence["bounded_execution"]["mapped_runtime_file_count"] < 1:
-        raise SystemExit(f"{kind} qualification observed no selected runtime mmap read")
-    if not evidence["bounded_execution"]["ram_wide_feature_or_edge_table_excluded"]:
-        raise SystemExit(f"{kind} qualification did not prove bounded mmap execution")
+        raise SystemExit(
+            f"{kind} qualification observed no selected runtime mmap read"
+        )
+    if not evidence["bounded_execution"][
+        "ram_wide_feature_or_edge_table_excluded"
+    ]:
+        raise SystemExit(
+            f"{kind} qualification did not prove bounded mmap execution"
+        )
     return evidence
 
 
@@ -829,8 +896,15 @@ def main() -> int:
         raise SystemExit(
             "usage: qualify_typed_graph_rss.py (worker mode is internal)"
         )
-    if NODE_ROWS < 4 or EDGE_ROWS < 4 or FEATURE_WIDTH < 1 or EDGE_FIELD_COUNT < 1:
-        raise SystemExit("RSS fixture dimensions must be positive and non-trivial")
+    if (
+        NODE_ROWS < 4
+        or EDGE_ROWS < 4
+        or FEATURE_WIDTH < 1
+        or EDGE_FIELD_COUNT < 1
+    ):
+        raise SystemExit(
+            "RSS fixture dimensions must be positive and non-trivial"
+        )
     if not 1.0 < PAYLOAD_TO_RSS_FACTOR <= 4.0:
         raise SystemExit("payload-to-RSS factor must be predeclared above one")
     aggregate: dict[str, Any] = {
@@ -843,7 +917,9 @@ def main() -> int:
         },
         "runs": [],
     }
-    with tempfile.TemporaryDirectory(prefix="topobench-typed-rss-") as directory:
+    with tempfile.TemporaryDirectory(
+        prefix="topobench-typed-rss-"
+    ) as directory:
         root = Path(directory)
         for kind in ("homogeneous", "heterogeneous"):
             run_root = root / kind
@@ -851,7 +927,9 @@ def main() -> int:
             aggregate["runs"].append(_run_one(run_root, kind, logical_payload))
     aggregate["status"] = "passed"
     evidence_root = Path(
-        os.environ.get("TOPOBENCH_QUALIFICATION_EVIDENCE_DIR", "qualification-evidence")
+        os.environ.get(
+            "TOPOBENCH_QUALIFICATION_EVIDENCE_DIR", "qualification-evidence"
+        )
     )
     evidence_root.mkdir(parents=True, exist_ok=True)
     evidence_path = evidence_root / "typed-graph-rss-qualification.json"

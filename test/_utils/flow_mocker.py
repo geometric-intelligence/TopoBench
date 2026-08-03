@@ -17,6 +17,7 @@ class FlowMocker:
     setup : bool, optional
         If True, setup mocker.
     """
+
     def __init__(self, mocker, params, setup=True):
         self.params = params
         self.mocker = mocker
@@ -49,7 +50,7 @@ class FlowMocker:
             init_args = p.get("init_args", dict())
 
             if patch_obj is not None:
-                if type(patch_obj) == tuple:
+                if type(patch_obj) is tuple:
                     # Mocker is object
                     if "property_val" in init_args:
                         init_args["return_value"] = init_args["property_val"]
@@ -57,7 +58,7 @@ class FlowMocker:
                         del init_args["property_val"]
                     # Create mock object for the instance
                     mock_obj = mocker.patch.object(*patch_obj, **init_args)
-                elif type(patch_obj) == str:
+                elif type(patch_obj) is str:
                     # Create mock object for class method
                     mock_obj = mocker.patch(patch_obj, **init_args)
                 else:
@@ -85,7 +86,7 @@ class FlowMocker:
         """
         params = params if params is not None else self.params
 
-        for i, p in enumerate(self.params):
+        for _i, p in enumerate(self.params):
             mock_name = p.get("mock", None)
             assert_args = p.get("assert_args", None)
 

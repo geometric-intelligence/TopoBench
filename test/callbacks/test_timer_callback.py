@@ -1,7 +1,10 @@
 """Test the PipelineTimer callback."""
-import pytest
+
 import time
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock
+
+import pytest
+
 from topobench.callbacks.timer_callback import PipelineTimer
 
 
@@ -13,7 +16,14 @@ class TestPipelineTimer:
         timer = PipelineTimer()
 
         # Check that all stage dictionaries are initialized
-        expected_stages = ["train_batch", "train_epoch", "val_batch", "val_epoch", "test_batch", "test_epoch"]
+        expected_stages = [
+            "train_batch",
+            "train_epoch",
+            "val_batch",
+            "val_epoch",
+            "test_batch",
+            "test_epoch",
+        ]
         for stage in expected_stages:
             assert stage in timer.sums
             assert stage in timer.counts
@@ -281,7 +291,9 @@ class TestPipelineTimer:
         assert "AvgTime/train_batch_mean" in call_args
         assert "AvgTime/train_batch_std" in call_args
         assert call_args["AvgTime/train_batch_mean"] == pytest.approx(3.0)
-        assert call_args["AvgTime/train_batch_std"] > 0  # Should have positive std
+        assert (
+            call_args["AvgTime/train_batch_std"] > 0
+        )  # Should have positive std
 
     def test_log_averages_empty_stage(self):
         """Test that _log_averages handles stages with no measurements."""
@@ -302,10 +314,19 @@ class TestPipelineTimer:
     def test_on_train_end_calls_log_averages(self):
         """Test that on_train_end calls _log_averages."""
         timer = PipelineTimer()
-        timer.skip_first_n = 0  # Don't skip any measurements to avoid empty slices
+        timer.skip_first_n = (
+            0  # Don't skip any measurements to avoid empty slices
+        )
 
         # Add some measurements to all stages to avoid warnings
-        for stage in ["train_batch", "train_epoch", "val_batch", "val_epoch", "test_batch", "test_epoch"]:
+        for stage in [
+            "train_batch",
+            "train_epoch",
+            "val_batch",
+            "val_epoch",
+            "test_batch",
+            "test_epoch",
+        ]:
             timer.sums[stage] = [1.0, 2.0, 3.0]
             timer.counts[stage] = 3
 
@@ -324,10 +345,10 @@ class TestPipelineTimer:
         timer = PipelineTimer()
 
         # Simulate training loop
-        for epoch in range(2):
+        for _epoch in range(2):
             timer.on_train_epoch_start()
 
-            for batch in range(3):
+            for _batch in range(3):
                 timer.on_train_batch_start()
                 time.sleep(0.001)
                 timer.on_train_batch_end()
@@ -337,7 +358,7 @@ class TestPipelineTimer:
             # Validation
             timer.on_validation_epoch_start()
 
-            for batch in range(2):
+            for _batch in range(2):
                 timer.on_validation_batch_start()
                 time.sleep(0.001)
                 timer.on_validation_batch_end()
@@ -360,7 +381,14 @@ class TestPipelineTimer:
         timer.skip_first_n = 0
 
         # Add measurements to all stages
-        all_stages = ["train_batch", "train_epoch", "val_batch", "val_epoch", "test_batch", "test_epoch"]
+        all_stages = [
+            "train_batch",
+            "train_epoch",
+            "val_batch",
+            "val_epoch",
+            "test_batch",
+            "test_epoch",
+        ]
         for stage in all_stages:
             timer.sums[stage] = [1.0, 2.0, 3.0]
             timer.counts[stage] = 3

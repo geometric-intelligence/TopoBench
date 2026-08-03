@@ -17,18 +17,19 @@ import shutil
 import socket
 import time
 import uuid
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any, Iterator, Mapping
+from typing import TYPE_CHECKING, Any
 
 from topobench.data.stores.external_node_index import ExternalNodeIndex
 
 if TYPE_CHECKING:
     from topobench.data.loaders.parquet import ParquetTypedGraphSource
+    from topobench.data.stores.pyg_partitioner import TypedPartitionBuild
     from topobench.data.stores.typed_graph_arrays import TypedGraphArrayBuild
     from topobench.data.stores.typed_graph_csc import TypedGraphRelationBuild
-    from topobench.data.stores.pyg_partitioner import TypedPartitionBuild
     from topobench.data.stores.typed_partition_book import (
         PartitionQualificationLimits,
     )
@@ -36,6 +37,7 @@ if TYPE_CHECKING:
 _BEHAVIOR_VERSION = "typed-node-index-v3"
 _SUPPORTED_ID_DTYPES = frozenset({"int64", "uint64", "string"})
 _HASH_CHUNK_BYTES = 1024 * 1024
+_BUILD_LOCK_POLL_SECONDS = 0.05
 
 
 def _known_inventory_counts(
@@ -50,11 +52,8 @@ def _known_inventory_counts(
     byte_count = getattr(inventory, "total_bytes", None)
     return (
         rows if type(rows) is int and rows >= 0 else None,
-        byte_count
-        if type(byte_count) is int and byte_count >= 0
-        else None,
+        byte_count if type(byte_count) is int and byte_count >= 0 else None,
     )
-
 
 
 def _monitored_stage(
@@ -64,7 +63,7 @@ def _monitored_stage(
     def decorate(method: Any) -> Any:
         @functools.wraps(method)
         def monitored(
-            self: "ParquetTypedGraphIngestor",
+            self: ParquetTypedGraphIngestor,
             *args: object,
             **kwargs: object,
         ) -> object:
@@ -104,7 +103,6 @@ def _monitored_stage(
         return monitored
 
     return decorate
-
 
 
 class ArtifactValidationError(RuntimeError):
@@ -186,13 +184,21 @@ class ParquetTypedGraphIngestor:
         execution_monitor: object | None = None,
     ) -> None:
         if not hasattr(source, "spec") or not hasattr(source, "files"):
-            raise TypeError("source must expose the ParquetTypedGraphSource contract")
+            raise TypeError(
+                "source must expose the ParquetTypedGraphSource contract"
+            )
         if isinstance(disk_limit_bytes, bool) or (
             disk_limit_bytes is not None
-            and (not isinstance(disk_limit_bytes, int) or disk_limit_bytes <= 0)
+            and (
+                not isinstance(disk_limit_bytes, int) or disk_limit_bytes <= 0
+            )
         ):
             raise ValueError("disk_limit_bytes must be a positive integer")
-        if isinstance(threads, bool) or not isinstance(threads, int) or threads <= 0:
+        if (
+            isinstance(threads, bool)
+            or not isinstance(threads, int)
+            or threads <= 0
+        ):
             raise ValueError("threads must be a positive integer")
         if lock_stale_seconds <= 0:
             raise ValueError("lock_stale_seconds must be positive")
@@ -246,7 +252,9 @@ class ParquetTypedGraphIngestor:
                 "string": pa.string(),
             }[node.id_dtype]
             first_schema = pa.ipc.read_schema(
-                pa.BufferReader(bytes.fromhex(node_entries[0].schema_serialized_hex))
+                pa.BufferReader(
+                    bytes.fromhex(node_entries[0].schema_serialized_hex)
+                )
             )
             field_index = first_schema.get_field_index(node.id_column)
             if field_index < 0:
@@ -299,7 +307,9 @@ class ParquetTypedGraphIngestor:
         )
         temporary_filesystem_path = self._temporary_filesystem_path()
         final_device, _, _ = _filesystem_capacity(self.store_root)
-        temporary_device, _, _ = _filesystem_capacity(temporary_filesystem_path)
+        temporary_device, _, _ = _filesystem_capacity(
+            temporary_filesystem_path
+        )
         inventory = SourceInventory(
             files=entries,
             total_bytes=total_bytes,
@@ -354,7 +364,6 @@ class ParquetTypedGraphIngestor:
         except _StageChecksumError:
             return self.build()
 
-
     @_monitored_stage("conversion", "arrays")
     def build_arrays(
         self,
@@ -376,9 +385,7 @@ class ParquetTypedGraphIngestor:
         """Stream every canonical directed relation into one verified CSC subtree."""
         validated_indexes = self._validated_indexes(index_build)
         arrays_completion = (
-            validated_indexes.stage_root
-            / "arrays"
-            / "arrays.complete.json"
+            validated_indexes.stage_root / "arrays" / "arrays.complete.json"
         )
         if arrays_completion.is_file() and not arrays_completion.is_symlink():
             from topobench.data.stores.typed_graph_arrays import (
@@ -492,7 +499,9 @@ class ParquetTypedGraphIngestor:
                         "input_fingerprint": inventory.source_fingerprint,
                         "config_fingerprint": inventory.config_fingerprint,
                         "dependency_versions": dict(dependencies),
-                        "outputs": {"inventory.json": _sha256_file(inventory_path)},
+                        "outputs": {
+                            "inventory.json": _sha256_file(inventory_path)
+                        },
                     },
                 )
                 indexes: dict[str, ExternalNodeIndex] = {}
@@ -503,7 +512,9 @@ class ParquetTypedGraphIngestor:
                     pq=pq,
                 ) as snapshot_stage:
                     snapshot_paths, snapshot_root = snapshot_stage
-                    for ordinal, node in enumerate(self.source.spec.node_types):
+                    for ordinal, node in enumerate(
+                        self.source.spec.node_types
+                    ):
                         internal_key = f"n{ordinal:04d}"
                         indexes[node.name] = self._build_one_index(
                             inventory,
@@ -533,9 +544,13 @@ class ParquetTypedGraphIngestor:
                             node.name: {
                                 "internal_key": f"n{ordinal:04d}",
                                 "id_dtype": node.id_dtype,
-                                "row_count": dict(inventory.node_rows)[node.name],
+                                "row_count": dict(inventory.node_rows)[
+                                    node.name
+                                ],
                             }
-                            for ordinal, node in enumerate(self.source.spec.node_types)
+                            for ordinal, node in enumerate(
+                                self.source.spec.node_types
+                            )
                         },
                     },
                 )
@@ -626,7 +641,9 @@ class ParquetTypedGraphIngestor:
         inventory: SourceInventory,
         snapshots: Mapping[str, Path],
     ) -> None:
-        if set(snapshots) != {entry.relative_path for entry in inventory.files}:
+        if set(snapshots) != {
+            entry.relative_path for entry in inventory.files
+        }:
             raise SourceMutationError(
                 "SOURCE-MUTATION-001: immutable snapshot file set changed"
             )
@@ -661,7 +678,9 @@ class ParquetTypedGraphIngestor:
         root = self.stage_root(inventory)
         return root.parent / f"{root.name}.lock"
 
-    def _inventory_file(self, path: Path, *, pa: Any, pq: Any) -> FileInventory:
+    def _inventory_file(
+        self, path: Path, *, pa: Any, pq: Any
+    ) -> FileInventory:
         try:
             expected = path.resolve(strict=True)
         except (FileNotFoundError, NotADirectoryError) as error:
@@ -686,30 +705,36 @@ class ParquetTypedGraphIngestor:
             schema = parquet_file.schema_arrow
             rows = parquet_file.metadata.num_rows
             uncompressed_bytes = sum(
-                parquet_file.metadata.row_group(row_group).column(column).total_uncompressed_size
+                parquet_file.metadata.row_group(row_group)
+                .column(column)
+                .total_uncompressed_size
                 for row_group in range(parquet_file.metadata.num_row_groups)
                 for column in range(parquet_file.metadata.num_columns)
             )
             after = os.fstat(stream.fileno())
         current = expected.stat()
         identities = (
-            before.st_dev,
-            before.st_ino,
-            before.st_size,
-            before.st_mtime_ns,
-            before.st_ctime_ns,
-        ), (
-            after.st_dev,
-            after.st_ino,
-            after.st_size,
-            after.st_mtime_ns,
-            after.st_ctime_ns,
-        ), (
-            current.st_dev,
-            current.st_ino,
-            current.st_size,
-            current.st_mtime_ns,
-            current.st_ctime_ns,
+            (
+                before.st_dev,
+                before.st_ino,
+                before.st_size,
+                before.st_mtime_ns,
+                before.st_ctime_ns,
+            ),
+            (
+                after.st_dev,
+                after.st_ino,
+                after.st_size,
+                after.st_mtime_ns,
+                after.st_ctime_ns,
+            ),
+            (
+                current.st_dev,
+                current.st_ino,
+                current.st_size,
+                current.st_mtime_ns,
+                current.st_ctime_ns,
+            ),
         )
         if identities[0] != identities[1] or identities[1] != identities[2]:
             raise SourceMutationError(
@@ -717,7 +742,9 @@ class ParquetTypedGraphIngestor:
             )
         serialized = schema.serialize().to_pybytes()
         return FileInventory(
-            relative_path=expected.relative_to(self.source.spec.source_root).as_posix(),
+            relative_path=expected.relative_to(
+                self.source.spec.source_root
+            ).as_posix(),
             absolute_path=expected,
             byte_size=before.st_size,
             row_count=rows,
@@ -727,7 +754,9 @@ class ParquetTypedGraphIngestor:
             uncompressed_bytes=uncompressed_bytes,
         )
 
-    def _validate_inventory_current(self, inventory: SourceInventory, *, pa: Any, pq: Any) -> None:
+    def _validate_inventory_current(
+        self, inventory: SourceInventory, *, pa: Any, pq: Any
+    ) -> None:
         observed = tuple(
             self._inventory_file(entry.absolute_path, pa=pa, pq=pq)
             for entry in inventory.files
@@ -799,8 +828,12 @@ class ParquetTypedGraphIngestor:
         return {
             "behavior_version": _BEHAVIOR_VERSION,
             "output_kind": spec.output_kind,
-            "node_types": [_normalized_dataclass(node) for node in spec.node_types],
-            "relations": [_normalized_dataclass(value) for value in spec.relations],
+            "node_types": [
+                _normalized_dataclass(node) for node in spec.node_types
+            ],
+            "relations": [
+                _normalized_dataclass(value) for value in spec.relations
+            ],
             "supervision": _normalized_dataclass(spec.supervision),
             "partition": _normalized_dataclass(spec.partition),
             "fitted_transform": _normalized_dataclass(spec.fitted_transform),
@@ -868,7 +901,9 @@ class ParquetTypedGraphIngestor:
                 "AS local_ordinal FROM source_ids"
             )
             escaped_parquet = str(temp_parquet).replace("'", "''")
-            row_group_size = max(2048, self.source.spec.ingestion.record_batch_rows)
+            row_group_size = max(
+                2048, self.source.spec.ingestion.record_batch_rows
+            )
             connection.execute(
                 "COPY (SELECT local_ordinal, external_id FROM mapping "
                 "ORDER BY local_ordinal) "
@@ -953,7 +988,6 @@ class ParquetTypedGraphIngestor:
         _fsync_directory(stage_root.parent)
         return pending_complete
 
-
     def _recover_incomplete_relation_artifacts(
         self,
         stage_root: Path,
@@ -992,13 +1026,16 @@ class ParquetTypedGraphIngestor:
         """Identify downstream Task6 paths excluded from Task2-4 evidence."""
         return (
             relative == "partitions"
-            or relative.startswith("partitions/")
-            or relative.startswith(".partitions-quarantine-")
-            or relative.startswith(".partitions-tmp-")
+            or relative.startswith(
+                (
+                    "partitions/",
+                    ".partitions-quarantine-",
+                    ".partitions-tmp-",
+                    ".pyg-partition-work/",
+                )
+            )
             or relative == ".pyg-partition-work"
-            or relative.startswith(".pyg-partition-work/")
         )
-
 
     def _resume(
         self,
@@ -1033,7 +1070,9 @@ class ParquetTypedGraphIngestor:
         pending_complete_relations = (
             self._recover_incomplete_relation_artifacts(stage_root)
         )
-        if completion.get("disk_admission") != _disk_admission_record(inventory):
+        if completion.get("disk_admission") != _disk_admission_record(
+            inventory
+        ):
             raise ArtifactValidationError(
                 "COMPLETION-EVIDENCE-001: filesystem admission evidence changed"
             )
@@ -1080,9 +1119,8 @@ class ParquetTypedGraphIngestor:
                 # Task6 owns and fully validates these downstream subtrees
                 # under this same content lock. They are not Task2-4 outputs.
                 continue
-            if (
-                pending_complete_relations
-                and relative.startswith("relations/")
+            if pending_complete_relations and relative.startswith(
+                "relations/"
             ):
                 continue
             if path.is_symlink():
@@ -1104,7 +1142,10 @@ class ParquetTypedGraphIngestor:
                 f"INCOMPLETE-ARTIFACT-001: missing staging artifact {missing[0]!r}"
             )
         for relative, expected_checksum in core_outputs.items():
-            if _sha256_file(_safe_artifact_path(stage_root, relative)) != expected_checksum:
+            if (
+                _sha256_file(_safe_artifact_path(stage_root, relative))
+                != expected_checksum
+            ):
                 raise _StageChecksumError(
                     f"CHECKSUM-001: staging artifact checksum mismatch for {relative!r}"
                 )
@@ -1115,13 +1156,15 @@ class ParquetTypedGraphIngestor:
             raise ArtifactValidationError(
                 "COMPLETION-EVIDENCE-001: inventory semantic evidence changed"
             )
-        inventory_completion = _read_json(stage_root / "inventory.complete.json")
+        inventory_completion = _read_json(
+            stage_root / "inventory.complete.json"
+        )
         _validate_common_evidence(inventory_completion, inventory)
-        if (
-            inventory_completion.get("stage") != "inventory"
-            or inventory_completion.get("outputs")
-            != {"inventory.json": _sha256_file(stage_root / "inventory.json")}
-        ):
+        if inventory_completion.get(
+            "stage"
+        ) != "inventory" or inventory_completion.get("outputs") != {
+            "inventory.json": _sha256_file(stage_root / "inventory.json")
+        }:
             raise ArtifactValidationError(
                 "COMPLETION-EVIDENCE-001: inventory completion evidence changed"
             )
@@ -1130,7 +1173,9 @@ class ParquetTypedGraphIngestor:
                 "COMPLETION-EVIDENCE-001: index evidence must be an object"
             )
         indexes: dict[str, ExternalNodeIndex] = {}
-        node_by_name = {node.name: node for node in self.source.spec.node_types}
+        node_by_name = {
+            node.name: node for node in self.source.spec.node_types
+        }
         if set(index_evidence) != set(node_by_name):
             raise ArtifactValidationError(
                 "COMPLETION-EVIDENCE-001: completed node-type set changed"
@@ -1176,7 +1221,10 @@ class ParquetTypedGraphIngestor:
                     f"COMPLETION-EVIDENCE-001: invalid outputs for {node_name!r}"
                 )
             for relative, checksum in per_outputs.items():
-                if _sha256_file(_safe_artifact_path(root, relative)) != checksum:
+                if (
+                    _sha256_file(_safe_artifact_path(root, relative))
+                    != checksum
+                ):
                     raise _StageChecksumError(
                         f"CHECKSUM-001: per-type checksum mismatch for {node_name!r}"
                     )
@@ -1191,7 +1239,9 @@ class ParquetTypedGraphIngestor:
                 parquet_file.metadata.num_rows != expected_rows
                 or schema.names != ["local_ordinal", "external_id"]
                 or not schema.field("local_ordinal").type.equals(pa.int64())
-                or not schema.field("external_id").type.equals(expected_arrow_type)
+                or not schema.field("external_id").type.equals(
+                    expected_arrow_type
+                )
             ):
                 raise ArtifactValidationError(
                     f"INDEX-BIJECTION-001: invalid node_ids Parquet for {node_name!r}"
@@ -1252,10 +1302,7 @@ class ParquetTypedGraphIngestor:
                 "uint64": "UBIGINT",
                 "string": "VARCHAR",
             }[node.id_dtype]
-            observed_sql_types = {
-                row[1]: row[2].upper()
-                for row in table_info
-            }
+            observed_sql_types = {row[1]: row[2].upper() for row in table_info}
             if observed_sql_types != {
                 "external_id": expected_sql_type,
                 "local_ordinal": "BIGINT",
@@ -1264,11 +1311,12 @@ class ParquetTypedGraphIngestor:
                     f"INDEX-BIJECTION-001: lookup SQL types changed for {node_name!r}"
                 )
             expected_bounds = (
-                (None, None)
-                if expected_rows == 0
-                else (0, expected_rows - 1)
+                (None, None) if expected_rows == 0 else (0, expected_rows - 1)
             )
-            if counts[:4] != (expected_rows,) * 4 or counts[4:] != expected_bounds:
+            if (
+                counts[:4] != (expected_rows,) * 4
+                or counts[4:] != expected_bounds
+            ):
                 raise ArtifactValidationError(
                     f"INDEX-BIJECTION-001: lookup state is not a bijection for {node_name!r}"
                 )
@@ -1291,28 +1339,58 @@ class ParquetTypedGraphIngestor:
         )
 
     @contextmanager
-    def _build_lock(self, path: Path) -> Iterator[None]:
+    def _build_lock(self, path: Path, *, wait: bool = False) -> Iterator[None]:
+        """Serialize one immutable identity while recovering dead owners."""
         path.parent.mkdir(parents=True, exist_ok=True)
         token = uuid.uuid4().hex
-        record = {
-            "pid": os.getpid(),
-            "hostname": socket.gethostname(),
-            "created_ns": time.time_ns(),
-            "token": token,
-        }
-        for attempt in range(2):
-            try:
-                descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            except FileExistsError:
-                if attempt or not self._remove_stale_lock(path):
+        while True:
+            if os.path.lexists(path):
+                if self._remove_stale_lock(path):
+                    continue
+                active = self._active_lock_owner(path)
+                if active is None:
+                    continue
+                if not active:
+                    if self._remove_stale_lock(path):
+                        continue
                     raise ConcurrentBuildError(
-                        f"BUILD-LOCK-001: active or unverifiable build owner at {path}"
-                    ) from None
-            else:
+                        "BUILD-LOCK-001: stale build owner cannot be "
+                        f"recovered at {path}"
+                    )
+                if not wait:
+                    raise ConcurrentBuildError(
+                        f"BUILD-LOCK-001: active build owner at {path}"
+                    )
+                time.sleep(_BUILD_LOCK_POLL_SECONDS)
+                continue
+            record = {
+                "pid": os.getpid(),
+                "hostname": socket.gethostname(),
+                "created_ns": time.time_ns(),
+                "token": token,
+            }
+            claim = path.with_name(f".{path.name}.{token}.claim")
+            descriptor = os.open(
+                claim, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
+            )
+            acquired = False
+            try:
                 with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                    json.dump(record, stream, sort_keys=True, separators=(",", ":"))
+                    json.dump(
+                        record, stream, sort_keys=True, separators=(",", ":")
+                    )
                     stream.flush()
                     os.fsync(stream.fileno())
+                try:
+                    os.link(claim, path, follow_symlinks=False)
+                except FileExistsError:
+                    pass
+                else:
+                    acquired = True
+            finally:
+                claim.unlink(missing_ok=True)
+            if acquired:
+                _fsync_directory(path.parent)
                 break
         try:
             yield
@@ -1324,6 +1402,43 @@ class ParquetTypedGraphIngestor:
             if observed.get("token") == token:
                 path.unlink()
                 _fsync_directory(path.parent)
+
+    def _active_lock_owner(self, path: Path) -> bool | None:
+        """Return active status, retrying disappearance and rejecting ambiguity."""
+        try:
+            record = _read_json(path)
+        except FileNotFoundError:
+            return None
+        except (OSError, ArtifactValidationError) as error:
+            raise ConcurrentBuildError(
+                f"BUILD-LOCK-001: unverifiable build owner at {path}"
+            ) from error
+        if set(record) != {"pid", "hostname", "created_ns", "token"}:
+            raise ConcurrentBuildError(
+                f"BUILD-LOCK-001: malformed build owner at {path}"
+            )
+        pid = record["pid"]
+        hostname = record["hostname"]
+        created_ns = record["created_ns"]
+        token = record["token"]
+        if (
+            isinstance(pid, bool)
+            or not isinstance(pid, int)
+            or pid <= 0
+            or not isinstance(hostname, str)
+            or not hostname
+            or isinstance(created_ns, bool)
+            or not isinstance(created_ns, int)
+            or not isinstance(token, str)
+            or not token
+        ):
+            raise ConcurrentBuildError(
+                f"BUILD-LOCK-001: malformed build owner at {path}"
+            )
+        if hostname == socket.gethostname():
+            return _pid_is_alive(pid)
+        age_seconds = (time.time_ns() - created_ns) / 1_000_000_000
+        return age_seconds <= self.lock_stale_seconds
 
     def _remove_stale_lock(self, path: Path) -> bool:
         try:
@@ -1375,9 +1490,9 @@ class ParquetTypedGraphIngestor:
 
 def _parquet_dependencies() -> tuple[Any, Any, Any]:
     try:
+        import duckdb
         import pyarrow as pa
         import pyarrow.parquet as pq
-        import duckdb
     except ImportError as error:
         raise RuntimeError(
             "Typed Parquet ingestion requires the optional pyarrow and duckdb dependencies"
@@ -1419,10 +1534,8 @@ def _copy_inventory_file(entry: FileInventory, destination: Path) -> None:
                 after = os.fstat(reader.fileno())
     except BaseException:
         if destination_created:
-            try:
+            with contextlib.suppress(FileNotFoundError):
                 destination.unlink()
-            except FileNotFoundError:
-                pass
         raise
     source_identity_before = (
         before.st_dev,
@@ -1488,7 +1601,9 @@ def _normalized_dataclass(value: Any) -> Any:
     if isinstance(value, dict):
         return {
             str(key): _normalized_dataclass(item)
-            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+            for key, item in sorted(
+                value.items(), key=lambda pair: str(pair[0])
+            )
         }
     return value
 
@@ -1557,7 +1672,9 @@ def _inventory_record(inventory: SourceInventory) -> dict[str, Any]:
 def _atomic_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.parent / f".{path.name}.tmp-{uuid.uuid4().hex}"
-    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    descriptor = os.open(
+        temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
+    )
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
             json.dump(
@@ -1573,16 +1690,16 @@ def _atomic_json(path: Path, value: Any) -> None:
         os.replace(temporary, path)
         _fsync_directory(path.parent)
     except BaseException:
-        try:
+        with contextlib.suppress(FileNotFoundError):
             temporary.unlink()
-        except FileNotFoundError:
-            pass
         raise
 
 
 def _read_json(path: Path) -> dict[str, Any]:
     if path.is_symlink() or not path.is_file():
-        raise ArtifactValidationError(f"COMPLETION-EVIDENCE-001: unsafe record {path}")
+        raise ArtifactValidationError(
+            f"COMPLETION-EVIDENCE-001: unsafe record {path}"
+        )
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
@@ -1616,12 +1733,15 @@ def _validated_output_map(value: Any) -> dict[str, str]:
     return result
 
 
-def _validate_common_evidence(record: Mapping[str, Any], inventory: SourceInventory) -> None:
+def _validate_common_evidence(
+    record: Mapping[str, Any], inventory: SourceInventory
+) -> None:
     if (
         record.get("behavior_version") != _BEHAVIOR_VERSION
         or record.get("input_fingerprint") != inventory.source_fingerprint
         or record.get("config_fingerprint") != inventory.config_fingerprint
-        or record.get("dependency_versions") != dict(inventory.dependency_versions)
+        or record.get("dependency_versions")
+        != dict(inventory.dependency_versions)
     ):
         raise ArtifactValidationError(
             "COMPLETION-EVIDENCE-001: completion input/config/dependency evidence changed"
@@ -1630,7 +1750,11 @@ def _validate_common_evidence(record: Mapping[str, Any], inventory: SourceInvent
 
 def _validate_relative_artifact(relative: str) -> PurePosixPath:
     path = PurePosixPath(relative)
-    if path.is_absolute() or not path.parts or any(part in {"", ".", ".."} for part in path.parts):
+    if (
+        path.is_absolute()
+        or not path.parts
+        or any(part in {"", ".", ".."} for part in path.parts)
+    ):
         raise ArtifactValidationError(
             f"COMPLETION-EVIDENCE-001: unsafe artifact path {relative!r}"
         )

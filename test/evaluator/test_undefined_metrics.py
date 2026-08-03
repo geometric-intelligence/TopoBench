@@ -9,7 +9,9 @@ from topobench.evaluator import EvaluationBatch, EvaluationContext, TBEvaluator
 from topobench.evaluator.backends import UndefinedMetricError
 
 
-def _context(task: str, classes: int, count: int | None, policy: str = "exact") -> EvaluationContext:
+def _context(
+    task: str, classes: int, count: int | None, policy: str = "exact"
+) -> EvaluationContext:
     return EvaluationContext(
         split="val",
         pass_kind="fit_epoch",
@@ -39,17 +41,25 @@ def _finalize(
     )
     evaluator.begin(_context(task, classes, count))
     if outputs is not None and targets is not None:
-        evaluator.update(EvaluationBatch(outputs=outputs, targets=targets, num_examples=len(targets)))
+        evaluator.update(
+            EvaluationBatch(
+                outputs=outputs, targets=targets, num_examples=len(targets)
+            )
+        )
     return evaluator.finalize()
 
 
 @pytest.mark.parametrize("metric", ["auroc", "auprc", "somers_d"])
-def test_single_class_binary_ranking_raises_structured_error_by_default(metric):
+def test_single_class_binary_ranking_raises_structured_error_by_default(
+    metric,
+):
     evaluator = TBEvaluator("classification", num_classes=2, metrics=[metric])
     evaluator.begin(_context("classification", 2, 4))
     evaluator.update(
         EvaluationBatch(
-            outputs=torch.tensor([[2.0, 0.0], [1.0, 0.1], [0.3, 0.2], [4.0, -1.0]]),
+            outputs=torch.tensor(
+                [[2.0, 0.0], [1.0, 0.1], [0.3, 0.2], [4.0, -1.0]]
+            ),
             targets=torch.zeros(4, dtype=torch.long),
             num_examples=4,
         )
@@ -71,7 +81,9 @@ def test_single_class_binary_nan_mode_returns_reason_and_support(metric):
         task="classification",
         classes=2,
         metrics=[metric],
-        outputs=torch.tensor([[2.0, 0.0], [1.0, 0.1], [0.3, 0.2], [4.0, -1.0]]),
+        outputs=torch.tensor(
+            [[2.0, 0.0], [1.0, 0.1], [0.3, 0.2], [4.0, -1.0]]
+        ),
         targets=torch.zeros(4, dtype=torch.long),
         undefined_policy="nan",
     )
@@ -87,7 +99,9 @@ def test_multiclass_auroc_requires_every_vocabulary_class_support():
         task="classification",
         classes=3,
         metrics=["auroc"],
-        outputs=torch.tensor([[2.0, 0.0, -1.0], [0.1, 1.4, 0.0], [0.3, 0.5, -0.2]]),
+        outputs=torch.tensor(
+            [[2.0, 0.0, -1.0], [0.1, 1.4, 0.0], [0.3, 0.5, -0.2]]
+        ),
         targets=torch.tensor([0, 1, 1]),
         undefined_policy="nan",
     )
@@ -103,7 +117,9 @@ def test_macro_metrics_report_absent_class_support(metric):
             task="classification",
             classes=3,
             metrics=[metric],
-            outputs=torch.tensor([[2.0, 0.0, -1.0], [0.1, 1.4, 0.0], [0.3, 0.5, -0.2]]),
+            outputs=torch.tensor(
+                [[2.0, 0.0, -1.0], [0.1, 1.4, 0.0], [0.3, 0.5, -0.2]]
+            ),
             targets=torch.tensor([0, 1, 1]),
             undefined_policy="error",
         )
@@ -161,8 +177,12 @@ def test_empty_evaluation_nan_mode_returns_all_metrics_with_metadata():
     assert tuple(result.metrics) == ("mae", "mse", "rmse", "r2")
     assert all(math.isnan(float(value)) for value in result.metrics.values())
     assert result.status == {name: "undefined" for name in result.metrics}
-    assert result.reason == {name: "empty_evaluation" for name in result.metrics}
-    assert all(metadata["num_examples"] == 0 for metadata in result.support.values())
+    assert result.reason == {
+        name: "empty_evaluation" for name in result.metrics
+    }
+    assert all(
+        metadata["num_examples"] == 0 for metadata in result.support.values()
+    )
 
 
 def test_invalid_undefined_policy_fails_at_construction():

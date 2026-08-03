@@ -1,11 +1,16 @@
 """Configuration file for pytest."""
+
 import os
+from dataclasses import replace
 from pathlib import Path
+
 from omegaconf import OmegaConf
 
 # 1. Register the 'env' resolver for OmegaConf
 if not OmegaConf.has_resolver("env"):
-    OmegaConf.register_new_resolver("env", lambda key, default=None: os.getenv(key, default))
+    OmegaConf.register_new_resolver(
+        "env", lambda key, default=None: os.getenv(key, default)
+    )
 
 # 2. Set a fallback PROJECT_ROOT so tests don't crash if it's not set in the shell
 if "PROJECT_ROOT" not in os.environ:
@@ -16,10 +21,20 @@ if "PROJECT_ROOT" not in os.environ:
 import pytest
 import torch
 import torch_geometric
+
 from topobench.data import HypergraphData
 from topobench.data.datasets.synthetic_hypergraph_dataset import (
     make_synthetic_hypergraph_data,
 )
+from test.data.stores.test_topology_only_pyg_partitioner import (
+    asymmetric_typed_source,
+    homogeneous_source,
+)
+from test.data.stores.test_typed_graph_store import (
+    QualifiedStoreFixture,
+    _build_qualified_store,
+)
+from topobench.data.loaders.parquet import ParquetTypedGraphSource
 
 
 @pytest.fixture
@@ -74,6 +89,7 @@ def simple_graph_0():
         y=torch.tensor(y),
     )
     return data
+
 
 @pytest.fixture
 def simple_graph_1():
@@ -139,3 +155,37 @@ def simple_graph_2():
         y=torch.tensor(y),
     )
     return data
+
+
+@pytest.fixture(scope="session")
+def task8_stores(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> dict[str, QualifiedStoreFixture]:
+    """Build the unrenamed typed stores used by sampling lifecycle tests."""
+    root = tmp_path_factory.mktemp("task8-qualified-stores")
+    heterogeneous = _build_qualified_store(
+        asymmetric_typed_source(
+            root / "heterogeneous-source",
+            num_partitions=3,
+            memory_limit_bytes=1,
+            external_partition_map="external/manifest.json",
+        ),
+        root / "heterogeneous-stores",
+    )
+    homogeneous_value = homogeneous_source(root / "homogeneous-source")
+    homogeneous_value = ParquetTypedGraphSource(
+        replace(
+            homogeneous_value.spec,
+            partition=replace(
+                homogeneous_value.spec.partition,
+                num_partitions=2,
+                memory_limit_bytes=1,
+                external_partition_map="external/manifest.json",
+            ),
+        )
+    )
+    homogeneous = _build_qualified_store(
+        homogeneous_value,
+        root / "homogeneous-stores",
+    )
+    return {"heterogeneous": heterogeneous, "homogeneous": homogeneous}

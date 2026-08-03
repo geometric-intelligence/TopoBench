@@ -17,9 +17,7 @@ def test_scalar_regression_accepts_exact_b_by_one(batch_size: int) -> None:
     logits = torch.randn(batch_size, 1)
     targets = torch.randn(batch_size, 1)
 
-    loss = _regression_loss()(
-        {"logits": logits, "labels": targets}, Data()
-    )
+    loss = _regression_loss()({"logits": logits, "labels": targets}, Data())
 
     assert loss.ndim == 0
     assert torch.isfinite(loss)
@@ -41,9 +39,7 @@ def test_scalar_regression_rejects_every_broadcast_opportunity(
 ) -> None:
     """DatasetLoss never inserts dimensions or relies on broadcasting."""
     with pytest.raises(ValueError, match="regression.*shape"):
-        _regression_loss()(
-            {"logits": logits, "labels": targets}, Data()
-        )
+        _regression_loss()({"logits": logits, "labels": targets}, Data())
 
 
 @pytest.mark.parametrize(
@@ -99,6 +95,4 @@ def test_classification_rejects_wrong_target_rank(
     )
 
     with pytest.raises(ValueError, match="classification.*rank-1"):
-        loss(
-            {"logits": torch.randn(3, 3), "labels": targets}, Data()
-        )
+        loss({"logits": torch.randn(3, 3), "labels": targets}, Data())

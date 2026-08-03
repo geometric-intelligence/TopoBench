@@ -4,6 +4,7 @@ from .base import AbstractLoader
 from .graph import GRAPH_LOADERS
 from .heterogeneous import HETEROGENEOUS_LOADERS
 from .hypergraph import HYPERGRAPH_LOADERS
+from .parquet import ParquetTypedGraphLoader
 
 LOADER_CLASSES = dict(
     sorted(
@@ -11,6 +12,7 @@ LOADER_CLASSES = dict(
             **GRAPH_LOADERS,
             **HETEROGENEOUS_LOADERS,
             **HYPERGRAPH_LOADERS,
+            ParquetTypedGraphLoader.__name__: ParquetTypedGraphLoader,
         }.items()
     )
 )

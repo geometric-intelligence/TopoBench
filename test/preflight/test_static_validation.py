@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import FrozenInstanceError
 from types import SimpleNamespace
-from typing import Callable
 
 import hydra
 import pytest
@@ -144,7 +144,9 @@ def _qualified_pipeline_output():
         active_split_tag="canonical",
         qualification_report=SimpleNamespace(passed=True),
         fitted_transform=transform,
-        reproducibility_policy=SimpleNamespace(save_reproducibility_bundle=True),
+        reproducibility_policy=SimpleNamespace(
+            save_reproducibility_bundle=True
+        ),
         provenance_input={
             "source_graph_id": source_identity,
             "partition_book_identity": partition_identity,
@@ -159,7 +161,9 @@ def _qualified_pipeline_output():
     )
 
 
-def test_existing_qualified_config_and_matching_pipeline_evidence_pass() -> None:
+def test_existing_qualified_config_and_matching_pipeline_evidence_pass() -> (
+    None
+):
     result = PreflightRunner(
         _compose_tiny_config(),
         _qualified_pipeline_output(),
@@ -200,7 +204,9 @@ def test_static_validation_accepts_explicit_epoch_end_validation() -> None:
         force_add=True,
     )
 
-    result = PreflightRunner(cfg, _qualified_pipeline_output()).validate_static()
+    result = PreflightRunner(
+        cfg, _qualified_pipeline_output()
+    ).validate_static()
 
     assert result.passed is True
 
@@ -299,7 +305,9 @@ def test_static_validation_rejects_malformed_partition_book_identity() -> None:
         PreflightRunner(cfg, output).validate_static()
 
 
-@pytest.mark.parametrize("missing_key", ("sampling_strategy", "sampler_backend"))
+@pytest.mark.parametrize(
+    "missing_key", ("sampling_strategy", "sampler_backend")
+)
 def test_static_validation_rejects_missing_sampler_identity(
     missing_key: str,
 ) -> None:
@@ -313,7 +321,10 @@ def test_static_validation_rejects_missing_sampler_identity(
 
 @pytest.mark.parametrize(
     ("key", "value"),
-    (("sampling_strategy", "heterogeneous-neighbor"), ("sampler_backend", "metis")),
+    (
+        ("sampling_strategy", "heterogeneous-neighbor"),
+        ("sampler_backend", "metis"),
+    ),
 )
 def test_static_validation_rejects_stale_sampler_identity(
     key: str,
@@ -350,7 +361,9 @@ def test_static_validation_rejects_stale_fitted_transform_identity() -> None:
         PreflightRunner(cfg, output).validate_static()
 
 
-def test_static_validation_rejects_missing_fitted_transform_state_identity() -> None:
+def test_static_validation_rejects_missing_fitted_transform_state_identity() -> (
+    None
+):
     cfg = _compose_tiny_config()
     output = _qualified_pipeline_output()
     del output.provenance_input["fitted_transform_state_key"]
@@ -359,7 +372,9 @@ def test_static_validation_rejects_missing_fitted_transform_state_identity() -> 
         PreflightRunner(cfg, output).validate_static()
 
 
-def test_static_validation_rejects_custom_metric_policy_incompatibility() -> None:
+def test_static_validation_rejects_custom_metric_policy_incompatibility() -> (
+    None
+):
     cfg = _compose_tiny_config()
     OmegaConf.update(
         cfg,
@@ -395,7 +410,9 @@ def test_static_validation_rejects_qualified_multi_rank_execution() -> None:
         PreflightRunner(cfg, _qualified_pipeline_output()).validate_static()
 
 
-def test_static_validation_rejects_nan_capable_checkpoint_monitor_without_policy() -> None:
+def test_static_validation_rejects_nan_capable_checkpoint_monitor_without_policy() -> (
+    None
+):
     cfg = _compose_tiny_config()
     OmegaConf.update(cfg, "evaluator.metrics", ["auroc"], merge=False)
     OmegaConf.update(
@@ -433,6 +450,75 @@ def test_static_validation_rejects_logger_without_artifact_adapter() -> None:
     )
 
     with pytest.raises(PreflightError, match="artifact adapter"):
+        PreflightRunner(cfg, _qualified_pipeline_output()).validate_static()
+
+
+def test_static_validation_rejects_slice_field_not_captured_as_metadata() -> (
+    None
+):
+    cfg = _compose_tiny_config()
+    OmegaConf.update(
+        cfg,
+        "evaluation_artifacts",
+        {
+            "enabled": True,
+            "metadata_fields": [],
+            "evaluation_slices": {
+                "source": {"max_categories": 8, "min_rows": 1}
+            },
+        },
+        merge=False,
+        force_add=True,
+    )
+
+    with pytest.raises(PreflightError, match="slice field.*metadata_fields"):
+        PreflightRunner(cfg, _qualified_pipeline_output()).validate_static()
+
+
+def test_static_validation_accepts_bounded_evaluation_slice_vocabulary() -> (
+    None
+):
+    cfg = _compose_tiny_config()
+    OmegaConf.update(
+        cfg,
+        "evaluation_artifacts",
+        {
+            "enabled": True,
+            "metadata_fields": ["source"],
+            "evaluation_slices": {
+                "source": {
+                    "max_categories": 2,
+                    "min_rows": 1,
+                    "vocabulary": ["alpha", "beta"],
+                }
+            },
+        },
+        merge=False,
+        force_add=True,
+    )
+
+    result = PreflightRunner(
+        cfg, _qualified_pipeline_output()
+    ).validate_static()
+
+    assert result.passed is True
+
+
+def test_static_validation_rejects_unbounded_evaluation_slice() -> None:
+    cfg = _compose_tiny_config()
+    OmegaConf.update(
+        cfg,
+        "evaluation_artifacts",
+        {
+            "enabled": True,
+            "metadata_fields": ["source"],
+            "evaluation_slices": {"source": {"min_rows": 1}},
+        },
+        merge=False,
+        force_add=True,
+    )
+
+    with pytest.raises(PreflightError, match="max_categories"):
         PreflightRunner(cfg, _qualified_pipeline_output()).validate_static()
 
 

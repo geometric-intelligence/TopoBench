@@ -5,15 +5,16 @@ including initialization, data transformations, split loading, and edge cases.
 """
 
 import copy
+import hashlib
 import json
-import random
 import os
+import random
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 import numpy as np
+import pytest
 import torch
 import torch_geometric.data
 from omegaconf import DictConfig
@@ -21,8 +22,8 @@ from torch_geometric.data import Data, HeteroData
 
 from topobench.data.datasets import (
     SyntheticGraphDataset,
-    SyntheticHypergraphDataset,
     SyntheticHeterogeneousDataset,
+    SyntheticHypergraphDataset,
 )
 from topobench.data.loaders.base import (
     AbstractLoader,
@@ -35,6 +36,11 @@ from topobench.data.loaders.hypergraph.synthetic import (
     SyntheticHypergraphDatasetLoader,
 )
 from topobench.data.preprocessor.preprocessor import PreProcessor
+from topobench.data.utils.cache_io import (
+    cache_manifest_path,
+    load_pyg_cache,
+    write_pyg_cache,
+)
 
 
 class MockTorchDataset(torch.utils.data.Dataset):
@@ -45,6 +51,7 @@ class MockTorchDataset(torch.utils.data.Dataset):
     data : Any
         The data to store in the dataset.
     """
+
     def __init__(self, data):
         self.data = data
 
@@ -113,6 +120,76 @@ def _assert_synthetic_heterodata_equal(
             expected[edge_type].edge_index,
             actual[edge_type].edge_index,
         )
+
+
+def _write_reducer_marker(marker_path: str) -> None:
+    """Record that an unsafe pickle reducer was executed."""
+    Path(marker_path).write_text("executed", encoding="utf-8")
+
+
+class _ReducerCanary:
+    """A pickle payload whose reducer has a harmless observable side effect."""
+
+    def __init__(self, marker_path: Path) -> None:
+        self.marker_path = marker_path
+
+    def __reduce__(self):
+        return _write_reducer_marker, (str(self.marker_path),)
+
+
+def _refresh_cache_payload_descriptor(path: Path) -> dict:
+    """Update only the sidecar fields that authenticate payload bytes."""
+    manifest_path = cache_manifest_path(path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["payload"]["sha256"] = hashlib.sha256(
+        path.read_bytes()
+    ).hexdigest()
+    manifest["payload"]["byte_size"] = path.stat().st_size
+    manifest_path.write_text(
+        json.dumps(manifest, sort_keys=True),
+        encoding="utf-8",
+    )
+    return manifest
+
+
+def _assert_tensor_primitive_tree(value) -> None:
+    """Assert a cache payload contains no executable Python objects."""
+    if isinstance(value, torch.Tensor) or value is None:
+        return
+    if isinstance(value, (bool, int, float, str)):
+        return
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            _assert_tensor_primitive_tree(item)
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            _assert_tensor_primitive_tree(key)
+            _assert_tensor_primitive_tree(item)
+        return
+    pytest.fail(f"unsafe cache value type: {type(value).__name__}")
+
+
+def _write_data_cache(
+    tmp_path: Path,
+    *,
+    data=None,
+    family: str = "data",
+    cache_identity: str = "fixture-identity",
+) -> tuple[Path, Path]:
+    """Write one valid real-file cache and return its payload and root."""
+    trusted_root = tmp_path / "trusted-cache"
+    path = trusted_root / "processed" / "data.pt"
+    source = Data(x=torch.arange(6, dtype=torch.float).reshape(3, 2))
+    write_pyg_cache(
+        [source if data is None else data],
+        path,
+        trusted_root=trusted_root,
+        family=family,
+        cache_identity=cache_identity,
+    )
+    return path, trusted_root
+
 
 class _CacheRecordLoader(AbstractLoader):
     """Return a local fixture while exercising the production loader seam."""
@@ -202,6 +279,7 @@ def _processed_fixture(
     )
     return PreProcessor(dataset, dataset_dir, transforms)
 
+
 def _processed_transform_config(
     tmp_path,
     transform_config: dict,
@@ -223,7 +301,11 @@ def _processed_direct(dataset, data_dir: Path) -> PreProcessor:
 
 def _rng_states() -> tuple[object, tuple, torch.Tensor]:
     """Snapshot all caller-global CPU RNG streams."""
-    return random.getstate(), np.random.get_state(), torch.random.get_rng_state()
+    return (
+        random.getstate(),
+        np.random.get_state(),
+        torch.random.get_rng_state(),
+    )
 
 
 def _assert_rng_states_equal(
@@ -247,18 +329,22 @@ class TestPreProcessorBasic:
         mock_dataset.transform = None
         mock_dataset._data = torch_geometric.data.Data()
         mock_dataset.slices = {}
-        mock_dataset.__iter__ = MagicMock(return_value=iter([
-            torch_geometric.data.Data(x=torch.randn(3, 4)),
-            torch_geometric.data.Data(x=torch.randn(5, 4)),
-        ]))
+        mock_dataset.__iter__ = MagicMock(
+            return_value=iter(
+                [
+                    torch_geometric.data.Data(x=torch.randn(3, 4)),
+                    torch_geometric.data.Data(x=torch.randn(5, 4)),
+                ]
+            )
+        )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             with patch("torch_geometric.data.InMemoryDataset.__init__"):
                 with patch.object(PreProcessor, "load"):
                     preprocessor = PreProcessor(mock_dataset, tmpdir, None)
 
-                    assert preprocessor.transforms_applied == False
-                    assert hasattr(preprocessor, 'data_list')
+                    assert not preprocessor.transforms_applied
+                    assert hasattr(preprocessor, "data_list")
 
     def test_init_preserves_split_idx(self):
         """Test that split_idx is preserved from dataset."""
@@ -290,7 +376,10 @@ class TestPreProcessorBasic:
                 with patch.object(PreProcessor, "load"):
                     preprocessor = PreProcessor(mock_dataset, tmpdir, None)
 
-                    assert preprocessor.processed_file_names == "data.pt"
+                    assert preprocessor.processed_file_names == [
+                        "data.pt",
+                        "data.pt.manifest.json",
+                    ]
 
     @patch("topobench.data.preprocessor.preprocessor.load_inductive_splits")
     def test_load_dataset_splits_inductive(self, mock_load_inductive_splits):
@@ -312,7 +401,9 @@ class TestPreProcessorBasic:
                 with patch.object(PreProcessor, "load"):
                     preprocessor = PreProcessor(mock_dataset, tmpdir, None)
 
-                    split_params = DictConfig({"learning_setting": "inductive"})
+                    split_params = DictConfig(
+                        {"learning_setting": "inductive"}
+                    )
                     preprocessor.load_dataset_splits(split_params)
 
                     mock_load_inductive_splits.assert_called_once_with(
@@ -320,7 +411,9 @@ class TestPreProcessorBasic:
                     )
 
     @patch("topobench.data.preprocessor.preprocessor.load_transductive_splits")
-    def test_load_dataset_splits_transductive(self, mock_load_transductive_splits):
+    def test_load_dataset_splits_transductive(
+        self, mock_load_transductive_splits
+    ):
         """Test loading dataset splits for transductive learning.
 
         Parameters
@@ -339,7 +432,9 @@ class TestPreProcessorBasic:
                 with patch.object(PreProcessor, "load"):
                     preprocessor = PreProcessor(mock_dataset, tmpdir, None)
 
-                    split_params = DictConfig({"learning_setting": "transductive"})
+                    split_params = DictConfig(
+                        {"learning_setting": "transductive"}
+                    )
                     preprocessor.load_dataset_splits(split_params)
 
                     mock_load_transductive_splits.assert_called_once_with(
@@ -360,7 +455,9 @@ class TestPreProcessorBasic:
                     preprocessor = PreProcessor(mock_dataset, tmpdir, None)
 
                     split_params = DictConfig({"learning_setting": "invalid"})
-                    with pytest.raises(ValueError, match="Invalid.*learning setting"):
+                    with pytest.raises(
+                        ValueError, match="Invalid.*learning setting"
+                    ):
                         preprocessor.load_dataset_splits(split_params)
 
     def test_no_learning_setting_error(self):
@@ -378,12 +475,16 @@ class TestPreProcessorBasic:
 
                     # Test with no learning_setting key
                     split_params = DictConfig({})
-                    with pytest.raises(ValueError, match="No learning setting specified"):
+                    with pytest.raises(
+                        ValueError, match="No learning setting specified"
+                    ):
                         preprocessor.load_dataset_splits(split_params)
 
                     # Test with learning_setting = False
                     split_params = DictConfig({"learning_setting": False})
-                    with pytest.raises(ValueError, match="No learning setting specified"):
+                    with pytest.raises(
+                        ValueError, match="No learning setting specified"
+                    ):
                         preprocessor.load_dataset_splits(split_params)
 
 
@@ -569,271 +670,428 @@ class TestPreProcessorProcessing:
         ]
         mock_dataset = MockTorchDataset(mock_data)
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
-                preprocessor = PreProcessor(None, tmpdir, None)
-                preprocessor.dataset = mock_dataset
-                preprocessor.pre_transform = None
-                preprocessor.collate = MagicMock(
-                    return_value=(torch_geometric.data.Data(), {})
-                )
-                preprocessor.save = MagicMock()
+        with tempfile.TemporaryDirectory() as tmpdir, patch.object(
+            PreProcessor, "__init__", lambda self, *args, **kwargs: None
+        ):
+            preprocessor = PreProcessor(None, tmpdir, None)
+            preprocessor.dataset = mock_dataset
+            preprocessor.pre_transform = None
+            preprocessor.collate = MagicMock(
+                return_value=(torch_geometric.data.Data(), {})
+            )
+            preprocessor.trusted_cache_root = tmpdir
+            preprocessor.cache_identity = "process-unit-test"
 
-                # Mock the processed_paths property
-                with patch.object(type(preprocessor), 'processed_paths', new_callable=lambda: property(lambda self: [f"{tmpdir}/data.pt"])):
-                    preprocessor.process()
+            # Mock the processed_paths property
+            with patch.object(
+                type(preprocessor),
+                "processed_paths",
+                new_callable=lambda: property(
+                    lambda self: [f"{tmpdir}/data.pt"]
+                ),
+            ):
+                preprocessor.process()
 
-                    assert len(preprocessor.data_list) == len(mock_data)
-                    preprocessor.collate.assert_called_once()
-                    preprocessor.save.assert_called_once()
+                assert len(preprocessor.data_list) == len(mock_data)
+                preprocessor.collate.assert_called_once()
+                assert cache_manifest_path(f"{tmpdir}/data.pt").is_file()
 
     def test_process_with_torch_geometric_data(self):
         """Test process method with torch_geometric.data.Data."""
         mock_data = torch_geometric.data.Data(x=torch.randn(3, 4))
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
-                preprocessor = PreProcessor(None, tmpdir, None)
-                preprocessor.dataset = mock_data
-                preprocessor.pre_transform = None
-                preprocessor.collate = MagicMock(
-                    return_value=(torch_geometric.data.Data(), {})
-                )
-                preprocessor.save = MagicMock()
+        with tempfile.TemporaryDirectory() as tmpdir, patch.object(
+            PreProcessor, "__init__", lambda self, *args, **kwargs: None
+        ):
+            preprocessor = PreProcessor(None, tmpdir, None)
+            preprocessor.dataset = mock_data
+            preprocessor.pre_transform = None
+            preprocessor.collate = MagicMock(
+                return_value=(torch_geometric.data.Data(), {})
+            )
+            preprocessor.trusted_cache_root = tmpdir
+            preprocessor.cache_identity = "process-unit-test"
 
-                # Mock the processed_paths property
-                with patch.object(type(preprocessor), 'processed_paths', new_callable=lambda: property(lambda self: [f"{tmpdir}/data.pt"])):
-                    preprocessor.process()
+            # Mock the processed_paths property
+            with patch.object(
+                type(preprocessor),
+                "processed_paths",
+                new_callable=lambda: property(
+                    lambda self: [f"{tmpdir}/data.pt"]
+                ),
+            ):
+                preprocessor.process()
 
-                    assert preprocessor.data_list == [mock_data]
-                    preprocessor.collate.assert_called_once_with([mock_data])
+                assert preprocessor.data_list == [mock_data]
+                preprocessor.collate.assert_called_once_with([mock_data])
 
     def test_process_with_pre_transform(self):
         """Test process method with a pre_transform applied."""
         mock_data = [
             torch_geometric.data.Data(x=torch.randn(3, 4)),
-            torch_geometric.data.Data(x=torch.randn(5, 4))
+            torch_geometric.data.Data(x=torch.randn(5, 4)),
         ]
         mock_dataset = MockTorchDataset(mock_data)
         mock_pre_transform = MagicMock(side_effect=lambda x: x)
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
-                preprocessor = PreProcessor(None, tmpdir, None)
-                preprocessor.dataset = mock_dataset
-                preprocessor.pre_transform = mock_pre_transform
-                preprocessor.collate = MagicMock(
-                    return_value=(torch_geometric.data.Data(), {})
-                )
-                preprocessor.save = MagicMock()
+        with tempfile.TemporaryDirectory() as tmpdir, patch.object(
+            PreProcessor, "__init__", lambda self, *args, **kwargs: None
+        ):
+            preprocessor = PreProcessor(None, tmpdir, None)
+            preprocessor.dataset = mock_dataset
+            preprocessor.pre_transform = mock_pre_transform
+            preprocessor.collate = MagicMock(
+                return_value=(torch_geometric.data.Data(), {})
+            )
+            preprocessor.trusted_cache_root = tmpdir
+            preprocessor.cache_identity = "process-unit-test"
 
-                # Mock the processed_paths property
-                with patch.object(type(preprocessor), 'processed_paths', new_callable=lambda: property(lambda self: [f"{tmpdir}/data.pt"])):
-                    preprocessor.process()
+            # Mock the processed_paths property
+            with patch.object(
+                type(preprocessor),
+                "processed_paths",
+                new_callable=lambda: property(
+                    lambda self: [f"{tmpdir}/data.pt"]
+                ),
+            ):
+                preprocessor.process()
 
-                    # Verify pre_transform was called for each data item
-                    assert mock_pre_transform.call_count == len(mock_data)
+                # Verify pre_transform was called for each data item
+                assert mock_pre_transform.call_count == len(mock_data)
 
 
-class TestPreProcessorLoad:
-    """Test PreProcessor load method."""
+class TestPyGCacheIO:
+    """Exercise the closed, non-executable processed-cache boundary."""
 
-    @patch("topobench.data.preprocessor.preprocessor.fs.torch_load")
-    def test_load_backward_compatibility_2_elements(self, mock_torch_load):
-        """Test load method with 2 elements (backward compatibility).
+    def test_data_roundtrip_uses_closed_schema_and_static_reconstruction(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        source = Data(
+            x=torch.tensor([[1.0, 2.0], [3.0, 4.0]]),
+            edge_index=torch.tensor([[0, 1], [1, 0]], dtype=torch.long),
+            y=torch.tensor([1]),
+            source_config={"feature_policy": "continuous", "seed": 7},
+        )
+        original = copy.deepcopy(source)
+        trusted_root = tmp_path / "trusted"
+        path = trusted_root / "processed" / "data.pt"
+        identity = "data-cache-identity"
 
-        Parameters
-        ----------
-        mock_torch_load : MagicMock
-            Mock of the torch_load function.
-        """
-        mock_data = torch_geometric.data.Data()
-        mock_slices = {"x": torch.tensor([0, 3])}
-        mock_torch_load.return_value = (mock_data, mock_slices)
+        write_pyg_cache(
+            [source],
+            path,
+            trusted_root=trusted_root,
+            family="data",
+            cache_identity=identity,
+        )
+        loaded, slices = load_pyg_cache(
+            path,
+            trusted_root=trusted_root,
+            family="data",
+            cache_identity=identity,
+            data_cls=Data,
+        )
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
-                preprocessor = PreProcessor(None, tmpdir, None)
-                preprocessor.load("/fake/path")
+        assert isinstance(loaded, Data)
+        assert not isinstance(loaded, HeteroData)
+        assert isinstance(slices, dict)
+        assert torch.equal(loaded.x, source.x)
+        assert torch.equal(loaded.edge_index, source.edge_index)
+        assert loaded.source_config == source.source_config
+        assert torch.equal(source.x, original.x)
+        assert source.source_config == original.source_config
 
-                # Use _data as that's what the actual code uses
-                assert preprocessor._data == mock_data
-                assert preprocessor.slices == mock_slices
-
-    @patch("topobench.data.preprocessor.preprocessor.fs.torch_load")
-    def test_load_backward_compatibility_3_elements(self, mock_torch_load):
-        """Test load method with 3 elements (backward compatibility).
-
-        Parameters
-        ----------
-        mock_torch_load : MagicMock
-            Mock of the torch_load function.
-        """
-        mock_data = torch_geometric.data.Data()
-        mock_slices = {"x": torch.tensor([0, 3])}
-        mock_data_cls = torch_geometric.data.Data
-        mock_torch_load.return_value = (mock_data, mock_slices, mock_data_cls)
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
-                preprocessor = PreProcessor(None, tmpdir, None)
-                preprocessor.load("/fake/path")
-
-                assert preprocessor._data == mock_data
-                assert preprocessor.slices == mock_slices
-
-    @patch("topobench.data.preprocessor.preprocessor.fs.torch_load")
-    def test_load_with_4_elements(self, mock_torch_load):
-        """Test load method with 4 elements (TU Datasets format).
-
-        Parameters
-        ----------
-        mock_torch_load : MagicMock
-            Mock of the torch_load function.
-        """
-        mock_data = torch_geometric.data.Data()
-        mock_slices = {"x": torch.tensor([0, 3])}
-        mock_sizes = {"x": 3}
-        mock_data_cls = torch_geometric.data.Data
-        mock_torch_load.return_value = (mock_data, mock_slices, mock_sizes, mock_data_cls)
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
-                preprocessor = PreProcessor(None, tmpdir, None)
-                preprocessor.load("/fake/path")
-
-                assert preprocessor._data == mock_data
-                assert preprocessor.slices == mock_slices
-
-    @patch("topobench.data.preprocessor.preprocessor.fs.torch_load")
-    def test_load_with_dict_data(self, mock_torch_load):
-        """Test load method when data is a dictionary.
-
-        Parameters
-        ----------
-        mock_torch_load : MagicMock
-            Mock of the torch_load function.
-        """
-        mock_data_dict = {
-            "x": torch.randn(3, 4),
-            "edge_index": torch.tensor([[0, 1], [1, 2]])
+        payload = torch.load(path, weights_only=True)
+        assert set(payload) == {
+            "schema",
+            "schema_version",
+            "family",
+            "cache_identity",
+            "data",
+            "slices",
         }
-        mock_slices = {"x": torch.tensor([0, 3])}
-        mock_torch_load.return_value = (
-            mock_data_dict,
-            mock_slices,
-            Data,
+        assert payload["schema"] == "topobench.pyg-cache"
+        assert payload["schema_version"] == 1
+        assert payload["family"] == "data"
+        assert payload["cache_identity"] == identity
+        _assert_tensor_primitive_tree(payload)
+
+        manifest = json.loads(
+            cache_manifest_path(path).read_text(encoding="utf-8")
         )
+        assert set(manifest) == {
+            "schema",
+            "schema_version",
+            "family",
+            "cache_identity",
+            "payload",
+        }
+        assert manifest["schema"] == "topobench.pyg-cache-manifest"
+        assert manifest["schema_version"] == 1
+        assert manifest["family"] == "data"
+        assert manifest["cache_identity"] == identity
+        assert set(manifest["payload"]) == {
+            "relative_path",
+            "sha256",
+            "byte_size",
+        }
+        assert Path(manifest["payload"]["relative_path"]).name == path.name
+        assert (
+            manifest["payload"]["sha256"]
+            == hashlib.sha256(path.read_bytes()).hexdigest()
+        )
+        assert manifest["payload"]["byte_size"] == path.stat().st_size
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
-                preprocessor = PreProcessor(None, tmpdir, None)
-                preprocessor.load("/fake/path")
-
-                assert isinstance(preprocessor._data, Data)
-                assert torch.equal(
-                    preprocessor._data.x,
-                    mock_data_dict["x"],
-                )
-                assert torch.equal(
-                    preprocessor._data.edge_index,
-                    mock_data_dict["edge_index"],
-                )
-                assert preprocessor.slices == mock_slices
-
-    @patch("topobench.data.preprocessor.preprocessor.fs.torch_load")
-    def test_load_legacy_two_element_dict_defaults_to_data(
+    def test_payload_identity_rejects_cross_published_manifest(
         self,
-        mock_torch_load,
-    ):
-        """A legacy dictionary payload without class metadata reconstructs Data."""
-        data_dict = {"x": torch.randn(3, 2)}
-        slices = {"x": torch.tensor([0, 3])}
-        mock_torch_load.return_value = (data_dict, slices)
-        preprocessor = object.__new__(PreProcessor)
-
-        preprocessor.load("/fake/path")
-
-        assert isinstance(preprocessor._data, Data)
-        assert torch.equal(preprocessor._data.x, data_dict["x"])
-        assert preprocessor.slices == slices
-
-    @patch("topobench.data.preprocessor.preprocessor.fs.torch_load")
-    def test_load_rejects_non_tuple_artifact(self, mock_torch_load):
-        """Corrupt cache containers raise an optimized-safe exception."""
-        mock_torch_load.return_value = ["data", {}]
-        preprocessor = object.__new__(PreProcessor)
-
-        with pytest.raises(TypeError) as error:
-            preprocessor.load("/fake/path")
-
-        assert str(error.value) == (
-            "Processed data artifact must be a tuple; received list"
+        tmp_path: Path,
+    ) -> None:
+        trusted_root = tmp_path / "trusted"
+        path = trusted_root / "processed" / "data.pt"
+        write_pyg_cache(
+            [Data(x=torch.ones(1, 1))],
+            path,
+            trusted_root=trusted_root,
+            family="data",
+            cache_identity="writer-b",
+        )
+        manifest_path = cache_manifest_path(path)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["cache_identity"] = "writer-a"
+        manifest_path.write_text(
+            json.dumps(manifest, separators=(",", ":"), sort_keys=True),
+            encoding="utf-8",
         )
 
-    @pytest.mark.parametrize("length", [1, 5])
-    @patch("topobench.data.preprocessor.preprocessor.fs.torch_load")
-    def test_load_rejects_unsupported_tuple_length(
+        with pytest.raises(ValueError, match="payload identity"):
+            load_pyg_cache(
+                path,
+                trusted_root=trusted_root,
+                family="data",
+                cache_identity="writer-a",
+                data_cls=Data,
+            )
+
+    def test_heterodata_roundtrip_reconstructs_only_requested_static_class(
         self,
-        mock_torch_load,
-        length,
-    ):
-        """Only documented two-, three-, and four-element caches are valid."""
-        mock_torch_load.return_value = tuple(range(length))
-        preprocessor = object.__new__(PreProcessor)
+        tmp_path: Path,
+    ) -> None:
+        source = HeteroData()
+        source["author"].x = torch.tensor([[1.0], [2.0]])
+        source["paper"].x = torch.tensor([[3.0], [4.0], [5.0]])
+        source["author", "writes", "paper"].edge_index = torch.tensor(
+            [[0, 1], [1, 2]],
+            dtype=torch.long,
+        )
+        source.source_config = {"selector": "synthetic-hetero", "seed": 11}
+        original = copy.deepcopy(source)
+        trusted_root = tmp_path / "trusted"
+        path = trusted_root / "processed" / "heterodata.pt"
+        identity = "heterodata-cache-identity"
 
-        with pytest.raises(ValueError) as error:
-            preprocessor.load("/fake/path")
-
-        assert str(error.value) == (
-            "Processed data artifact must contain 2, 3, or 4 elements; "
-            f"received {length}"
+        write_pyg_cache(
+            [source],
+            path,
+            trusted_root=trusted_root,
+            family="heterodata",
+            cache_identity=identity,
+        )
+        loaded, slices = load_pyg_cache(
+            path,
+            trusted_root=trusted_root,
+            family="heterodata",
+            cache_identity=identity,
+            data_cls=HeteroData,
         )
 
-    @patch("topobench.data.preprocessor.preprocessor.fs.torch_load")
-    def test_load_rejects_unsupported_data_payload(self, mock_torch_load):
-        """A tuple alone does not make an arbitrary payload a valid cache."""
-        mock_torch_load.return_value = (42, None)
-        preprocessor = object.__new__(PreProcessor)
-
-        with pytest.raises(TypeError) as error:
-            preprocessor.load("/fake/path")
-
-        assert str(error.value) == (
-            "Processed data payload must be Data, HeteroData, or a "
-            "dictionary; received int"
+        assert type(loaded) is HeteroData
+        assert isinstance(slices, dict)
+        assert loaded.metadata() == source.metadata()
+        assert torch.equal(loaded["author"].x, source["author"].x)
+        assert torch.equal(
+            loaded["author", "writes", "paper"].edge_index,
+            source["author", "writes", "paper"].edge_index,
         )
+        assert loaded.source_config == source.source_config
+        assert source.metadata() == original.metadata()
+        assert torch.equal(source["paper"].x, original["paper"].x)
 
-    @patch("topobench.data.preprocessor.preprocessor.fs.torch_load")
-    def test_load_rejects_unsupported_slices_payload(self, mock_torch_load):
-        """Slice metadata must retain the structure expected by PyG."""
-        mock_torch_load.return_value = (Data(), [])
-        preprocessor = object.__new__(PreProcessor)
+        payload = torch.load(path, weights_only=True)
+        assert set(payload) == {
+            "schema",
+            "schema_version",
+            "family",
+            "cache_identity",
+            "data",
+            "slices",
+        }
+        assert payload["family"] == "heterodata"
+        _assert_tensor_primitive_tree(payload)
+        assert all(not isinstance(value, type) for value in payload.values())
 
-        with pytest.raises(TypeError) as error:
-            preprocessor.load("/fake/path")
+        with pytest.raises((TypeError, ValueError), match="family|Data"):
+            load_pyg_cache(
+                path,
+                trusted_root=trusted_root,
+                family="heterodata",
+                cache_identity=identity,
+                data_cls=Data,
+            )
 
-        assert str(error.value) == (
-            "Processed data slices must be a dictionary or None; "
-            "received list"
-        )
-
-    @patch("topobench.data.preprocessor.preprocessor.fs.torch_load")
-    def test_load_rejects_invalid_data_class_for_dict(
+    def test_matching_digest_poison_never_executes_reducer(
         self,
-        mock_torch_load,
-    ):
-        """Dictionary cache payloads require a supported reconstruction class."""
-        mock_torch_load.return_value = ({"x": torch.ones(1, 1)}, None, object)
-        preprocessor = object.__new__(PreProcessor)
+        tmp_path: Path,
+    ) -> None:
+        path, trusted_root = _write_data_cache(tmp_path)
+        marker = tmp_path / "reducer-executed"
+        torch.save({"poison": _ReducerCanary(marker)}, path)
+        _refresh_cache_payload_descriptor(path)
+        assert not marker.exists()
 
-        with pytest.raises(TypeError) as error:
-            preprocessor.load("/fake/path")
+        with pytest.raises(Exception, match="cache|payload|schema|weights"):
+            load_pyg_cache(
+                path,
+                trusted_root=trusted_root,
+                family="data",
+                cache_identity="fixture-identity",
+                data_cls=Data,
+            )
 
-        assert str(error.value) == (
-            "Processed data class must be Data or HeteroData for a "
-            "dictionary payload; received object"
-        )
+        assert not marker.exists()
+
+    def test_payload_digest_mismatch_is_rejected_before_reconstruction(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        path, trusted_root = _write_data_cache(tmp_path)
+        path.write_bytes(path.read_bytes() + b"mutated")
+
+        with pytest.raises(
+            (RuntimeError, ValueError), match="digest|SHA|size"
+        ):
+            load_pyg_cache(
+                path,
+                trusted_root=trusted_root,
+                family="data",
+                cache_identity="fixture-identity",
+                data_cls=Data,
+            )
+
+    @pytest.mark.parametrize(
+        ("field", "stale_value"),
+        [("schema_version", 0), ("cache_identity", "stale-identity")],
+        ids=["schema-version", "cache-identity"],
+    )
+    def test_stale_manifest_is_rejected(
+        self,
+        tmp_path: Path,
+        field: str,
+        stale_value,
+    ) -> None:
+        path, trusted_root = _write_data_cache(tmp_path)
+        manifest_path = cache_manifest_path(path)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest[field] = stale_value
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        with pytest.raises(
+            (RuntimeError, ValueError), match="manifest|identity|version"
+        ):
+            load_pyg_cache(
+                path,
+                trusted_root=trusted_root,
+                family="data",
+                cache_identity="fixture-identity",
+                data_cls=Data,
+            )
+
+    def test_write_rejects_payload_outside_trusted_root(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        trusted_root = tmp_path / "trusted"
+        escaped_path = tmp_path / "escaped.pt"
+
+        with pytest.raises(
+            (PermissionError, ValueError), match="root|outside|escape"
+        ):
+            write_pyg_cache(
+                [Data(x=torch.ones(1, 1))],
+                escaped_path,
+                trusted_root=trusted_root,
+                family="data",
+                cache_identity="fixture-identity",
+            )
+
+        assert not escaped_path.exists()
+        assert not cache_manifest_path(escaped_path).exists()
+
+    def test_load_rejects_symlinked_payload_inside_trusted_root(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        path, trusted_root = _write_data_cache(tmp_path)
+        external = tmp_path / "external-payload.pt"
+        external.write_bytes(path.read_bytes())
+        path.unlink()
+        path.symlink_to(external)
+
+        with pytest.raises(
+            (PermissionError, ValueError), match="symlink|regular|root"
+        ):
+            load_pyg_cache(
+                path,
+                trusted_root=trusted_root,
+                family="data",
+                cache_identity="fixture-identity",
+                data_cls=Data,
+            )
+
+    @pytest.mark.skipif(os.name != "posix", reason="POSIX mode bits required")
+    @pytest.mark.parametrize("mode", [0o664, 0o646], ids=["group", "world"])
+    def test_load_rejects_group_or_world_writable_payload(
+        self,
+        tmp_path: Path,
+        mode: int,
+    ) -> None:
+        path, trusted_root = _write_data_cache(tmp_path)
+        path.chmod(mode)
+
+        with pytest.raises(
+            (PermissionError, ValueError), match="mode|writable|permission"
+        ):
+            load_pyg_cache(
+                path,
+                trusted_root=trusted_root,
+                family="data",
+                cache_identity="fixture-identity",
+                data_cls=Data,
+            )
+
+    @pytest.mark.skipif(
+        not hasattr(os, "geteuid"),
+        reason="effective UID is unavailable",
+    )
+    def test_load_rejects_effective_uid_mismatch(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        path, trusted_root = _write_data_cache(tmp_path)
+        actual_uid = path.stat().st_uid
+        monkeypatch.setattr(os, "geteuid", lambda: actual_uid + 1)
+
+        with pytest.raises(
+            (PermissionError, ValueError), match="owner|UID|uid"
+        ):
+            load_pyg_cache(
+                path,
+                trusted_root=trusted_root,
+                family="data",
+                cache_identity="fixture-identity",
+                data_cls=Data,
+            )
 
 
 class TestPreProcessorTransforms:
@@ -862,8 +1120,7 @@ class TestPreProcessorTransforms:
             },
             "loader": {
                 "target": (
-                    "test.data.preprocess.test_preprocessor."
-                    "_CacheRecordLoader"
+                    "test.data.preprocess.test_preprocessor._CacheRecordLoader"
                 ),
                 "parameters": {
                     **_cache_parameters(tmp_path),
@@ -1117,11 +1374,14 @@ class TestPreProcessorTransforms:
                 "target": None,
                 "parameters": expected,
             }
-            assert json.loads(
-                Path(omitted_processed.cache_record_path).read_text(
-                    encoding="utf-8"
+            assert (
+                json.loads(
+                    Path(omitted_processed.cache_record_path).read_text(
+                        encoding="utf-8"
+                    )
                 )
-            ) == omitted_processed.cache_record
+                == omitted_processed.cache_record
+            )
 
     def test_direct_dataset_content_parameters_prevent_collisions(
         self,
@@ -1209,15 +1469,15 @@ class TestPreProcessorTransforms:
 
         assert json.loads(record_path.read_text(encoding="utf-8")) == mismatch
 
-    def test_digest_component_prevents_transform_path_traversal(self, tmp_path):
+    def test_digest_component_prevents_transform_path_traversal(
+        self, tmp_path
+    ):
         """Untrusted transform labels never become path components."""
         preprocessor = _processed_fixture(
             tmp_path,
             transform_key="../../escape",
         )
-        expected_parent = (
-            tmp_path / "cache" / "SyntheticGraph"
-        ).resolve()
+        expected_parent = (tmp_path / "cache" / "SyntheticGraph").resolve()
 
         assert Path(preprocessor.processed_data_dir).parent.resolve() == (
             expected_parent
@@ -1340,19 +1600,28 @@ class TestPreProcessorTransforms:
         mock_dataset._data = torch_geometric.data.Data()
         mock_dataset.slices = {}
 
-        transforms_config = DictConfig({
-            "liftings": {
-                "transform1": {"transform_name": "DummyTransform", "param1": "value1"}
+        transforms_config = DictConfig(
+            {
+                "liftings": {
+                    "transform1": {
+                        "transform_name": "DummyTransform",
+                        "param1": "value1",
+                    }
+                }
             }
-        })
+        )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create preprocessor instance
-            with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
+            with patch.object(
+                PreProcessor, "__init__", lambda self, *args, **kwargs: None
+            ):
                 preprocessor = PreProcessor(None, tmpdir, None)
 
                 # Mock DataTransform to avoid needing real transforms
-                with patch("topobench.data.preprocessor.preprocessor.DataTransform") as mock_dt:
+                with patch(
+                    "topobench.data.preprocessor.preprocessor.DataTransform"
+                ) as mock_dt:
                     mock_dt.return_value = MagicMock()
                     preprocessor.set_processed_data_dir = MagicMock()
 
@@ -1361,159 +1630,206 @@ class TestPreProcessorTransforms:
                     )
 
                     # Check that a Compose object was created
-                    assert hasattr(pre_transform, '__call__')
+                    assert callable(pre_transform)
 
     def test_instantiate_pre_transform_multiple_transforms(self):
         """Test instantiate_pre_transform with multiple transforms (else branch)."""
-        transforms_config = DictConfig({
-            "transform1": {"transform_name": "Transform1", "param1": "value1"},
-            "transform2": {"transform_name": "Transform2", "param2": "value2"}
-        })
+        transforms_config = DictConfig(
+            {
+                "transform1": {
+                    "transform_name": "Transform1",
+                    "param1": "value1",
+                },
+                "transform2": {
+                    "transform_name": "Transform2",
+                    "param2": "value2",
+                },
+            }
+        )
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
-                preprocessor = PreProcessor(None, tmpdir, None)
+        with tempfile.TemporaryDirectory() as tmpdir, patch.object(
+            PreProcessor, "__init__", lambda self, *args, **kwargs: None
+        ):
+            preprocessor = PreProcessor(None, tmpdir, None)
 
-                # Mock DataTransform
-                with patch("topobench.data.preprocessor.preprocessor.DataTransform") as mock_dt:
-                    mock_dt.return_value = MagicMock()
+            # Mock DataTransform
+            with patch(
+                "topobench.data.preprocessor.preprocessor.DataTransform"
+            ) as mock_dt:
+                mock_dt.return_value = MagicMock()
 
-                    # Mock set_processed_data_dir
-                    preprocessor.set_processed_data_dir = MagicMock()
+                # Mock set_processed_data_dir
+                preprocessor.set_processed_data_dir = MagicMock()
 
-                    pre_transform = preprocessor.instantiate_pre_transform(
-                        tmpdir, transforms_config
-                    )
+                pre_transform = preprocessor.instantiate_pre_transform(
+                    tmpdir, transforms_config
+                )
 
-                    # DataTransform should be called for each transform
-                    assert mock_dt.call_count == 2
-                    assert hasattr(pre_transform, '__call__')
+                # DataTransform should be called for each transform
+                assert mock_dt.call_count == 2
+                assert callable(pre_transform)
 
     def test_instantiate_pre_transform_single_transform(self):
         """Test instantiate_pre_transform with single transform (if branch)."""
-        transforms_config = DictConfig({
-            "transform_name": "SingleTransform",
-            "param1": "value1",
-            "param2": 42
-        })
+        transforms_config = DictConfig(
+            {
+                "transform_name": "SingleTransform",
+                "param1": "value1",
+                "param2": 42,
+            }
+        )
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
-                preprocessor = PreProcessor(None, tmpdir, None)
+        with tempfile.TemporaryDirectory() as tmpdir, patch.object(
+            PreProcessor, "__init__", lambda self, *args, **kwargs: None
+        ):
+            preprocessor = PreProcessor(None, tmpdir, None)
 
-                # Mock DataTransform
-                with patch("topobench.data.preprocessor.preprocessor.DataTransform") as mock_dt:
-                    # Mock DataTransform to return a mock object
-                    mock_transform = MagicMock()
-                    mock_dt.return_value = mock_transform
+            # Mock DataTransform
+            with patch(
+                "topobench.data.preprocessor.preprocessor.DataTransform"
+            ) as mock_dt:
+                # Mock DataTransform to return a mock object
+                mock_transform = MagicMock()
+                mock_dt.return_value = mock_transform
 
-                    # Mock set_processed_data_dir
-                    preprocessor.set_processed_data_dir = MagicMock()
+                # Mock set_processed_data_dir
+                preprocessor.set_processed_data_dir = MagicMock()
 
-                    pre_transform = preprocessor.instantiate_pre_transform(
-                        tmpdir, transforms_config
-                    )
+                pre_transform = preprocessor.instantiate_pre_transform(
+                    tmpdir, transforms_config
+                )
 
-                    # DataTransform should be called once with the entire config
-                    assert mock_dt.call_count == 1
-                    # Should be called with all the config parameters
-                    mock_dt.assert_called_once_with(**transforms_config)
+                # DataTransform should be called once with the entire config
+                assert mock_dt.call_count == 1
+                # Should be called with all the config parameters
+                mock_dt.assert_called_once_with(**transforms_config)
 
-                    # Verify the pre_transform is a Compose object
-                    assert isinstance(
-                        pre_transform,
-                        torch_geometric.transforms.Compose
-                    )
+                # Verify the pre_transform is a Compose object
+                assert isinstance(
+                    pre_transform, torch_geometric.transforms.Compose
+                )
 
     def test_instantiate_pre_transform_calls_set_processed_data_dir(self):
         """Test that instantiate_pre_transform calls set_processed_data_dir."""
-        transforms_config = DictConfig({
-            "transform1": {"transform_name": "Transform1", "param1": "value1"}
-        })
+        transforms_config = DictConfig(
+            {
+                "transform1": {
+                    "transform_name": "Transform1",
+                    "param1": "value1",
+                }
+            }
+        )
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
-                preprocessor = PreProcessor(None, tmpdir, None)
+        with tempfile.TemporaryDirectory() as tmpdir, patch.object(
+            PreProcessor, "__init__", lambda self, *args, **kwargs: None
+        ):
+            preprocessor = PreProcessor(None, tmpdir, None)
 
-                with patch("topobench.data.preprocessor.preprocessor.DataTransform") as mock_dt:
-                    mock_dt.return_value = MagicMock()
-                    # Mock set_processed_data_dir
-                    preprocessor.set_processed_data_dir = MagicMock()
+            with patch(
+                "topobench.data.preprocessor.preprocessor.DataTransform"
+            ) as mock_dt:
+                mock_dt.return_value = MagicMock()
+                # Mock set_processed_data_dir
+                preprocessor.set_processed_data_dir = MagicMock()
 
-                    pre_transform = preprocessor.instantiate_pre_transform(
-                        tmpdir, transforms_config
-                    )
+                preprocessor.instantiate_pre_transform(
+                    tmpdir, transforms_config
+                )
 
-                    call_args = (
-                        preprocessor.set_processed_data_dir.call_args.args
-                    )
-                    assert call_args[0] == tmpdir
-                    assert call_args[1][0]["name"] == "transform1"
-                    assert call_args[1][0]["parameters"] == {
-                        "param1": "value1",
-                        "preprocessor_device": "cpu",
-                        "transform_name": "Transform1",
-                    }
+                call_args = (
+                    preprocessor.set_processed_data_dir.call_args.args
+                )
+                assert call_args[0] == tmpdir
+                assert call_args[1][0]["name"] == "transform1"
+                assert call_args[1][0]["parameters"] == {
+                    "param1": "value1",
+                    "preprocessor_device": "cpu",
+                    "transform_name": "Transform1",
+                }
 
     def test_instantiate_pre_transform_returns_compose(self):
         """Test that instantiate_pre_transform returns a Compose object."""
-        transforms_config = DictConfig({
-            "transform1": {"transform_name": "Transform1", "param1": "value1"}
-        })
+        transforms_config = DictConfig(
+            {
+                "transform1": {
+                    "transform_name": "Transform1",
+                    "param1": "value1",
+                }
+            }
+        )
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
-                preprocessor = PreProcessor(None, tmpdir, None)
+        with tempfile.TemporaryDirectory() as tmpdir, patch.object(
+            PreProcessor, "__init__", lambda self, *args, **kwargs: None
+        ):
+            preprocessor = PreProcessor(None, tmpdir, None)
 
-                with patch("topobench.data.preprocessor.preprocessor.DataTransform") as mock_dt:
-                    mock_dt.return_value = MagicMock()
-                    preprocessor.set_processed_data_dir = MagicMock()
+            with patch(
+                "topobench.data.preprocessor.preprocessor.DataTransform"
+            ) as mock_dt:
+                mock_dt.return_value = MagicMock()
+                preprocessor.set_processed_data_dir = MagicMock()
 
-                    pre_transform = preprocessor.instantiate_pre_transform(
-                        tmpdir, transforms_config
-                    )
+                pre_transform = preprocessor.instantiate_pre_transform(
+                    tmpdir, transforms_config
+                )
 
-                    # Check it's a Compose instance
-                    assert isinstance(
-                        pre_transform,
-                        torch_geometric.transforms.Compose
-                    )
+                # Check it's a Compose instance
+                assert isinstance(
+                    pre_transform, torch_geometric.transforms.Compose
+                )
 
     def test_instantiate_pre_transform_single_vs_multiple(self):
         """Test that the method correctly distinguishes between single and multiple transforms."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
-                preprocessor = PreProcessor(None, tmpdir, None)
-                preprocessor.set_processed_data_dir = MagicMock()
+        with tempfile.TemporaryDirectory() as tmpdir, patch.object(
+            PreProcessor, "__init__", lambda self, *args, **kwargs: None
+        ):
+            preprocessor = PreProcessor(None, tmpdir, None)
+            preprocessor.set_processed_data_dir = MagicMock()
 
-                with patch("topobench.data.preprocessor.preprocessor.DataTransform") as mock_dt:
-                    mock_dt.return_value = MagicMock()
+            with patch(
+                "topobench.data.preprocessor.preprocessor.DataTransform"
+            ) as mock_dt:
+                mock_dt.return_value = MagicMock()
 
-                    # Test single transform (has transform_name key)
-                    single_config = DictConfig({
+                # Test single transform (has transform_name key)
+                single_config = DictConfig(
+                    {
                         "transform_name": "SingleTransform",
-                        "param1": "value1"
-                    })
+                        "param1": "value1",
+                    }
+                )
 
-                    preprocessor.instantiate_pre_transform(tmpdir, single_config)
+                preprocessor.instantiate_pre_transform(
+                    tmpdir, single_config
+                )
 
-                    # Should be called once with all parameters
-                    assert mock_dt.call_count == 1
-                    mock_dt.assert_called_with(**single_config)
+                # Should be called once with all parameters
+                assert mock_dt.call_count == 1
+                mock_dt.assert_called_with(**single_config)
 
-                    # Reset mock
-                    mock_dt.reset_mock()
+                # Reset mock
+                mock_dt.reset_mock()
 
-                    # Test multiple transforms (no transform_name key at top level)
-                    multiple_config = DictConfig({
-                        "transform1": {"transform_name": "Transform1", "param1": "value1"},
-                        "transform2": {"transform_name": "Transform2", "param2": "value2"}
-                    })
+                # Test multiple transforms (no transform_name key at top level)
+                multiple_config = DictConfig(
+                    {
+                        "transform1": {
+                            "transform_name": "Transform1",
+                            "param1": "value1",
+                        },
+                        "transform2": {
+                            "transform_name": "Transform2",
+                            "param2": "value2",
+                        },
+                    }
+                )
 
-                    preprocessor.instantiate_pre_transform(tmpdir, multiple_config)
+                preprocessor.instantiate_pre_transform(
+                    tmpdir, multiple_config
+                )
 
-                    # Should be called twice, once for each transform
-                    assert mock_dt.call_count == 2
+                # Should be called twice, once for each transform
+                assert mock_dt.call_count == 2
 
 
 class TestPreProcessorEdgeCases:
@@ -1537,7 +1853,9 @@ class TestPreProcessorEdgeCases:
         """Test the processed_dir property returns correct paths."""
         with tempfile.TemporaryDirectory() as tmpdir:
             # Without transforms
-            with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
+            with patch.object(
+                PreProcessor, "__init__", lambda self, *args, **kwargs: None
+            ):
                 preprocessor = PreProcessor(None, tmpdir, None)
                 preprocessor.root = tmpdir
                 preprocessor.transforms_applied = False
@@ -1545,7 +1863,9 @@ class TestPreProcessorEdgeCases:
                 assert preprocessor.processed_dir == tmpdir
 
             # With transforms
-            with patch.object(PreProcessor, '__init__', lambda self, *args, **kwargs: None):
+            with patch.object(
+                PreProcessor, "__init__", lambda self, *args, **kwargs: None
+            ):
                 preprocessor = PreProcessor(None, tmpdir, None)
                 preprocessor.root = tmpdir
                 preprocessor.transforms_applied = True

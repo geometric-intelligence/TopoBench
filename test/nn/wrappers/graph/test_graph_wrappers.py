@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from lightning import LightningModule
 import pytest
 import torch
+from lightning import LightningModule
 from torch import Tensor, nn
 from torch_geometric.data import Batch, Data
 
@@ -35,7 +35,7 @@ def test_graph_wrapper_exports_are_explicit_and_narrow() -> None:
 
 def _move_tensors_to_meta(data: Data) -> None:
     """Simulate framework transfer without requiring accelerator hardware."""
-    for field in data.keys():
+    for field in data:
         value = data[field]
         if isinstance(value, Tensor):
             data[field] = value.to("meta")
@@ -76,9 +76,7 @@ def test_trusted_transferred_evidence_avoids_device_content_reads() -> None:
 def test_trusted_optional_evidence_rejects_recorded_nonfinite_values() -> None:
     """Consume mode rejects CPU-recorded invalid values without device reads."""
     data = _graph_batch()
-    data.edge_weight = torch.tensor(
-        [1.0, 1.0, float("nan"), 1.0, 1.0, 1.0]
-    )
+    data.edge_weight = torch.tensor([1.0, 1.0, float("nan"), 1.0, 1.0, 1.0])
     evidence = _prepare_graph_batch_evidence(data)
     _move_tensors_to_meta(data)
     _bind_graph_batch_evidence(data, evidence)
@@ -276,7 +274,7 @@ def _node_graph() -> Data:
 
 def _snapshot_data(data: Data) -> tuple[dict[str, object], dict[str, Tensor]]:
     """Capture field identity and tensor values for mutation checks."""
-    fields = {key: data[key] for key in data.keys()}
+    fields = {key: data[key] for key in data}
     tensor_values = {
         key: value.clone()
         for key, value in fields.items()
@@ -525,15 +523,11 @@ def test_optional_edge_field_modes_are_explicit(
         ("edge_attr", torch.ones(6, 2, dtype=torch.float64)),
         (
             "edge_attr",
-            torch.tensor(
-                [[1.0], [1.0], [float("nan")], [1.0], [1.0], [1.0]]
-            ),
+            torch.tensor([[1.0], [1.0], [float("nan")], [1.0], [1.0], [1.0]]),
         ),
         (
             "edge_attr",
-            torch.tensor(
-                [[1.0], [1.0], [float("-inf")], [1.0], [1.0], [1.0]]
-            ),
+            torch.tensor([[1.0], [1.0], [float("-inf")], [1.0], [1.0], [1.0]]),
         ),
     ],
     ids=[
@@ -629,9 +623,7 @@ def test_gnn_ignores_malformed_ignored_edge_fields(field: str) -> None:
 def test_gnn_passes_aligned_edge_fields_unchanged() -> None:
     """Capable backbones receive both valid edge tensors by identity."""
     data = _graph_batch()
-    data.edge_attr = torch.arange(
-        data.edge_index.size(1), dtype=data.x.dtype
-    )
+    data.edge_attr = torch.arange(data.edge_index.size(1), dtype=data.x.dtype)
     data.edge_weight = torch.linspace(
         0.25,
         1.25,

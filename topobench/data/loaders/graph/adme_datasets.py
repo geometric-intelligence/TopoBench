@@ -31,7 +31,11 @@ from topobench.data.loaders.base import (
     canonical_sha256,
     isolated_rng_state,
 )
-
+from topobench.data.utils.cache_io import (
+    cache_manifest_path,
+    load_pyg_cache,
+    write_pyg_cache,
+)
 
 _PROVENANCE_VERSION = 2
 _PHASES = ("train", "valid", "test")
@@ -66,8 +70,7 @@ def _canonical_scalar(value: Any) -> Any:
     if callable(isoformat):
         return {"isoformat": isoformat()}
     raise TypeError(
-        "ADME provenance cannot canonically serialize "
-        f"{type(value).__name__}"
+        f"ADME provenance cannot canonically serialize {type(value).__name__}"
     )
 
 
@@ -85,9 +88,7 @@ def _frame_records(frame: Any) -> list[dict[str, Any]]:
 def _source_data_digest(split: dict[str, Any]) -> str:
     """Hash source rows independently of their assigned split phase."""
     records = [
-        record
-        for phase in _PHASES
-        for record in _frame_records(split[phase])
+        record for phase in _PHASES for record in _frame_records(split[phase])
     ]
     records.sort(key=canonical_json_bytes)
     return canonical_sha256(records)
@@ -143,15 +144,9 @@ def _build_provenance(
         },
         "representation": {
             "node_feature_encoding": "categorical_one_hot",
-            "node_feature_cardinalities": list(
-                OGB_ATOM_FEATURE_CARDINALITIES
-            ),
-            "stored_node_feature_width": len(
-                OGB_ATOM_FEATURE_CARDINALITIES
-            ),
-            "encoded_node_feature_width": sum(
-                OGB_ATOM_FEATURE_CARDINALITIES
-            ),
+            "node_feature_cardinalities": list(OGB_ATOM_FEATURE_CARDINALITIES),
+            "stored_node_feature_width": len(OGB_ATOM_FEATURE_CARDINALITIES),
+            "encoded_node_feature_width": sum(OGB_ATOM_FEATURE_CARDINALITIES),
         },
     }
 
@@ -256,25 +251,43 @@ class ADMEDatasetLoader(AbstractLoader):
         class _ADMEDataset(InMemoryDataset):
             """Internal cache for already converted ADME graphs."""
 
-            def __init__(self, root, data_name, split_idx, graph_list):
+            def __init__(
+                self,
+                root,
+                data_name,
+                split_idx,
+                graph_list,
+                cache_identity,
+            ):
                 self.data_name = data_name
                 self.split_idx = split_idx
                 self._graph_list = graph_list
+                self.cache_identity = cache_identity
                 super().__init__(root)
-                self._data, self.slices = torch.load(
+                self._data, self.slices = load_pyg_cache(
                     self.processed_paths[0],
-                    weights_only=False,
+                    trusted_root=self.root,
+                    family="data",
+                    cache_identity=self.cache_identity,
+                    data_cls=Data,
                 )
 
             @property
             def processed_file_names(self):
                 """Return the representation-specific processed file name."""
-                return [f"{self.data_name}_node_categories_v1.pt"]
+                name = f"{self.data_name}_node_categories_v1.pt"
+                return [name, cache_manifest_path(name).name]
 
             def process(self):
                 """Collate pre-built graphs and persist the processed cache."""
                 self._data, self.slices = self.collate(self._graph_list)
-                torch.save((self._data, self.slices), self.processed_paths[0])
+                write_pyg_cache(
+                    self._graph_list,
+                    self.processed_paths[0],
+                    trusted_root=self.root,
+                    family="data",
+                    cache_identity=self.cache_identity,
+                )
 
             def __repr__(self):
                 return f"ADMEDataset({self.data_name}, {len(self)})"
@@ -344,22 +357,24 @@ class ADMEDatasetLoader(AbstractLoader):
         provenance_path = processed_path.with_name(
             f"{processed_path.name}.provenance.json"
         )
-        cache_hit = processed_path.is_file() and _provenance_matches(
-            provenance_path,
-            provenance,
+        cache_identity = canonical_sha256(provenance)
+        manifest_path = cache_manifest_path(processed_path)
+        cache_hit = (
+            processed_path.is_file()
+            and manifest_path.is_file()
+            and _provenance_matches(provenance_path, provenance)
         )
         if not cache_hit:
             processed_path.unlink(missing_ok=True)
             provenance_path.unlink(missing_ok=True)
+            manifest_path.unlink(missing_ok=True)
 
         graph_list = []
         if not cache_hit:
             for split_data in (train_data, valid_data, test_data):
                 for _, row in split_data.iterrows():
                     graph_dict = smiles2graph(row["Drug"])
-                    node_features = torch.as_tensor(
-                        graph_dict["node_feat"]
-                    )
+                    node_features = torch.as_tensor(graph_dict["node_feat"])
                     validate_categorical_columns(
                         node_features,
                         OGB_ATOM_FEATURE_CARDINALITIES,
@@ -407,14 +422,15 @@ class ADMEDatasetLoader(AbstractLoader):
             data_name=dataset_name,
             split_idx=split_idx,
             graph_list=graph_list,
+            cache_identity=cache_identity,
         )
         if not cache_hit:
-            processed_path.chmod(processed_path.stat().st_mode & ~0o111)
+            processed_path.chmod(processed_path.stat().st_mode & ~0o022)
             _write_provenance(provenance_path, provenance)
 
         dataset.split_idx = split_idx
         dataset.split_provenance = provenance
-        dataset.split_fingerprint = canonical_sha256(provenance)
+        dataset.split_fingerprint = cache_identity
         dataset.feature_encoding = "categorical_one_hot"
         dataset.feature_cardinalities = OGB_ATOM_FEATURE_CARDINALITIES
         dataset.provenance_path = str(provenance_path)

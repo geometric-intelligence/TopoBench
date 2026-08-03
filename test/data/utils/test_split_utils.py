@@ -793,5 +793,3 @@ class TestInductiveSubsetViews:
         assert isinstance(test_ds, Subset)
         assert train_ds.dataset is val_ds.dataset is test_ds.dataset is source
         assert source.item_accesses == 0
-
-

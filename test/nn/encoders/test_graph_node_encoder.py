@@ -2,8 +2,8 @@
 
 import pytest
 import torch
-from torch.nn.parameter import UninitializedParameter
 from omegaconf import OmegaConf
+from torch.nn.parameter import UninitializedParameter
 from torch_geometric.data import Batch, Data, HeteroData
 from torch_geometric.nn import GraphNorm
 
@@ -127,7 +127,6 @@ def test_graph_node_encoder_replaces_native_features() -> None:
     assert result.x is not original_x
 
 
-
 def test_sparse_coo_projection_matches_dense_linear_reference() -> None:
     dense_x = torch.tensor(
         [
@@ -147,9 +146,7 @@ def test_sparse_coo_projection_matches_dense_linear_reference() -> None:
             encoder.projection.weight,
             encoder.projection.bias,
         )
-        expected = torch.relu(
-            encoder.sparse_norm(projected, batch=batch)
-        )
+        expected = torch.relu(encoder.sparse_norm(projected, batch=batch))
 
     result = encoder(data)
 
@@ -197,9 +194,11 @@ def test_sparse_projection_has_finite_value_and_parameter_gradients() -> None:
 def test_validated_sparse_forward_skips_redundant_full_value_scan(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    sparse_x = torch.tensor(
-        [[1.0, 0.0, 2.0], [0.0, -1.0, 0.0]]
-    ).to_sparse_coo().coalesce()
+    sparse_x = (
+        torch.tensor([[1.0, 0.0, 2.0], [0.0, -1.0, 0.0]])
+        .to_sparse_coo()
+        .coalesce()
+    )
     data = Data(x=sparse_x)
     mark_hypergraph_validated(
         data,
@@ -232,9 +231,11 @@ def test_unvalidated_sparse_forward_rejects_nonfinite_values() -> None:
 
 
 def test_stale_sparse_validation_context_is_rejected() -> None:
-    original = torch.tensor(
-        [[1.0, 0.0, 2.0], [0.0, -1.0, 0.0]]
-    ).to_sparse_coo().coalesce()
+    original = (
+        torch.tensor([[1.0, 0.0, 2.0], [0.0, -1.0, 0.0]])
+        .to_sparse_coo()
+        .coalesce()
+    )
     data = Data(x=original)
     mark_hypergraph_validated(
         data,
@@ -279,6 +280,7 @@ def test_sparse_encoder_rejects_unsupported_layouts(
 
     with pytest.raises((TypeError, ValueError), match=message):
         encoder(Data(x=features))
+
 
 def test_categorical_batch_encoding_matches_canonical_one_hot_path() -> None:
     categories = torch.tensor(
@@ -437,7 +439,9 @@ def test_categorical_encoder_rejects_invalid_categories_before_projection(
         nonlocal projection_called
         projection_called = True
 
-    handle = encoder.projection.register_forward_pre_hook(mark_projection_called)
+    handle = encoder.projection.register_forward_pre_hook(
+        mark_projection_called
+    )
     data = Data(x=x)
     with pytest.raises(error_type, match=message):
         encoder(data)
@@ -462,9 +466,7 @@ def test_categorical_encoder_rejects_nonfinite_continuous_suffix() -> None:
 
 
 def test_categorical_encoder_accepts_hydra_cardinality_sequence() -> None:
-    cardinalities = OmegaConf.create(
-        list(OGB_ATOM_FEATURE_CARDINALITIES)
-    )
+    cardinalities = OmegaConf.create(list(OGB_ATOM_FEATURE_CARDINALITIES))
 
     encoder = GraphNodeFeatureEncoder(
         9,

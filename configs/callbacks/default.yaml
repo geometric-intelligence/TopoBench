@@ -25,6 +25,17 @@ early_stopping:
 model_summary:
   max_depth: -1
 
+prediction_artifacts:
+  _target_: topobench.callbacks.SelectedCheckpointArtifactCallback
+  run_root: ${paths.output_dir}
+  root: ${evaluation_artifacts.root}
+  shard_rows: ${evaluation_artifacts.shard_rows}
+  shard_bytes: ${evaluation_artifacts.shard_bytes}
+  metadata_fields: ${evaluation_artifacts.metadata_fields}
+  evaluation_slices: ${evaluation_artifacts.evaluation_slices}
+  distributed_policy: ${evaluation_artifacts.distributed_policy}
+  existing_artifact_policy: ${evaluation_artifacts.existing_artifact_policy}
+
 learning_rate_monitor:
   _target_: lightning.pytorch.callbacks.LearningRateMonitor
   logging_interval: "epoch"

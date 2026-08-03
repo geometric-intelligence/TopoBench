@@ -1,10 +1,13 @@
 """Test the DGMLoss class."""
 
+from unittest.mock import MagicMock
+
 import pytest
 import torch
 import torch_geometric
-from unittest.mock import MagicMock
+
 from topobench.loss.model.DGMLoss import DGMLoss
+
 
 @pytest.fixture
 def mock_batch():
@@ -17,7 +20,14 @@ def mock_batch():
         A mock object representing a batch of data.
     """
     batch = MagicMock(spec=torch_geometric.data.Data)
-    batch.keys.return_value = ["logprobs_1", "logprobs_2", "model_state", "train_mask", "val_mask", "test_mask"]
+    batch.keys.return_value = [
+        "logprobs_1",
+        "logprobs_2",
+        "model_state",
+        "train_mask",
+        "val_mask",
+        "test_mask",
+    ]
     batch.model_state = "Training"
     batch.train_mask = torch.tensor([True, False])
     batch.val_mask = torch.tensor([False, True])
@@ -26,6 +36,7 @@ def mock_batch():
     batch.logprobs_2 = torch.tensor([[0.7, 0.8, 0.9], [1.0, 1.1, 1.2]])
     batch.__getitem__.side_effect = lambda key: getattr(batch, key)
     return batch
+
 
 @pytest.fixture
 def mock_model_out():
@@ -39,8 +50,9 @@ def mock_model_out():
     """
     return {
         "logits": torch.tensor([[0.1, 0.9], [0.8, 0.2], [0.4, 0.6]]),
-        "labels": torch.tensor([1, 0, 1])
+        "labels": torch.tensor([1, 0, 1]),
     }
+
 
 def test_dgm_loss_init():
     """
@@ -53,10 +65,12 @@ def test_dgm_loss_init():
     assert loss_fn.loss_weight == 0.7
     assert loss_fn.avg_accuracy is None
 
+
 def test_dgm_loss_repr():
     """Test the string representation of the DGMLoss class."""
     loss_fn = DGMLoss()
     assert repr(loss_fn) == "DGMLoss()"
+
 
 def test_dgm_loss_forward(mock_batch, mock_model_out):
     """
@@ -76,6 +90,7 @@ def test_dgm_loss_forward(mock_batch, mock_model_out):
 
     # Check if the loss value is a scalar tensor
     assert loss.dim() == 0
+
 
 def test_dgm_loss_forward_with_different_masks(mock_batch, mock_model_out):
     """
@@ -115,6 +130,7 @@ def test_dgm_loss_forward_with_different_masks(mock_batch, mock_model_out):
     mock_batch.model_state = "Test"
     loss = loss_fn.forward(mock_model_out, mock_batch)
     assert isinstance(loss, torch.Tensor)
+
 
 if __name__ == "__main__":
     pytest.main()

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import weakref
 from collections.abc import Mapping
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -20,7 +20,6 @@ from torch_geometric.loader import DataLoader as GeometricDataLoader
 from test.data.dataload.test_disk_graph_datamodule import (
     exhaustive_fanout,
     materialized_heterogeneous_reference,
-    task8_stores,
 )
 from test.data.stores.test_typed_graph_store import QualifiedStoreFixture
 from topobench.data.stores.typed_graph_store import TypedGraphStore
@@ -156,7 +155,8 @@ class _RecordingSGD(SGD):
             for parameter in group["params"]
         ]
         self._observations["parameter_changed"] = any(
-            not torch.equal(left, right) for left, right in zip(before, after)
+            not torch.equal(left, right)
+            for left, right in zip(before, after, strict=False)
         )
         self._observations["events"].append("optimizer.step")
         return result
@@ -248,7 +248,9 @@ class ProbeModel(LightningModule):
                 if "y" in batch[node_type]
             ]
             if len(candidates) != 1:
-                raise ValueError("probe batch must expose one supervised node type")
+                raise ValueError(
+                    "probe batch must expose one supervised node type"
+                )
             store = candidates[0]
         else:
             store = batch
@@ -426,32 +428,121 @@ def test_probe_reads_exactly_one_representative_batch_per_enabled_phase(
     ] == expected
 
 
+@pytest.mark.skipif(
+    not torch.backends.mps.is_available(),
+    reason="requires an available MPS accelerator",
+)
+def test_probe_releases_mps_values_before_purging_backend_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    references: dict[str, weakref.ReferenceType[Any]] = {}
+    cache_purge_live_references: list[tuple[str, ...]] = []
+
+    class OwnershipProbeModel(ProbeModel):
+        def transfer_batch_to_device(
+            self,
+            batch: Data | HeteroData,
+            device: torch.device,
+            dataloader_idx: int,
+        ) -> Data | HeteroData:
+            transferred = super().transfer_batch_to_device(
+                batch,
+                device,
+                dataloader_idx,
+            )
+            features = transferred.x
+            assert isinstance(features, Tensor)
+            assert features.device.type == "mps"
+            references["transferred_batch"] = weakref.ref(transferred)
+            references["transferred_features"] = weakref.ref(features)
+            return transferred
+
+        def model_step(
+            self,
+            batch: Data | HeteroData,
+        ) -> Mapping[str, Any]:
+            model_out = super().model_step(batch)
+            logits = model_out["logits"]
+            loss = model_out["loss"]
+            assert isinstance(logits, Tensor)
+            assert isinstance(loss, Tensor)
+            assert logits.device.type == "mps"
+            assert loss.device.type == "mps"
+            references["output"] = weakref.ref(logits)
+            references["loss"] = weakref.ref(loss)
+            return model_out
+
+    def observe_empty_cache() -> None:
+        cache_purge_live_references.append(
+            tuple(
+                name
+                for name, reference in references.items()
+                if reference() is not None
+            )
+        )
+
+    monkeypatch.setattr(torch.mps, "empty_cache", observe_empty_cache)
+    datamodule = StatefulPhaseDataModule()
+    observations = make_observations()
+
+    def configure(cfg: Any) -> None:
+        cfg.trainer.accelerator = "mps"
+
+    runner, static_result, _ = qualified_runner(
+        datamodule,
+        train=False,
+        test=True,
+        configure=configure,
+    )
+
+    result = runner.run_probe(
+        model_factory=lambda: OwnershipProbeModel(observations),
+        static_result=static_result,
+    )
+
+    assert result.passed
+    assert set(references) == {
+        "transferred_batch",
+        "transferred_features",
+        "output",
+        "loss",
+    }
+    assert cache_purge_live_references == [()]
+
+
 def _strategy_modules(
     task8_stores: dict[str, QualifiedStoreFixture],
     strategy_name: str,
 ) -> tuple[DiskGraphDataModule, DiskGraphDataModule]:
     if strategy_name == "homogeneous-disk-cluster":
         source: Any = task8_stores["homogeneous"].store_build.path
-        factory = lambda: HomogeneousClusterStrategy(
-            clusters_per_batch=1,
-            seed=31,
-        )
+
+        def factory():
+            return HomogeneousClusterStrategy(
+                clusters_per_batch=1,
+                seed=31,
+            )
     elif strategy_name == "heterogeneous-disk-cluster":
         source = task8_stores["heterogeneous"].store_build.path
-        factory = lambda: HeterogeneousClusterStrategy(
-            clusters_per_batch=1,
-            seed=31,
-        )
+
+        def factory():
+            return HeterogeneousClusterStrategy(
+                clusters_per_batch=1,
+                seed=31,
+            )
     else:
         fixture = task8_stores["heterogeneous"]
         with TypedGraphStore.open(fixture.store_build.path) as store:
             source = materialized_heterogeneous_reference(store)
             fanout = exhaustive_fanout(store.relation_types)
-        factory = lambda: HeterogeneousNeighborStrategy(
-            batch_size=1,
-            num_neighbors=fanout,
-            seed=31,
-        )
+
+        def factory():
+            return HeterogeneousNeighborStrategy(
+                batch_size=1,
+                num_neighbors=fanout,
+                seed=31,
+            )
+
     return (
         DiskGraphDataModule(source, factory(), train_shuffle=False),
         DiskGraphDataModule(source, factory(), train_shuffle=False),
@@ -594,12 +685,14 @@ def test_nontrain_disk_probe_requires_existing_fitted_state_without_fitting(
         train_shuffle=False,
     )
     try:
-        with pytest.raises(
-            FitStateError,
-            match="requires an existing exact fitted state",
+        with (
+            pytest.raises(
+                FitStateError,
+                match="requires an existing exact fitted state",
+            ),
+            module.noncommitting_probe_batches((phase,)),
         ):
-            with module.noncommitting_probe_batches((phase,)):
-                pass
+            pass
 
         assert type(transform).calls == {
             "begin": 0,

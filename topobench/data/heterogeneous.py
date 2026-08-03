@@ -10,6 +10,7 @@ from typing import cast
 import torch
 from torch_geometric.data import HeteroData
 from torch_geometric.typing import EdgeType, Metadata
+
 from topobench.data.capabilities import validate_classification_vocabulary
 
 _MASK_NAMES = ("train_mask", "val_mask", "test_mask")
@@ -146,7 +147,7 @@ def _normalize_input_channels(
 class HeterogeneousDataSpec:
     """Immutable metadata required by heterogeneous node models.
 
-    Parameters
+    Attributes
     ----------
     node_types : tuple[str, ...]
         Node types in their native PyG metadata order.

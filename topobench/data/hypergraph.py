@@ -8,6 +8,7 @@ from typing import Any, ClassVar, Final
 import torch
 from torch import Tensor
 from torch_geometric.data import Data
+
 from topobench.data.capabilities import validate_classification_vocabulary
 
 HYPERGRAPH_REPRESENTATION_VERSION: Final = 2

@@ -707,9 +707,7 @@ def get_default_metrics(task, num_classes, metrics=None):
         raise ValueError("Duplicate metric names are not allowed")
     for metric in selected:
         if metric not in BUILTIN_METRIC_SPECS:
-            raise ValueError(
-                f"Unsupported metric {metric!r} for {task}"
-            )
+            raise ValueError(f"Unsupported metric {metric!r} for {task}")
         spec = BUILTIN_METRIC_SPECS[metric]
         if task not in spec.tasks:
             registry_task = "/".join(sorted(spec.tasks))

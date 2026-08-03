@@ -38,6 +38,7 @@ class SupervisedBatch:
     logits: Tensor
     targets: Tensor
     num_examples: int
+    row_indices: Tensor | None = None
 
     def __post_init__(self) -> None:
         """Validate the public result even when constructed directly."""
@@ -49,6 +50,35 @@ class SupervisedBatch:
             raise TypeError("num_examples must be a positive built-in int")
         if self.num_examples < 1:
             raise ValueError("num_examples must be a positive built-in int")
+        if (
+            self.logits.ndim == 0
+            or self.targets.ndim == 0
+            or self.logits.shape[0] != self.num_examples
+            or self.targets.shape[0] != self.num_examples
+        ):
+            raise ValueError("logits and targets must align with num_examples")
+        row_indices = self.row_indices
+        if row_indices is None:
+            row_indices = torch.arange(
+                self.num_examples,
+                dtype=torch.long,
+                device=self.logits.device,
+            )
+            object.__setattr__(self, "row_indices", row_indices)
+        if not isinstance(row_indices, Tensor):
+            raise TypeError("row_indices must be a tensor")
+        if row_indices.dtype != torch.long or row_indices.ndim != 1:
+            raise TypeError("row_indices must be a rank-1 torch.long tensor")
+        if row_indices.numel() != self.num_examples:
+            raise ValueError("row_indices must align with num_examples")
+        if bool(torch.any(row_indices < 0)):
+            raise ValueError("row_indices must be non-negative")
+        if row_indices.numel() > 1 and bool(
+            torch.any(row_indices[1:] <= row_indices[:-1])
+        ):
+            raise ValueError(
+                "row_indices must be unique and strictly increasing"
+            )
 
 
 class SupervisionAdapter(Protocol):
@@ -172,10 +202,16 @@ class DefaultSupervisionAdapter:
             self.task_level,
         )
         if self.task_level != "node":
+            count = targets.size(0)
             return SupervisedBatch(
                 logits,
                 targets,
-                num_examples=targets.size(0),
+                num_examples=count,
+                row_indices=torch.arange(
+                    count,
+                    dtype=torch.long,
+                    device=logits.device,
+                ),
             )
 
         try:
@@ -183,13 +219,15 @@ class DefaultSupervisionAdapter:
         except KeyError as error:
             raise ValueError(f"Invalid state_str: {phase}") from error
         mask = _mask_from_store(batch, mask_name, targets.size(0))
-        selected = int(mask.sum().item())
+        row_indices = mask.nonzero(as_tuple=False).view(-1)
+        selected = int(row_indices.numel())
         if selected == 0:
             raise ValueError(f"No supervised examples for {phase}")
         return SupervisedBatch(
-            logits=logits[mask],
-            targets=targets[mask],
+            logits=logits.index_select(0, row_indices),
+            targets=targets.index_select(0, row_indices),
             num_examples=selected,
+            row_indices=row_indices,
         )
 
 
@@ -261,6 +299,11 @@ class HeterogeneousNodeSupervisionAdapter:
                 logits=logits[:seed_count],
                 targets=labels[:seed_count],
                 num_examples=seed_count,
+                row_indices=torch.arange(
+                    seed_count,
+                    dtype=torch.long,
+                    device=logits.device,
+                ),
             )
 
         mask_name = _PHASE_MASK[phase]
@@ -269,13 +312,15 @@ class HeterogeneousNodeSupervisionAdapter:
             mask_name,
             expected_count=labels.size(0),
         )
-        selected = int(mask.sum().item())
+        row_indices = mask.nonzero(as_tuple=False).view(-1)
+        selected = int(row_indices.numel())
         if selected == 0:
             raise ValueError(f"No supervised target nodes for {phase}")
         return SupervisedBatch(
-            logits=logits[mask],
-            targets=labels[mask],
+            logits=logits.index_select(0, row_indices),
+            targets=labels.index_select(0, row_indices),
             num_examples=selected,
+            row_indices=row_indices,
         )
 
 

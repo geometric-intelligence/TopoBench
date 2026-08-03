@@ -11,11 +11,13 @@ parameters:
   task_level: node
   target_node_type: author
   num_classes: 4
+  feature_policy: continuous_with_constant_fill
   loss_type: cross_entropy
   monitor_metric: accuracy
 
 split_params:
   learning_setting: transductive
+  split_type: fixed
   source: official_masks
 
 dataloader_params:

@@ -8,6 +8,7 @@ from typing import Any
 from omegaconf import DictConfig
 
 from topobench.utils import pylogger, rich_utils
+from topobench.utils.logging_utils import redact_config_value
 
 log = pylogger.RankedLogger(__name__, rank_zero_only=True)
 
@@ -106,8 +107,8 @@ def task_wrapper(task_func: Callable) -> Callable:
 
         # things to always do after either success or exception
         finally:
-            # display output dir path in terminal
-            log.info(f"Output dir: {cfg.paths.output_dir}")
+            safe_output_dir = redact_config_value(cfg, "paths.output_dir")
+            log.info(f"Output dir: {safe_output_dir}")
 
             # always close wandb run (even if exception occurs so multirun won't fail)
             if find_spec("wandb"):  # check if wandb is installed
@@ -150,7 +151,8 @@ def get_metric_value(
             "Make sure `optimized_metric` name in `hparams_search` config is correct!"
         )
 
-    metric_value = metric_dict[metric_name].item()
+    metric = metric_dict[metric_name]
+    metric_value = float(metric.item() if hasattr(metric, "item") else metric)
     log.info(f"Retrieved metric value! <{metric_name}={metric_value}>")
 
     return metric_value

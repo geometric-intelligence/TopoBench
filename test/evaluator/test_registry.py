@@ -13,7 +13,6 @@ from topobench.evaluator.registry import (
     resolve_metric_specs,
 )
 
-
 BUILTIN_NAMES = (
     "accuracy",
     "precision",
@@ -155,7 +154,9 @@ def test_reserved_result_name_is_rejected_before_factory_runs():
         ("auroc_online_abs_error", "auroc_online_abs_error"),
     ],
 )
-def test_generated_audit_key_collision_is_rejected(custom_name, expected_collision):
+def test_generated_audit_key_collision_is_rejected(
+    custom_name, expected_collision
+):
     custom = MetricSpec(
         name=custom_name,
         tasks=frozenset({"classification"}),
@@ -185,10 +186,15 @@ def test_generated_audit_key_collision_is_rejected(custom_name, expected_collisi
         ("regression", "audit", "mse"),
     ],
 )
-def test_unsupported_task_or_policy_fails_during_resolution(task, policy, metric):
+def test_unsupported_task_or_policy_fails_during_resolution(
+    task, policy, metric
+):
     with pytest.raises(ValueError, match=metric):
         resolve_metric_specs(
-            [metric], task=task, num_classes=2 if task == "classification" else 1, policy=policy
+            [metric],
+            task=task,
+            num_classes=2 if task == "classification" else 1,
+            policy=policy,
         )
 
 
@@ -196,7 +202,10 @@ def test_no_global_registration_or_torchmetrics_public_exports():
     assert not hasattr(evaluator_public, "METRICS")
     assert not hasattr(evaluator_public, "register_metric")
     assert not hasattr(evaluator_public, "Metric")
-    assert all("torchmetrics" not in value.__class__.__module__ for value in evaluator_public.__dict__.values())
+    assert all(
+        "torchmetrics" not in value.__class__.__module__
+        for value in evaluator_public.__dict__.values()
+    )
 
 
 def test_metric_backend_is_a_structural_topobench_protocol():

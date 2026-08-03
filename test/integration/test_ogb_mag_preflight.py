@@ -23,6 +23,7 @@ from hydra.core.global_hydra import GlobalHydra
 from omegaconf import DictConfig
 from torch_geometric.data import HeteroData
 
+from topobench.nn.capabilities import validate_capability_composition
 from topobench.utils.config_resolvers import register_all_resolvers
 from topobench.utils.model_instantiation import instantiate_model
 
@@ -198,7 +199,14 @@ def test_real_ogb_mag_sampled_preflight(tmp_path: Path) -> None:
         )
         model_name = str(cfg.model.model_name)
         _prepare_memory_report(device)
-        model = instantiate_model(cfg, data_spec=spec).to(device)
+        model = instantiate_model(
+            cfg,
+            data_spec=spec,
+            capability_validation=validate_capability_composition(
+                cfg,
+                observed=pipeline_output.capability_spec,
+            ),
+        ).to(device)
         model.train()
         model.on_train_epoch_start()
         try:

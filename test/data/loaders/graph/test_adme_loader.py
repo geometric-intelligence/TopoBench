@@ -21,10 +21,12 @@ import pandas as pd
 import pytest
 import torch
 from omegaconf import OmegaConf
+from torch_geometric.data import Data
 
 from topobench.data.capabilities import GRAPH_DATASET_MANIFEST
 from topobench.data.features import validate_qualified_graph_source
 from topobench.data.loaders.graph.adme_datasets import ADMEDatasetLoader
+from topobench.data.utils.cache_io import cache_manifest_path
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -137,6 +139,33 @@ def _canonical_digest(value):
     return hashlib.sha256(payload).hexdigest()
 
 
+def _write_reducer_marker(marker_path: str) -> None:
+    """Record any unsafe reducer execution."""
+    Path(marker_path).write_text("executed", encoding="utf-8")
+
+
+class _ReducerCanary:
+    """A harmless payload that becomes observable only if unpickled."""
+
+    def __init__(self, marker_path: Path) -> None:
+        self.marker_path = marker_path
+
+    def __reduce__(self):
+        return _write_reducer_marker, (str(self.marker_path),)
+
+
+def _refresh_payload_descriptor(path: Path) -> dict:
+    """Keep the manifest digest valid after deliberate cache poisoning."""
+    manifest_path = cache_manifest_path(path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["payload"]["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    manifest["payload"]["byte_size"] = path.stat().st_size
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    return manifest
+
+
+
+
 # ---------------------------------------------------------------------------
 # Basic unit tests (no mocking needed)
 # ---------------------------------------------------------------------------
@@ -216,6 +245,55 @@ def test_cache_miss_and_hit_preserve_rng_and_reuse_matching_provenance(
     assert mock_s2g.call_count == conversion_calls_after_miss
     assert cache_hit.split_provenance == cache_miss.split_provenance
     assert cache_hit.split_fingerprint == cache_miss.split_fingerprint
+    processed_path = Path(cache_miss.processed_paths[0])
+    manifest = json.loads(
+        cache_manifest_path(processed_path).read_text(encoding="utf-8")
+    )
+    assert manifest == {
+        "schema": "topobench.pyg-cache-manifest",
+        "schema_version": 1,
+        "family": "data",
+        "cache_identity": cache_miss.split_fingerprint,
+        "payload": {
+            "relative_path": manifest["payload"]["relative_path"],
+            "sha256": hashlib.sha256(processed_path.read_bytes()).hexdigest(),
+            "byte_size": processed_path.stat().st_size,
+        },
+    }
+    assert Path(manifest["payload"]["relative_path"]).name == processed_path.name
+    assert type(cache_hit._data) is Data
+
+
+@patch(
+    "topobench.data.loaders.graph.adme_datasets.smiles2graph",
+    side_effect=_fake_smiles2graph,
+)
+@patch(
+    "topobench.data.loaders.graph.adme_datasets.ADME",
+    side_effect=_rng_mutating_tdc,
+)
+def test_matching_manifest_poisoned_adme_cache_is_rejected_without_execution(
+    mock_adme,
+    mock_s2g,
+    tmp_path,
+):
+    del mock_adme
+    cfg = _make_cfg(tmp_path, split_seed=7)
+    source_config = OmegaConf.to_container(cfg, resolve=True)
+    first = ADMEDatasetLoader(cfg).load_dataset()
+    processed_path = Path(first.processed_paths[0])
+    marker = tmp_path / "adme-reducer-executed"
+    torch.save({"poison": _ReducerCanary(marker)}, processed_path)
+    _refresh_payload_descriptor(processed_path)
+    conversion_calls = mock_s2g.call_count
+    assert not marker.exists()
+
+    with pytest.raises(Exception, match="cache|payload|schema|weights"):
+        ADMEDatasetLoader(cfg).load_dataset()
+
+    assert not marker.exists()
+    assert mock_s2g.call_count == conversion_calls
+    assert OmegaConf.to_container(cfg, resolve=True) == source_config
 
 
 @patch(
@@ -234,8 +312,10 @@ def test_valid_read_only_cache_hit_does_not_chmod_or_mutate_artifacts(
     first = ADMEDatasetLoader(cfg).load_dataset()
     processed_path = Path(first.processed_paths[0])
     provenance_path = Path(first.provenance_path)
+    manifest_path = cache_manifest_path(processed_path)
     os.chmod(processed_path, 0o444)
     os.chmod(provenance_path, 0o444)
+    os.chmod(manifest_path, 0o444)
 
     def snapshot(path):
         file_stat = path.stat()
@@ -245,9 +325,8 @@ def test_valid_read_only_cache_hit_does_not_chmod_or_mutate_artifacts(
             hashlib.sha256(path.read_bytes()).hexdigest(),
         )
 
-    before = {
-        path: snapshot(path) for path in (processed_path, provenance_path)
-    }
+    artifacts = (processed_path, manifest_path, provenance_path)
+    before = {path: snapshot(path) for path in artifacts}
     conversion_calls_after_miss = mock_s2g.call_count
 
     with patch.object(
@@ -261,9 +340,7 @@ def test_valid_read_only_cache_hit_does_not_chmod_or_mutate_artifacts(
 
     assert cache_hit.split_fingerprint == first.split_fingerprint
     assert mock_s2g.call_count == conversion_calls_after_miss
-    assert {
-        path: snapshot(path) for path in (processed_path, provenance_path)
-    } == before
+    assert {path: snapshot(path) for path in artifacts} == before
 
 
 @patch(

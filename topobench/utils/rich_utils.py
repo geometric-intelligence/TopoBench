@@ -2,6 +2,7 @@
 
 from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
 import rich
 import rich.syntax
@@ -12,6 +13,7 @@ from omegaconf import DictConfig, OmegaConf, open_dict
 from rich.prompt import Prompt
 
 from topobench.utils import pylogger
+from topobench.utils.logging_utils import redact_config, redact_config_value
 
 log = pylogger.RankedLogger(__name__, rank_zero_only=True)
 
@@ -47,6 +49,7 @@ def print_config_tree(
         Whether to export config to the hydra output folder, by default False.
     """
     style = "dim"
+    redacted_cfg = cast(dict[str, object], redact_config(cfg, resolve=resolve))
     tree = rich.tree.Tree("CONFIG", style=style, guide_style=style)
 
     queue = []
@@ -55,14 +58,14 @@ def print_config_tree(
     for field in print_order:
         (
             queue.append(field)
-            if field in cfg
+            if field in redacted_cfg
             else log.warning(
                 f"Field '{field}' not found in config. Skipping '{field}' config printing..."
             )
         )
 
     # add all the other fields to queue (not specified in `print_order`)
-    for field in cfg:
+    for field in redacted_cfg:
         if field not in queue:
             queue.append(field)
 
@@ -70,11 +73,12 @@ def print_config_tree(
     for field in queue:
         branch = tree.add(field, style=style, guide_style=style)
 
-        config_group = cfg[field]
-        if isinstance(config_group, DictConfig):
-            branch_content = OmegaConf.to_yaml(config_group, resolve=resolve)
-        else:
-            branch_content = str(config_group)
+        config_group = redacted_cfg[field]
+        branch_content = (
+            OmegaConf.to_yaml(config_group, resolve=False)
+            if isinstance(config_group, (dict, list))
+            else str(config_group)
+        )
 
         branch.add(rich.syntax.Syntax(branch_content, "yaml"))
 
@@ -98,6 +102,7 @@ def enforce_tags(cfg: DictConfig, save_to_file: bool = False) -> None:
     save_to_file : bool, optional
         Whether to export tags to the hydra output folder (default: False).
     """
+    prompted = False
     if not cfg.get("tags"):
         if "id" in HydraConfig().cfg.hydra.job:
             raise ValueError("Specify tags before launching a multirun!")
@@ -112,9 +117,12 @@ def enforce_tags(cfg: DictConfig, save_to_file: bool = False) -> None:
 
         with open_dict(cfg):
             cfg.tags = tags
+        prompted = True
 
-        log.info(f"Tags: {cfg.tags}")
+    redacted_tags = redact_config_value(cfg, "tags")
+    if prompted:
+        log.info(f"Tags: {redacted_tags}")
 
     if save_to_file:
         with open(Path(cfg.paths.output_dir, "tags.log"), "w") as file:
-            rich.print(cfg.tags, file=file)
+            rich.print(redacted_tags, file=file)

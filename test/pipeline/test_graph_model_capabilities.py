@@ -16,6 +16,7 @@ from topobench.nn.backbones.graph import GCNDGM
 from topobench.nn.capabilities import (
     GRAPH_MODEL_CAPABILITIES,
     compatible_graph_models,
+    validate_capability_composition,
     validate_graph_composition,
 )
 from topobench.nn.readouts import NoReadOut
@@ -70,7 +71,15 @@ def _compose(
 def _build(cfg: DictConfig):
     pipeline = hydra.utils.instantiate(cfg.data_pipeline)
     output = pipeline.build(cfg)
-    model = instantiate_model(cfg, data_spec=None)
+    capability_validation = validate_capability_composition(
+        cfg,
+        observed=output.capability_spec,
+    )
+    model = instantiate_model(
+        cfg,
+        data_spec=None,
+        capability_validation=capability_validation,
+    )
     model.eval()
     model.state_str = "Training"
     return output.datamodule, model
@@ -94,7 +103,9 @@ def test_declared_synthetic_contract_completes_one_epoch_and_final_test(
         assert result["observed_train_batch_size"] > 1
 
 
-def test_scalar_regression_preserves_exact_batch_target_shape_including_remainder() -> None:
+def test_scalar_regression_preserves_exact_batch_target_shape_including_remainder() -> (
+    None
+):
     cfg = _compose("SyntheticGraphRegression", "gcn", batch_size=3)
     datamodule, model = _build(cfg)
     observed_shapes: list[tuple[int, int]] = []
@@ -192,8 +203,9 @@ def test_every_model_enforces_its_declared_optional_edge_mode(
         assert set(model_out) == {"x", "labels", "batch", "logits"}
 
 
-
-def test_gcn_edge_weights_change_logits_and_zero_matches_edge_removal() -> None:
+def test_gcn_edge_weights_change_logits_and_zero_matches_edge_removal() -> (
+    None
+):
     """The declared consumed weights control native GCN messages."""
     assert GRAPH_MODEL_CAPABILITIES["gcn"].edge_weight_mode == "consume"
     backbone = GCN(
@@ -246,16 +258,20 @@ def test_gcn_edge_weights_change_logits_and_zero_matches_edge_removal() -> None:
     assert not torch.allclose(weighted, unweighted)
     torch.testing.assert_close(zero_bridge, removed_bridge)
 
+
 def _cycle_edges(node_count: int, offset: int = 0) -> torch.Tensor:
     nodes = torch.arange(node_count, dtype=torch.long)
     successors = (nodes + 1) % node_count
-    return torch.cat(
-        (
-            torch.stack((nodes, successors)),
-            torch.stack((successors, nodes)),
-        ),
-        dim=1,
-    ) + offset
+    return (
+        torch.cat(
+            (
+                torch.stack((nodes, successors)),
+                torch.stack((successors, nodes)),
+            ),
+            dim=1,
+        )
+        + offset
+    )
 
 
 @pytest.mark.parametrize("model_state", ("Validation", "Test"))
@@ -314,14 +330,15 @@ def test_graph_mlp_contrastive_loss_isolates_disjoint_graphs() -> None:
 
     actual = loss({"x": combined.x}, combined)
     expected = (
-        3 * loss({"x": first.x}, first)
-        + 4 * loss({"x": second.x}, second)
+        3 * loss({"x": first.x}, first) + 4 * loss({"x": second.x}, second)
     ) / 7
 
     torch.testing.assert_close(actual, expected)
 
 
-def test_gcn_dgm_auxiliary_edges_masks_and_gradients_are_batch_isolated() -> None:
+def test_gcn_dgm_auxiliary_edges_masks_and_gradients_are_batch_isolated() -> (
+    None
+):
     torch.manual_seed(11)
     batch_index = torch.tensor([0, 0, 0, 1, 1, 1, 1], dtype=torch.long)
     train_mask = torch.tensor([True, False, True, True, False, True, False])

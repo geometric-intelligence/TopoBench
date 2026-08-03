@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from contextlib import contextmanager
 from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from importlib import metadata
 from numbers import Integral
 from typing import Literal
@@ -565,7 +565,9 @@ class HeterogeneousNodeDataModule(LightningDataModule):
         if not requested or any(
             phase not in {"train", "val", "test"} for phase in requested
         ):
-            raise ValueError("probe phases must contain train, val, and/or test")
+            raise ValueError(
+                "probe phases must contain train, val, and/or test"
+            )
         rng_state = torch.random.get_rng_state().clone()
         probe = HeterogeneousNodeDataModule(
             self.data,

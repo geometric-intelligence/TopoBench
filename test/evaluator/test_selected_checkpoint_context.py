@@ -357,6 +357,7 @@ def test_rerun_dataloader_failure_does_not_leave_selected_pass_armed(
     cfg = OmegaConf.create(
         {
             "trainer": {},
+            "paths": {"checkpoint_dir": str(tmp_path)},
             "enable_progress_bar": False,
             "delete_checkpoint_after_test": False,
         }
@@ -446,6 +447,7 @@ def test_rerun_trainer_failure_does_not_leave_selected_pass_armed(
     cfg = OmegaConf.create(
         {
             "trainer": {},
+            "paths": {"checkpoint_dir": str(tmp_path)},
             "enable_progress_bar": False,
             "delete_checkpoint_after_test": False,
         }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import pickle
 from pathlib import Path
 
 import numpy as np
@@ -11,7 +12,14 @@ import torch
 from sklearn.decomposition import IncrementalPCA
 from torch_geometric.data import Data, HeteroData
 
-from topobench.transforms.fittable import FitContext, FitStateError, FitStatePublisher, FitStatus
+from topobench.transforms.fittable import (
+    FitContext,
+    FitStateError,
+    FitStatePublisher,
+    FitStatus,
+    build_fit_state_key,
+    derive_fit_chunk_schedule,
+)
 from topobench.transforms.incremental_pca import IncrementalPCATransform
 
 _X = np.array(
@@ -53,7 +61,9 @@ def _sha(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
-def _context(*, dtype: str = "float64", width: int = 3, rows: int = 6) -> FitContext:
+def _context(
+    *, dtype: str = "float64", width: int = 3, rows: int = 6
+) -> FitContext:
     ids = np.arange(rows, dtype=np.int64)
     return FitContext(
         content_sha256="a" * 64,
@@ -71,7 +81,9 @@ def _context(*, dtype: str = "float64", width: int = 3, rows: int = 6) -> FitCon
     )
 
 
-def _transform(*, whiten: bool = False, output_dtype: str = "float64") -> IncrementalPCATransform:
+def _transform(
+    *, whiten: bool = False, output_dtype: str = "float64"
+) -> IncrementalPCATransform:
     return IncrementalPCATransform(
         n_components=2,
         max_batch_rows=2,
@@ -103,11 +115,33 @@ def test_incremental_pca_matches_declared_numeric_fixture_and_explicit_state(
     assert transform.sample_count_ == 6
     assert transform.input_width_ == 3
     assert transform.output_width_ == 2
-    np.testing.assert_allclose(transform.mean_, _EXPECTED_MEAN, rtol=tolerance, atol=tolerance)
-    np.testing.assert_allclose(transform.components_, _EXPECTED_COMPONENTS, rtol=tolerance, atol=tolerance)
-    np.testing.assert_allclose(transform.explained_variance_, _EXPECTED_VARIANCE, rtol=tolerance, atol=tolerance)
-    np.testing.assert_allclose(transform.explained_variance_ratio_, _EXPECTED_RATIO, rtol=tolerance, atol=tolerance)
-    np.testing.assert_allclose(transform.singular_values_, _EXPECTED_SINGULAR, rtol=tolerance, atol=tolerance)
+    np.testing.assert_allclose(
+        transform.mean_, _EXPECTED_MEAN, rtol=tolerance, atol=tolerance
+    )
+    np.testing.assert_allclose(
+        transform.components_,
+        _EXPECTED_COMPONENTS,
+        rtol=tolerance,
+        atol=tolerance,
+    )
+    np.testing.assert_allclose(
+        transform.explained_variance_,
+        _EXPECTED_VARIANCE,
+        rtol=tolerance,
+        atol=tolerance,
+    )
+    np.testing.assert_allclose(
+        transform.explained_variance_ratio_,
+        _EXPECTED_RATIO,
+        rtol=tolerance,
+        atol=tolerance,
+    )
+    np.testing.assert_allclose(
+        transform.singular_values_,
+        _EXPECTED_SINGULAR,
+        rtol=tolerance,
+        atol=tolerance,
+    )
 
     manifest = transform.fitted_state.manifest
     assert manifest["metadata"] == {
@@ -141,7 +175,9 @@ def test_transform_clones_native_batch_and_preserves_identity_supervision_edges(
     source["node"].x = torch.from_numpy(_X.copy())
     source["node"].n_id = torch.arange(6)
     source["node"].y = torch.arange(6)
-    source["node"].train_mask = torch.tensor([True, True, False, False, False, False])
+    source["node"].train_mask = torch.tensor(
+        [True, True, False, False, False, False]
+    )
     edge_type = ("node", "links", "node")
     source[edge_type].edge_index = torch.tensor([[0, 1, 2], [1, 2, 3]])
     original_x = source["node"].x.clone()
@@ -163,7 +199,9 @@ def test_transform_clones_native_batch_and_preserves_identity_supervision_edges(
     assert torch.equal(output["node"].n_id, source["node"].n_id)
     assert torch.equal(output["node"].y, source["node"].y)
     assert torch.equal(output["node"].train_mask, source["node"].train_mask)
-    assert torch.equal(output[edge_type].edge_index, source[edge_type].edge_index)
+    assert torch.equal(
+        output[edge_type].edge_index, source[edge_type].edge_index
+    )
 
 
 def test_whitening_uses_sklearn_semantics_and_restart_reuses_identical_state(
@@ -179,12 +217,45 @@ def test_whitening_uses_sklearn_semantics_and_restart_reuses_identical_state(
     tolerance = np.finfo(np.float64).eps * 10**8
 
     np.testing.assert_allclose(
-        fitted.transform(data).x.numpy(), expected, rtol=tolerance, atol=tolerance
+        fitted.transform(data).x.numpy(),
+        expected,
+        rtol=tolerance,
+        atol=tolerance,
     )
     np.testing.assert_array_equal(
         restarted.transform(data).x.numpy(), fitted.transform(data).x.numpy()
     )
     assert restarted.fitted_state.key == fitted.fitted_state.key
+
+
+def test_post_fit_configuration_mutation_invalidates_published_identity(
+    tmp_path: Path,
+) -> None:
+    fitted = _transform()
+    _fit(fitted, tmp_path)
+    published_key = fitted.state_key
+    assert published_key is not None
+    data = Data(x=torch.from_numpy(_X.copy()))
+    data.target_node_type = "node"
+
+    fitted.whiten = True
+
+    assert build_fit_state_key(_context(), fitted) != published_key
+    assert fitted.state_key == published_key
+    with pytest.raises(FitStateError, match="configuration|identity"):
+        fitted.transform(data)
+    with pytest.raises(FitStateError, match="configuration|identity"):
+        pickle.dumps(fitted)
+
+    restarted = _transform()
+    restarted.load_state(tmp_path, _context())
+    assert restarted.state_key == published_key
+    np.testing.assert_allclose(
+        restarted.transform(data).x.numpy(),
+        _EXPECTED_PROJECTION,
+        rtol=np.finfo(np.float64).eps * 10**8,
+        atol=np.finfo(np.float64).eps * 10**8,
+    )
 
 
 def test_lifecycle_rejects_invalid_order_bounds_width_dtype_and_nonfinite(
@@ -261,7 +332,9 @@ def test_state_load_rejects_context_mismatch_and_semantic_array_corruption(
     fitted = _transform()
     _fit(fitted, tmp_path)
     with pytest.raises(FitStateError, match="not found|identity|state"):
-        _transform().load_state(tmp_path, replace_context := _context(dtype="float32"))
+        _transform().load_state(
+            tmp_path, replace_context := _context(dtype="float32")
+        )
     assert replace_context.input_dtype == "float32"
 
     component_path = fitted.fitted_state.path / "components.npy"
@@ -272,6 +345,7 @@ def test_state_load_rejects_context_mismatch_and_semantic_array_corruption(
         np.save(stream, component, allow_pickle=False)
     with pytest.raises(FitStateError, match="checksum|finite|corrupt"):
         _transform().load_state(tmp_path, _context())
+
 
 def test_internal_updates_and_accumulation_buffer_respect_declared_bounds(
     tmp_path: Path,
@@ -310,6 +384,40 @@ def test_internal_updates_and_accumulation_buffer_respect_declared_bounds(
     )
     with pytest.raises(ValueError, match="byte|accumulation"):
         undersized_bytes.begin_fit(_context(dtype="float32", rows=3))
+
+
+def test_begin_fit_accepts_derived_bootstrap_chunk_below_max_row_bound(
+    tmp_path: Path,
+) -> None:
+    transform = IncrementalPCATransform(
+        n_components=2,
+        max_batch_rows=8,
+        max_batch_bytes=48,
+        target_node_type="node",
+        input_dtype="float64",
+        output_dtype="float64",
+        accumulation_dtype="float64",
+    )
+    context = _context()
+    schedule = derive_fit_chunk_schedule(
+        input_width=context.input_width,
+        input_dtype=context.input_dtype,
+        accumulation_dtype=transform.accumulation_dtype,
+        max_batch_rows=transform.max_batch_rows,
+        max_batch_bytes=transform.max_batch_bytes,
+        sample_count=context.input_shape[0],
+    )
+
+    assert schedule.chunk_rows == transform.n_components
+    assert schedule.chunk_rows < transform.max_batch_rows
+    transform.begin_fit(context)
+    for start in range(0, len(_X), schedule.chunk_rows):
+        transform.update_fit(_X[start : start + schedule.chunk_rows])
+    transform.finalize_fit(tmp_path)
+
+    assert transform.status is FitStatus.FITTED
+    assert transform.sample_count_ == len(_X)
+
 
 def test_finalize_allows_samples_equal_components_with_sklearn_variance(
     tmp_path: Path,

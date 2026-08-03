@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import stat
 import zipfile
 from collections import defaultdict
 from collections.abc import Hashable, Iterable, Mapping
@@ -11,11 +13,11 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from numbers import Integral
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 import numpy as np
-from scipy import sparse as scipy_sparse
 import torch
+from scipy import sparse as scipy_sparse
 from torch import Tensor
 
 from topobench.data import (
@@ -80,18 +82,245 @@ def incidence_pairs(
     return index, len(ordered_ids)
 
 
+def _safe_absolute_path(path: str | Path) -> Path:
+    """Return a lexical absolute path without resolving symlinks."""
+    return Path(os.path.abspath(os.fspath(path)))
+
+
+def _directory_open_flags() -> int:
+    """Build fail-closed flags for descriptor-relative cache traversal."""
+    if not hasattr(os, "O_NOFOLLOW") or os.open not in os.supports_dir_fd:
+        raise RuntimeError(
+            "safe hypergraph cache reads require no-follow descriptor support"
+        )
+    flags = os.O_RDONLY | os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_DIRECTORY"):
+        flags |= os.O_DIRECTORY
+    return flags
+
+
+def _open_directory_descriptor(path: Path) -> int:
+    """Open one cache boundary directory without following its final path."""
+    absolute = _safe_absolute_path(path)
+    try:
+        path_stat = absolute.stat(follow_symlinks=False)
+    except FileNotFoundError:
+        raise
+    if stat.S_ISLNK(path_stat.st_mode):
+        raise PermissionError(
+            "safe hypergraph cache path contains a symlink directory"
+        )
+    if not stat.S_ISDIR(path_stat.st_mode):
+        raise PermissionError(
+            "safe hypergraph cache path contains a non-directory component"
+        )
+    try:
+        descriptor = os.open(absolute, _directory_open_flags())
+    except OSError as error:
+        raise PermissionError(
+            "unable to securely open safe hypergraph cache directory"
+        ) from error
+    descriptor_stat = os.fstat(descriptor)
+    if not stat.S_ISDIR(descriptor_stat.st_mode) or (
+        path_stat.st_dev,
+        path_stat.st_ino,
+    ) != (descriptor_stat.st_dev, descriptor_stat.st_ino):
+        os.close(descriptor)
+        raise PermissionError(
+            "safe hypergraph cache directory changed while it was opened"
+        )
+    return descriptor
+
+
+def _safe_asset_names(data_name: str) -> tuple[str, str]:
+    """Validate one dataset leaf name and return its exact asset names."""
+    name_path = Path(data_name)
+    if (
+        not data_name
+        or name_path.name != data_name
+        or name_path.is_absolute()
+        or len(name_path.parts) != 1
+        or data_name in {".", ".."}
+    ):
+        raise ValueError("data_name must be a single path component")
+    return f"{data_name}.json", f"{data_name}.npz"
+
+
 def _resolve_data_dir(data_dir: str | Path, data_name: str) -> Path:
-    """Resolve assets that either retain or flatten their dataset folder."""
-    root = Path(data_dir)
-    nested = root / data_name
-    if nested.is_dir():
-        return nested
-    return root
+    """Resolve a flattened or nested cache through no-follow descriptors."""
+    asset_names = _safe_asset_names(data_name)
+    root = _safe_absolute_path(data_dir)
+    try:
+        root_descriptor = _open_directory_descriptor(root)
+    except FileNotFoundError as error:
+        raise FileNotFoundError(
+            "safe hypergraph assets require both "
+            f"{asset_names[0]} and {asset_names[1]}"
+        ) from error
+
+    resolved = root
+    directory_descriptor = root_descriptor
+    try:
+        try:
+            nested_stat = os.stat(
+                data_name,
+                dir_fd=root_descriptor,
+                follow_symlinks=False,
+            )
+        except FileNotFoundError:
+            nested_stat = None
+        if nested_stat is not None and stat.S_ISLNK(nested_stat.st_mode):
+            raise PermissionError(
+                "safe hypergraph cache path contains a symlink directory"
+            )
+        if nested_stat is not None and stat.S_ISDIR(nested_stat.st_mode):
+            try:
+                directory_descriptor = os.open(
+                    data_name,
+                    _directory_open_flags(),
+                    dir_fd=root_descriptor,
+                )
+            except OSError as error:
+                raise PermissionError(
+                    "unable to securely open nested hypergraph cache"
+                ) from error
+            resolved = root / data_name
+
+        missing: list[str] = []
+        for asset_name in asset_names:
+            try:
+                asset_stat = os.stat(
+                    asset_name,
+                    dir_fd=directory_descriptor,
+                    follow_symlinks=False,
+                )
+            except FileNotFoundError:
+                missing.append(asset_name)
+                continue
+            if stat.S_ISLNK(asset_stat.st_mode):
+                raise PermissionError(
+                    f"safe hypergraph asset is a symlink: {asset_name}"
+                )
+            if not stat.S_ISREG(asset_stat.st_mode):
+                raise PermissionError(
+                    f"safe hypergraph asset must be a regular file: {asset_name}"
+                )
+        if missing:
+            raise FileNotFoundError(
+                "safe hypergraph assets require both "
+                f"{asset_names[0]} and {asset_names[1]}"
+            )
+        return resolved
+    finally:
+        if directory_descriptor != root_descriptor:
+            os.close(directory_descriptor)
+        os.close(root_descriptor)
+
+
+def _open_safe_asset(
+    path: Path,
+    *,
+    trusted_root: Path,
+    label: str,
+) -> BinaryIO:
+    """Open one cache asset through a bound no-follow directory chain."""
+    root = _safe_absolute_path(trusted_root)
+    absolute = _safe_absolute_path(path)
+    try:
+        relative = absolute.relative_to(root)
+    except ValueError as error:
+        raise PermissionError(
+            f"{label} is outside the safe hypergraph cache root"
+        ) from error
+    if not relative.parts:
+        raise PermissionError(f"{label} must be below the cache root")
+
+    directory_descriptor = _open_directory_descriptor(root)
+    descriptor: int | None = None
+    try:
+        for component in relative.parts[:-1]:
+            component_stat = os.stat(
+                component,
+                dir_fd=directory_descriptor,
+                follow_symlinks=False,
+            )
+            if stat.S_ISLNK(component_stat.st_mode):
+                raise PermissionError(
+                    "safe hypergraph cache path contains a symlink directory"
+                )
+            if not stat.S_ISDIR(component_stat.st_mode):
+                raise PermissionError(
+                    "safe hypergraph cache path contains a non-directory "
+                    "component"
+                )
+            try:
+                child_descriptor = os.open(
+                    component,
+                    _directory_open_flags(),
+                    dir_fd=directory_descriptor,
+                )
+            except OSError as error:
+                raise PermissionError(
+                    "unable to securely open safe hypergraph cache directory"
+                ) from error
+            child_stat = os.fstat(child_descriptor)
+            if not stat.S_ISDIR(child_stat.st_mode) or (
+                component_stat.st_dev,
+                component_stat.st_ino,
+            ) != (child_stat.st_dev, child_stat.st_ino):
+                os.close(child_descriptor)
+                raise PermissionError(
+                    "safe hypergraph cache directory changed while opening"
+                )
+            os.close(directory_descriptor)
+            directory_descriptor = child_descriptor
+
+        asset_name = relative.parts[-1]
+        path_stat = os.stat(
+            asset_name,
+            dir_fd=directory_descriptor,
+            follow_symlinks=False,
+        )
+        if stat.S_ISLNK(path_stat.st_mode):
+            raise PermissionError(f"{label} is a symlink")
+        if not stat.S_ISREG(path_stat.st_mode):
+            raise PermissionError(f"{label} must be a regular file")
+        flags = os.O_RDONLY | os.O_NOFOLLOW
+        if hasattr(os, "O_CLOEXEC"):
+            flags |= os.O_CLOEXEC
+        try:
+            descriptor = os.open(
+                asset_name,
+                flags,
+                dir_fd=directory_descriptor,
+            )
+        except OSError as error:
+            raise PermissionError(
+                f"unable to securely open {label}"
+            ) from error
+        descriptor_stat = os.fstat(descriptor)
+        if not stat.S_ISREG(descriptor_stat.st_mode):
+            raise PermissionError(f"{label} must be a regular file")
+        if (path_stat.st_dev, path_stat.st_ino) != (
+            descriptor_stat.st_dev,
+            descriptor_stat.st_ino,
+        ):
+            raise PermissionError(f"{label} changed while it was opened")
+        stream = os.fdopen(descriptor, "rb", closefd=True)
+        descriptor = None
+        return stream
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        os.close(directory_descriptor)
 
 
 _DEFAULT_MAX_DENSE_FEATURE_BYTES = 512 * 1024**2
 _DEFAULT_MAX_ARRAY_MEMBER_BYTES = 512 * 1024**2
 _DEFAULT_MAX_TOTAL_ARRAY_BYTES = 1024 * 1024**2
+_SAFE_METADATA_BYTE_LIMIT = 1024 * 1024
 _FINITE_VALIDATION_CHUNK_ELEMENTS = 1_048_576
 _FLOAT32_ELEMENT_BYTES = 4
 
@@ -152,7 +381,9 @@ def _validate_sparse_coo_tensor(features: Tensor) -> Tensor:
     if features.ndim != 2 or features.sparse_dim() != 2:
         raise ValueError("sparse feature tensors must be fully sparse rank-2")
     if features.dense_dim() != 0:
-        raise TypeError("sparse feature tensors must not have dense dimensions")
+        raise TypeError(
+            "sparse feature tensors must not have dense dimensions"
+        )
     if not features.is_floating_point():
         raise TypeError("sparse feature values must have a floating dtype")
 
@@ -169,7 +400,9 @@ def _validate_sparse_coo_tensor(features: Tensor) -> Tensor:
         )
     coalesced = features.coalesce()
     if not bool(torch.isfinite(coalesced.values()).all()):
-        raise ValueError("sparse feature values must contain only finite values")
+        raise ValueError(
+            "sparse feature values must contain only finite values"
+        )
 
     converted = coalesced.to(dtype=torch.float32).coalesce()
     if not bool(torch.isfinite(converted.values()).all()):
@@ -192,9 +425,9 @@ def _csr_feature_tensor(features: Any) -> Tensor:
     indptr = np.asarray(features.indptr)
     if not np.issubdtype(values.dtype, np.floating):
         raise TypeError("scipy CSR feature values must have a floating dtype")
-    if not np.issubdtype(column_indices.dtype, np.integer) or not np.issubdtype(
-        indptr.dtype, np.integer
-    ):
+    if not np.issubdtype(
+        column_indices.dtype, np.integer
+    ) or not np.issubdtype(indptr.dtype, np.integer):
         raise TypeError("scipy CSR indices must have integer dtypes")
     if values.ndim != 1 or column_indices.ndim != 1 or indptr.ndim != 1:
         raise ValueError("scipy CSR storage arrays must be rank-1")
@@ -214,7 +447,9 @@ def _csr_feature_tensor(features: Any) -> Tensor:
             "scipy CSR column indices must be within declared shape bounds"
         )
     if not _numpy_values_are_finite(values):
-        raise ValueError("scipy CSR feature values must contain only finite values")
+        raise ValueError(
+            "scipy CSR feature values must contain only finite values"
+        )
 
     positions = np.arange(values.size, dtype=np.int64)
     row_indices = np.searchsorted(indptr, positions, side="right") - 1
@@ -227,9 +462,7 @@ def _csr_feature_tensor(features: Any) -> Tensor:
             axis=0,
         )
     )
-    tensor_values = torch.from_numpy(
-        values.astype(np.float32, copy=True)
-    )
+    tensor_values = torch.from_numpy(values.astype(np.float32, copy=True))
     tensor = torch.sparse_coo_tensor(
         indices,
         tensor_values,
@@ -319,9 +552,48 @@ def _canonical_json_bytes(value: Any) -> bytes:
     ).encode("utf-8")
 
 
-def _read_safe_metadata(path: Path) -> dict[str, Any]:
-    """Read canonical JSON without extensions, duplicates, or object hooks."""
-    raw = path.read_bytes()
+def _stat_identity(value: os.stat_result) -> tuple[int, int, int, int, int]:
+    """Return fields that expose replacement or in-place cache mutation."""
+    return (
+        value.st_dev,
+        value.st_ino,
+        value.st_size,
+        value.st_mtime_ns,
+        value.st_ctime_ns,
+    )
+
+
+def _read_safe_metadata(
+    path: Path,
+    *,
+    trusted_root: Path | None = None,
+) -> dict[str, Any]:
+    """Read bounded canonical JSON from one no-follow regular descriptor."""
+    root = path.parent if trusted_root is None else trusted_root
+    with _open_safe_asset(
+        path,
+        trusted_root=root,
+        label="safe hypergraph metadata",
+    ) as stream:
+        before = os.fstat(stream.fileno())
+        if before.st_size > _SAFE_METADATA_BYTE_LIMIT:
+            raise ValueError(
+                "safe hypergraph metadata exceeds metadata byte limit="
+                f"{_SAFE_METADATA_BYTE_LIMIT}"
+            )
+        raw = stream.read(_SAFE_METADATA_BYTE_LIMIT + 1)
+        after = os.fstat(stream.fileno())
+        if len(raw) > _SAFE_METADATA_BYTE_LIMIT:
+            raise ValueError(
+                "safe hypergraph metadata exceeds metadata byte limit="
+                f"{_SAFE_METADATA_BYTE_LIMIT}"
+            )
+        if len(raw) != before.st_size or _stat_identity(
+            before
+        ) != _stat_identity(after):
+            raise PermissionError(
+                "safe hypergraph metadata changed during validated read"
+            )
     try:
         text = raw.decode("utf-8")
         value = json.loads(
@@ -330,7 +602,9 @@ def _read_safe_metadata(path: Path) -> dict[str, Any]:
             parse_constant=_reject_json_constant,
         )
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ValueError(f"invalid safe hypergraph metadata: {path.name}") from error
+        raise ValueError(
+            f"invalid safe hypergraph metadata: {path.name}"
+        ) from error
     if not isinstance(value, dict):
         raise TypeError("safe hypergraph metadata must be a JSON object")
     if raw != _canonical_json_bytes(value):
@@ -338,12 +612,13 @@ def _read_safe_metadata(path: Path) -> dict[str, Any]:
     return value
 
 
-def _sha256_file(path: Path) -> str:
-    """Hash one payload without a shape-sized in-memory copy."""
+def _sha256_file(stream: BinaryIO) -> str:
+    """Hash one descriptor-bound payload without a shape-sized copy."""
+    stream.seek(0)
     digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
+    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+        digest.update(chunk)
+    stream.seek(0)
     return digest.hexdigest()
 
 
@@ -423,9 +698,7 @@ def _preflight_safe_descriptors(
     """Reject impossible or oversized descriptors before member access."""
     label_dtype, label_shape = descriptors["labels"]
     if label_shape != (num_nodes,):
-        raise ValueError(
-            f"labels descriptor shape must equal [{num_nodes}]"
-        )
+        raise ValueError(f"labels descriptor shape must equal [{num_nodes}]")
     if label_dtype.kind not in "iuf":
         raise TypeError("labels descriptor must declare a real numeric dtype")
     incidence_dtype, incidence_shape = descriptors["incidence"]
@@ -467,9 +740,8 @@ def _preflight_safe_descriptors(
         raise TypeError(
             "feature_indices descriptor must declare int64 shape [2, NNZ]"
         )
-    if (
-        not np.issubdtype(value_dtype, np.floating)
-        or value_shape != (index_shape[1],)
+    if not np.issubdtype(value_dtype, np.floating) or value_shape != (
+        index_shape[1],
     ):
         raise TypeError(
             "feature_values descriptor must declare floating shape [NNZ]"
@@ -488,12 +760,12 @@ def _read_npy_header(
     try:
         version = np.lib.format.read_magic(stream)
         if version == (1, 0):
-            shape, fortran_order, dtype = (
-                np.lib.format.read_array_header_1_0(stream)
+            shape, fortran_order, dtype = np.lib.format.read_array_header_1_0(
+                stream
             )
         elif version == (2, 0):
-            shape, fortran_order, dtype = (
-                np.lib.format.read_array_header_2_0(stream)
+            shape, fortran_order, dtype = np.lib.format.read_array_header_2_0(
+                stream
             )
         else:
             raise ValueError(
@@ -511,16 +783,17 @@ def _read_npy_header(
 
 
 def _preflight_npz_archive(
-    path: Path,
+    stream: BinaryIO,
     descriptors: Mapping[str, tuple[np.dtype[Any], tuple[int, ...]]],
     *,
     max_member_bytes: int,
     max_total_bytes: int,
 ) -> None:
-    """Validate raw ZIP members and NPY headers before NumPy allocation."""
+    """Validate raw ZIP members and NPY headers on the bound descriptor."""
+    stream.seek(0)
     expected_names = {f"{name}.npy" for name in descriptors}
     try:
-        with zipfile.ZipFile(path, mode="r") as archive:
+        with zipfile.ZipFile(stream, mode="r") as archive:
             members = archive.infolist()
             member_names = [member.filename for member in members]
             if (
@@ -538,9 +811,7 @@ def _preflight_npz_archive(
                 if member.is_dir():
                     raise ValueError("safe NPZ must not contain directories")
                 if member.compress_type != zipfile.ZIP_STORED:
-                    raise ValueError(
-                        "safe NPZ members must use ZIP_STORED"
-                    )
+                    raise ValueError("safe NPZ members must use ZIP_STORED")
                 if member.flag_bits & 0x1:
                     raise ValueError("safe NPZ members must not be encrypted")
                 if member.compress_size != member.file_size:
@@ -561,9 +832,9 @@ def _preflight_npz_archive(
 
                 array_name = member.filename.removesuffix(".npy")
                 declared_dtype, declared_shape = descriptors[array_name]
-                with archive.open(member, mode="r") as stream:
+                with archive.open(member, mode="r") as member_stream:
                     header_dtype, header_shape, header_bytes = (
-                        _read_npy_header(stream, member.filename)
+                        _read_npy_header(member_stream, member.filename)
                     )
                 if header_dtype != declared_dtype:
                     raise TypeError(
@@ -764,8 +1035,7 @@ def _validated_incidence(
     """Validate explicit incidence roles and preserve every declared pair."""
     if incidence.ndim != 2 or incidence.shape[0] != 2:
         raise ValueError(
-            "incidence must have shape [2, M]; "
-            f"received {incidence.shape}"
+            f"incidence must have shape [2, M]; received {incidence.shape}"
         )
     if incidence.dtype.hasobject or not np.issubdtype(
         incidence.dtype,
@@ -853,15 +1123,14 @@ def load_hypergraph_npz_dataset(
         max_total_array_bytes,
         "max_total_array_bytes",
     )
-    resolved_dir = _resolve_data_dir(data_dir, data_name)
+    trusted_root = _safe_absolute_path(data_dir)
+    resolved_dir = _resolve_data_dir(trusted_root, data_name)
     metadata_path = resolved_dir / f"{data_name}.json"
     npz_path = resolved_dir / f"{data_name}.npz"
-    if not metadata_path.is_file() or not npz_path.is_file():
-        raise FileNotFoundError(
-            "safe hypergraph assets require both "
-            f"{data_name}.json and {data_name}.npz"
-        )
-    metadata = _read_safe_metadata(metadata_path)
+    metadata = _read_safe_metadata(
+        metadata_path,
+        trusted_root=trusted_root,
+    )
     descriptors, num_nodes, num_hyperedges = _validate_safe_metadata(metadata)
     _preflight_safe_descriptors(
         metadata,
@@ -869,34 +1138,46 @@ def load_hypergraph_npz_dataset(
         num_nodes=num_nodes,
         max_dense_bytes=dense_limit,
     )
-    if _sha256_file(npz_path) != metadata["npz_sha256"]:
-        raise ValueError("safe hypergraph NPZ SHA-256 mismatch")
-    _preflight_npz_archive(
-        npz_path,
-        descriptors,
-        max_member_bytes=member_limit,
-        max_total_bytes=total_limit,
-    )
 
     arrays: dict[str, np.ndarray] = {}
-    with np.load(npz_path, allow_pickle=False) as archive:
-        if len(archive.files) != len(descriptors) or set(
-            archive.files
-        ) != set(descriptors):
-            raise ValueError("safe hypergraph NPZ array schema mismatch")
-        for name, (declared_dtype, declared_shape) in descriptors.items():
-            array = archive[name]
-            if array.dtype != declared_dtype:
-                raise TypeError(
-                    f"{name} dtype does not match metadata; "
-                    f"declared={declared_dtype.str}, actual={array.dtype.str}"
-                )
-            if array.shape != declared_shape:
-                raise ValueError(
-                    f"{name} shape does not match metadata; "
-                    f"declared={declared_shape}, actual={array.shape}"
-                )
-            arrays[name] = array
+    with _open_safe_asset(
+        npz_path,
+        trusted_root=trusted_root,
+        label="safe hypergraph NPZ",
+    ) as npz_stream:
+        before = os.fstat(npz_stream.fileno())
+        if _sha256_file(npz_stream) != metadata["npz_sha256"]:
+            raise ValueError("safe hypergraph NPZ SHA-256 mismatch")
+        _preflight_npz_archive(
+            npz_stream,
+            descriptors,
+            max_member_bytes=member_limit,
+            max_total_bytes=total_limit,
+        )
+        npz_stream.seek(0)
+        with np.load(npz_stream, allow_pickle=False) as archive:
+            if len(archive.files) != len(descriptors) or set(
+                archive.files
+            ) != set(descriptors):
+                raise ValueError("safe hypergraph NPZ array schema mismatch")
+            for name, (declared_dtype, declared_shape) in descriptors.items():
+                array = archive[name]
+                if array.dtype != declared_dtype:
+                    raise TypeError(
+                        f"{name} dtype does not match metadata; "
+                        f"declared={declared_dtype.str}, actual={array.dtype.str}"
+                    )
+                if array.shape != declared_shape:
+                    raise ValueError(
+                        f"{name} shape does not match metadata; "
+                        f"declared={declared_shape}, actual={array.shape}"
+                    )
+                arrays[name] = array
+        after = os.fstat(npz_stream.fileno())
+        if _stat_identity(before) != _stat_identity(after):
+            raise PermissionError(
+                "safe hypergraph NPZ changed during validated read"
+            )
 
     features = _safe_feature_tensor(
         arrays,
@@ -918,6 +1199,28 @@ def load_hypergraph_npz_dataset(
         representation_version=HYPERGRAPH_REPRESENTATION_VERSION,
     )
     return validate_hypergraph_structure(data), str(resolved_dir)
+
+
+def hypergraph_asset_identity(
+    data_dir: str | Path,
+    data_name: str,
+) -> str:
+    """Bind a processed cache to one exact validated raw metadata record."""
+    trusted_root = _safe_absolute_path(data_dir)
+    resolved_dir = _resolve_data_dir(trusted_root, data_name)
+    metadata = _read_safe_metadata(
+        resolved_dir / f"{data_name}.json",
+        trusted_root=trusted_root,
+    )
+    _validate_safe_metadata(metadata)
+    record = {"data_name": data_name, "metadata": metadata}
+    encoded = json.dumps(
+        record,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def validate_hypergraph_npz_assets(
@@ -1019,9 +1322,7 @@ def load_hypergraph_content_dataset(
     raw_node_ids = {node for node, _ in raw_edges}
     raw_hyperedge_ids = {hyperedge for _, hyperedge in raw_edges}
     if raw_node_ids & raw_hyperedge_ids:
-        raise ValueError(
-            "declared node and hyperedge roles must be disjoint"
-        )
+        raise ValueError("declared node and hyperedge roles must be disjoint")
 
     num_rows = len(content_ids)
     num_node_rows = int(role_spec.num_node_rows)
@@ -1035,9 +1336,7 @@ def load_hypergraph_content_dataset(
     declared_node_ids = {content_ids[row] for row in node_rows}
     declared_padding_ids = {content_ids[row] for row in padding_rows}
     if raw_hyperedge_ids & declared_node_ids:
-        raise ValueError(
-            "declared node and hyperedge roles must be disjoint"
-        )
+        raise ValueError("declared node and hyperedge roles must be disjoint")
     if (raw_node_ids - declared_node_ids) or (
         raw_hyperedge_ids & declared_padding_ids
     ):
@@ -1064,16 +1363,14 @@ def load_hypergraph_content_dataset(
             ):
                 raise ValueError(
                     "declared padding rows do not match padding_sentinel"
-                )
+                ) from None
         else:
             if not bool((numeric_payload == sentinel).all()):
                 raise ValueError(
                     "declared padding rows do not match padding_sentinel"
                 )
 
-    node_id = {
-        content_ids[row]: index for index, row in enumerate(node_rows)
-    }
+    node_id = {content_ids[row]: index for index, row in enumerate(node_rows)}
     try:
         raw_features = content[node_rows, 1:-1].astype(np.float64)
     except ValueError as error:

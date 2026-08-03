@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import errno
 import dataclasses
+import errno
 import hashlib
 import inspect
 import json
@@ -11,11 +11,13 @@ import os
 import re
 import shutil
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
+from numbers import Integral
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 from torch_geometric.data import Data, HeteroData
@@ -23,6 +25,8 @@ from torch_geometric.data import Data, HeteroData
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _ARRAY_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]*\Z")
 _STATE_FORMAT = "topobench-fitted-transform-v1"
+_CANONICAL_FIT_DRIVER_VERSION = "canonical-fit-driver-v1"
+_INCREMENTAL_PCA_CHUNK_SCHEDULE_VERSION = "incremental-pca-chunk-schedule-v1"
 NativeGraph = Data | HeteroData
 
 
@@ -34,7 +38,7 @@ class FitStateNotFoundError(FitStateError):
     """Report that an exact fitted-state identity has not been published."""
 
 
-class FitStatus(str, Enum):
+class FitStatus(StrEnum):
     """One-way lifecycle for a fitted transform instance."""
 
     UNFITTED = "unfitted"
@@ -72,11 +76,15 @@ class TransformSpec:
         if self.output_kind not in {"same", "Data", "HeteroData"}:
             raise ValueError("output_kind must be same, Data, or HeteroData")
         if self.device != "cpu":
-            raise ValueError("fitted transforms currently require CPU execution")
+            raise ValueError(
+                "fitted transforms currently require CPU execution"
+            )
         if not self.deterministic:
             raise ValueError("fitted transforms must be deterministic")
         if not self.preserves_node_identity or not self.preserves_supervision:
-            raise ValueError("fitted transforms must preserve identity and supervision")
+            raise ValueError(
+                "fitted transforms must preserve identity and supervision"
+            )
         if self.edge_effects != "none":
             raise ValueError("fitted transforms must declare no edge effects")
         for name, value in (
@@ -89,7 +97,9 @@ class TransformSpec:
             if not isinstance(value, str) or not value:
                 raise ValueError(f"{name} must be a non-empty string")
         if self.target_node_type is not None and not self.target_node_type:
-            raise ValueError("target_node_type must be non-empty when provided")
+            raise ValueError(
+                "target_node_type must be non-empty when provided"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,9 +149,15 @@ class FitContext:
         if normalized_versions != self.package_versions or len(
             {name for name, _ in self.package_versions}
         ) != len(self.package_versions):
-            raise ValueError("package_versions must be uniquely sorted by name")
-        if any(not name or not version for name, version in self.package_versions):
-            raise ValueError("package_versions require non-empty names and values")
+            raise ValueError(
+                "package_versions must be uniquely sorted by name"
+            )
+        if any(
+            not name or not version for name, version in self.package_versions
+        ):
+            raise ValueError(
+                "package_versions require non-empty names and values"
+            )
         dtype = np.dtype(self.input_dtype)
         if dtype.hasobject:
             raise ValueError("input_dtype must be non-executable")
@@ -163,11 +179,13 @@ class FittableTransform(Protocol):
 
     spec: TransformSpec
     status: FitStatus
+    max_batch_rows: int
+    max_batch_bytes: int
+
     @property
     def state_key(self) -> str | None:
         """Immutable published-state identity, available only while fitted."""
         ...
-
 
     def canonical_config(self) -> Mapping[str, object]: ...
 
@@ -188,6 +206,88 @@ class FittableTransform(Protocol):
     def transform(self, batch: NativeGraph) -> NativeGraph: ...
 
 
+@dataclass(frozen=True, slots=True)
+class FitChunkSchedule:
+    """Exact bounded row schedule supplied by the canonical fit driver."""
+
+    version: str
+    max_batch_rows: int
+    max_batch_bytes: int
+    input_width: int
+    input_itemsize: int
+    accumulation_itemsize: int
+    bytes_per_row: int
+    chunk_rows: int
+    sample_count: int | None
+    complete_chunks: int | None
+    remainder_rows: int | None
+
+
+def derive_fit_chunk_schedule(
+    *,
+    input_width: int,
+    input_dtype: str | np.dtype[Any],
+    accumulation_dtype: str | np.dtype[Any],
+    max_batch_rows: int,
+    max_batch_bytes: int,
+    sample_count: int | None = None,
+) -> FitChunkSchedule:
+    """Derive the one versioned bounded chunk schedule used for fitting."""
+
+    for name, value in (
+        ("input_width", input_width),
+        ("max_batch_rows", max_batch_rows),
+        ("max_batch_bytes", max_batch_bytes),
+    ):
+        if not isinstance(value, Integral) or isinstance(value, bool):
+            raise TypeError(f"{name} must be an integer")
+        if int(value) < 1:
+            raise ValueError(f"{name} must be at least 1")
+    input_value = np.dtype(input_dtype)
+    if sample_count is not None:
+        if not isinstance(sample_count, Integral) or isinstance(
+            sample_count, bool
+        ):
+            raise TypeError("sample_count must be an integer or None")
+        if int(sample_count) < 0:
+            raise ValueError("sample_count must be non-negative")
+    accumulation_value = np.dtype(accumulation_dtype)
+    if input_value.hasobject or accumulation_value.hasobject:
+        raise ValueError("fit chunk schedule dtypes must be non-executable")
+    bytes_per_row = int(input_width) * max(
+        input_value.itemsize,
+        accumulation_value.itemsize,
+    )
+    chunk_rows = min(
+        int(max_batch_rows),
+        int(max_batch_bytes) // bytes_per_row,
+    )
+    if chunk_rows < 1:
+        raise ValueError(
+            "fitted transform byte bound cannot hold one canonical input row"
+        )
+    complete_chunks: int | None = None
+    remainder_rows: int | None = None
+    if sample_count is not None:
+        complete_chunks, remainder_rows = divmod(
+            int(sample_count),
+            chunk_rows,
+        )
+    return FitChunkSchedule(
+        version=_INCREMENTAL_PCA_CHUNK_SCHEDULE_VERSION,
+        max_batch_rows=int(max_batch_rows),
+        max_batch_bytes=int(max_batch_bytes),
+        input_width=int(input_width),
+        input_itemsize=input_value.itemsize,
+        accumulation_itemsize=accumulation_value.itemsize,
+        bytes_per_row=bytes_per_row,
+        chunk_rows=chunk_rows,
+        sample_count=None if sample_count is None else int(sample_count),
+        complete_chunks=complete_chunks,
+        remainder_rows=remainder_rows,
+    )
+
+
 def _json_value(value: object) -> object:
     if dataclasses.is_dataclass(value):
         return _json_value(dataclasses.asdict(value))
@@ -205,7 +305,9 @@ def _json_value(value: object) -> object:
         if not np.isfinite(value):
             raise ValueError("canonical JSON values must be finite")
         return value
-    raise TypeError(f"value of type {type(value).__name__} is not canonical JSON")
+    raise TypeError(
+        f"value of type {type(value).__name__} is not canonical JSON"
+    )
 
 
 def _canonical_json(value: object) -> bytes:
@@ -262,6 +364,38 @@ def _code_fingerprint(transform: FittableTransform) -> str:
     return digest.hexdigest()
 
 
+def _fit_driver_identity(
+    context: FitContext,
+    transform: FittableTransform,
+) -> dict[str, object]:
+    schedule = derive_fit_chunk_schedule(
+        input_width=context.input_width,
+        input_dtype=context.input_dtype,
+        accumulation_dtype=transform.spec.accumulation_dtype,
+        max_batch_rows=transform.max_batch_rows,
+        max_batch_bytes=transform.max_batch_bytes,
+        sample_count=context.input_shape[0],
+    )
+    driver = {
+        "entrypoint": "DiskGraphDataModule._fit_missing_state",
+        "version": _CANONICAL_FIT_DRIVER_VERSION,
+    }
+    schedule_payload = {
+        "derived": schedule,
+        "version": _INCREMENTAL_PCA_CHUNK_SCHEDULE_VERSION,
+    }
+    return {
+        "driver": {
+            **driver,
+            "sha256": _sha_bytes(_canonical_json(driver)),
+        },
+        "incremental_pca_chunk_schedule": {
+            **schedule_payload,
+            "sha256": _sha_bytes(_canonical_json(schedule_payload)),
+        },
+    }
+
+
 def build_fit_state_key(
     context: FitContext, transform: FittableTransform
 ) -> str:
@@ -273,6 +407,7 @@ def build_fit_state_key(
     payload = {
         "format": _STATE_FORMAT,
         "context": context,
+        "fit_driver": _fit_driver_identity(context, transform),
         "transform": {
             "module": transform_type.__module__,
             "qualname": transform_type.__qualname__,
@@ -315,7 +450,6 @@ class FitStatePublisher:
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root)
 
-
     def publish(
         self,
         key: str,
@@ -343,14 +477,18 @@ class FitStatePublisher:
             records: dict[str, dict[str, object]] = {}
             for name in sorted(arrays):
                 if not _ARRAY_NAME.fullmatch(name):
-                    raise ValueError(f"unsafe fitted-state array name: {name!r}")
+                    raise ValueError(
+                        f"unsafe fitted-state array name: {name!r}"
+                    )
                 value = np.asarray(arrays[name])
                 if value.dtype.hasobject:
                     raise TypeError(
                         "object arrays are executable/pickle-backed and are forbidden"
                     )
                 if value.dtype.kind in "fc" and not np.isfinite(value).all():
-                    raise ValueError(f"fitted-state array {name!r} must be finite")
+                    raise ValueError(
+                        f"fitted-state array {name!r} must be finite"
+                    )
                 value = np.ascontiguousarray(value)
                 path = staging / f"{name}.npy"
                 with path.open("xb") as stream:
@@ -381,12 +519,16 @@ class FitStatePublisher:
                 proposed = json.loads(
                     manifest_path.read_text(encoding="utf-8")
                 )
-                if _canonical_json(existing.manifest) != _canonical_json(proposed):
+                if _canonical_json(existing.manifest) != _canonical_json(
+                    proposed
+                ):
                     raise FitStateError(
                         "existing fitted-state identity cannot be overwritten"
                     )
                 for name, value in arrays.items():
-                    if not np.array_equal(existing.arrays[name], np.asarray(value)):
+                    if not np.array_equal(
+                        existing.arrays[name], np.asarray(value)
+                    ):
                         raise FitStateError(
                             "existing fitted-state identity cannot be overwritten"
                         )
@@ -394,18 +536,25 @@ class FitStatePublisher:
             try:
                 os.rename(staging, target)
             except OSError as error:
-                if error.errno not in {errno.EEXIST, errno.ENOTEMPTY} or not target.exists():
+                if (
+                    error.errno not in {errno.EEXIST, errno.ENOTEMPTY}
+                    or not target.exists()
+                ):
                     raise
                 existing = self.load(
                     key,
                     expected_metadata=normalized_metadata,
                 )
-                if _canonical_json(existing.manifest) != _canonical_json(manifest):
+                if _canonical_json(existing.manifest) != _canonical_json(
+                    manifest
+                ):
                     raise FitStateError(
                         "concurrent fitted-state identity differs"
                     ) from error
                 for name, value in arrays.items():
-                    if not np.array_equal(existing.arrays[name], np.asarray(value)):
+                    if not np.array_equal(
+                        existing.arrays[name], np.asarray(value)
+                    ):
                         raise FitStateError(
                             "concurrent fitted-state arrays differ"
                         ) from error
@@ -464,30 +613,39 @@ class FitStatePublisher:
         content_sha256 = content_payload.pop("content_sha256", None)
         if content_sha256 != _sha_bytes(_canonical_json(content_payload)):
             raise FitStateError("fitted state manifest checksum is corrupt")
-        if expected_metadata is not None and manifest["metadata"] != _json_value(
-            expected_metadata
-        ):
+        if expected_metadata is not None and manifest[
+            "metadata"
+        ] != _json_value(expected_metadata):
             raise FitStateError("fitted state metadata identity mismatch")
         expected_files = {"manifest.json"}
         loaded: dict[str, np.ndarray] = {}
         for name, record in manifest["arrays"].items():
             if not isinstance(name, str) or not _ARRAY_NAME.fullmatch(name):
-                raise FitStateError("fitted state contains an unsafe array name")
+                raise FitStateError(
+                    "fitted state contains an unsafe array name"
+                )
             if not isinstance(record, dict) or set(record) != {
                 "dtype",
                 "shape",
                 "sha256",
             }:
-                raise FitStateError(f"fitted state array {name!r} has invalid metadata")
+                raise FitStateError(
+                    f"fitted state array {name!r} has invalid metadata"
+                )
             filename = f"{name}.npy"
             expected_files.add(filename)
             path = target / filename
             if path.is_symlink() or not path.is_file():
-                raise FitStateError(f"fitted state array {name!r} is missing or unsafe")
-            if not _SHA256.fullmatch(str(record["sha256"])) or _sha_file(path) != record[
-                "sha256"
-            ]:
-                raise FitStateError(f"fitted state array {name!r} checksum is corrupt")
+                raise FitStateError(
+                    f"fitted state array {name!r} is missing or unsafe"
+                )
+            if (
+                not _SHA256.fullmatch(str(record["sha256"]))
+                or _sha_file(path) != record["sha256"]
+            ):
+                raise FitStateError(
+                    f"fitted state array {name!r} checksum is corrupt"
+                )
             try:
                 value = np.load(path, mmap_mode="r", allow_pickle=False)
             except (OSError, ValueError) as error:
@@ -496,15 +654,24 @@ class FitStatePublisher:
                 ) from error
             if value.dtype.hasobject:
                 raise FitStateError("fitted state object arrays are forbidden")
-            if value.dtype.str != record["dtype"] or list(value.shape) != record["shape"]:
-                raise FitStateError(f"fitted state array {name!r} dtype/shape mismatch")
+            if (
+                value.dtype.str != record["dtype"]
+                or list(value.shape) != record["shape"]
+            ):
+                raise FitStateError(
+                    f"fitted state array {name!r} dtype/shape mismatch"
+                )
             if value.dtype.kind in "fc" and not np.isfinite(value).all():
-                raise FitStateError(f"fitted state array {name!r} must be finite")
+                raise FitStateError(
+                    f"fitted state array {name!r} must be finite"
+                )
             value.flags.writeable = False
             loaded[name] = value
         actual_files = {path.name for path in target.iterdir()}
         if actual_files != expected_files:
-            raise FitStateError("fitted state file set is corrupt or incomplete")
+            raise FitStateError(
+                "fitted state file set is corrupt or incomplete"
+            )
         return PublishedFitState(
             key=key,
             path=target,
@@ -515,6 +682,7 @@ class FitStatePublisher:
 
 __all__ = [
     "FitContext",
+    "FitChunkSchedule",
     "FitStateError",
     "FitStateNotFoundError",
     "FitStatePublisher",
@@ -523,4 +691,5 @@ __all__ = [
     "PublishedFitState",
     "TransformSpec",
     "build_fit_state_key",
+    "derive_fit_chunk_schedule",
 ]

@@ -3,8 +3,9 @@
 ## Status
 
 Approved on 2026-07-31 for the `topobench_graph_hetero` branch and amended
-after implementation-plan, audit, confidentiality, split-contract, and
-disk-streaming reviews on the same date.
+after implementation-plan, audit, confidentiality, split-contract,
+out-of-core, universal typed-store, prediction-artifact, evaluator, and
+automatic-preflight reviews.
 
 ## Objective
 
@@ -74,40 +75,53 @@ construction; the supervision adapter only validates and consumes them.
 
 ### Transductive execution modes
 
-Transductive node classification has two explicit execution modes over the
-same one-source-graph contract:
+Transductive node classification has four explicit execution views over a
+one-source-graph contract:
 
-- `full_graph` reuses the one in-memory `Data` object for every phase and
-  requires graph `batch_size == 1`;
-- `cluster_disk` converts either one native in-memory source graph or one
-  logical graph stored as chunked node/edge Parquet datasets into a versioned,
-  partition-ordered global CSR representation, then reads only the selected
-  cluster union for each step.
+- `full_graph` reuses one in-memory native PyG `Data` or `HeteroData`;
+- `materialized_reference` uses the accepted typed partition book with
+  materialized exact cluster unions or PyG neighbor sampling;
+- homogeneous `cluster_disk` and heterogeneous `cluster_disk` emit exact
+  induced native `Data`/`HeteroData` unions from one store;
+- heterogeneous `neighbor_disk` performs relation-specific fanout from
+  target-node seeds in that same store and emits native `HeteroData`.
 
-The native-source adapter may materialize its one graph during preprocessing.
-The Parquet adapter is strictly out of core: schema roles are mapped in YAML;
-DuckDB/Arrow scans, external ID joins and sorts, streaming graph partitioning,
-and final array writes remain within declared memory and temporary-disk bounds.
-Neither the complete graph nor the complete embedding matrix becomes a PyG
-`Data` or an in-memory tensor. The authoritative detailed contract is
+The physical artifact is one **universal typed graph store**. A homogeneous
+graph is represented as one node type and one relation type; its native `Data`
+view removes those synthetic type names. A heterogeneous graph retains typed
+node maps and canonical relation triples. This unifies source ingestion,
+external-ID mapping, immutable arrays, fingerprints, lazy worker ownership,
+prefetch, monitoring, resume, and prediction export without pretending that
+cluster-union and neighbor sampling are the same algorithm.
+
+The native-source adapter may materialize its one graph. The Parquet adapter
+keeps features and mapped edge tables out of memory through DuckDB/Arrow scans,
+per-type external-ID joins, per-relation sorts, and bounded array writes. Its
+explicit reference partition step may materialize topology-only PyG
+`Data`/`HeteroData` under a separate 256 GiB default admission; it never loads
+complete embeddings, labels, masks, or edge fields into that view. The detailed
+contract is
 `docs/plans/2026-07-31-parquet-graph-ingestion-streaming-design.md`.
 
-The manifest records source and split fingerprints, resolved semantic schema,
-partition algorithm and seed, representation version, dependency versions,
-tensor dtypes/shapes, checksums, and conversion resource limits. The stored
-artifact contains CSR row pointers and column indices, cluster boundaries,
-canonical numeric global-node permutation maps, a Parquet mapping back to
-external integer/string node IDs, features, labels, all three phase masks, and
-declared edge fields. It contains no transformed batches and uses
-non-executable metadata.
+The manifest records all node/relation/split schemas, active-capable split tags,
+source and array checksums, accepted partition-book fingerprint and hard
+qualification, output/strategy capabilities, producer environment/backend,
+representation version, target type, dtypes/shapes, and resource evidence.
+Node features, labels, phase membership, external-ID maps, and optional fields
+remain per type. Directed adjacency and edge fields are destination-oriented
+CSC per canonical relation. Typed partition assignments/permutations/pointers
+serve both homogeneous and heterogeneous cluster modes; no runtime full-layout
+conversion is allowed.
 
-Each loader worker opens arrays lazily. A step samples cluster IDs, copies only
-their selected read-only slices into writable tensors, reconstructs the induced
-union including edges between co-sampled clusters, and emits one native PyG
-`Data`. The batch carries all sliced phase masks and canonical `global_nid`;
-external source IDs are restored only at prediction-export/audit boundaries.
-Validation and test cluster orders are deterministic. Training uses explicit
-issued and committed sampler state so prefetched-but-uncommitted work is
+Each loader worker opens arrays lazily. The homogeneous strategy reconstructs
+the exact induced union, including edges between co-sampled partitions, and
+emits one writable native `Data` with canonical `global_nid`. The
+heterogeneous strategy delegates typed seed expansion to PyG
+`NeighborLoader((FeatureStore, GraphStore), ...)`, preserves relation-specific
+fanout, and supervises only `n_id[:batch_size]` of the configured target type.
+External source IDs are restored only at prediction-export/audit boundaries.
+Validation/test descriptor order is deterministic. Both strategies use one
+issued-versus-committed sequence protocol so prefetched-but-uncommitted work is
 regenerated after checkpoint resume.
 
 ### Split inputs and phase ownership
@@ -153,10 +167,18 @@ considered supported merely because its YAML composes.
 
 ### Heterogeneous graphs
 
-The existing native `HeteroData` implementation remains the reference design.
-It keeps its dedicated full-graph and `NeighborLoader` data module,
-`HeterogeneousDataSpec`, metadata-driven models, seed-node supervision, fixed
-sampled evaluation, and shared `TBModel` lifecycle.
+The existing native `HeteroData` implementation remains the in-memory
+reference design. It keeps its dedicated full-graph and `NeighborLoader`
+semantics, `HeterogeneousDataSpec`, metadata-driven models, target-seed
+supervision, fixed sampled evaluation, and shared `TBModel` lifecycle.
+
+The disk-backed view is integrated behind the same heterogeneous data pipeline
+and data module contract. A typed `FeatureStore`/`GraphStore` adapter exposes
+selected memory-mapped node features and precomputed per-relation CSC to the
+existing PyG `NeighborLoader`; it does not reconstruct a full `HeteroData`.
+Full-graph evaluation remains an in-memory-only mode. Disk-backed
+heterogeneous evaluation uses deterministic exhaustive target-seed neighbor
+batches and is qualified separately from full-graph evaluation.
 
 Neighbor sampling is a required capability. The installed environment must
 retain at least one PyG sampling backend (`torch-sparse` initially, or
@@ -200,44 +222,47 @@ rank-based `data.pt` files are never silently interpreted as native
 ## Runtime Architecture
 
 All domains share configuration, preprocessing, optimization, evaluation,
-callbacks, logging, checkpointing, and best-checkpoint reruns. Data-specific
-logic is selected through explicit data-pipeline configuration rather than
-runtime type checks in `run.py`.
+callbacks, logging, checkpointing, selected-checkpoint prediction artifacts,
+and best-checkpoint reruns. Data-specific logic is selected through explicit
+data-pipeline and data-module strategy configuration rather than runtime type
+checks in `run.py`.
 
 ```text
 loader
   -> shared representation-preserving preprocessor
-  -> explicit data pipeline
+  -> explicit TopoBench data pipeline
        -> graph data module
             -> in-memory native PyG batching
-            -> disk-backed transductive cluster sampling
-                 -> native PyG Data batch
-                 -> optional graph-to-graph batch transform
+            -> universal disk store + homogeneous cluster strategy -> Data
        -> heterogeneous node data module
+            -> in-memory HeteroData full/neighbor batching
+            -> universal disk store + typed neighbor strategy -> HeteroData
        -> hypergraph node data module
   -> optional immutable runtime data specification
   -> domain feature encoder
   -> domain backbone and wrapper
   -> domain readout
-  -> supervision adapter
+  -> supervision adapter + aligned prediction identity
   -> TBModel loss, metrics, optimizer, callbacks, logging, checkpoint reruns
+  -> selected-checkpoint val/test metrics and sharded prediction artifacts
 ```
 
 ### Graph pipeline
 
-The graph pipeline uses native PyG objects in both storage modes. Inductive
-graph-level datasets batch multiple examples through PyG `DataLoader` and use
-`batch` for pooling. Inductive node-level phase datasets emit node logits and
-supervise every labeled node in the current phase graphs without phase masks.
+The graph pipeline uses native PyG objects in every execution mode. Inductive
+graph-level datasets batch multiple examples through PyG `DataLoader`, carry a
+stable `sample_id`, and use `batch` for pooling. Inductive node-level phase
+datasets emit node logits and supervise every labeled node in the current
+phase graphs without phase masks.
 
 Transductive mode is explicit rather than inferred from missing
 validation/test datasets and always requires exactly one source graph.
 `full_graph` requires graph `batch_size == 1` and reuses that graph for every
-phase. `cluster_disk` uses the versioned partition store and a dedicated native
-collator; its cluster count per step is not graph-example `batch_size`. Both
-modes expose the same `x`, `edge_index`, optional edge fields, `y`, and boolean
-phase-mask semantics. Only sampled disk batches additionally require
-`global_nid`.
+phase. `cluster_disk` uses the universal typed store plus the homogeneous
+cluster strategy; its cluster count per step is not graph-example
+`batch_size`. Both modes expose the same `x`, `edge_index`, optional edge
+fields, `y`, and boolean phase-mask semantics. Only sampled disk batches
+additionally require canonical `global_nid`.
 
 The qualified large-graph profile overlaps lazy disk reads, worker-side CPU
 assembly, pinned-host staging, asynchronous H2D copies, and model compute. Host
@@ -258,9 +283,12 @@ prediction/target shapes and never rely on PyTorch broadcasting.
 
 ### Heterogeneous pipeline
 
-The heterogeneous path remains separate from ordinary example batching. No
-behavioral rewrite is planned beyond adapting shared interfaces that change
-when the old homogeneous topological path is removed.
+The heterogeneous path remains separate from ordinary example batching but
+shares the same TopoBench pipeline output, `TBModel`, supervision, transfer,
+monitoring, prediction-artifact, and provenance seams. In-memory and disk
+strategies produce the same target-seed contract. Relation traversal, feature
+selection, and sampling remain owned by PyG and the typed store; `run.py` does
+not branch on `Data` versus `HeteroData`.
 
 ### Hypergraph pipeline
 
@@ -329,24 +357,26 @@ The branch retains:
 HOPSE, SANN, cell-rank encodings, barycentric subdivision, simplicial
 curvature, and other higher-order-only transforms are removed.
 
-The disk-backed transductive graph path may apply one optional
-`batch_transform` after the sampled induced graph has been assembled and before
-Lightning transfers it to the model device. This name is intentionally
-different from PyG `pre_transform`, which denotes once-before-storage work.
-The runtime transform accepts and returns native homogeneous `Data`; graph to
-hypergraph or rank-indexed output is unsupported. Eligibility is explicit:
-each qualified transform exposes an immutable `BatchTransformSpec` declaring
-graph input/output, determinism, node-identity preservation, and either
-feature-width preservation or one fixed output width. Missing metadata is a
-rejection, not an inferred capability.
+The materialized and disk graph paths may apply one optional `batch_transform`
+after native `Data`/`HeteroData` assembly and canonical identity attachment,
+before pinning/device transfer. This name remains distinct from PyG
+`pre_transform`. Every qualified transform exposes an immutable
+`BatchTransformSpec` declaring native input/output kind, determinism, identity
+and supervision preservation, device requirement, feature width, and edge
+effects. Entity removal/reordering requires an explicit checked identity map.
 
-The transform may change graph-native features or edges, but it must preserve
-node count, labels, all phase masks, and `global_nid`. These identity fields are
-attached before invocation and validated afterward. The transform runs exactly
-once per batch, never mutates the immutable store, and is not cached. Qualified
-runtime transforms are deterministic; stochastic augmentations remain
-experimental until their RNG and resume state have an explicit lifecycle
-contract.
+A separate `FittableTransform` supports training-only preprocessing such as
+incremental PCA. One bounded pre-training fit view enumerates each active-split
+training entity exactly once in canonical order; it never fits through
+duplicate-prone cluster context and never reads validation/test rows. The
+immutable fitted state is keyed by store, split/train checksum, transform code
+and configuration, schema/dtype, versions, and precision; it is atomically
+published and referenced by checkpoints/reproducibility artifacts.
+
+The per-batch transform runs exactly once, never mutates the store, and
+validates canonical identity and supervision afterward. Stochastic
+augmentations remain experimental until RNG and resume state have an explicit
+lifecycle contract.
 
 ## Dependency Boundary
 
@@ -371,6 +401,137 @@ DuckDB and PyArrow are pinned direct dependencies of an explicit Parquet
 extra. They are imported lazily: ordinary graph, heterogeneous, and hypergraph
 imports and runs remain independent of the extra. Parquet conversion and its
 mandatory bounded-memory qualification install it explicitly.
+
+TorchMetrics remains the internal standard-metric engine because Lightning
+already installs it and because exact ranking metrics, device state, and
+undefined-value semantics should not be reimplemented casually. TopoBench
+declares a qualified direct TorchMetrics constraint, hides its classes behind
+TopoBench evaluator contracts, uses only public TorchMetrics APIs, and retains
+one shared exact binary score/target buffer for AUROC and AUPRC.
+
+## Selected-Checkpoint Evaluation Artifacts
+
+After fitting, the checkpoint selected solely by validation is loaded once for
+one validation rerun and one test rerun. Each rerun publishes its own
+`evaluations/best_checkpoint/{val,test}` directory containing final
+`metrics.json` with integer `num_examples` and a versioned
+`predictions/manifest.json` plus bounded, pickle-free `.npz` shards. No
+validation and test file, temporary path, callback buffer, or logger artifact
+name is shared.
+
+Prediction rows retain stable entity identity, target, raw loss-facing model
+output, evaluator-facing prediction, optional target-transform representations,
+and only configured lightweight metadata. Graph-level batches carry explicit
+example IDs; homogeneous and hypergraph node outputs use canonical global node
+IDs; heterogeneous neighbor output includes only target seeds and keys them by
+target node type plus canonical `n_id`. External IDs are restored at export,
+not carried through model batches.
+
+One domain-neutral callback streams selected batches to bounded shards and
+uses a pipeline-provided identity adapter; it does not run another forward
+pass or implement domain-specific evaluation. Atomic promotion requires exact
+coverage, unique identities, valid shapes, finite values, file digests, and
+agreement among evaluator `num_examples`, metrics JSON, logger value, and
+manifest observed rows. Every configured logger receives split-qualified
+scalar metrics/counts and one separate artifact record/upload for every local
+file through an explicit logger adapter. The local run directory remains
+authoritative.
+
+The complete schema, logger, sharding, collision, source-sliced analysis, and
+resume contract is
+`docs/plans/2026-07-31-selected-checkpoint-prediction-artifacts-design.md`.
+
+## Scalable Evaluator and Automatic Preflight
+
+The supervision adapter emits one immutable `EvaluationBatch` into an explicit
+`TBEvaluator` lifecycle. TopoBench-owned metric specifications adapt
+TorchMetrics internally; public APIs expose only TopoBench contexts, batches,
+results, policies, and extension protocols. Dynamic metric discovery,
+multilabel/multioutput evaluator branches, the example metric, and evaluator
+access to mutable `model_out` dictionaries are removed.
+
+Training uses bounded online metrics by default. Validation and test use exact
+metrics by default. Accuracy, macro precision/recall/F1, MAE, MSE, RMSE, and R2
+retain fixed-size exact state. AUROC supports binary and multiclass
+classification; AUPRC (average precision) and Somers'
+$D_{S\mid Y}=2\,\mathrm{AUROC}-1$ support binary classification only. One
+TopoBench-owned exact-ranking backend retains detached CPU chunks: binary
+AUROC/AUPRC share one score/target buffer, multiclass AUROC owns one `[N, C]`
+probability/target buffer, and Somers' D adds no state. No stateful exact
+TorchMetrics module retains hidden observations. Retained plus sequential
+compute workspace is guarded under one declared byte ceiling. Online ranking
+metrics use a recorded threshold grid. Audit mode reports each exact ranking
+metric, its online approximation, and absolute error in one pass. Undefined
+metrics fail by default or return provenance-visible NaN only under an explicit
+exploratory policy.
+
+Every finalized train, validation, and test context reports integer
+`num_examples`: the supervised datapoints that participated in every configured
+metric. One committed result supplies the phase logger value, returned output,
+final JSON, prediction-manifest count check, and provenance; disagreement is a
+hard failure. Mid-epoch training checkpoints serialize evaluator counts/state
+only when their canonical batch-sequence prefix, the sampler's committed
+cursor, and model global step agree; pending gradient-accumulation batches are
+replayed rather than double-counted.
+
+Every normal training run passes an automatic isolated preflight before
+production logger/trainer side effects. It resolves and validates configuration,
+obtains non-committing representative batches, and exercises a throwaway
+data-to-device, model, supervision, loss, evaluator, backward, optimizer,
+scheduler, compilation, and prediction-payload flow where the configured
+runtime permits. Probe model, optimizer, RNG, sampler, logger, checkpoint, and
+artifact state never becomes production state. Disabling the gate requires an
+experimental override and marks the run unqualified.
+
+The authoritative contracts and ordered TDD work are:
+
+- `docs/plans/2026-07-31-scalable-evaluator-design.md`; and
+- `docs/plans/2026-07-31-scalable-evaluator-implementation.md`.
+
+## Materialized Reference and Reproducible Typed Partitions
+
+The universal-store companion adds supported `materialized_reference` and
+`disk` modes. Homogeneous reference behavior is migrated and corrected from
+`dleko11:on_disk_transductive` commit
+`b55b876a3bb227fdc5a79b776b6e8d337ff5fe02`. Heterogeneous reference
+partitioning constructs topology-only `HeteroData` and invokes PyG
+`Partitioner.generate_partition()` unchanged. Its admission limit defaults to
+256 GiB; features, labels, split masks, edge attributes, and model state never
+enter the partitioner.
+
+Trusted local PyG output is adapted into one immutable typed partition book.
+Temporary METIS reverse arcs exist only in its scoring view. Promotion requires
+complete/invertible typed identity, authoritative relation direction, topology
+fingerprint, and configured hard per-type, per-phase, per-relation,
+feature-byte, cut/locality, empty-partition, and maximum-size checks. METIS
+reruns are not assumed deterministic; the accepted partition map and checksum,
+not rerunning the algorithm, reproduce the run.
+
+One explicit split registry supports several `{phase}_{unique_tag}` triplets.
+IDs are unique within each file and pairwise disjoint among train/validation/
+test of one tag. Different tags may overlap. Every run records its active tag
+and phase-file checksums; every qualified tag passes structural and partition-
+balance checks.
+
+Qualified runs must retain a default-enabled reproducibility bundle containing
+resolved configuration, dependency lock, source state, environment/hardware,
+RNG policy, store/partition/split/transform identities, checkpoints, check
+evidence, and artifact checksums. A producer may publish the validated
+non-executable content-addressed store; a consumer downloads by digest, safely
+extracts and verifies in staging, atomically promotes it, and trains from memory
+maps without repartitioning. Disabling the bundle is experimental and marks
+the run unqualified.
+
+Stable check IDs produce structured expected/observed evidence, remediation,
+documentation, and local report paths. One bounded event stream profiles
+conversion, partitioning, validation, fitted transforms, reads, assembly, H2D,
+compute, evaluator, checkpoint, and artifact work; local evidence is
+authoritative and W&B receives bounded sampled/aggregate records.
+
+The authoritative details and TDD sequence are:
+
+- `docs/plans/2026-07-31-parquet-graph-ingestion-streaming-design.md`; and
+- `docs/plans/2026-07-31-parquet-graph-ingestion-streaming-implementation.md`.
 
 ## Configuration and Product Surface
 
@@ -432,14 +593,15 @@ The migration is test-driven and proceeds from new contracts to deletion.
 5. Prove that explicit transductive mode rejects multiple source graphs, all
    split modes reject overlap or incomplete coverage where applicable, and
    scalar-regression prediction/target shapes cannot broadcast.
-6. Qualify both native-source and out-of-core Parquet disk-backed transductive
-   execution: schema mapping, arbitrary external IDs, bounded conversion RSS
-   and temporary disk, deterministic graph-aware partitioning, cache
-   miss/hit/resume equivalence, selected-read instrumentation, cross-cluster
-   edges, canonical global IDs plus external-ID export, writable tensors,
-   deterministic committed sampler resume, multi-worker lazy opening,
-   exactly-once graph-to-graph transforms, bounded host/CUDA prefetch, and
-   continuous input-starvation telemetry.
+6. Qualify native-source homogeneous graphs plus universal-store homogeneous
+   and heterogeneous cluster/neighbor execution: multiple explicit disjoint
+   split triplets, corrected PyG homogeneous baseline, topology-only typed PyG
+   partitioning, immutable partition books, hard balance, exact induced
+   `HeteroData.subgraph` unions, exact deterministic `NeighborLoader` parity,
+   canonical identity round-trip, bounded conversion/partition/read resources,
+   pre-partitioned download and atomic promotion, training-only fitted PCA,
+   cache/resume/reproducibility equivalence, lazy workers, bounded host/CUDA
+   prefetch, stable check evidence, and continuous structured profiling.
 7. Migrate hypergraph data and both surviving models.
 8. Qualify target and conditional graph models against task, batching, and
    edge-field capabilities.
@@ -453,8 +615,20 @@ The migration is test-driven and proceeds from new contracts to deletion.
 12. Remove dependencies and regenerate the lock file while preserving the
     heterogeneous sampling backend.
 13. Run graph, heterogeneous, and hypergraph lifecycle tests, compatibility
-    tests for surviving selector names, negative architecture tests, Ruff, and
-    the broad network-free regression suite.
+    tests for surviving selector names, selected-checkpoint prediction
+    artifact tests, negative architecture tests, Ruff, and the broad
+    network-free regression suite.
+14. Prove the typed evaluator lifecycle, bounded online state, TopoBench-owned
+    guarded exact binary/multiclass CPU state with no hidden duplicate,
+    AUPRC/Somers' D semantics, audit parity, exact participant-count reporting,
+    aligned evaluator/sampler/global-step resume, undefined-value policy, and
+    selected-checkpoint result authority.
+15. Prove automatic preflight runs before training, exercises each surviving
+    domain through one isolated step, and leaves production RNG/model/optimizer/
+    sampler/logger/artifact state pristine.
+16. After integrated qualification, have a review agent add sparse comments
+    only where nested or non-obvious code needs an invariant or rationale for
+    future maintainers; rerun focused and style gates afterward.
 
 The final audit must prove that `topobench`, its default configuration, and
 every selector in the surviving manifest import, compose, load, preprocess,
@@ -462,14 +636,25 @@ split, execute one compatible model batch, and produce finite loss/metrics in
 the appropriate network-free or mandatory download-marked gate. It must prove
 ordinary generated three-way splitting, direct fixed node/example indices,
 phase-separated inductive node graphs, exact `[B, 1]` scalar-regression
-prediction/target tensors, disk-backed transductive cluster sampling from both
-native and chunked Parquet sources, bounded conversion and selected reads, an
+prediction/target tensors, disk-backed transductive sampling from homogeneous
+and heterogeneous native/Parquet sources, bounded conversion and selected
+reads, exact homogeneous cluster unions, exact relation fanout, an
 exactly-once graph-to-graph batch transform, measured CUDA overlap with at most
-5% qualified steady-state input stall, heterogeneous neighbor batching after a
-clean dependency sync, and representative real hypergraph raw formats before
-release. It must also prove
-that unsupported task selectors are absent and that TopoModelX, TopoNetX,
+5% qualified steady-state input stall, and representative real hypergraph raw
+formats before release.
+
+It must also prove that the validation-selected checkpoint produces distinct
+validation and test metric records and sharded per-sample artifacts with exact
+identity/target/output alignment, external-ID restoration, source metadata and
+bounded source-sliced analyses, separate logger registrations, and no silent
+overwrite. Unsupported task selectors are absent and TopoModelX, TopoNetX,
 GUDHI, and HyperNetX are unavailable to the clean process.
+
+Every qualified training smoke must also show an automatic preflight result
+before its first production step. Evaluator provenance records metric
+implementation, aggregation, policy, exactness, thresholds, class support,
+counts, and retained/peak memory evidence. No exact-memory overrun or undefined
+metric silently becomes an approximation or zero.
 
 Confidential adapters are qualified only inside the approved data boundary.
 Repository tests use independently generated artificial data; they never
@@ -490,4 +675,6 @@ indices, tensors, embeddings, predictions, caches, or checkpoints.
   Cluster-GCN/conversion, mutable Parquet embeddings, arbitrary
   configuration-provided SQL/Python expressions, and stochastic qualified
   runtime transforms.
+- Distributed prediction-artifact merge before a separately qualified all-rank
+  collection protocol exists.
 - Renaming the Python package or CLI.

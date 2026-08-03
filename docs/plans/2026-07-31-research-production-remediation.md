@@ -4,7 +4,20 @@
 
 **Goal:** Make the reduced graph, heterogeneous-graph, and hypergraph TopoBench core scientifically trustworthy for an internal applied-research team: qualified runs must mean what their configs say, reproduce from recorded inputs, reject malformed data before training, report the selected checkpoint consistently, and fail predictably at declared scale boundaries.
 
-**Architecture:** Keep native PyG `Data`/`Batch` and `HeteroData`/`NeighborLoader`, native incidence-index hypergraphs, explicit domain registries, and easy custom-component development. Full-graph transductive runs retain the native in-memory path; large single-graph transductive runs use a versioned global CSR store, deterministic Cluster-GCN part sampling, selected disk reads, and an optional exactly-once graph-to-graph batch transform before model transfer. Packaged selectors run in a strict **qualified** profile. Custom Hydra targets remain available only in an explicit **experimental** profile and are recorded as unqualified; raw Hydra configuration remains trusted local research code, not an untrusted job-submission API. Data identity, split identity, partition/sampler identity, model identity, and lifecycle identity become explicit validated records used by caches and run provenance.
+**Architecture:** Keep native PyG `Data`/`Batch`,
+`HeteroData`/`NeighborLoader`, native incidence-index hypergraphs, explicit
+domain registries, and easy custom-component development. Full-graph
+transductive runs retain native in-memory paths. Large homogeneous and
+heterogeneous single-graph runs share one immutable universal typed CSC store,
+bounded selected reads, generic host/device prefetch, committed-cursor resume,
+telemetry, provenance inputs, and prediction identity; homogeneous graph-aware
+cluster unions and heterogeneous relation-aware target-seed neighbor sampling
+remain explicit strategies. Selected-checkpoint validation and test each
+publish independent final metrics and sharded per-sample artifacts. Packaged
+selectors run in strict **qualified** mode. Custom Hydra targets remain
+available only in explicit **experimental** mode and are recorded as
+unqualified; raw Hydra configuration remains trusted local research code, not
+an untrusted job-submission API.
 
 **Tech Stack:** Python 3.11, PyTorch 2.3, PyTorch Geometric, Lightning 2.4, Hydra/OmegaConf, TorchMetrics, pytest, Ruff, uv.
 
@@ -12,6 +25,11 @@
 
 - `docs/plans/2026-07-31-graph-heterogeneous-hypergraph-core-design.md`
 - `docs/plans/2026-07-31-graph-heterogeneous-hypergraph-core-implementation.md`
+- `docs/plans/2026-07-31-parquet-graph-ingestion-streaming-design.md`
+- `docs/plans/2026-07-31-parquet-graph-ingestion-streaming-implementation.md`
+- `docs/plans/2026-07-31-selected-checkpoint-prediction-artifacts-design.md`
+- `docs/plans/2026-07-31-scalable-evaluator-design.md`
+- `docs/plans/2026-07-31-scalable-evaluator-implementation.md`
 
 This is a remediation plan for the current implementation candidate. It does not replace the core architecture plan. Where this plan is stricter, this plan controls release qualification.
 
@@ -43,10 +61,15 @@ The framework serves a trusted internal team running comparative experiments and
 3. **Model/data robustness:** malformed data accepted too late, non-finite values, cross-example influence, isolated-node failures, and wrong class vocabularies.
 4. **Lifecycle accounting:** best-checkpoint metrics, callback state, and returned results disagreeing with dashboards or resumed runs.
 5. **Resource predictability:** hidden quadratic work, avoidable densification/cloning, and unbounded metric state.
-6. **Disk-streaming correctness:** stale or malformed partition artifacts,
-   incorrect cross-cluster reconstruction, repeated transforms, hidden
-   full-graph reads, and sampler state that diverges after resume.
-7. **Trusted-workflow hardening:** secret redaction, authenticated downloads, frozen environments, and pinned CI actions.
+6. **Disk-streaming correctness:** stale/malformed typed stores, relation
+   direction or fanout loss, incorrect homogeneous cluster unions, hidden
+   full-array reads/conversions, and cluster/seed sampler state that diverges
+   after resume.
+7. **Evaluation auditability:** selected-checkpoint metrics disagree with
+   retained prediction rows, identities/targets drift, or validation/test
+   artifacts collide or omit logger registrations.
+8. **Trusted-workflow hardening:** secret redaction, authenticated downloads,
+   frozen environments, and pinned CI actions.
 
 A network service accepting untrusted Hydra configs is explicitly outside this release. If that use case appears, build a separate target-free submission schema and isolated worker; do not reinterpret the research CLI as safe for hostile input.
 
@@ -59,15 +82,26 @@ A network service accepting untrusted Hydra configs is explicitly outside this r
 All are mandatory:
 
 - train/validation/test phases are non-empty, pairwise disjoint, and complete whenever the contract says they partition one source;
+- every named split tag has exactly one explicitly registered train/validation/
+  test source; phase IDs and filenames are unique and pairwise disjoint within
+  that tag, while overlap across different tags is permitted and provenance
+  records the active tag plus all three source digests;
 - ordinary fixed or generated train/validation/test is the only qualified split interface; `k-fold` is removed until an outer held-out test protocol exists;
 - ADME selectors use declared scaffold splits with a recorded seed and provenance;
 - every packaged dataset's task, task level, learning setting, feature policy, class count, and target vocabulary match its qualification manifest and runtime data;
 - no graph batch contains a cross-graph edge;
-- disk-sampled transductive batches preserve source node identity, phase masks,
-  edge direction, and all edges induced by the selected cluster union;
-- GCN-DGM uses incoming selected neighbors, has a trainable supported `k`, and cannot enter unbounded dense all-pairs construction under a qualified selector;
-- EDGNN uses every exposed regularization parameter and supports or explicitly rejects isolated nodes per convolution;
-- best-epoch train and validation metrics come from one epoch and selected-checkpoint validation/test metrics are returned programmatically.
+- homogeneous disk batches preserve canonical node identity, phase ownership,
+  edge direction, and every edge induced by the selected cluster union;
+- heterogeneous disk batches preserve typed relation direction/fields and
+  configured fanout, and supervise/export only target seeds;
+- GCN-DGM uses incoming selected neighbors, has a trainable supported `k`, and
+  cannot enter unbounded dense all-pairs construction under a qualified
+  selector;
+- EDGNN uses every exposed regularization parameter and supports or explicitly
+  rejects isolated nodes per convolution;
+- best-epoch train/validation metrics come from one epoch; one
+  validation-selected checkpoint owns returned metrics plus independent
+  validation/test per-sample artifacts with exact identities and targets.
 
 ### Gate B: Reproducibility and provenance
 
@@ -75,12 +109,26 @@ All are mandatory:
 
 - generated splits and synthetic data use local generators and do not mutate global NumPy/Torch RNG state;
 - processed-cache identity includes every loader parameter that changes raw data, transform configuration, representation version, and relevant parser policy;
-- each run records dataset selector, data fingerprint, split strategy/seed/exact phase indices or masks digest, resolved model/config fingerprint, environment fingerprint, selected epoch, checkpoint digest, and deterministic mode;
-- cache hit and cache miss produce byte-equivalent processed tensors for the same identity;
-- disk-partition identity records source/split fingerprints, representation
-  version, partition algorithm/seed, array metadata and checksums, while
-  checkpoint state records the training sampler epoch/order state;
-- uninterrupted and checkpoint-resumed qualification runs agree on state and selected-checkpoint results within the declared deterministic contract.
+- qualified runs default `save_reproducibility_bundle` to true and cannot
+  disable it; an explicit experimental override marks all outputs unqualified;
+- each run records dataset/source/cache, active split tag and phase digests,
+  resolved config/model, fitted-transform state, environment, RNG/determinism,
+  accepted partition-book/store, selected checkpoint, check evidence, and
+  artifact-manifest identities;
+- cache hit/miss and pre-partitioned download produce the same validated
+  semantic content for one identity;
+- typed-store identity records source/node/relation/split schemas, every array
+  checksum, output/strategy capability, accepted partition map and hard-balance
+  report, backend/build/options, producer environment, content hash, and
+  committed sampler/evaluator state;
+- the accepted partition map—not an independent METIS rerun—reproduces
+  partition membership;
+- each selected-checkpoint artifact records checkpoint/data/split/model/
+  transform fingerprints, row/shard coverage/digests, identity schema, and
+  distinct logger registrations;
+- fresh/cache/download/moved-store/second-process and interrupted/resumed
+  qualification runs satisfy their declared bitwise or numeric-equivalence
+  profile for state, metrics, and prediction artifacts.
 
 ### Gate C: Robustness and scale
 
@@ -91,14 +139,20 @@ All are mandatory:
 - ambiguous content rows are preserved or rejected by explicit metadata; payload values never decide whether a node exists;
 - sparse raw features remain sparse or hit an explicit bounded densification gate;
 - full transductive hypergraphs are not deep-cloned or re-collated needlessly;
-- disk-backed transductive steps read only selected CSR/feature/label/mask
-  slices, produce writable batch tensors, and never retain the full graph in
-  runtime memory;
-- qualified graph-to-graph batch transforms run exactly once before device
-  transfer and preserve node count, labels, masks, and true global node IDs;
-- exhaustive structure validation runs once at an ingestion/cache boundary, not on every forward;
-- default metrics do not retain unbounded per-example multiclass AUROC state on large node tasks;
-- remote reads, archive extraction, and local promotion are bounded and atomic.
+- both disk strategies read only selected CSC/feature/supervision slices,
+  produce writable native batches, and retain no full graph or feature matrix
+  in runtime memory;
+- homogeneous graph transforms run exactly once before transfer and preserve
+  node/supervision identity; heterogeneous store/view normalization is
+  validated before relation sampling;
+- exhaustive structure validation runs once at ingestion/cache boundaries,
+  not on every forward;
+- selected-checkpoint prediction writing is bounded and sharded; it never
+  retains an epoch of outputs in RAM or saves arbitrary batch/input state;
+- default metrics do not retain unbounded per-example multiclass AUROC state on
+  large node tasks;
+- remote reads, archive extraction, local store promotion, and final prediction
+  artifact promotion are bounded and atomic.
 
 ### Gate D: Trusted workflow
 
@@ -117,11 +171,14 @@ All are mandatory:
 - ordinary offline CI exercises malformed inputs, semantic model oracles, cache hit/miss equivalence, and lifecycle accounting;
 - one explicit download opt-in controls all live-data tests;
 - representative real OGB-MAG, DBLP, ADME, citation-hypergraph, and content-hypergraph qualifications exercise all phases and supervision ownership;
-- one representative real large transductive graph qualifies disk partition
-  creation, cache reload, bounded selected reads, all three supervised phases,
-  and one finite end-to-end model step;
+- representative real large homogeneous and heterogeneous typed Parquet graphs
+  qualify conversion, cache reload, bounded selected reads, exact partition
+  unions or relation fanout, all target phases, and finite GCN/HGT steps;
+- selected-checkpoint validation/test artifacts qualify exact row identity,
+  targets, raw/exported outputs, source metadata, sharding, separate paths, and
+  per-file logger registration;
 - skipped mandatory release qualifications fail the release job;
-- the final six end-to-end smokes pass from a clean frozen environment.
+- the final seven end-to-end smokes pass from a clean frozen environment.
 
 ---
 
@@ -179,6 +236,12 @@ Every validated audit finding maps to one implementation task. Duplicate reports
 | F46 | Selected cluster unions can lose cross-cluster edges or expose permuted IDs as source IDs | New approved scope; release blocker | 7 |
 | F47 | Runtime transforms can run twice, mutate stored views, or change supervision identity | New approved scope; release blocker | 7 |
 | F48 | Multi-worker and resumed cluster sampling can diverge or reopen full graph state | New approved scope | 8 |
+| F49 | One disk graph cannot select several named, independently validated split triplets | New approved scope; release blocker | 6, 8, 30 |
+| F50 | Independent METIS reruns cannot reproduce an accepted partition | New approved scope; persist accepted map/environment | 6, 30 |
+| F51 | Pre-partitioned download/cache promotion can expose partial or unsafe artifacts | New approved scope; release blocker | 6 |
+| F52 | Conversion/training checks and temporal resource signals lack one actionable evidence stream | New approved scope | 7, 30 |
+| F53 | Fitted preprocessing can leak validation/test data or repeat cluster context rows | New approved scope; release blocker | 7 |
+| F54 | Materialized/disk sampling and final-metric parity lack hard reference oracles | New approved scope; release blocker | 7, 8, 31 |
 
 ---
 
@@ -420,7 +483,7 @@ git commit -m "fix: fingerprint processed data completely"
 
 ---
 
-## Phase 2: Out-of-core Parquet and disk-backed transductive execution
+## Phase 2: Universal typed Parquet store and disk-backed execution
 
 This phase starts only after Tasks 1–5 make source, split, feature, and cache
 identity authoritative. Its approved architecture is
@@ -429,174 +492,203 @@ Its authoritative TDD steps, exact file ownership, commands, and commit
 boundaries are
 `docs/plans/2026-07-31-parquet-graph-ingestion-streaming-implementation.md`.
 
-The companion plan ports only the global-CSR, partition, and selected-read
-concepts from `dleko11:on_disk_transductive`. It does not merge that branch's
-rank-indexed collator, higher-order lifting path, SQLite cluster copies,
-parent-open arrays, device transfer in `collate_fn`, or compatibility fields.
-It additionally supports one logical graph stored as chunked node/edge
-Parquet, strict out-of-core conversion, deterministic TopoBench-owned streaming
-partitioning, bounded host/CUDA prefetch, exact committed-cursor resume, and
-continuous input-starvation telemetry.
+The companion plan contributes supported materialized-reference and disk modes,
+one typed partition book/store, explicit named split triplets, fitted
+training-only transforms, content-addressed pre-partitioned distribution,
+reproducibility bundles, structured check evidence, profiling, prefetch, and
+committed resume. Homogeneous cluster, heterogeneous cluster, and
+heterogeneous neighbor strategies emit native `Data`/`HeteroData` without
+rank-indexed collators, per-cluster SQLite copies, parent-open arrays, CUDA in
+`collate_fn`, or compatibility fields.
 
-### Task 6: Build the bounded-memory Parquet conversion and graph store
+### Task 6: Build the bounded universal typed store
 
 **Files:**
 
-- Execute companion-plan Tasks 1–6 exactly.
-- Do not duplicate their file list or create a second store/ingestion API.
+- Execute companion-plan Tasks 1–7 exactly.
+- Do not duplicate their schema/split registry, ingestion, ID maps, CSC writer,
+  corrected homogeneous baseline, typed PyG partition adapter/validator,
+  content-addressed store, bundle, or PyG protocol views.
 
 **Step 1: Establish the red contracts**
 
-Follow companion Tasks 1–6 in order: schema/dependencies, source inventory and
-external IDs, embeddings/supervision, edge CSR, streaming Fennel partitioning,
-then immutable partition-order rewrite and staged resume. Each companion task
-owns its own focused red test and commit.
+Follow companion Tasks 1–7: typed YAML and named split triplets; inventory and
+per-type IDs/features/supervision; canonical relation CSC; corrected pinned
+`ClusterData` baseline; topology-only PyG typed partition book with 256 GiB
+default admission and hard balance; then safe atomic store/bundle promotion.
 
-The completed boundary must accept YAML-mapped node, edge, label, and split
-roles over many Parquet files; map arbitrary supported integer/string source
-IDs deterministically; and never materialize the full graph, embedding matrix,
-mapped edge table, `edge_index`, or PyG `Data` in RAM.
+The boundary accepts homogeneous and heterogeneous sources. Parquet conversion
+never materializes complete features or mapped edges; the explicit reference
+partition step may materialize topology only under its independent ceiling.
 
 **Step 2: Run the Phase 2 store gate**
 
 ```bash
-uv run pytest test/data/test_parquet_graph_spec.py \
-  test/data/test_parquet_graph_ingestion.py \
-  test/data/test_parquet_supervision.py \
-  test/data/test_parquet_edge_ingestion.py \
-  test/data/test_graph_partition.py \
-  test/data/test_graph_store.py \
-  test/data/test_parquet_conversion_resume.py -q
+uv run pytest \
+  test/data/loaders/test_parquet_typed_schema.py \
+  test/data/stores/test_typed_graph_inventory.py \
+  test/data/stores/test_external_node_index.py \
+  test/data/stores/test_typed_graph_features.py \
+  test/data/stores/test_typed_graph_supervision.py \
+  test/data/stores/test_typed_graph_csc.py \
+  test/data/stores/test_typed_graph_edge_rejections.py \
+  test/data/stores/test_materialized_homogeneous_partition.py \
+  test/data/stores/test_topology_only_pyg_partitioner.py \
+  test/data/stores/test_typed_partition_book.py \
+  test/data/stores/test_partition_qualification.py \
+  test/data/stores/test_typed_graph_store.py \
+  test/data/stores/test_pyg_store.py \
+  test/data/stores/test_typed_store_promotion.py \
+  test/data/stores/test_prepartitioned_store_bundle.py \
+  test/data/stores/test_qualification_checks.py -q
 ```
 
-Expected: PASS with deterministic semantic digests across file/row-group
-layouts, bounded subprocess RSS, hard partition balance, declared cut quality,
-atomic promotion, and exact staged-resume invalidation.
+Expected: exact split and typed-ID contracts, semantic digests across physical
+layouts, canonical relation direction/fields, corrected homogeneous identity,
+typed partition qualification, bounded conversion/reference resources,
+selected memory-mapped reads, safe distribution, and atomic promotion.
 
 **Step 3: Respect companion commit boundaries**
 
-Companion Tasks 1–6 produce six reviewable commits. Do not add a redundant
-summary commit and do not mark remediation Task 6 complete until every
-companion completion criterion assigned to Tasks 1–6 passes.
+Companion Tasks 1–7 own seven commits. Do not add a redundant summary commit
+or mark remediation Task 6 complete until their criteria pass.
 
-### Task 7: Stream, prefetch, resume, and monitor graph batches
+### Task 7: Sample, transform, prefetch, resume, and profile disk views
 
 **Files:**
 
-- Execute companion-plan Tasks 7–10 exactly.
-- Do not duplicate their loader, prefetch, sampler, callback, or monitor APIs.
+- Execute companion-plan Tasks 8–12 exactly.
+- Do not duplicate their data module, strategies, fitted transforms, sequence
+  state, prefetch, event/check stream, callbacks, or monitor.
 
-**Step 1: Establish selected-batch and transform behavior**
+**Step 1: Establish exact native sampling behavior**
 
-Execute companion Task 7. Prove selected CSR/feature reads, exact induced-union
-edges including cross-partition edges, writable tensors, canonical
-`global_nid`, and exactly-once qualified graph-to-graph CPU transforms before
-pinning or device transfer.
+Execute companion Task 8. Homogeneous and heterogeneous partition descriptors
+reconstruct exact induced unions against materialized PyG oracles.
+Heterogeneous target-seed descriptors use exact deterministic relation-specific
+neighbor parity and supervise only `n_id[:batch_size]`.
 
-**Step 2: Make queued work checkpoint-safe**
+**Step 2: Fit training-only transforms**
 
-Execute companion Task 8. Separate sampler `issued_cursor` from
-`committed_cursor`; checkpoints persist only committed state and regenerate
-issued-but-uncommitted batches after resume.
+Execute companion Task 9. The canonical fit view visits each active-tag
+training entity once, never reads validation/test, and atomically publishes
+bounded PCA/transform state keyed by all scientific inputs.
 
-**Step 3: Add bounded two-stage prefetch**
+**Step 3: Make queued work checkpoint-safe**
 
-Execute companion Task 9. Host worker depth and the ordered CUDA ring have
-independent byte budgets. The qualified large-graph profile defaults to three
-batches ahead, plus the currently computing batch. CPU/MPS use explicit
-host-only mode; CUDA is never called from workers or `collate_fn`.
+Execute companion Task 10. One sequence protocol separates issued/prepared/
+consumed work from committed optimizer/evaluator/global-step state, handles
+gradient accumulation, and regenerates all uncommitted descriptors.
 
-**Step 4: Add continuous input telemetry**
+**Step 4: Add bounded generic prefetch**
 
-Execute companion Task 10. Measure every batch's input wait, disk/assembly,
-queue depths, H2D, compute, bytes, dimensions, sequence, and partition IDs
-without hot-path synchronization. Packaged runs warn after the approved
-rolling starvation boundary; correctness errors always raise. Keep
-`system/input/*` outside evaluator, best-checkpoint, returned, and scientific
-metrics.
+Execute companion Task 11. Host and CUDA queues accept `Data`/`HeteroData`, use
+independent budgets, and default to three device-ready batches plus the current
+batch. CPU/MPS use explicit host-only mode; workers never call CUDA.
 
-**Step 5: Run the Phase 2 streaming gate**
+**Step 5: Add structured profiling and check evidence**
+
+Execute companion Task 12. Profile conversion through training with bounded
+local evidence and sampled W&B/logger aggregates. Every hard failure carries a
+stable check ID, expected/observed evidence, remediation, and report path;
+`system/*` never contaminates scientific metrics.
+
+**Step 6: Run the Phase 2 streaming gate**
 
 ```bash
-uv run pytest test/data/dataload/test_graph_disk.py \
-  test/data/dataload/test_graph_disk_sampler.py \
-  test/data/dataload/test_prefetch.py \
-  test/data/dataload/test_input_pipeline_monitor.py \
-  test/callbacks/test_input_pipeline.py \
-  test/callbacks/test_best_epoch_metrics.py -q
+uv run pytest \
+  test/data/dataload/test_disk_graph_datamodule.py \
+  test/data/dataload/test_homogeneous_cluster_strategy.py \
+  test/data/dataload/test_heterogeneous_neighbor_strategy.py \
+  test/data/dataload/test_heterogeneous_cluster_strategy.py \
+  test/data/dataload/test_disk_neighbor_parity.py \
+  test/transforms/test_fittable_transform.py \
+  test/transforms/test_incremental_pca.py \
+  test/data/dataload/test_sequence_state.py \
+  test/data/dataload/test_device_prefetch.py \
+  test/profiling/test_execution_events.py \
+  test/profiling/test_local_event_log.py \
+  test/data/dataload/test_input_monitor.py \
+  test/callbacks/test_dataloader_commit.py \
+  test/callbacks/test_input_pipeline.py -q
 ```
 
-Expected: PASS. Spawn workers open lazily and cleanly; queue order and committed
-resume are exact; monitor warnings do not contaminate scientific metrics.
+Expected: both native output views are exact; spawn workers open lazily and
+close cleanly; delivery and committed resume are ordered; telemetry does not
+contaminate scientific results.
 
-**Step 6: Respect companion commit boundaries**
+**Step 7: Respect companion commit boundaries**
 
-Companion Tasks 7–10 produce four reviewable commits. Do not add a redundant
-summary commit.
+Companion Tasks 8–12 own five commits. Do not add a summary commit.
 
-### Task 8: Integrate and qualify Parquet graph training end to end
+### Task 8: Integrate and qualify universal disk training end to end
 
 **Files:**
 
-- Execute companion-plan Tasks 11–13 exactly.
-- Preserve `GraphDataModule` as the ordinary in-memory path.
+- Execute companion-plan Tasks 13–15 exactly.
+- Preserve existing graph and heterogeneous in-memory data modules.
 
-**Step 1: Wire the explicit source and pipeline**
+**Step 1: Wire thin TopoBench pipeline adapters**
 
-Execute companion Task 11. `ParquetGraphLoader` returns a validated source
-specification rather than `Data`; `data_pipeline=graph_disk` owns conversion,
-the canonical store, disk data module, runtime transform, prefetch settings,
-and provenance metadata. Parquet imports remain lazy outside this path.
+Execute companion Task 13. Existing pipelines select materialized/disk and
+cluster/neighbor strategies explicitly, reuse standard outputs and `TBModel`,
+and provide active split, transform, reproducibility, profiling, and canonical
+prediction identity inputs. `run.py` does not branch on native data type.
+Parquet imports remain lazy outside this path.
 
 **Step 2: Prove lifecycle and resume**
 
-Execute companion Task 12 in fresh processes. Interrupted and uninterrupted
-runs must agree on committed cluster sequences, model/optimizer/scheduler
-state, callbacks, selected-checkpoint rerun, scientific metrics, and
-external-ID prediction export despite prefetched future work.
+Execute companion Task 14 in fresh processes. Fresh/cache/download/moved-store
+and interrupted/uninterrupted homogeneous cluster, heterogeneous cluster, and
+neighbor runs agree on immutable identities, remaining descriptors,
+sampler/evaluator/model state, selected checkpoint, metrics, and predictions
+under the declared reproduction profile.
 
 **Step 3: Run bounded-memory, real-data, and CUDA qualification**
 
-Execute companion Task 13. The synthetic conversion fixture must materially
-exceed its subprocess RSS ceiling. The approved real graph gate must consume
-chunked Parquet. The CUDA profiler gate compares synchronous, host-only,
-one-ahead, and three-ahead loading, proves H2D/compute overlap, and requires at
-most 5% steady-state input stall for release.
+Execute companion Task 15. Generated conversion and topology-partition fixtures
+prove their independent memory ceilings. Real multi-split Parquet gates
+exercise fitted transforms and both typed strategies. Exact exhaustive oracles,
+predeclared paired-seed metric bounds, CUDA H2D/compute overlap, and at most 5%
+strict steady-state input stall all pass.
 
 ```bash
-uv run pytest test/integration/test_parquet_graph_lifecycle.py \
+uv run pytest \
+  test/integration/test_typed_graph_conversion_resume.py \
   test/integration/test_graph_disk_resume.py \
-  test/integration/test_real_parquet_graph.py -q
+  test/integration/test_heterogeneous_disk_resume.py \
+  test/integration/test_typed_graph_lifecycle.py \
+  test/integration/test_real_parquet_graph.py \
+  test/integration/test_real_parquet_heterogeneous.py -q
 
-TOPOBENCH_ALLOW_DOWNLOADS=1 uv run pytest \
-  test/integration/test_real_parquet_graph.py::test_real_parquet_graph -q
-
-uv run pytest test/integration/qualify_parquet_graph_cuda.py -q
+uv run python test/integration/qualify_typed_graph_rss.py
+uv run python test/integration/qualify_typed_graph_cuda.py
 ```
 
-Expected: every command PASS in its mandatory environment. A skip, missing
-Parquet extra, absent CUDA runner, RSS breach, input-stall breach, or missing
+Expected: PASS in each mandatory environment. A skip, missing Parquet extra,
+missing neighbor backend, absent CUDA runner, RSS/stall breach, or missing
 evidence is not a passing release.
 
-**Step 4: Run focused and adjacent graph suites**
+**Step 4: Run focused and adjacent framework suites**
 
 ```bash
-uv run pytest test/data/test_graph_store.py \
-  test/data/dataload/test_graph_disk.py \
-  test/pipeline/test_graph_disk_pipeline.py \
+uv run pytest \
+  test/data/stores \
+  test/data/dataload/test_disk_graph_datamodule.py \
+  test/pipeline/test_disk_graph_pipeline.py \
+  test/pipeline/test_disk_heterogeneous_pipeline.py \
   test/pipeline/test_graph_model_capabilities.py \
-  test/config/test_surviving_graph_configs.py \
-  test/integration/test_graph_disk_resume.py \
-  test/integration/test_parquet_graph_lifecycle.py -q
+  test/pipeline/test_heterogeneous_pipeline.py \
+  test/config/test_all_surviving_configs.py -q
 ```
 
 Expected: PASS.
 
 **Step 5: Respect companion commit boundaries**
 
-Companion Tasks 11–13 produce three reviewable commits. Do not add a redundant
-summary commit. Resume this remediation plan at Task 9 only after every
-companion completion criterion passes.
+Companion Tasks 13–15 own three commits. Do not add a redundant summary commit.
+Resume this remediation plan at Task 9 only after every companion completion
+criterion passes.
 
 ---
 
@@ -1063,140 +1155,331 @@ git add topobench/data/pipelines/hypergraph.py topobench/dataloader/graph.py top
 git commit -m "perf: avoid full hypergraph recopy and revalidation"
 ```
 
-### Task 20: Make expensive multiclass metrics explicit and bounded
+### Task 20: Implement the scalable evaluator and automatic preflight
 
-**Files:**
+**Authoritative companion plan:**
 
-- Modify: `topobench/utils/config_resolvers.py`
-- Modify: `topobench/evaluator/evaluator.py`
-- Modify: `configs/evaluator/default.yaml`
-- Modify: heterogeneous dataset/experiment configs as needed
-- Modify: `test/evaluator/test_evaluator.py`
-- Modify: `test/config/test_all_surviving_configs.py`
+- Design: `docs/plans/2026-07-31-scalable-evaluator-design.md`
+- Implementation:
+  `docs/plans/2026-07-31-scalable-evaluator-implementation.md`
 
-**Step 1: Write failing metric-policy tests**
+This task delegates evaluator, metric-policy, count-reporting, and pre-training
+dry-run file ownership to Tasks 1–9 of the companion implementation plan. Do
+not implement a second bounded-ranking patch or an ad hoc dry run in this
+remediation file.
 
-Assert large multiclass node selectors do not collect exact AUROC during training by default. Assert small binary/qualified configs keep intended metrics. Add an opt-in bounded/binned AUROC case if scientifically acceptable.
+**Step 1: Execute companion Tasks 1–9**
 
-**Step 2: Run the red tests**
+The ordered companion work must:
+
+- reduce evaluator tasks/metrics to the surviving core;
+- introduce typed context, batch, result, and lifecycle contracts;
+- introduce the automatic preflight gate early, before production logger and
+  trainer construction;
+- replace dynamic metric discovery with explicit TopoBench specifications and
+  internal TorchMetrics adapters;
+- implement exact, online, and audit policies;
+- implement binary AUPRC as average precision and Somers'
+  $D_{S\mid Y}=2\,\mathrm{AUROC}-1$, rejecting both for non-binary vocabularies;
+- retain all exact binary/multiclass ranking observations in one guarded
+  TopoBench-owned CPU backend with no stateful TorchMetrics duplicate;
+- define strict/NaN undefined behavior;
+- commit and report exact `num_examples` for every train/validation/test
+  context;
+- wire `TBModel` to the canonical selected supervision batch;
+- complete non-committing data and isolated execution probes; and
+- make configuration and the direct TorchMetrics dependency authoritative.
+
+Training defaults to bounded online ranking metrics. Validation and test
+default to exact in-memory ranking metrics under the declared byte ceiling.
+Audit mode compares exact and thresholded values in one pass. No policy
+silently falls back.
+
+**Step 2: Run the companion focused gate**
 
 ```bash
-uv run pytest test/evaluator/test_evaluator.py test/config/test_all_surviving_configs.py -q
+uv run pytest \
+  test/evaluator \
+  test/preflight \
+  test/model/test_model.py \
+  test/model/test_supervision.py \
+  test/config/test_all_surviving_configs.py \
+  test/utils/test_config_resolvers.py \
+  test/pipeline/test_pipeline.py \
+  test/pipeline/test_heterogeneous_pipeline.py -q
 ```
 
-**Step 3: Implement per-phase metric policy**
+Expected: PASS. Tests prove fixed state does not grow with example count,
+binary exact state is shared, multiclass exact state is CPU-owned, every
+reachable exact tensor and compute workspace is guarded, AUPRC/Somers' D
+semantics and audit metadata are explicit, phase `num_examples` is exact,
+preflight runs before training, and probe execution changes no production
+state.
 
-Do not store full training logits for large multiclass tasks. Make exact AUROC opt-in, use bounded thresholds only where the approximation is explicitly recorded, and avoid needless CPU copies for streaming metrics.
+**Step 3: Record evaluator and preflight provenance**
 
-**Step 4: Record the policy**
+Run provenance includes metric implementation, aggregation, policy,
+exactness/thresholds, positive-class and Somers' D orientation, class support,
+integer `num_examples`, retained/peak bytes, preflight checks, compilation
+status, component targets/versions, skipped-impossible checks with reasons, and
+qualification status. Disabling preflight requires an experimental override
+and marks the run unqualified.
 
-Run provenance includes metric implementation, averaging, thresholds/binning, phase applicability, and class count.
+**Step 4: Use companion commit boundaries**
 
-**Step 5: Run focused and heterogeneous tests**
-
-```bash
-uv run pytest test/evaluator/test_evaluator.py test/config/test_all_surviving_configs.py test/pipeline/test_heterogeneous_pipeline.py -q
-```
-
-**Step 6: Commit**
-
-```bash
-git add topobench/utils/config_resolvers.py topobench/evaluator/evaluator.py configs/evaluator configs/dataset/heterogeneous configs/experiment test/evaluator/test_evaluator.py test/config/test_all_surviving_configs.py
-git commit -m "fix: bound default multiclass metric state"
-```
+Use the focused commit boundaries in companion Tasks 1–9. Do not create a
+duplicate Task 20 commit after those commits already own the changes.
 
 ---
 
 ## Phase 6: Training lifecycle and reported results
 
-### Task 21: Make best-epoch and rerun metrics one authoritative result
+### Task 21: Make selected-checkpoint metrics and prediction artifacts authoritative
+
+First execute companion evaluator Task 10 from
+`docs/plans/2026-07-31-scalable-evaluator-implementation.md`. It owns explicit
+selected-checkpoint evaluation contexts and the one authoritative
+`EvaluationResult`; this task owns durable prediction serialization and logger
+artifact publication.
 
 **Files:**
 
+- Modify: `topobench/model/supervision.py`
+- Modify: `topobench/model/model.py`
+- Modify: `topobench/data/pipelines/base.py`
+- Modify: `topobench/data/splits.py`
 - Modify: `topobench/callbacks/best_epoch_metrics.py`
+- Create: `topobench/callbacks/prediction_artifacts.py`
+- Create: `topobench/evaluator/prediction.py`
+- Create: `topobench/utils/artifact_logging.py`
 - Modify: `topobench/run.py`
-- Modify: `test/callbacks/test_best_epoch_metrics.py`
-- Modify: `test/pipeline/test_pipeline.py`
-
-**Step 1: Write a real-hook-order test**
-
-Use a tiny actual Lightning trainer for at least two epochs with distinguishable train/validation values. Assert `best_epoch/train/*` and `best_epoch/val/*` are captured from the same epoch without manually prepopulating callback state.
-
-**Step 2: Write a returned-surface test**
-
-Run without any external logger. Assert `run()` returns best-epoch metrics plus `val_best_rerun/*` and `test_best_rerun/*`. Set `optimized_metric` to a best-epoch key and assert lookup succeeds.
-
-**Step 3: Run the red tests**
-
-```bash
-uv run pytest test/callbacks/test_best_epoch_metrics.py test/pipeline/test_pipeline.py -q
-```
-
-**Step 4: Implement one metric record**
-
-Capture same-epoch train entries at a hook where the model has already published them and validation selection is known. Expose callback results and checkpoint-rerun results through the returned metric dictionary, not only logger-specific APIs. External loggers consume the same record.
-
-**Step 5: Remove logger-specific truth**
-
-W&B summary may mirror values but cannot be the only sink. Preserve numeric values without lossy conversion.
-
-**Step 6: Run focused and lifecycle tests**
-
-```bash
-uv run pytest test/callbacks/test_best_epoch_metrics.py test/pipeline/test_pipeline.py test/pipeline/test_heterogeneous_pipeline.py -q
-```
-
-**Step 7: Commit**
-
-```bash
-git add topobench/callbacks/best_epoch_metrics.py topobench/run.py test/callbacks/test_best_epoch_metrics.py test/pipeline/test_pipeline.py
-git commit -m "fix: return authoritative selected-checkpoint metrics"
-```
-
-### Task 22: Qualify checkpoint resume against uninterrupted training
-
-**Files:**
-
-- Modify: `topobench/callbacks/best_epoch_metrics.py`
-- Modify: `topobench/run.py`
+- Modify: `configs/run.yaml`
+- Create: `configs/evaluation_artifacts/default.yaml`
+- Modify: `test/model/test_supervision.py`
+- Create: `test/evaluator/test_prediction_payload.py`
+- Create: `test/callbacks/test_prediction_artifacts.py`
+- Create: `test/utils/test_artifact_logging.py`
 - Modify: `test/callbacks/test_best_epoch_metrics.py`
 - Modify: `test/pipeline/test_pipeline.py`
 - Modify: `test/pipeline/test_heterogeneous_pipeline.py`
+
+**Step 1: Write real selected-checkpoint lifecycle tests**
+
+Use tiny actual Lightning trainers for at least two epochs with distinguishable
+training/validation values. Assert same-epoch `best_epoch/train/*` and
+`best_epoch/val/*` capture without manually injecting callback state. Assert
+the checkpoint selected solely by validation is loaded for exactly one
+validation rerun and one test rerun; test metrics never affect selection.
+Assert train, ordinary validation, selected-checkpoint validation, and
+selected-checkpoint test each log one exact `num_examples` total from the
+finalized `EvaluationResult`, never a Lightning average of per-batch counts.
+
+**Step 2: Write domain identity and payload tests**
+
+Extend the canonical `EvaluationBatch` with aligned, immutable prediction
+identity supplied by a pipeline-configured adapter. The supervision adapter
+continues to select the loss-owning outputs/targets exactly once. Cover:
+
+- graph-level `sample_id` across shuffle and unequal final batches;
+- homogeneous full/disk `(source_graph_id, global_nid)`;
+- heterogeneous `(source_graph_id, target_node_type, n_id)` with only
+  `n_id[:batch_size]` seeds and no context nodes;
+- hypergraph `(source_graph_id, global_nid)`;
+- exact target, raw-output, exported prediction, optional model/normalized
+  target spaces, shapes, class vocabulary/units, and source metadata.
+
+External string IDs are restored only at export. Reject missing, duplicate,
+surplus, or misaligned IDs, shape broadcasting, undeclared metadata, and the
+same external ID collision across node types.
+
+**Step 3: Write sharding, atomicity, and logger tests**
+
+Require:
+
+```text
+evaluations/best_checkpoint/val/metrics.json
+evaluations/best_checkpoint/val/predictions/manifest.json
+evaluations/best_checkpoint/val/predictions/part-*.npz
+evaluations/best_checkpoint/test/metrics.json
+evaluations/best_checkpoint/test/predictions/manifest.json
+evaluations/best_checkpoint/test/predictions/part-*.npz
+```
+
+Force several shards under tiny row/byte caps. Load every shard with
+`allow_pickle=False` and assert ordered exact row coverage, equal column
+lengths, dtypes/shapes, unique composite identity, checkpoint SHA-256, shard
+SHA-256, source/dataset/split/model/transform fingerprints, and separate val
+and test paths, callback state, manifests, and logger names. Require integer
+`num_examples` in each `metrics.json` and exact equality with
+`EvaluationResult.num_examples`, manifest observed rows, returned output,
+provenance, and the split-qualified logger value.
+
+Test atomic temporary-directory promotion, participant-count disagreement,
+interruption before promotion, idempotent exact rerun, conflicting rerun
+rejection, and explicit multi-rank failure. Every configured logger must
+receive one separate artifact record/upload per `metrics.json`, manifest, and
+shard. W&B uses immutable artifacts; CSV/local uses append-only URI+digest
+index records. An unsupported logger fails preflight when artifacts are
+enabled.
+
+**Step 4: Write returned and source-sliced metric tests**
+
+Without an external logger, assert `run()` returns best-epoch metrics,
+selected-checkpoint validation/test metrics, each context's `num_examples`,
+and both artifact manifest paths/digests. With bounded configured `source`
+vocabulary, assert per-source metrics and counts come from the same
+evaluator/prediction rows, are written under `slices/source/...`, and use stable
+logger keys. Reject unbounded category expansion. Set `optimized_metric` to a
+best-epoch key and assert lookup works.
+
+**Step 5: Run the red tests**
+
+```bash
+uv run pytest \
+  test/model/test_supervision.py \
+  test/evaluator/test_prediction_payload.py \
+  test/callbacks/test_prediction_artifacts.py \
+  test/utils/test_artifact_logging.py \
+  test/callbacks/test_best_epoch_metrics.py \
+  test/pipeline/test_pipeline.py \
+  test/pipeline/test_heterogeneous_pipeline.py -q
+```
+
+**Step 6: Implement one bounded artifact path**
+
+Keep `TBModel.model_step` as the single supervision boundary. Companion
+evaluator Task 10 routes the resulting `EvaluationBatch` through explicit
+selected-checkpoint validation and test contexts. When artifact capture is
+enabled, the writer consumes that same batch; it does not repeat the forward
+pass or supervision selection. Stream completed batches to CPU and bounded
+`.npz` buffers, release flushed buffers, validate coverage/finiteness/digests,
+write versioned JSON, and promote each split atomically only after participant
+counts agree.
+
+The same immutable `EvaluationResult` feeds returned values, local
+`metrics.json`, every logger, and provenance. Serialize
+`EvaluationResult.num_examples` as an integer outside the metric mapping and
+require it to equal manifest observed rows. W&B summary may mirror scalar
+values but cannot be the only sink. Preserve numeric values without lossy
+conversion.
+
+**Step 7: Run focused and lifecycle tests**
+
+```bash
+uv run pytest \
+  test/model/test_supervision.py \
+  test/evaluator/test_prediction_payload.py \
+  test/callbacks/test_prediction_artifacts.py \
+  test/utils/test_artifact_logging.py \
+  test/callbacks/test_best_epoch_metrics.py \
+  test/pipeline/test_pipeline.py \
+  test/pipeline/test_heterogeneous_pipeline.py \
+  test/pipeline/test_disk_graph_pipeline.py \
+  test/pipeline/test_disk_heterogeneous_pipeline.py -q
+```
+
+**Step 8: Commit**
+
+```bash
+git add topobench/model/supervision.py topobench/model/model.py topobench/data/pipelines/base.py topobench/data/splits.py topobench/callbacks/best_epoch_metrics.py topobench/callbacks/prediction_artifacts.py topobench/evaluator/prediction.py topobench/utils/artifact_logging.py topobench/run.py configs/run.yaml configs/evaluation_artifacts/default.yaml test/model/test_supervision.py test/evaluator/test_prediction_payload.py test/callbacks/test_prediction_artifacts.py test/utils/test_artifact_logging.py test/callbacks/test_best_epoch_metrics.py test/pipeline
+git commit -m "feat: retain selected-checkpoint predictions"
+```
+
+---
+
+### Task 22: Qualify checkpoint resume against uninterrupted training
+
+First execute companion evaluator Task 11 from
+`docs/plans/2026-07-31-scalable-evaluator-implementation.md`. It owns the joint
+evaluator-sequence, sampler-cursor, and model-global-step checkpoint boundary;
+this task proves that contract through complete production lifecycle resumes.
+
+**Files:**
+
+- Modify only for proven defects: `topobench/callbacks/best_epoch_metrics.py`
+- Modify only for proven defects: `topobench/callbacks/prediction_artifacts.py`
+- Modify only for proven defects: `topobench/evaluator/evaluator.py`
+- Modify only for proven defects: `topobench/model/model.py`
+- Modify only for proven defects: `topobench/run.py`
+- Modify: `test/callbacks/test_best_epoch_metrics.py`
+- Modify: `test/callbacks/test_prediction_artifacts.py`
+- Modify: `test/evaluator/test_state_serialization.py`
+- Modify: `test/pipeline/test_pipeline.py`
+- Modify: `test/pipeline/test_heterogeneous_pipeline.py`
 - Modify: `test/integration/test_graph_disk_resume.py`
+- Modify: `test/integration/test_heterogeneous_disk_resume.py`
 
-**Step 1: Write the uninterrupted control**
+**Step 1: Write uninterrupted controls**
 
-Run deterministic packaged tiny in-memory, disk-streamed graph, and heterogeneous experiments for two or three epochs. Record model state, optimizer/global step, epoch, best monitored value/epoch/path, callback metric state, split/data/partition fingerprints, disk sampler state, and rerun metrics.
+Run deterministic packaged tiny in-memory graph, homogeneous disk cluster,
+in-memory heterogeneous neighbor, and heterogeneous disk neighbor experiments
+for two or three epochs, including gradient accumulation greater than one.
+Record model/optimizer/global-step/epoch state, best
+monitor/epoch/checkpoint, callback metric state, evaluator committed
+sequence/`num_examples`, split/store/strategy fingerprints, committed sampler
+cursor, rerun metrics, prediction manifest digests, ordered canonical
+identities, and shard contents.
 
-**Step 2: Write the resumed comparison**
+**Step 2: Write resumed comparisons**
 
-Run one epoch, save, resume through the production `ckpt_path` path, and finish to the same total epoch. Assert the same final state and selected-checkpoint results as the uninterrupted control, including the same post-resume global-node cluster batches for the disk path.
+Inject production-hook checkpoint requests before an optimizer step, between
+optimizer/sampler/evaluator commits, at an aligned global-step boundary, and at
+epoch end. Mixed/pending requests must defer or fail without publishing a
+checkpoint. Resume every valid checkpoint through `ckpt_path` and finish to the
+same total epoch. Assert identical final model state, remaining cluster/seed
+descriptors, evaluator metric state and `num_examples`, selected checkpoint,
+validation/test metrics, prediction rows, shard semantic digests, and logger
+registrations. Issued-but-uncommitted work is regenerated exactly once. An
+interrupted final prediction write exposes no partial final directory and
+restarts or resumes only at a validated shard boundary.
 
 **Step 3: Run the red tests**
 
 ```bash
-uv run pytest test/callbacks/test_best_epoch_metrics.py test/pipeline/test_pipeline.py test/pipeline/test_heterogeneous_pipeline.py test/integration/test_graph_disk_resume.py -q
+uv run pytest \
+  test/callbacks/test_best_epoch_metrics.py \
+  test/callbacks/test_prediction_artifacts.py \
+  test/evaluator/test_state_serialization.py \
+  test/pipeline/test_pipeline.py \
+  test/pipeline/test_heterogeneous_pipeline.py \
+  test/integration/test_graph_disk_resume.py \
+  test/integration/test_heterogeneous_disk_resume.py -q
 ```
 
-**Step 4: Persist callback state correctly**
+**Step 4: Persist lifecycle state correctly**
 
-Implement `state_dict`/`load_state_dict` for best value, epoch, metric record, and any required comparison mode. Resume must preserve pre-resume best state.
+Implement or repair versioned `state_dict`/`load_state_dict` for best value,
+epoch, metric record, comparison mode, selected checkpoint identity, and only
+the prediction-writer state needed for validated shard-boundary recovery.
+Training checkpoints contain only an aligned evaluator sequence/count state,
+sampler cursor, and model global step; they contain no pending microbatch or
+partial prediction tensors. Resume preserves pre-resume best state and
+immutable store/artifact fingerprints.
 
 **Step 5: Define qualification accurately**
 
-If a backend cannot produce bitwise identity, document and test the exact tolerance/invariant. Never label an untested resume path as equivalent to uninterrupted training.
+If a backend cannot produce bitwise identity, document and test the exact
+tolerance/invariant. Never label an untested resume path as equivalent to
+uninterrupted training.
 
 **Step 6: Run focused lifecycle tests**
 
 ```bash
-uv run pytest test/callbacks/test_best_epoch_metrics.py test/pipeline/test_pipeline.py test/pipeline/test_heterogeneous_pipeline.py test/integration/test_graph_disk_resume.py -q
+uv run pytest \
+  test/callbacks/test_best_epoch_metrics.py \
+  test/callbacks/test_prediction_artifacts.py \
+  test/evaluator/test_state_serialization.py \
+  test/pipeline/test_pipeline.py \
+  test/pipeline/test_heterogeneous_pipeline.py \
+  test/integration/test_graph_disk_resume.py \
+  test/integration/test_heterogeneous_disk_resume.py -q
 ```
 
 **Step 7: Commit**
 
 ```bash
-git add topobench/callbacks/best_epoch_metrics.py topobench/run.py test/callbacks/test_best_epoch_metrics.py test/pipeline/test_pipeline.py test/pipeline/test_heterogeneous_pipeline.py test/integration/test_graph_disk_resume.py
-git commit -m "fix: preserve lifecycle state across resume"
+git add topobench/callbacks/best_epoch_metrics.py topobench/callbacks/prediction_artifacts.py topobench/evaluator/evaluator.py topobench/model/model.py topobench/run.py test/callbacks/test_best_epoch_metrics.py test/callbacks/test_prediction_artifacts.py test/evaluator/test_state_serialization.py test/pipeline/test_pipeline.py test/pipeline/test_heterogeneous_pipeline.py test/integration/test_graph_disk_resume.py test/integration/test_heterogeneous_disk_resume.py
+git commit -m "fix: align selected results and metrics across resume"
 ```
 
 ---
@@ -1527,47 +1810,69 @@ git commit -m "test: qualify real phase supervision and downloads"
 
 - Modify: `configs/run.yaml`
 - Modify: `configs/trainer/default.yaml`
+- Create: `configs/artifacts/reproducibility.yaml`
 - Modify: `topobench/run.py`
 - Create: `topobench/provenance.py`
+- Create: `topobench/reproducibility.py`
 - Create: `test/test_provenance.py`
+- Create: `test/test_reproducibility_bundle.py`
 - Modify: lifecycle and pipeline tests
 
 **Step 1: Write failing deterministic-mode tests**
 
 Assert there is one authoritative config field. In deterministic mode, nondeterministic operations raise rather than warn. Assert global seeds, loader/sampler seeds, worker policy, and deterministic backend state are recorded.
 
+Assert `save_reproducibility_bundle` defaults to true, cannot be false in a
+qualified profile, and marks a permitted experimental run unqualified. Exercise
+fresh, cache-hit, downloaded pre-partitioned, moved, resumed, multiple-split,
+and second-clean-process replay.
+
 **Step 2: Write failing provenance-schema tests**
 
 Require a versioned record containing:
 
-- qualified/experimental status and reason;
-- dataset selector, loader target/version, raw artifact digest, processed-data/cache digest;
-- split type, seed, exact phase index/mask digests and counts;
-- transform and feature-policy record;
-- disk store manifest/source digests, resolved Parquet schema roles and
-  dependency versions, representation version, partition
-  algorithm/options/seed and quality statistics, committed cluster sampler
-  state, runtime-transform digest, host/device queue depths and budgets,
-  monitor thresholds, p50/p95/p99 input timings, starvation count, peak
-  RSS/pinned/GPU/temporary-disk bytes, and final-store size when
-  `cluster_disk` is selected;
-- model selector, every component target, resolved behavior-changing hyperparameter, parameter count, initialization digest;
-- metric/loss definitions;
-- selected epoch, checkpoint digest, rerun metrics;
-- Python, OS, Torch, PyG, Lightning, CUDA/backend, repository revision, and lock digest;
-- deterministic settings and worker/sampler settings.
+- qualification/reproduction level and reasons;
+- dataset selector, loader/backend versions, raw/cache/store content digests;
+- all registered split tags, active tag, exact phase source/index/mask digests,
+  counts, coverage policy, and partition-balance evidence;
+- feature policy plus fitted/runtime transform configuration, code/state digest,
+  fit-input checksum, and leakage qualification;
+- typed-store source/schema/array/checksum manifest, output/target types,
+  accepted typed partition-book digest, PyG/METIS backend/build/options,
+  hard-balance/cut evidence, and pre-partitioned bundle identity;
+- committed cluster/seed sampler cursor and RNG plus evaluator sequence/count
+  and model global step;
+- host/device queue settings, structured profiling/check schema, event/summary
+  digests, p50/p95/p99 timings, starvation, RSS/pinned/GPU/temp-disk/final-size;
+- model selector, component targets, behavior-changing hyperparameters,
+  parameter count, and initialization digest;
+- loss/metric definitions, exactness/tolerances, participant counts, and
+  sampled-strategy paired-seed qualification;
+- selected epoch/checkpoint path/digest, validation/test rerun results, and
+  prediction manifest paths/digests;
+- per-artifact schema, row/shard counts, identity schema, logger registration,
+  and bounded slice definitions;
+- Python, OS/kernel/architecture, CPU, Torch, PyG, Lightning,
+  `torch-sparse`/`pyg-lib`, METIS, CUDA runtime/driver/GPU, BLAS/OpenMP,
+  container digest when present, repository revision/dirty-patch digest, and
+  dependency-lock digest;
+- global/component seeds, deterministic algorithms, workers, and sampler
+  settings.
 
 Do not include secrets, raw data, individual real-data IDs, tensors, predictions, or embeddings in generic logs.
 
 **Step 3: Run the red tests**
 
 ```bash
-uv run pytest test/test_provenance.py test/pipeline/test_pipeline.py test/pipeline/test_heterogeneous_pipeline.py -q
+uv run pytest test/test_provenance.py test/test_reproducibility_bundle.py test/pipeline/test_pipeline.py test/pipeline/test_heterogeneous_pipeline.py -q
 ```
 
 **Step 4: Implement one immutable run record**
 
-Build it from validated pipeline/model/lifecycle outputs, not by dumping the Hydra tree. Hash canonical non-sensitive structures. Write atomically and return its path/digest from `run()`.
+Build one immutable record and bundle from validated pipeline/model/lifecycle
+outputs, not a Hydra-tree dump. Hash canonical non-sensitive structures, copy
+the qualified lock/config/state references, atomically publish the bundle, and
+return its path/digest from `run()`.
 
 **Step 5: Enforce strict deterministic mode**
 
@@ -1576,13 +1881,13 @@ Remove duplicate root/trainer authorities. Use strict deterministic algorithms w
 **Step 6: Run focused tests**
 
 ```bash
-uv run pytest test/test_provenance.py test/pipeline/test_pipeline.py test/pipeline/test_heterogeneous_pipeline.py test/data/dataload/test_heterogeneous_dataloader.py -q
+uv run pytest test/test_provenance.py test/test_reproducibility_bundle.py test/pipeline/test_pipeline.py test/pipeline/test_heterogeneous_pipeline.py test/data/dataload/test_heterogeneous_dataloader.py -q
 ```
 
 **Step 7: Commit**
 
 ```bash
-git add configs/run.yaml configs/trainer/default.yaml topobench/run.py topobench/provenance.py test/test_provenance.py test/pipeline test/data/dataload/test_heterogeneous_dataloader.py
+git add configs/run.yaml configs/trainer/default.yaml configs/artifacts/reproducibility.yaml topobench/run.py topobench/provenance.py topobench/reproducibility.py test/test_provenance.py test/test_reproducibility_bundle.py test/pipeline test/data/dataload/test_heterogeneous_dataloader.py
 git commit -m "feat: record authoritative experiment provenance"
 ```
 
@@ -1605,7 +1910,11 @@ uv run pytest \
   test/nn/backbones/graph/test_nsd.py \
   test/nn/backbones/hypergraph/test_edgnn.py \
   test/callbacks/test_best_epoch_metrics.py \
-  test/evaluator/test_evaluator.py -q
+  test/callbacks/test_prediction_artifacts.py \
+  test/evaluator/test_evaluator.py \
+  test/evaluator/test_prediction_payload.py \
+  test/utils/test_artifact_logging.py -q
+
 ```
 
 Expected: PASS.
@@ -1649,28 +1958,36 @@ From a disposable clean checkout or CI job:
 uv sync --frozen --all-extras
 uv run python test/data/pipelines/verify_clean_import.py
 uv run pytest test -q
+uv run python test/integration/qualify_typed_graph_rss.py
+uv run python test/integration/qualify_typed_graph_cuda.py
 ```
 
 Expected: PASS; `uv.lock` unchanged.
 
-**Step 6: Run the six end-to-end CPU smokes**
+**Step 6: Run the seven end-to-end CPU smokes**
 
 ```bash
 WANDB_MODE=disabled uv run python -m topobench.run experiment=graph_synthetic_gcn trainer.accelerator=cpu trainer.devices=1 trainer.max_epochs=1
 WANDB_MODE=disabled uv run python -m topobench.run experiment=graph_synthetic_regression trainer.accelerator=cpu trainer.devices=1 trainer.max_epochs=1
 WANDB_MODE=disabled uv run python -m topobench.run experiment=graph_synthetic_inductive_node trainer.accelerator=cpu trainer.devices=1 trainer.max_epochs=1
 WANDB_MODE=disabled uv run python -m topobench.run experiment=graph_synthetic_disk_gcn trainer.accelerator=cpu trainer.devices=1 trainer.max_epochs=1
+WANDB_MODE=disabled uv run python -m topobench.run experiment=heterogeneous_synthetic_disk_hgt_neighbor trainer.accelerator=cpu trainer.devices=1 trainer.max_epochs=1
 WANDB_MODE=disabled uv run python -m topobench.run experiment=heterogeneous_synthetic_hgt trainer.accelerator=cpu trainer.devices=1 trainer.max_epochs=1
 WANDB_MODE=disabled uv run python -m topobench.run experiment=hypergraph_synthetic_edgnn trainer.accelerator=cpu trainer.devices=1 trainer.max_epochs=1
 ```
 
-For each smoke, inspect the returned/run artifact and assert:
+For each smoke, inspect returned values and the run directory and assert:
 
-- `qualified=true`;
-- finite train/validation/test metrics;
-- best epoch and checkpoint digest;
-- returned `val_best_rerun/*` and `test_best_rerun/*` metrics;
-- complete data/split/model/environment provenance;
+- `qualified=true` and finite train/validation/test metrics;
+- binary runs include AUPRC and Somers' D with declared positive-class and
+  orientation metadata;
+- best epoch and validation-selected checkpoint digest;
+- exact validation/test selected-checkpoint metric records;
+- each phase's `num_examples` agrees across returned output, logger, final JSON,
+  prediction manifest where applicable, and provenance;
+- distinct `evaluations/best_checkpoint/{val,test}` metrics, manifest, and
+  pickle-free prediction shards using that same checkpoint digest;
+- complete data/split/model/environment/artifact provenance;
 - no secret-bearing config dump.
 
 **Step 7: Run explicit real-data qualification**
@@ -1680,8 +1997,12 @@ TOPOBENCH_ALLOW_DOWNLOADS=1 uv run pytest \
   test/integration/test_ogb_mag_preflight.py \
   test/integration/test_dblp_heterogeneous.py \
   test/integration/test_real_hypergraph_formats.py \
-  test/integration/test_real_graph_disk.py \
+  test/integration/test_real_parquet_graph.py \
+  test/integration/test_real_parquet_heterogeneous.py \
   test/integration/test_retained_datasets.py -q
+
+uv run python test/integration/qualify_typed_graph_rss.py
+uv run python test/integration/qualify_typed_graph_cuda.py
 ```
 
 Expected: PASS with zero mandatory skips.
@@ -1710,9 +2031,21 @@ Document exactly:
 - live-data qualification command;
 - disk partition identity, runtime-memory boundary, sampler-resume semantics,
   and deterministic exactly-once `batch_transform` constraints;
-- scale limits for GCN-DGM, sparse hypergraph features, and metrics.
+- scale limits for GCN-DGM, sparse hypergraph features, and metrics;
+- selected-checkpoint validation/test prediction schemas, artifact directories,
+  logger registration names, source-sliced analyses, and retention policy.
 
-**Step 10: Final commit**
+**Step 10: Run the final sparse-comment review**
+
+Execute companion evaluator Task 14 from
+`docs/plans/2026-07-31-scalable-evaluator-implementation.md` after every
+behavioral and documentation gate above passes. One review agent inspects the
+integrated runtime and adds only short rationale comments at genuinely nested
+or non-obvious reliability boundaries. The task's focused tests and Ruff gates
+must pass; any discovered behavioral defect returns to TDD and requires
+re-running the affected release gates.
+
+**Step 11: Final commit**
 
 ```bash
 git add README.md docs configs topobench test pyproject.toml uv.lock .github/workflows
@@ -1725,38 +2058,70 @@ git commit -m "release: qualify the reduced research core"
 
 Implementation is complete only when all are true:
 
-- F01–F42 and F45–F48 are fixed, removed, or explicitly bounded as specified; F43–F44 remain covered by regressions.
-- No qualified run uses overlapping phases, validation-as-test, random ADME splits mislabeled as scaffold, stale seed-dependent caches, silently coerced labels, or mismatched class counts.
-- Every exposed model hyperparameter changes executed behavior or is rejected/removed.
-- Graph and hypergraph examples remain isolated under batching and message passing.
-- Large-data paths have explicit bounded memory/workspace behavior; Parquet
-  conversion never materializes the full graph, embedding matrix, mapped edge
-  table, or PyG `Data`, and no hidden full sparse-to-dense conversion,
-  full-graph clone, per-forward exhaustive scan, or unbounded default AUROC
-  state remains.
-- Disk-backed transductive runs retain no full source graph at runtime, read
-  only selected arrays, reconstruct exact induced cluster unions with
-  canonical numeric global IDs plus exact external-ID export, and apply
-  qualified graph-to-graph transforms exactly once before pinning/transfer.
-- Bounded host prefetch and a configurable ordered CUDA ring defaulting to
-  three batches ahead preserve delivery order and committed-cursor resume;
-  continuous asynchronous input telemetry warns without contaminating
-  scientific metrics, and qualification stays at or below 5% input stall.
-- Best-epoch, selected-checkpoint rerun, returned metrics, external logger metrics, and resume state agree by construction and by real lifecycle test.
+- F01–F42 and F45–F54 are fixed, removed, or explicitly bounded as specified;
+  F43–F44 remain covered by regressions.
+- No qualified run uses overlap within one named split triplet,
+  validation-as-test, random ADME mislabeled as scaffold, stale caches,
+  silently coerced labels, or mismatched classes; distinct split tags may
+  intentionally overlap and remain independently fingerprinted.
+- Every exposed model hyperparameter changes executed behavior or is rejected.
+- Graph and hypergraph examples remain isolated under batching/message passing.
+- One typed store/partition book supports homogeneous and heterogeneous
+  materialized/disk cluster plus heterogeneous neighbor `Data`/`HeteroData`
+  views without a parallel framework.
+- Parquet conversion never materializes complete features or mapped edge
+  tables; topology-only partitioning obeys its independent 256 GiB default
+  admission; no hidden layout densification/full clone/exhaustive forward scan
+  or unbounded default metric state remains.
+- Typed IDs/features/supervision, directed relations/fields, and partition
+  inverses round-trip exactly. Temporary METIS reverse arcs never leak.
+- Materialized/disk cluster unions match PyG subgraph oracles; qualified
+  deterministic disk neighbor batches exactly match materialized
+  `NeighborLoader`; exhaustive logits/metrics and predeclared paired-seed
+  sampled-metric bounds pass.
+- Training-only fitted transforms visit canonical active-tag rows once, never
+  read validation/test, and replay from immutable checked state.
+- Pre-partitioned bundles safely download, stage, validate, atomically promote,
+  move, and reopen by digest without executable artifacts.
+- Qualified runs retain the default-mandatory reproducibility bundle with full
+  source/config/environment/partition/split/transform/checkpoint/artifact
+  identity; METIS is not rerun for replay.
+- Bounded host/CUDA queues preserve order and committed sampler/evaluator/
+  global-step resume for every strategy. Structured local profiling/check
+  evidence remains authoritative, W&B publication is bounded, and strict
+  qualification remains at or below 5% input stall.
+- Best-epoch, selected-checkpoint rerun, returned metrics, every external
+  logger, final metrics JSON, prediction manifest, and resume state agree by
+  construction on metric values and exact `num_examples`.
+- Binary AUPRC/Somers' D semantics, online bounds, exact TopoBench-owned
+  binary/multiclass CPU state, complete retained-plus-compute guards, and
+  audit/error policies are qualified with independent reference values.
+- resumable checkpoints align evaluator sequence/count state, sampler committed
+  cursor, and model global step; gradient-accumulation microbatches cannot be
+  checkpointed pending or counted twice;
+- Validation and test each retain independent atomic metrics plus sharded
+  per-sample identity/target/raw-output/prediction artifacts from the same
+  validation-selected checkpoint; files never silently overwrite and every
+  configured logger receives a separate split-qualified artifact record.
 - Qualified packaged configs are closed and source-validated; custom Hydra components remain easy to add under an explicit unqualified experimental profile.
 - No credential appears in stdout, `config_tree.log`, run provenance, or cross-logger hyperparameters.
 - Runtime does not execute remote pickle data; downloaded artifacts are bounded, authenticated, validated, and atomically promoted.
 - Cache and checkpoint deserialization follows the declared trusted boundary and safe state-dict path.
 - `uv sync --frozen --all-extras` succeeds without changing the lock; all actions are full-SHA pinned.
-- Offline suite, Ruff, clean-import probe, six CPU smokes, bounded-RSS Parquet
-  conversion, mandatory CUDA-overlap, and live-data qualifications pass with
-  recorded evidence.
+- a final agent review leaves sparse rationale-bearing comments only at
+  genuinely complex reliability boundaries and its focused/style gates pass;
+- Offline suite, Ruff, clean-import probe, seven CPU smokes, bounded-RSS
+  homogeneous/heterogeneous Parquet conversion, mandatory CUDA overlap,
+  selected-checkpoint prediction artifacts, and live-data qualifications pass
+  with recorded evidence.
 
 ## Explicit non-goals
 
 - Hostile multi-tenant Hydra job submission.
 - Arbitrary untrusted checkpoint uploads.
 - Distributed or DDP metric qualification.
+- Distributed prediction-artifact merge before an all-rank collection protocol
+  is separately qualified.
 - Heterogeneous link prediction or graph-level prediction.
 - Hypergraph graph-level prediction, neighbor sampling, or distributed sampling.
 - Multi-graph disk batching, remote object-store memory mapping, distributed

@@ -7,12 +7,12 @@ PyG dataset.  Conversion and runtime storage belong to the ingestion layer.
 
 from __future__ import annotations
 
+import re
+import stat
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath, PureWindowsPath
-import re
-import stat
 from typing import Any, Literal
 
 OutputKind = Literal["homogeneous", "heterogeneous"]
@@ -226,8 +226,7 @@ def _confined_path(
             ) from error
         if stat.S_ISLNK(metadata.st_mode):
             raise ValueError(
-                f"{context} contains symlink component "
-                f"{str(candidate)!r}"
+                f"{context} contains symlink component {str(candidate)!r}"
             )
         regular_file_identity = (
             (metadata.st_dev, metadata.st_ino)
@@ -259,7 +258,9 @@ class NodeTypeSpec:
         name = _name(self.name, context="node type name")
         context = f"node_types[{name}]"
         object.__setattr__(self, "name", name)
-        object.__setattr__(self, "paths", _paths(self.paths, context=f"{context}.paths"))
+        object.__setattr__(
+            self, "paths", _paths(self.paths, context=f"{context}.paths")
+        )
         object.__setattr__(
             self,
             "id_column",
@@ -330,7 +331,9 @@ class RelationSpec:
         relation = tuple(relation_value)
         context = f"relations[{relation!r}]"
         object.__setattr__(self, "relation", relation)
-        object.__setattr__(self, "paths", _paths(self.paths, context=f"{context}.paths"))
+        object.__setattr__(
+            self, "paths", _paths(self.paths, context=f"{context}.paths")
+        )
         source = _column(
             self.source_column,
             context=f"{context}.source_column",
@@ -357,7 +360,9 @@ class RelationSpec:
         )
         role_columns = (source, destination, edge_id)
         if any(field in role_columns for field in fields):
-            raise ValueError(f"{context}.edge_fields may not reuse role columns")
+            raise ValueError(
+                f"{context}.edge_fields may not reuse role columns"
+            )
         if edge_id in {source, destination}:
             raise ValueError(f"{context}.edge_id_column must be a stable role")
         object.__setattr__(self, "source_column", source)
@@ -378,7 +383,9 @@ class SplitSetSpec:
     qualified: bool = True
 
     def __post_init__(self) -> None:
-        if not isinstance(self.tag, str) or not _TAG_PATTERN.fullmatch(self.tag):
+        if not isinstance(self.tag, str) or not _TAG_PATTERN.fullmatch(
+            self.tag
+        ):
             raise ValueError(f"split tag {self.tag!r} is illegal")
         phase_paths = tuple(
             _relative_path(
@@ -419,7 +426,9 @@ class SplitRegistrySpec:
         if not split_sets:
             raise ValueError("split_registry.sets must not be empty")
         if not all(isinstance(split, SplitSetSpec) for split in split_sets):
-            raise TypeError("split_registry.sets must contain SplitSetSpec values")
+            raise TypeError(
+                "split_registry.sets must contain SplitSetSpec values"
+            )
         tags = tuple(split.tag for split in split_sets)
         duplicate_tags = sorted(
             tag for tag, count in Counter(tags).items() if count > 1
@@ -438,7 +447,9 @@ class SplitRegistrySpec:
             for path in (split.train, split.val, split.test)
         )
         if len(set(all_phase_paths)) != len(all_phase_paths):
-            raise ValueError("split_registry phase filenames must be globally unique")
+            raise ValueError(
+                "split_registry phase filenames must be globally unique"
+            )
         required_policies = {
             "cross_tag_overlap": "allowed",
             "within_phase_ids": "unique",
@@ -513,7 +524,9 @@ class SupervisionSpec:
                     "supervision label and node ID columns must be distinct"
                 )
         else:
-            raise ValueError("supervision.labels.source must be nodes or dataset")
+            raise ValueError(
+                "supervision.labels.source must be nodes or dataset"
+            )
         object.__setattr__(self, "target_node_type", target)
         object.__setattr__(self, "label_column", label_column)
         object.__setattr__(self, "label_paths", label_paths)
@@ -698,7 +711,9 @@ class ParquetTypedGraphSpec:
         if not isinstance(self.source_root, (str, Path)):
             raise TypeError("source_root must be a path")
         if isinstance(self.source_root, str) and "${" in self.source_root:
-            raise ValueError("source_root contains an unresolved interpolation")
+            raise ValueError(
+                "source_root contains an unresolved interpolation"
+            )
         root = Path(self.source_root).expanduser().resolve(strict=False)
         nodes = tuple(self.node_types)
         relations = tuple(self.relations)
@@ -708,7 +723,9 @@ class ParquetTypedGraphSpec:
             raise ValueError("relations must not be empty")
         if not all(isinstance(node, NodeTypeSpec) for node in nodes):
             raise TypeError("node_types must contain NodeTypeSpec values")
-        if not all(isinstance(relation, RelationSpec) for relation in relations):
+        if not all(
+            isinstance(relation, RelationSpec) for relation in relations
+        ):
             raise TypeError("relations must contain RelationSpec values")
         node_names = tuple(node.name for node in nodes)
         duplicate_nodes = sorted(
@@ -759,7 +776,10 @@ class ParquetTypedGraphSpec:
                     "one relation"
                 )
             expected = nodes[0].name
-            if relations[0].relation[0] != expected or relations[0].relation[2] != expected:
+            if (
+                relations[0].relation[0] != expected
+                or relations[0].relation[2] != expected
+            ):
                 raise ValueError(
                     "homogeneous output requires one self-type relation"
                 )
@@ -799,7 +819,9 @@ class ParquetTypedGraphSpec:
         )
         for context, observed, expected_type in nested_specs:
             if not isinstance(observed, expected_type):
-                raise TypeError(f"{context} must be a {expected_type.__name__}")
+                raise TypeError(
+                    f"{context} must be a {expected_type.__name__}"
+                )
         relative_files: list[tuple[str, str]] = []
         for node in nodes:
             relative_files.extend(
@@ -811,12 +833,15 @@ class ParquetTypedGraphSpec:
                 for path in relation.paths
             )
         relative_files.extend(
-            (f"supervision.labels.paths", path)
+            ("supervision.labels.paths", path)
             for path in self.supervision.label_paths
         )
         for split in self.supervision.split_registry.sets:
             relative_files.extend(
-                (f"supervision.splits[{split.tag}].{phase}", getattr(split, phase))
+                (
+                    f"supervision.splits[{split.tag}].{phase}",
+                    getattr(split, phase),
+                )
                 for phase in ("train", "val", "test")
             )
         file_owners: dict[Path, str] = {}
@@ -930,11 +955,15 @@ def _spec_from_parameters(parameters: object) -> ParquetTypedGraphSpec:
     )
     data_domain = values.get("data_domain")
     if data_domain not in {"graph", "heterogeneous"}:
-        raise ValueError("loader.parameters.data_domain must be graph or heterogeneous")
+        raise ValueError(
+            "loader.parameters.data_domain must be graph or heterogeneous"
+        )
     if values.get("data_type") != "parquet_typed":
         raise ValueError("loader.parameters.data_type must be 'parquet_typed'")
     if values.get("data_name") != "ParquetTypedGraph":
-        raise ValueError("loader.parameters.data_name must be 'ParquetTypedGraph'")
+        raise ValueError(
+            "loader.parameters.data_name must be 'ParquetTypedGraph'"
+        )
     output_kind = _required(values, "output_kind", context="loader.parameters")
     expected_output = {
         "graph": "homogeneous",
@@ -953,8 +982,7 @@ def _spec_from_parameters(parameters: object) -> ParquetTypedGraphSpec:
     if not node_values:
         raise ValueError("loader.parameters.node_types must not be empty")
     nodes = tuple(
-        _node_from_mapping(name, value)
-        for name, value in node_values.items()
+        _node_from_mapping(name, value) for name, value in node_values.items()
     )
 
     edge_values = _sequence(
@@ -975,7 +1003,9 @@ def _spec_from_parameters(parameters: object) -> ParquetTypedGraphSpec:
         _required(values, "partition", context="loader.parameters")
     )
     return ParquetTypedGraphSpec(
-        source_root=_required(values, "source_root", context="loader.parameters"),
+        source_root=_required(
+            values, "source_root", context="loader.parameters"
+        ),
         output_kind=output_kind,
         node_types=nodes,
         relations=relations,
@@ -1022,7 +1052,9 @@ def _node_from_mapping(name: str, value: object) -> NodeTypeSpec:
         ),
         context=feature_context,
     )
-    representation = _required(features, "representation", context=feature_context)
+    representation = _required(
+        features, "representation", context=feature_context
+    )
     if representation == "fixed_size_list":
         feature_columns = (
             _required(features, "column", context=feature_context),
@@ -1070,9 +1102,7 @@ def _relation_from_mapping(value: object, *, index: int) -> RelationSpec:
     )
     _check_keys(
         columns,
-        allowed=frozenset(
-            {"source", "destination", "edge_id", "fields"}
-        ),
+        allowed=frozenset({"source", "destination", "edge_id", "fields"}),
         context=columns_context,
     )
     return RelationSpec(
@@ -1154,7 +1184,9 @@ def _split_registry_from_mapping(value: object) -> SplitRegistrySpec:
         split = _mapping(value, context=split_context)
         _check_keys(
             split,
-            allowed=frozenset({"train", "val", "test", "coverage", "qualified"}),
+            allowed=frozenset(
+                {"train", "val", "test", "coverage", "qualified"}
+            ),
             context=split_context,
         )
         qualified = split.get("qualified", True)

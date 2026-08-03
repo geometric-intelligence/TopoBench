@@ -112,7 +112,9 @@ class BestEpochMetricsCallback(Callback):
         if best_value is not None and (
             isinstance(best_value, bool) or not isinstance(best_value, Real)
         ):
-            raise TypeError("best_monitored_value must be a real scalar or None")
+            raise TypeError(
+                "best_monitored_value must be a real scalar or None"
+            )
         best_epoch = state_dict["best_epoch_number"]
         if best_epoch is not None and (
             isinstance(best_epoch, bool)

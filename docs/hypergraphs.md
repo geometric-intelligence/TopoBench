@@ -70,9 +70,9 @@ The native representation version is **2**, and its processed filename is:
 hypergraph_data_v2.pt
 ```
 
-An older `processed/data.pt` cache is incompatible. When only that older file exists, the dataset warns, ignores it, and regenerates `hypergraph_data_v2.pt` from the raw data. It never treats the older object as native data.
+An older `processed/data.pt` cache is incompatible. When only that older file exists, the dataset warns, ignores it, and regenerates `hypergraph_data_v2.pt` from the authenticated raw data. It never deserializes the older object as native data.
 
-A file named `hypergraph_data_v2.pt` must contain `HypergraphData` with `representation_version == 2` and valid structure. A missing or mismatched version raises an error rather than guessing how to migrate the object. To regenerate after that error, remove only the invalid processed `hypergraph_data_v2.pt` file and rerun the dataset command; keep the raw files so PyG can process them again.
+`hypergraph_data_v2.pt` is a tensor/primitive-only, versioned payload paired with `hypergraph_data_v2.pt.manifest.json`. TopoBench opens both beneath the configured per-principal cache root without following links, verifies file ownership, permissions, path, byte size, cache identity, and SHA-256, then calls `torch.load(..., weights_only=True)`. Only after closed-schema validation does it reconstruct the statically selected `HypergraphData` class and validate `representation_version == 2` plus the incidence structure. Missing, stale, or mismatched metadata raises an error rather than guessing how to migrate the cache. Remove the invalid payload and its manifest to regenerate them from retained raw files.
 
 Changing the incidence layout requires a new representation number and processed filename. Reusing version 2 for incompatible data would allow stale caches to cross the validation boundary.
 

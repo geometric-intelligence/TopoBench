@@ -1,5 +1,11 @@
 """Bounded disk-store construction and lookup APIs."""
 
+# ``topobench.data`` currently imports PyArrow through an optional PyG path
+# before this subpackage executes. Stores have no hot-path PyArrow dependency;
+# discard those optional module-cache entries so a clean store import proves it.
+import sys as _sys
+
+from topobench.data.stores.external_node_index import ExternalNodeIndex
 from topobench.data.stores.pyg_store import (
     PyGTypedFeatureStore,
     PyGTypedGraphStore,
@@ -16,13 +22,6 @@ from topobench.data.stores.store_bundle import (
     BundleLimits,
     StoreBundle,
 )
-from topobench.data.stores.typed_graph_store import (
-    TypedGraphStore,
-    TypedGraphStoreBuild,
-    TypedGraphStoreState,
-    TypedGraphStoreWriter,
-)
-from topobench.data.stores.external_node_index import ExternalNodeIndex
 from topobench.data.stores.typed_graph_ingestion import (
     ArtifactValidationError,
     ConcurrentBuildError,
@@ -33,11 +32,12 @@ from topobench.data.stores.typed_graph_ingestion import (
     SourceInventory,
     SourceMutationError,
 )
-
-# ``topobench.data`` currently imports PyArrow through an optional PyG path
-# before this subpackage executes. Stores have no hot-path PyArrow dependency;
-# discard those optional module-cache entries so a clean store import proves it.
-import sys as _sys
+from topobench.data.stores.typed_graph_store import (
+    TypedGraphStore,
+    TypedGraphStoreBuild,
+    TypedGraphStoreState,
+    TypedGraphStoreWriter,
+)
 
 for _module_name in tuple(_sys.modules):
     if _module_name == "pyarrow" or _module_name.startswith("pyarrow."):

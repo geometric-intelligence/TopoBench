@@ -13,6 +13,60 @@ from torch_geometric.data import Data
 _SPLIT_MASK_NAMES = ("train_mask", "val_mask", "test_mask")
 
 
+def _ensure_global_nid(data: Data, num_nodes: int) -> None:
+    """Attach or validate stable source node ordinals without copying features."""
+    global_nid = getattr(data, "global_nid", None)
+    if global_nid is None:
+        data.global_nid = torch.arange(num_nodes, dtype=torch.long)
+        return
+    if (
+        not isinstance(global_nid, torch.Tensor)
+        or global_nid.dtype == torch.bool
+        or global_nid.is_floating_point()
+        or global_nid.is_complex()
+        or global_nid.ndim != 1
+        or global_nid.numel() != num_nodes
+    ):
+        raise ValueError(
+            "global_nid must be a rank-one integer tensor aligned to nodes"
+        )
+    if bool(torch.any(global_nid < 0)):
+        raise ValueError(
+            "global_nid must contain non-negative source ordinals"
+        )
+    if torch.unique(global_nid).numel() != num_nodes:
+        raise ValueError("global_nid must contain unique source ordinals")
+
+
+def _source_ordinal(dataset: Dataset[Data], index: int) -> int:
+    """Resolve an index through nested shallow Subset views."""
+    current: Dataset[Data] = dataset
+    ordinal = int(index)
+    while isinstance(current, Subset):
+        ordinal = int(current.indices[ordinal])
+        current = current.dataset
+    return ordinal
+
+
+class _SourceOrdinalSubset(Subset[Data]):
+    """Lazy phase view that attaches a stable graph source ordinal on access."""
+
+    def __getitem__(self, index: int) -> Data:
+        source_index = int(self.indices[index])
+        data = self.dataset[source_index]
+        if not isinstance(data, Data):
+            raise TypeError("inductive graph views must contain native Data")
+        if getattr(data, "sample_id", None) is None:
+            data.sample_id = torch.tensor(
+                [_source_ordinal(self.dataset, source_index)],
+                dtype=torch.long,
+            )
+        return data
+
+    def __getitems__(self, indices: list[int]) -> list[Data]:
+        return [self[index] for index in indices]
+
+
 def _normalize_num_nodes(num_nodes: int) -> int:
     """Return a validated node count."""
     if isinstance(num_nodes, bool) or not isinstance(num_nodes, Integral):
@@ -122,6 +176,7 @@ def validate_transductive_masks(data: Data) -> None:
         masks,  # type: ignore[arg-type]
         _labeled_mask(data, num_nodes),
     )
+    _ensure_global_nid(data, num_nodes)
 
 
 def apply_transductive_split(
@@ -143,6 +198,7 @@ def apply_transductive_split(
     )
     _validate_masks(masks, _labeled_mask(data, num_nodes))
     data.train_mask, data.val_mask, data.test_mask = masks
+    _ensure_global_nid(data, num_nodes)
     return data
 
 
@@ -190,9 +246,9 @@ def inductive_split_views(
         _normalize_inductive_partition(split_idx, len(dataset))
     )
     return (
-        Subset(dataset, train_indices),
-        Subset(dataset, valid_indices),
-        Subset(dataset, test_indices),
+        _SourceOrdinalSubset(dataset, train_indices),
+        _SourceOrdinalSubset(dataset, valid_indices),
+        _SourceOrdinalSubset(dataset, test_indices),
     )
 
 

@@ -1,5 +1,8 @@
 """Topology-only PyG partition generation, trusted adaptation, and publication."""
+
 from __future__ import annotations
+
+import contextlib
 import gc
 import hashlib
 import json
@@ -10,19 +13,30 @@ import shutil
 import stat
 import sys
 import uuid
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
-from typing import Any, Mapping, Sequence
+from typing import Any
+
 import numpy as np
 import torch
 from torch_geometric.data import HeteroData
 from torch_geometric.distributed.utils import as_str
-from topobench.data.stores.typed_partition_book import CanonicalRelation, PartitionQualificationLimits, PartitionStatistics, QualificationCheck, TypedPartitionBook, topology_fingerprint
+
+from topobench.data.stores.typed_partition_book import (
+    CanonicalRelation,
+    PartitionQualificationLimits,
+    PartitionStatistics,
+    QualificationCheck,
+    TypedPartitionBook,
+    topology_fingerprint,
+)
 
 
 def _ingestion() -> Any:
     from topobench.data.stores import typed_graph_ingestion
+
     return typed_graph_ingestion
 
 
@@ -40,7 +54,9 @@ def _safe_json(path: Path, code: str) -> dict[str, Any]:
             current = os.fstat(descriptor)
             if (current.st_dev, current.st_ino) != (info.st_dev, info.st_ino):
                 raise _error(code, f"{path.name} changed while opening")
-            with os.fdopen(descriptor, "r", encoding="utf-8", closefd=False) as stream:
+            with os.fdopen(
+                descriptor, "r", encoding="utf-8", closefd=False
+            ) as stream:
                 value = json.load(stream)
         finally:
             os.close(descriptor)
@@ -60,7 +76,10 @@ def _safe_torch_load(path: Path) -> Any:
         try:
             current = os.fstat(descriptor)
             if (current.st_dev, current.st_ino) != (info.st_dev, info.st_ino):
-                raise _error("PARTITION-OUTPUT-001", f"{path.name} changed while opening")
+                raise _error(
+                    "PARTITION-OUTPUT-001",
+                    f"{path.name} changed while opening",
+                )
             return torch.load(
                 f"/dev/fd/{descriptor}",
                 map_location="cpu",
@@ -72,7 +91,9 @@ def _safe_torch_load(path: Path) -> Any:
     except _ingestion().ArtifactValidationError:
         raise
     except Exception as exc:
-        raise _error("PARTITION-OUTPUT-001", f"malformed trusted tensor {path.name}") from exc
+        raise _error(
+            "PARTITION-OUTPUT-001", f"malformed trusted tensor {path.name}"
+        ) from exc
 
 
 def _safe_relative(root: Path, relative: str, code: str) -> Path:
@@ -82,7 +103,9 @@ def _safe_relative(root: Path, relative: str, code: str) -> Path:
     candidate = root
     for component in parsed.parts:
         candidate /= component
-        if os.path.lexists(candidate) and stat.S_ISLNK(candidate.lstat().st_mode):
+        if os.path.lexists(candidate) and stat.S_ISLNK(
+            candidate.lstat().st_mode
+        ):
             raise _error(code, "path contains symlink")
     resolved = (root / parsed).resolve(strict=False)
     try:
@@ -95,12 +118,17 @@ def _safe_relative(root: Path, relative: str, code: str) -> Path:
 def _file_sha(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
-        while chunk := stream.read(1024 * 1024): digest.update(chunk)
+        while chunk := stream.read(1024 * 1024):
+            digest.update(chunk)
     return digest.hexdigest()
 
 
 def _tree_bytes(root: Path) -> int:
-    return sum(path.stat().st_size for path in root.rglob("*") if path.is_file() and not path.is_symlink())
+    return sum(
+        path.stat().st_size
+        for path in root.rglob("*")
+        if path.is_file() and not path.is_symlink()
+    )
 
 
 def _rss_bytes() -> int:
@@ -132,18 +160,25 @@ class CanonicalRelationTopology:
     @property
     def destination(self) -> np.ndarray:
         colptr = np.load(self.colptr_path, mmap_mode="r", allow_pickle=False)
-        return np.repeat(np.arange(self.destination_count, dtype=np.int64), np.diff(colptr))
+        return np.repeat(
+            np.arange(self.destination_count, dtype=np.int64), np.diff(colptr)
+        )
+
+
 def _csc_destination_chunk(
     colptr: np.ndarray,
     start: int,
     stop: int,
 ) -> np.ndarray:
     positions = np.arange(start, stop, dtype=np.int64)
-    return np.searchsorted(
-        colptr,
-        positions,
-        side="right",
-    ).astype(np.int64, copy=False) - 1
+    return (
+        np.searchsorted(
+            colptr,
+            positions,
+            side="right",
+        ).astype(np.int64, copy=False)
+        - 1
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,16 +210,29 @@ class TypedPartitionBuild:
 
 class PyGPartitionArtifactAdapter:
     """Adapt only locally-generated, fingerprint-owned PyG tensor artifacts."""
-    def __init__(self, topology: TopologyContext, artifact_root: Path, *, trusted_parent: Path) -> None:
+
+    def __init__(
+        self,
+        topology: TopologyContext,
+        artifact_root: Path,
+        *,
+        trusted_parent: Path,
+    ) -> None:
         self.topology = topology
         self.artifact_root = Path(artifact_root)
         self.trusted_parent = Path(trusted_parent)
         try:
-            self.artifact_root.resolve(strict=True).relative_to(self.trusted_parent.resolve(strict=True))
+            self.artifact_root.resolve(strict=True).relative_to(
+                self.trusted_parent.resolve(strict=True)
+            )
         except (ValueError, FileNotFoundError) as exc:
-            raise _error("PARTITION-OUTPUT-001", "PyG output is outside trusted parent") from exc
+            raise _error(
+                "PARTITION-OUTPUT-001", "PyG output is outside trusted parent"
+            ) from exc
         if topology.fingerprint not in self.artifact_root.resolve().parts:
-            raise _error("PARTITION-OUTPUT-001", "PyG output is not fingerprint-owned")
+            raise _error(
+                "PARTITION-OUTPUT-001", "PyG output is not fingerprint-owned"
+            )
         if self.artifact_root.is_symlink():
             raise _error("PARTITION-OUTPUT-001", "PyG output is symlinked")
 
@@ -196,25 +244,42 @@ class PyGPartitionArtifactAdapter:
         measured_resources: Mapping[str, Any] | None = None,
         trusted_storage_root: Path | None = None,
     ) -> TypedPartitionBook:
-        meta = _safe_json(self.artifact_root / "META.json", "PARTITION-OUTPUT-001")
+        meta = _safe_json(
+            self.artifact_root / "META.json", "PARTITION-OUTPUT-001"
+        )
         expected_nodes = list(self.topology.internal_node_types)
-        if meta.get("num_parts") != self.topology.num_partitions or meta.get("is_hetero") is not True or meta.get("node_types") != expected_nodes:
-            raise _error("PARTITION-OUTPUT-001", "PyG metadata differs from request")
+        if (
+            meta.get("num_parts") != self.topology.num_partitions
+            or meta.get("is_hetero") is not True
+            or meta.get("node_types") != expected_nodes
+        ):
+            raise _error(
+                "PARTITION-OUTPUT-001", "PyG metadata differs from request"
+            )
         assignments: dict[str, np.ndarray] = {}
         for internal in expected_nodes:
-            value = _safe_torch_load(self.artifact_root / "node_map" / f"{internal}.pt")
-            if not isinstance(value, torch.Tensor) or value.dtype != torch.int64 or value.ndim != 1:
-                raise _error("PARTITION-ID-001", f"node map {internal} is malformed")
+            value = _safe_torch_load(
+                self.artifact_root / "node_map" / f"{internal}.pt"
+            )
+            if (
+                not isinstance(value, torch.Tensor)
+                or value.dtype != torch.int64
+                or value.ndim != 1
+            ):
+                raise _error(
+                    "PARTITION-ID-001", f"node map {internal} is malformed"
+                )
             node_type = self.topology.internal_node_types[internal]
             array = value.detach().cpu().numpy()
-            if (
-                len(array) != self.topology.node_counts[node_type]
-                or not _partition_ids_valid(
-                    array,
-                    self.topology.num_partitions,
-                )
+            if len(array) != self.topology.node_counts[
+                node_type
+            ] or not _partition_ids_valid(
+                array,
+                self.topology.num_partitions,
             ):
-                raise _error("PARTITION-ID-001", f"node map {internal} has invalid IDs")
+                raise _error(
+                    "PARTITION-ID-001", f"node map {internal} has invalid IDs"
+                )
             assignments[node_type] = array
         del array
         del value
@@ -226,9 +291,7 @@ class PyGPartitionArtifactAdapter:
                 item.destination_internal_key,
             )
             value = _safe_torch_load(
-                self.artifact_root
-                / "edge_map"
-                / f"{as_str(edge_type)}.pt"
+                self.artifact_root / "edge_map" / f"{as_str(edge_type)}.pt"
             )
             if (
                 not isinstance(value, torch.Tensor)
@@ -328,8 +391,7 @@ class PyGPartitionArtifactAdapter:
                 assignments[node_type],
                 minlength=self.topology.num_partitions,
             )
-            for internal, node_type
-            in self.topology.internal_node_types.items()
+            for internal, node_type in self.topology.internal_node_types.items()
         }
         seen_paths: list[Path] = []
         seen: dict[str, np.memmap] = {}
@@ -350,25 +412,21 @@ class PyGPartitionArtifactAdapter:
                 seen[internal][:] = False
             for partition in range(self.topology.num_partitions):
                 value = _safe_torch_load(
-                    self.artifact_root
-                    / f"part_{partition}"
-                    / "node_feats.pt"
+                    self.artifact_root / f"part_{partition}" / "node_feats.pt"
                 )
                 if not isinstance(value, dict):
                     raise _error(
                         "PARTITION-OUTPUT-001",
                         "malformed node feature map",
                     )
-                for internal, node_type in (
-                    self.topology.internal_node_types.items()
-                ):
+                for (
+                    internal,
+                    node_type,
+                ) in self.topology.internal_node_types.items():
                     record = value.get(internal)
-                    if (
-                        not isinstance(record, dict)
-                        or not isinstance(
-                            record.get("id"),
-                            torch.Tensor,
-                        )
+                    if not isinstance(record, dict) or not isinstance(
+                        record.get("id"),
+                        torch.Tensor,
                     ):
                         raise _error(
                             "PARTITION-ID-001",
@@ -378,8 +436,7 @@ class PyGPartitionArtifactAdapter:
                     if (
                         ids.dtype != np.int64
                         or ids.ndim != 1
-                        or len(ids)
-                        != expected_counts[internal][partition]
+                        or len(ids) != expected_counts[internal][partition]
                     ):
                         raise _error(
                             "PARTITION-ID-001",
@@ -397,15 +454,11 @@ class PyGPartitionArtifactAdapter:
                         chunk = ids[start:stop]
                         if (
                             np.any(chunk < 0)
-                            or np.any(
-                                chunk
-                                >= len(assignments[node_type])
-                            )
+                            or np.any(chunk >= len(assignments[node_type]))
                             or len(np.unique(chunk)) != len(chunk)
                             or np.any(seen[internal][chunk])
                             or np.any(
-                                assignments[node_type][chunk]
-                                != partition
+                                assignments[node_type][chunk] != partition
                             )
                         ):
                             raise _error(
@@ -424,7 +477,14 @@ class PyGPartitionArtifactAdapter:
 
 class TopologyOnlyPyGPartitioner:
     """Preflight and generate a topology-only typed partition book."""
-    def __init__(self, ingestor: Any, relation_build: Any, *, num_partitions: int | None = None) -> None:
+
+    def __init__(
+        self,
+        ingestor: Any,
+        relation_build: Any,
+        *,
+        num_partitions: int | None = None,
+    ) -> None:
         self.ingestor = ingestor
         self.relation_build = relation_build
         resolved_partitions = (
@@ -434,10 +494,7 @@ class TopologyOnlyPyGPartitioner:
         )
         if isinstance(resolved_partitions, bool):
             raise TypeError("num_partitions must be an integer")
-        if (
-            not isinstance(resolved_partitions, int)
-            or resolved_partitions < 2
-        ):
+        if not isinstance(resolved_partitions, int) or resolved_partitions < 2:
             raise ValueError("num_partitions must be at least 2")
         self.num_partitions = resolved_partitions
         self.materialization_count = 0
@@ -447,26 +504,92 @@ class TopologyOnlyPyGPartitioner:
         self.topology_context = self._context()
 
     def _context(self) -> TopologyContext:
-        if self.relation_build.stage_root != self.ingestor.stage_root(self.relation_build.inventory): raise _error("PARTITION-FINGERPRINT-001", "foreign Task4 build")
-        relations_meta = _safe_json(self.relation_build.artifact_root / "relations.json", "PARTITION-FINGERPRINT-001")
-        arrays_meta = _safe_json(self.relation_build.stage_root / "arrays" / "arrays.json", "PARTITION-FINGERPRINT-001")
-        node_keys = {node.name: f"n{index:04d}" for index, node in enumerate(self.ingestor.source.spec.node_types)}
+        if self.relation_build.stage_root != self.ingestor.stage_root(
+            self.relation_build.inventory
+        ):
+            raise _error("PARTITION-FINGERPRINT-001", "foreign Task4 build")
+        relations_meta = _safe_json(
+            self.relation_build.artifact_root / "relations.json",
+            "PARTITION-FINGERPRINT-001",
+        )
+        arrays_meta = _safe_json(
+            self.relation_build.stage_root / "arrays" / "arrays.json",
+            "PARTITION-FINGERPRINT-001",
+        )
+        node_keys = {
+            node.name: f"n{index:04d}"
+            for index, node in enumerate(self.ingestor.source.spec.node_types)
+        }
         inverse = {key: name for name, key in node_keys.items()}
         counts = dict(self.relation_build.inventory.node_rows)
         relations: dict[CanonicalRelation, CanonicalRelationTopology] = {}
         for key, record in sorted(relations_meta["relations"].items()):
             relation = tuple(record["relation"])
-            relations[relation] = CanonicalRelationTopology(relation, key, record["source_internal_key"], record["destination_internal_key"], record["source_count"], record["destination_count"], record["edge_count"], self.relation_build.artifact_root / record["colptr"]["relative_path"], self.relation_build.artifact_root / record["row"]["relative_path"], MappingProxyType(record))
-        completion = _safe_json(self.relation_build.artifact_root / "relations.complete.json", "PARTITION-FINGERPRINT-001")
-        binding = {"task4_content_sha256": self.relation_build.content_sha256, "task4_completion_sha256": _file_sha(self.relation_build.artifact_root / "relations.complete.json"), "array_binding": completion["array_binding"], "source_fingerprint": self.relation_build.inventory.source_fingerprint, "config_fingerprint": self.relation_build.inventory.config_fingerprint, "active_split_tag": arrays_meta["active_split_tag"]}
-        return TopologyContext(topology_fingerprint.from_relation_build(self.ingestor, self.relation_build), tuple(node.name for node in self.ingestor.source.spec.node_types), MappingProxyType(node_keys), MappingProxyType(inverse), MappingProxyType(counts), MappingProxyType(relations), MappingProxyType(binding), MappingProxyType(arrays_meta), self.relation_build.stage_root, self.num_partitions, self.ingestor.source.spec.partition.recursive)
+            relations[relation] = CanonicalRelationTopology(
+                relation,
+                key,
+                record["source_internal_key"],
+                record["destination_internal_key"],
+                record["source_count"],
+                record["destination_count"],
+                record["edge_count"],
+                self.relation_build.artifact_root
+                / record["colptr"]["relative_path"],
+                self.relation_build.artifact_root
+                / record["row"]["relative_path"],
+                MappingProxyType(record),
+            )
+        completion = _safe_json(
+            self.relation_build.artifact_root / "relations.complete.json",
+            "PARTITION-FINGERPRINT-001",
+        )
+        binding = {
+            "task4_content_sha256": self.relation_build.content_sha256,
+            "task4_completion_sha256": _file_sha(
+                self.relation_build.artifact_root / "relations.complete.json"
+            ),
+            "array_binding": completion["array_binding"],
+            "source_fingerprint": self.relation_build.inventory.source_fingerprint,
+            "config_fingerprint": self.relation_build.inventory.config_fingerprint,
+            "active_split_tag": arrays_meta["active_split_tag"],
+        }
+        return TopologyContext(
+            topology_fingerprint.from_relation_build(
+                self.ingestor, self.relation_build
+            ),
+            tuple(node.name for node in self.ingestor.source.spec.node_types),
+            MappingProxyType(node_keys),
+            MappingProxyType(inverse),
+            MappingProxyType(counts),
+            MappingProxyType(relations),
+            MappingProxyType(binding),
+            MappingProxyType(arrays_meta),
+            self.relation_build.stage_root,
+            self.num_partitions,
+            self.ingestor.source.spec.partition.recursive,
+        )
 
     @property
-    def topology_fingerprint(self) -> str: return self.topology_context.fingerprint
+    def topology_fingerprint(self) -> str:
+        return self.topology_context.fingerprint
+
     @property
-    def canonical_relations(self) -> Mapping[CanonicalRelation, CanonicalRelationTopology]: return self.topology_context.relations
+    def canonical_relations(
+        self,
+    ) -> Mapping[CanonicalRelation, CanonicalRelationTopology]:
+        return self.topology_context.relations
+
     @property
-    def canonical_edge_types(self) -> tuple[tuple[str, str, str], ...]: return tuple((item.source_internal_key, item.internal_key, item.destination_internal_key) for item in self.topology_context.relations.values())
+    def canonical_edge_types(self) -> tuple[tuple[str, str, str], ...]:
+        return tuple(
+            (
+                item.source_internal_key,
+                item.internal_key,
+                item.destination_internal_key,
+            )
+            for item in self.topology_context.relations.values()
+        )
+
     @property
     def synthetic_edge_types(
         self,
@@ -478,26 +601,74 @@ class TopologyOnlyPyGPartitioner:
         return self._synthetic_edge_types
 
     @staticmethod
-    def estimate_topology_resources(*, node_count: int, canonical_edge_count: int, relation_count: int, node_type_count: int) -> dict[str, int]:
+    def estimate_topology_resources(
+        *,
+        node_count: int,
+        canonical_edge_count: int,
+        relation_count: int,
+        node_type_count: int,
+    ) -> dict[str, int]:
         scoring = canonical_edge_count * 2
         external_assignment_bytes = node_count * np.dtype(np.int64).itemsize
-        memory = 1120 * 1024**2 + scoring * 64 + node_count * 40 + external_assignment_bytes + (relation_count + node_type_count + 2) * 4096
+        memory = (
+            1120 * 1024**2
+            + scoring * 64
+            + node_count * 40
+            + external_assignment_bytes
+            + (relation_count + node_type_count + 2) * 4096
+        )
         temporary = 8 * 1024**2 + scoring * 80 + node_count * 32
-        return {"node_count": node_count, "canonical_edge_count": canonical_edge_count, "scoring_edge_upper_bound": scoring, "external_assignment_bytes": external_assignment_bytes, "peak_memory_bytes": memory, "temporary_disk_bytes": temporary}
+        return {
+            "node_count": node_count,
+            "canonical_edge_count": canonical_edge_count,
+            "scoring_edge_upper_bound": scoring,
+            "external_assignment_bytes": external_assignment_bytes,
+            "peak_memory_bytes": memory,
+            "temporary_disk_bytes": temporary,
+        }
 
     def estimate_resources(self) -> dict[str, int]:
-        return self.estimate_topology_resources(node_count=sum(self.topology_context.node_counts.values()), canonical_edge_count=sum(item.edge_count for item in self.topology_context.relations.values()), relation_count=len(self.topology_context.relations), node_type_count=len(self.topology_context.node_types))
+        return self.estimate_topology_resources(
+            node_count=sum(self.topology_context.node_counts.values()),
+            canonical_edge_count=sum(
+                item.edge_count
+                for item in self.topology_context.relations.values()
+            ),
+            relation_count=len(self.topology_context.relations),
+            node_type_count=len(self.topology_context.node_types),
+        )
 
-    def preflight(self, *, memory_limit_bytes: int | None = None, temp_available_bytes: int | None = None) -> dict[str, int]:
+    def preflight(
+        self,
+        *,
+        memory_limit_bytes: int | None = None,
+        temp_available_bytes: int | None = None,
+    ) -> dict[str, int]:
         estimate = self.estimate_resources()
-        memory = memory_limit_bytes if memory_limit_bytes is not None else self.ingestor.source.spec.partition.memory_limit_bytes
-        if estimate["peak_memory_bytes"] > memory: raise _error("PARTITION-MEMORY-001", f"estimate {estimate['peak_memory_bytes']} exceeds {memory}")
+        memory = (
+            memory_limit_bytes
+            if memory_limit_bytes is not None
+            else self.ingestor.source.spec.partition.memory_limit_bytes
+        )
+        if estimate["peak_memory_bytes"] > memory:
+            raise _error(
+                "PARTITION-MEMORY-001",
+                f"estimate {estimate['peak_memory_bytes']} exceeds {memory}",
+            )
         if temp_available_bytes is None:
             _, available, _ = _ingestion()._filesystem_capacity(
                 self.relation_build.inventory.temporary_filesystem_path
             )
-            temp_available_bytes = min(available, self.ingestor.disk_limit_bytes) if self.ingestor.disk_limit_bytes is not None else available
-        if estimate["temporary_disk_bytes"] > temp_available_bytes: raise _error("PARTITION-TEMP-DISK-001", f"estimate {estimate['temporary_disk_bytes']} exceeds {temp_available_bytes}")
+            temp_available_bytes = (
+                min(available, self.ingestor.disk_limit_bytes)
+                if self.ingestor.disk_limit_bytes is not None
+                else available
+            )
+        if estimate["temporary_disk_bytes"] > temp_available_bytes:
+            raise _error(
+                "PARTITION-TEMP-DISK-001",
+                f"estimate {estimate['temporary_disk_bytes']} exceeds {temp_available_bytes}",
+            )
         return estimate
 
     def _scoring_edges(
@@ -542,18 +713,44 @@ class TopologyOnlyPyGPartitioner:
         return scoring
 
     def materialize_topology(self) -> HeteroData:
-        self.preflight(); data = HeteroData()
-        for internal, node_type in self.topology_context.internal_node_types.items(): data[internal].num_nodes = self.topology_context.node_counts[node_type]
-        for edge_type, edges in self._scoring_edges().items(): data[edge_type].edge_index = torch.from_numpy(edges)
-        self.materialization_count += 1; return data
+        self.preflight()
+        data = HeteroData()
+        for (
+            internal,
+            node_type,
+        ) in self.topology_context.internal_node_types.items():
+            data[internal].num_nodes = self.topology_context.node_counts[
+                node_type
+            ]
+        for edge_type, edges in self._scoring_edges().items():
+            data[edge_type].edge_index = torch.from_numpy(edges)
+        self.materialization_count += 1
+        return data
 
     def artifact_adapter(self, root: Path) -> PyGPartitionArtifactAdapter:
-        return PyGPartitionArtifactAdapter(self.topology_context, root, trusted_parent=Path(root).parent)
+        return PyGPartitionArtifactAdapter(
+            self.topology_context, root, trusted_parent=Path(root).parent
+        )
 
-    def adapt_assignments(self, assignments: Mapping[str, np.ndarray], limits: PartitionQualificationLimits, *, backend: str) -> TypedPartitionBook:
-        return _qualified_book(self.topology_context, assignments, limits, backend=backend, estimated_resources=self.estimate_resources(), measured_resources={})
+    def adapt_assignments(
+        self,
+        assignments: Mapping[str, np.ndarray],
+        limits: PartitionQualificationLimits,
+        *,
+        backend: str,
+    ) -> TypedPartitionBook:
+        return _qualified_book(
+            self.topology_context,
+            assignments,
+            limits,
+            backend=backend,
+            estimated_resources=self.estimate_resources(),
+            measured_resources={},
+        )
 
-    def generate(self, limits: PartitionQualificationLimits) -> TypedPartitionBook:
+    def generate(
+        self, limits: PartitionQualificationLimits
+    ) -> TypedPartitionBook:
         estimate = self.preflight()
         ephemeral_root = self.ingestor._new_ephemeral_root(
             self.relation_build.inventory,
@@ -577,8 +774,7 @@ class TopologyOnlyPyGPartitioner:
                     "internal_key": internal,
                     "count": self.topology_context.node_counts[node_type],
                 }
-                for internal, node_type
-                in self.topology_context.internal_node_types.items()
+                for internal, node_type in self.topology_context.internal_node_types.items()
             ],
             "relations": [
                 {
@@ -740,8 +936,7 @@ class TopologyOnlyPyGPartitioner:
             duckdb=duckdb,
         )
         if (
-            relations.content_sha256
-            != self.relation_build.content_sha256
+            relations.content_sha256 != self.relation_build.content_sha256
             or arrays.active_tag
             != self.topology_context.source_binding["active_split_tag"]
         ):
@@ -749,7 +944,6 @@ class TopologyOnlyPyGPartitioner:
                 "PARTITION-FINGERPRINT-001",
                 "Task4 binding changed before partition publication",
             )
-
 
     def _clean_task6_scratch_locked(self) -> None:
         """Remove only confined Task6 leftovers for this source identity."""
@@ -798,10 +992,13 @@ class TopologyOnlyPyGPartitioner:
                     )
                 shutil.rmtree(path)
 
-
-    def build(self, limits: PartitionQualificationLimits) -> TypedPartitionBuild:
+    def build(
+        self, limits: PartitionQualificationLimits
+    ) -> TypedPartitionBuild:
         artifact = self.relation_build.stage_root / "partitions"
-        with self.ingestor._build_lock(self.ingestor.lock_path(self.relation_build.inventory)):
+        with self.ingestor._build_lock(
+            self.ingestor.lock_path(self.relation_build.inventory)
+        ):
             self._reopen_task4_locked()
             self._clean_task6_scratch_locked()
             if artifact.exists():
@@ -854,12 +1051,27 @@ class TopologyOnlyPyGPartitioner:
                         evidence=_partition_evidence(book, stored_limits),
                         resumed=True,
                     )
-            try: book = self.generate(limits)
+            try:
+                book = self.generate(limits)
             except _ingestion().ArtifactValidationError:
-                configured = self.ingestor.source.spec.partition.external_partition_map
-                if configured is None: raise
-                assignments = _external_assignments(self.topology_context, self.ingestor.source.spec.source_root, configured)
-                book = _qualified_book(self.topology_context, assignments, limits, backend="external", estimated_resources=self.estimate_resources(), measured_resources={})
+                configured = (
+                    self.ingestor.source.spec.partition.external_partition_map
+                )
+                if configured is None:
+                    raise
+                assignments = _external_assignments(
+                    self.topology_context,
+                    self.ingestor.source.spec.source_root,
+                    configured,
+                )
+                book = _qualified_book(
+                    self.topology_context,
+                    assignments,
+                    limits,
+                    backend="external",
+                    estimated_resources=self.estimate_resources(),
+                    measured_resources={},
+                )
             publish_parent = (
                 self.ingestor.store_root
                 / ".topobench-partition-work"
@@ -906,10 +1118,8 @@ def _release_memmap_pages(value: Any) -> None:
     madvise = getattr(mapping, "madvise", None)
     if advice is None or not callable(madvise):
         return
-    try:
+    with contextlib.suppress(OSError, ValueError):
         madvise(advice)
-    except (OSError, ValueError):
-        pass
 
 
 def _persist_int64_vector(path: Path, value: np.ndarray) -> None:
@@ -926,6 +1136,8 @@ def _persist_int64_vector(path: Path, value: np.ndarray) -> None:
         output.flush()
     finally:
         _close_memmap(output)
+
+
 def _canonical_arrays_valid(
     source: np.ndarray,
     colptr: np.ndarray,
@@ -936,10 +1148,7 @@ def _canonical_arrays_valid(
     for start in range(1, len(colptr), _PARTITION_CHUNK_ROWS):
         stop = min(start + _PARTITION_CHUNK_ROWS, len(colptr))
         block = colptr[start:stop]
-        if (
-            int(block[0]) < previous
-            or np.any(block[1:] < block[:-1])
-        ):
+        if int(block[0]) < previous or np.any(block[1:] < block[:-1]):
             return False
         previous = int(block[-1])
     for start in range(0, len(source), _PARTITION_CHUNK_ROWS):
@@ -971,8 +1180,6 @@ def _persist_csc_destinations(
         output.flush()
     finally:
         _close_memmap(output)
-
-
 
 
 def _node_layout(
@@ -1136,9 +1343,7 @@ def _persist_missing_reverse_arcs(
     desired_path = scratch_root / f"desired-reverse-{ordinal:04d}.npy"
     available_path = scratch_root / f"available-reverse-{ordinal:04d}.npy"
     missing_path = scratch_root / f"missing-reverse-{ordinal:04d}.npy"
-    pair_dtype = np.dtype(
-        [("source", np.int64), ("destination", np.int64)]
-    )
+    pair_dtype = np.dtype([("source", np.int64), ("destination", np.int64)])
     desired_dtype = np.dtype(
         [
             ("source", np.int64),
@@ -1159,12 +1364,8 @@ def _persist_missing_reverse_arcs(
         )
         for start in range(0, count, _PARTITION_CHUNK_ROWS):
             stop = min(start + _PARTITION_CHUNK_ROWS, count)
-            desired["source"][start:stop] = record["destination"][
-                start:stop
-            ]
-            desired["destination"][start:stop] = record["source"][
-                start:stop
-            ]
+            desired["source"][start:stop] = record["destination"][start:stop]
+            desired["destination"][start:stop] = record["source"][start:stop]
             desired["ordinal"][start:stop] = np.arange(
                 start,
                 stop,
@@ -1220,10 +1421,14 @@ def _persist_missing_reverse_arcs(
                 int(desired["destination"][desired_start]),
             )
             desired_index += 1
-            while desired_index < count and (
-                int(desired["source"][desired_index]),
-                int(desired["destination"][desired_index]),
-            ) == pair:
+            while (
+                desired_index < count
+                and (
+                    int(desired["source"][desired_index]),
+                    int(desired["destination"][desired_index]),
+                )
+                == pair
+            ):
                 desired_index += 1
             while available_index < available_count:
                 available_pair = (
@@ -1234,10 +1439,14 @@ def _persist_missing_reverse_arcs(
                     break
                 available_index += 1
             available_start = available_index
-            while available_index < available_count and (
-                int(available_pairs["source"][available_index]),
-                int(available_pairs["destination"][available_index]),
-            ) == pair:
+            while (
+                available_index < available_count
+                and (
+                    int(available_pairs["source"][available_index]),
+                    int(available_pairs["destination"][available_index]),
+                )
+                == pair
+            ):
                 available_index += 1
             matched = min(
                 desired_index - desired_start,
@@ -1252,9 +1461,7 @@ def _persist_missing_reverse_arcs(
                     start + _PARTITION_CHUNK_ROWS,
                     desired_start + matched,
                 )
-                missing[
-                    np.asarray(desired["ordinal"][start:stop])
-                ] = 0
+                missing[np.asarray(desired["ordinal"][start:stop])] = 0
         missing.flush()
         peak = _tree_bytes(scratch_root)
 
@@ -1360,12 +1567,8 @@ def _scoring_records(
                         f"srev_{record['internal_key']}",
                         record["source_internal_key"],
                     ),
-                    "source_internal_key": record[
-                        "destination_internal_key"
-                    ],
-                    "destination_internal_key": record[
-                        "source_internal_key"
-                    ],
+                    "source_internal_key": record["destination_internal_key"],
+                    "destination_internal_key": record["source_internal_key"],
                     "source_path": source_path,
                     "destination_path": destination_path,
                     "edge_count": count,
@@ -1506,7 +1709,7 @@ def _metis_assignment(
 
     assignment: torch.Tensor | None = None
     if WITH_TORCH_SPARSE:
-        try:
+        with contextlib.suppress(AttributeError, RuntimeError):
             assignment = torch.ops.torch_sparse.partition(
                 colptr.cpu(),
                 index.cpu(),
@@ -1514,8 +1717,6 @@ def _metis_assignment(
                 num_partitions,
                 recursive,
             ).to(index.device)
-        except (AttributeError, RuntimeError):
-            pass
     if assignment is None and WITH_METIS:
         assignment = pyg_lib.partition.metis(
             colptr.cpu(),
@@ -1570,9 +1771,7 @@ def _write_global_edge_rank(
             )
             try:
                 count = int(record["edge_count"])
-                source_offset = node_offsets[
-                    record["source_internal_key"]
-                ]
+                source_offset = node_offsets[record["source_internal_key"]]
                 destination_offset = node_offsets[
                     record["destination_internal_key"]
                 ]
@@ -1641,6 +1840,7 @@ def _write_partition_graph_files(
     scratch_root: Path,
 ) -> int:
     from collections import defaultdict
+
     from torch_geometric.utils import index_sort
 
     graph: dict[tuple[str, str, str], dict[str, Any]] = {}
@@ -1684,8 +1884,7 @@ def _write_partition_graph_files(
                 owned_count += int(np.count_nonzero(owner == partition))
 
             ordered_path = (
-                scratch_root
-                / f"graph-order-{partition:04d}-{ordinal:04d}.npy"
+                scratch_root / f"graph-order-{partition:04d}-{ordinal:04d}.npy"
             )
             ordered = np.lib.format.open_memmap(
                 ordered_path,
@@ -1722,9 +1921,7 @@ def _write_partition_graph_files(
                         output_offset,
                         output_offset + selected_count,
                     )
-                    ordered["col"][output] = destination[start:stop][
-                        selected
-                    ]
+                    ordered["col"][output] = destination[start:stop][selected]
                     ordered["row"][output] = source[start:stop][selected]
                     ordered["edge_id"][output] = (
                         np.arange(start, stop, dtype=np.int64)[selected]
@@ -1852,9 +2049,7 @@ def _write_partition_adapter_artifacts(
         node_map_root.mkdir()
         edge_map_root.mkdir()
         node_types = [node["internal_key"] for node in nodes]
-        node_counts = {
-            node["internal_key"]: node["count"] for node in nodes
-        }
+        node_counts = {node["internal_key"]: node["count"] for node in nodes}
         edge_rank_path, edge_rank_temporary_peak = _write_global_edge_rank(
             scoring,
             node_offsets,
@@ -1885,9 +2080,8 @@ def _write_partition_adapter_artifacts(
             for internal in node_types:
                 offset = node_offsets[internal]
                 count = node_counts[internal]
-                mask = (
-                    (partition_nodes >= offset)
-                    & (partition_nodes < offset + count)
+                mask = (partition_nodes >= offset) & (
+                    partition_nodes < offset + count
                 )
                 global_ids = partition_nodes[mask]
                 node_features[internal] = {
@@ -2052,15 +2246,15 @@ def _bounded_partition_worker(
 
         artifact_temporary_peak, artifact_phase_peaks = (
             _write_partition_adapter_artifacts(
-            output_root,
-            nodes,
-            scoring,
-            node_offsets,
-            assignment,
-            num_partitions=num_partitions,
-            recursive=recursive,
-            scratch_root=scratch_root,
-        )
+                output_root,
+                nodes,
+                scoring,
+                node_offsets,
+                assignment,
+                num_partitions=num_partitions,
+                recursive=recursive,
+                scratch_root=scratch_root,
+            )
         )
         peak_rss_by_phase.update(artifact_phase_peaks)
         temporary_peak = max(temporary_peak, artifact_temporary_peak)
@@ -2090,8 +2284,7 @@ def _partition_worker(request_name: str, response_name: str) -> None:
         work_root = request_path.parent.resolve(strict=True)
         output_root = Path(request["output_root"])
         if (
-            request.get("format_version")
-            != "topology-only-pyg-worker-v1"
+            request.get("format_version") != "topology-only-pyg-worker-v1"
             or output_root != request_path.parent / "output"
             or request["fingerprint"] not in work_root.parts
         ):
@@ -2115,15 +2308,13 @@ def _partition_worker(request_name: str, response_name: str) -> None:
             )
         if num_partitions < 2:
             raise AssertionError()
-        temporary_disk_bytes, peak_rss_by_phase = (
-            _bounded_partition_worker(
+        temporary_disk_bytes, peak_rss_by_phase = _bounded_partition_worker(
             work_root,
             output_root,
             nodes,
             relations,
             num_partitions=num_partitions,
             recursive=recursive,
-        )
         )
         _atomic_json(
             response_path,
@@ -2138,7 +2329,7 @@ def _partition_worker(request_name: str, response_name: str) -> None:
             },
         )
     except Exception as error:
-        try:
+        with contextlib.suppress(Exception):
             _atomic_json(
                 response_path,
                 {
@@ -2147,8 +2338,6 @@ def _partition_worker(request_name: str, response_name: str) -> None:
                     "detail": str(error) or repr(error),
                 },
             )
-        except Exception:
-            pass
 
 
 def _missing_reverse_arcs(
@@ -2181,21 +2370,15 @@ def _missing_reverse_arcs(
         available_destination = np.concatenate(
             [candidate[1] for candidate in available]
         )
-    desired_order = np.lexsort(
-        (desired_destination, desired_source)
-    )
-    available_order = np.lexsort(
-        (available_destination, available_source)
-    )
+    desired_order = np.lexsort((desired_destination, desired_source))
+    available_order = np.lexsort((available_destination, available_source))
     missing = np.ones(count, dtype=np.bool_)
     desired_index = 0
     available_index = 0
     while desired_index < count:
         desired_start = desired_index
         desired_row = int(desired_source[desired_order[desired_start]])
-        desired_col = int(
-            desired_destination[desired_order[desired_start]]
-        )
+        desired_col = int(desired_destination[desired_order[desired_start]])
         desired_index += 1
         while desired_index < count:
             index = desired_order[desired_index]
@@ -2228,14 +2411,23 @@ def _missing_reverse_arcs(
             available_index - available_start,
         )
         if matched:
-            missing[
-                desired_order[desired_start : desired_start + matched]
-            ] = False
+            missing[desired_order[desired_start : desired_start + matched]] = (
+                False
+            )
     return desired_source[missing], desired_destination[missing]
 
 
-def _derive_ownership(topology: TopologyContext, assignments: Mapping[str, np.ndarray]) -> dict[CanonicalRelation, np.ndarray]:
-    return {relation: np.asarray(assignments[relation[2]], dtype=np.int64)[item.destination] for relation, item in topology.relations.items()}
+def _derive_ownership(
+    topology: TopologyContext, assignments: Mapping[str, np.ndarray]
+) -> dict[CanonicalRelation, np.ndarray]:
+    return {
+        relation: np.asarray(assignments[relation[2]], dtype=np.int64)[
+            item.destination
+        ]
+        for relation, item in topology.relations.items()
+    }
+
+
 def _bounded_ownership(
     topology: TopologyContext,
     assignments: Mapping[str, np.ndarray],
@@ -2245,9 +2437,7 @@ def _bounded_ownership(
     ownership: dict[CanonicalRelation, np.ndarray] = {}
     opened: list[np.memmap] = []
     try:
-        for ordinal, (relation, item) in enumerate(
-            topology.relations.items()
-        ):
+        for ordinal, (relation, item) in enumerate(topology.relations.items()):
             output = np.lib.format.open_memmap(
                 storage_root / f"relation-{ordinal:04d}.npy",
                 mode="w+",
@@ -2444,17 +2634,13 @@ def _statistics(
     )
     phases: dict[str, dict[str, tuple[int, ...]]] = {}
     target = assignments[supervision["target_node_type"]]
-    for tag, record in sorted(
-        topology.arrays_metadata["splits"].items()
-    ):
+    for tag, record in sorted(topology.arrays_metadata["splits"].items()):
         if record["qualified"] is not True:
             continue
         phases[tag] = {}
         for phase, phase_record in sorted(record["phases"].items()):
             ids = np.load(
-                topology.stage_root
-                / "arrays"
-                / phase_record["relative_path"],
+                topology.stage_root / "arrays" / phase_record["relative_path"],
                 mmap_mode="r",
                 allow_pickle=False,
             )
@@ -2473,9 +2659,7 @@ def _statistics(
                         target[ids[start:stop]],
                         minlength=parts,
                     )
-                phases[tag][phase] = tuple(
-                    int(item) for item in counts
-                )
+                phases[tag][phase] = tuple(int(item) for item in counts)
             finally:
                 _close_memmap(ids)
     _release_memmap_pages(target)
@@ -2504,8 +2688,7 @@ def _statistics(
                     minlength=parts,
                 )
                 different = (
-                    source_assignment[source[start:stop]]
-                    != owner_chunk
+                    source_assignment[source[start:stop]] != owner_chunk
                 )
                 cut_counts += np.bincount(
                     owner_chunk[different],
@@ -2526,9 +2709,8 @@ def _statistics(
             else 0
         )
         for field in item.metadata["fields"].values():
-            edge_bytes += (
-                np.dtype(field["storage_dtype"]).itemsize
-                * int(np.prod(field.get("value_shape", []) or [1]))
+            edge_bytes += np.dtype(field["storage_dtype"]).itemsize * int(
+                np.prod(field.get("value_shape", []) or [1])
             )
         total += counts * edge_bytes
     fraction = np.divide(
@@ -2548,6 +2730,8 @@ def _statistics(
         tuple(map(float, fraction)),
         tuple(map(float, 1 - fraction)),
     )
+
+
 def _requalify_book(
     topology: TopologyContext,
     book: TypedPartitionBook,
@@ -2586,10 +2770,14 @@ def _requalify_book(
     )
 
 
-
-def _checks(stats: PartitionStatistics, topology: TopologyContext, limits: PartitionQualificationLimits, backend: str) -> tuple[QualificationCheck, ...]:
-    unknown_node_types = (
-        set(limits.max_nodes_per_type) - set(stats.node_counts)
+def _checks(
+    stats: PartitionStatistics,
+    topology: TopologyContext,
+    limits: PartitionQualificationLimits,
+    backend: str,
+) -> tuple[QualificationCheck, ...]:
+    unknown_node_types = set(limits.max_nodes_per_type) - set(
+        stats.node_counts
     )
     if unknown_node_types:
         raise _error(
@@ -2615,18 +2803,107 @@ def _checks(stats: PartitionStatistics, topology: TopologyContext, limits: Parti
             "PARTITION-RELATION-BALANCE-001",
             f"unknown canonical relation {unknown_relations[0]!r}",
         )
-    total_nodes = [sum(values[i] for values in stats.node_counts.values()) for i in range(topology.num_partitions)]
-    type_pass = all(max(stats.node_counts[name]) <= limit for name, limit in limits.max_nodes_per_type.items())
-    phase_pass = all(max(stats.phase_counts[tag][phase]) <= limit for tag, phase_limits in limits.max_phase_nodes.items() if tag in stats.phase_counts for phase, limit in phase_limits.items())
-    relation_pass = all(max(stats.relation_edge_counts[_relation_label(key)]) <= limit for key, limit in limits.max_edges_per_relation.items())
-    cut_pass = (limits.max_cut_fraction is None or max(stats.cut_fraction) <= limits.max_cut_fraction) and (limits.min_locality is None or min(stats.locality) >= limits.min_locality)
+    total_nodes = [
+        sum(values[i] for values in stats.node_counts.values())
+        for i in range(topology.num_partitions)
+    ]
+    type_pass = all(
+        max(stats.node_counts[name]) <= limit
+        for name, limit in limits.max_nodes_per_type.items()
+    )
+    phase_pass = all(
+        max(stats.phase_counts[tag][phase]) <= limit
+        for tag, phase_limits in limits.max_phase_nodes.items()
+        if tag in stats.phase_counts
+        for phase, limit in phase_limits.items()
+    )
+    relation_pass = all(
+        max(stats.relation_edge_counts[_relation_label(key)]) <= limit
+        for key, limit in limits.max_edges_per_relation.items()
+    )
+    cut_pass = (
+        limits.max_cut_fraction is None
+        or max(stats.cut_fraction) <= limits.max_cut_fraction
+    ) and (
+        limits.min_locality is None
+        or min(stats.locality) >= limits.min_locality
+    )
     return (
-        QualificationCheck("PARTITION-ID-001", True, {"nodes": sum(topology.node_counts.values())}), QualificationCheck("PARTITION-EMPTY-001", all(x > 0 for x in total_nodes), {"total_nodes": total_nodes}, detail="empty partition"),
-        QualificationCheck("PARTITION-TYPE-BALANCE-001", type_pass, stats.node_counts, limits.max_nodes_per_type, "type maximum exceeded"), QualificationCheck("PARTITION-PHASE-BALANCE-001", phase_pass, stats.phase_counts, limits.max_phase_nodes, "phase maximum exceeded"),
-        QualificationCheck("PARTITION-RELATION-BALANCE-001", relation_pass, stats.relation_edge_counts, {_relation_label(k): v for k, v in limits.max_edges_per_relation.items()}, "relation maximum exceeded"),
-        QualificationCheck("PARTITION-FEATURE-BYTES-001", limits.max_feature_bytes is None or max(stats.feature_bytes) <= limits.max_feature_bytes, {"per_partition": stats.feature_bytes}, limits.max_feature_bytes, "feature bytes exceeded"),
-        QualificationCheck("PARTITION-TOTAL-SIZE-001", limits.max_total_size_bytes is None or max(stats.total_size_bytes) <= limits.max_total_size_bytes, {"per_partition": stats.total_size_bytes}, limits.max_total_size_bytes, "total size exceeded"), QualificationCheck("PARTITION-CUT-001", cut_pass, {"cut_fraction": stats.cut_fraction, "locality": stats.locality}, {"max_cut_fraction": limits.max_cut_fraction, "min_locality": limits.min_locality}, "cut/locality exceeded"),
-        QualificationCheck("PARTITION-MEMORY-001", True, {}), QualificationCheck("PARTITION-TEMP-DISK-001", True, {}), QualificationCheck("PARTITION-BACKEND-001", True, {"backend": backend}), QualificationCheck("PARTITION-OUTPUT-001", True, {}), QualificationCheck("PARTITION-FINGERPRINT-001", True, {"topology": topology.fingerprint}), QualificationCheck("PARTITION-EXTERNAL-MAP-001", True, {"used": backend == "external"}),
+        QualificationCheck(
+            "PARTITION-ID-001",
+            True,
+            {"nodes": sum(topology.node_counts.values())},
+        ),
+        QualificationCheck(
+            "PARTITION-EMPTY-001",
+            all(x > 0 for x in total_nodes),
+            {"total_nodes": total_nodes},
+            detail="empty partition",
+        ),
+        QualificationCheck(
+            "PARTITION-TYPE-BALANCE-001",
+            type_pass,
+            stats.node_counts,
+            limits.max_nodes_per_type,
+            "type maximum exceeded",
+        ),
+        QualificationCheck(
+            "PARTITION-PHASE-BALANCE-001",
+            phase_pass,
+            stats.phase_counts,
+            limits.max_phase_nodes,
+            "phase maximum exceeded",
+        ),
+        QualificationCheck(
+            "PARTITION-RELATION-BALANCE-001",
+            relation_pass,
+            stats.relation_edge_counts,
+            {
+                _relation_label(k): v
+                for k, v in limits.max_edges_per_relation.items()
+            },
+            "relation maximum exceeded",
+        ),
+        QualificationCheck(
+            "PARTITION-FEATURE-BYTES-001",
+            limits.max_feature_bytes is None
+            or max(stats.feature_bytes) <= limits.max_feature_bytes,
+            {"per_partition": stats.feature_bytes},
+            limits.max_feature_bytes,
+            "feature bytes exceeded",
+        ),
+        QualificationCheck(
+            "PARTITION-TOTAL-SIZE-001",
+            limits.max_total_size_bytes is None
+            or max(stats.total_size_bytes) <= limits.max_total_size_bytes,
+            {"per_partition": stats.total_size_bytes},
+            limits.max_total_size_bytes,
+            "total size exceeded",
+        ),
+        QualificationCheck(
+            "PARTITION-CUT-001",
+            cut_pass,
+            {"cut_fraction": stats.cut_fraction, "locality": stats.locality},
+            {
+                "max_cut_fraction": limits.max_cut_fraction,
+                "min_locality": limits.min_locality,
+            },
+            "cut/locality exceeded",
+        ),
+        QualificationCheck("PARTITION-MEMORY-001", True, {}),
+        QualificationCheck("PARTITION-TEMP-DISK-001", True, {}),
+        QualificationCheck(
+            "PARTITION-BACKEND-001", True, {"backend": backend}
+        ),
+        QualificationCheck("PARTITION-OUTPUT-001", True, {}),
+        QualificationCheck(
+            "PARTITION-FINGERPRINT-001",
+            True,
+            {"topology": topology.fingerprint},
+        ),
+        QualificationCheck(
+            "PARTITION-EXTERNAL-MAP-001", True, {"used": backend == "external"}
+        ),
     )
 
 
@@ -2652,10 +2929,8 @@ def _external_assignments(
     }
     if (
         set(manifest) != expected_manifest_keys
-        or manifest.get("format_version")
-        != "typed-external-partition-map-v1"
-        or manifest.get("num_partitions")
-        != topology.num_partitions
+        or manifest.get("format_version") != "typed-external-partition-map-v1"
+        or manifest.get("num_partitions") != topology.num_partitions
     ):
         raise _error(
             "PARTITION-EXTERNAL-MAP-001",
@@ -2669,8 +2944,7 @@ def _external_assignments(
     record = manifest.get("assignment")
     if (
         not isinstance(record, dict)
-        or set(record)
-        != {"relative_path", "sha256", "dtype", "shape"}
+        or set(record) != {"relative_path", "sha256", "dtype", "shape"}
         or not isinstance(record.get("relative_path"), str)
         or not record["relative_path"].endswith(".npy")
     ):
@@ -2714,9 +2988,8 @@ def _external_assignments(
                 break
             digest.update(chunk)
             copied_bytes += len(chunk)
-        if (
-            copied_bytes != before.st_size
-            or digest.hexdigest() != record.get("sha256")
+        if copied_bytes != before.st_size or digest.hexdigest() != record.get(
+            "sha256"
         ):
             raise _error(
                 "PARTITION-EXTERNAL-MAP-001",
@@ -2746,18 +3019,15 @@ def _external_assignments(
         values = np.array(loaded, dtype=loaded.dtype, copy=True)
         after = os.fstat(descriptor)
         if (
-            (
-                before.st_dev,
-                before.st_ino,
-                before.st_size,
-                before.st_mtime_ns,
-            )
-            != (
-                after.st_dev,
-                after.st_ino,
-                after.st_size,
-                after.st_mtime_ns,
-            )
+            before.st_dev,
+            before.st_ino,
+            before.st_size,
+            before.st_mtime_ns,
+        ) != (
+            after.st_dev,
+            after.st_ino,
+            after.st_size,
+            after.st_mtime_ns,
         ):
             raise _error(
                 "PARTITION-EXTERNAL-MAP-001",
@@ -2789,9 +3059,12 @@ def _external_assignments(
 
 
 def _json_value(value: Any) -> Any:
-    if isinstance(value, Mapping): return {str(key): _json_value(item) for key, item in value.items()}
-    if isinstance(value, (tuple, list)): return [_json_value(item) for item in value]
-    if isinstance(value, np.generic): return value.item()
+    if isinstance(value, Mapping):
+        return {str(key): _json_value(item) for key, item in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [_json_value(item) for item in value]
+    if isinstance(value, np.generic):
+        return value.item()
     return value
 
 
@@ -2815,14 +3088,10 @@ def _save_npy(path: Path, value: np.ndarray) -> None:
 
 def _fsync_tree_directories(root: Path) -> None:
     directories = [
-        candidate
-        for candidate in root.rglob("*")
-        if candidate.is_dir()
+        candidate for candidate in root.rglob("*") if candidate.is_dir()
     ]
     directories.sort(
-        key=lambda candidate: len(
-            candidate.relative_to(root).parts
-        ),
+        key=lambda candidate: len(candidate.relative_to(root).parts),
         reverse=True,
     )
     for directory in directories:
@@ -2831,9 +3100,7 @@ def _fsync_tree_directories(root: Path) -> None:
 
 
 def _atomic_json(path: Path, value: Any) -> None:
-    temporary = path.with_name(
-        f".{path.name}.{uuid.uuid4().hex}.tmp"
-    )
+    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     with temporary.open("w", encoding="utf-8") as stream:
         json.dump(
             value,
@@ -2861,12 +3128,8 @@ def _identity_record(
         "backend_version": book.backend_version,
         "options": _json_value(book.options),
         "provenance": _json_value(book.provenance),
-        "estimated_resources": _json_value(
-            book.estimated_resources
-        ),
-        "measured_resources": _json_value(
-            book.measured_resources
-        ),
+        "estimated_resources": _json_value(book.estimated_resources),
+        "measured_resources": _json_value(book.measured_resources),
         "content_identity": book.content_identity,
         "limits_fingerprint": limits.fingerprint,
     }
@@ -2875,10 +3138,7 @@ def _identity_record(
 def _immutable_json(value: Any) -> Any:
     if isinstance(value, Mapping):
         return MappingProxyType(
-            {
-                str(key): _immutable_json(item)
-                for key, item in value.items()
-            }
+            {str(key): _immutable_json(item) for key, item in value.items()}
         )
     if isinstance(value, (list, tuple)):
         return tuple(_immutable_json(item) for item in value)
@@ -2895,8 +3155,7 @@ def _partition_evidence(
             "qualification": {
                 "limits": limits.as_record(),
                 "checks": [
-                    check.as_record()
-                    for check in book.qualification_checks
+                    check.as_record() for check in book.qualification_checks
                 ],
             },
         }
@@ -2917,15 +3176,51 @@ def _publish_subtree(
     outputs: dict[str, str] = {}
     try:
         for index, name in enumerate(topology.node_types):
-            root = temporary / "node_types" / f"n{index:04d}"; root.mkdir(parents=True)
-            for filename, value in (("assignment", book.node_assignments[name]), ("permutation", book.node_permutations[name]), ("inverse", book.node_inverse_permutations[name]), ("partptr", book.node_partptr[name])):
-                path = root / f"{filename}.npy"; _save_npy(path, value); outputs[path.relative_to(temporary).as_posix()] = _file_sha(path)
+            root = temporary / "node_types" / f"n{index:04d}"
+            root.mkdir(parents=True)
+            for filename, value in (
+                ("assignment", book.node_assignments[name]),
+                ("permutation", book.node_permutations[name]),
+                ("inverse", book.node_inverse_permutations[name]),
+                ("partptr", book.node_partptr[name]),
+            ):
+                path = root / f"{filename}.npy"
+                _save_npy(path, value)
+                outputs[path.relative_to(temporary).as_posix()] = _file_sha(
+                    path
+                )
         for index, relation in enumerate(sorted(topology.relations)):
-            root = temporary / "relations" / f"r{index:04d}"; root.mkdir(parents=True); path = root / "edge_partition.npy"; _save_npy(path, book.edge_ownership[relation]); outputs[path.relative_to(temporary).as_posix()] = _file_sha(path)
+            root = temporary / "relations" / f"r{index:04d}"
+            root.mkdir(parents=True)
+            path = root / "edge_partition.npy"
+            _save_npy(path, book.edge_ownership[relation])
+            outputs[path.relative_to(temporary).as_posix()] = _file_sha(path)
         identity = _identity_record(book, limits)
-        _atomic_json(temporary / "partition_book.json", identity); _atomic_json(temporary / "statistics.json", book.statistics.as_record()); _atomic_json(temporary / "qualification.json", {"limits": limits.as_record(), "checks": [x.as_record() for x in book.qualification_checks]})
-        for name in ("partition_book.json", "statistics.json", "qualification.json"): outputs[name] = _file_sha(temporary / name)
-        _atomic_json(temporary / "partitions.complete.json", {"format_version": "typed-partitions-completion-v1", "content_identity": book.content_identity, "outputs": dict(sorted(outputs.items()))})
+        _atomic_json(temporary / "partition_book.json", identity)
+        _atomic_json(
+            temporary / "statistics.json", book.statistics.as_record()
+        )
+        _atomic_json(
+            temporary / "qualification.json",
+            {
+                "limits": limits.as_record(),
+                "checks": [x.as_record() for x in book.qualification_checks],
+            },
+        )
+        for name in (
+            "partition_book.json",
+            "statistics.json",
+            "qualification.json",
+        ):
+            outputs[name] = _file_sha(temporary / name)
+        _atomic_json(
+            temporary / "partitions.complete.json",
+            {
+                "format_version": "typed-partitions-completion-v1",
+                "content_identity": book.content_identity,
+                "outputs": dict(sorted(outputs.items())),
+            },
+        )
         _fsync_tree_directories(temporary)
         os.replace(temporary, artifact)
         _fsync_directory(artifact.parent)
@@ -2946,10 +3241,7 @@ def _republish_partition_metadata(
 ) -> None:
     work_parent.mkdir(parents=True, exist_ok=True)
     temporary = work_parent / uuid.uuid4().hex
-    backup = (
-        artifact.parent
-        / f".partitions-tmp-previous-{uuid.uuid4().hex}"
-    )
+    backup = artifact.parent / f".partitions-tmp-previous-{uuid.uuid4().hex}"
     try:
         shutil.copytree(
             artifact,
@@ -2965,8 +3257,7 @@ def _republish_partition_metadata(
             {
                 "limits": limits.as_record(),
                 "checks": [
-                    check.as_record()
-                    for check in book.qualification_checks
+                    check.as_record() for check in book.qualification_checks
                 ],
             },
         )
@@ -3062,15 +3353,11 @@ def _load_published_array_pair(
                     raise
                 if version == (1, 0):
                     shape, fortran_order, dtype = (
-                        np.lib.format.read_array_header_1_0(
-                            header_stream
-                        )
+                        np.lib.format.read_array_header_1_0(header_stream)
                     )
                 elif version == (2, 0):
                     shape, fortran_order, dtype = (
-                        np.lib.format.read_array_header_2_0(
-                            header_stream
-                        )
+                        np.lib.format.read_array_header_2_0(header_stream)
                     )
                 else:
                     raise ValueError("unsupported NPY version")
@@ -3224,17 +3511,14 @@ def _read_subtree(
             }
         )
     for index, _ in enumerate(sorted(topology.relations)):
-        expected_outputs.add(
-            f"relations/r{index:04d}/edge_partition.npy"
-        )
+        expected_outputs.add(f"relations/r{index:04d}/edge_partition.npy")
     completion = _safe_json(
         artifact / "partitions.complete.json",
         "PARTITION-OUTPUT-001",
     )
     outputs = completion.get("outputs")
     if (
-        completion.get("format_version")
-        != "typed-partitions-completion-v1"
+        completion.get("format_version") != "typed-partitions-completion-v1"
         or not isinstance(outputs, dict)
         or set(outputs) != expected_outputs
     ):
@@ -3250,12 +3534,8 @@ def _read_subtree(
                 "partition subtree contains a symlink",
             )
         if path.is_file():
-            observed_outputs.add(
-                path.relative_to(artifact).as_posix()
-            )
-    if observed_outputs != expected_outputs | {
-        "partitions.complete.json"
-    }:
+            observed_outputs.add(path.relative_to(artifact).as_posix())
+    if observed_outputs != expected_outputs | {"partitions.complete.json"}:
         raise _error(
             "PARTITION-OUTPUT-001",
             "partition subtree contains missing or unknown files",
@@ -3306,12 +3586,9 @@ def _read_subtree(
     }
     if (
         set(identity) != expected_identity_keys
-        or identity.get("format_version")
-        != "typed-partition-book-v1"
-        or identity.get("num_partitions")
-        != topology.num_partitions
-        or identity.get("topology_fingerprint")
-        != topology.fingerprint
+        or identity.get("format_version") != "typed-partition-book-v1"
+        or identity.get("num_partitions") != topology.num_partitions
+        or identity.get("topology_fingerprint") != topology.fingerprint
         or identity.get("source_binding")
         != _json_value(topology.source_binding)
         or identity.get("limits_fingerprint") != stored_limits.fingerprint
@@ -3365,10 +3642,7 @@ def _read_subtree(
     fresh_ownership: dict[CanonicalRelation, np.ndarray] = {}
     for index, relation in enumerate(sorted(topology.relations)):
         observed, fresh_observed = _load_published_array_pair(
-            artifact
-            / "relations"
-            / f"r{index:04d}"
-            / "edge_partition.npy",
+            artifact / "relations" / f"r{index:04d}" / "edge_partition.npy",
             f"published ownership for {relation!r}",
         )
         fresh_ownership[relation] = fresh_observed
@@ -3435,16 +3709,13 @@ def _read_subtree(
         num_partitions=topology.num_partitions,
         node_assignments=assignments,
         node_permutations={
-            name: value["permutation"]
-            for name, value in derived.items()
+            name: value["permutation"] for name, value in derived.items()
         },
         node_inverse_permutations={
-            name: value["inverse"]
-            for name, value in derived.items()
+            name: value["inverse"] for name, value in derived.items()
         },
         node_partptr={
-            name: value["partptr"]
-            for name, value in derived.items()
+            name: value["partptr"] for name, value in derived.items()
         },
         edge_ownership=ownership,
         topology_fingerprint=topology.fingerprint,
@@ -3466,10 +3737,7 @@ def _read_subtree(
         )
     expected_qualification = {
         "limits": stored_limits.as_record(),
-        "checks": [
-            check.as_record()
-            for check in book.qualification_checks
-        ],
+        "checks": [check.as_record() for check in book.qualification_checks],
     }
     if qualification != expected_qualification:
         raise _error(
@@ -3484,18 +3752,19 @@ def _read_subtree(
                 name: value["permutation"]
                 for name, value in fresh_derived.items()
             },
-            {
-                name: value["inverse"]
-                for name, value in fresh_derived.items()
-            },
-            {
-                name: value["partptr"]
-                for name, value in fresh_derived.items()
-            },
+            {name: value["inverse"] for name, value in fresh_derived.items()},
+            {name: value["partptr"] for name, value in fresh_derived.items()},
             fresh_ownership,
         )
     finally:
         book.close()
     return fresh_book, identity, stored_limits
 
-__all__ = ["CanonicalRelationTopology", "PyGPartitionArtifactAdapter", "TopologyContext", "TopologyOnlyPyGPartitioner", "TypedPartitionBuild"]
+
+__all__ = [
+    "CanonicalRelationTopology",
+    "PyGPartitionArtifactAdapter",
+    "TopologyContext",
+    "TopologyOnlyPyGPartitioner",
+    "TypedPartitionBuild",
+]

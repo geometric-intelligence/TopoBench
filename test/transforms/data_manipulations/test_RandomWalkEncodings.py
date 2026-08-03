@@ -3,6 +3,7 @@
 import pytest
 import torch
 from torch_geometric.data import Data
+
 from topobench.transforms.data_manipulations import RWSE
 
 
@@ -35,14 +36,18 @@ class TestRWSE:
         # Check that RWSE was concatenated to x
         assert transformed.x is not None
         assert transformed.x.shape[0] == 3  # num_nodes
-        assert transformed.x.shape[1] == 1 + self.transform.max_pe_dim  # original + RWSE
+        assert (
+            transformed.x.shape[1] == 1 + self.transform.max_pe_dim
+        )  # original + RWSE
 
         # Check that original features are preserved
         assert torch.equal(transformed.x[:, 0:1], x)
 
         # Check that RWSE features are not all zeros
         rwse_features = transformed.x[:, 1:]
-        assert not torch.allclose(rwse_features, torch.zeros_like(rwse_features))
+        assert not torch.allclose(
+            rwse_features, torch.zeros_like(rwse_features)
+        )
 
     def test_forward_no_concat(self):
         """Test transform when concat_to_x is False."""
@@ -81,7 +86,9 @@ class TestRWSE:
         # Check that RWSE is all zeros for empty graph
         assert transformed.x is not None
         assert transformed.x.shape == (5, self.transform.max_pe_dim)
-        assert torch.allclose(transformed.x, torch.zeros(5, self.transform.max_pe_dim))
+        assert torch.allclose(
+            transformed.x, torch.zeros(5, self.transform.max_pe_dim)
+        )
 
     def test_single_node_graph(self):
         """Test transform on a graph with a single node."""
@@ -93,7 +100,9 @@ class TestRWSE:
         # Check that RWSE is all zeros for single node
         assert transformed.x is not None
         assert transformed.x.shape == (1, self.transform.max_pe_dim)
-        assert torch.allclose(transformed.x, torch.zeros(1, self.transform.max_pe_dim))
+        assert torch.allclose(
+            transformed.x, torch.zeros(1, self.transform.max_pe_dim)
+        )
 
     def test_disconnected_graph(self):
         """Test transform on a disconnected graph."""
@@ -126,9 +135,7 @@ class TestRWSE:
         # Complete graph on 4 nodes
         edges = []
         for i in range(4):
-            for j in range(4):
-                if i != j:
-                    edges.append([i, j])
+            edges.extend([[i, j] for j in range(4) if i != j])
         edge_index = torch.tensor(edges).t()
         data = Data(edge_index=edge_index, num_nodes=4)
 
@@ -144,7 +151,9 @@ class TestRWSE:
         # For later steps, values should approach 1/4 = 0.25
         later_steps = rwse[:, -3:]  # last 3 steps
         # All nodes should have similar return probabilities
-        assert torch.allclose(later_steps, later_steps.mean(dim=0, keepdim=True), atol=0.1)
+        assert torch.allclose(
+            later_steps, later_steps.mean(dim=0, keepdim=True), atol=0.1
+        )
 
     def test_directed_graph(self):
         """Test transform on a directed graph (unidirectional edges)."""
@@ -159,7 +168,9 @@ class TestRWSE:
         assert transformed.x.shape == (4, self.transform.max_pe_dim)
 
         # Node 3 has no outgoing edges, so return probability should be 0
-        assert torch.allclose(transformed.x[3], torch.zeros(self.transform.max_pe_dim))
+        assert torch.allclose(
+            transformed.x[3], torch.zeros(self.transform.max_pe_dim)
+        )
 
     def test_isolated_node(self):
         """Test transform with isolated nodes."""
@@ -174,7 +185,9 @@ class TestRWSE:
         assert transformed.x.shape == (3, self.transform.max_pe_dim)
 
         # Isolated node (node 2) should have zero RWSE
-        assert torch.allclose(transformed.x[2], torch.zeros(self.transform.max_pe_dim))
+        assert torch.allclose(
+            transformed.x[2], torch.zeros(self.transform.max_pe_dim)
+        )
 
     def test_different_pe_dimensions(self):
         """Test transform with different max_pe_dim values."""
@@ -250,7 +263,7 @@ class TestRWSE:
             edge_index=edge_index,
             y=y,
             custom_attr=custom_attr,
-            num_nodes=3
+            num_nodes=3,
         )
 
         transformed = self.transform(data)
@@ -320,5 +333,8 @@ class TestRWSE:
 
         captured = capsys.readouterr()
         # Verify that some debug information was printed
-        assert "RWSE Debug Report" in captured.out or "method" in captured.out.lower()
+        assert (
+            "RWSE Debug Report" in captured.out
+            or "method" in captured.out.lower()
+        )
         assert transformed.x.shape == (3, 4)

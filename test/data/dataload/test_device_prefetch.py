@@ -10,6 +10,7 @@ from dataclasses import replace
 
 import pytest
 import torch
+from torch.utils.data import DataLoader
 from torch_geometric.data import Data, HeteroData
 
 from test.data.dataload.test_disk_graph_datamodule import task8_stores
@@ -139,6 +140,39 @@ def test_worst_case_host_budget_includes_live_cuda_staging() -> None:
             max_device_queue_bytes=300,
             worst_case_host_bytes=100,
             worst_case_device_bytes=100,
+        )
+
+
+def test_prefetch_rejects_pytorch_worker_results_before_byte_admission() -> None:
+    source = DataLoader([_batch(1)], batch_size=None, num_workers=1)
+
+    with pytest.raises(
+        ValueError,
+        match="num_workers=0.*worker result queue.*host-byte admission",
+    ):
+        DevicePrefetchLoader(
+            source,
+            _limits(),
+            capability=_capability(),
+        )
+
+    assert source._iterator is None
+
+
+def test_disk_prefetch_rejects_workers_before_opening_the_store(
+    task8_stores: dict[str, QualifiedStoreFixture],
+) -> None:
+    fixture = task8_stores["homogeneous"]
+
+    with pytest.raises(
+        ValueError,
+        match="prefetch_limits.*num_workers=0.*worker result queue",
+    ):
+        DiskGraphDataModule(
+            fixture.store_build.path,
+            HomogeneousClusterStrategy(clusters_per_batch=1),
+            num_workers=1,
+            prefetch_limits=_limits(),
         )
 
 
@@ -605,8 +639,12 @@ def test_disk_datamodule_prefetch_defers_delivery_and_preserves_commit_state(
 
     module.teardown("fit")
     module.teardown("fit")
-    assert module.closed
+    assert module.closed is False
+    assert module._owner is not None
+    assert module._owner._store is None
     assert not loader.active_iterators
+    module.close()
+    assert module.closed
 
 def _sequence_module(
     fixture: QualifiedStoreFixture,
@@ -629,6 +667,156 @@ def _sequence_module(
         ),
         prefetch_device="cpu",
     )
+
+
+class _FailOnceReadyMonitor(InputMonitor):
+    def __init__(self) -> None:
+        super().__init__()
+        self.armed = False
+
+    def mark_batch_ready(self, **_: object) -> None:
+        if self.armed:
+            self.armed = False
+            raise RuntimeError("injected monitor failure")
+
+
+def _direct_sequence_module(
+    fixture: QualifiedStoreFixture,
+    *,
+    monitor: InputMonitor | None = None,
+) -> DiskGraphDataModule:
+    return DiskGraphDataModule(
+        fixture.store_build.path,
+        HomogeneousClusterStrategy(
+            clusters_per_batch=1,
+            partition_groups=((0,), (1,), (2,)),
+            seed=29,
+        ),
+        num_workers=0,
+        train_shuffle=False,
+        execution_monitor=monitor,
+    )
+
+
+@pytest.mark.parametrize(
+    "abort_stage",
+    ("materialization", "validation", "monitor", "consumer", "close"),
+)
+def test_direct_train_abort_rolls_back_to_the_committed_boundary(
+    task8_stores: dict[str, QualifiedStoreFixture],
+    monkeypatch: pytest.MonkeyPatch,
+    abort_stage: str,
+) -> None:
+    monitor = _FailOnceReadyMonitor() if abort_stage == "monitor" else None
+    module = _direct_sequence_module(
+        task8_stores["homogeneous"],
+        monitor=monitor,
+    )
+    module.setup("fit")
+    loader = module.train_dataloader()
+    first_iterator = iter(loader)
+    first = next(first_iterator)
+    assert first.sequence_id == 1
+    module.consume_sequence(first.sequence_id)
+    assert module.commit_optimizer_step(
+        optimizer_succeeded=True,
+        model_global_step=1,
+        evaluator_snapshot={"sequence_id": 1, "count": 1, "state": {}},
+        epoch=0,
+    )
+    getattr(first_iterator, "close")()
+    state = module.sequence_state
+    assert state.committed_cursor == 1
+
+    if abort_stage == "materialization":
+        strategy = loader.dataset.strategy
+        materialize = strategy.materialize
+        failed = False
+
+        def fail_materialization_once(
+            source: object,
+            descriptor: object,
+        ) -> Data:
+            nonlocal failed
+            if not failed:
+                failed = True
+                raise RuntimeError("injected materialization failure")
+            return materialize(source, descriptor)
+
+        monkeypatch.setattr(strategy, "materialize", fail_materialization_once)
+    elif abort_stage == "validation":
+        prepare = module.prepare_sequence
+        failed = False
+
+        def fail_validation_once(
+            sequence_id: int,
+            descriptor: object,
+        ) -> None:
+            nonlocal failed
+            if not failed:
+                failed = True
+                raise RuntimeError("injected validation failure")
+            prepare(sequence_id, descriptor)
+
+        monkeypatch.setattr(module, "prepare_sequence", fail_validation_once)
+    elif monitor is not None:
+        monitor.armed = True
+
+    if abort_stage in {"materialization", "validation", "monitor"}:
+        iterator = iter(loader)
+        with pytest.raises(RuntimeError, match=f"injected {abort_stage} failure"):
+            next(iterator)
+    elif abort_stage == "consumer":
+        def fail_consumer() -> None:
+            for batch in loader:
+                module.consume_sequence(batch.sequence_id)
+                raise RuntimeError("injected consumer failure")
+
+        with pytest.raises(RuntimeError, match="injected consumer failure"):
+            fail_consumer()
+    else:
+        iterator = iter(loader)
+        batch = next(iterator)
+        module.consume_sequence(batch.sequence_id)
+        getattr(iterator, "close")()
+
+    assert state.committed_cursor == 1
+    assert state.issued == ()
+    assert state.prepared == ()
+    assert state.delivered == ()
+    assert state.consumed == ()
+    assert state.pending_group == ()
+
+    retry = iter(loader)
+    assert next(retry).sequence_id == state.committed_cursor + 1
+    getattr(retry, "close")()
+    assert state.issued == ()
+    assert state.prepared == ()
+    assert state.delivered == ()
+    assert state.consumed == ()
+    assert state.pending_group == ()
+    module.close()
+
+
+def test_direct_iterator_close_after_terminal_module_close_is_safe(
+    task8_stores: dict[str, QualifiedStoreFixture],
+) -> None:
+    module = _direct_sequence_module(task8_stores["homogeneous"])
+    module.setup("fit")
+    iterator = iter(module.train_dataloader())
+    batch = next(iterator)
+    module.consume_sequence(batch.sequence_id)
+    state = module.sequence_state
+
+    module.close()
+    assert module.closed
+    getattr(iterator, "close")()
+
+    assert state.issued == ()
+    assert state.prepared == ()
+    assert state.delivered == ()
+    assert state.consumed == ()
+    assert state.pending_group == ()
 
 
 def test_prefetch_early_break_rolls_back_transient_sequence_for_reiteration(

@@ -1,15 +1,17 @@
 """Contract tests for the intentionally small evaluator vocabulary."""
 
 import inspect
-import hydra
 
+import hydra
 import pytest
 import torchmetrics
 
 import topobench.evaluator as evaluator_api
 from topobench.evaluator import TBEvaluator
-from topobench.utils.config_resolvers import get_default_metrics
-from topobench.utils.config_resolvers import register_all_resolvers
+from topobench.utils.config_resolvers import (
+    get_default_metrics,
+    register_all_resolvers,
+)
 
 
 @pytest.mark.parametrize(
@@ -81,10 +83,7 @@ def test_public_evaluator_module_exports_no_torchmetrics_types() -> None:
     assert "METRICS" not in public_names
     assert "ExampleRegressionMetric" not in public_names
     assert all(
-        not (
-            inspect.isclass(value)
-            and issubclass(value, torchmetrics.Metric)
-        )
+        not (inspect.isclass(value) and issubclass(value, torchmetrics.Metric))
         for name in public_names
         if inspect.isclass(value := getattr(evaluator_api, name))
     )
@@ -103,9 +102,7 @@ def test_public_evaluator_module_exports_no_torchmetrics_types() -> None:
 )
 def test_removed_names_are_not_constructible(metric: str) -> None:
     with pytest.raises(ValueError, match="Unsupported metric"):
-        TBEvaluator(
-            task="classification", num_classes=3, metrics=[metric]
-        )
+        TBEvaluator(task="classification", num_classes=3, metrics=[metric])
 
 
 def _compose_selectable_evaluator_metrics(
@@ -158,6 +155,6 @@ def _compose_selectable_evaluator_metrics(
 def test_selectable_evaluator_configs_use_authoritative_ordered_defaults(
     evaluator, dataset, expected
 ):
-    assert _compose_selectable_evaluator_metrics(
-        evaluator, dataset
-    ) == expected
+    assert (
+        _compose_selectable_evaluator_metrics(evaluator, dataset) == expected
+    )

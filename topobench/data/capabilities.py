@@ -10,9 +10,11 @@ from typing import Any, Literal
 
 import torch
 from torch import Tensor
+
 from topobench.data.qualification import (
     DATASET_QUALIFICATION_MANIFEST,
     DatasetQualification,
+    SplitType,
 )
 
 TaskKind = Literal["classification", "regression"]
@@ -25,7 +27,90 @@ FeaturePolicy = Literal[
     "constant",
 ]
 EdgeField = Literal["edge_attr", "edge_weight"]
-QualificationValue = str | int | float | bool
+QualificationValue = str | int | float | bool | None
+DataDomain = Literal["graph", "heterogeneous", "hypergraph"]
+OutputKind = Literal["graph", "homogeneous", "heterogeneous", "hypergraph"]
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeDataCapability:
+    """Observed immutable metadata at the data/model construction boundary."""
+
+    selector: str
+    data_domain: str
+    output_kind: str
+    feature_widths: tuple[tuple[str, int], ...]
+    num_classes: int | None
+    target_node_type: str | None
+
+    def __post_init__(self) -> None:
+        selector_domain, separator, data_name = self.selector.partition("/")
+        if (
+            not separator
+            or not data_name
+            or selector_domain not in {"graph", "heterogeneous", "hypergraph"}
+        ):
+            raise ValueError(
+                "selector must be an exact qualified dataset selector"
+            )
+        if self.selector not in DATASET_QUALIFICATION_MANIFEST:
+            raise ValueError(
+                f"selector {self.selector!r} is not exactly qualified"
+            )
+        qualification = DATASET_QUALIFICATION_MANIFEST[self.selector]
+        if self.data_domain != selector_domain:
+            raise ValueError(
+                "data_domain must match the qualified selector domain"
+            )
+        expected_output = (
+            "graph"
+            if selector_domain == "graph"
+            and qualification.task_level == "graph"
+            else {
+                "graph": "homogeneous",
+                "heterogeneous": "heterogeneous",
+                "hypergraph": "hypergraph",
+            }[selector_domain]
+        )
+        if self.output_kind != expected_output:
+            raise ValueError(
+                f"output_kind must be {expected_output!r} for "
+                f"{selector_domain!r} data"
+            )
+        if not isinstance(self.feature_widths, tuple):
+            raise TypeError("feature_widths must be an immutable tuple")
+        node_types: list[str] = []
+        for entry in self.feature_widths:
+            if (
+                not isinstance(entry, tuple)
+                or len(entry) != 2
+                or not isinstance(entry[0], str)
+                or not entry[0]
+                or isinstance(entry[1], bool)
+                or not isinstance(entry[1], int)
+                or entry[1] <= 0
+            ):
+                raise ValueError(
+                    "feature_widths must contain (node_type, positive width) "
+                    "tuples"
+                )
+            node_types.append(entry[0])
+        if not node_types or len(node_types) != len(set(node_types)):
+            raise ValueError("feature_widths must contain unique node types")
+        if self.num_classes is not None and (
+            isinstance(self.num_classes, bool)
+            or not isinstance(self.num_classes, int)
+            or self.num_classes <= 0
+        ):
+            raise ValueError("num_classes must be a positive integer or None")
+        if self.target_node_type is not None and (
+            not isinstance(self.target_node_type, str)
+            or not self.target_node_type
+        ):
+            raise ValueError(
+                "target_node_type must be a non-empty string or None"
+            )
+
 
 OGB_ATOM_FEATURE_CARDINALITIES = (119, 5, 12, 12, 10, 6, 6, 2, 2)
 
@@ -50,6 +135,8 @@ class GraphDatasetCapability:
     feature_policy: FeaturePolicy
     edge_fields: frozenset[EdgeField]
     qualification: tuple[tuple[str, QualificationValue], ...]
+    split_type: SplitType = "random"
+    target_node_type: str | None = None
     feature_width: int = 1
     stored_feature_width: int | None = None
     feature_encoding: str = "continuous"
@@ -62,6 +149,15 @@ class GraphDatasetCapability:
     source_capabilities: frozenset[tuple[str, str, str, str]] = frozenset()
 
     def __post_init__(self) -> None:
+        if self.split_type not in {"fixed", "random"}:
+            raise ValueError("split_type must be 'fixed' or 'random'")
+        if self.target_node_type is not None and (
+            not isinstance(self.target_node_type, str)
+            or not self.target_node_type
+        ):
+            raise ValueError(
+                "target_node_type must be a non-empty string or None"
+            )
         if (
             isinstance(self.num_classes, bool)
             or not isinstance(self.num_classes, int)
@@ -69,9 +165,7 @@ class GraphDatasetCapability:
         ):
             raise ValueError("num_classes must be a positive integer")
         if self.task == "classification" and self.num_classes < 2:
-            raise ValueError(
-                "classification num_classes must be at least 2"
-            )
+            raise ValueError("classification num_classes must be at least 2")
         if self.task == "regression" and self.num_classes != 1:
             raise ValueError("regression num_classes must equal 1")
         if self.num_nodes is not None:
@@ -96,9 +190,7 @@ class GraphDatasetCapability:
             if self.stored_feature_width is None
             else self.stored_feature_width
         )
-        if isinstance(stored_width, bool) or not isinstance(
-            stored_width, int
-        ):
+        if isinstance(stored_width, bool) or not isinstance(stored_width, int):
             raise TypeError("stored_feature_width must be an integer")
         if stored_width <= 0:
             raise ValueError("stored_feature_width must be positive")
@@ -125,8 +217,7 @@ class GraphDatasetCapability:
                 )
             if self.feature_width != stored_width:
                 raise ValueError(
-                    "categorical feature_width must equal "
-                    "stored_feature_width"
+                    "categorical feature_width must equal stored_feature_width"
                 )
         elif self.feature_cardinalities:
             raise ValueError(
@@ -243,27 +334,21 @@ def validate_classification_vocabulary(
         if first_item is None:
             first_item = item
         shape = tuple(value.shape) if isinstance(value, Tensor) else None
-        dtype = value.dtype if isinstance(value, Tensor) else type(value).__name__
+        dtype = (
+            value.dtype if isinstance(value, Tensor) else type(value).__name__
+        )
         context = (
             f"{selector}: {item} field {field} observed "
             f"shape={shape}, dtype={dtype}"
         )
         if not isinstance(value, Tensor):
-            raise TypeError(
-                f"{context}; expected rank-1 torch.long labels"
-            )
+            raise TypeError(f"{context}; expected rank-1 torch.long labels")
         if value.dtype != torch.long:
-            raise TypeError(
-                f"{context}; expected dtype=torch.long"
-            )
+            raise TypeError(f"{context}; expected dtype=torch.long")
         if value.ndim != 1:
-            raise ValueError(
-                f"{context}; expected rank-1 labels"
-            )
+            raise ValueError(f"{context}; expected rank-1 labels")
         if value.numel() != expected_size:
-            raise ValueError(
-                f"{context}; expected shape=({expected_size},)"
-            )
+            raise ValueError(f"{context}; expected shape=({expected_size},)")
         if value.numel() == 0:
             raise ValueError(
                 f"{context}; expected at least one label in "
@@ -295,58 +380,22 @@ def validate_classification_vocabulary(
 def qualify_heterogeneous_dataset(
     dataset: Mapping[str, Any],
 ) -> DatasetQualification:
-    """Qualify heterogeneous supervision against the retained manifest."""
-    if not isinstance(dataset, Mapping):
-        raise TypeError("dataset must be a mapping")
-    domain = _value_at_path(dataset, "loader.parameters.data_domain")
-    if domain != "heterogeneous":
-        raise ValueError(
-            "dataset.loader.parameters.data_domain must be "
-            f"'heterogeneous', got {domain!r}"
-        )
-    data_name = _value_at_path(dataset, "loader.parameters.data_name")
-    selector = f"heterogeneous/{data_name}"
-    qualification = DATASET_QUALIFICATION_MANIFEST.get(selector)
-    if qualification is None:
-        raise ValueError(
-            f"{selector}: no retained heterogeneous qualification"
-        )
-    loader_family = _value_at_path(dataset, "loader._target_")
-    if loader_family != qualification.loader_family:
-        raise ValueError(
-            f"{selector}: dataset.loader._target_={loader_family!r}; "
-            f"manifest expects {qualification.loader_family!r}"
-        )
-
-    configured_classes = _value_at_path(
-        dataset,
-        "parameters.num_classes",
-    )
+    """Delegate heterogeneous qualification to the shared exact boundary."""
     if (
-        isinstance(configured_classes, bool)
-        or not isinstance(configured_classes, Integral)
+        isinstance(dataset, Mapping)
+        and _value_at_path(
+            dataset,
+            "loader.parameters.data_domain",
+        )
+        != "heterogeneous"
     ):
-        raise TypeError(
-            f"{selector}: dataset.parameters.num_classes observed "
-            f"dtype={type(configured_classes).__name__}; manifest expects "
-            f"integer {qualification.num_classes}"
-        )
-    if configured_classes != qualification.num_classes:
         raise ValueError(
-            f"{selector}: dataset.parameters.num_classes="
-            f"{configured_classes!r}; manifest expects "
-            f"{qualification.num_classes}"
+            "dataset.loader.parameters.data_domain must be 'heterogeneous'"
         )
-
-    target_node_type = _value_at_path(
-        dataset,
-        "parameters.target_node_type",
-    )
-    if target_node_type != qualification.target_node_type:
+    qualification = qualify_dataset(dataset)
+    if not qualification.selector.startswith("heterogeneous/"):
         raise ValueError(
-            f"{selector}: dataset.parameters.target_node_type="
-            f"{target_node_type!r}; manifest expects "
-            f"{qualification.target_node_type!r}"
+            "dataset.loader.parameters.data_domain must be 'heterogeneous'"
         )
     return qualification
 
@@ -402,9 +451,7 @@ def _loader_target(selector: str) -> str:
     if selector == "ogbg-molhiv":
         return "topobench.data.loaders.OGBGDatasetLoader"
     if selector == "ParquetTypedGraph":
-        return (
-            "topobench.data.loaders.parquet.ParquetTypedGraphLoader"
-        )
+        return "topobench.data.loaders.parquet.ParquetTypedGraphLoader"
     raise ValueError(f"missing loader qualification for {selector!r}")
 
 
@@ -434,12 +481,15 @@ def _capability(
         if num_classes is not None
         else (2 if task == "classification" else 1)
     )
+    dataset_qualification = DATASET_QUALIFICATION_MANIFEST[f"graph/{selector}"]
     return GraphDatasetCapability(
         selector=selector,
         task=task,
         task_level=task_level,
         learning_setting=learning_setting,
         feature_policy=feature_policy,
+        split_type=dataset_qualification.split_type,
+        target_node_type=dataset_qualification.target_node_type,
         feature_width=feature_width,
         stored_feature_width=stored_feature_width,
         feature_encoding=feature_encoding,
@@ -457,12 +507,17 @@ def _capability(
             ("parameters.task_level", task_level),
             ("parameters.feature_policy", feature_policy),
             ("parameters.num_classes", class_count),
+            (
+                "parameters.target_node_type",
+                dataset_qualification.target_node_type,
+            ),
             *(
                 (("parameters.num_nodes", num_nodes),)
                 if num_nodes is not None
                 else ()
             ),
             ("split_params.learning_setting", learning_setting),
+            ("split_params.split_type", dataset_qualification.split_type),
             *(
                 (
                     ("parameters.feature_encoding", feature_encoding),
@@ -480,9 +535,7 @@ def _capability(
 
 
 _EDGE_ATTR = frozenset({"edge_attr"})
-_DEGREE_FEATURE_TRANSFORMS = frozenset(
-    {"NodeDegrees", "OneHotDegreeFeatures"}
-)
+_DEGREE_FEATURE_TRANSFORMS = frozenset({"NodeDegrees", "OneHotDegreeFeatures"})
 _CATEGORICAL_FEATURE_TRANSFORMS = frozenset({"OneHotDegreeFeatures"})
 _CONSTANT_FEATURE_TRANSFORMS = frozenset({"ConstantNodeFeatures"})
 _ROWS = (
@@ -908,7 +961,7 @@ def _descriptor_is_runnable_graph_source(
     )
 
 
-def qualify_graph_dataset(
+def _qualify_graph_dataset_exact(
     dataset: Mapping[str, Any],
 ) -> GraphDatasetCapability:
     """Qualify exactly one manifest row from selector-specific evidence."""
@@ -946,15 +999,15 @@ def qualify_graph_dataset(
             configured_classes,
             Integral,
         ):
-            raise TypeError(
-                f"{capability.selector}: full source field "
+            raise ValueError(
+                f"graph/{capability.selector}: full source field "
                 "dataset.parameters.num_classes observed "
                 f"dtype={type(configured_classes).__name__}; expected "
                 "an integer"
             )
         if configured_classes != capability.num_classes:
             raise ValueError(
-                f"{capability.selector}: full source field "
+                f"graph/{capability.selector}: full source field "
                 "dataset.parameters.num_classes="
                 f"{configured_classes!r}; manifest expects "
                 f"{capability.num_classes}"
@@ -992,15 +1045,19 @@ def qualify_graph_dataset(
         return capability
 
     observed_paths = (
+        "loader._target_",
+        "loader.parameters.data_domain",
         "loader.parameters.data_name",
         "parameters.task",
         "parameters.task_level",
         "parameters.feature_policy",
         "parameters.num_classes",
+        "parameters.target_node_type",
         "loader.parameters.output_kind",
         "loader.parameters.partition.strategy",
         "loader.parameters.partition.backend",
         "split_params.learning_setting",
+        "split_params.split_type",
     )
     observed = ", ".join(
         f"dataset.{path}={_value_at_path(dataset, path)!r}"
@@ -1017,17 +1074,146 @@ def qualify_graph_dataset(
     )
 
 
+def _validate_static_qualification(
+    dataset: Mapping[str, Any],
+    qualification: DatasetQualification,
+) -> None:
+    """Reject every mutable static field that contradicts its exact row."""
+    expected_fields: tuple[tuple[str, object], ...] = (
+        (
+            "loader.parameters.data_domain",
+            qualification.selector.partition("/")[0],
+        ),
+        ("loader._target_", qualification.loader_family),
+        (
+            "loader.parameters.data_name",
+            qualification.selector.partition("/")[2],
+        ),
+        ("parameters.task", qualification.task),
+        ("parameters.task_level", qualification.task_level),
+        ("split_params.learning_setting", qualification.split_mode),
+        ("split_params.split_type", qualification.split_type),
+        ("parameters.feature_policy", qualification.feature_policy),
+        ("parameters.num_classes", qualification.num_classes),
+        ("parameters.target_node_type", qualification.target_node_type),
+    )
+    for path, expected in expected_fields:
+        observed = _value_at_path(dataset, path)
+        if (
+            path == "parameters.num_classes"
+            and (
+                isinstance(observed, bool)
+                or not isinstance(observed, Integral)
+            )
+        ) or observed != expected:
+            raise ValueError(
+                f"{qualification.selector}: dataset.{path}={observed!r}; "
+                f"manifest expects {expected!r}"
+            )
+
+
+def qualify_dataset(dataset: Mapping[str, Any]) -> DatasetQualification:
+    """Return one exact cross-domain qualification before loader construction."""
+    if not isinstance(dataset, Mapping):
+        raise TypeError("dataset must be a mapping")
+    domain_path = "loader.parameters.data_domain"
+    domain = _value_at_path(dataset, domain_path)
+    if domain not in {"graph", "heterogeneous", "hypergraph"}:
+        raise ValueError(
+            f"dataset.{domain_path}={domain!r}; expected an exact qualified "
+            "data domain"
+        )
+    declared_output_kind = _value_at_path(
+        dataset,
+        "loader.parameters.output_kind",
+    )
+    expected_output_kind = {
+        "graph": "homogeneous",
+        "heterogeneous": "heterogeneous",
+        "hypergraph": "hypergraph",
+    }[domain]
+    if (
+        declared_output_kind is not None
+        and declared_output_kind != expected_output_kind
+    ):
+        raise ValueError(
+            f"dataset.{domain_path}={domain!r} contradicts "
+            "dataset.loader.parameters.output_kind="
+            f"{declared_output_kind!r}; expected {expected_output_kind!r}"
+        )
+    if domain == "graph":
+        capability = _qualify_graph_dataset_exact(dataset)
+        return DATASET_QUALIFICATION_MANIFEST[f"graph/{capability.selector}"]
+
+    data_name_path = "loader.parameters.data_name"
+    data_name = _value_at_path(dataset, data_name_path)
+    selector = f"{domain}/{data_name}"
+    qualification = DATASET_QUALIFICATION_MANIFEST.get(selector)
+    if qualification is None:
+        raise ValueError(
+            f"dataset.{domain_path}={domain!r}, "
+            f"dataset.{data_name_path}={data_name!r}; no exact qualified "
+            "selector"
+        )
+    _validate_static_qualification(dataset, qualification)
+    return qualification
+
+
+def qualify_graph_dataset(
+    dataset: Mapping[str, Any],
+) -> GraphDatasetCapability:
+    """Delegate graph qualification to the shared exact boundary."""
+    if not isinstance(dataset, Mapping):
+        raise TypeError("dataset must be a mapping")
+    if (
+        _value_at_path(
+            dataset,
+            "loader.parameters.data_domain",
+        )
+        != "graph"
+    ):
+        raise ValueError(
+            "dataset.loader.parameters.data_domain must be 'graph'"
+        )
+    data_name = _value_at_path(dataset, "loader.parameters.data_name")
+    if data_name not in GRAPH_DATASET_MANIFEST:
+        _qualify_graph_dataset_exact(dataset)
+
+    configured_classes = _value_at_path(dataset, "parameters.num_classes")
+    if isinstance(configured_classes, bool) or not isinstance(
+        configured_classes,
+        Integral,
+    ):
+        data_name = _value_at_path(dataset, "loader.parameters.data_name")
+        raise TypeError(
+            f"graph/{data_name}: dataset.parameters.num_classes observed "
+            f"dtype={type(configured_classes).__name__}; expected an integer"
+        )
+    qualification = qualify_dataset(dataset)
+    if not qualification.selector.startswith("graph/"):
+        raise ValueError(
+            "dataset.loader.parameters.data_domain must be 'graph'"
+        )
+    return GRAPH_DATASET_MANIFEST[qualification.selector.partition("/")[2]]
+
+
 __all__ = [
+    "DATASET_QUALIFICATION_MANIFEST",
+    "DatasetQualification",
+    "DataDomain",
     "EdgeField",
+    "OutputKind",
     "FeaturePolicy",
     "GRAPH_DATASET_MANIFEST",
     "OGB_ATOM_FEATURE_CARDINALITIES",
     "GraphDatasetCapability",
     "GraphTaskContract",
+    "RuntimeDataCapability",
     "configured_graph_feature_width",
     "LearningSetting",
     "TaskKind",
     "TaskLevel",
+    "qualify_dataset",
     "qualify_graph_dataset",
     "qualify_heterogeneous_dataset",
     "validate_classification_vocabulary",

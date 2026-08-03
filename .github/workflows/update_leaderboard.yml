@@ -11,9 +11,6 @@ on:
       - "docs/scripts/fetch_leaderboard_results.py"
       - ".github/workflows/update_leaderboard.yml"
 
-permissions:
-  contents: write
-  pull-requests: write
 
 concurrency:
   group: leaderboard-refresh
@@ -23,10 +20,15 @@ jobs:
   refresh:
     runs-on: ubuntu-latest
     if: github.repository == 'geometric-intelligence/topobench'
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
 
@@ -50,7 +52,7 @@ jobs:
 
       - name: Open / update pull request
         if: steps.changes.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: bot/refresh-tdl-challenge-2026-leaderboard

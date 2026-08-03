@@ -12,11 +12,13 @@ parameters:
   task_level: node
   target_node_type: paper
   num_classes: 349
+  feature_policy: continuous_per_node_type
   loss_type: cross_entropy
   monitor_metric: accuracy
 
 split_params:
   learning_setting: transductive
+  split_type: fixed
   source: official_masks
 
 dataloader_params:

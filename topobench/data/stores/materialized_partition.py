@@ -13,7 +13,6 @@ from torch_geometric.loader import ClusterData
 from torch_geometric.utils import subgraph as pyg_subgraph
 from torch_geometric.utils import to_undirected
 
-
 AttributeRole = Literal["node", "edge", "graph"]
 
 
@@ -316,16 +315,24 @@ class MaterializedHomogeneousPartition:
     def _validate_partition(self, num_nodes: int) -> None:
         partptr = getattr(self.partition, "partptr", None)
         node_perm = getattr(self.partition, "node_perm", None)
-        if not isinstance(partptr, Tensor) or not isinstance(node_perm, Tensor):
+        if not isinstance(partptr, Tensor) or not isinstance(
+            node_perm, Tensor
+        ):
             raise ValueError(
                 "PyG ClusterData returned a partition without partptr/node_perm"
             )
         if partptr.dtype != torch.long or tuple(partptr.shape) != (
             self.num_parts + 1,
         ):
-            raise ValueError("PyG ClusterData returned an invalid partition partptr")
-        if node_perm.dtype != torch.long or tuple(node_perm.shape) != (num_nodes,):
-            raise ValueError("PyG ClusterData returned an invalid partition node_perm")
+            raise ValueError(
+                "PyG ClusterData returned an invalid partition partptr"
+            )
+        if node_perm.dtype != torch.long or tuple(node_perm.shape) != (
+            num_nodes,
+        ):
+            raise ValueError(
+                "PyG ClusterData returned an invalid partition node_perm"
+            )
         if (
             int(partptr[0]) != 0
             or int(partptr[-1]) != num_nodes
@@ -442,7 +449,9 @@ class MaterializedHomogeneousPartition:
             return_edge_mask=True,
         )
         output = Data(edge_index=edge_index)
-        cache = output._store.__dict__.setdefault("_cached_attr", defaultdict(set))
+        cache = output._store.__dict__.setdefault(
+            "_cached_attr", defaultdict(set)
+        )
 
         for key, source_value in self._data.items():
             if key in ("edge_index", "num_nodes"):
@@ -467,7 +476,9 @@ class MaterializedHomogeneousPartition:
         output.num_nodes = int(global_nid.numel())
         output.global_nid = global_nid
         cache[AttrType.NODE].add("global_nid")
-        output.selected_partition_ids = torch.tensor(normalized, dtype=torch.long)
+        output.selected_partition_ids = torch.tensor(
+            normalized, dtype=torch.long
+        )
         output.num_selected_partitions = len(normalized)
         cache[AttrType.OTHER].update(
             {"selected_partition_ids", "num_selected_partitions"}

@@ -146,8 +146,7 @@ def _prepare_graph_batch_evidence(data: Data) -> _GraphBatchEvidence:
     if batch_index.dtype is not torch.long:
         raise TypeError("batch.batch must have dtype torch.long")
     if any(
-        tensor.device.type != "cpu"
-        for tensor in (x, edge_index, batch_index)
+        tensor.device.type != "cpu" for tensor in (x, edge_index, batch_index)
     ):
         raise ValueError("graph batch evidence must be prepared on CPU")
     if edge_index.device != x.device or batch_index.device != x.device:
@@ -274,8 +273,6 @@ def _current_optional_evidence(
     return None
 
 
-
-
 def _validate_node_targets(labels: Tensor, node_count: int) -> None:
     """Validate the only supported node-level target contract."""
     if labels.size(0) != node_count:
@@ -330,8 +327,6 @@ def _validate_targets(
     raise ValueError(
         "batch.y count must match graphs or nodes described by batch.batch"
     )
-
-
 
 
 def _validated_graph_fields(

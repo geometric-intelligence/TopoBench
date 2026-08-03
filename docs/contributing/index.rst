@@ -73,33 +73,32 @@ Use an `assert` statement to check that the function under test returns the corr
 Run Tests
 ~~~~~~~~~
 
-Install `pytest` which is the software tools used to run tests:
+Synchronize the reviewed development environment from the committed lock:
 
     .. code-block:: bash
 
-      $ pip install -e .[dev]
+      $ uv sync --frozen --all-extras
 
 Then run the test using:
 
     .. code-block:: bash
 
-      $ pytest test_add.py
+      $ uv run pytest test_add.py
 
 Verify that the code you have added does not break `TopoBenchX` by running all the tests.
 
     .. code-block:: bash
 
-      $ pytest test/
+      $ uv run pytest test/
 
 Write Documentation
 -------------------
 
-Building the documentation requires installing specific requirements.
+Documentation dependencies are part of the frozen all-extras environment:
 
     .. code-block:: bash
 
-      $ pip install -e .[doc]
-
+      $ uv sync --frozen --all-extras
 Intro to Docstrings
 ~~~~~~~~~~~~~~~~~~~
 

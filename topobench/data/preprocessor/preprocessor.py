@@ -12,21 +12,22 @@ import torch_geometric
 from filelock import FileLock
 from omegaconf import OmegaConf
 from torch_geometric.data import Data, HeteroData
-from torch_geometric.io import fs
 from tqdm import tqdm
 
+from topobench.data.hypergraph import HypergraphData
 from topobench.data.loaders.base import (
     CACHE_SOURCE_ATTRIBUTE,
     canonical_sha256,
     normalize_cache_value,
 )
+from topobench.data.utils.cache_io import load_pyg_cache, write_pyg_cache
 from topobench.data.utils.split_utils import (
     load_inductive_splits,
     load_transductive_splits,
 )
 from topobench.transforms.data_transform import DataTransform
 
-SupportedData = Data | HeteroData
+SupportedData = Data | HeteroData | HypergraphData
 PreProcessorInput = (
     torch_geometric.data.Dataset | torch.utils.data.Dataset | SupportedData
 )
@@ -38,9 +39,18 @@ _CACHE_RECORD_FILE_NAME = "cache_record.json"
 
 def _data_family(
     data: SupportedData,
-) -> type[Data] | type[HeteroData]:
-    """Return the concrete homogeneous or heterogeneous data family."""
-    return HeteroData if isinstance(data, HeteroData) else Data
+) -> type[Data] | type[HeteroData] | type[HypergraphData]:
+    """Return the exact supported PyG storage family."""
+    if type(data) is HeteroData:
+        return HeteroData
+    if type(data) is HypergraphData:
+        return HypergraphData
+    if type(data) is Data:
+        return Data
+    raise TypeError(
+        "processed caches support only exact Data, HeteroData, or "
+        f"HypergraphData objects; received {type(data).__name__}"
+    )
 
 
 def _dataset_cache_source(dataset: PreProcessorInput) -> dict:
@@ -109,9 +119,9 @@ def _effective_transform_step(
                 }:
                     continue
                 if parameter.name in supplied_parameters:
-                    effective_parameters[parameter.name] = (
-                        supplied_parameters[parameter.name]
-                    )
+                    effective_parameters[parameter.name] = supplied_parameters[
+                        parameter.name
+                    ]
                 elif parameter.default is not inspect.Parameter.empty:
                     effective_parameters[parameter.name] = parameter.default
         effective_parameters.update(
@@ -168,6 +178,7 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         **kwargs,
     ):
         self.dataset = dataset
+        self.trusted_cache_root = data_dir
         self.preprocessing_time = 0
         if transforms_config is not None:
             self.transforms_applied = True
@@ -200,6 +211,13 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
             self.data_list = [data for data in self]
         else:
             self.transforms_applied = False
+            self.cache_record = {
+                "schema": _PROCESSED_CACHE_SCHEMA,
+                "schema_version": _PROCESSED_CACHE_SCHEMA_VERSION,
+                **_dataset_cache_source(dataset),
+                "transform": {"steps": []},
+            }
+            self.cache_identity = canonical_sha256(self.cache_record)
             super().__init__(data_dir, None, None, **kwargs)
             self.transform = (
                 dataset.transform if hasattr(dataset, "transform") else None
@@ -226,15 +244,9 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         return self.root
 
     @property
-    def processed_file_names(self) -> str:
-        """Return the name of the processed file.
-
-        Returns
-        -------
-        str
-            Name of the processed file.
-        """
-        return "data.pt"
+    def processed_file_names(self) -> list[str]:
+        """Return the complete processed-cache publication set."""
+        return ["data.pt", "data.pt.manifest.json"]
 
     def instantiate_pre_transform(
         self, data_dir, transforms_config
@@ -383,7 +395,7 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
                 os.unlink(temporary_path)
 
     def process(self) -> None:
-        """Process and persist a homogeneous family of supported PyG data.
+        """Prepare and persist a homogeneous family of supported PyG data.
 
         Pre-transforms retain PyG's existing semantics: they receive each
         original object and may mutate it in place. This method does not copy
@@ -455,63 +467,48 @@ class PreProcessor(torch_geometric.data.InMemoryDataset):
         self.data_list = processed
         self._data, self.slices = self.collate(processed)
         self._data_list = None  # Reset cache.
-        self.save(processed, self.processed_paths[0])
+        assert expected_family is not None
+        family = {
+            Data: "data",
+            HeteroData: "heterodata",
+            HypergraphData: "hypergraph",
+        }[expected_family]
+        write_pyg_cache(
+            processed,
+            self.processed_paths[0],
+            trusted_root=self.trusted_cache_root,
+            family=family,
+            cache_identity=self.cache_identity,
+        )
 
     def load(self, path: str) -> None:
-        r"""Load the dataset from the file path `path`.
-
-        Parameters
-        ----------
-        path : str
-            The path to the processed data.
-        """
-        out = fs.torch_load(path)
-        if not isinstance(out, tuple):
-            raise TypeError(
-                "Processed data artifact must be a tuple; "
-                f"received {type(out).__name__}"
-            )
-        if len(out) not in (2, 3, 4):
-            raise ValueError(
-                "Processed data artifact must contain 2, 3, or 4 elements; "
-                f"received {len(out)}"
-            )
-
-        data_cls: type[Data] | type[HeteroData] = Data
-        if len(out) == 2:  # Backward compatibility (1).
-            data, self.slices = out
-        elif len(out) == 3:  # Backward compatibility (2).
-            data, self.slices, data_cls = out
-        else:  # TU Datasets store additional element (__class__).
-            data, self.slices, _, data_cls = out
-
-        if self.slices is not None and not isinstance(self.slices, dict):
-            raise TypeError(
-                "Processed data slices must be a dictionary or None; "
-                f"received {type(self.slices).__name__}"
-            )
-        if not isinstance(data, (dict, Data, HeteroData)):
-            raise TypeError(
-                "Processed data payload must be Data, HeteroData, or a "
-                f"dictionary; received {type(data).__name__}"
-            )
-        if not isinstance(data, dict):  # Backward compatibility.
-            self.data = data
-            return
-        if not isinstance(data_cls, type) or not issubclass(
-            data_cls,
-            (Data, HeteroData),
+        """Load one verified, closed-schema processed cache."""
+        if isinstance(
+            self.dataset,
+            (torch_geometric.data.Dataset, torch.utils.data.Dataset),
         ):
-            received = (
-                data_cls.__name__
-                if isinstance(data_cls, type)
-                else type(data_cls).__name__
-            )
-            raise TypeError(
-                "Processed data class must be Data or HeteroData for a "
-                f"dictionary payload; received {received}"
-            )
-        self.data = data_cls.from_dict(data)
+            if len(self.dataset) == 0:
+                raise ValueError(
+                    "cannot determine the family of an empty dataset"
+                )
+            sample = self.dataset[0]
+        else:
+            sample = self.dataset
+        data_cls = _data_family(sample)
+        family = {
+            Data: "data",
+            HeteroData: "heterodata",
+            HypergraphData: "hypergraph",
+        }[data_cls]
+        data, slices = load_pyg_cache(
+            path,
+            trusted_root=self.trusted_cache_root,
+            family=family,
+            cache_identity=self.cache_identity,
+            data_cls=data_cls,
+        )
+        self.data = data
+        self.slices = slices or None
 
     def load_dataset_splits(
         self, split_params

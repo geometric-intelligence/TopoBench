@@ -1,7 +1,7 @@
 """Native GraphMLP backbone and auxiliary-loss gates."""
 
-import torch
 import pytest
+import torch
 from torch_geometric.data import Data
 
 from topobench.loss.model import GraphMLPLoss
@@ -9,7 +9,9 @@ from topobench.nn.backbones.graph import GraphMLP
 from topobench.nn.wrappers.graph import GraphMLPWrapper
 
 
-def test_graph_mlp_returns_only_embeddings_without_global_distance_matrix() -> None:
+def test_graph_mlp_returns_only_embeddings_without_global_distance_matrix() -> (
+    None
+):
     model = GraphMLP(in_channels=4, hidden_channels=8)
     model.train()
 

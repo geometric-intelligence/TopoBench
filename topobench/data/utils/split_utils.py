@@ -13,6 +13,7 @@ from topobench.data.splits import (
     validate_transductive_masks,
 )
 
+
 def _raise_unqualified_kfold(split_type: str) -> NoReturn:
     """Reject nested CV until it has a qualified outer test partition."""
     raise ValueError(

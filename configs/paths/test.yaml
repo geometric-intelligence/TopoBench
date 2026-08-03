@@ -14,5 +14,8 @@ log_dir: ${paths.root_dir}/logs
 # use it to store all files generated during the run, like ckpts and metrics
 output_dir: ${paths.root_dir}/outputs
 
+# trusted same-run checkpoint root
+checkpoint_dir: ${paths.output_dir}/checkpoints
+
 # path to working directory
 work_dir: ${hydra.runtime.cwd}

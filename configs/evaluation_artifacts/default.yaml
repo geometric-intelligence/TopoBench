@@ -1,0 +1,8 @@
+enabled: true
+root: ${paths.output_dir}/evaluations/best_checkpoint
+shard_rows: 65536
+shard_bytes: 268435456
+metadata_fields: []
+evaluation_slices: {}
+distributed_policy: reject
+existing_artifact_policy: verify_identical

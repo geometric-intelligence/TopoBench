@@ -83,7 +83,10 @@ def _compose_graph(selector: str, *overrides: str) -> DictConfig:
 
 @pytest.mark.parametrize(
     "selector",
-    [pytest.param(selector, id=selector) for selector in GRAPH_DATASET_MANIFEST],
+    [
+        pytest.param(selector, id=selector)
+        for selector in GRAPH_DATASET_MANIFEST
+    ],
 )
 def test_default_graph_composition_resolves_qualified_feature_policy_and_width(
     selector: str,

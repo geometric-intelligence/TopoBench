@@ -1,8 +1,10 @@
 """Main entry point for training and testing models."""
 
-import hashlib
+import os
+import tempfile
 from collections.abc import Mapping
 from contextlib import suppress
+from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -16,13 +18,18 @@ from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
 from lightning.pytorch.loggers import Logger
 from omegaconf import DictConfig, OmegaConf
 
+from topobench.callbacks import (
+    BestEpochMetricsCallback,
+    SelectedCheckpointArtifactCallback,
+    SplitPublication,
+)
 from topobench.callbacks.input_pipeline import (
     InputPipelineCallback,
     create_input_monitor,
 )
-from topobench.domains import SUPPORTED_DOMAINS
+from topobench.data.loaders.base import canonical_sha256, resolve_cache_config
 from topobench.evaluator import EvaluationResult
-from topobench.nn.capabilities import validate_graph_composition
+from topobench.nn.capabilities import CapabilityValidation
 from topobench.preflight import PreflightRunner
 from topobench.utils import (
     RankedLogger,
@@ -34,15 +41,21 @@ from topobench.utils import (
     log_hyperparameters,
     task_wrapper,
 )
+from topobench.utils.artifact_logging import ArtifactLoggerAdapter
+from topobench.utils.checkpoint_io import (
+    LoadedSelectedCheckpoint,
+    TrustedCheckpointIO,
+    checkpoint_manifest_path,
+    checkpoint_state_path,
+    load_selected_checkpoint,
+    validate_trusted_resume,
+)
 from topobench.utils.config_resolvers import register_all_resolvers
-
-_DOMAIN_PIPELINE_TARGETS = {
-    "graph": "topobench.data.pipelines.DefaultDataPipeline",
-    "heterogeneous": (
-        "topobench.data.pipelines.HeterogeneousNodeDataPipeline"
-    ),
-    "hypergraph": "topobench.data.pipelines.HypergraphNodeDataPipeline",
-}
+from topobench.utils.instantiators import (
+    ExecutionProfileRecord,
+    validate_execution_profile,
+    validate_profile_capability,
+)
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 # ------------------------------------------------------------------------------------ #
@@ -83,58 +96,67 @@ def initialize_hydra() -> DictConfig:
 
 
 def validate_domain_composition(cfg: DictConfig) -> str:
-    """Reject unsupported or cross-domain dataset, model, and pipeline compositions."""
-    if not isinstance(cfg, DictConfig):
-        raise TypeError("cfg must be a DictConfig")
+    """Return the dataset domain after profile-aware capability validation."""
+    profile_record = validate_execution_profile(cfg)
+    return validate_profile_capability(
+        cfg,
+        profile_record=profile_record,
+    ).model.data_domain
 
-    dataset_path = "cfg.dataset.loader.parameters.data_domain"
-    model_path = "cfg.model.model_domain"
-    dataset_domain = OmegaConf.select(
-        cfg,
-        "dataset.loader.parameters.data_domain",
-        default=None,
-    )
-    model_domain = OmegaConf.select(cfg, "model.model_domain", default=None)
-    for path, domain in (
-        (dataset_path, dataset_domain),
-        (model_path, model_domain),
-    ):
-        if domain is None:
-            raise ValueError(f"{path} is required")
-        if not isinstance(domain, str):
-            raise TypeError(f"{path} must be a string")
-        if domain not in SUPPORTED_DOMAINS:
-            raise ValueError(
-                f"{path}={domain!r} is unsupported; "
-                f"expected one of {SUPPORTED_DOMAINS}"
-            )
-    if dataset_domain != model_domain:
-        raise ValueError(
-            "Cross-domain composition is unsupported: "
-            f"{dataset_path}={dataset_domain!r} does not match "
-            f"{model_path}={model_domain!r}"
+
+def _profile_provenance(
+    profile_record: ExecutionProfileRecord,
+) -> dict[str, object]:
+    """Serialize the immutable execution profile for runtime provenance."""
+    return {
+        "profile": profile_record.profile,
+        "qualified": profile_record.qualified,
+        "targets": tuple(
+            {"path": path, "import_path": import_path}
+            for path, import_path in profile_record.targets
+        ),
+        "custom_targets": tuple(
+            {"path": path, "import_path": import_path}
+            for path, import_path in profile_record.custom_targets
+        ),
+    }
+
+
+def _profiled_provenance_input(
+    provenance_input: Mapping[str, object] | None,
+    *,
+    profile_record: ExecutionProfileRecord,
+) -> dict[str, object]:
+    """Add execution qualification without mutating pipeline provenance."""
+    provenance = {} if provenance_input is None else dict(provenance_input)
+    provenance["execution_profile"] = _profile_provenance(profile_record)
+    return provenance
+
+
+def _live_pipeline_provenance(
+    datamodule: LightningDataModule,
+    provenance_input: Mapping[str, object] | None,
+) -> dict[str, object]:
+    """Copy provenance and bind any fitted transform's published state."""
+
+    provenance = {} if provenance_input is None else dict(provenance_input)
+    fitted_transform = getattr(datamodule, "fitted_transform", None)
+    if fitted_transform is None:
+        return provenance
+    state_key = getattr(fitted_transform, "state_key", None)
+    if not _is_sha256(state_key):
+        raise RuntimeError(
+            "fitted transform must expose a valid immutable state_key "
+            "before selected artifact publication"
         )
-    pipeline_path = "cfg.data_pipeline._target_"
-    pipeline_target = OmegaConf.select(
-        cfg,
-        "data_pipeline._target_",
-        default=None,
-    )
-    if pipeline_target is None:
-        raise ValueError(f"{pipeline_path} is required")
-    if not isinstance(pipeline_target, str):
-        raise TypeError(f"{pipeline_path} must be a string")
-    expected_pipeline_target = _DOMAIN_PIPELINE_TARGETS[dataset_domain]
-    if pipeline_target != expected_pipeline_target:
-        raise ValueError(
-            "Cross-domain pipeline composition is unsupported: "
-            f"{dataset_path}={dataset_domain!r} requires "
-            f"{pipeline_path}={expected_pipeline_target!r}, "
-            f"got {pipeline_target!r}"
+    recorded_state_key = provenance.get("fitted_transform_state_key")
+    if recorded_state_key is not None and recorded_state_key != state_key:
+        raise RuntimeError(
+            "fitted transform immutable state_key changed after provenance "
+            "binding"
         )
-    if dataset_domain == "graph":
-        validate_graph_composition(cfg.dataset, cfg.model)
-    return dataset_domain
+    provenance["fitted_transform_state_key"] = state_key
+    return provenance
 
 
 def _instantiate_execution_monitor(
@@ -224,6 +246,22 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
     tuple[dict[str, Any], dict[str, Any]]
         A tuple with metrics and dict with all instantiated objects.
     """
+    profile_record = validate_execution_profile(cfg)
+    if not profile_record.qualified:
+        log.warning(
+            "Experimental execution profile selected; outputs are unqualified."
+        )
+    capability_validation: CapabilityValidation = validate_profile_capability(
+        cfg,
+        profile_record=profile_record,
+    )
+    checkpoint_path = cfg.get("ckpt_path")
+    if profile_record.qualified and checkpoint_path is not None:
+        validate_trusted_resume(
+            checkpoint_path,
+            output_root=cfg.paths.output_dir,
+            checkpoint_root=cfg.paths.checkpoint_dir,
+        )
     # Lightning is the single authority for Python, NumPy, torch, and workers.
     L.seed_everything(cfg.seed, workers=True)
 
@@ -243,12 +281,19 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
         execution_monitor=execution_monitor,
     )
     pipeline_output = pipeline.build(cfg)
+    capability_validation = validate_profile_capability(
+        cfg,
+        profile_record=profile_record,
+        observed=pipeline_output.capability_spec,
+    )
     datamodule = pipeline_output.datamodule
 
     def model_factory() -> LightningModule:
         return instantiate_model(
             cfg,
             data_spec=pipeline_output.data_spec,
+            capability_validation=capability_validation,
+            profile_record=profile_record,
         )
 
     preflight = PreflightRunner(cfg, pipeline_output)
@@ -269,6 +314,18 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
     callbacks: list[Callback] = instantiate_callbacks(
         cfg.get("callbacks"),
         input_pipeline_monitor=execution_monitor,
+    )
+    artifacts_enabled = bool(
+        OmegaConf.select(
+            cfg,
+            "evaluation_artifacts.enabled",
+            default=False,
+        )
+    )
+    artifact_callback = (
+        _selected_checkpoint_artifact_callback(callbacks)
+        if artifacts_enabled
+        else None
     )
     callback_monitor = _shared_execution_monitor(callbacks)
     if callback_monitor is not execution_monitor:
@@ -300,12 +357,20 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
                 )
 
     log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
+    trainer_kwargs: dict[str, object] = {
+        "callbacks": callbacks,
+        "logger": logger,
+        "num_sanity_val_steps": 0,
+        "log_every_n_steps": 1,
+    }
+    if profile_record.qualified:
+        trainer_kwargs["plugins"] = TrustedCheckpointIO(
+            output_root=cfg.paths.output_dir,
+            checkpoint_root=cfg.paths.checkpoint_dir,
+        )
     trainer: Trainer = hydra.utils.instantiate(
         cfg.trainer,
-        callbacks=callbacks,
-        logger=logger,
-        num_sanity_val_steps=0,
-        log_every_n_steps=1,  # Log metrics every step (Lightning requires >=1)
+        **trainer_kwargs,
     )
 
     object_dict = {
@@ -318,7 +383,9 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
         "data_spec": pipeline_output.data_spec,
         "pipeline_output": pipeline_output,
         "preflight": preflight_result,
+        "execution_profile": profile_record,
         "selected_checkpoint_results": MappingProxyType({}),
+        "selected_checkpoint_publications": MappingProxyType({}),
     }
 
     if logger:
@@ -330,6 +397,24 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
         trainer.fit(
             model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path")
         )
+
+    original_provenance = getattr(pipeline_output, "provenance_input", None)
+    live_provenance = _live_pipeline_provenance(
+        datamodule,
+        original_provenance,
+    )
+    if live_provenance != (
+        {} if original_provenance is None else dict(original_provenance)
+    ):
+        pipeline_output = replace(
+            pipeline_output,
+            provenance_input=live_provenance,
+        )
+        object_dict["pipeline_output"] = pipeline_output
+    profiled_provenance = _profiled_provenance_input(
+        live_provenance,
+        profile_record=profile_record,
+    )
 
     train_metrics = trainer.callback_metrics
     selected_checkpoint_results: Mapping[str, EvaluationResult] = (
@@ -344,25 +429,97 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
             device=model.device,
             callbacks=callbacks,
             logger=logger,
+            prediction_row_adapter=pipeline_output.prediction_row_adapter,
+            supervision_counts=pipeline_output.supervision_counts,
+            provenance_input=profiled_provenance,
+            source_graph_id=pipeline_output.source_graph_id,
         )
         object_dict["selected_checkpoint_results"] = (
             selected_checkpoint_results
         )
+        if artifact_callback is not None:
+            object_dict["selected_checkpoint_publications"] = (
+                artifact_callback.publications
+            )
 
-    selected_metrics = {
-        name: value
-        for result in selected_checkpoint_results.values()
-        for name, value in _selected_checkpoint_payload(result).items()
-    }
+    selected_metrics: dict[str, object] = {}
+    for split, result in selected_checkpoint_results.items():
+        selected_metrics.update(_selected_checkpoint_payload(result))
+        if artifact_callback is not None:
+            publication = artifact_callback.publications.get(split)
+            if publication is None:
+                raise RuntimeError(
+                    f"selected-checkpoint {split} publication is missing"
+                )
+            selected_metrics.update(_selected_publication_payload(publication))
     # The qualification bit remains authoritative even when preflight is
     # explicitly disabled under the experimental profile.
     metric_dict = {
         **train_metrics,
+        **_best_epoch_payload(callbacks),
         **selected_metrics,
-        "qualified": preflight_result.qualified,
+        "qualified": (profile_record.qualified and preflight_result.qualified),
     }
 
     return metric_dict, object_dict
+
+
+def _selected_checkpoint_artifact_callback(
+    callbacks: list[Callback],
+) -> SelectedCheckpointArtifactCallback:
+    """Return the sole configured owner of selected prediction artifacts."""
+
+    matches = [
+        callback
+        for callback in callbacks
+        if isinstance(callback, SelectedCheckpointArtifactCallback)
+    ]
+    if len(matches) != 1:
+        raise RuntimeError(
+            "enabled prediction artifacts require exactly one "
+            "SelectedCheckpointArtifactCallback, "
+            f"found {len(matches)}"
+        )
+    return matches[0]
+
+
+def _best_epoch_payload(callbacks: list[Callback]) -> dict[str, object]:
+    """Expose the callback-owned best epoch without scalar conversion."""
+
+    matches = [
+        callback
+        for callback in callbacks
+        if isinstance(callback, BestEpochMetricsCallback)
+    ]
+    if len(matches) > 1:
+        raise RuntimeError(
+            "best-epoch result authority requires at most one "
+            f"BestEpochMetricsCallback, found {len(matches)}"
+        )
+    if not matches:
+        return {}
+    callback = matches[0]
+    payload = {
+        f"best_epoch/{name}": value
+        for name, value in callback.best_epoch_metrics.items()
+    }
+    if callback.best_epoch_number is not None:
+        payload["best_epoch"] = callback.best_epoch_number
+    return payload
+
+
+def _selected_publication_payload(
+    publication: SplitPublication,
+) -> dict[str, object]:
+    """Expose only the canonical manifest locator at the metric boundary."""
+
+    namespace = f"evaluations/best_checkpoint/{publication.split}/"
+    return {
+        f"{namespace}predictions/manifest_path": publication.manifest_file.path,
+        (
+            f"{namespace}predictions/manifest_sha256"
+        ): publication.manifest_file.sha256,
+    }
 
 
 def _selected_checkpoint_payload(
@@ -375,7 +532,7 @@ def _selected_checkpoint_payload(
             f"{namespace}{name}": value
             for name, value in result.metrics.items()
         },
-        f"{namespace}num_examples": int(result.num_examples),
+        f"{namespace}num_examples": result.num_examples,
     }
 
 
@@ -428,6 +585,195 @@ def _take_selected_checkpoint_result(
     return result
 
 
+def _resolved_config_section(cfg: DictConfig, name: str) -> object:
+    """Resolve one config section for deterministic identity hashing."""
+
+    value = OmegaConf.select(cfg, name, default=None)
+    if OmegaConf.is_config(value):
+        return OmegaConf.to_container(
+            value,
+            resolve=True,
+            throw_on_missing=True,
+        )
+    return value
+
+
+def _is_sha256(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _selected_provenance_by_split(
+    cfg: DictConfig,
+    *,
+    source_graph_id: str | None,
+    provenance_input: Mapping[str, object] | None,
+    expected_num_examples: Mapping[str, int],
+    checkpoint_sha256: str,
+) -> dict[str, dict[str, str]]:
+    """Bind selected results to resolved data, split, transforms, and model."""
+
+    provenance = {} if provenance_input is None else dict(provenance_input)
+    normalized_provenance = resolve_cache_config(
+        provenance,
+        context="selected checkpoint pipeline provenance",
+    )
+    source_candidate = provenance.get("source_fingerprint", source_graph_id)
+    source_fingerprint = (
+        source_candidate
+        if _is_sha256(source_candidate)
+        else canonical_sha256(
+            {
+                "source_graph_id": source_graph_id,
+                "loader": _resolved_config_section(cfg, "dataset.loader"),
+            }
+        )
+    )
+    dataset_candidate = provenance.get("dataset_fingerprint")
+    dataset_fingerprint = (
+        dataset_candidate
+        if _is_sha256(dataset_candidate)
+        else canonical_sha256(
+            {
+                "dataset": _resolved_config_section(cfg, "dataset"),
+                "source_fingerprint": source_fingerprint,
+                "pipeline_provenance": normalized_provenance,
+            }
+        )
+    )
+    transform_candidate = provenance.get("transform_fingerprint")
+    fitted_state_key = provenance.get("fitted_transform_state_key")
+    transform_fingerprint = (
+        transform_candidate
+        if _is_sha256(transform_candidate) and fitted_state_key is None
+        else canonical_sha256(
+            {
+                "declared_transform_fingerprint": (
+                    transform_candidate
+                    if _is_sha256(transform_candidate)
+                    else None
+                ),
+                "transforms": _resolved_config_section(cfg, "transforms"),
+                "fitted_transform": provenance.get("fitted_transform"),
+                "fitted_transform_state_key": fitted_state_key,
+            }
+        )
+    )
+    model_fingerprint = canonical_sha256(
+        {
+            "model": _resolved_config_section(cfg, "model"),
+            "checkpoint_sha256": checkpoint_sha256,
+        }
+    )
+    split_base = provenance.get("split_fingerprint")
+    split_configuration = _resolved_config_section(
+        cfg,
+        "dataset.split_params",
+    )
+    split_provenance = dict(normalized_provenance)
+    split_provenance.pop("execution_profile", None)
+    return {
+        split: {
+            "source_fingerprint": source_fingerprint,
+            "dataset_fingerprint": dataset_fingerprint,
+            "split_fingerprint": canonical_sha256(
+                {
+                    "partition_fingerprint": (
+                        split_base if _is_sha256(split_base) else None
+                    ),
+                    "split_configuration": split_configuration,
+                    "pipeline_provenance": split_provenance,
+                    "split": split,
+                    "num_examples": expected_num_examples[split],
+                }
+            ),
+            "model_fingerprint": model_fingerprint,
+            "transform_fingerprint": transform_fingerprint,
+        }
+        for split in ("val", "test")
+    }
+
+
+def _checkpoint_counter(checkpoint: Mapping[str, object], name: str) -> int:
+    value = checkpoint.get(name)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(
+            f"selected checkpoint {name} must be a non-negative integer"
+        )
+    return value
+
+
+def _restore_quarantined_checkpoint_artifact(
+    quarantine_path: Path,
+    public_path: Path,
+) -> bool:
+    """Restore without overwriting a newer object at the public path."""
+    try:
+        os.link(
+            quarantine_path,
+            public_path,
+            follow_symlinks=False,
+        )
+    except FileExistsError:
+        return False
+    quarantine_path.unlink()
+    return True
+
+
+def _remove_loaded_checkpoint_artifacts(
+    model_path: Path,
+    loaded_checkpoint: LoadedSelectedCheckpoint,
+    *,
+    checkpoint_root: str | Path,
+) -> None:
+    """Delete only artifact inodes observed by trusted checkpoint loading."""
+    artifact_paths = {
+        "checkpoint": model_path,
+        "manifest": checkpoint_manifest_path(model_path),
+        "state": checkpoint_state_path(model_path),
+    }
+    quarantine_root = Path(
+        tempfile.mkdtemp(
+            prefix=".selected-checkpoint-cleanup-",
+            dir=Path(checkpoint_root),
+        )
+    )
+    try:
+        for role in ("checkpoint", "manifest", "state"):
+            expected_identity = loaded_checkpoint.artifact_identities.get(role)
+            if expected_identity is None:
+                continue
+            public_path = artifact_paths[role]
+            quarantine_path = quarantine_root / role
+            try:
+                os.replace(public_path, quarantine_path)
+            except FileNotFoundError:
+                continue
+            if loaded_checkpoint.matches_artifact(role, quarantine_path):
+                quarantine_path.unlink()
+                continue
+            restored = _restore_quarantined_checkpoint_artifact(
+                quarantine_path,
+                public_path,
+            )
+            recovery = (
+                str(public_path)
+                if restored
+                else f"{quarantine_path} (public path already occupied)"
+            )
+            log.warning(
+                "Skipped deletion of replaced selected-checkpoint "
+                f"{role}; replacement retained at {recovery}"
+            )
+    finally:
+        loaded_checkpoint.close()
+        with suppress(OSError):
+            quarantine_root.rmdir()
+
+
 def rerun_best_model_checkpoint(
     checkpoint_model: LightningModule,
     cfg: DictConfig,
@@ -435,8 +781,13 @@ def rerun_best_model_checkpoint(
     device: torch.device,
     callbacks: list[Callback],
     logger: list[Logger],
+    prediction_row_adapter: object | None = None,
+    supervision_counts: Mapping[str, int] | None = None,
+    provenance_input: Mapping[str, object] | None = None,
+    source_graph_id: str | None = None,
 ) -> Mapping[str, EvaluationResult]:
     """Load one validation-selected checkpoint and evaluate val and test."""
+
     checkpoint_callbacks = [
         callback
         for callback in callbacks
@@ -453,23 +804,13 @@ def rerun_best_model_checkpoint(
             "validation did not select a non-empty checkpoint path"
         )
     model_path = Path(selected_checkpoint.best_model_path)
-    if not model_path.is_file():
-        raise FileNotFoundError(
-            f"selected checkpoint does not exist: {model_path}"
-        )
-    with model_path.open("rb") as checkpoint_stream:
-        checkpoint_id = hashlib.file_digest(
-            checkpoint_stream,
-            "sha256",
-        ).hexdigest()
-
-    checkpoint = torch.load(
+    loaded_checkpoint = load_selected_checkpoint(
         model_path,
-        map_location="cpu",
-        weights_only=False,
+        output_root=cfg.paths.output_dir,
+        checkpoint_root=cfg.paths.checkpoint_dir,
     )
-    if not isinstance(checkpoint, Mapping):
-        raise TypeError("selected checkpoint must contain a mapping")
+    checkpoint = loaded_checkpoint.checkpoint
+    checkpoint_id = loaded_checkpoint.checkpoint_id
     state_dict = checkpoint.get("state_dict")
     if not isinstance(state_dict, Mapping) or not state_dict:
         raise ValueError(
@@ -477,6 +818,9 @@ def rerun_best_model_checkpoint(
         )
     checkpoint_model.load_state_dict(state_dict, strict=True)
     checkpoint_model.to(device)
+    cleanup_checkpoint = bool(cfg.get("delete_checkpoint_after_test", False))
+    if not cleanup_checkpoint:
+        loaded_checkpoint.close()
 
     bind_checkpoint_id = getattr(
         checkpoint_model,
@@ -489,11 +833,78 @@ def rerun_best_model_checkpoint(
         )
     bind_checkpoint_id(checkpoint_id)
 
+    artifacts_enabled = bool(
+        OmegaConf.select(
+            cfg,
+            "evaluation_artifacts.enabled",
+            default=False,
+        )
+    )
+    artifact_callback = (
+        _selected_checkpoint_artifact_callback(callbacks)
+        if artifacts_enabled
+        else None
+    )
+    if artifact_callback is not None:
+        provenance_input = _live_pipeline_provenance(
+            datamodule,
+            provenance_input,
+        )
+    expected_num_examples: dict[str, int] | None = None
+    provenance_by_split: dict[str, dict[str, str]] | None = None
+    artifact_logger: ArtifactLoggerAdapter | None = None
+    if artifact_callback is not None:
+        artifact_callback.configure_slice_evaluator_factory(
+            lambda: hydra.utils.instantiate(cfg.evaluator)
+        )
+        checkpoint_epoch = _checkpoint_counter(checkpoint, "epoch")
+        checkpoint_global_step = _checkpoint_counter(
+            checkpoint,
+            "global_step",
+        )
+        if prediction_row_adapter is None:
+            raise RuntimeError(
+                "enabled prediction artifacts require a prediction row adapter"
+            )
+        if supervision_counts is None:
+            raise RuntimeError(
+                "enabled prediction artifacts require supervision counts"
+            )
+        expected_num_examples = {}
+        for split in ("val", "test"):
+            count = supervision_counts.get(split)
+            if (
+                isinstance(count, bool)
+                or not isinstance(count, int)
+                or count <= 0
+            ):
+                raise ValueError(
+                    "selected-checkpoint artifact supervision count for "
+                    f"{split} must be a positive integer"
+                )
+            expected_num_examples[split] = count
+        provenance_by_split = _selected_provenance_by_split(
+            cfg,
+            source_graph_id=source_graph_id,
+            provenance_input=provenance_input,
+            expected_num_examples=expected_num_examples,
+            checkpoint_sha256=checkpoint_id,
+        )
+        artifact_logger = ArtifactLoggerAdapter(
+            logger,
+            run_root=artifact_callback.run_root,
+        )
+
+    trainer_kwargs: dict[str, object] = {
+        "num_sanity_val_steps": 0,
+        "enable_progress_bar": cfg.get("enable_progress_bar", True),
+        "logger": False,
+    }
+    if artifact_callback is not None:
+        trainer_kwargs["callbacks"] = [artifact_callback]
     checkpoint_trainer: Trainer = hydra.utils.instantiate(
         cfg.trainer,
-        num_sanity_val_steps=0,
-        enable_progress_bar=cfg.get("enable_progress_bar", True),
-        logger=False,
+        **trainer_kwargs,
     )
     set_validation_pass_kind = getattr(
         checkpoint_model,
@@ -512,49 +923,147 @@ def rerun_best_model_checkpoint(
     if not callable(set_test_pass_kind):
         raise TypeError("checkpoint model must expose set_next_test_pass_kind")
 
-    log.info(
-        "Re-evaluating validation-selected checkpoint %s on validation",
-        checkpoint_id,
-    )
-    val_loader = datamodule.val_dataloader()
-    set_validation_pass_kind("selected_checkpoint")
-    try:
-        checkpoint_trainer.validate(
-            model=checkpoint_model,
-            dataloaders=val_loader,
+    configure_capture = None
+    clear_capture = None
+    selected_context = None
+    capture_bound = False
+    if artifact_callback is not None:
+        configure_capture = getattr(
+            checkpoint_model,
+            "configure_prediction_artifact_capture",
+            None,
         )
-    except BaseException:
-        with suppress(RuntimeError):
-            set_validation_pass_kind("fit_epoch")
-        raise
-    val_result = _take_selected_checkpoint_result(
-        checkpoint_model,
-        split="val",
-        checkpoint_id=checkpoint_id,
-    )
-    _publish_selected_checkpoint_result(val_result, logger)
+        clear_capture = getattr(
+            checkpoint_model,
+            "clear_prediction_artifact_capture",
+            None,
+        )
+        selected_context = getattr(
+            checkpoint_model,
+            "selected_checkpoint_context",
+            None,
+        )
+        if not all(
+            callable(boundary)
+            for boundary in (
+                configure_capture,
+                clear_capture,
+                selected_context,
+            )
+        ):
+            raise TypeError(
+                "checkpoint model must expose selected artifact capture "
+                "configuration, clearing, and context boundaries"
+            )
+        assert expected_num_examples is not None
+        assert provenance_by_split is not None
+        configure_capture(
+            prediction_row_adapter,
+            artifact_callback,
+            expected_num_examples,
+            provenance_by_split=provenance_by_split,
+        )
+        capture_bound = True
 
-    log.info(
-        "Re-evaluating validation-selected checkpoint %s on test",
-        checkpoint_id,
-    )
-    test_loader = datamodule.test_dataloader()
-    set_test_pass_kind("selected_checkpoint")
     try:
-        checkpoint_trainer.test(
-            model=checkpoint_model,
-            dataloaders=test_loader,
+        log.info(
+            "Re-evaluating validation-selected checkpoint "
+            f"{checkpoint_id} on validation"
         )
+        val_loader = datamodule.val_dataloader()
+        if artifact_callback is not None:
+            assert selected_context is not None
+            artifact_callback.begin(
+                selected_context("val"),
+                checkpoint_path=model_path,
+                checkpoint_sha256=checkpoint_id,
+                checkpoint_epoch=checkpoint_epoch,
+                checkpoint_global_step=checkpoint_global_step,
+                world_size=checkpoint_trainer.world_size,
+                global_rank=checkpoint_trainer.global_rank,
+            )
+        try:
+            set_validation_pass_kind("selected_checkpoint")
+            checkpoint_trainer.validate(
+                model=checkpoint_model,
+                dataloaders=val_loader,
+            )
+        except BaseException:
+            with suppress(RuntimeError):
+                set_validation_pass_kind("fit_epoch")
+            raise
+        val_result = _take_selected_checkpoint_result(
+            checkpoint_model,
+            split="val",
+            checkpoint_id=checkpoint_id,
+        )
+        if artifact_callback is None:
+            _publish_selected_checkpoint_result(val_result, logger)
+        else:
+            val_publication = artifact_callback.finalize(val_result)
+            assert artifact_logger is not None
+            artifact_logger.register(val_publication)
+
+        log.info(
+            "Re-evaluating validation-selected checkpoint "
+            f"{checkpoint_id} on test"
+        )
+        test_loader = datamodule.test_dataloader()
+        if artifact_callback is not None:
+            assert selected_context is not None
+            artifact_callback.begin(
+                selected_context("test"),
+                checkpoint_path=model_path,
+                checkpoint_sha256=checkpoint_id,
+                checkpoint_epoch=checkpoint_epoch,
+                checkpoint_global_step=checkpoint_global_step,
+                world_size=checkpoint_trainer.world_size,
+                global_rank=checkpoint_trainer.global_rank,
+            )
+        try:
+            set_test_pass_kind("selected_checkpoint")
+            checkpoint_trainer.test(
+                model=checkpoint_model,
+                dataloaders=test_loader,
+            )
+        except BaseException:
+            with suppress(RuntimeError):
+                set_test_pass_kind("fit_epoch")
+            raise
+        test_result = _take_selected_checkpoint_result(
+            checkpoint_model,
+            split="test",
+            checkpoint_id=checkpoint_id,
+        )
+        if artifact_callback is None:
+            _publish_selected_checkpoint_result(test_result, logger)
+        else:
+            test_publication = artifact_callback.finalize(test_result)
+            assert artifact_logger is not None
+            artifact_logger.register(test_publication)
     except BaseException:
-        with suppress(RuntimeError):
-            set_test_pass_kind("fit_epoch")
+        with suppress(BaseException):
+            abort_evaluation = getattr(
+                checkpoint_model,
+                "abort_evaluation",
+                None,
+            )
+            if callable(abort_evaluation):
+                abort_evaluation()
+        if artifact_callback is not None:
+            with suppress(BaseException):
+                artifact_callback.abort()
+        if capture_bound:
+            if clear_capture is not None:
+                with suppress(BaseException):
+                    clear_capture()
+            capture_bound = False
+        loaded_checkpoint.close()
         raise
-    test_result = _take_selected_checkpoint_result(
-        checkpoint_model,
-        split="test",
-        checkpoint_id=checkpoint_id,
-    )
-    _publish_selected_checkpoint_result(test_result, logger)
+    finally:
+        if capture_bound:
+            assert clear_capture is not None
+            clear_capture()
 
     results: dict[str, EvaluationResult] = {
         "val": val_result,
@@ -564,16 +1073,20 @@ def rerun_best_model_checkpoint(
         results
     )
 
-    if cfg.get("delete_checkpoint_after_test", False):
-        log.info("Cleaning up: Deleting checkpoint at %s", model_path)
+    if cleanup_checkpoint:
+        log.info(f"Cleaning up: Deleting checkpoint at {model_path}")
         try:
-            model_path.unlink()
+            _remove_loaded_checkpoint_artifacts(
+                model_path,
+                loaded_checkpoint,
+                checkpoint_root=cfg.paths.checkpoint_dir,
+            )
         except OSError as error:
             log.warning(
-                "Failed to delete checkpoint at %s. Error: %s",
-                model_path,
-                error,
+                f"Failed to delete checkpoint at {model_path}. Error: {error}"
             )
+        finally:
+            loaded_checkpoint.close()
     return immutable_results
 
 

@@ -1,9 +1,5 @@
 # train with many loggers at once
 
 defaults:
-  # - comet
   - csv
-  # - mlflow
-  # - neptune
-  - tensorboard
   - wandb

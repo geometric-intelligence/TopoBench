@@ -21,6 +21,7 @@ from omegaconf import DictConfig
 from torch_geometric.data import HeteroData
 
 from topobench.data import validate_heterogeneous_node_data
+from topobench.nn.capabilities import validate_capability_composition
 from topobench.utils.config_resolvers import register_all_resolvers
 from topobench.utils.model_instantiation import instantiate_model
 
@@ -85,7 +86,14 @@ def test_real_dblp_smoke(tmp_path: Path) -> None:
             if experiment == "heterogeneous_dblp_hgt"
             else _compose(experiment, tmp_path)
         )
-        model = instantiate_model(cfg, data_spec=spec)
+        model = instantiate_model(
+            cfg,
+            data_spec=spec,
+            capability_validation=validate_capability_composition(
+                cfg,
+                observed=pipeline_output.capability_spec,
+            ),
+        )
         model.train()
         model.on_train_epoch_start()
         try:

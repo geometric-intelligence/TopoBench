@@ -1,7 +1,9 @@
 """Class for automated testing of neural network topobench."""
 
-import torch
 import copy
+
+import torch
+
 
 class NNModuleAutoTest:
     r"""Test the neural network module.
@@ -18,6 +20,7 @@ class NNModuleAutoTest:
     params : list
         List of dictionaries with the following keys.
     """
+
     SEED = 0
 
     def __init__(self, params):
@@ -30,17 +33,19 @@ class NNModuleAutoTest:
             module = self.exec_func(param["module"], param["init"])
             cloned_inp = self.clone_input(param["forward"])
 
-            result, result_2 = self.exec_twice(module, param["forward"], cloned_inp)
+            result, result_2 = self.exec_twice(
+                module, param["forward"], cloned_inp
+            )
 
-            if type(result) != tuple:
-                result = (result, )
-                result_2 = (result_2, )
+            if type(result) is not tuple:
+                result = (result,)
+                result_2 = (result_2,)
 
             self.assert_return_tensor(result)
             self.assert_equal_output(module, result, result_2)
 
             if "assert_shape" in param:
-                if type(param["assert_shape"]) != list:
+                if type(param["assert_shape"]) is not list:
                     param["assert_shape"] = [param["assert_shape"]]
 
                 self.assert_shape(result, param["assert_shape"])
@@ -92,12 +97,14 @@ class NNModuleAutoTest:
         TypeError
             If the type of the arguments is not tuple or dict.
         """
-        if type(args) == tuple:
+        if type(args) is tuple:
             return func(*args)
-        elif type(args) == dict:
+        elif type(args) is dict:
             return func(**args)
         else:
-            raise TypeError(f"{type(args)} is not correct type for function arguments.")
+            raise TypeError(
+                f"{type(args)} is not correct type for function arguments."
+            )
 
     def clone_input(self, args):
         """Clone input arguments.
@@ -112,10 +119,11 @@ class NNModuleAutoTest:
         tuple or dict
             Cloned input arguments.
         """
-        if type(args) == tuple:
+        if type(args) is tuple:
             return tuple(self.clone_object(a) for a in args)
-        elif type(args) == dict:
+        elif type(args) is dict:
             return {k: self.clone_object(v) for k, v in args.items()}
+        return None
 
     def clone_object(self, obj):
         """Clone object.
@@ -143,7 +151,7 @@ class NNModuleAutoTest:
         result : tuple
             Output tensors.
         """
-        assert any(isinstance(r, torch.Tensor)  for r in result)
+        assert any(isinstance(r, torch.Tensor) for r in result)
 
     def assert_equal_output(self, module, result, result_2):
         """Assert if the output of the module is the same when called with the same data.
@@ -164,11 +172,13 @@ class NNModuleAutoTest:
             if isinstance(r1, torch.Tensor):
                 assert torch.equal(r1, r2)
             elif isinstance(r1, tuple) and isinstance(r2, tuple):
-                for r1_, r2_ in zip(r1, r2):
-                    if isinstance(r1_, torch.Tensor) and isinstance(r2_, torch.Tensor):
+                for r1_, r2_ in zip(r1, r2, strict=False):
+                    if isinstance(r1_, torch.Tensor) and isinstance(
+                        r2_, torch.Tensor
+                    ):
                         assert torch.equal(r1_, r2_)
                     else:
-                        assert  r1_ == r2_
+                        assert r1_ == r2_
             else:
                 assert r1 == r2
 

@@ -13,7 +13,7 @@ import sys
 import tempfile
 import uuid
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
@@ -35,7 +35,6 @@ from topobench.data.stores.qualification_checks import (
     _read_json_secure,
     _safe_relative,
     _secure_descriptor,
-    _write_report,
     compute_content_identity,
     compute_metadata_binding,
     qualification_check_set_fingerprint,
@@ -52,6 +51,8 @@ if TYPE_CHECKING:
 _BOUNDED_VALIDATION_FORMAT_VERSION = "typed-store-bounded-validation-v1"
 _BOUNDED_VALIDATION_RSS_LIMIT_BYTES = 320 * 1024**2
 _BOUNDED_VALIDATION_TIMEOUT_SECONDS = 900
+_PUBLICATION_IDENTITY_VERSION = "typed-store-publication-v1"
+_PUBLICATION_RECEIPT_VERSION = "typed-store-publication-receipt-v1"
 _PHASES = ("train", "val", "test")
 
 
@@ -213,7 +214,10 @@ def _validation_worker_evidence(
     if (
         not isinstance(report_identity, list)
         or len(report_identity) != 5
-        or any(isinstance(value, bool) or not isinstance(value, int) for value in report_identity)
+        or any(
+            isinstance(value, bool) or not isinstance(value, int)
+            for value in report_identity
+        )
     ):
         raise _artifact_error(
             "VALIDATION-EVIDENCE-001: report identity is malformed"
@@ -224,10 +228,9 @@ def _validation_worker_evidence(
         raise _artifact_error(
             "VALIDATION-EVIDENCE-001: validation report cannot be reopened safely"
         ) from error
-    if (
-        report_sha256 != evidence["report_sha256"]
-        or observed_report_identity != tuple(report_identity)
-    ):
+    if report_sha256 != evidence[
+        "report_sha256"
+    ] or observed_report_identity != tuple(report_identity):
         raise _artifact_error(
             "VALIDATION-EVIDENCE-001: validation report digest changed"
         )
@@ -268,7 +271,10 @@ def _validation_worker_evidence(
         or len(evidence["manifest_sha256"]) != 64
         or not isinstance(manifest_identity, list)
         or len(manifest_identity) != 5
-        or any(isinstance(value, bool) or not isinstance(value, int) for value in manifest_identity)
+        or any(
+            isinstance(value, bool) or not isinstance(value, int)
+            for value in manifest_identity
+        )
     ):
         raise _artifact_error(
             "VALIDATION-EVIDENCE-001: manifest identity is malformed"
@@ -286,10 +292,9 @@ def _validation_worker_evidence(
         raise _artifact_error(
             "VALIDATION-EVIDENCE-001: manifest cannot be reopened safely"
         ) from error
-    if (
-        manifest_sha256 != evidence["manifest_sha256"]
-        or observed_manifest_identity != tuple(manifest_identity)
-    ):
+    if manifest_sha256 != evidence[
+        "manifest_sha256"
+    ] or observed_manifest_identity != tuple(manifest_identity):
         raise _artifact_error(
             "VALIDATION-EVIDENCE-001: manifest digest changed"
         )
@@ -418,9 +423,7 @@ def _validate_store_bounded(
         {
             "format_version": evidence["format_version"],
             "status": evidence["status"],
-            "validation_root_sha256": evidence[
-                "validation_root_sha256"
-            ],
+            "validation_root_sha256": evidence["validation_root_sha256"],
             "report_sha256": evidence["report_sha256"],
             "manifest_sha256": evidence["manifest_sha256"],
             "file_identity_count": len(identities),
@@ -462,27 +465,32 @@ class TypedGraphStoreWriter:
         self.execution_monitor = execution_monitor
 
     def build(self) -> TypedGraphStoreBuild:
-        """Reopen, validate, and promote under one content-addressed lock."""
+        """Reopen, validate, and promote in one serialized transaction."""
         inventory = self.partition_build.inventory
         expected_stage = self.ingestor.stage_root(inventory)
         if (
             self.partition_build.stage_root != expected_stage
-            or self.partition_build.artifact_root != expected_stage / "partitions"
+            or self.partition_build.artifact_root
+            != expected_stage / "partitions"
         ):
             raise _artifact_error(
                 "STALE-BINDING-001: Task6 build does not belong to this ingestor"
             )
         original_partition_build = self.partition_build
-        recovered_partition_build = self._recover_partition_build()
-        self.partition_build = recovered_partition_build
-        inventory = recovered_partition_build.inventory
-        staging_parent = self.ingestor.store_root / ".staging"
-        staging_parent.mkdir(parents=True, exist_ok=True)
-        namespace = staging_parent / f".finalize-{expected_stage.name}"
+        recovered_partition_build: TypedPartitionBuild | None = None
+        namespace = self._publication_namespace()
         candidate: Path | None = None
         try:
-            with self.ingestor._build_lock(self.ingestor.lock_path(inventory)):
+            with self.ingestor._build_lock(
+                self._publication_lock_path(),
+                wait=True,
+            ):
+                recovered_partition_build = self._recover_partition_build()
+                self.partition_build = recovered_partition_build
                 self._prepare_candidate_namespace(namespace)
+                published = self._reopen_published_locked()
+                if published is not None:
+                    return published
                 candidate = namespace / f"finalize-{uuid.uuid4().hex}"
                 candidate.mkdir(parents=False, exist_ok=False)
                 reopened = self._reopen_task1_6_locked()
@@ -490,28 +498,136 @@ class TypedGraphStoreWriter:
                 recovered_book = recovered_partition_build.book
                 if recovered_book is not original_partition_build.book:
                     recovered_book.close()
-                return self._promote_candidate(candidate)
+                promoted = self._promote_candidate(candidate)
+                try:
+                    self._write_publication_receipt(promoted)
+                except BaseException:
+                    promoted.store.close()
+                    raise
+                return promoted
         finally:
             if candidate is not None and candidate.exists():
                 shutil.rmtree(candidate, ignore_errors=True)
-            recovered_book = recovered_partition_build.book
-            if recovered_book is not original_partition_build.book:
-                close = getattr(recovered_book, "close", None)
-                if callable(close):
-                    close()
+            if recovered_partition_build is not None:
+                recovered_book = recovered_partition_build.book
+                if recovered_book is not original_partition_build.book:
+                    close = getattr(recovered_book, "close", None)
+                    if callable(close):
+                        close()
             self.partition_build = original_partition_build
+
+    def _publication_identity(self) -> str:
+        """Bind locking to immutable Task6 content and consumer semantics."""
+        payload = {
+            "format_version": _PUBLICATION_IDENTITY_VERSION,
+            "stage_identity": self.partition_build.stage_root.name,
+            "partition_binding": _normalized_json(
+                self.partition_build.binding
+            ),
+            "task_bindings": self.task_bindings,
+        }
+        return hashlib.sha256(
+            json.dumps(
+                payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            ).encode("utf-8")
+        ).hexdigest()
+
+    def _publication_namespace(self) -> Path:
+        return (
+            self.ingestor.store_root
+            / ".staging"
+            / f".finalize-{self._publication_identity()}"
+        )
+
+    def _publication_lock_path(self) -> Path:
+        namespace = self._publication_namespace()
+        return namespace.with_name(f"{namespace.name}.lock")
+
+    def _publication_receipt_path(self) -> Path:
+        return self._publication_namespace() / "publication.json"
+
+    def _reopen_published_locked(self) -> TypedGraphStoreBuild | None:
+        """Reuse only a fully qualified target from this exact transaction."""
+        receipt_path = self._publication_receipt_path()
+        if not os.path.lexists(receipt_path):
+            return None
+        record = _read_json(receipt_path)
+        expected_keys = {
+            "format_version",
+            "publication_identity",
+            "content_sha256",
+        }
+        content_sha256 = record.get("content_sha256")
+        if (
+            set(record) != expected_keys
+            or record.get("format_version") != _PUBLICATION_RECEIPT_VERSION
+            or record.get("publication_identity")
+            != self._publication_identity()
+            or not isinstance(content_sha256, str)
+            or len(content_sha256) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in content_sha256
+            )
+        ):
+            raise _artifact_error(
+                "PUBLICATION-RECEIPT-001: finalization receipt is malformed"
+            )
+        target = self.ingestor.store_root / content_sha256
+        if not os.path.lexists(target):
+            receipt_path.unlink()
+            _fsync_directory(receipt_path.parent)
+            return None
+        try:
+            existing, target_validation = _validate_store_bounded(
+                target,
+                expected_bindings=self.task_bindings,
+                require_directory_identity=True,
+                execution_monitor=self.execution_monitor,
+            )
+        except QualificationFailure:
+            receipt_path.unlink()
+            _fsync_directory(receipt_path.parent)
+            return None
+        return TypedGraphStoreBuild(
+            target,
+            content_sha256,
+            True,
+            None,
+            existing.report,
+            MappingProxyType({"target": target_validation}),
+            TypedGraphStore(existing),
+        )
+
+    def _write_publication_receipt(
+        self,
+        build: TypedGraphStoreBuild,
+    ) -> None:
+        _write_json(
+            self._publication_receipt_path(),
+            {
+                "format_version": _PUBLICATION_RECEIPT_VERSION,
+                "publication_identity": self._publication_identity(),
+                "content_sha256": build.content_sha256,
+            },
+        )
 
     def _recover_partition_build(self) -> TypedPartitionBuild:
         """Revalidate Task6 before reusing its trusted finalization contract."""
         trusted = self.partition_build
         recovered = self.ingestor.build_partitions(limits=trusted.limits)
         if (
-            recovered.book.content_identity
-            != trusted.book.content_identity
+            recovered.book.content_identity != trusted.book.content_identity
             or recovered.limits != trusted.limits
             or recovered.binding != trusted.binding
             or recovered.evidence != trusted.evidence
         ):
+            if recovered.book is not trusted.book:
+                recovered.book.close()
             raise _artifact_error(
                 "PARTITION-FINGERPRINT-001: Task6 binding or evidence "
                 "changed before finalization"
@@ -532,6 +648,27 @@ class TypedGraphStoreWriter:
                     and not child.is_symlink()
                     and child.is_dir()
                 ):
+                    continue
+                if (
+                    child.name == "publication.json"
+                    and not child.is_symlink()
+                    and child.is_file()
+                ):
+                    continue
+                receipt_token = child.name.removeprefix(
+                    ".publication.json."
+                ).removesuffix(".tmp")
+                if (
+                    child.name == f".publication.json.{receipt_token}.tmp"
+                    and len(receipt_token) == 32
+                    and all(
+                        character in "0123456789abcdef"
+                        for character in receipt_token
+                    )
+                    and not child.is_symlink()
+                    and child.is_file()
+                ):
+                    child.unlink()
                     continue
                 if (
                     child.is_symlink()
@@ -610,34 +747,11 @@ class TypedGraphStoreWriter:
         target.chmod(0o555)
         _fsync_directory(target)
         _fsync_directory(self.ingestor.store_root)
-        promoted_report = replace(
-            validated_candidate.report,
-            checks=tuple(
-                replace(
-                    check,
-                    evidence=MappingProxyType(
-                        {
-                            key: (
-                                str(target)
-                                if key == "store_path"
-                                and value == str(candidate)
-                                else value
-                            )
-                            for key, value in check.evidence.items()
-                        }
-                    ),
-                )
-                for check in validated_candidate.report.checks
-            ),
-            store_path=target,
-        )
-        _write_report(promoted_report.report_path, promoted_report)
-        _emit_qualification_results(self.execution_monitor, promoted_report)
-        promoted = ValidatedStore(
+        promoted, target_validation = _validate_store_bounded(
             target,
-            validated_candidate.manifest,
-            promoted_report,
-            validated_candidate.file_identities,
+            expected_bindings=self.task_bindings,
+            require_directory_identity=True,
+            execution_monitor=self.execution_monitor,
         )
         return TypedGraphStoreBuild(
             target,
@@ -645,7 +759,12 @@ class TypedGraphStoreWriter:
             False,
             quarantine,
             promoted.report,
-            MappingProxyType({"candidate": candidate_validation}),
+            MappingProxyType(
+                {
+                    "candidate": candidate_validation,
+                    "target": target_validation,
+                }
+            ),
             TypedGraphStore(promoted),
         )
 
@@ -705,7 +824,9 @@ class TypedGraphStoreWriter:
         finally:
             book.close()
 
-    def _materialize_candidate(self, root: Path, reopened: Mapping[str, Any]) -> None:
+    def _materialize_candidate(
+        self, root: Path, reopened: Mapping[str, Any]
+    ) -> None:
         stage = self.partition_build.stage_root
         arrays_metadata = _read_json(stage / "arrays" / "arrays.json")
         relation_metadata = _read_json(stage / "relations" / "relations.json")
@@ -797,7 +918,9 @@ class TypedGraphStoreWriter:
             split = {
                 "coverage": source_split["coverage"],
                 "qualified": source_split["qualified"],
-                "supervision_population": source_split["supervision_population"],
+                "supervision_population": source_split[
+                    "supervision_population"
+                ],
                 "phases": phases,
             }
             split["fingerprint"] = split_fingerprint(tag, split, phase_arrays)
@@ -921,7 +1044,9 @@ class TypedGraphStoreWriter:
                 root / relative,
             )
             files.append(
-                _plain_file_record(root / relative, relative, role, dtype="json", shape=[])
+                _plain_file_record(
+                    root / relative, relative, role, dtype="json", shape=[]
+                )
             )
 
         partition_identity = reopened["partition_identity"]
@@ -1083,7 +1208,9 @@ class TypedGraphStoreWriter:
             finally:
                 os.close(destination_descriptor)
             after = os.fstat(source_descriptor)
-            if copied != before.st_size or _stat_identity(before) != _stat_identity(after):
+            if copied != before.st_size or _stat_identity(
+                before
+            ) != _stat_identity(after):
                 destination.unlink(missing_ok=True)
                 raise _artifact_error(
                     f"SOURCE-MUTATION-001: source changed while copying {source}"
@@ -1104,7 +1231,8 @@ class TypedGraphStore:
         self._closed = False
         self._state: TypedGraphStoreState | None = None
         self._node_keys = {
-            record["name"]: key for key, record in self._manifest["nodes"].items()
+            record["name"]: key
+            for key, record in self._manifest["nodes"].items()
         }
         self._relation_keys = {
             tuple(record["relation"]): key
@@ -1135,14 +1263,19 @@ class TypedGraphStore:
             raise TypeError("state must be a TypedGraphStoreState")
         manifest = json.loads(state.manifest_json)
         report_record = json.loads(state.report_json)
-        if not isinstance(manifest, dict) or not isinstance(report_record, dict):
-            raise TypeError("typed graph store state must contain JSON objects")
-        root = Path(state.root)
-        if (
-            report_record.get("passed") is not True
-            or report_record.get("store_path") != str(root)
+        if not isinstance(manifest, dict) or not isinstance(
+            report_record, dict
         ):
-            raise ValueError("typed graph store state is not a passed root binding")
+            raise TypeError(
+                "typed graph store state must contain JSON objects"
+            )
+        root = Path(state.root)
+        if report_record.get("passed") is not True or report_record.get(
+            "store_path"
+        ) != str(root):
+            raise ValueError(
+                "typed graph store state is not a passed root binding"
+            )
         raw_checks = report_record.get("checks")
         if not isinstance(raw_checks, list):
             raise TypeError("typed graph store state has malformed checks")
@@ -1221,7 +1354,9 @@ class TypedGraphStore:
 
     @property
     def node_types(self) -> tuple[str, ...]:
-        return tuple(record["name"] for record in self._manifest["nodes"].values())
+        return tuple(
+            record["name"] for record in self._manifest["nodes"].values()
+        )
 
     @property
     def relation_types(self) -> tuple[tuple[str, str, str], ...]:
@@ -1256,7 +1391,9 @@ class TypedGraphStore:
             raise KeyError(f"node type {node_type!r} has no labels")
         return self._selected(self._map(node["y"]), rows)
 
-    def node_array(self, node_type: str, attr_name: str, rows: Any = None) -> np.ndarray:
+    def node_array(
+        self, node_type: str, attr_name: str, rows: Any = None
+    ) -> np.ndarray:
         if attr_name == "x":
             return self.node_features(node_type, rows)
         if attr_name == "y":
@@ -1319,7 +1456,9 @@ class TypedGraphStore:
             self._manifest["partition"]["relations"][key]["edge_partition"]
         )
 
-    def external_ids(self, node_type: str, rows: Any = None) -> list[int | str]:
+    def external_ids(
+        self, node_type: str, rows: Any = None
+    ) -> list[int | str]:
         """Explicitly restore external IDs; imports PyArrow only on this call."""
         self._ensure_open()
         node = self._node(node_type)
@@ -1447,9 +1586,7 @@ class TypedGraphStore:
             selected_start = int(
                 np.searchsorted(unique, row_start, side="left")
             )
-            selected_end = int(
-                np.searchsorted(unique, row_end, side="left")
-            )
+            selected_end = int(np.searchsorted(unique, row_end, side="left"))
             if selected_start < selected_end:
                 table = parquet.read_row_group(
                     row_group,
@@ -1546,10 +1683,9 @@ class TypedGraphStore:
                     _lazy_array_failure(relative, str(error), record),
                     self.qualification_report.report_path,
                 ) from error
-            if (
-                handle.array.dtype != np.dtype(record["dtype"])
-                or handle.array.shape != tuple(record["shape"])
-            ):
+            if handle.array.dtype != np.dtype(
+                record["dtype"]
+            ) or handle.array.shape != tuple(record["shape"]):
                 observed = {
                     "dtype": handle.array.dtype.str,
                     "shape": list(handle.array.shape),
@@ -1590,7 +1726,9 @@ def _row_indices(rows: Any, count: int) -> np.ndarray | slice | None:
         rows = rows.detach().cpu().numpy()
     values = np.asarray(rows)
     if values.dtype.kind not in {"i", "u"} or values.ndim != 1:
-        raise TypeError("row selection must be a one-dimensional integer index")
+        raise TypeError(
+            "row selection must be a one-dimensional integer index"
+        )
     if len(values) and (int(values.min()) < 0 or int(values.max()) >= count):
         raise IndexError("row selection is out of range")
     return values.astype(np.int64, copy=False)
@@ -1672,7 +1810,9 @@ def _build_environment(
         "cpu_count": os.cpu_count(),
         "cuda_available": cuda_available,
         "cuda_version": torch.version.cuda,
-        "cuda_device": torch.cuda.get_device_name(0) if cuda_available else None,
+        "cuda_device": torch.cuda.get_device_name(0)
+        if cuda_available
+        else None,
         "container_image": os.environ.get("CONTAINER_IMAGE_DIGEST"),
         "store_filesystem": str(ingestor.store_root),
         "metadata_binding_sha256": metadata_binding,
@@ -1684,7 +1824,12 @@ def _build_environment(
 
 def _normalized_json(value: Any) -> Any:
     if isinstance(value, Mapping):
-        return {str(key): _normalized_json(item) for key, item in sorted(value.items(), key=lambda item: str(item[0]))}
+        return {
+            str(key): _normalized_json(item)
+            for key, item in sorted(
+                value.items(), key=lambda item: str(item[0])
+            )
+        }
     if isinstance(value, (tuple, list)):
         return [_normalized_json(item) for item in value]
     if isinstance(value, np.generic):
@@ -1697,21 +1842,24 @@ def _normalized_json(value: Any) -> Any:
 def _write_json(path: Path, value: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    with temporary.open("wb") as stream:
-        stream.write(
-            json.dumps(
-                value,
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=False,
-                allow_nan=False,
-            ).encode("utf-8")
-            + b"\n"
-        )
-        stream.flush()
-        os.fsync(stream.fileno())
-    os.replace(temporary, path)
-    _fsync_directory(path.parent)
+    try:
+        with temporary.open("wb") as stream:
+            stream.write(
+                json.dumps(
+                    value,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                    allow_nan=False,
+                ).encode("utf-8")
+                + b"\n"
+            )
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        _fsync_directory(path.parent)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -1720,9 +1868,13 @@ def _read_json(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise _artifact_error(f"MANIFEST-001: malformed JSON artifact {path}") from error
+        raise _artifact_error(
+            f"MANIFEST-001: malformed JSON artifact {path}"
+        ) from error
     if not isinstance(value, dict):
-        raise _artifact_error(f"MANIFEST-001: JSON artifact {path} is not an object")
+        raise _artifact_error(
+            f"MANIFEST-001: JSON artifact {path} is not an object"
+        )
     return value
 
 
@@ -1769,7 +1921,9 @@ def _fsync_tree(root: Path) -> None:
 def _make_read_only(root: Path, *, movable_root: bool = False) -> None:
     for path in root.rglob("*"):
         if path.is_symlink():
-            raise _artifact_error("ARTIFACT-TYPE-001: store contains a symlink")
+            raise _artifact_error(
+                "ARTIFACT-TYPE-001: store contains a symlink"
+            )
         path.chmod(0o555 if path.is_dir() else 0o444)
     root.chmod(0o755 if movable_root else 0o555)
 

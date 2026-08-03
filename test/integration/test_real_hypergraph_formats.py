@@ -13,7 +13,10 @@ import torch
 from omegaconf import OmegaConf
 
 from topobench.data import HYPERGRAPH_CACHE_FILENAME, HypergraphData
-from topobench.data.datasets import CitationHypergraphDataset, HypergraphDataset
+from topobench.data.datasets import (
+    CitationHypergraphDataset,
+    HypergraphDataset,
+)
 from topobench.data.utils.hypergraph_io import (
     SAFE_HYPERGRAPH_CONVERTER_VERSION,
     SAFE_HYPERGRAPH_FORMAT,
@@ -40,9 +43,7 @@ def _write_safe_asset(raw_dir: Path, name: str, *, valid_digest: bool) -> None:
         "features": np.asarray(
             [[0.0, 0.0], [1.0, 2.0], [3.0, 4.0]], dtype=np.float32
         ),
-        "incidence": np.asarray(
-            [[1, 1, 2], [1, 1, 0]], dtype=np.int64
-        ),
+        "incidence": np.asarray([[1, 1, 2], [1, 1, 0]], dtype=np.int64),
         "labels": np.asarray([0, 2, 1], dtype=np.int64),
     }
     npz_path = raw_dir / f"{name}.npz"

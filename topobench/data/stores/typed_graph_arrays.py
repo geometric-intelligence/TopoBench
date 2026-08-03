@@ -9,14 +9,15 @@ indexes.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
 import hashlib
 import json
 import os
-from pathlib import Path
 import shutil
-from typing import TYPE_CHECKING, Any, Mapping
 import uuid
+from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -92,14 +93,10 @@ class TypedGraphArrayWriter:
             + 1
             + 3 * len(supervision.split_registry.sets)
         )
-        evidence_reserve = (
-            1024**2
-            + 4096
-            * (
-                array_count
-                + len(inventory.files)
-                + len(supervision.split_registry.sets)
-            )
+        evidence_reserve = 1024**2 + 4096 * (
+            array_count
+            + len(inventory.files)
+            + len(supervision.split_registry.sets)
         )
         estimated_array_bytes = (
             payload_bytes + 512 * array_count + evidence_reserve
@@ -112,9 +109,7 @@ class TypedGraphArrayWriter:
         task2_final_bytes = inventory.estimated_final_bytes
         final_peak_bytes = task2_final_bytes + estimated_array_bytes
         temporary_peak_bytes = snapshot_bytes + spill_bytes
-        same_filesystem = (
-            inventory.final_device == inventory.temporary_device
-        )
+        same_filesystem = inventory.final_device == inventory.temporary_device
         return {
             "same_filesystem": same_filesystem,
             "task2_final_bytes": task2_final_bytes,
@@ -143,9 +138,7 @@ class TypedGraphArrayWriter:
             ingestion._filesystem_capacity(inventory.final_filesystem_path)
         )
         temporary_device, temporary_available, temporary_probe = (
-            ingestion._filesystem_capacity(
-                inventory.temporary_filesystem_path
-            )
+            ingestion._filesystem_capacity(inventory.temporary_filesystem_path)
         )
         if (
             final_device != inventory.final_device
@@ -233,8 +226,7 @@ class TypedGraphArrayWriter:
         inventory = self.index_build.inventory
         limit = self.ingestor.disk_limit_bytes
         if isinstance(limit, bool) or (
-            limit is not None
-            and (not isinstance(limit, int) or limit <= 0)
+            limit is not None and (not isinstance(limit, int) or limit <= 0)
         ):
             raise ValueError("disk_limit_bytes must be a positive integer")
         final_device, _, _ = ingestion._filesystem_capacity(
@@ -315,7 +307,9 @@ class TypedGraphArrayWriter:
                     pq=pq,
                 ) as snapshot_stage:
                     snapshots, snapshot_root = snapshot_stage
-                    connection = duckdb.connect(str(spill_root / "arrays.duckdb"))
+                    connection = duckdb.connect(
+                        str(spill_root / "arrays.duckdb")
+                    )
                     try:
                         self._configure_connection(connection, spill_root)
                         metadata = self._write_all(
@@ -350,7 +344,9 @@ class TypedGraphArrayWriter:
                             key: value["content_sha256"]
                             for key, value in metadata["nodes"].items()
                         },
-                        "supervision": metadata["supervision"]["content_sha256"],
+                        "supervision": metadata["supervision"][
+                            "content_sha256"
+                        ],
                         "splits": {
                             tag: {
                                 phase: evidence["content_sha256"]
@@ -360,8 +356,12 @@ class TypedGraphArrayWriter:
                         },
                     }
                     metadata["content_identity"] = identity
-                    metadata["content_sha256"] = ingestion._sha256_json(identity)
-                    ingestion._atomic_json(temporary_root / "arrays.json", metadata)
+                    metadata["content_sha256"] = ingestion._sha256_json(
+                        identity
+                    )
+                    ingestion._atomic_json(
+                        temporary_root / "arrays.json", metadata
+                    )
                     self._validate_array_tree(
                         temporary_root,
                         metadata,
@@ -374,16 +374,16 @@ class TypedGraphArrayWriter:
                         "behavior_version": ingestion._BEHAVIOR_VERSION,
                         "input_fingerprint": inventory.source_fingerprint,
                         "config_fingerprint": inventory.config_fingerprint,
-                        "dependency_versions": dict(inventory.dependency_versions),
+                        "dependency_versions": dict(
+                            inventory.dependency_versions
+                        ),
                         "content_sha256": metadata["content_sha256"],
                         "outputs": outputs,
                         "reopened_and_validated": True,
                         "disk_admission": disk_admission,
                         "prepared_array_stage_bytes": 0,
                     }
-                    completion_path = (
-                        temporary_root / "arrays.complete.json"
-                    )
+                    completion_path = temporary_root / "arrays.complete.json"
                     for _ in range(4):
                         ingestion._atomic_json(
                             completion_path,
@@ -521,7 +521,9 @@ class TypedGraphArrayWriter:
             "array_behavior_version": _ARRAY_BEHAVIOR_VERSION,
             "input_fingerprint": self.index_build.inventory.source_fingerprint,
             "config_fingerprint": self.index_build.inventory.config_fingerprint,
-            "dependency_versions": dict(self.index_build.inventory.dependency_versions),
+            "dependency_versions": dict(
+                self.index_build.inventory.dependency_versions
+            ),
             "record_batch_rows": spec.ingestion.record_batch_rows,
             "max_record_batch_rows": self._max_batch_rows,
             "nodes": nodes,
@@ -543,11 +545,24 @@ class TypedGraphArrayWriter:
     ) -> dict[str, Any]:
         ingestion = _ingestion_module()
         paths = tuple(snapshots[relative] for relative in node.paths)
-        schema = self._exact_role_schema(paths, pq=pq, context=f"node type {node.name!r}")
-        self._require_exact_id(schema, node.id_column, node.id_dtype, pa=pa, code="FEATURE-ID-CAST-001")
+        schema = self._exact_role_schema(
+            paths, pq=pq, context=f"node type {node.name!r}"
+        )
+        self._require_exact_id(
+            schema,
+            node.id_column,
+            node.id_dtype,
+            pa=pa,
+            code="FEATURE-ID-CAST-001",
+        )
         expected_value_type = _arrow_type(pa, node.feature_dtype)
         if node.feature_representation == "fixed_size_list":
-            field = self._field(schema, node.feature_columns[0], "FEATURE-SCHEMA-001", node.name)
+            field = self._field(
+                schema,
+                node.feature_columns[0],
+                "FEATURE-SCHEMA-001",
+                node.name,
+            )
             observed = field.type
             if not pa.types.is_fixed_size_list(observed):
                 raise ingestion.ArtifactValidationError(
@@ -563,14 +578,18 @@ class TypedGraphArrayWriter:
                 )
         else:
             for column in node.feature_columns:
-                field = self._field(schema, column, "FEATURE-SCHEMA-001", node.name)
+                field = self._field(
+                    schema, column, "FEATURE-SCHEMA-001", node.name
+                )
                 if not field.type.equals(expected_value_type):
                     raise ingestion.ArtifactValidationError(
                         f"FEATURE-CAST-001: node type {node.name!r} column {column!r} type {field.type} does not exactly match {expected_value_type}"
                     )
 
         source_view = f"feature_source_{internal_key}"
-        connection.read_parquet([str(path) for path in paths]).create_view(source_view)
+        connection.read_parquet([str(path) for path in paths]).create_view(
+            source_view
+        )
         columns = ", ".join(_quote(column) for column in node.feature_columns)
         order_expression = ingestion._canonical_external_id_order(
             _quote(node.id_column),
@@ -600,7 +619,9 @@ class TypedGraphArrayWriter:
                 rows = batch.num_rows
                 self._observe_batch(rows)
                 expected = np.arange(offset, offset + rows, dtype=np.int64)
-                observed_ordinals = batch.column(0).to_numpy(zero_copy_only=False)
+                observed_ordinals = batch.column(0).to_numpy(
+                    zero_copy_only=False
+                )
                 if not np.array_equal(observed_ordinals, expected):
                     raise ingestion.ArtifactValidationError(
                         f"FEATURE-ALIGNMENT-001: node type {node.name!r} did not resolve to exact canonical ordinals"
@@ -690,7 +711,11 @@ class TypedGraphArrayWriter:
             raise ingestion.ArtifactValidationError(
                 "TARGET-DTYPE-001: string classification requires an explicit qualified vocabulary"
             )
-        task = "classification" if supervision.label_dtype in _INTEGER_DTYPES else "regression"
+        task = (
+            "classification"
+            if supervision.label_dtype in _INTEGER_DTYPES
+            else "regression"
+        )
         if supervision.label_dtype not in _INTEGER_DTYPES | _FLOAT_DTYPES:
             raise ingestion.ArtifactValidationError(
                 f"TARGET-DTYPE-001: unsupported target dtype {supervision.label_dtype!r}"
@@ -699,13 +724,17 @@ class TypedGraphArrayWriter:
             paths = tuple(snapshots[relative] for relative in target.paths)
             id_column = target.id_column
         else:
-            paths = tuple(snapshots[relative] for relative in supervision.label_paths)
+            paths = tuple(
+                snapshots[relative] for relative in supervision.label_paths
+            )
             id_column = supervision.label_id_column
             if id_column is None:
                 raise ingestion.ArtifactValidationError(
                     "SUPERVISION-POSITIONAL-001: keyed labels require an external-ID column"
                 )
-        schema = self._exact_role_schema(paths, pq=pq, context="target supervision")
+        schema = self._exact_role_schema(
+            paths, pq=pq, context="target supervision"
+        )
         self._require_exact_id(
             schema,
             id_column,
@@ -726,8 +755,12 @@ class TypedGraphArrayWriter:
             )
         source_view = "supervision_source"
         mapping_view = "supervision_mapping"
-        connection.read_parquet([str(path) for path in paths]).create_view(source_view)
-        connection.read_parquet(str(self.index_build.indexes[target.name].node_ids_path)).create_view(mapping_view)
+        connection.read_parquet([str(path) for path in paths]).create_view(
+            source_view
+        )
+        connection.read_parquet(
+            str(self.index_build.indexes[target.name].node_ids_path)
+        ).create_view(mapping_view)
         row_count, non_null_ids, distinct_ids = connection.execute(
             f"SELECT COUNT(*), COUNT({_quote(id_column)}), COUNT(DISTINCT {_quote(id_column)}) FROM {_quote(source_view)}"
         ).fetchone()
@@ -809,7 +842,9 @@ class TypedGraphArrayWriter:
             alignment_code="SUPERVISION-ALIGNMENT-001",
         )
         source_records = self._source_records(
-            supervision.label_paths if supervision.label_source == "dataset" else target.paths
+            supervision.label_paths
+            if supervision.label_source == "dataset"
+            else target.paths
         )
         return {
             **record,
@@ -839,16 +874,22 @@ class TypedGraphArrayWriter:
     ) -> dict[str, Any]:
         ingestion = _ingestion_module()
         mapping_view = "split_target_mapping"
-        connection.read_parquet(str(self.index_build.indexes[target.name].node_ids_path)).create_view(mapping_view)
+        connection.read_parquet(
+            str(self.index_build.indexes[target.name].node_ids_path)
+        ).create_view(mapping_view)
         target_count = self.index_build.indexes[target.name].row_count
         result: dict[str, Any] = {}
-        for tag_index, split in enumerate(self.ingestor.source.spec.supervision.split_registry.sets):
+        for tag_index, split in enumerate(
+            self.ingestor.source.spec.supervision.split_registry.sets
+        ):
             phases: dict[str, dict[str, Any]] = {}
             tables: dict[str, str] = {}
             for phase_index, phase in enumerate(_PHASES):
                 relative = getattr(split, phase)
                 snapshot = snapshots[relative]
-                schema = self._exact_role_schema((snapshot,), pq=pq, context=f"split {split.tag!r}/{phase}")
+                schema = self._exact_role_schema(
+                    (snapshot,), pq=pq, context=f"split {split.tag!r}/{phase}"
+                )
                 self._require_exact_id(
                     schema,
                     target.id_column,
@@ -972,10 +1013,14 @@ class TypedGraphArrayWriter:
                         )
                 values = batch.column(1)
                 if values.null_count:
-                    raise ingestion.ArtifactValidationError(f"{null_code}: array contains null values")
+                    raise ingestion.ArtifactValidationError(
+                        f"{null_code}: array contains null values"
+                    )
                 block = values.to_numpy(zero_copy_only=False)
                 if finite_code is not None:
-                    self._validate_finite(block, code=finite_code, context="target supervision")
+                    self._validate_finite(
+                        block, code=finite_code, context="target supervision"
+                    )
                 _write_npy_block(output, block, dtype=storage_dtype)
                 offset += rows
             if offset != count:
@@ -1013,34 +1058,48 @@ class TypedGraphArrayWriter:
             "count": count,
             "byte_size": path.stat().st_size,
             "file_sha256": ingestion._sha256_file(path),
-            "content_sha256": _array_content_sha(path, self.ingestor.source.spec.ingestion.record_batch_rows),
+            "content_sha256": _array_content_sha(
+                path, self.ingestor.source.spec.ingestion.record_batch_rows
+            ),
         }
 
-    def _source_records(self, relatives: tuple[str, ...]) -> list[dict[str, Any]]:
+    def _source_records(
+        self, relatives: tuple[str, ...]
+    ) -> list[dict[str, Any]]:
         inventory_by_path = {
-            entry.relative_path: entry for entry in self.index_build.inventory.files
+            entry.relative_path: entry
+            for entry in self.index_build.inventory.files
         }
         return [
             {
                 "relative_path": relative,
                 "byte_size": inventory_by_path[relative].byte_size,
                 "sha256": inventory_by_path[relative].sha256,
-                "schema_fingerprint": inventory_by_path[relative].schema_fingerprint,
+                "schema_fingerprint": inventory_by_path[
+                    relative
+                ].schema_fingerprint,
             }
             for relative in relatives
         ]
 
-    def _exact_role_schema(self, paths: tuple[Path, ...], *, pq: Any, context: str) -> Any:
+    def _exact_role_schema(
+        self, paths: tuple[Path, ...], *, pq: Any, context: str
+    ) -> Any:
         ingestion = _ingestion_module()
         schemas = tuple(pq.ParquetFile(path).schema_arrow for path in paths)
-        serialized = {hashlib.sha256(schema.serialize().to_pybytes()).hexdigest() for schema in schemas}
+        serialized = {
+            hashlib.sha256(schema.serialize().to_pybytes()).hexdigest()
+            for schema in schemas
+        }
         if len(serialized) != 1:
             raise ingestion.ArtifactValidationError(
                 f"SCHEMA-DRIFT-001: {context} fragments have different exact Arrow schemas"
             )
         return schemas[0]
 
-    def _require_exact_id(self, schema: Any, column: str, dtype: str, *, pa: Any, code: str) -> None:
+    def _require_exact_id(
+        self, schema: Any, column: str, dtype: str, *, pa: Any, code: str
+    ) -> None:
         ingestion = _ingestion_module()
         field = self._field(schema, column, code, "external-ID source")
         expected = _id_arrow_type(pa, dtype)
@@ -1060,8 +1119,13 @@ class TypedGraphArrayWriter:
         return schema.field(index)
 
     @staticmethod
-    def _validate_finite(array: np.ndarray, *, code: str, context: str) -> None:
-        if np.issubdtype(array.dtype, np.floating) and not np.isfinite(array).all():
+    def _validate_finite(
+        array: np.ndarray, *, code: str, context: str
+    ) -> None:
+        if (
+            np.issubdtype(array.dtype, np.floating)
+            and not np.isfinite(array).all()
+        ):
             ingestion = _ingestion_module()
             raise ingestion.ArtifactValidationError(
                 f"{code}: {context} contains NaN or infinity"
@@ -1115,7 +1179,9 @@ class TypedGraphArrayWriter:
                         f"UNKNOWN-ARTIFACT-001: symlink in array stage: {path}"
                     )
                 if path.is_file():
-                    outputs[path.relative_to(root).as_posix()] = ingestion._sha256_file(path)
+                    outputs[path.relative_to(root).as_posix()] = (
+                        ingestion._sha256_file(path)
+                    )
         outputs["arrays.json"] = ingestion._sha256_file(root / "arrays.json")
         return outputs
 
@@ -1125,11 +1191,16 @@ class TypedGraphArrayWriter:
         completion = ingestion._read_json(root / "arrays.complete.json")
         if (
             completion.get("stage") != "typed_graph_arrays"
-            or completion.get("array_behavior_version") != _ARRAY_BEHAVIOR_VERSION
-            or completion.get("behavior_version") != ingestion._BEHAVIOR_VERSION
-            or completion.get("input_fingerprint") != self.index_build.inventory.source_fingerprint
-            or completion.get("config_fingerprint") != self.index_build.inventory.config_fingerprint
-            or completion.get("dependency_versions") != dict(self.index_build.inventory.dependency_versions)
+            or completion.get("array_behavior_version")
+            != _ARRAY_BEHAVIOR_VERSION
+            or completion.get("behavior_version")
+            != ingestion._BEHAVIOR_VERSION
+            or completion.get("input_fingerprint")
+            != self.index_build.inventory.source_fingerprint
+            or completion.get("config_fingerprint")
+            != self.index_build.inventory.config_fingerprint
+            or completion.get("dependency_versions")
+            != dict(self.index_build.inventory.dependency_versions)
             or completion.get("reopened_and_validated") is not True
         ):
             raise ingestion.ArtifactValidationError(
@@ -1196,9 +1267,12 @@ class TypedGraphArrayWriter:
         ingestion = _ingestion_module()
         if (
             metadata.get("array_behavior_version") != _ARRAY_BEHAVIOR_VERSION
-            or metadata.get("input_fingerprint") != self.index_build.inventory.source_fingerprint
-            or metadata.get("config_fingerprint") != self.index_build.inventory.config_fingerprint
-            or metadata.get("dependency_versions") != dict(self.index_build.inventory.dependency_versions)
+            or metadata.get("input_fingerprint")
+            != self.index_build.inventory.source_fingerprint
+            or metadata.get("config_fingerprint")
+            != self.index_build.inventory.config_fingerprint
+            or metadata.get("dependency_versions")
+            != dict(self.index_build.inventory.dependency_versions)
         ):
             raise ingestion.ArtifactValidationError(
                 "COMPLETION-EVIDENCE-001: array semantic evidence changed"
@@ -1212,14 +1286,18 @@ class TypedGraphArrayWriter:
             raise ingestion.ArtifactValidationError(
                 "DISK-EVIDENCE-001: Task 3 metadata disk estimate changed"
             )
-        if ingestion._sha256_json(metadata.get("content_identity")) != metadata.get("content_sha256"):
+        if ingestion._sha256_json(
+            metadata.get("content_identity")
+        ) != metadata.get("content_sha256"):
             raise ingestion.ArtifactValidationError(
                 "CHECKSUM-001: array content identity checksum changed"
             )
         nodes = metadata.get("nodes")
         expected_nodes = {
             f"n{ordinal:04d}": node
-            for ordinal, node in enumerate(self.ingestor.source.spec.node_types)
+            for ordinal, node in enumerate(
+                self.ingestor.source.spec.node_types
+            )
         }
         if not isinstance(nodes, dict) or set(nodes) != set(expected_nodes):
             raise ingestion.ArtifactValidationError(
@@ -1264,7 +1342,9 @@ class TypedGraphArrayWriter:
             if node.name == supervision_spec.target_node_type
         )
         target_key = next(
-            key for key, node in expected_nodes.items() if node.name == target.name
+            key
+            for key, node in expected_nodes.items()
+            if node.name == target.name
         )
         target_count = len(self.index_build.indexes[target.name])
         task = (
@@ -1337,8 +1417,12 @@ class TypedGraphArrayWriter:
             _close_memmap(target_values)
         splits = metadata.get("splits")
         registry = self.ingestor.source.spec.supervision.split_registry
-        if not isinstance(splits, dict) or set(splits) != {split.tag for split in registry.sets}:
-            raise ingestion.ArtifactValidationError("COMPLETION-EVIDENCE-001: split registry evidence changed")
+        if not isinstance(splits, dict) or set(splits) != {
+            split.tag for split in registry.sets
+        }:
+            raise ingestion.ArtifactValidationError(
+                "COMPLETION-EVIDENCE-001: split registry evidence changed"
+            )
         target_count = len(self.index_build.indexes[target.name])
         for split_spec in registry.sets:
             split = splits[split_spec.tag]
@@ -1422,10 +1506,9 @@ class TypedGraphArrayWriter:
                     f"SPLIT-DISJOINT-001: split {split_spec.tag!r} phases overlap"
                 )
             union_count = sum(len(array) for array in arrays.values())
-            if (
-                split.get("union_count") != union_count
-                or split.get("coverage_complete") != (union_count == target_count)
-            ):
+            if split.get("union_count") != union_count or split.get(
+                "coverage_complete"
+            ) != (union_count == target_count):
                 raise ingestion.ArtifactValidationError(
                     f"SPLIT-EVIDENCE-001: split {split_spec.tag!r} coverage "
                     "evidence changed"
@@ -1446,8 +1529,7 @@ class TypedGraphArrayWriter:
             "config_fingerprint": self.index_build.inventory.config_fingerprint,
             "active_split_tag": registry.active_tag,
             "nodes": {
-                key: record["content_sha256"]
-                for key, record in nodes.items()
+                key: record["content_sha256"] for key, record in nodes.items()
             },
             "supervision": supervision["content_sha256"],
             "splits": {
@@ -1481,21 +1563,31 @@ class TypedGraphArrayWriter:
         ingestion = _ingestion_module()
         relative = record.get("relative_path")
         if not isinstance(relative, str):
-            raise ingestion.ArtifactValidationError("COMPLETION-EVIDENCE-001: array path missing")
+            raise ingestion.ArtifactValidationError(
+                "COMPLETION-EVIDENCE-001: array path missing"
+            )
         path = ingestion._safe_artifact_path(root, relative)
         array = np.load(path, mmap_mode="r", allow_pickle=False)
         expected_dtype = record.get("storage_dtype")
         expected_shape = tuple(record.get("shape", ()))
-        if array.dtype.str != expected_dtype or array.shape != expected_shape or array.shape[0] != record.get("count"):
+        if (
+            array.dtype.str != expected_dtype
+            or array.shape != expected_shape
+            or array.shape[0] != record.get("count")
+        ):
             raise ingestion.ArtifactValidationError(
                 f"ARRAY-SHAPE-001: dtype/shape/count changed for {relative!r}"
             )
         _close_memmap(array)
-        if path.stat().st_size != record.get("byte_size") or ingestion._sha256_file(path) != record.get("file_sha256"):
+        if path.stat().st_size != record.get(
+            "byte_size"
+        ) or ingestion._sha256_file(path) != record.get("file_sha256"):
             raise ingestion.ArtifactValidationError(
                 f"CHECKSUM-001: file checksum changed for {relative!r}"
             )
-        if _array_content_sha(path, self.ingestor.source.spec.ingestion.record_batch_rows) != record.get("content_sha256"):
+        if _array_content_sha(
+            path, self.ingestor.source.spec.ingestion.record_batch_rows
+        ) != record.get("content_sha256"):
             raise ingestion.ArtifactValidationError(
                 f"CHECKSUM-001: array content checksum changed for {relative!r}"
             )
@@ -1509,9 +1601,7 @@ class TypedGraphArrayWriter:
                         row_elements *= extent
                     for start in range(0, shape[0], rows):
                         block_rows = min(rows, shape[0] - start)
-                        byte_count = (
-                            block_rows * row_elements * dtype.itemsize
-                        )
+                        byte_count = block_rows * row_elements * dtype.itemsize
                         payload = stream.read(byte_count)
                         if len(payload) != byte_count:
                             raise ingestion.ArtifactValidationError(
@@ -1533,7 +1623,6 @@ class TypedGraphArrayWriter:
                     )
             finally:
                 _close_memmap(array)
-
 
     def _validate_classification_vocabulary(
         self,
@@ -1582,9 +1671,8 @@ class TypedGraphArrayWriter:
             seen[:] = 0
             for start in range(0, len(values), rows):
                 block = np.asarray(values[start : start + rows])
-                if (
-                    len(block)
-                    and (int(block.min()) < 0 or int(block.max()) >= size)
+                if len(block) and (
+                    int(block.min()) < 0 or int(block.max()) >= size
                 ):
                     raise ingestion.ArtifactValidationError(
                         "TARGET-VOCABULARY-001: classification value is "
@@ -1601,6 +1689,7 @@ class TypedGraphArrayWriter:
             if seen is not None:
                 _close_memmap(seen)
             shutil.rmtree(temporary_root)
+
 
 def _ingestion_module() -> Any:
     from topobench.data.stores import typed_graph_ingestion
@@ -1642,7 +1731,9 @@ def _arrow_dtype_name(dtype: str) -> str:
 
 
 def _id_arrow_type(pa: Any, dtype: str) -> Any:
-    return {"int64": pa.int64(), "uint64": pa.uint64(), "string": pa.string()}[dtype]
+    return {"int64": pa.int64(), "uint64": pa.uint64(), "string": pa.string()}[
+        dtype
+    ]
 
 
 def _numpy_dtype(dtype: str) -> np.dtype[Any]:
@@ -1706,7 +1797,9 @@ def _fsync_file(path: Path) -> None:
         os.fsync(stream.fileno())
 
 
-def _read_npy_header(stream: Any) -> tuple[tuple[int, ...], bool, np.dtype[Any]]:
+def _read_npy_header(
+    stream: Any,
+) -> tuple[tuple[int, ...], bool, np.dtype[Any]]:
     version = np.lib.format.read_magic(stream)
     if version == (1, 0):
         return np.lib.format.read_array_header_1_0(stream)
@@ -1728,7 +1821,9 @@ def _array_content_sha(path: Path, batch_rows: int) -> str:
             while remaining:
                 block = stream.read(min(remaining, read_bytes))
                 if not block:
-                    raise ValueError(f"truncated NumPy array payload at {path}")
+                    raise ValueError(
+                        f"truncated NumPy array payload at {path}"
+                    )
                 digest.update(block)
                 remaining -= len(block)
             return digest.hexdigest()
@@ -1743,7 +1838,9 @@ def _array_content_sha(path: Path, batch_rows: int) -> str:
 def _combined_source_sha(records: list[dict[str, Any]]) -> str:
     if len(records) == 1:
         return records[0]["sha256"]
-    encoded = json.dumps(records, sort_keys=True, separators=(",", ":")).encode()
+    encoded = json.dumps(
+        records, sort_keys=True, separators=(",", ":")
+    ).encode()
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -1768,16 +1865,9 @@ def _is_exact_population(
     # The caller has already proved every phase sorted/unique, pairwise
     # disjoint, and in range. A union of ``population`` distinct members of
     # [0, population) is therefore exactly the full ordinal population.
-    return (
-        sum(len(array) for array in arrays.values()) == population
-        and all(
-            not len(array)
-            or (
-                int(array[0]) >= 0
-                and int(array[-1]) < population
-            )
-            for array in arrays.values()
-        )
+    return sum(len(array) for array in arrays.values()) == population and all(
+        not len(array) or (int(array[0]) >= 0 and int(array[-1]) < population)
+        for array in arrays.values()
     )
 
 

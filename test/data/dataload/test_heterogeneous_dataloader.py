@@ -30,6 +30,8 @@ from topobench.transforms.data_manipulations.heterogeneous import (
     HeterogeneousToUndirected,
 )
 
+_CHOICE_RICH_FANOUT = [2, 3, 1]
+
 
 class IntegralValue(IntEnum):
     """Non-built-in integral values used to test normalization."""
@@ -39,10 +41,38 @@ class IntegralValue(IntEnum):
     FOUR = 4
 
 
+def _make_every_relation_choice_rich(data: HeteroData) -> HeteroData:
+    """Give every relation more candidates than the largest test fanout."""
+    candidate_count = max(_CHOICE_RICH_FANOUT) + 1
+    author_count = data["author"].num_nodes
+    paper_count = data["paper"].num_nodes
+    venue_count = data["venue"].num_nodes
+    assert author_count is not None
+    assert paper_count is not None
+    assert venue_count is not None
+
+    author_ids = torch.arange(author_count).repeat_interleave(candidate_count)
+    author_slots = torch.arange(candidate_count).repeat(author_count)
+    paper_ids = (author_ids + author_slots) % paper_count
+    data["author", "writes", "paper"].edge_index = torch.stack(
+        [author_ids, paper_ids]
+    )
+
+    paper_ids = torch.arange(paper_count).repeat_interleave(candidate_count)
+    paper_slots = torch.arange(candidate_count).repeat(paper_count)
+    venue_ids = (paper_ids + paper_slots) % venue_count
+    data["paper", "published_in", "venue"].edge_index = torch.stack(
+        [paper_ids, venue_ids]
+    )
+    return data
+
+
 @pytest.fixture
 def heterogeneous_data() -> HeteroData:
     """Return the canonical fully transformed synthetic graph."""
-    data = make_synthetic_heterogeneous_data(seed=7)
+    data = _make_every_relation_choice_rich(
+        make_synthetic_heterogeneous_data(seed=7)
+    )
     data = HeterogeneousConstantFeatures(node_types="venue")(data)
     return HeterogeneousToUndirected(merge=False)(data)
 
@@ -96,6 +126,37 @@ def _batch_tensor_signature(batch: HeteroData) -> tuple[object, ...]:
 def _loader_signature(loader: object) -> tuple[tuple[object, ...], ...]:
     """Materialize one loader traversal into ordered batch signatures."""
     return tuple(_batch_tensor_signature(batch) for batch in loader)
+
+
+def _assert_every_relation_exceeds_fanout(
+    data: HeteroData,
+    fanout: list[int],
+) -> None:
+    """Require a genuine neighbor choice for every relation at every hop."""
+    required_degree = max(fanout)
+    for edge_type in data.edge_types:
+        destination_type = edge_type[2]
+        destination_count = data[destination_type].num_nodes
+        assert destination_count is not None
+        in_degree = torch.bincount(
+            data[edge_type].edge_index[1],
+            minlength=destination_count,
+        )
+        assert torch.all(in_degree > required_degree), (
+            f"{edge_type!r} has minimum in-degree "
+            f"{int(in_degree.min())}, which does not exceed every fanout "
+            f"in {fanout!r}"
+        )
+
+
+def test_sampling_fixture_exceeds_every_relation_fanout(
+    heterogeneous_data: HeteroData,
+) -> None:
+    """Every relation offers more candidates than all configured hop fanouts."""
+    _assert_every_relation_exceeds_fanout(
+        heterogeneous_data,
+        _CHOICE_RICH_FANOUT,
+    )
 
 
 @pytest.mark.parametrize(
@@ -674,7 +735,7 @@ def test_evaluation_settings_descriptor_is_stable_and_complete(
         "paper": 24,
         "venue": 6,
     }
-    assert settings["edge_counts"] == [72, 24, 72, 24]
+    assert settings["edge_counts"] == [144, 96, 144, 96]
     assert settings["phase_seed_count"] == int(
         heterogeneous_data["author"].val_mask.sum()
     )
@@ -831,7 +892,7 @@ def test_sampled_evaluation_replays_identical_batches_across_all_traversals(
         heterogeneous_data,
         heterogeneous_spec,
         mode="neighbor",
-        num_neighbors=[1, 1],
+        num_neighbors=_CHOICE_RICH_FANOUT,
         batch_size=4,
         evaluation_seed=23,
     )
@@ -866,7 +927,7 @@ def test_sampled_evaluation_seed_controls_context_without_cross_run_drift(
             heterogeneous_data,
             heterogeneous_spec,
             mode="neighbor",
-            num_neighbors=[1, 1],
+            num_neighbors=_CHOICE_RICH_FANOUT,
             batch_size=4,
             evaluation_seed=seed,
         )
@@ -888,7 +949,7 @@ def test_resampled_evaluation_isolated_from_consumer_mutation(
         heterogeneous_data,
         heterogeneous_spec,
         mode="neighbor",
-        num_neighbors=[1, 1],
+        num_neighbors=_CHOICE_RICH_FANOUT,
         batch_size=4,
         evaluation_seed=31,
     )
@@ -923,7 +984,7 @@ def test_sampled_evaluation_does_not_perturb_global_torch_rng(
         heterogeneous_data,
         heterogeneous_spec,
         mode="neighbor",
-        num_neighbors=[1, 1],
+        num_neighbors=_CHOICE_RICH_FANOUT,
         batch_size=4,
         evaluation_seed=37,
     )

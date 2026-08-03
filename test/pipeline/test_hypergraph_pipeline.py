@@ -1,21 +1,22 @@
 """Network-free composition gates for native hypergraph models."""
 
 from __future__ import annotations
+
 from collections.abc import Callable
 
 import hydra
 import pytest
 import torch
-from torch import Tensor, nn
 from omegaconf import DictConfig, open_dict
+from torch import Tensor, nn
 
 import topobench.data.pipelines.hypergraph as hypergraph_pipeline_module
-
 from test._utils.simplified_pipeline import run
 from topobench.data.datasets.synthetic_hypergraph_dataset import (
     make_synthetic_hypergraph_data,
 )
 from topobench.data.pipelines.hypergraph import HypergraphNodeDataPipeline
+from topobench.nn.capabilities import validate_capability_composition
 from topobench.nn.encoders.graph_node_encoder import GraphNodeFeatureEncoder
 from topobench.nn.wrappers.hypergraph import HypergraphWrapper
 from topobench.utils.config_resolvers import register_all_resolvers
@@ -74,6 +75,24 @@ def _build_from_source(
     return cfg, HypergraphNodeDataPipeline().build(cfg)
 
 
+def test_hypergraph_pipeline_emits_observed_capability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Capability metadata comes from validated feature and label tensors."""
+    source = make_synthetic_hypergraph_data(seed=19)
+
+    _, output = _build_from_source(monkeypatch, source)
+    capability = output.capability_spec
+
+    assert capability is not None
+    assert capability.selector == "hypergraph/SyntheticHypergraph"
+    assert capability.data_domain == "hypergraph"
+    assert capability.output_kind == "hypergraph"
+    assert capability.feature_widths == (("node", 4),)
+    assert capability.num_classes == 2
+    assert capability.target_node_type is None
+
+
 def test_pipeline_aliases_immutable_hypergraph_tensors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -81,8 +100,7 @@ def test_pipeline_aliases_immutable_hypergraph_tensors(
     source = make_synthetic_hypergraph_data(seed=23)
     source_fields = set(source.keys())
     source_masks = {
-        name: source[name]
-        for name in ("train_mask", "val_mask", "test_mask")
+        name: source[name] for name in ("train_mask", "val_mask", "test_mask")
     }
 
     _, output = _build_from_source(monkeypatch, source)
@@ -91,11 +109,14 @@ def test_pipeline_aliases_immutable_hypergraph_tensors(
     assert runtime is not source
     for field in ("x", "y", "hyperedge_index"):
         assert runtime[field] is source[field]
-    assert set(source.keys()) == source_fields
+    assert set(source.keys()) == source_fields | {"global_nid"}
+    assert torch.equal(
+        source.global_nid,
+        torch.arange(source.num_nodes, dtype=torch.long),
+    )
     assert "batch" not in source
     for name, mask in source_masks.items():
         assert source[name] is mask
-
 
 
 def test_singleton_pipeline_keeps_sparse_features_until_encoder(
@@ -114,6 +135,7 @@ def test_singleton_pipeline_keeps_sparse_features_until_encoder(
     assert batch.x is sparse_x
     assert batch.x.layout == torch.sparse_coo
     assert batch.x.is_coalesced()
+
 
 def test_exhaustive_hypergraph_validation_runs_once_at_pipeline_boundary(
     monkeypatch: pytest.MonkeyPatch,
@@ -204,7 +226,15 @@ def test_synthetic_hypergraph_composes_to_finite_node_logits(
     cfg = _compose(model_selector)
     pipeline_output = hydra.utils.instantiate(cfg.data_pipeline).build(cfg)
     batch = next(iter(pipeline_output.datamodule.train_dataloader()))
-    model = instantiate_model(cfg, data_spec=None)
+    capability_validation = validate_capability_composition(
+        cfg,
+        observed=pipeline_output.capability_spec,
+    )
+    model = instantiate_model(
+        cfg,
+        data_spec=None,
+        capability_validation=capability_validation,
+    )
     model.eval()
 
     model_out = model.forward(batch)
@@ -219,7 +249,9 @@ def test_synthetic_hypergraph_composes_to_finite_node_logits(
     assert torch.isfinite(model_out["logits"]).all()
 
 
-def test_synthetic_hypergraph_meandeg_returns_finite_full_node_logits() -> None:
+def test_synthetic_hypergraph_meandeg_returns_finite_full_node_logits() -> (
+    None
+):
     """The configured MeanDeg path preserves every nonisolated fixture node."""
     cfg = _compose("edgnn")
     with open_dict(cfg.model.backbone):
@@ -228,7 +260,15 @@ def test_synthetic_hypergraph_meandeg_returns_finite_full_node_logits() -> None:
         cfg.model.backbone.dropout = 0.0
     pipeline_output = hydra.utils.instantiate(cfg.data_pipeline).build(cfg)
     batch = next(iter(pipeline_output.datamodule.train_dataloader()))
-    model = instantiate_model(cfg, data_spec=None)
+    capability_validation = validate_capability_composition(
+        cfg,
+        observed=pipeline_output.capability_spec,
+    )
+    model = instantiate_model(
+        cfg,
+        data_spec=None,
+        capability_validation=capability_validation,
+    )
     model.eval()
 
     model_out = model.forward(batch)

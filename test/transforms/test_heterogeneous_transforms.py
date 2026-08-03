@@ -428,6 +428,7 @@ def test_heterogeneous_transforms_compose_in_declared_order(
     }
 
     preprocessor = object.__new__(PreProcessor)
+    preprocessor.set_processed_data_dir = lambda *_: None
     composed = preprocessor.instantiate_pre_transform(
         "unused",
         synthetic_transform_config,

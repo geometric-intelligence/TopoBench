@@ -116,7 +116,9 @@ class _HGTQualificationModel(torch.nn.Module):
         self.target_node_type = target_node_type
         self.project = torch.nn.ModuleDict(
             {
-                node_type: torch.nn.Linear(int(sample[node_type].x.shape[1]), 32)
+                node_type: torch.nn.Linear(
+                    int(sample[node_type].x.shape[1]), 32
+                )
                 for node_type in sample.node_types
             }
         )
@@ -169,7 +171,9 @@ class _MeasuredBatchSource(Iterable[NativeBatch]):
 
     def __iter__(self) -> Iterator[NativeBatch]:
         for index in range(self.steps):
-            descriptor = self.workload.descriptors[index % len(self.workload.descriptors)]
+            descriptor = self.workload.descriptors[
+                index % len(self.workload.descriptors)
+            ]
             read = self.monitor.begin(
                 ExecutionOperation.SELECTED_READ,
                 phase="qualification",
@@ -197,13 +201,19 @@ class _MeasuredBatchSource(Iterable[NativeBatch]):
             )
             batch.sequence_id = index + 1
             if self.profile_payload_bytes:
-                count = self.profile_payload_bytes // torch.empty((), dtype=torch.float32).element_size()
-                batch.qualification_payload = torch.arange(count, dtype=torch.float32)
+                count = (
+                    self.profile_payload_bytes
+                    // torch.empty((), dtype=torch.float32).element_size()
+                )
+                batch.qualification_payload = torch.arange(
+                    count, dtype=torch.float32
+                )
             self.monitor.finish(
                 assembly,
                 node_count=estimate.node_count,
                 edge_count=estimate.edge_count,
-                unique_storage_bytes=estimate.total_bytes + self.profile_payload_bytes,
+                unique_storage_bytes=estimate.total_bytes
+                + self.profile_payload_bytes,
             )
             yield batch
 
@@ -212,7 +222,9 @@ def _version(package: str) -> str:
     try:
         return metadata.version(package)
     except metadata.PackageNotFoundError as error:
-        raise RuntimeError(f"mandatory package {package!r} is unavailable") from error
+        raise RuntimeError(
+            f"mandatory package {package!r} is unavailable"
+        ) from error
 
 
 def _cuda_prerequisites() -> dict[str, Any]:
@@ -306,7 +318,9 @@ def _limits(depth: int) -> PrefetchLimits:
 def _digest_descriptors(descriptors: Sequence[SamplingDescriptor]) -> str:
     digest = hashlib.sha256()
     for descriptor in descriptors:
-        payload = json.dumps(asdict(descriptor), sort_keys=True, separators=(",", ":"))
+        payload = json.dumps(
+            asdict(descriptor), sort_keys=True, separators=(",", ":")
+        )
         encoded = payload.encode("utf-8")
         digest.update(len(encoded).to_bytes(8, "big"))
         digest.update(encoded)
@@ -348,7 +362,9 @@ def _model(
     torch.manual_seed(seed)
     if workload.model_kind == "gcn":
         assert isinstance(sample, Data)
-        result: torch.nn.Module = _GCNQualificationModel(int(sample.x.shape[1]))
+        result: torch.nn.Module = _GCNQualificationModel(
+            int(sample.x.shape[1])
+        )
     else:
         assert isinstance(sample, HeteroData)
         assert workload.target_node_type is not None
@@ -361,7 +377,9 @@ def _event_quantiles(events: Sequence[Any]) -> dict[str, dict[str, int]]:
     for event in events:
         if event.status is not ExecutionStatus.SUCCESS:
             continue
-        grouped.setdefault(event.operation.value, []).append(int(event.duration_ns))
+        grouped.setdefault(event.operation.value, []).append(
+            int(event.duration_ns)
+        )
     result: dict[str, dict[str, int]] = {}
     for operation, values in sorted(grouped.items()):
         ordered = sorted(values)
@@ -379,7 +397,10 @@ def _has_cpu_disk_overlap(events: Sequence[Any]) -> bool:
         event
         for event in events
         if event.operation
-        in {ExecutionOperation.SELECTED_READ, ExecutionOperation.NATIVE_ASSEMBLY}
+        in {
+            ExecutionOperation.SELECTED_READ,
+            ExecutionOperation.NATIVE_ASSEMBLY,
+        }
     ]
     compute = [
         event
@@ -399,10 +420,16 @@ def _has_cpu_disk_overlap(events: Sequence[Any]) -> bool:
 
 def _run_mode(
     workload: _Workload,
-    mode: Literal["synchronous", "host-only", "device-depth-1", "device-depth-3"],
+    mode: Literal[
+        "synchronous", "host-only", "device-depth-1", "device-depth-3"
+    ],
     device: torch.device,
 ) -> dict[str, Any]:
-    depth = 0 if mode in {"synchronous", "host-only"} else int(mode.rsplit("-", 1)[1])
+    depth = (
+        0
+        if mode in {"synchronous", "host-only"}
+        else int(mode.rsplit("-", 1)[1])
+    )
     monitor = InputMonitor(
         cuda_event_factory=lambda: torch.cuda.Event(enable_timing=True),
         warmup_steps=WARMUP_STEPS,
@@ -439,7 +466,9 @@ def _run_mode(
         sample = first
     else:
         sample = first.to(device, non_blocking=False)
-    model = _model(workload, sample, seed=QUALIFICATION_SEEDS[0], device=device)
+    model = _model(
+        workload, sample, seed=QUALIFICATION_SEEDS[0], device=device
+    )
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats(device)
     loss_tensors: list[Tensor] = []
@@ -504,11 +533,16 @@ def _run_mode(
     except StopIteration:
         pass
     else:
-        raise RuntimeError("qualification source exceeded its declared finite length")
+        raise RuntimeError(
+            "qualification source exceeded its declared finite length"
+        )
     torch.cuda.synchronize(device)
     losses = [float(value) for value in loss_tensors]
     accuracies = [float(value) for value in accuracy_tensors]
-    compute_ns = [round(start.elapsed_time(end) * 1_000_000) for start, end in compute_pairs]
+    compute_ns = [
+        round(start.elapsed_time(end) * 1_000_000)
+        for start, end in compute_pairs
+    ]
     steady_wait = wait_ns[WARMUP_STEPS:]
     steady_compute = compute_ns[WARMUP_STEPS + 1 :]
     wait_total = sum(steady_wait)
@@ -522,7 +556,9 @@ def _run_mode(
     monitor.poll()
     events = monitor.drain()
     if any(event.status is ExecutionStatus.ERROR for event in events):
-        raise RuntimeError(f"{workload.name}/{mode} emitted error profiling evidence")
+        raise RuntimeError(
+            f"{workload.name}/{mode} emitted error profiling evidence"
+        )
     operations = {event.operation for event in events}
     required = {
         ExecutionOperation.SELECTED_READ,
@@ -538,7 +574,9 @@ def _run_mode(
         }
     missing = required - operations
     if missing:
-        raise RuntimeError(f"{workload.name}/{mode} missing evidence {sorted(item.value for item in missing)}")
+        raise RuntimeError(
+            f"{workload.name}/{mode} missing evidence {sorted(item.value for item in missing)}"
+        )
     max_host_bytes = 0
     max_device_bytes = 0
     if prefetch is not None:
@@ -546,13 +584,17 @@ def _run_mode(
         max_host_bytes = int(iterator.max_host_queued_bytes)
         max_device_bytes = int(iterator.max_device_queued_bytes)
         if max_host_bytes > MAX_HOST_QUEUE_BYTES:
-            raise RuntimeError("observed pinned-host queue exceeded its budget")
+            raise RuntimeError(
+                "observed pinned-host queue exceeded its budget"
+            )
         if max_device_bytes > (0 if depth == 0 else MAX_DEVICE_QUEUE_BYTES):
             raise RuntimeError("observed device queue exceeded its budget")
         prefetch.close()
     gpu_peak = int(torch.cuda.max_memory_allocated(device))
     if gpu_peak > MAX_GPU_ALLOCATED_BYTES:
-        raise RuntimeError("observed CUDA allocation exceeded its predeclared budget")
+        raise RuntimeError(
+            "observed CUDA allocation exceeded its predeclared budget"
+        )
     monitor.close()
     if not all(math.isfinite(value) for value in losses):
         raise RuntimeError(f"{workload.name}/{mode} produced non-finite loss")
@@ -692,10 +734,18 @@ def _profile_overlap(
     }
 
 
-def _allclose_or_fail(actual: Tensor, expected: Tensor, contract: str) -> float:
-    difference = float((actual - expected).abs().max()) if actual.numel() else 0.0
-    if not torch.allclose(actual, expected, atol=ORACLE_ATOL, rtol=ORACLE_RTOL):
-        raise RuntimeError(f"{contract} functional oracle failed; max_abs={difference}")
+def _allclose_or_fail(
+    actual: Tensor, expected: Tensor, contract: str
+) -> float:
+    difference = (
+        float((actual - expected).abs().max()) if actual.numel() else 0.0
+    )
+    if not torch.allclose(
+        actual, expected, atol=ORACLE_ATOL, rtol=ORACLE_RTOL
+    ):
+        raise RuntimeError(
+            f"{contract} functional oracle failed; max_abs={difference}"
+        )
     return difference
 
 
@@ -704,7 +754,11 @@ def _metric_error_or_fail(
     expected: float | Tensor,
     contract: str,
 ) -> float:
-    actual_value = float(actual.detach().item()) if isinstance(actual, Tensor) else float(actual)
+    actual_value = (
+        float(actual.detach().item())
+        if isinstance(actual, Tensor)
+        else float(actual)
+    )
     expected_value = (
         float(expected.detach().item())
         if isinstance(expected, Tensor)
@@ -727,6 +781,7 @@ def _functional_oracles(
         materialized_heterogeneous_reference,
         materialized_homogeneous_reference,
     )
+
     result: dict[str, Any] = {}
     with TypedGraphStore.open(homogeneous.store_build.path) as store:
         full = materialized_homogeneous_reference(store)
@@ -742,7 +797,9 @@ def _functional_oracles(
         )[0]
         disk = strategy.materialize(store, descriptor)
         model = _model(
-            _Workload("gcn-cluster", "gcn", store, strategy, (descriptor,), None),
+            _Workload(
+                "gcn-cluster", "gcn", store, strategy, (descriptor,), None
+            ),
             disk,
             seed=QUALIFICATION_SEEDS[0],
             device=device,
@@ -751,7 +808,9 @@ def _functional_oracles(
             disk_device = disk.to(device)
             full_device = full.to(device)
             disk_logits = model(disk_device)
-            full_logits = model(full_device).index_select(0, disk_device.global_nid)
+            full_logits = model(full_device).index_select(
+                0, disk_device.global_nid
+            )
         result["gcn_all_partitions"] = {
             "max_abs_logit_error": _allclose_or_fail(
                 disk_logits,
@@ -885,7 +944,9 @@ def _one_training_result(
     disk_batch = disk_batch.to(device)
     reference_batch = reference_batch.to(device)
     disk_model = _model(workload, disk_batch, seed=seed, device=device)
-    reference_model = _model(workload, reference_batch, seed=seed, device=device)
+    reference_model = _model(
+        workload, reference_batch, seed=seed, device=device
+    )
     reference_model.load_state_dict(disk_model.state_dict())
 
     def train(model: torch.nn.Module, batch: NativeBatch) -> float:
@@ -904,7 +965,9 @@ def _one_training_result(
             )
         return float(accuracy)
 
-    return train(disk_model, disk_batch), train(reference_model, reference_batch)
+    return train(disk_model, disk_batch), train(
+        reference_model, reference_batch
+    )
 
 
 def _statistics(values: Sequence[float]) -> dict[str, float | list[float]]:
@@ -928,6 +991,7 @@ def _paired_seed_qualification(
         materialized_heterogeneous_reference,
         materialized_homogeneous_reference,
     )
+
     all_results: dict[str, Any] = {}
     with TypedGraphStore.open(homogeneous.store_build.path) as store:
         full = materialized_homogeneous_reference(store)
@@ -1047,11 +1111,11 @@ def _paired_seed_qualification(
                 reference_descriptor,
                 target_seed_ids=descriptor.target_seed_ids,
                 generator_seed=descriptor.generator_seed,
-                generator_state_sha256=(
-                    descriptor.generator_state_sha256
-                ),
+                generator_state_sha256=(descriptor.generator_state_sha256),
             )
-            reference = materialized_neighbor.materialize(full, reference_descriptor)
+            reference = materialized_neighbor.materialize(
+                full, reference_descriptor
+            )
             workload = _Workload(
                 "hgt-neighbor",
                 "hgt",
@@ -1075,8 +1139,15 @@ def _paired_seed_qualification(
     for strategy, rows in sorted(all_results.items()):
         disk_values = [row[1] for row in rows]
         reference_values = [row[2] for row in rows]
-        paired = [disk - reference for disk, reference in zip(disk_values, reference_values, strict=True)]
-        degradation = statistics.fmean(reference_values) - statistics.fmean(disk_values)
+        paired = [
+            disk - reference
+            for disk, reference in zip(
+                disk_values, reference_values, strict=True
+            )
+        ]
+        degradation = statistics.fmean(reference_values) - statistics.fmean(
+            disk_values
+        )
         if degradation > MAX_DEGRADATION:
             raise RuntimeError(
                 f"{strategy} paired degradation {degradation:.6f} exceeds "
@@ -1090,7 +1161,9 @@ def _paired_seed_qualification(
                     "materialized_metric": reference,
                     "paired_difference": difference,
                 }
-                for (seed, disk, reference), difference in zip(rows, paired, strict=True)
+                for (seed, disk, reference), difference in zip(
+                    rows, paired, strict=True
+                )
             ],
             "disk": _statistics(disk_values),
             "materialized": _statistics(reference_values),
@@ -1114,8 +1187,13 @@ def _workloads(homogeneous: Any, heterogeneous: Any) -> tuple[_Workload, ...]:
         homogeneous_store.active_split_tag,
         "train",
     )
-    assignments = homogeneous_store.partition_assignment(homogeneous_store.node_types[0])
-    groups = tuple((int(assignments[int(target_ids[index % len(target_ids)])]),) for index in range(NUM_STEPS))
+    assignments = homogeneous_store.partition_assignment(
+        homogeneous_store.node_types[0]
+    )
+    groups = tuple(
+        (int(assignments[int(target_ids[index % len(target_ids)])]),)
+        for index in range(NUM_STEPS)
+    )
     gcn = HomogeneousClusterStrategy(partition_groups=groups, seed=37)
     gcn_descriptors = gcn.setup(
         homogeneous_store,
@@ -1131,7 +1209,10 @@ def _workloads(homogeneous: Any, heterogeneous: Any) -> tuple[_Workload, ...]:
         "train",
     )
     assignments = heterogeneous_store.partition_assignment(target)
-    groups = tuple((int(assignments[int(target_ids[index % len(target_ids)])]),) for index in range(NUM_STEPS))
+    groups = tuple(
+        (int(assignments[int(target_ids[index % len(target_ids)])]),)
+        for index in range(NUM_STEPS)
+    )
     cluster = HeterogeneousClusterStrategy(partition_groups=groups, seed=41)
     cluster_descriptors = cluster.setup(
         heterogeneous_store,
@@ -1142,7 +1223,8 @@ def _workloads(homogeneous: Any, heterogeneous: Any) -> tuple[_Workload, ...]:
     neighbor = HeterogeneousNeighborStrategy(
         batch_size=1,
         num_neighbors={
-            relation: [-1, -1] for relation in heterogeneous_store.relation_types
+            relation: [-1, -1]
+            for relation in heterogeneous_store.relation_types
         },
         seed=43,
     )
@@ -1184,7 +1266,9 @@ def _store_provenance(workload: _Workload) -> dict[str, Any]:
     store = workload.store
     return {
         "store_fingerprint": store.content_sha256,
-        "source_fingerprint": store._manifest["source_binding"]["source_fingerprint"],
+        "source_fingerprint": store._manifest["source_binding"][
+            "source_fingerprint"
+        ],
         "partition_book_identity": store.partition_book_identity,
         "output_kind": store.output_kind,
         "schema_roles": {
@@ -1225,12 +1309,16 @@ def main() -> int:
         if NUM_STEPS <= WARMUP_STEPS + 1 or COMPUTE_REPEATS < 1:
             raise RuntimeError("CUDA qualification dimensions are too small")
         device = torch.device("cuda", 0)
-        with tempfile.TemporaryDirectory(prefix="topobench-typed-cuda-") as directory:
+        with tempfile.TemporaryDirectory(
+            prefix="topobench-typed-cuda-"
+        ) as directory:
             root = Path(directory)
             prerequisites["partition_backend_execution"] = (
                 _partition_backend_smoke(root / "partition-backend-smoke")
             )
-            homogeneous_source_value = homogeneous_source(root / "homogeneous-source")
+            homogeneous_source_value = homogeneous_source(
+                root / "homogeneous-source"
+            )
             homogeneous_source_value = ParquetTypedGraphSource(
                 replace(
                     homogeneous_source_value.spec,
@@ -1296,7 +1384,9 @@ def main() -> int:
                     "profiler_overlap_by_mode": profiler_by_mode,
                 }
             oracles = _functional_oracles(homogeneous, heterogeneous, device)
-            paired = _paired_seed_qualification(homogeneous, heterogeneous, device)
+            paired = _paired_seed_qualification(
+                homogeneous, heterogeneous, device
+            )
             for workload in workloads:
                 workload.store.close()
 

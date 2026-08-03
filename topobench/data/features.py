@@ -9,9 +9,10 @@ from typing import Literal
 import torch
 from torch import Tensor
 from torch_geometric.data import Data, HeteroData
+
 from topobench.data.capabilities import (
-    GraphDatasetCapability,
     OGB_ATOM_FEATURE_CARDINALITIES,
+    GraphDatasetCapability,
     validate_classification_vocabulary,
 )
 
@@ -25,7 +26,6 @@ GraphFeaturePolicy = Literal[
 _FEATURE_POLICIES = frozenset(
     {"continuous", "categorical_one_hot", "degree", "constant"}
 )
-
 
 
 def validate_categorical_columns(
@@ -59,9 +59,8 @@ def validate_categorical_columns(
     if categories.is_floating_point():
         if not allow_integral_float:
             raise TypeError(f"{context} must have an integral dtype")
-        if (
-            not torch.isfinite(categories).all()
-            or not torch.all(categories == torch.trunc(categories))
+        if not torch.isfinite(categories).all() or not torch.all(
+            categories == torch.trunc(categories)
         ):
             raise ValueError(
                 f"{context} must contain exact integral categories"
@@ -266,7 +265,7 @@ def validate_graph_features(
         )
 
     base_features = x[:, :base_channels]
-    appended_features = x[:, base_channels:]
+    x[:, base_channels:]
 
     if feature_policy == "categorical_one_hot":
         _validate_consistent_multi_hot(base_features, feature_policy)
@@ -306,9 +305,7 @@ def validate_qualified_graph_source(
                 item=item,
             )
             expected_size = (
-                1
-                if capability.task_level == "graph"
-                else int(data.num_nodes)
+                1 if capability.task_level == "graph" else int(data.num_nodes)
             )
             yield item, data.get("y"), expected_size
 
@@ -335,11 +332,7 @@ def validate_qualified_graph_source(
                 item=item,
             )
             target = data.get("y")
-            shape = (
-                tuple(target.shape)
-                if isinstance(target, Tensor)
-                else None
-            )
+            shape = tuple(target.shape) if isinstance(target, Tensor) else None
             dtype = (
                 target.dtype
                 if isinstance(target, Tensor)
@@ -354,13 +347,9 @@ def validate_qualified_graph_source(
                     f"{context}; target is required with shape=(1,)"
                 )
             if not target.is_floating_point():
-                raise TypeError(
-                    f"{context}; expected floating dtype"
-                )
+                raise TypeError(f"{context}; expected floating dtype")
             if target.shape != (1,):
-                raise ValueError(
-                    f"{context}; expected shape=(1,)"
-                )
+                raise ValueError(f"{context}; expected shape=(1,)")
             if not torch.isfinite(target).all():
                 raise ValueError(
                     f"{context}; expected one finite scalar target"

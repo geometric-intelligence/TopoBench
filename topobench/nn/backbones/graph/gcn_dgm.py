@@ -265,8 +265,8 @@ class GCNDGM(nn.Module):
                 )
             )
         local_targets = torch.cat(selected_indices)
-        selected_differences = (
-            structure[local_targets] - structure.unsqueeze(1)
+        selected_differences = structure[local_targets] - structure.unsqueeze(
+            1
         )
         selected_distances = torch.linalg.vector_norm(
             selected_differences,

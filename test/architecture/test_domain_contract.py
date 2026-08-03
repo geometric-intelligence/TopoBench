@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 from omegaconf import OmegaConf
-from test.architecture.verify_forbidden_imports import FORBIDDEN_DEPENDENCIES
 
+from test.architecture.verify_forbidden_imports import FORBIDDEN_DEPENDENCIES
 from topobench import SUPPORTED_DOMAINS, require_supported_domain
 from topobench.data.capabilities import (
     GRAPH_DATASET_MANIFEST,

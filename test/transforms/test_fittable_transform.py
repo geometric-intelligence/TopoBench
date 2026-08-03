@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import errno
-import os
 import json
+import os
 from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 from typing import Any
@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 from torch_geometric.data import Data
 
+import topobench.transforms.fittable as fittable_module
 from topobench.transforms.fittable import (
     FitContext,
     FitStateError,
@@ -30,8 +31,16 @@ _SHA_B = "b" * 64
 class _DeclaredTransform:
     """Small structural implementation used to exercise the generic contract."""
 
-    def __init__(self, *, scale: float = 1.0) -> None:
+    def __init__(
+        self,
+        *,
+        scale: float = 1.0,
+        max_batch_rows: int = 4,
+        max_batch_bytes: int = 1024,
+    ) -> None:
         self.scale = scale
+        self.max_batch_rows = max_batch_rows
+        self.max_batch_bytes = max_batch_bytes
         self.status = FitStatus.UNFITTED
         self._state_key: str | None = None
         self.spec = TransformSpec(
@@ -57,7 +66,6 @@ class _DeclaredTransform:
             return None
         return self._state_key
 
-
     def canonical_config(self) -> dict[str, object]:
         return {"scale": self.scale}
 
@@ -67,7 +75,9 @@ class _DeclaredTransform:
     def begin_fit(self, context: FitContext) -> None:
         self.status = FitStatus.FITTING
 
-    def update_fit(self, features: np.ndarray, labels: np.ndarray | None = None) -> None:
+    def update_fit(
+        self, features: np.ndarray, labels: np.ndarray | None = None
+    ) -> None:
         if self.status is not FitStatus.FITTING:
             raise RuntimeError("not fitting")
 
@@ -75,7 +85,9 @@ class _DeclaredTransform:
         self.status = FitStatus.FITTED
         return object()
 
-    def load_state(self, state_root: str | Path, context: FitContext) -> object:
+    def load_state(
+        self, state_root: str | Path, context: FitContext
+    ) -> object:
         self.status = FitStatus.FITTED
         return object()
 
@@ -104,7 +116,9 @@ def _context() -> FitContext:
     )
 
 
-def test_protocol_and_declaration_are_explicit_runtime_immutable_contracts() -> None:
+def test_protocol_and_declaration_are_explicit_runtime_immutable_contracts() -> (
+    None
+):
     transform = _DeclaredTransform()
 
     assert isinstance(transform, FittableTransform)
@@ -144,12 +158,41 @@ def test_state_key_changes_for_every_scientific_identity_component() -> None:
         replace(context, numeric_precision="float32"),
     )
 
-    assert all(build_fit_state_key(value, transform) != baseline for value in mutations)
-    assert build_fit_state_key(context, _DeclaredTransform(scale=2.0)) != baseline
+    assert all(
+        build_fit_state_key(value, transform) != baseline
+        for value in mutations
+    )
+    assert (
+        build_fit_state_key(context, _DeclaredTransform(scale=2.0)) != baseline
+    )
     assert build_fit_state_key(context, _DifferentCodeTransform()) != baseline
     changed_spec = _DeclaredTransform()
     changed_spec.spec = replace(changed_spec.spec, output_dtype="float64")
     assert build_fit_state_key(context, changed_spec) != baseline
+
+
+def test_state_key_changes_with_fit_driver_and_chunk_schedule_versions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _context()
+    transform = _DeclaredTransform()
+    baseline = build_fit_state_key(context, transform)
+
+    monkeypatch.setattr(
+        fittable_module,
+        "_CANONICAL_FIT_DRIVER_VERSION",
+        "canonical-fit-driver-v2",
+    )
+    driver_changed = build_fit_state_key(context, transform)
+    monkeypatch.setattr(
+        fittable_module,
+        "_INCREMENTAL_PCA_CHUNK_SCHEDULE_VERSION",
+        "incremental-pca-chunk-schedule-v2",
+    )
+    both_changed = build_fit_state_key(context, transform)
+
+    assert driver_changed != baseline
+    assert both_changed != driver_changed
 
 
 def test_publisher_round_trips_only_validated_json_and_non_executable_arrays(
@@ -173,12 +216,19 @@ def test_publisher_round_trips_only_validated_json_and_non_executable_arrays(
         "manifest.json",
         "mean.npy",
     }
-    assert json.loads((published.path / "manifest.json").read_text(encoding="utf-8"))[
-        "state_key"
-    ] == key
+    assert (
+        json.loads(
+            (published.path / "manifest.json").read_text(encoding="utf-8")
+        )["state_key"]
+        == key
+    )
     assert loaded.arrays["components"].flags.writeable is False
-    np.testing.assert_array_equal(loaded.arrays["components"], arrays["components"])
-    with pytest.raises((TypeError, ValueError), match="object|executable|pickle"):
+    np.testing.assert_array_equal(
+        loaded.arrays["components"], arrays["components"]
+    )
+    with pytest.raises(
+        (TypeError, ValueError), match="object|executable|pickle"
+    ):
         publisher.publish(
             "f" * 64,
             metadata={},
@@ -196,11 +246,14 @@ def test_publisher_never_overwrites_or_reuses_corrupt_or_partial_state(
         metadata={"sample_count": 4},
         arrays={"mean": np.ones(3, dtype=np.float64)},
     )
-    assert publisher.publish(
-        key,
-        metadata={"sample_count": 4},
-        arrays={"mean": np.ones(3, dtype=np.float64)},
-    ).path == first.path
+    assert (
+        publisher.publish(
+            key,
+            metadata={"sample_count": 4},
+            arrays={"mean": np.ones(3, dtype=np.float64)},
+        ).path
+        == first.path
+    )
     with pytest.raises(FitStateError, match="overwrite|identity|existing"):
         publisher.publish(
             key,

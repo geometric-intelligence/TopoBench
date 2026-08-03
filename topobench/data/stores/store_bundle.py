@@ -50,7 +50,11 @@ class BundleLimits:
             "max_archive_bytes",
         ):
             value = getattr(self, name)
-            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or value <= 0
+            ):
                 raise ValueError(f"{name} must be a positive integer")
         if self.max_compression_ratio < 1.0:
             raise ValueError("max_compression_ratio must be at least one")
@@ -60,15 +64,22 @@ class StoreBundle:
     """Package, digest-pin, safely extract, promote, and move stores."""
 
     @staticmethod
-    def package(store_path: str | Path, archive_path: str | Path) -> BundleArtifact:
+    def package(
+        store_path: str | Path, archive_path: str | Path
+    ) -> BundleArtifact:
         validated = validate_store(store_path)
         root = validated.root
         archive = Path(archive_path)
         archive.parent.mkdir(parents=True, exist_ok=True)
-        temporary = archive.with_name(f".{archive.name}.{uuid.uuid4().hex}.tmp")
+        temporary = archive.with_name(
+            f".{archive.name}.{uuid.uuid4().hex}.tmp"
+        )
         members = [
             "manifest.json",
-            *sorted(record["relative_path"] for record in validated.manifest["files"]),
+            *sorted(
+                record["relative_path"]
+                for record in validated.manifest["files"]
+            ),
         ]
         try:
             with zipfile.ZipFile(
@@ -78,7 +89,9 @@ class StoreBundle:
                 allowZip64=True,
             ) as bundle:
                 for relative in members:
-                    info = zipfile.ZipInfo(relative, date_time=(1980, 1, 1, 0, 0, 0))
+                    info = zipfile.ZipInfo(
+                        relative, date_time=(1980, 1, 1, 0, 0, 0)
+                    )
                     info.compress_type = zipfile.ZIP_STORED
                     info.create_system = 3
                     info.external_attr = (stat.S_IFREG | 0o444) << 16
@@ -94,7 +107,9 @@ class StoreBundle:
             _fsync_directory(archive.parent)
         finally:
             temporary.unlink(missing_ok=True)
-        return BundleArtifact(archive, _sha256_file(archive), archive.stat().st_size)
+        return BundleArtifact(
+            archive, _sha256_file(archive), archive.stat().st_size
+        )
 
     @staticmethod
     def download(
@@ -106,19 +121,32 @@ class StoreBundle:
         timeout_seconds: float = 30.0,
     ) -> Path:
         expected = _expected_digest(expected_sha256)
-        if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes <= 0:
+        if (
+            isinstance(max_bytes, bool)
+            or not isinstance(max_bytes, int)
+            or max_bytes <= 0
+        ):
             raise ValueError("BUNDLE-SIZE-001: max_bytes must be positive")
         if timeout_seconds <= 0:
             raise ValueError("BUNDLE-TIMEOUT-001: timeout must be positive")
         target = Path(destination)
         target.parent.mkdir(parents=True, exist_ok=True)
-        temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.download")
+        temporary = target.with_name(
+            f".{target.name}.{uuid.uuid4().hex}.download"
+        )
         digest = hashlib.sha256()
         total = 0
         try:
-            with urllib.request.urlopen(url, timeout=timeout_seconds) as response, temporary.open("xb") as stream:
+            with (
+                urllib.request.urlopen(
+                    url, timeout=timeout_seconds
+                ) as response,
+                temporary.open("xb") as stream,
+            ):
                 while True:
-                    chunk = response.read(min(1024 * 1024, max_bytes - total + 1))
+                    chunk = response.read(
+                        min(1024 * 1024, max_bytes - total + 1)
+                    )
                     if not chunk:
                         break
                     total += len(chunk)
@@ -193,7 +221,9 @@ class StoreBundle:
                 "r",
                 allowZip64=True,
             ) as bundle:
-                for info, relative in _validated_members(bundle, active_limits):
+                for info, relative in _validated_members(
+                    bundle, active_limits
+                ):
                     destination = stage.joinpath(
                         *PurePosixPath(relative).parts
                     )
@@ -222,10 +252,9 @@ class StoreBundle:
                     if target.is_symlink() or not target.is_dir():
                         raise ValueError(
                             "BUNDLE-TYPE-001: colliding final path is unsafe"
-                        )
+                        ) from None
                     quarantine = (
-                        root
-                        / f".quarantine-{identity}-{uuid.uuid4().hex}"
+                        root / f".quarantine-{identity}-{uuid.uuid4().hex}"
                     )
                     os.replace(target, quarantine)
                     _fsync_directory(root)
@@ -306,7 +335,9 @@ def _validated_members(
         names.add(relative)
         folded.add(folded_name)
         if info.flag_bits & 0x1:
-            raise ValueError("BUNDLE-TYPE-001: encrypted members are unsupported")
+            raise ValueError(
+                "BUNDLE-TYPE-001: encrypted members are unsupported"
+            )
         if info.compress_type != zipfile.ZIP_STORED:
             raise ValueError(
                 f"BUNDLE-COMPRESSION-001: member {relative!r} is not ZIP_STORED"
@@ -411,15 +442,16 @@ def _copy_validated_member(
         raise ValueError(
             f"BUNDLE-SOURCE-001: validated member changed: {info.filename}"
         )
-    with os.fdopen(descriptor, "rb", closefd=True) as source, bundle.open(
-        info,
-        "w",
-        force_zip64=True,
-    ) as destination:
+    with (
+        os.fdopen(descriptor, "rb", closefd=True) as source,
+        bundle.open(
+            info,
+            "w",
+            force_zip64=True,
+        ) as destination,
+    ):
         _copy_stream(source, destination)
-        if _stat_identity(before) != _stat_identity(
-            os.fstat(source.fileno())
-        ):
+        if _stat_identity(before) != _stat_identity(os.fstat(source.fileno())):
             raise ValueError(
                 f"BUNDLE-SOURCE-001: member changed while packaging: {info.filename}"
             )
@@ -439,7 +471,9 @@ def _expected_digest(value: str) -> str:
         or len(value) != 64
         or any(character not in "0123456789abcdef" for character in value)
     ):
-        raise ValueError("BUNDLE-DIGEST-001: expected SHA256 must be lowercase hex")
+        raise ValueError(
+            "BUNDLE-DIGEST-001: expected SHA256 must be lowercase hex"
+        )
     return value
 
 

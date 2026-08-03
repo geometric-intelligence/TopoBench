@@ -15,7 +15,9 @@ def _incidence() -> torch.Tensor:
     )
 
 
-def _model(*, input_dropout: float = 0.0, edconv_type: str = "EquivSet") -> EDGNN:
+def _model(
+    *, input_dropout: float = 0.0, edconv_type: str = "EquivSet"
+) -> EDGNN:
     return EDGNN(
         num_features=4,
         input_dropout=input_dropout,
@@ -134,7 +136,9 @@ def test_edgnn_meandeg_returns_full_finite_output_with_isolated_nodes(
         assert torch.isfinite(output[isolated_nodes]).all()
 
 
-@pytest.mark.parametrize("isolated_position", [2, 4], ids=("interior", "trailing"))
+@pytest.mark.parametrize(
+    "isolated_position", [2, 4], ids=("interior", "trailing")
+)
 def test_edgnn_meandeg_isolation_does_not_change_nonisolated_output(
     isolated_position: int,
 ) -> None:

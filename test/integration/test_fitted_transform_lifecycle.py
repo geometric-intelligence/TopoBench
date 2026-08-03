@@ -13,7 +13,6 @@ import torch
 
 from test.data.dataload.test_disk_graph_datamodule import (
     materialized_heterogeneous_reference,
-    task8_stores,
 )
 from test.data.stores.test_typed_graph_store import QualifiedStoreFixture
 from topobench.data.stores.typed_graph_store import TypedGraphStore
@@ -22,6 +21,7 @@ from topobench.dataloader.disk_graph import (
     HeterogeneousClusterStrategy,
     HeterogeneousNeighborStrategy,
     HomogeneousClusterStrategy,
+    _fit_ids,
 )
 from topobench.transforms.fittable import FitStateError, FitStatus
 from topobench.transforms.incremental_pca import IncrementalPCATransform
@@ -53,6 +53,7 @@ class _CountingPCA(IncrementalPCATransform):
     def transform(self, batch: Any) -> Any:
         self.transform_calls += 1
         return super().transform(batch)
+
 
 class _HomogeneousCountingPCA(IncrementalPCATransform):
     def __init__(self) -> None:
@@ -113,11 +114,119 @@ def _strategy() -> HeterogeneousClusterStrategy:
 
 def _tree_digest(root: Path) -> tuple[tuple[str, str], ...]:
     return tuple(
-        (str(path.relative_to(root)), hashlib.sha256(path.read_bytes()).hexdigest())
+        (
+            str(path.relative_to(root)),
+            hashlib.sha256(path.read_bytes()).hexdigest(),
+        )
         for path in sorted(root.rglob("*"))
         if path.is_file()
     )
 
+
+
+class _BoundedIdSource:
+    ndim = 1
+    dtype = np.dtype(np.int32)
+
+    def __init__(self, values: np.ndarray, *, maximum_slice: int) -> None:
+        self._values = values
+        self.maximum_slice = maximum_slice
+        self.slice_lengths: list[int] = []
+
+    def __len__(self) -> int:
+        return len(self._values)
+
+    def __getitem__(self, item: slice) -> np.ndarray:
+        assert isinstance(item, slice)
+        assert item.step in {None, 1}
+        start = 0 if item.start is None else item.start
+        stop = len(self) if item.stop is None else item.stop
+        length = stop - start
+        assert length <= self.maximum_slice
+        self.slice_lengths.append(length)
+        return self._values[item]
+
+
+def test_canonical_fit_ids_validate_hash_and_reiterate_in_bounded_chunks() -> (
+    None
+):
+    source = _BoundedIdSource(
+        np.arange(11, dtype=np.int32),
+        maximum_slice=3,
+    )
+
+    identifiers = _fit_ids(
+        source,
+        row_count=11,
+        active_split_tag="primary",
+        chunk_rows=3,
+    )
+    chunks = tuple(identifiers.iter_chunks())
+
+    np.testing.assert_array_equal(
+        np.concatenate(chunks),
+        np.arange(11, dtype=np.int64),
+    )
+    assert identifiers.count == 11
+    assert identifiers.dtype == np.dtype("<i8")
+    canonical = _fit_ids(
+        np.arange(11, dtype="<i8"),
+        row_count=11,
+        active_split_tag="primary",
+        chunk_rows=4,
+    )
+    assert identifiers.sha256 == canonical.sha256
+    assert all(len(chunk) <= 3 for chunk in chunks)
+    assert source.slice_lengths
+    assert max(source.slice_lengths) <= 3
+
+
+def test_canonical_mask_ids_never_emit_empty_fit_updates() -> None:
+    mask = torch.tensor(
+        [False, True, False, False, False, True],
+        dtype=torch.bool,
+    )
+
+    identifiers = _fit_ids(
+        mask,
+        row_count=len(mask),
+        active_split_tag="primary",
+        chunk_rows=2,
+        is_mask=True,
+    )
+    chunks = tuple(identifiers.iter_chunks())
+
+    assert chunks
+    assert all(len(chunk) > 0 for chunk in chunks)
+    np.testing.assert_array_equal(
+        np.concatenate(chunks),
+        np.array([1, 5], dtype=np.int64),
+    )
+
+
+@pytest.mark.parametrize(
+    ("values", "message"),
+    (
+        ([0, 2, 1], "strictly increasing|sorted"),
+        ([0, 1, 1], "duplicates"),
+        ([-1, 0, 1], r"outside \[0, 3\)"),
+        ([0, 1, 3], r"outside \[0, 3\)"),
+    ),
+)
+def test_canonical_fit_ids_reject_malformed_streams_incrementally(
+    values: list[int],
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        _fit_ids(
+            _BoundedIdSource(
+                np.asarray(values, dtype=np.int32),
+                maximum_slice=2,
+            ),
+            row_count=3,
+            active_split_tag="primary",
+            chunk_rows=2,
+        )
 
 @pytest.mark.parametrize("strategy_name", ("cluster", "neighbor"))
 def test_fit_reads_only_sorted_canonical_train_rows_once_and_applies_once_per_batch(
@@ -128,7 +237,9 @@ def test_fit_reads_only_sorted_canonical_train_rows_once_and_applies_once_per_ba
 ) -> None:
     fixture = task8_stores["heterogeneous"]
     with TypedGraphStore.open(fixture.store_build.path) as store:
-        expected_ids = np.sort(np.array(store.split_ids("primary", "train"), copy=True))
+        expected_ids = np.sort(
+            np.array(store.split_ids("primary", "train"), copy=True)
+        )
         stored_features = np.array(store.node_features("author"), copy=True)
 
     feature_reads: list[np.ndarray] = []
@@ -142,8 +253,12 @@ def test_fit_reads_only_sorted_canonical_train_rows_once_and_applies_once_per_ba
             feature_reads.append(np.asarray(rows, dtype=np.int64).copy())
         return original_features(self, node_type, rows)
 
-    def forbidden_labels(self: TypedGraphStore, node_type: str, rows: Any = None) -> np.ndarray:
-        raise AssertionError(f"unsupervised fit opened labels for {node_type!r}")
+    def forbidden_labels(
+        self: TypedGraphStore, node_type: str, rows: Any = None
+    ) -> np.ndarray:
+        raise AssertionError(
+            f"unsupervised fit opened labels for {node_type!r}"
+        )
 
     monkeypatch.setattr(TypedGraphStore, "node_features", observed_features)
     monkeypatch.setattr(TypedGraphStore, "node_labels", forbidden_labels)
@@ -179,8 +294,11 @@ def test_fit_reads_only_sorted_canonical_train_rows_once_and_applies_once_per_ba
     assert transform.transform_calls == len(batches) == 2
     assert all(batch["author"].x.shape[1] == 1 for batch in batches)
     with TypedGraphStore.open(fixture.store_build.path) as reopened:
-        np.testing.assert_array_equal(reopened.node_features("author"), stored_features)
+        np.testing.assert_array_equal(
+            reopened.node_features("author"), stored_features
+        )
     module.close()
+
 
 def test_homogeneous_cluster_fits_complete_train_rows_without_leakage(
     task8_stores: dict[str, QualifiedStoreFixture],
@@ -189,8 +307,12 @@ def test_homogeneous_cluster_fits_complete_train_rows_without_leakage(
 ) -> None:
     fixture = task8_stores["homogeneous"]
     with TypedGraphStore.open(fixture.store_build.path) as store:
-        expected_ids = np.sort(np.array(store.split_ids("default", "train"), copy=True))
-        expected_features = np.array(store.node_features("node", expected_ids), copy=True)
+        expected_ids = np.sort(
+            np.array(store.split_ids("default", "train"), copy=True)
+        )
+        expected_features = np.array(
+            store.node_features("node", expected_ids), copy=True
+        )
     original_labels = TypedGraphStore.node_labels
 
     def forbidden_labels(
@@ -198,7 +320,9 @@ def test_homogeneous_cluster_fits_complete_train_rows_without_leakage(
         node_type: str,
         rows: Any = None,
     ) -> np.ndarray:
-        raise AssertionError(f"unsupervised fit opened labels for {node_type!r}")
+        raise AssertionError(
+            f"unsupervised fit opened labels for {node_type!r}"
+        )
 
     monkeypatch.setattr(TypedGraphStore, "node_labels", forbidden_labels)
     transform = _HomogeneousCountingPCA()
@@ -216,7 +340,9 @@ def test_homogeneous_cluster_fits_complete_train_rows_without_leakage(
         np.concatenate(transform.fit_features),
         expected_features,
     )
-    assert sum(len(value) for value in transform.fit_features) == len(expected_ids)
+    assert sum(len(value) for value in transform.fit_features) == len(
+        expected_ids
+    )
     monkeypatch.setattr(TypedGraphStore, "node_labels", original_labels)
     batches = list(module.train_dataloader())
     assert transform.transform_calls == len(batches) == 1
@@ -244,7 +370,8 @@ def test_materialized_neighbor_fits_partial_active_tag_rows_only(
         ].clone()
     original_features = data["author"].x.clone()
     expected_ids = (
-        data["author"].diagnostic_train_mask.nonzero(as_tuple=False)
+        data["author"]
+        .diagnostic_train_mask.nonzero(as_tuple=False)
         .reshape(-1)
         .numpy()
     )
@@ -267,7 +394,9 @@ def test_materialized_neighbor_fits_partial_active_tag_rows_only(
         np.concatenate(transform.fit_features),
         original_features[expected_ids].numpy(),
     )
-    assert sum(len(value) for value in transform.fit_features) == len(expected_ids)
+    assert sum(len(value) for value in transform.fit_features) == len(
+        expected_ids
+    )
     batches = list(module.train_dataloader())
     assert transform.transform_calls == len(batches) == len(expected_ids)
     assert torch.equal(data["author"].x, original_features)
@@ -291,7 +420,9 @@ def test_state_reuse_survives_restart_download_move_resume_and_worker_spawn(
     )
     first.setup("fit")
     expected_key = initial.fitted_state.key
-    expected_projection = next(iter(first.val_dataloader()))["author"].x.clone()
+    expected_projection = next(iter(first.val_dataloader()))[
+        "author"
+    ].x.clone()
     first.close()
     before = _tree_digest(states)
 
@@ -301,7 +432,9 @@ def test_state_reuse_survives_restart_download_move_resume_and_worker_spawn(
     resumed = _CountingPCA()
 
     def forbidden_begin(*args: object, **kwargs: object) -> None:
-        raise AssertionError("parent attempted to refit an existing immutable state")
+        raise AssertionError(
+            "parent attempted to refit an existing immutable state"
+        )
 
     resumed.begin_fit = forbidden_begin  # type: ignore[method-assign]
     second = DiskGraphDataModule(
@@ -378,6 +511,7 @@ def test_validation_only_never_fits_and_split_tags_cannot_share_state(
             fitted_state_root=tmp_path / "isolated",
         )
     assert diagnostic.status is FitStatus.UNFITTED
+
 
 def test_heterogeneous_fit_requires_explicit_target_before_publication(
     task8_stores: dict[str, QualifiedStoreFixture],

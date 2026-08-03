@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,7 @@ from topobench.data.stores.typed_graph_ingestion import (
 )
 from topobench.data.stores.typed_graph_store import (
     TypedGraphStore,
+    TypedGraphStoreBuild,
     TypedGraphStoreWriter,
 )
 
@@ -75,6 +77,144 @@ def test_validated_identity_is_cache_hit_and_changed_task_binding_is_miss(
         assert store.task_bindings == {"consumer_contract": "neighbor-v2"}
 
 
+def test_same_identity_deduplicates_while_distinct_identity_proceeds(
+    qualified_store_fixtures: dict[str, QualifiedStoreFixture],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = qualified_store_fixtures["homogeneous"]
+    shared_binding = {"transactional_publication": "shared"}
+    distinct_binding = {"transactional_publication": "distinct"}
+    first_writer = TypedGraphStoreWriter(
+        fixture.ingestor,
+        fixture.partition_build,
+        task_bindings=shared_binding,
+    )
+    duplicate_writer = TypedGraphStoreWriter(
+        fixture.ingestor,
+        fixture.partition_build,
+        task_bindings=shared_binding,
+    )
+    distinct_writer = TypedGraphStoreWriter(
+        fixture.ingestor,
+        fixture.partition_build,
+        task_bindings=distinct_binding,
+    )
+    assert (
+        first_writer._publication_lock_path()
+        == duplicate_writer._publication_lock_path()
+    )
+    assert (
+        distinct_writer._publication_lock_path()
+        != first_writer._publication_lock_path()
+    )
+    real_validate = store_module._validate_store_bounded
+    real_materialize = TypedGraphStoreWriter._materialize_candidate
+    first_candidate_ready = threading.Event()
+    release_first = threading.Event()
+    duplicate_started = threading.Event()
+    duplicate_done = threading.Event()
+    distinct_done = threading.Event()
+    materializations = {"shared": 0, "distinct": 0}
+
+    def pause_shared_candidate(path: str | Path, **kwargs: object) -> object:
+        candidate = Path(path)
+        if (
+            candidate.parent == first_writer._publication_namespace()
+            and not first_candidate_ready.is_set()
+        ):
+            first_candidate_ready.set()
+            assert release_first.wait(timeout=30)
+        return real_validate(path, **kwargs)
+
+    def count_materialization(
+        writer: TypedGraphStoreWriter,
+        root: Path,
+        reopened: object,
+    ) -> None:
+        identity = writer.task_bindings["transactional_publication"]
+        materializations[identity] += 1
+        real_materialize(writer, root, reopened)
+
+    monkeypatch.setattr(
+        store_module,
+        "_validate_store_bounded",
+        pause_shared_candidate,
+    )
+    monkeypatch.setattr(
+        TypedGraphStoreWriter,
+        "_materialize_candidate",
+        count_materialization,
+    )
+    first_results: list[TypedGraphStoreBuild] = []
+    duplicate_results: list[TypedGraphStoreBuild] = []
+    distinct_results: list[TypedGraphStoreBuild] = []
+    errors: list[BaseException] = []
+
+    def build(
+        writer: TypedGraphStoreWriter,
+        results: list[TypedGraphStoreBuild],
+        *,
+        started: threading.Event | None = None,
+        done: threading.Event | None = None,
+    ) -> None:
+        if started is not None:
+            started.set()
+        try:
+            results.append(writer.build())
+        except BaseException as error:
+            errors.append(error)
+        finally:
+            if done is not None:
+                done.set()
+
+    first = threading.Thread(
+        target=build,
+        args=(first_writer, first_results),
+        daemon=True,
+    )
+    first.start()
+    assert first_candidate_ready.wait(timeout=60)
+    duplicate = threading.Thread(
+        target=build,
+        args=(duplicate_writer, duplicate_results),
+        kwargs={"started": duplicate_started, "done": duplicate_done},
+        daemon=True,
+    )
+    distinct = threading.Thread(
+        target=build,
+        args=(distinct_writer, distinct_results),
+        kwargs={"done": distinct_done},
+        daemon=True,
+    )
+    duplicate.start()
+    distinct.start()
+    try:
+        assert duplicate_started.wait(timeout=10)
+        assert distinct_done.wait(timeout=60)
+        assert not duplicate_done.is_set()
+    finally:
+        release_first.set()
+    for thread in (first, duplicate, distinct):
+        thread.join(timeout=60)
+
+    assert not any(thread.is_alive() for thread in (first, duplicate, distinct))
+    assert errors == []
+    assert materializations == {"shared": 1, "distinct": 1}
+    assert (
+        len(first_results)
+        == len(duplicate_results)
+        == len(distinct_results)
+        == 1
+    )
+    assert first_results[0].cache_hit is False
+    assert duplicate_results[0].cache_hit is True
+    assert duplicate_results[0].path == first_results[0].path
+    assert distinct_results[0].cache_hit is False
+    assert distinct_results[0].path != first_results[0].path
+    for result in (*first_results, *duplicate_results, *distinct_results):
+        result.store.close()
+
+
 def test_failed_finalization_is_invisible_and_never_mutates_task1_6_stage(
     qualified_store_fixtures: dict[str, QualifiedStoreFixture],
     monkeypatch: pytest.MonkeyPatch,
@@ -87,6 +227,15 @@ def test_failed_finalization_is_invisible_and_never_mutates_task1_6_stage(
         fixture.partition_build,
         task_bindings={"fault_injection": "copy"},
     )
+    published_before = {
+        path
+        for path in fixture.ingestor.store_root.iterdir()
+        if path.is_dir()
+        and len(path.name) == 64
+        and all(
+            character in "0123456789abcdef" for character in path.name
+        )
+    }
     original = writer._copy_file
     copied = 0
 
@@ -103,9 +252,22 @@ def test_failed_finalization_is_invisible_and_never_mutates_task1_6_stage(
 
     assert _stage_checksums(source_stage) == before
     assert fixture.store_build.path.is_dir()
-    assert not list(fixture.ingestor.store_root.glob("fault_injection*"))
-    assert not list(
-        (fixture.ingestor.store_root / ".staging").glob("finalize-*")
+    assert {
+        path
+        for path in fixture.ingestor.store_root.iterdir()
+        if path.is_dir()
+        and len(path.name) == 64
+        and all(
+            character in "0123456789abcdef" for character in path.name
+        )
+    } == published_before
+    assert not writer._publication_receipt_path().exists()
+    assert not tuple(
+        path
+        for path in (fixture.ingestor.store_root / ".staging").rglob(
+            "finalize-*"
+        )
+        if path.is_dir()
     )
 
 

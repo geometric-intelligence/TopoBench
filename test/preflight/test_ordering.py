@@ -9,17 +9,21 @@ import hydra
 import pytest
 from hydra.core.global_hydra import GlobalHydra
 from omegaconf import OmegaConf
-from topobench.callbacks.input_pipeline import InputPipelineCallback
-from topobench.profiling.execution_events import ExecutionOperation
 
 import topobench.run as run_module
+from topobench.callbacks.input_pipeline import InputPipelineCallback
 from topobench.preflight import (
     PreflightCheck,
     PreflightError,
     PreflightResult,
     PreflightRunner,
 )
+from topobench.profiling.execution_events import ExecutionOperation
 from topobench.utils.config_resolvers import register_all_resolvers
+from topobench.utils.instantiators import (
+    validate_execution_profile,
+    validate_profile_capability,
+)
 from topobench.utils.model_instantiation import instantiate_model
 
 
@@ -66,7 +70,10 @@ def _run_cfg(*, train: bool = True, test: bool = False):
                 "accelerator": "cpu",
                 "devices": 1,
             },
-            "paths": {"output_dir": "test-output"},
+            "paths": {
+                "output_dir": "test-output",
+                "checkpoint_dir": "test-output/checkpoints",
+            },
             "callbacks": None,
             "logger": None,
             "train": train,
@@ -94,6 +101,7 @@ def _install_runtime_fakes(
         datamodule=MagicMock(),
         preprocessing_time=0.0,
         data_spec=None,
+        capability_spec=MagicMock(name="observed_capability"),
     )
     pipeline = MagicMock()
     pipeline.build.side_effect = lambda cfg: (
@@ -102,6 +110,7 @@ def _install_runtime_fakes(
     trainer = MagicMock()
     trainer.callback_metrics = {}
     trainer.fit.side_effect = lambda **kwargs: events.append("fit")
+    observed_validation = MagicMock(name="observed_capability_validation")
     model_count = 0
 
     def instantiate(config, **kwargs):
@@ -115,11 +124,21 @@ def _install_runtime_fakes(
             return trainer
         raise AssertionError(f"unexpected Hydra construction: {target!r}")
 
-    def instantiate_model(cfg, *, data_spec):
+    def instantiate_model(
+        cfg,
+        *,
+        data_spec,
+        capability_validation,
+        profile_record,
+    ):
         nonlocal model_count
+        del profile_record
         del cfg, data_spec
+        assert capability_validation is observed_validation
         model_count += 1
-        events.append("throwaway_model" if model_count == 1 else "production_model")
+        events.append(
+            "throwaway_model" if model_count == 1 else "production_model"
+        )
         return MagicMock()
 
     class FakeRunner:
@@ -156,6 +175,21 @@ def _install_runtime_fakes(
         lambda seed, workers: events.append(f"seed:{seed}:{workers}"),
     )
     monkeypatch.setattr(run_module.hydra.utils, "instantiate", instantiate)
+    monkeypatch.setattr(
+        run_module,
+        "validate_execution_profile",
+        MagicMock(name="execution_profile_record"),
+    )
+    monkeypatch.setattr(
+        run_module,
+        "validate_profile_capability",
+        MagicMock(
+            side_effect=[
+                MagicMock(name="static_capability_validation"),
+                observed_validation,
+            ]
+        ),
+    )
     monkeypatch.setattr(run_module, "instantiate_model", instantiate_model)
     monkeypatch.setattr(run_module, "PreflightRunner", FakeRunner)
     monkeypatch.setattr(
@@ -176,6 +210,7 @@ def _install_runtime_fakes(
         lambda **kwargs: events.append("test"),
     )
     return trainer, pipeline
+
 
 def test_monitor_precedes_pipeline_and_is_adopted_only_after_preflight(
     monkeypatch: pytest.MonkeyPatch,
@@ -222,10 +257,16 @@ def test_monitor_precedes_pipeline_and_is_adopted_only_after_preflight(
     run_module.run(cfg)
 
     assert pipeline.call_args is None
-    assert events.index("monitor_construct") < events.index("pipeline_construct")
+    assert events.index("monitor_construct") < events.index(
+        "pipeline_construct"
+    )
     assert events.index("pipeline_build") < events.index("static_preflight")
-    assert events.index("static_preflight") < events.index("callbacks_construct")
-    assert events.index("callbacks_construct") < events.index("trainer_construct")
+    assert events.index("static_preflight") < events.index(
+        "callbacks_construct"
+    )
+    assert events.index("callbacks_construct") < events.index(
+        "trainer_construct"
+    )
     assert pipeline.build.call_args.args == (cfg,)
     assert pipeline.execution_monitor is monitor
 
@@ -339,7 +380,9 @@ def test_experimental_disable_is_structured_and_unqualified() -> None:
     assert result.checks[-1].check_id == "preflight.enabled"
 
 
-def test_config_only_run_records_probe_as_not_requested_without_model() -> None:
+def test_config_only_run_records_probe_as_not_requested_without_model() -> (
+    None
+):
     cfg = _run_cfg(train=False, test=False)
     runner = PreflightRunner(cfg, pipeline_output=None)
     static_result = runner.validate_static()
@@ -348,7 +391,9 @@ def test_config_only_run_records_probe_as_not_requested_without_model() -> None:
     def model_factory():
         nonlocal model_requested
         model_requested = True
-        raise AssertionError("config-only run must not construct a probe model")
+        raise AssertionError(
+            "config-only run must not construct a probe model"
+        )
 
     result = runner.run_probe(
         model_factory=model_factory,
@@ -362,7 +407,9 @@ def test_config_only_run_records_probe_as_not_requested_without_model() -> None:
     assert "not executed" in result.checks[-1].detail
 
 
-def test_isolated_probe_uses_real_model_supervision_loss_and_typed_evaluator() -> None:
+def test_isolated_probe_uses_real_model_supervision_loss_and_typed_evaluator() -> (
+    None
+):
     GlobalHydra.instance().clear()
     register_all_resolvers()
     with hydra.initialize(
@@ -392,10 +439,16 @@ def test_isolated_probe_uses_real_model_supervision_loss_and_typed_evaluator() -
     runner = PreflightRunner(cfg, pipeline_output)
 
     static_result = runner.validate_static()
+    capability_validation = validate_profile_capability(
+        cfg,
+        profile_record=validate_execution_profile(cfg),
+        observed=pipeline_output.capability_spec,
+    )
     result = runner.run_probe(
         model_factory=lambda: instantiate_model(
             cfg,
             data_spec=pipeline_output.data_spec,
+            capability_validation=capability_validation,
         ),
         static_result=static_result,
     )
@@ -403,7 +456,9 @@ def test_isolated_probe_uses_real_model_supervision_loss_and_typed_evaluator() -
     assert result.passed is True
     assert result.qualified is True
     execution_checks = tuple(
-        check for check in result.checks if check.check_id.startswith("execution.")
+        check
+        for check in result.checks
+        if check.check_id.startswith("execution.")
     )
     assert tuple(check.check_id for check in execution_checks) == (
         "execution.representative_batch",

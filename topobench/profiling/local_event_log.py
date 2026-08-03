@@ -11,9 +11,8 @@ import stat
 import threading
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
-from typing import Any
 
 from topobench.profiling.execution_events import ExecutionEvent
 
@@ -37,7 +36,7 @@ class EventLogOverflowError(ValueError):
     """Reject an individual event that cannot fit one bounded segment."""
 
 
-class FsyncPolicy(str, Enum):
+class FsyncPolicy(StrEnum):
     """Declared durability point for authoritative local evidence."""
 
     ALWAYS = "always"
@@ -151,17 +150,26 @@ class LocalEventLog:
         root.mkdir(parents=True, exist_ok=True)
         candidate.parent.mkdir(parents=True, exist_ok=True)
         _reject_symlink_components(candidate)
-        if candidate.parent.resolve() != root.resolve() and allowed_root is None:
-            raise UnsafeEventLogPathError("event log parent changed during creation")
+        if (
+            candidate.parent.resolve() != root.resolve()
+            and allowed_root is None
+        ):
+            raise UnsafeEventLogPathError(
+                "event log parent changed during creation"
+            )
         try:
             policy = FsyncPolicy(fsync_policy)
         except (TypeError, ValueError) as error:
-            raise ValueError("fsync_policy must be always, rotation, or close") from error
+            raise ValueError(
+                "fsync_policy must be always, rotation, or close"
+            ) from error
         self.path = candidate
         self.allowed_root = root.resolve()
         self.max_bytes = _integer(max_bytes, "max_bytes", minimum=256)
         self.max_records = _integer(max_records, "max_records", minimum=1)
-        self.max_rotations = _integer(max_rotations, "max_rotations", minimum=0)
+        self.max_rotations = _integer(
+            max_rotations, "max_rotations", minimum=0
+        )
         self.fsync_policy = policy
         self.rotated_file_count = 0
         self.recovered_tail_bytes = 0
@@ -212,10 +220,9 @@ class LocalEventLog:
     ) -> None:
         self._segments = segments or [[]]
         self._retained_events = tuple(
-            event
-            for segment in self._segments
-            for event in segment
+            event for segment in self._segments for event in segment
         )
+
     def _fingerprint_locked(
         self,
     ) -> tuple[tuple[str, int, int, int, int], ...]:
@@ -238,9 +245,6 @@ class LocalEventLog:
         if self._fingerprint_locked() != self._segment_fingerprint:
             self._recover_retained_locked()
 
-
-
-
     def _recover_retained_locked(self) -> None:
         segments: list[list[ExecutionEvent]] = []
         active_size = 0
@@ -257,13 +261,15 @@ class LocalEventLog:
         self._set_segments(segments)
         self._segment_fingerprint = self._fingerprint_locked()
 
-
-
     def _rotation_path(self, index: int) -> Path:
         return self.path.with_name(f"{self.path.name}.{index}")
 
     def _rotation_paths(self, *, oldest_first: bool) -> tuple[Path, ...]:
-        indices = range(self.max_rotations, 0, -1) if oldest_first else range(1, self.max_rotations + 1)
+        indices = (
+            range(self.max_rotations, 0, -1)
+            if oldest_first
+            else range(1, self.max_rotations + 1)
+        )
         return tuple(
             path
             for path in (self._rotation_path(index) for index in indices)
@@ -285,7 +291,9 @@ class LocalEventLog:
         return _canonical(frame) + b"\n"
 
     @staticmethod
-    def _decode(line: bytes, *, path: Path, line_number: int) -> ExecutionEvent:
+    def _decode(
+        line: bytes, *, path: Path, line_number: int
+    ) -> ExecutionEvent:
         try:
             frame = json.loads(line)
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -323,7 +331,9 @@ class LocalEventLog:
         try:
             event = ExecutionEvent.from_record(record)
             if event.as_record() != record:
-                raise ValueError("event record is not canonical or safely redacted")
+                raise ValueError(
+                    "event record is not canonical or safely redacted"
+                )
             return event
         except (TypeError, ValueError) as error:
             raise EventLogCorruptionError(
@@ -422,7 +432,10 @@ class LocalEventLog:
             self._refresh_if_changed_locked()
             events = tuple(self._segments[-1])
             size = self._active_size
-            if len(events) >= self.max_records or size + len(encoded) > self.max_bytes:
+            if (
+                len(events) >= self.max_records
+                or size + len(encoded) > self.max_bytes
+            ):
                 self._rotate()
             descriptor = _secure_open(self.path, os.O_APPEND | os.O_WRONLY)
             try:
@@ -457,8 +470,6 @@ class LocalEventLog:
             self._refresh_if_changed_locked()
             return self._retained_events
 
-
-
     @property
     def closed(self) -> bool:
         return self._closed
@@ -483,7 +494,7 @@ class LocalEventLog:
         self._closed = True
         os.close(self._lock_descriptor)
 
-    def __enter__(self) -> "LocalEventLog":
+    def __enter__(self) -> LocalEventLog:
         self._ensure_open()
         return self
 

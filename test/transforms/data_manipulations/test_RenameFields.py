@@ -19,9 +19,7 @@ def test_init_validates_lengths():
 
 
 def test_repr_includes_field_names():
-    t = RenameFields(
-        init_field_name=["a"], new_field_name=["b"], note="hello"
-    )
+    t = RenameFields(init_field_name=["a"], new_field_name=["b"], note="hello")
     text = repr(t)
     assert "RenameFields" in text
     assert "'a'" in text

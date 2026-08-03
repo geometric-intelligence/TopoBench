@@ -30,13 +30,16 @@ TopoBench requires Python 3.11 and uses [uv](https://docs.astral.sh/uv/) for its
 ```bash
 git clone https://github.com/geometric-intelligence/topobench.git
 cd topobench
-source uv_env_setup.sh cpu
+source uv_env_setup.sh
 ```
 
-Pass `cu118` or `cu121` instead of `cpu` when that build matches the machine. The setup script creates `.venv`, selects the matching PyTorch and PyG packages, and synchronizes the project. For an existing compatible environment, install every project extra directly:
+The committed lock selects the supported build for the host: CPU on macOS and
+CUDA 12.1 on Linux. The setup script never edits `pyproject.toml` or `uv.lock`;
+it creates `.venv` with a frozen sync. For an existing compatible environment,
+use the same immutable command directly:
 
 ```bash
-uv sync --all-extras
+uv sync --frozen --all-extras
 ```
 
 ## Run the smallest graph experiment
@@ -54,6 +57,23 @@ uv run python -m topobench experiment=graph_synthetic_regression
 ```
 
 See [Graph data and batching](docs/graph_data.md) for split, target-shape, and edge-policy contracts.
+
+## Choose a Hydra execution trust profile
+
+The default `execution_profile=qualified` accepts only the exact packaged
+`_target_` import paths for every dataset, model component, pipeline, callback,
+logger, trainer, optimizer, evaluator, and loss. A changed or additional
+executable target fails before any runtime object is created.
+
+Use `execution_profile=experimental` explicitly when developing a compatible
+custom component. Experimental runs execute the configured target unchanged,
+emit an unqualified warning, and record every configured and custom target in
+their runtime provenance; they never become qualified.
+
+Hydra `_target_` values execute trusted Python code. TopoBench configuration is
+therefore a local trusted-code interface, not an untrusted service API.
+Accepting external submissions would require a separate target-free schema and
+an isolated worker; that boundary is outside TopoBench's current runtime.
 
 ## Run heterogeneous graph experiments
 
@@ -103,7 +123,7 @@ Training emits ordinary phase metrics while the selected checkpoint is based on 
 - `val_best_rerun/<metric>` for the validation rerun;
 - `test_best_rerun/<metric>` for the test rerun.
 
-For example, classification can produce `val_best_rerun/accuracy` and `test_best_rerun/accuracy`. Use these namespaces—not the final epoch's `val/<metric>` or `test/<metric>`—when reporting the selected model. W&B receives the same names when its logger is enabled.
+For example, classification can produce `val_best_rerun/accuracy` and `test_best_rerun/accuracy`. Use these namespaces—not the final epoch's `val/<metric>` or `test/<metric>`—when reporting the selected model. W&B receives the same names when its logger is enabled. Selected-checkpoint reruns load only a digest-bound tensor state with `weights_only=True` and strict model matching. Qualified full resume accepts only a private checkpoint under the current run's configured checkpoint root whose path, size, and SHA-256 match its same-run manifest; arbitrary external `ckpt_path` values are rejected before model or trainer construction.
 
 ## Add a dataset through the loader registry
 

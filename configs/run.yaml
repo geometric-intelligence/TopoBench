@@ -11,6 +11,7 @@ defaults:
   - optimizer: default
   - loss: default
   - evaluator: default
+  - evaluation_artifacts: default
   - preflight: default
   - callbacks: default
   - logger: csv
@@ -32,7 +33,8 @@ defaults:
 # task name, determines output directory path
 task_name: "train"
 
-# qualified runs require every mandatory static and execution preflight check
+# qualified requires exact packaged targets; experimental custom targets are
+# trusted local code and always produce unqualified outputs
 execution_profile: qualified
 
 # tags to help you identify your experiments
@@ -47,6 +49,9 @@ train: True
 # lightning chooses best weights based on the metric specified in checkpoint callback
 test: True
 delete_checkpoint_after_test: False
+
+# metric returned by train.py for hyperparameter optimization
+optimized_metric: null
 
 # simply provide checkpoint path to resume training
 ckpt_path: null

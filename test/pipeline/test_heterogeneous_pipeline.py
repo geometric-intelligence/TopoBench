@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import math
+import pickle
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from pathlib import Path
@@ -21,11 +23,19 @@ from lightning.pytorch.loggers.wandb import WandbLogger
 from omegaconf import DictConfig, OmegaConf
 from torch_geometric.data import Data, HeteroData
 
+import topobench.evaluator as evaluator_module
+import topobench.run as run_module
 from topobench.dataloader.heterogeneous import HeterogeneousNodeDataModule
 from topobench.evaluator import EvaluationResult
 from topobench.model import TBModel
+from topobench.nn.capabilities import validate_capability_composition
 from topobench.run import rerun_best_model_checkpoint, run
 from topobench.utils import instantiate_callbacks
+from topobench.utils.checkpoint_io import (
+    TrustedCheckpointIO,
+    checkpoint_manifest_path,
+    checkpoint_state_path,
+)
 from topobench.utils.config_resolvers import register_all_resolvers
 from topobench.utils.model_instantiation import instantiate_model
 
@@ -56,6 +66,25 @@ NEIGHBOR_EXPERIMENTS = (
 )
 
 
+def _execute_checkpoint_reducer_canary(marker_path: str) -> torch.Tensor:
+    """Record unsafe deserialization without performing a harmful action."""
+    Path(marker_path).write_text("executed", encoding="utf-8")
+    return torch.tensor(0)
+
+
+class _CheckpointReducerCanary:
+    """Pickle payload whose reducer is inert until unsafe deserialization."""
+
+    def __init__(self, marker_path: Path) -> None:
+        self._marker_path = marker_path
+
+    def __reduce__(self) -> tuple[object, tuple[str]]:
+        return (
+            _execute_checkpoint_reducer_canary,
+            (str(self._marker_path),),
+        )
+
+
 def _compose(
     experiment: str,
     *,
@@ -78,6 +107,8 @@ def _compose(
                 "paths=test",
                 f"paths.output_dir={output_dir}",
                 f"paths.work_dir={output_dir}",
+                f"paths.data_dir={tmp_path / 'datasets'}",
+                f"++paths.cache_dir={tmp_path / 'cache'}",
                 f"trainer.default_root_dir={output_dir}",
                 (
                     "callbacks.model_checkpoint.dirpath="
@@ -200,6 +231,29 @@ def test_full_batch_experiment_contract(
     ]
 
 
+def test_heterogeneous_pipeline_emits_observed_capability(
+    tmp_path: Path,
+) -> None:
+    """Capability metadata comes from validated runtime node stores."""
+    cfg = _compose("heterogeneous_synthetic_hgt_full", tmp_path=tmp_path)
+
+    output = hydra.utils.instantiate(cfg.data_pipeline).build(cfg)
+    capability = output.capability_spec
+
+    assert capability is not None
+    assert capability.selector == "heterogeneous/SyntheticHeterogeneous"
+    assert capability.data_domain == "heterogeneous"
+    assert capability.output_kind == "heterogeneous"
+    assert capability.feature_widths == output.data_spec.input_channels
+    assert capability.feature_widths == (
+        ("author", 8),
+        ("paper", 5),
+        ("venue", 1),
+    )
+    assert capability.num_classes == output.data_spec.num_classes == 2
+    assert capability.target_node_type == "author"
+
+
 @pytest.mark.parametrize(
     ("experiment", "model_name"),
     NEIGHBOR_EXPERIMENTS,
@@ -283,15 +337,8 @@ def test_full_batch_training_validation_checkpoint_and_best_rerun(
     assert best_path.is_file()
     assert best_path.stat().st_size > 0
 
-    rerun_messages = [record.getMessage() for record in caplog.records]
-    assert any(
-        "evaluations/best_checkpoint/val/" in message
-        for message in rerun_messages
-    )
-    assert any(
-        "evaluations/best_checkpoint/test/" in message
-        for message in rerun_messages
-    )
+    assert "evaluations/best_checkpoint/val/num_examples" in fit_metrics
+    assert "evaluations/best_checkpoint/test/num_examples" in fit_metrics
 
     # The production rerun attaches the model to a dedicated trainer whose
     # final phase is test.
@@ -371,15 +418,8 @@ def test_neighbor_training_validation_checkpoint_and_best_rerun(
     assert best_path.is_file()
     assert best_path.stat().st_size > 0
 
-    rerun_messages = [record.getMessage() for record in caplog.records]
-    assert any(
-        "evaluations/best_checkpoint/val/" in message
-        for message in rerun_messages
-    )
-    assert any(
-        "evaluations/best_checkpoint/test/" in message
-        for message in rerun_messages
-    )
+    assert "evaluations/best_checkpoint/val/num_examples" in fit_metrics
+    assert "evaluations/best_checkpoint/test/num_examples" in fit_metrics
 
     rerun_model = objects["model"]
     rerun_trainer = rerun_model.trainer
@@ -438,6 +478,14 @@ def test_neighbor_training_validation_checkpoint_and_best_rerun(
                 device=torch.device("cpu"),
                 callbacks=objects["callbacks"],
                 logger=[sink],
+                prediction_row_adapter=objects[
+                    "pipeline_output"
+                ].prediction_row_adapter,
+                supervision_counts=objects[
+                    "pipeline_output"
+                ].supervision_counts,
+                provenance_input=objects["pipeline_output"].provenance_input,
+                source_graph_id=objects["pipeline_output"].source_graph_id,
             )
         )
         assert torch.equal(torch.random.get_rng_state(), rng_before)
@@ -493,8 +541,9 @@ def test_neighbor_process_outputs_accounts_for_every_seed_once(
             "model.backbone.dropout=0.0",
         ),
     )
-    datamodule, model = _build_heterogeneous_runtime(cfg)
+    datamodule, model, pipeline_output = _build_heterogeneous_runtime(cfg)
     target_type = datamodule.spec.target_node_type
+    prediction_adapter = pipeline_output.prediction_row_adapter
     observed_context = False
 
     for phase in ("train", "val", "test"):
@@ -519,6 +568,34 @@ def test_neighbor_process_outputs_accounts_for_every_seed_once(
 
             model.zero_grad(set_to_none=True)
             unfiltered = model.forward(batch)
+            supervised = model.supervision_adapter.select(
+                unfiltered,
+                batch,
+                model.state_str,
+            )
+            payload = prediction_adapter.adapt(
+                batch,
+                supervised,
+                phase=phase,
+            )
+            assert isinstance(payload, evaluator_module.PredictionPayload)
+            assert payload.identity.key == (
+                "source_graph_id",
+                "target_node_type",
+                "n_id",
+            )
+            exported_ids = payload.identity.columns["n_id"]
+            assert exported_ids.tolist() == seed_ids.tolist()
+            assert len(exported_ids) == seed_count
+            assert payload.prediction.shape[0] == seed_count
+            assert (
+                payload.identity.columns["target_node_type"].tolist()
+                == [target_type] * seed_count
+            )
+            assert (
+                payload.identity.columns["source_graph_id"].tolist()
+                == [pipeline_output.source_graph_id] * seed_count
+            )
             raw_logits = cast(torch.Tensor, unfiltered["logits"])
             raw_labels = cast(torch.Tensor, unfiltered["labels"])
             raw_logits.retain_grad()
@@ -563,7 +640,7 @@ def test_neighbor_fixed_evaluation_repeats_batches_and_metrics(
         tmp_path=tmp_path,
         extra_overrides=("model.backbone.dropout=0.0",),
     )
-    datamodule, model = _build_heterogeneous_runtime(cfg)
+    datamodule, model, _ = _build_heterogeneous_runtime(cfg)
     assert datamodule.evaluation_protocol == "sampled_neighbor_fixed"
 
     for phase in ("val", "test"):
@@ -606,6 +683,7 @@ def test_full_batch_best_rerun_logs_authoritative_result_namespaces(
         MagicMock(spec=WandbLogger),
         MagicMock(spec=CSVLogger),
     ]
+    sinks[1].log_dir = str(tmp_path / "csv-logger")
     results = rerun_best_model_checkpoint(
         checkpoint_model=objects["model"],
         cfg=cfg,
@@ -613,13 +691,19 @@ def test_full_batch_best_rerun_logs_authoritative_result_namespaces(
         device=torch.device("cpu"),
         callbacks=objects["callbacks"],
         logger=sinks,
+        prediction_row_adapter=objects[
+            "pipeline_output"
+        ].prediction_row_adapter,
+        supervision_counts=objects["pipeline_output"].supervision_counts,
+        provenance_input=objects["pipeline_output"].provenance_input,
+        source_graph_id=objects["pipeline_output"].source_graph_id,
     )
 
     assert tuple(results) == ("val", "test")
     assert results["val"] is not results["test"]
     assert all(sink.log_metrics.call_count == 2 for sink in sinks)
     assert all(
-        len(call.args) == 1 and not call.kwargs
+        len(call.args) == 1 and set(call.kwargs) == {"step"}
         for sink in sinks
         for call in sink.log_metrics.call_args_list
     )
@@ -674,6 +758,390 @@ def test_full_batch_best_rerun_logs_authoritative_result_namespaces(
     )
 
 
+def test_selected_checkpoint_rejects_reducer_without_execution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Selected rerun rejects executable pickle before trainer construction."""
+    cfg = _compose(
+        "heterogeneous_synthetic_hgt_full",
+        tmp_path=tmp_path,
+        extra_overrides=(
+            "execution_profile=experimental",
+            "evaluation_artifacts.enabled=false",
+        ),
+    )
+    datamodule, model, _ = _build_heterogeneous_runtime(cfg)
+    callbacks = instantiate_callbacks(cfg.callbacks)
+    selected_checkpoint = _checkpoint_callback(callbacks)
+    checkpoint_path = (
+        Path(cfg.paths.output_dir) / "checkpoints" / "poisoned.ckpt"
+    )
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    marker_path = tmp_path / "unsafe-reducer-executed"
+    torch.save(
+        {
+            "state_dict": model.state_dict(),
+            "epoch": 0,
+            "global_step": 0,
+            "reducer_canary": _CheckpointReducerCanary(marker_path),
+        },
+        checkpoint_path,
+    )
+    assert not marker_path.exists()
+    selected_checkpoint.best_model_path = str(checkpoint_path)
+    construction_calls: list[object] = []
+
+    def construction_must_not_start(*args: object, **kwargs: object) -> object:
+        construction_calls.append((args, kwargs))
+        raise AssertionError("unsafe checkpoint must fail before construction")
+
+    monkeypatch.setattr(
+        run_module.hydra.utils,
+        "instantiate",
+        construction_must_not_start,
+    )
+
+    with pytest.raises(pickle.UnpicklingError):
+        rerun_best_model_checkpoint(
+            checkpoint_model=model,
+            cfg=cfg,
+            datamodule=datamodule,
+            device=torch.device("cpu"),
+            callbacks=callbacks,
+            logger=[],
+        )
+
+    assert not marker_path.exists()
+    assert construction_calls == []
+
+
+def test_selected_checkpoint_digest_matches_the_bytes_loaded_during_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A path replacement cannot split checkpoint identity from loaded state."""
+    cfg = _compose(
+        "heterogeneous_synthetic_hgt_full",
+        tmp_path=tmp_path,
+        extra_overrides=(
+            "execution_profile=experimental",
+            "evaluation_artifacts.enabled=false",
+        ),
+    )
+    datamodule, model, _ = _build_heterogeneous_runtime(cfg)
+    callbacks = instantiate_callbacks(cfg.callbacks)
+    selected_checkpoint = _checkpoint_callback(callbacks)
+    checkpoint_dir = Path(cfg.paths.output_dir) / "checkpoints"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = checkpoint_dir / "selected.ckpt"
+    replacement_path = checkpoint_dir / "replacement.ckpt"
+
+    original_state = {
+        name: value.detach().clone()
+        for name, value in model.state_dict().items()
+    }
+    torch.save(
+        {
+            "state_dict": original_state,
+            "epoch": 0,
+            "global_step": 0,
+        },
+        checkpoint_path,
+    )
+    original_digest = hashlib.sha256(checkpoint_path.read_bytes()).hexdigest()
+
+    replacement_state = {
+        name: value.detach().clone() for name, value in original_state.items()
+    }
+    changed_name = next(
+        name
+        for name, value in replacement_state.items()
+        if torch.is_floating_point(value)
+    )
+    replacement_state[changed_name].add_(1.0)
+    torch.save(
+        {
+            "state_dict": replacement_state,
+            "epoch": 1,
+            "global_step": 1,
+        },
+        replacement_path,
+    )
+    replacement_digest = hashlib.sha256(
+        replacement_path.read_bytes()
+    ).hexdigest()
+    assert replacement_digest != original_digest
+    selected_checkpoint.best_model_path = str(checkpoint_path)
+
+    real_torch_load = run_module.torch.load
+    load_calls: list[tuple[bool, tuple[Any, ...], dict[str, Any]]] = []
+    real_load_state_dict = model.load_state_dict
+    strict_load_calls: list[bool] = []
+
+    def record_strict_load(
+        state_dict: Mapping[str, torch.Tensor],
+        *,
+        strict: bool = True,
+        assign: bool = False,
+    ) -> object:
+        strict_load_calls.append(strict)
+        return real_load_state_dict(
+            state_dict,
+            strict=strict,
+            assign=assign,
+        )
+
+    monkeypatch.setattr(model, "load_state_dict", record_strict_load)
+
+    def replace_before_deserialization(
+        source: Any,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        load_calls.append(
+            (
+                callable(getattr(source, "read", None))
+                and not isinstance(source, (str, Path)),
+                args,
+                dict(kwargs),
+            )
+        )
+        replacement_path.replace(checkpoint_path)
+        return real_torch_load(source, *args, **kwargs)
+
+    monkeypatch.setattr(
+        run_module.torch,
+        "load",
+        replace_before_deserialization,
+    )
+
+    results = rerun_best_model_checkpoint(
+        checkpoint_model=model,
+        cfg=cfg,
+        datamodule=datamodule,
+        device=torch.device("cpu"),
+        callbacks=callbacks,
+        logger=[],
+    )
+    assert len(load_calls) == 1
+    source_is_stream, _, load_kwargs = load_calls[0]
+    assert source_is_stream
+    assert load_kwargs["map_location"] == "cpu"
+    assert load_kwargs["weights_only"] is True
+    assert strict_load_calls == [True]
+
+    loaded_state = model.state_dict()
+
+    def matches(expected: Mapping[str, torch.Tensor]) -> bool:
+        return loaded_state.keys() == expected.keys() and all(
+            torch.equal(loaded_state[name].cpu(), expected[name].cpu())
+            for name in expected
+        )
+
+    loaded_original = matches(original_state)
+    loaded_replacement = matches(replacement_state)
+    assert loaded_original != loaded_replacement
+    loaded_digest = original_digest if loaded_original else replacement_digest
+    assert all(
+        result.context.checkpoint_id == loaded_digest
+        for result in results.values()
+    )
+
+
+def test_selected_checkpoint_cleanup_preserves_post_load_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cleanup removes only the trusted objects loaded before a path swap."""
+    cfg = _compose(
+        "heterogeneous_synthetic_hgt_full",
+        tmp_path=tmp_path,
+        extra_overrides=(
+            "execution_profile=experimental",
+            "evaluation_artifacts.enabled=false",
+            "delete_checkpoint_after_test=true",
+        ),
+    )
+    datamodule, model, _ = _build_heterogeneous_runtime(cfg)
+    callbacks = instantiate_callbacks(cfg.callbacks)
+    selected_checkpoint = _checkpoint_callback(callbacks)
+    checkpoint_dir = Path(cfg.paths.checkpoint_dir)
+    checkpoint_path = checkpoint_dir / "selected.ckpt"
+    replacement_path = checkpoint_dir / "replacement.ckpt"
+    original_state = {
+        name: value.detach().clone()
+        for name, value in model.state_dict().items()
+    }
+    checkpoint_io = TrustedCheckpointIO(
+        output_root=cfg.paths.output_dir,
+        checkpoint_root=checkpoint_dir,
+    )
+    checkpoint_io.save_checkpoint(
+        {
+            "state_dict": original_state,
+            "epoch": 0,
+            "global_step": 0,
+        },
+        checkpoint_path,
+    )
+    original_digest = hashlib.sha256(checkpoint_path.read_bytes()).hexdigest()
+
+    replacement_state = {
+        name: value.detach().clone() for name, value in original_state.items()
+    }
+    changed_name = next(
+        name
+        for name, value in replacement_state.items()
+        if torch.is_floating_point(value)
+    )
+    replacement_state[changed_name].add_(1.0)
+    torch.save(
+        {
+            "state_dict": replacement_state,
+            "epoch": 1,
+            "global_step": 1,
+        },
+        replacement_path,
+    )
+    replacement_bytes = replacement_path.read_bytes()
+    replacement_digest = hashlib.sha256(replacement_bytes).hexdigest()
+    assert replacement_digest != original_digest
+    selected_checkpoint.best_model_path = str(checkpoint_path)
+
+    real_load_selected_checkpoint = run_module.load_selected_checkpoint
+
+    def replace_after_trusted_load(*args: Any, **kwargs: Any) -> object:
+        loaded = real_load_selected_checkpoint(*args, **kwargs)
+        replacement_path.replace(checkpoint_path)
+        return loaded
+
+    monkeypatch.setattr(
+        run_module,
+        "load_selected_checkpoint",
+        replace_after_trusted_load,
+    )
+
+    results = rerun_best_model_checkpoint(
+        checkpoint_model=model,
+        cfg=cfg,
+        datamodule=datamodule,
+        device=torch.device("cpu"),
+        callbacks=callbacks,
+        logger=[],
+    )
+
+    loaded_state = model.state_dict()
+    assert loaded_state.keys() == original_state.keys()
+    assert all(
+        torch.equal(loaded_state[name].cpu(), original_state[name].cpu())
+        for name in original_state
+    )
+    assert all(
+        result.context.checkpoint_id == original_digest
+        for result in results.values()
+    )
+    assert checkpoint_path.read_bytes() == replacement_bytes
+    assert not checkpoint_manifest_path(checkpoint_path).exists()
+    assert not checkpoint_state_path(checkpoint_path).exists()
+
+
+def test_active_selected_evaluation_failure_preserves_root_and_cleans_capture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cleanup leaves capture reusable without masking an active-pass failure."""
+    cfg = _compose(
+        "heterogeneous_synthetic_hgt_full",
+        tmp_path=tmp_path,
+        extra_overrides=("evaluation_artifacts.enabled=true",),
+    )
+    datamodule, model, pipeline_output = _build_heterogeneous_runtime(cfg)
+    callbacks = instantiate_callbacks(cfg.callbacks)
+    selected_checkpoint = _checkpoint_callback(callbacks)
+    checkpoint_path = (
+        Path(cfg.paths.output_dir) / "checkpoints" / "selected.ckpt"
+    )
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(
+        {
+            "state_dict": model.state_dict(),
+            "epoch": 0,
+            "global_step": 0,
+        },
+        checkpoint_path,
+    )
+    selected_checkpoint.best_model_path = str(checkpoint_path)
+
+    class SelectedEvaluationFailure(RuntimeError):
+        pass
+
+    sentinel = SelectedEvaluationFailure("selected validation failed")
+    evaluation_started = False
+
+    class FailingTrainer:
+        world_size = 1
+        global_rank = 0
+
+        def validate(
+            self,
+            *,
+            model: TBModel,
+            dataloaders: object,
+        ) -> None:
+            nonlocal evaluation_started
+            del dataloaders
+            model.on_validation_epoch_start()
+            assert model.evaluator.state == "active"
+            evaluation_started = True
+            raise sentinel
+
+        def test(
+            self,
+            *,
+            model: TBModel,
+            dataloaders: object,
+        ) -> None:
+            del model, dataloaders
+            raise AssertionError("test must not run after validation failure")
+
+    monkeypatch.setattr(
+        run_module.hydra.utils,
+        "instantiate",
+        lambda *args, **kwargs: FailingTrainer(),
+    )
+
+    with pytest.raises(SelectedEvaluationFailure) as error:
+        rerun_best_model_checkpoint(
+            checkpoint_model=model,
+            cfg=cfg,
+            datamodule=datamodule,
+            device=torch.device("cpu"),
+            callbacks=callbacks,
+            logger=[],
+            prediction_row_adapter=pipeline_output.prediction_row_adapter,
+            supervision_counts=pipeline_output.supervision_counts,
+            provenance_input=pipeline_output.provenance_input,
+            source_graph_id=pipeline_output.source_graph_id,
+        )
+
+    assert error.value is sentinel
+    assert evaluation_started
+    assert model.evaluator.state == "idle"
+    assert model.evaluator.context is None
+
+    selected_counts = {
+        split: int(pipeline_output.supervision_counts[split])
+        for split in ("val", "test")
+    }
+    model.configure_prediction_artifact_capture(
+        pipeline_output.prediction_row_adapter,
+        MagicMock(),
+        selected_counts,
+    )
+    model.clear_prediction_artifact_capture()
+
+
 def _direct_model_loss(
     model: TBModel,
     batch: Data | HeteroData,
@@ -703,17 +1171,22 @@ def _assert_expected_module_gradients(model: TBModel) -> None:
 
 def _build_heterogeneous_runtime(
     cfg: DictConfig,
-) -> tuple[HeterogeneousNodeDataModule, TBModel]:
-    """Build the real heterogeneous datamodule and model from one config."""
+) -> tuple[HeterogeneousNodeDataModule, TBModel, Any]:
+    """Build the real heterogeneous pipeline, data module, and model."""
     pipeline = hydra.utils.instantiate(cfg.data_pipeline)
     pipeline_output = pipeline.build(cfg)
+    capability_validation = validate_capability_composition(
+        cfg,
+        observed=pipeline_output.capability_spec,
+    )
     lightning_model = instantiate_model(
         cfg,
         data_spec=pipeline_output.data_spec,
+        capability_validation=capability_validation,
     )
     assert isinstance(pipeline_output.datamodule, HeterogeneousNodeDataModule)
     assert isinstance(lightning_model, TBModel)
-    return pipeline_output.datamodule, lightning_model
+    return pipeline_output.datamodule, lightning_model, pipeline_output
 
 
 def _phase_loader(
@@ -792,9 +1265,14 @@ def test_full_batch_model_has_an_overfit_signal(
     pipeline = hydra.utils.instantiate(cfg.data_pipeline)
     pipeline_output = pipeline.build(cfg)
     datamodule = pipeline_output.datamodule
+    capability_validation = validate_capability_composition(
+        cfg,
+        observed=pipeline_output.capability_spec,
+    )
     lightning_model = instantiate_model(
         cfg,
         data_spec=pipeline_output.data_spec,
+        capability_validation=capability_validation,
     )
     assert isinstance(lightning_model, TBModel)
     model = lightning_model

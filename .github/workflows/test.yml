@@ -12,22 +12,24 @@ on:
         default: false
         type: boolean
 
-permissions:
-  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         python-version: ["3.11"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       # 1. Setup uv
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
@@ -53,7 +55,7 @@ jobs:
           pytest --cov --cov-report=xml:coverage.xml test/
 
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v4.0.1
+        uses: codecov/codecov-action@e0b68c6749509c5f83f984dd99a76a1c1a231044 # v4.0.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           file: coverage.xml
@@ -62,11 +64,15 @@ jobs:
   bounded-rss:
     name: Bounded typed-Parquet RSS
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           python-version: "3.11"
           enable-cache: true
@@ -78,7 +84,7 @@ jobs:
           TOPOBENCH_QUALIFICATION_EVIDENCE_DIR: qualification-evidence
         run: uv run python test/integration/qualify_typed_graph_rss.py
       - name: Persist aggregate RSS evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: typed-graph-rss-qualification
           path: qualification-evidence/typed-graph-rss-qualification.json
@@ -88,12 +94,16 @@ jobs:
     name: Mandatory typed graph CUDA release gate
     if: github.event_name == 'workflow_dispatch' && inputs.release_qualification
     runs-on: [self-hosted, linux, x64, cuda]
+    permissions:
+      contents: read
     environment: release-qualification
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           python-version: "3.11"
           enable-cache: true
@@ -105,7 +115,7 @@ jobs:
           TOPOBENCH_QUALIFICATION_EVIDENCE_DIR: qualification-evidence
         run: uv run python test/integration/qualify_typed_graph_cuda.py
       - name: Persist aggregate CUDA evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: typed-graph-cuda-qualification
           path: qualification-evidence/typed-graph-cuda-qualification.json
@@ -115,12 +125,16 @@ jobs:
     name: Digest-pinned live Parquet release gate
     if: github.event_name == 'workflow_dispatch' && inputs.release_qualification
     runs-on: [self-hosted, linux, x64, live-data]
+    permissions:
+      contents: read
     environment: release-qualification
     timeout-minutes: 180
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           python-version: "3.11"
           enable-cache: true
@@ -137,7 +151,7 @@ jobs:
           TOPOBENCH_QUALIFICATION_EVIDENCE_DIR: qualification-evidence
         run: uv run pytest test/integration/test_real_parquet_graph.py test/integration/test_real_parquet_heterogeneous.py test/integration/test_retained_datasets.py -q
       - name: Persist aggregate live-data evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: typed-graph-live-parquet-qualification
           path: qualification-evidence/*.json

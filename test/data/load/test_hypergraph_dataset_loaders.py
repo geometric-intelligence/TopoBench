@@ -12,16 +12,20 @@ from typing import Any
 import numpy as np
 import pytest
 import torch
+from omegaconf import OmegaConf
 
 from topobench.data import (
     HYPERGRAPH_REPRESENTATION_VERSION,
     HypergraphData,
     validate_hypergraph_structure,
 )
+from topobench.data.datasets import CitationHypergraphDataset, HypergraphDataset
+from topobench.data.utils.cache_io import cache_manifest_path
 from topobench.data.utils.hypergraph_io import (
     SAFE_HYPERGRAPH_CONVERTER_VERSION,
     SAFE_HYPERGRAPH_FORMAT,
     SAFE_HYPERGRAPH_FORMAT_VERSION,
+    _SAFE_METADATA_BYTE_LIMIT,
     ContentRoleSpec,
     load_hypergraph_content_dataset,
     load_hypergraph_npz_dataset,
@@ -304,6 +308,160 @@ def test_safe_loader_preserves_isolated_zero_label_and_duplicate_incidence(
         torch.tensor([[1, 1, 2], [1, 1, 0]], dtype=torch.long),
     )
     validate_hypergraph_npz_assets(tmp_path, name)
+
+
+def test_safe_loader_accepts_valid_nested_cache(tmp_path: Path) -> None:
+    name = "nested-safe-cache"
+    nested = tmp_path / name
+    _write_safe_fixture(nested, name)
+
+    data, resolved_dir = load_hypergraph_npz_dataset(tmp_path, name)
+
+    _assert_native(data)
+    assert resolved_dir == str(nested)
+
+
+@pytest.mark.parametrize("component", ["root", "nested"])
+def test_safe_loader_rejects_symlinked_data_directory_components(
+    tmp_path: Path,
+    component: str,
+) -> None:
+    name = "linked-cache"
+    outside = tmp_path / "outside"
+    _write_safe_fixture(outside / name, name)
+    cache_root = tmp_path / "cache"
+    if component == "root":
+        cache_root.symlink_to(outside, target_is_directory=True)
+    else:
+        cache_root.mkdir()
+        (cache_root / name).symlink_to(
+            outside / name,
+            target_is_directory=True,
+        )
+
+    with pytest.raises(PermissionError, match="symlink"):
+        load_hypergraph_npz_dataset(cache_root, name)
+
+
+@pytest.mark.parametrize("suffix", [".json", ".npz"])
+def test_safe_loader_rejects_symlinked_asset_files(
+    tmp_path: Path,
+    suffix: str,
+) -> None:
+    name = "linked-asset"
+    cache_root = tmp_path / "cache"
+    _write_safe_fixture(cache_root, name)
+    asset = cache_root / f"{name}{suffix}"
+    outside = tmp_path / f"outside{suffix}"
+    asset.replace(outside)
+    asset.symlink_to(outside)
+
+    with pytest.raises(PermissionError, match="symlink|regular file"):
+        load_hypergraph_npz_dataset(cache_root, name)
+
+
+def test_safe_loader_rejects_out_of_root_dataset_name(tmp_path: Path) -> None:
+    name = "escape"
+    _write_safe_fixture(tmp_path, name)
+    (tmp_path / name).mkdir()
+    cache_root = tmp_path / "cache"
+    cache_root.mkdir()
+
+    with pytest.raises(ValueError, match="single path component"):
+        load_hypergraph_npz_dataset(cache_root, f"../{name}")
+
+
+def test_safe_loader_rejects_oversized_metadata_before_json_decode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    name = "oversized-metadata"
+    _write_safe_fixture(tmp_path, name)
+    metadata_path = tmp_path / f"{name}.json"
+    with metadata_path.open("wb") as stream:
+        stream.truncate(_SAFE_METADATA_BYTE_LIMIT + 1)
+
+    def unexpected_decode(*args: object, **kwargs: object) -> object:
+        raise AssertionError("oversized metadata reached json.loads")
+
+    monkeypatch.setattr(json, "loads", unexpected_decode)
+    with pytest.raises(ValueError, match="metadata.*byte limit"):
+        load_hypergraph_npz_dataset(tmp_path, name)
+
+@pytest.mark.parametrize(
+    "dataset_class",
+    [CitationHypergraphDataset, HypergraphDataset],
+    ids=["citation", "general"],
+)
+def test_processed_cache_second_hit_uses_static_hypergraph_reconstruction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    dataset_class: type[CitationHypergraphDataset] | type[HypergraphDataset],
+) -> None:
+    name = dataset_class.__name__.lower()
+    raw_dir = tmp_path / name / "raw"
+    _write_safe_fixture(raw_dir, name)
+    parameters = OmegaConf.create({"data_name": name})
+    original_parameters = OmegaConf.to_container(parameters, resolve=True)
+    raw_snapshot = {
+        path.name: path.read_bytes()
+        for path in raw_dir.iterdir()
+        if path.is_file()
+    }
+
+    first = dataset_class(
+        root=str(tmp_path),
+        name=name,
+        parameters=parameters,
+    )
+    processed_path = Path(first.processed_paths[0])
+    manifest_path = cache_manifest_path(processed_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert set(manifest) == {
+        "schema",
+        "schema_version",
+        "family",
+        "cache_identity",
+        "payload",
+    }
+    assert manifest["schema"] == "topobench.pyg-cache-manifest"
+    assert manifest["schema_version"] == 1
+    assert manifest["family"] == "hypergraph"
+    assert isinstance(manifest["cache_identity"], str)
+    assert manifest["cache_identity"]
+    assert set(manifest["payload"]) == {
+        "relative_path",
+        "sha256",
+        "byte_size",
+    }
+    assert Path(manifest["payload"]["relative_path"]).name == processed_path.name
+    assert manifest["payload"]["sha256"] == hashlib.sha256(
+        processed_path.read_bytes()
+    ).hexdigest()
+    assert manifest["payload"]["byte_size"] == processed_path.stat().st_size
+
+    def reject_reprocessing(*args: object, **kwargs: object) -> None:
+        raise AssertionError("valid processed cache was reprocessed")
+
+    monkeypatch.setattr(dataset_class, "process", reject_reprocessing)
+    second = dataset_class(
+        root=str(tmp_path),
+        name=name,
+        parameters=parameters,
+    )
+
+    assert type(first._data) is HypergraphData
+    assert type(second._data) is HypergraphData
+    _assert_native(second[0])
+    assert torch.equal(second[0].x, first[0].x)
+    assert torch.equal(second[0].hyperedge_index, first[0].hyperedge_index)
+    assert OmegaConf.to_container(parameters, resolve=True) == original_parameters
+    assert {
+        path.name: path.read_bytes()
+        for path in raw_dir.iterdir()
+        if path.is_file()
+    } == raw_snapshot
+
 
 
 def test_safe_loader_preserves_high_shape_sparse_coo_features(tmp_path: Path) -> None:

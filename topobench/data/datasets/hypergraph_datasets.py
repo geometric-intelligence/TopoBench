@@ -14,11 +14,17 @@ from topobench.data import (
     HypergraphData,
     validate_hypergraph_structure,
 )
+from topobench.data.utils.cache_io import (
+    cache_manifest_path,
+    load_pyg_cache,
+    write_pyg_cache,
+)
 from topobench.data.utils.downloads import (
     RemoteArchive,
     acquire_verified_archive,
 )
 from topobench.data.utils.hypergraph_io import (
+    hypergraph_asset_identity,
     load_hypergraph_npz_dataset,
     validate_hypergraph_npz_assets,
 )
@@ -53,6 +59,7 @@ class HypergraphDataset(InMemoryDataset):
     ) -> None:
         self.name = name
         self.parameters = parameters
+        self.trusted_cache_root = root
         legacy_path = osp.join(root, name, "processed", "data.pt")
         native_path = osp.join(
             root,
@@ -68,9 +75,19 @@ class HypergraphDataset(InMemoryDataset):
                 stacklevel=2,
             )
         super().__init__(root)
-        self.load(self.processed_paths[0], data_cls=HypergraphData)
-        data = self.get(0)
-        validate_hypergraph_structure(data)
+        self.cache_identity = hypergraph_asset_identity(
+            self.raw_dir,
+            self.name,
+        )
+        self._data, slices = load_pyg_cache(
+            self.processed_paths[0],
+            trusted_root=self.trusted_cache_root,
+            family="hypergraph",
+            cache_identity=self.cache_identity,
+            data_cls=HypergraphData,
+        )
+        self.slices = slices or None
+        validate_hypergraph_structure(self.get(0))
 
     def __repr__(self) -> str:
         return f"{self.name}(self.root={self.root}, self.name={self.name}, self.parameters={self.parameters}, self.force_reload={self.force_reload})"
@@ -110,15 +127,12 @@ class HypergraphDataset(InMemoryDataset):
         return [f"{self.name}.json", f"{self.name}.npz"]
 
     @property
-    def processed_file_names(self) -> str:
-        """Return the processed file name for the dataset.
-
-        Returns
-        -------
-        str
-            Processed file name.
-        """
-        return HYPERGRAPH_CACHE_FILENAME
+    def processed_file_names(self) -> list[str]:
+        """Return the complete native processed-cache publication set."""
+        return [
+            HYPERGRAPH_CACHE_FILENAME,
+            cache_manifest_path(HYPERGRAPH_CACHE_FILENAME).name,
+        ]
 
     def download(self) -> None:
         """Acquire one authenticated safe-format archive atomically."""
@@ -141,4 +155,14 @@ class HypergraphDataset(InMemoryDataset):
             data_name=self.name,
         )
         validate_hypergraph_structure(data)
-        self.save([data], self.processed_paths[0])
+        self.cache_identity = hypergraph_asset_identity(
+            self.raw_dir,
+            self.name,
+        )
+        write_pyg_cache(
+            [data],
+            self.processed_paths[0],
+            trusted_root=self.trusted_cache_root,
+            family="hypergraph",
+            cache_identity=self.cache_identity,
+        )

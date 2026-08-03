@@ -23,6 +23,7 @@ from topobench.data import (
 from topobench.data.capabilities import GRAPH_DATASET_MANIFEST
 from topobench.data.loaders.graph.adme_datasets import ADMEDatasetLoader
 from topobench.evaluator.backends import UndefinedMetricError
+from topobench.nn.capabilities import validate_capability_composition
 from topobench.utils.config_resolvers import register_all_resolvers
 from topobench.utils.model_instantiation import instantiate_model
 
@@ -30,9 +31,13 @@ _EVIDENCE_PREFIX = (
     "test/integration/test_retained_datasets.py::"
     "test_retained_dataset_lifecycle"
 )
-_PARQUET_EVIDENCE = (
+_PARQUET_STORE_EVIDENCE = (
     "test/data/stores/test_typed_graph_store.py::"
     "test_opens_homogeneous_and_heterogeneous_content_addressed_stores"
+)
+_HETEROGENEOUS_PARQUET_EVIDENCE = (
+    "test/integration/test_heterogeneous_disk_resume.py::"
+    "test_heterogeneous_cluster_and_neighbor_resume_exactly_at_every_boundary"
 )
 _PARQUET_RELEASE_EVIDENCE = (
     "test/integration/test_real_parquet_graph.py::"
@@ -204,9 +209,8 @@ def _assert_composed_metadata(
     assert cfg.dataset.parameters.task == row.task
     assert cfg.dataset.parameters.task_level == row.task_level
     assert cfg.dataset.split_params.learning_setting == row.split_mode
-    assert (
-        f"{cfg.model.model_domain}/{cfg.model.model_name}"
-        == (model_selector or row.compatible_model)
+    assert f"{cfg.model.model_domain}/{cfg.model.model_name}" == (
+        model_selector or row.compatible_model
     )
     assert Path(str(cfg.dataset.loader.parameters.data_dir)).is_relative_to(
         tmp_path
@@ -428,7 +432,14 @@ def _execute_lifecycle(
     _assert_runtime_format(qualification, cfg, batch)
     feature_batch = batch.clone()
 
-    model = instantiate_model(cfg, data_spec=output.data_spec)
+    model = instantiate_model(
+        cfg,
+        data_spec=output.data_spec,
+        capability_validation=validate_capability_composition(
+            cfg,
+            observed=output.capability_spec,
+        ),
+    )
     model.train()
     model.state_str = "Training"
     model.on_train_epoch_start()
@@ -496,7 +507,6 @@ def test_adme_loader_rejects_method_disagreeing_with_selector_metadata(
         ADMEDatasetLoader(cfg.dataset.loader.parameters)
 
 
-
 @pytest.mark.parametrize(
     "qualification",
     _RETAINED_DATASET_PARAMETERS,
@@ -535,10 +545,7 @@ def test_local_graph_feature_policy_lifecycle(
         model_selector=model_selector,
     )
     if model_selector is not None:
-        assert (
-            cfg.model.feature_encoder.in_channels
-            > capability.feature_width
-        )
+        assert cfg.model.feature_encoder.in_channels > capability.feature_width
     fixture = _local_graph_dataset(
         qualification,
         width=capability.feature_width,
@@ -575,12 +582,16 @@ def test_qualification_manifest_keys_evidence_and_gates_are_consistent() -> (
         if row.evidence_test == _EVIDENCE_PREFIX
     }
     assert len(_RETAINED_DATASET_PARAMETERS) == len(lifecycle_rows) == 33
-    assert len(DATASET_QUALIFICATION_MANIFEST) == 34
+    assert len(DATASET_QUALIFICATION_MANIFEST) == 35
+    assert (
+        DATASET_QUALIFICATION_MANIFEST["graph/ParquetTypedGraph"].evidence_test
+        == _PARQUET_STORE_EVIDENCE
+    )
     assert (
         DATASET_QUALIFICATION_MANIFEST[
-            "graph/ParquetTypedGraph"
+            "heterogeneous/ParquetTypedGraph"
         ].evidence_test
-        == _PARQUET_EVIDENCE
+        == _HETEROGENEOUS_PARQUET_EVIDENCE
     )
     assert _PARQUET_RELEASE_EVIDENCE == (
         "test/integration/test_real_parquet_graph.py::"
@@ -598,6 +609,7 @@ def test_qualification_manifest_keys_evidence_and_gates_are_consistent() -> (
     assert packaged == {
         "graph/SyntheticGraph",
         "graph/ParquetTypedGraph",
+        "heterogeneous/ParquetTypedGraph",
         "graph/SyntheticGraphRegression",
         "graph/SyntheticNodeGraph",
         "heterogeneous/SyntheticHeterogeneous",

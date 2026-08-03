@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from importlib.metadata import PackageNotFoundError, version
 from numbers import Integral
 from pathlib import Path
-from typing import Mapping
 
 import numpy as np
 import torch
@@ -21,6 +21,7 @@ from topobench.transforms.fittable import (
     PublishedFitState,
     TransformSpec,
     build_fit_state_key,
+    derive_fit_chunk_schedule,
 )
 
 
@@ -67,14 +68,20 @@ class IncrementalPCATransform:
         whiten: bool = False,
     ) -> None:
         self.n_components = _positive_integer(n_components, "n_components")
-        self.max_batch_rows = _positive_integer(max_batch_rows, "max_batch_rows")
-        self.max_batch_bytes = _positive_integer(max_batch_bytes, "max_batch_bytes")
+        self.max_batch_rows = _positive_integer(
+            max_batch_rows, "max_batch_rows"
+        )
+        self.max_batch_bytes = _positive_integer(
+            max_batch_bytes, "max_batch_bytes"
+        )
         if self.max_batch_rows < self.n_components:
             raise ValueError("max_batch_rows must be at least n_components")
         if target_node_type is not None and (
             not isinstance(target_node_type, str) or not target_node_type
         ):
-            raise ValueError("target_node_type must be non-empty when provided")
+            raise ValueError(
+                "target_node_type must be non-empty when provided"
+            )
         if not isinstance(target_field, str) or not target_field:
             raise ValueError("target_field must be non-empty")
         if type(whiten) is not bool:
@@ -83,7 +90,9 @@ class IncrementalPCATransform:
         self.target_field = target_field
         self.input_dtype = _dtype(input_dtype, "input_dtype")
         self.output_dtype = _dtype(output_dtype, "output_dtype")
-        self.accumulation_dtype = _dtype(accumulation_dtype, "accumulation_dtype")
+        self.accumulation_dtype = _dtype(
+            accumulation_dtype, "accumulation_dtype"
+        )
         self.whiten = whiten
         self.spec = TransformSpec(
             input_kinds=("Data", "HeteroData"),
@@ -133,13 +142,17 @@ class IncrementalPCATransform:
         }
 
     def __getstate__(self) -> dict[str, object]:
+        if self.status is FitStatus.FITTED:
+            self._validated_fitted_state()
         state = dict(self.__dict__)
         state.pop("begin_fit", None)
         state["_model"] = None
         state["_pending"] = None
         if self.status is FitStatus.FITTED:
             if self._context is None or self._state_root is None:
-                raise RuntimeError("fitted worker state lacks immutable reload identity")
+                raise RuntimeError(
+                    "fitted worker state lacks immutable reload identity"
+                )
             state["_state"] = None
             state["status"] = FitStatus.UNFITTED
         return state
@@ -159,14 +172,17 @@ class IncrementalPCATransform:
         if self.status is not FitStatus.FITTED:
             return None
         if self._state is None:
-            raise FitStateError("fitted transform has no published state binding")
+            raise FitStateError(
+                "fitted transform has no published state binding"
+            )
         return self._state.key
-
 
     @property
     def fitted_state(self) -> PublishedFitState:
         if self._state is None or self.status is not FitStatus.FITTED:
-            raise RuntimeError("fitted state is unavailable before valid finalize/load")
+            raise RuntimeError(
+                "fitted state is unavailable before valid finalize/load"
+            )
         return self._state
 
     def _array(self, name: str) -> np.ndarray:
@@ -204,45 +220,89 @@ class IncrementalPCATransform:
     def output_width_(self) -> int:
         return int(self.fitted_state.manifest["metadata"]["output_width"])
 
+    def _validated_fitted_state(self) -> PublishedFitState:
+        if self._state is None or self._context is None:
+            raise FitStateError(
+                "fitted transform has no published state binding"
+            )
+        expected_key = build_fit_state_key(self._context, self)
+        if expected_key != self._state.key:
+            raise FitStateError(
+                "fitted transform configuration no longer matches "
+                "its published state identity"
+            )
+        return self._state
+
     def _require_unfitted(self) -> None:
         if self.status is FitStatus.FAILED:
-            raise RuntimeError("failed fitted-transform instances cannot be reused")
+            raise RuntimeError(
+                "failed fitted-transform instances cannot be reused"
+            )
         if self.status is not FitStatus.UNFITTED:
-            raise RuntimeError(f"fit has already begun or finalized ({self.status.value})")
+            raise RuntimeError(
+                f"fit has already begun or finalized ({self.status.value})"
+            )
 
     def begin_fit(self, context: FitContext) -> None:
         self._require_unfitted()
         if context.target_field != self.target_field:
-            raise ValueError("fit context target field does not match transform")
-        if self.target_node_type is not None and context.target_node_type != self.target_node_type:
-            raise ValueError("fit context target node type does not match transform")
+            raise ValueError(
+                "fit context target field does not match transform"
+            )
+        if (
+            self.target_node_type is not None
+            and context.target_node_type != self.target_node_type
+        ):
+            raise ValueError(
+                "fit context target node type does not match transform"
+            )
         if self.n_components > context.input_width:
             raise ValueError("n_components cannot exceed input feature width")
         if np.dtype(context.input_dtype) != self.input_dtype:
-            raise TypeError("fit context input dtype does not match transform dtype")
+            raise TypeError(
+                "fit context input dtype does not match transform dtype"
+            )
         if context.numeric_precision != self.accumulation_dtype.name:
-            raise ValueError("fit context numeric precision does not match transform")
-        required = (
-            self.max_batch_rows
-            * context.input_width
-            * max(self.input_dtype.itemsize, self.accumulation_dtype.itemsize)
-        )
-        if required > self.max_batch_bytes:
             raise ValueError(
-                "max_batch_bytes cannot hold one accumulation batch at max_batch_rows"
+                "fit context numeric precision does not match transform"
+            )
+        schedule = derive_fit_chunk_schedule(
+            input_width=context.input_width,
+            input_dtype=self.input_dtype,
+            accumulation_dtype=self.accumulation_dtype,
+            max_batch_rows=self.max_batch_rows,
+            max_batch_bytes=self.max_batch_bytes,
+            sample_count=context.input_shape[0],
+        )
+        if schedule.chunk_rows < self.n_components:
+            raise ValueError(
+                "byte-derived fit chunk cannot hold the n_components "
+                "bootstrap rows"
             )
         self._context = context
-        self._model = IncrementalPCA(n_components=self.n_components, whiten=self.whiten, copy=True)
-        self._pending = np.empty((0, context.input_width), dtype=self.accumulation_dtype)
+        self._model = IncrementalPCA(
+            n_components=self.n_components, whiten=self.whiten, copy=True
+        )
+        self._pending = np.empty(
+            (0, context.input_width), dtype=self.accumulation_dtype
+        )
         self._sample_count = 0
         self.status = FitStatus.FITTING
 
-    def _require_fitting(self) -> tuple[FitContext, IncrementalPCA, np.ndarray]:
+    def _require_fitting(
+        self,
+    ) -> tuple[FitContext, IncrementalPCA, np.ndarray]:
         if self.status is FitStatus.FAILED:
-            raise RuntimeError("failed fitted-transform instances cannot be reused")
+            raise RuntimeError(
+                "failed fitted-transform instances cannot be reused"
+            )
         if self.status is not FitStatus.FITTING:
             raise RuntimeError("fit is not active or has already finalized")
-        assert self._context is not None and self._model is not None and self._pending is not None
+        assert (
+            self._context is not None
+            and self._model is not None
+            and self._pending is not None
+        )
         return self._context, self._model, self._pending
 
     @staticmethod
@@ -250,11 +310,14 @@ class IncrementalPCATransform:
         with np.errstate(divide="ignore", invalid="ignore"):
             model.partial_fit(features)
 
-
-    def update_fit(self, features: np.ndarray, labels: np.ndarray | None = None) -> None:
+    def update_fit(
+        self, features: np.ndarray, labels: np.ndarray | None = None
+    ) -> None:
         context, model, pending = self._require_fitting()
         if labels is not None:
-            raise PermissionError("incremental PCA does not declare label access")
+            raise PermissionError(
+                "incremental PCA does not declare label access"
+            )
         value = np.asarray(features)
         if value.ndim != 2:
             raise ValueError("fit features must be a two-dimensional array")
@@ -271,9 +334,7 @@ class IncrementalPCATransform:
                 f"fit update dtype {value.dtype.name} does not match {self.input_dtype.name}"
             )
         accumulation_bytes = (
-            value.shape[0]
-            * value.shape[1]
-            * self.accumulation_dtype.itemsize
+            value.shape[0] * value.shape[1] * self.accumulation_dtype.itemsize
         )
         if accumulation_bytes > self.max_batch_bytes:
             raise ValueError(
@@ -345,11 +406,17 @@ class IncrementalPCATransform:
         context, model, pending = self._require_fitting()
         try:
             if self._sample_count == 0:
-                raise ValueError("cannot fit incremental PCA on empty training input")
+                raise ValueError(
+                    "cannot fit incremental PCA on empty training input"
+                )
             if self._sample_count != context.input_shape[0]:
-                raise ValueError("fit sample count does not match canonical training context")
+                raise ValueError(
+                    "fit sample count does not match canonical training context"
+                )
             if self._sample_count < self.n_components:
-                raise ValueError("incremental PCA requires at least n_components samples")
+                raise ValueError(
+                    "incremental PCA requires at least n_components samples"
+                )
             if self._sample_count == 1 and self.whiten:
                 raise ValueError(
                     "whitening is undefined for a single-sample PCA fit"
@@ -357,11 +424,20 @@ class IncrementalPCATransform:
             if not hasattr(model, "components_") or len(pending):
                 raise ValueError("insufficient final samples for n_components")
             arrays = {
-                "components": np.asarray(model.components_, dtype=self.accumulation_dtype),
-                "explained_variance": np.asarray(model.explained_variance_, dtype=self.accumulation_dtype),
-                "explained_variance_ratio": np.asarray(model.explained_variance_ratio_, dtype=self.accumulation_dtype),
+                "components": np.asarray(
+                    model.components_, dtype=self.accumulation_dtype
+                ),
+                "explained_variance": np.asarray(
+                    model.explained_variance_, dtype=self.accumulation_dtype
+                ),
+                "explained_variance_ratio": np.asarray(
+                    model.explained_variance_ratio_,
+                    dtype=self.accumulation_dtype,
+                ),
                 "mean": np.asarray(model.mean_, dtype=self.accumulation_dtype),
-                "singular_values": np.asarray(model.singular_values_, dtype=self.accumulation_dtype),
+                "singular_values": np.asarray(
+                    model.singular_values_, dtype=self.accumulation_dtype
+                ),
             }
             if self._sample_count == 1:
                 arrays["explained_variance"] = np.zeros(
@@ -376,7 +452,11 @@ class IncrementalPCATransform:
                     self.n_components,
                     dtype=self.accumulation_dtype,
                 )
-            state = FitStatePublisher(state_root).publish(build_fit_state_key(context, self), metadata=self._metadata(context), arrays=arrays)
+            state = FitStatePublisher(state_root).publish(
+                build_fit_state_key(context, self),
+                metadata=self._metadata(context),
+                arrays=arrays,
+            )
             self._state_root = Path(state_root)
             self._install(state, context)
             return state
@@ -387,13 +467,23 @@ class IncrementalPCATransform:
             self._model = None
             self._pending = None
 
-    def load_state(self, state_root: str | Path, context: FitContext) -> PublishedFitState:
+    def load_state(
+        self, state_root: str | Path, context: FitContext
+    ) -> PublishedFitState:
         self._require_unfitted()
-        if context.target_field != self.target_field or (self.target_node_type is not None and context.target_node_type != self.target_node_type):
-            raise FitStateError("fitted state context target identity mismatch")
+        if context.target_field != self.target_field or (
+            self.target_node_type is not None
+            and context.target_node_type != self.target_node_type
+        ):
+            raise FitStateError(
+                "fitted state context target identity mismatch"
+            )
         if np.dtype(context.input_dtype) != self.input_dtype:
             raise FitStateError("fitted state context dtype mismatch")
-        state = FitStatePublisher(state_root).load(build_fit_state_key(context, self), expected_metadata=self._metadata(context))
+        state = FitStatePublisher(state_root).load(
+            build_fit_state_key(context, self),
+            expected_metadata=self._metadata(context),
+        )
         self._state_root = Path(state_root)
         self._install(state, context)
         return state
@@ -412,53 +502,96 @@ class IncrementalPCATransform:
         for name, shape in expected_shapes.items():
             value = arrays[name]
             if value.shape != shape or value.dtype != self.accumulation_dtype:
-                raise FitStateError(f"incremental PCA state {name!r} shape/dtype is invalid")
+                raise FitStateError(
+                    f"incremental PCA state {name!r} shape/dtype is invalid"
+                )
             if not np.isfinite(value).all():
-                raise FitStateError(f"incremental PCA state {name!r} must be finite")
-        tolerance = np.finfo(self.accumulation_dtype).eps * max(128, context.input_width * 16)
+                raise FitStateError(
+                    f"incremental PCA state {name!r} must be finite"
+                )
+        tolerance = np.finfo(self.accumulation_dtype).eps * max(
+            128, context.input_width * 16
+        )
         gram = arrays["components"] @ arrays["components"].T
-        if not np.allclose(gram, np.eye(self.n_components, dtype=self.accumulation_dtype), rtol=tolerance, atol=tolerance):
-            raise FitStateError("incremental PCA components are not orthonormal")
-        if np.any(arrays["explained_variance"] < 0) or np.any(arrays["explained_variance_ratio"] < 0):
+        if not np.allclose(
+            gram,
+            np.eye(self.n_components, dtype=self.accumulation_dtype),
+            rtol=tolerance,
+            atol=tolerance,
+        ):
+            raise FitStateError(
+                "incremental PCA components are not orthonormal"
+            )
+        if np.any(arrays["explained_variance"] < 0) or np.any(
+            arrays["explained_variance_ratio"] < 0
+        ):
             raise FitStateError("incremental PCA variance state is invalid")
         if np.any(arrays["singular_values"] < 0):
             raise FitStateError("incremental PCA singular values are invalid")
         if self.whiten and np.any(arrays["explained_variance"] <= 0):
-            raise FitStateError("whitened incremental PCA requires positive variance")
+            raise FitStateError(
+                "whitened incremental PCA requires positive variance"
+            )
         self._context = context
         self._state = state
         self.status = FitStatus.FITTED
 
     def transform(self, batch: NativeGraph) -> NativeGraph:
         if self.status is FitStatus.FAILED:
-            raise RuntimeError("failed fitted-transform instances cannot be reused")
+            raise RuntimeError(
+                "failed fitted-transform instances cannot be reused"
+            )
         if self.status is not FitStatus.FITTED:
-            raise RuntimeError("transform requires valid finalized fitted state")
+            raise RuntimeError(
+                "transform requires valid finalized fitted state"
+            )
+        self._validated_fitted_state()
         if isinstance(batch, HeteroData):
             if self.target_node_type is None:
-                raise ValueError("HeteroData transform requires target_node_type")
+                raise ValueError(
+                    "HeteroData transform requires target_node_type"
+                )
             if self.target_node_type not in batch.node_types:
-                raise ValueError(f"batch does not contain target node type {self.target_node_type!r}")
+                raise ValueError(
+                    f"batch does not contain target node type {self.target_node_type!r}"
+                )
             storage = batch[self.target_node_type]
         elif isinstance(batch, Data):
             storage = batch
         else:
-            raise TypeError("incremental PCA accepts native Data or HeteroData")
+            raise TypeError(
+                "incremental PCA accepts native Data or HeteroData"
+            )
         if self.target_field not in storage:
-            raise ValueError(f"batch does not contain feature field {self.target_field!r}")
+            raise ValueError(
+                f"batch does not contain feature field {self.target_field!r}"
+            )
         tensor = storage[self.target_field]
         if not isinstance(tensor, torch.Tensor) or tensor.device.type != "cpu":
-            raise TypeError("incremental PCA requires a CPU tensor feature field")
+            raise TypeError(
+                "incremental PCA requires a CPU tensor feature field"
+            )
         if tensor.ndim != 2 or tensor.shape[1] != self.input_width_:
-            raise ValueError("batch feature width is incompatible with fitted state")
-        expected_dtype = torch.from_numpy(np.empty((), dtype=self.input_dtype)).dtype
+            raise ValueError(
+                "batch feature width is incompatible with fitted state"
+            )
+        expected_dtype = torch.from_numpy(
+            np.empty((), dtype=self.input_dtype)
+        ).dtype
         if tensor.dtype != expected_dtype:
-            raise TypeError("batch feature dtype is incompatible with fitted state")
-        centered = np.asarray(tensor.detach().numpy(), dtype=self.accumulation_dtype) - self.mean_
+            raise TypeError(
+                "batch feature dtype is incompatible with fitted state"
+            )
+        centered = (
+            np.asarray(tensor.detach().numpy(), dtype=self.accumulation_dtype)
+            - self.mean_
+        )
         projected = centered @ self.components_.T
         if self.whiten:
             projected = projected / np.sqrt(self.explained_variance_)
-        output_value = torch.from_numpy(np.array(projected, dtype=self.output_dtype, copy=True, order="C"))
+        output_value = torch.from_numpy(
+            np.array(projected, dtype=self.output_dtype, copy=True, order="C")
+        )
         output = batch.clone()
         if isinstance(output, HeteroData):
             assert self.target_node_type is not None

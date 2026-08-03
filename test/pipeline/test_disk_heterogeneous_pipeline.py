@@ -6,6 +6,7 @@ import json
 import shutil
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import hydra
@@ -16,14 +17,13 @@ import torch
 from lightning import Trainer
 from omegaconf import DictConfig, OmegaConf, open_dict
 from torch_geometric.data import HeteroData
-import topobench.data.stores.typed_graph_store as typed_graph_store_module
 
+import topobench.run as run_module
 from test.data.stores.test_topology_only_pyg_partitioner import (
     asymmetric_typed_source,
 )
 from test.data.stores.test_typed_graph_store import _build_qualified_store
 from test.pipeline.test_disk_graph_pipeline import (
-    CONFIG_ROOT,
     _compose,
     _source_parameters,
 )
@@ -36,6 +36,7 @@ from topobench.data.pipelines import DataPipelineOutput
 from topobench.data.stores.typed_graph_ingestion import ArtifactValidationError
 from topobench.dataloader.disk_graph import DiskGraphDataModule
 from topobench.dataloader.heterogeneous import HeterogeneousNodeDataModule
+from topobench.nn.capabilities import validate_capability_composition
 from topobench.transforms.incremental_pca import IncrementalPCATransform
 from topobench.utils.model_instantiation import instantiate_model
 
@@ -62,32 +63,103 @@ class CountingPCATransform(IncrementalPCATransform):
         return super().transform(batch)
 
 
-def _neighbor_source(root: Path, *, pca: bool = False) -> ParquetTypedGraphSource:
+def _neighbor_source(
+    root: Path, *, pca: bool = False
+) -> ParquetTypedGraphSource:
     source = asymmetric_typed_source(root, num_partitions=2)
+    author_path = source.spec.source_root / "nodes/authors.parquet"
+    author_table = pq.read_table(author_path)
+    author_values = author_table["f0"].to_pylist()
+    author_table = author_table.append_column(
+        "f1",
+        pa.array(
+            [float(value) + 1.0 for value in author_values],
+            type=pa.float32(),
+        ),
+    )
+    author_table = author_table.append_column(
+        "f2",
+        pa.array(
+            [float(value) + 2.0 for value in author_values],
+            type=pa.float32(),
+        ),
+    )
+    author_label_index = author_table.schema.get_field_index("label")
+    if author_label_index >= 0:
+        author_table = author_table.remove_column(author_label_index)
+    pq.write_table(author_table, author_path)
+
     paper_path = source.spec.source_root / "nodes/papers.parquet"
-    paper_table = pq.read_table(paper_path)
-    for column_name in ("f0", "f1", "f2"):
-        column_index = paper_table.schema.get_field_index(column_name)
-        paper_table = paper_table.set_column(
-            column_index,
-            column_name,
-            pa.array(
-                paper_table[column_name].to_pylist(),
-                type=pa.float32(),
-            ),
+    original_paper = pq.read_table(paper_path)
+    paper_ids = original_paper["paper_id"]
+    base_values = original_paper["f0"].to_pylist()
+    paper_columns: dict[str, pa.Array | pa.ChunkedArray] = {
+        "paper_id": paper_ids,
+    }
+    for column_index in range(128):
+        paper_columns[f"f{column_index}"] = pa.array(
+            [float(value) + column_index / 100.0 for value in base_values],
+            type=pa.float32(),
         )
-    pq.write_table(paper_table, paper_path)
-    fitted = FittedTransformSpec(name="pca") if pca else source.spec.fitted_transform
+    paper_columns["label"] = pa.array([0, 1, 0, 1, 0], type=pa.int64())
+    pq.write_table(pa.table(paper_columns), paper_path)
+
+    split_ids = {
+        "primary": {
+            "train": [10, 20],
+            "val": [30],
+            "test": [40, 50],
+        },
+        "diagnostic": {
+            "train": [50],
+            "val": [10],
+            "test": [20],
+        },
+    }
+    for split_set in source.spec.supervision.split_registry.sets:
+        for phase in ("train", "val", "test"):
+            split_path = source.spec.source_root / getattr(split_set, phase)
+            pq.write_table(
+                pa.table(
+                    {
+                        "paper_id": pa.array(
+                            split_ids[split_set.tag][phase],
+                            type=pa.int64(),
+                        )
+                    }
+                ),
+                split_path,
+            )
+
+    fitted = (
+        FittedTransformSpec(name="pca")
+        if pca
+        else source.spec.fitted_transform
+    )
     node_types = tuple(
-        replace(node, feature_dtype="float32")
+        replace(
+            node,
+            feature_columns=tuple(f"f{index}" for index in range(128)),
+            feature_dtype="float32",
+            feature_width=128,
+        )
         if node.name == "paper"
-        else node
+        else replace(
+            node,
+            feature_columns=("f0", "f1", "f2"),
+            feature_dtype="float32",
+            feature_width=3,
+        )
         for node in source.spec.node_types
     )
     return ParquetTypedGraphSource(
         replace(
             source.spec,
             node_types=node_types,
+            supervision=replace(
+                source.spec.supervision,
+                target_node_type="paper",
+            ),
             partition=replace(source.spec.partition, strategy="neighbor"),
             fitted_transform=fitted,
         )
@@ -122,7 +194,7 @@ def _parquet_cfg(
     with open_dict(cfg.dataset):
         cfg.dataset.loader = loader
         cfg.dataset.parameters.target_node_type = target
-        cfg.dataset.parameters.num_classes = 4
+        cfg.dataset.parameters.num_classes = 2
         cfg.dataset.parameters.num_features = [
             node.feature_width for node in source.spec.node_types
         ]
@@ -194,8 +266,12 @@ def test_materialized_heterogeneous_pipeline_remains_the_existing_data_module(
     assert type(output.datamodule) is HeterogeneousNodeDataModule
     assert output.data_spec is not None
     assert output.active_split_tag is None
-    assert output.prediction_identity_resolver is None
-    assert output.provenance_input is None
+    assert output.prediction_row_adapter is not None
+    assert output.supervision_counts == {"train": 20, "val": 6, "test": 10}
+    assert output.provenance_input is not None
+    assert (
+        output.provenance_input["source_graph_id"] == "SyntheticHeterogeneous"
+    )
 
 
 def test_hydra_heterogeneous_descriptor_builds_native_neighbor_batches(
@@ -210,9 +286,22 @@ def test_hydra_heterogeneous_descriptor_builds_native_neighbor_batches(
     assert output.active_split_tag == "primary"
     assert output.data_spec is not None
     assert output.data_spec.node_types == ("author", "paper")
-    assert output.data_spec.target_node_type == "author"
-    assert output.data_spec.input_channels == (("author", 1), ("paper", 3))
-    assert output.supervision_counts == {"train": 2, "val": 1, "test": 1}
+    assert output.data_spec.target_node_type == "paper"
+    assert output.data_spec.input_channels == (
+        ("author", 3),
+        ("paper", 128),
+    )
+    assert output.supervision_counts == {"train": 2, "val": 1, "test": 2}
+    assert output.capability_spec is not None
+    assert output.capability_spec.selector == "heterogeneous/ParquetTypedGraph"
+    assert output.capability_spec.data_domain == "heterogeneous"
+    assert output.capability_spec.output_kind == "heterogeneous"
+    assert output.capability_spec.feature_widths == (
+        ("author", 3),
+        ("paper", 128),
+    )
+    assert output.capability_spec.num_classes == 2
+    assert output.capability_spec.target_node_type == "paper"
     assert output.provenance_input is not None
     assert output.provenance_input["sampling_strategy"] == (
         "heterogeneous-neighbor"
@@ -223,18 +312,18 @@ def test_hydra_heterogeneous_descriptor_builds_native_neighbor_batches(
     output.datamodule.setup("fit")
     batch = next(iter(output.datamodule.train_dataloader()))
     assert type(batch) is HeteroData
-    assert int(batch["author"].batch_size) == 2
-    canonical = output.prediction_identity_resolver.resolve(
+    assert int(batch["paper"].batch_size) == 2
+    canonical = output.prediction_row_adapter.resolve(
         batch,
         phase="train",
     )
     assert canonical == (
-        (output.source_graph_id, "author", 0),
-        (output.source_graph_id, "author", 1),
+        (output.source_graph_id, "paper", 0),
+        (output.source_graph_id, "paper", 1),
     )
-    assert output.prediction_identity_resolver.restore_external_ids(canonical) == (
-        "a",
-        "b",
+    assert output.prediction_row_adapter.restore_external_ids(canonical) == (
+        10,
+        20,
     )
 
 
@@ -243,15 +332,25 @@ def test_heterogeneous_disk_pipeline_runs_one_native_hgt_epoch(
 ) -> None:
     source = _neighbor_source(tmp_path / "source")
     cfg = _parquet_cfg(source, tmp_path)
+    with open_dict(cfg):
+        cfg.evaluator.undefined_metric_policy = "nan"
     output = _build(cfg)
-    model = instantiate_model(cfg, data_spec=output.data_spec)
+    capability_validation = validate_capability_composition(
+        cfg,
+        observed=output.capability_spec,
+    )
+    model = instantiate_model(
+        cfg,
+        data_spec=output.data_spec,
+        capability_validation=capability_validation,
+    )
     output.datamodule.setup("fit")
     batch = next(iter(output.datamodule.val_dataloader()))
-    target_count = int(batch["author"].batch_size)
+    target_count = int(batch["paper"].batch_size)
     selected = model.supervision_adapter.select(
         {
-            "logits": torch.zeros((batch["author"].num_nodes, 4)),
-            "labels": batch["author"].y,
+            "logits": torch.zeros((batch["paper"].num_nodes, 2)),
+            "labels": batch["paper"].y,
         },
         batch,
         "Validation",
@@ -280,38 +379,15 @@ def test_heterogeneous_disk_pipeline_runs_one_native_hgt_epoch(
 
 def test_fitted_transform_fits_once_and_applies_once_per_native_batch(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source = _neighbor_source(tmp_path / "source", pca=True)
     cfg = _parquet_cfg(source, tmp_path, fitted_transform=True)
-    validate_store = typed_graph_store_module.validate_store
-    qualified_paths: list[Path] = []
-
-    def count_canonical_qualification(
-        path: str | Path,
-        **kwargs: object,
-    ) -> object:
-        if kwargs.get("require_directory_identity") is True:
-            qualified_paths.append(Path(path))
-        return validate_store(path, **kwargs)
-
-    monkeypatch.setattr(
-        typed_graph_store_module,
-        "validate_store",
-        count_canonical_qualification,
-    )
     output = _build(cfg)
     transform = output.fitted_transform
     assert transform is output.datamodule.fitted_transform
     assert transform.canonical_config()["n_components"] == 1
-    assert qualified_paths == [
-        output.prediction_identity_resolver.store_path
-    ]
 
     output.datamodule.setup("fit")
-    assert qualified_paths == [
-        output.prediction_identity_resolver.store_path
-    ]
 
     assert transform.begin_fit_calls == 1
     assert transform.finalize_fit_calls == 1
@@ -325,6 +401,111 @@ def test_fitted_transform_fits_once_and_applies_once_per_native_batch(
     output.datamodule.setup("test")
     assert type(next(iter(output.datamodule.val_dataloader()))) is HeteroData
     assert type(next(iter(output.datamodule.test_dataloader()))) is HeteroData
+
+
+def test_run_refreshes_fitted_transform_provenance_after_training(
+    tmp_path: Path,
+) -> None:
+    source = _neighbor_source(tmp_path / "source", pca=True)
+    cfg = _parquet_cfg(source, tmp_path, fitted_transform=True)
+    with open_dict(cfg):
+        cfg.train = True
+        cfg.test = False
+        cfg.execution_profile = "experimental"
+        cfg.preflight.enabled = False
+        cfg.evaluation_artifacts.enabled = False
+        cfg.evaluator.undefined_metric_policy = "nan"
+        cfg.trainer.max_epochs = 1
+        cfg.trainer.min_epochs = 1
+        cfg.trainer.limit_train_batches = 1
+        cfg.trainer.limit_val_batches = 1
+        cfg.trainer.enable_progress_bar = False
+        cfg.enable_progress_bar = False
+
+    _, objects = run_module.run(cfg)
+
+    transform = objects["datamodule"].fitted_transform
+    state_key = transform.state_key
+    assert isinstance(state_key, str)
+    assert state_key
+    returned_output = objects["pipeline_output"]
+    assert returned_output.provenance_input is not None
+    assert (
+        returned_output.provenance_input["fitted_transform_state_key"]
+        == state_key
+    )
+
+
+def test_live_fitted_state_key_changes_selected_transform_fingerprint(
+    tmp_path: Path,
+) -> None:
+    cfg = _parquet_cfg(_neighbor_source(tmp_path / "source"), tmp_path)
+    baseline_provenance = {
+        "fitted_transform": "pca",
+        "transform_fingerprint": "d" * 64,
+        "fitted_transform_state_key": None,
+    }
+    first_key = "a" * 64
+    second_key = "b" * 64
+
+    first_live = run_module._live_pipeline_provenance(
+        SimpleNamespace(
+            fitted_transform=SimpleNamespace(state_key=first_key),
+        ),
+        baseline_provenance,
+    )
+    second_live = run_module._live_pipeline_provenance(
+        SimpleNamespace(
+            fitted_transform=SimpleNamespace(state_key=second_key),
+        ),
+        baseline_provenance,
+    )
+    fingerprints = [
+        run_module._selected_provenance_by_split(
+            cfg,
+            source_graph_id=None,
+            provenance_input=provenance,
+            expected_num_examples={"val": 1, "test": 1},
+            checkpoint_sha256="c" * 64,
+        )["val"]["transform_fingerprint"]
+        for provenance in (first_live, second_live)
+    ]
+
+    assert baseline_provenance["fitted_transform_state_key"] is None
+    assert first_live["fitted_transform_state_key"] == first_key
+    assert second_live["fitted_transform_state_key"] == second_key
+    assert fingerprints[0] != fingerprints[1]
+
+
+def test_live_provenance_copy_preserves_non_fitted_pipeline() -> None:
+    provenance = {
+        "fitted_transform_state_key": None,
+        "transform_fingerprint": "d" * 64,
+    }
+
+    copied = run_module._live_pipeline_provenance(
+        SimpleNamespace(),
+        provenance,
+    )
+
+    assert copied == provenance
+    assert copied is not provenance
+
+
+@pytest.mark.parametrize("state_key", (None, "", "not-a-published-state-key"))
+def test_unbound_fitted_transform_fails_before_selected_publication(
+    state_key: str | None,
+) -> None:
+    with pytest.raises(
+        RuntimeError,
+        match="fitted transform.*immutable state_key",
+    ):
+        run_module._live_pipeline_provenance(
+            SimpleNamespace(
+                fitted_transform=SimpleNamespace(state_key=state_key),
+            ),
+            {"fitted_transform_state_key": None},
+        )
 
 
 def test_pipeline_rejects_declared_feature_dtype_mismatch_before_training(
@@ -350,7 +531,9 @@ def test_reusing_fitted_state_against_changed_source_fails_contextually(
     tmp_path: Path,
 ) -> None:
     first_source = _neighbor_source(tmp_path / "first-source", pca=True)
-    first_cfg = _parquet_cfg(first_source, tmp_path / "run", fitted_transform=True)
+    first_cfg = _parquet_cfg(
+        first_source, tmp_path / "run", fitted_transform=True
+    )
     pipeline = hydra.utils.instantiate(first_cfg.data_pipeline)
     first_output = pipeline.build(first_cfg)
     first_output.datamodule.setup("fit")
@@ -371,7 +554,9 @@ def test_reusing_fitted_state_against_changed_source_fails_contextually(
     )
 
     second_output = pipeline.build(second_cfg)
-    with pytest.raises(RuntimeError, match="fitted transform context identity mismatch"):
+    with pytest.raises(
+        RuntimeError, match="fitted transform context identity mismatch"
+    ):
         second_output.datamodule.setup("fit")
 
 

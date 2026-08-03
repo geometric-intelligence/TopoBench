@@ -39,8 +39,7 @@ class TestNSDEncoder:
     def test_initialization_default(self):
         """Test default initialization of NSDEncoder."""
         model = NSDEncoder(
-            input_dim=self.input_dim,
-            hidden_dim=self.hidden_dim
+            input_dim=self.input_dim, hidden_dim=self.hidden_dim
         )
 
         assert model.input_dim == self.input_dim
@@ -61,7 +60,7 @@ class TestNSDEncoder:
             dropout=0.2,
             input_dropout=0.15,
             sheaf_act="elu",
-            orth="matrix_exp"
+            orth="matrix_exp",
         )
 
         assert model.num_layers == 3
@@ -76,7 +75,7 @@ class TestNSDEncoder:
             hidden_dim=self.hidden_dim,
             num_layers=2,
             sheaf_type="diag",
-            d=2
+            d=2,
         )
 
         assert model.sheaf_type == "diag"
@@ -89,7 +88,7 @@ class TestNSDEncoder:
             hidden_dim=self.hidden_dim,
             num_layers=2,
             sheaf_type="bundle",
-            d=4
+            d=4,
         )
 
         assert model.sheaf_type == "bundle"
@@ -102,7 +101,7 @@ class TestNSDEncoder:
             hidden_dim=self.hidden_dim,
             num_layers=2,
             sheaf_type="general",
-            d=4
+            d=4,
         )
 
         assert model.sheaf_type == "general"
@@ -114,7 +113,7 @@ class TestNSDEncoder:
             NSDEncoder(
                 input_dim=self.input_dim,
                 hidden_dim=self.hidden_dim,
-                sheaf_type="invalid_type"
+                sheaf_type="invalid_type",
             )
 
     def test_initialization_invalid_sheaf_act(self):
@@ -124,7 +123,7 @@ class TestNSDEncoder:
             NSDEncoder(
                 input_dim=self.input_dim,
                 hidden_dim=self.hidden_dim,
-                sheaf_act="relu"  # Not supported, only 'id', 'tanh', 'elu' are valid
+                sheaf_act="relu",  # Not supported, only 'id', 'tanh', 'elu' are valid
             )
 
     @pytest.mark.parametrize("d", [True, 2.5, 0])
@@ -214,15 +213,13 @@ class TestNSDEncoder:
         x = self._prepare_features(simple_graph_0.num_nodes)
 
         model = NSDEncoder(
-            input_dim=self.input_dim,
-            hidden_dim=self.hidden_dim,
-            num_layers=2
+            input_dim=self.input_dim, hidden_dim=self.hidden_dim, num_layers=2
         )
 
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -240,15 +237,10 @@ class TestNSDEncoder:
         x = self._prepare_features(simple_graph_0.num_nodes)
 
         model = NSDEncoder(
-            input_dim=self.input_dim,
-            hidden_dim=self.hidden_dim,
-            num_layers=2
+            input_dim=self.input_dim, hidden_dim=self.hidden_dim, num_layers=2
         )
 
-        out = model(
-            x=x,
-            edge_index=simple_graph_0.edge_index
-        )
+        out = model(x=x, edge_index=simple_graph_0.edge_index)
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
 
@@ -263,9 +255,7 @@ class TestNSDEncoder:
         x = self._prepare_features(simple_graph_0.num_nodes)
 
         model = NSDEncoder(
-            input_dim=self.input_dim,
-            hidden_dim=self.hidden_dim,
-            num_layers=2
+            input_dim=self.input_dim, hidden_dim=self.hidden_dim, num_layers=2
         )
 
         # Create dummy edge attributes (should be ignored by NSD)
@@ -275,7 +265,7 @@ class TestNSDEncoder:
             x=x,
             edge_index=simple_graph_0.edge_index,
             edge_attr=edge_attr,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -291,9 +281,7 @@ class TestNSDEncoder:
         x = self._prepare_features(simple_graph_0.num_nodes)
 
         model = NSDEncoder(
-            input_dim=self.input_dim,
-            hidden_dim=self.hidden_dim,
-            num_layers=2
+            input_dim=self.input_dim, hidden_dim=self.hidden_dim, num_layers=2
         )
 
         # Create dummy edge weights (should be ignored by NSD)
@@ -303,7 +291,7 @@ class TestNSDEncoder:
             x=x,
             edge_index=simple_graph_0.edge_index,
             edge_weight=edge_weight,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -323,13 +311,13 @@ class TestNSDEncoder:
             hidden_dim=self.hidden_dim,
             num_layers=2,
             sheaf_type="diag",
-            d=2
+            d=2,
         )
 
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -349,13 +337,13 @@ class TestNSDEncoder:
             hidden_dim=self.hidden_dim,
             num_layers=2,
             sheaf_type="bundle",
-            d=4
+            d=4,
         )
 
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -375,13 +363,13 @@ class TestNSDEncoder:
             hidden_dim=self.hidden_dim,
             num_layers=2,
             sheaf_type="general",
-            d=4
+            d=4,
         )
 
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -400,13 +388,13 @@ class TestNSDEncoder:
             model = NSDEncoder(
                 input_dim=self.input_dim,
                 hidden_dim=self.hidden_dim,
-                num_layers=num_layers
+                num_layers=num_layers,
             )
 
             out = model(
                 x=x,
                 edge_index=simple_graph_0.edge_index,
-                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
             )
 
             assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -427,13 +415,13 @@ class TestNSDEncoder:
                 input_dim=self.input_dim,
                 hidden_dim=self.hidden_dim,
                 num_layers=2,
-                d=d
+                d=d,
             )
 
             out = model(
                 x=x,
                 edge_index=simple_graph_0.edge_index,
-                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
             )
 
             assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -454,13 +442,13 @@ class TestNSDEncoder:
                 input_dim=self.input_dim,
                 hidden_dim=self.hidden_dim,
                 num_layers=2,
-                dropout=dropout
+                dropout=dropout,
             )
 
             out = model(
                 x=x,
                 edge_index=simple_graph_0.edge_index,
-                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
             )
 
             assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -480,13 +468,13 @@ class TestNSDEncoder:
                 input_dim=self.input_dim,
                 hidden_dim=self.hidden_dim,
                 num_layers=2,
-                input_dropout=input_dropout
+                input_dropout=input_dropout,
             )
 
             out = model(
                 x=x,
                 edge_index=simple_graph_0.edge_index,
-                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
             )
 
             assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -506,13 +494,13 @@ class TestNSDEncoder:
                 input_dim=self.input_dim,
                 hidden_dim=self.hidden_dim,
                 num_layers=2,
-                sheaf_act=sheaf_act
+                sheaf_act=sheaf_act,
             )
 
             out = model(
                 x=x,
                 edge_index=simple_graph_0.edge_index,
-                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
             )
 
             assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -532,13 +520,13 @@ class TestNSDEncoder:
                 input_dim=self.input_dim,
                 hidden_dim=self.hidden_dim,
                 num_layers=2,
-                orth=orth
+                orth=orth,
             )
 
             out = model(
                 x=x,
                 edge_index=simple_graph_0.edge_index,
-                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
             )
 
             assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -554,16 +542,14 @@ class TestNSDEncoder:
         x = self._prepare_features(simple_graph_0.num_nodes)
 
         model = NSDEncoder(
-            input_dim=self.input_dim,
-            hidden_dim=self.hidden_dim,
-            num_layers=2
+            input_dim=self.input_dim, hidden_dim=self.hidden_dim, num_layers=2
         )
         model.train()
 
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -580,16 +566,14 @@ class TestNSDEncoder:
         x = self._prepare_features(simple_graph_0.num_nodes)
 
         model = NSDEncoder(
-            input_dim=self.input_dim,
-            hidden_dim=self.hidden_dim,
-            num_layers=2
+            input_dim=self.input_dim, hidden_dim=self.hidden_dim, num_layers=2
         )
         model.eval()
 
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -604,16 +588,16 @@ class TestNSDEncoder:
             Test graph fixture.
         """
         model = NSDEncoder(
-            input_dim=self.input_dim,
-            hidden_dim=self.hidden_dim,
-            num_layers=2
+            input_dim=self.input_dim, hidden_dim=self.hidden_dim, num_layers=2
         )
 
-        x = self._prepare_features(simple_graph_0.num_nodes).requires_grad_(True)
+        x = self._prepare_features(simple_graph_0.num_nodes).requires_grad_(
+            True
+        )
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         # Compute loss and backward
@@ -623,7 +607,11 @@ class TestNSDEncoder:
         # Check that gradients exist
         assert x.grad is not None
         # At least some parameters should have gradients
-        has_grad = any(param.grad is not None for param in model.parameters() if param.requires_grad)
+        has_grad = any(
+            param.grad is not None
+            for param in model.parameters()
+            if param.requires_grad
+        )
         assert has_grad, "No gradients computed for any model parameters"
 
     def test_batched_graphs(self, simple_graph_0, simple_graph_1):
@@ -640,18 +628,14 @@ class TestNSDEncoder:
         x = self._prepare_features(expected_nodes)
 
         model = NSDEncoder(
-            input_dim=self.input_dim,
-            hidden_dim=self.hidden_dim,
-            num_layers=2
+            input_dim=self.input_dim, hidden_dim=self.hidden_dim, num_layers=2
         )
 
         # Create batch
         batch_data = Batch.from_data_list([simple_graph_0, simple_graph_1])
 
         out = model(
-            x=x,
-            edge_index=batch_data.edge_index,
-            batch=batch_data.batch
+            x=x, edge_index=batch_data.edge_index, batch=batch_data.batch
         )
 
         assert out.shape == (expected_nodes, self.hidden_dim)
@@ -659,9 +643,7 @@ class TestNSDEncoder:
     def test_empty_graph(self):
         """Test forward pass with empty graph (single node, no edges)."""
         model = NSDEncoder(
-            input_dim=self.input_dim,
-            hidden_dim=self.hidden_dim,
-            num_layers=2
+            input_dim=self.input_dim, hidden_dim=self.hidden_dim, num_layers=2
         )
         # Set to eval mode to avoid batch norm issues with single node
         model.eval()
@@ -677,9 +659,7 @@ class TestNSDEncoder:
     def test_large_graph(self):
         """Test forward pass with a larger graph."""
         model = NSDEncoder(
-            input_dim=self.input_dim,
-            hidden_dim=self.hidden_dim,
-            num_layers=2
+            input_dim=self.input_dim, hidden_dim=self.hidden_dim, num_layers=2
         )
 
         num_nodes = 100
@@ -727,7 +707,7 @@ class TestNSDEncoder:
             input_dim=self.input_dim,
             hidden_dim=self.hidden_dim,
             num_layers=2,
-            dropout=0.5
+            dropout=0.5,
         )
         model.eval()
 
@@ -735,13 +715,13 @@ class TestNSDEncoder:
         out1 = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         out2 = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert torch.allclose(out1, out2)
@@ -758,15 +738,13 @@ class TestNSDEncoder:
             x = self._prepare_features(simple_graph_0.num_nodes)
 
             model = NSDEncoder(
-                input_dim=self.input_dim,
-                hidden_dim=hidden_dim,
-                num_layers=2
+                input_dim=self.input_dim, hidden_dim=hidden_dim, num_layers=2
             )
 
             out = model(
                 x=x,
                 edge_index=simple_graph_0.edge_index,
-                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
             )
 
             assert out.shape == (simple_graph_0.num_nodes, hidden_dim)
@@ -783,15 +761,13 @@ class TestNSDEncoder:
             x = self._prepare_features(simple_graph_0.num_nodes, input_dim)
 
             model = NSDEncoder(
-                input_dim=input_dim,
-                hidden_dim=self.hidden_dim,
-                num_layers=2
+                input_dim=input_dim, hidden_dim=self.hidden_dim, num_layers=2
             )
 
             out = model(
                 x=x,
                 edge_index=simple_graph_0.edge_index,
-                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
             )
 
             assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -811,7 +787,7 @@ class TestNSDEncoder:
             input_dim=self.input_dim,
             hidden_dim=self.hidden_dim,
             num_layers=2,
-            device="cuda"
+            device="cuda",
         )
         model = model.cuda()
 
@@ -840,13 +816,13 @@ class TestNSDEncoder:
         model = NSDEncoder(
             input_dim=self.input_dim,
             hidden_dim=self.hidden_dim,
-            num_layers=num_layers
+            num_layers=num_layers,
         )
 
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -875,13 +851,13 @@ class TestNSDEncoder:
             hidden_dim=self.hidden_dim,
             num_layers=2,
             sheaf_type=sheaf_type,
-            d=d
+            d=d,
         )
 
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -904,13 +880,13 @@ class TestNSDEncoder:
             input_dim=self.input_dim,
             hidden_dim=self.hidden_dim,
             num_layers=2,
-            d=d
+            d=d,
         )
 
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -933,13 +909,13 @@ class TestNSDEncoder:
             input_dim=self.input_dim,
             hidden_dim=self.hidden_dim,
             num_layers=2,
-            orth=orth
+            orth=orth,
         )
 
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -955,9 +931,7 @@ class TestNSDEncoder:
         x = self._prepare_features(simple_graph_0.num_nodes)
 
         model = NSDEncoder(
-            input_dim=self.input_dim,
-            hidden_dim=self.hidden_dim,
-            num_layers=2
+            input_dim=self.input_dim, hidden_dim=self.hidden_dim, num_layers=2
         )
 
         out = model(
@@ -965,7 +939,7 @@ class TestNSDEncoder:
             edge_index=simple_graph_0.edge_index,
             batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
             unused_kwarg="test",
-            another_unused=123
+            another_unused=123,
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -973,9 +947,7 @@ class TestNSDEncoder:
     def test_get_sheaf_model(self):
         """Test get_sheaf_model method."""
         model = NSDEncoder(
-            input_dim=self.input_dim,
-            hidden_dim=self.hidden_dim,
-            num_layers=2
+            input_dim=self.input_dim, hidden_dim=self.hidden_dim, num_layers=2
         )
 
         sheaf_model = model.get_sheaf_model()
@@ -1026,9 +998,7 @@ class TestNSDEncoder:
         x = self._prepare_features(simple_graph_0.num_nodes)
 
         model = NSDEncoder(
-            input_dim=self.input_dim,
-            hidden_dim=self.hidden_dim,
-            num_layers=2
+            input_dim=self.input_dim, hidden_dim=self.hidden_dim, num_layers=2
         )
         model.eval()
 
@@ -1037,7 +1007,7 @@ class TestNSDEncoder:
             out = model(
                 x=x,
                 edge_index=simple_graph_0.edge_index,
-                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+                batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
             )
             assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
             assert not torch.isnan(out).any()
@@ -1052,17 +1022,17 @@ class TestNSDEncoder:
             Test graph fixture.
         """
         model = NSDEncoder(
-            input_dim=self.input_dim,
-            hidden_dim=self.hidden_dim,
-            num_layers=2
+            input_dim=self.input_dim, hidden_dim=self.hidden_dim, num_layers=2
         )
         model.train()
 
-        x = self._prepare_features(simple_graph_0.num_nodes).requires_grad_(True)
+        x = self._prepare_features(simple_graph_0.num_nodes).requires_grad_(
+            True
+        )
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         # Compute loss
@@ -1070,7 +1040,9 @@ class TestNSDEncoder:
         loss.backward()
 
         # Check gradients in different parts of the model
-        param_grads = [p.grad for p in model.parameters() if p.grad is not None]
+        param_grads = [
+            p.grad for p in model.parameters() if p.grad is not None
+        ]
         assert len(param_grads) > 0, "No parameters have gradients"
 
         # Check that gradients are not all zeros
@@ -1095,13 +1067,13 @@ class TestNSDEncoder:
             num_layers=2,
             sheaf_type="bundle",
             d=4,
-            orth="matrix_exp"
+            orth="matrix_exp",
         )
 
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -1126,13 +1098,13 @@ class TestNSDEncoder:
             num_layers=2,
             sheaf_type="general",
             d=4,
-            orth="matrix_exp"
+            orth="matrix_exp",
         )
 
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         assert out.shape == (simple_graph_0.num_nodes, self.hidden_dim)
@@ -1154,15 +1126,17 @@ class TestNSDEncoder:
             hidden_dim=self.hidden_dim,
             num_layers=2,
             sheaf_type="bundle",
-            d=4
+            d=4,
         )
         model.train()
 
-        x = self._prepare_features(simple_graph_0.num_nodes).requires_grad_(True)
+        x = self._prepare_features(simple_graph_0.num_nodes).requires_grad_(
+            True
+        )
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         # Compute loss and backward
@@ -1171,7 +1145,11 @@ class TestNSDEncoder:
 
         # Check that gradients exist
         assert x.grad is not None
-        has_grad = any(param.grad is not None for param in model.parameters() if param.requires_grad)
+        has_grad = any(
+            param.grad is not None
+            for param in model.parameters()
+            if param.requires_grad
+        )
         assert has_grad, "No gradients computed for any model parameters"
 
     def test_general_sheaf_gradient_flow(self, simple_graph_0):
@@ -1189,15 +1167,17 @@ class TestNSDEncoder:
             hidden_dim=self.hidden_dim,
             num_layers=2,
             sheaf_type="general",
-            d=4
+            d=4,
         )
         model.train()
 
-        x = self._prepare_features(simple_graph_0.num_nodes).requires_grad_(True)
+        x = self._prepare_features(simple_graph_0.num_nodes).requires_grad_(
+            True
+        )
         out = model(
             x=x,
             edge_index=simple_graph_0.edge_index,
-            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long)
+            batch=torch.zeros(simple_graph_0.num_nodes, dtype=torch.long),
         )
 
         # Compute loss and backward
@@ -1206,5 +1186,9 @@ class TestNSDEncoder:
 
         # Check that gradients exist
         assert x.grad is not None
-        has_grad = any(param.grad is not None for param in model.parameters() if param.requires_grad)
+        has_grad = any(
+            param.grad is not None
+            for param in model.parameters()
+            if param.requires_grad
+        )
         assert has_grad, "No gradients computed for any model parameters"

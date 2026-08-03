@@ -44,9 +44,7 @@ def _native_batch() -> Batch:
     )
     second = HypergraphData(
         x=torch.arange(6, dtype=torch.float32).reshape(2, 3),
-        hyperedge_index=torch.tensor(
-            [[0, 1], [0, 0]], dtype=torch.long
-        ),
+        hyperedge_index=torch.tensor([[0, 1], [0, 0]], dtype=torch.long),
         num_hyperedges=1,
         y=torch.tensor([1, 0], dtype=torch.long),
     )

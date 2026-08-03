@@ -2,12 +2,11 @@
 
 import hashlib
 import json
+import math
 import random
 from abc import ABC, abstractmethod
-from collections.abc import Mapping, Sequence
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-import math
 from pathlib import Path
 from typing import Any
 

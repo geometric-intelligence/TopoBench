@@ -2,6 +2,7 @@
 
 import torch
 from torch_geometric.data import Data
+
 from topobench.transforms.data_manipulations import (
     InfereKNNConnectivity,
     InfereRadiusConnectivity,
@@ -13,14 +14,16 @@ class TestConnectivityTransforms:
 
     def setup_method(self):
         """Set up test fixtures before each test method."""
-        self.x = torch.tensor([
-            [2, 2],
-            [2.2, 2],
-            [2.1, 1.5],
-            [-3, 2],
-            [-2.7, 2],
-            [-2.5, 1.5],
-        ])
+        self.x = torch.tensor(
+            [
+                [2, 2],
+                [2.2, 2],
+                [2.1, 1.5],
+                [-3, 2],
+                [-2.7, 2],
+                [-2.5, 1.5],
+            ]
+        )
 
         self.data = Data(
             x=self.x,

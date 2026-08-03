@@ -8,15 +8,16 @@ replace DuckDB's otherwise blocking joined-edge sort.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-import io
 import hashlib
+import io
 import json
 import os
-from pathlib import Path
 import shutil
-from typing import TYPE_CHECKING, Any, Mapping
 import uuid
+from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -123,7 +124,9 @@ class TypedGraphRelationWriter:
                     pq=pq,
                 ) as snapshot_stage:
                     snapshots, _ = snapshot_stage
-                    connection = duckdb.connect(str(spill_root / "relations.duckdb"))
+                    connection = duckdb.connect(
+                        str(spill_root / "relations.duckdb")
+                    )
                     try:
                         self._configure_connection(connection, spill_root)
                         (
@@ -178,8 +181,12 @@ class TypedGraphRelationWriter:
                         },
                     }
                     metadata["content_identity"] = identity
-                    metadata["content_sha256"] = ingestion._sha256_json(identity)
-                    ingestion._atomic_json(temporary_root / "relations.json", metadata)
+                    metadata["content_sha256"] = ingestion._sha256_json(
+                        identity
+                    )
+                    ingestion._atomic_json(
+                        temporary_root / "relations.json", metadata
+                    )
                     self._validate_relation_tree(
                         temporary_root,
                         metadata,
@@ -192,9 +199,13 @@ class TypedGraphRelationWriter:
                         "behavior_version": ingestion._BEHAVIOR_VERSION,
                         "input_fingerprint": inventory.source_fingerprint,
                         "config_fingerprint": inventory.config_fingerprint,
-                        "dependency_versions": dict(inventory.dependency_versions),
+                        "dependency_versions": dict(
+                            inventory.dependency_versions
+                        ),
                         "content_sha256": metadata["content_sha256"],
-                        "source_schema_sha256": metadata["source_schema_sha256"],
+                        "source_schema_sha256": metadata[
+                            "source_schema_sha256"
+                        ],
                         "index_bindings": metadata["index_bindings"],
                         "outputs": outputs,
                         "array_binding": metadata["array_binding"],
@@ -205,13 +216,20 @@ class TypedGraphRelationWriter:
                         },
                         "prepared_relation_stage_bytes": 0,
                     }
-                    completion_path = temporary_root / "relations.complete.json"
+                    completion_path = (
+                        temporary_root / "relations.complete.json"
+                    )
                     for _ in range(5):
                         ingestion._atomic_json(completion_path, completion)
                         prepared_bytes = _tree_bytes(temporary_root)
-                        if completion["prepared_relation_stage_bytes"] == prepared_bytes:
+                        if (
+                            completion["prepared_relation_stage_bytes"]
+                            == prepared_bytes
+                        ):
                             break
-                        completion["prepared_relation_stage_bytes"] = prepared_bytes
+                        completion["prepared_relation_stage_bytes"] = (
+                            prepared_bytes
+                        )
                     else:
                         raise ingestion.ArtifactValidationError(
                             "DISK-EVIDENCE-001: prepared relation byte evidence did not stabilize"
@@ -248,8 +266,7 @@ class TypedGraphRelationWriter:
             expected.inventory.source_fingerprint
             != self.index_build.inventory.source_fingerprint
             or expected.stage_root != self.index_build.stage_root
-            or expected.artifact_root
-            != self.index_build.stage_root / "arrays"
+            or expected.artifact_root != self.index_build.stage_root / "arrays"
         ):
             raise ingestion.ArtifactValidationError(
                 "ARRAY-BINDING-001: Task 3 build does not belong to these exact indexes"
@@ -337,7 +354,9 @@ class TypedGraphRelationWriter:
                 )
                 array_count += len(relation.edge_fields)
         evidence_reserve = 1024**2 + 8192 * (
-            array_count + len(self.ingestor.source.spec.relations) + len(inventory.files)
+            array_count
+            + len(self.ingestor.source.spec.relations)
+            + len(inventory.files)
         )
         canonical_scratch_reserve = (
             max(payload_bytes, relation_uncompressed)
@@ -360,9 +379,7 @@ class TypedGraphRelationWriter:
         array_completion = _ingestion_module()._read_json(
             self.array_build.artifact_root / "arrays.complete.json"
         )
-        task3_requirements = array_completion["disk_admission"][
-            "requirements"
-        ]
+        task3_requirements = array_completion["disk_admission"]["requirements"]
         task3_final_bytes = int(task3_requirements["final_peak_bytes"])
         final_peak = task3_final_bytes + estimated_relation
 
@@ -389,6 +406,7 @@ class TypedGraphRelationWriter:
             "temporary_additional_bytes": temporary_peak,
             "shared_additional_bytes": estimated_relation + temporary_peak,
         }
+
     def _exact_relation_disk_requirements(
         self,
         prepared: Mapping[str, tuple[Any, Mapping[str, Any]]],
@@ -413,17 +431,13 @@ class TypedGraphRelationWriter:
             edge_id = None
             if context["edge_descriptor"] is not None:
                 edge_id = _npy_storage_sizing(
-                    np.dtype(
-                        context["edge_descriptor"]["storage_dtype"]
-                    ),
+                    np.dtype(context["edge_descriptor"]["storage_dtype"]),
                     (context["edge_count"],),
                 )
             fields = {
                 name: _npy_storage_sizing(
                     np.dtype(
-                        context["field_descriptors"][name][
-                            "storage_dtype"
-                        ]
+                        context["field_descriptors"][name]["storage_dtype"]
                     ),
                     (
                         context["edge_count"],
@@ -471,14 +485,9 @@ class TypedGraphRelationWriter:
             reorder_records = [row]
             if edge_id is not None:
                 reorder_records.append(edge_id)
-            reorder_records.extend(
-                fields[name] for name in sorted(fields)
-            )
+            reorder_records.extend(fields[name] for name in sorted(fields))
             max_reorder_file_bytes = max(
-                (
-                    int(record["file_bytes"])
-                    for record in reorder_records
-                ),
+                (int(record["file_bytes"]) for record in reorder_records),
                 default=0,
             )
             max_canonical_scratch_file_bytes = max(
@@ -505,16 +514,12 @@ class TypedGraphRelationWriter:
         same_filesystem = bool(coarse_requirements["same_filesystem"])
         return {
             "same_filesystem": same_filesystem,
-            "task2_final_bytes": int(
-                coarse_requirements["task2_final_bytes"]
-            ),
+            "task2_final_bytes": int(coarse_requirements["task2_final_bytes"]),
             "task2_required_peak_bytes": int(
                 coarse_requirements["task2_required_peak_bytes"]
             ),
             "task3_final_bytes": task3_final_bytes,
-            "task3_array_bytes": int(
-                coarse_requirements["task3_array_bytes"]
-            ),
+            "task3_array_bytes": int(coarse_requirements["task3_array_bytes"]),
             "estimated_relation_bytes": estimated_relation_bytes,
             "exact_array_file_bytes": exact_array_bytes,
             "exact_array_payload_bytes": exact_payload_bytes,
@@ -527,8 +532,7 @@ class TypedGraphRelationWriter:
             "final_peak_bytes": final_peak_bytes,
             "temporary_peak_bytes": temporary_peak_bytes,
             "resume_temporary_additional_bytes": temporary_peak_bytes,
-            "shared_peak_bytes": final_peak_bytes
-            + temporary_peak_bytes,
+            "shared_peak_bytes": final_peak_bytes + temporary_peak_bytes,
             "final_additional_bytes": final_build_bytes,
             "temporary_additional_bytes": temporary_peak_bytes,
             "shared_additional_bytes": final_build_bytes
@@ -544,8 +548,8 @@ class TypedGraphRelationWriter:
     ) -> dict[str, Any]:
         ingestion = _ingestion_module()
         inventory = self.index_build.inventory
-        final_device, final_available, final_probe = ingestion._filesystem_capacity(
-            inventory.final_filesystem_path
+        final_device, final_available, final_probe = (
+            ingestion._filesystem_capacity(inventory.final_filesystem_path)
         )
         temporary_device, temporary_available, temporary_probe = (
             ingestion._filesystem_capacity(inventory.temporary_filesystem_path)
@@ -557,11 +561,7 @@ class TypedGraphRelationWriter:
             raise ingestion.DiskAdmissionError(
                 "DISK-EVIDENCE-001: final or temporary filesystem changed before Task 4 allocation"
             )
-        code = (
-            "DISK-PREFLIGHT-EXACT-001"
-            if exact
-            else "DISK-PREFLIGHT-001"
-        )
+        code = "DISK-PREFLIGHT-EXACT-001" if exact else "DISK-PREFLIGHT-001"
         limit = self.ingestor.disk_limit_bytes
         if requirements["same_filesystem"]:
             available = min(final_available, temporary_available)
@@ -634,9 +634,7 @@ class TypedGraphRelationWriter:
             inventory.final_filesystem_path
         )
         temporary_device, temporary_available, _ = (
-            ingestion._filesystem_capacity(
-                inventory.temporary_filesystem_path
-            )
+            ingestion._filesystem_capacity(inventory.temporary_filesystem_path)
         )
         if (
             self.ingestor.store_root != inventory.final_filesystem_path
@@ -702,7 +700,9 @@ class TypedGraphRelationWriter:
     ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
         prepared: dict[str, tuple[Any, dict[str, Any]]] = {}
         schema_evidence: dict[str, dict[str, Any]] = {}
-        for ordinal, relation in enumerate(self.ingestor.source.spec.relations):
+        for ordinal, relation in enumerate(
+            self.ingestor.source.spec.relations
+        ):
             internal_key = f"r{ordinal:04d}"
             context = self._prepare_relation(
                 relation=relation,
@@ -738,7 +738,9 @@ class TypedGraphRelationWriter:
             "relation_behavior_version": _RELATION_BEHAVIOR_VERSION,
             "input_fingerprint": self.index_build.inventory.source_fingerprint,
             "config_fingerprint": self.index_build.inventory.config_fingerprint,
-            "dependency_versions": dict(self.index_build.inventory.dependency_versions),
+            "dependency_versions": dict(
+                self.index_build.inventory.dependency_versions
+            ),
             "record_batch_rows": self.ingestor.source.spec.ingestion.record_batch_rows,
             "max_record_batch_rows": self._max_batch_rows,
             "index_bindings": index_bindings,
@@ -784,9 +786,7 @@ class TypedGraphRelationWriter:
             edge_path = relation_root / "edge_id.npy"
             edge_output = _open_npy_output(
                 edge_path,
-                dtype=np.dtype(
-                    context["edge_descriptor"]["storage_dtype"]
-                ),
+                dtype=np.dtype(context["edge_descriptor"]["storage_dtype"]),
                 shape=(edge_count,),
             )
         field_paths: dict[str, Path] = {}
@@ -812,7 +812,9 @@ class TypedGraphRelationWriter:
         ]
         offset = 0
         try:
-            reader = connection.execute(context["stream_query"]).to_arrow_reader(
+            reader = connection.execute(
+                context["stream_query"]
+            ).to_arrow_reader(
                 self.ingestor.source.spec.ingestion.record_batch_rows
             )
             for batch in reader:
@@ -873,7 +875,9 @@ class TypedGraphRelationWriter:
                         dtype=np.dtype(descriptor["storage_dtype"]),
                     )
                     column += 1
-                for field_name, descriptor in context["field_descriptors"].items():
+                for field_name, descriptor in context[
+                    "field_descriptors"
+                ].items():
                     _write_npy_block(
                         field_outputs[field_name],
                         self._value_block(
@@ -908,7 +912,9 @@ class TypedGraphRelationWriter:
             try:
                 if edge_count:
                     key_view = f"canonical_keys_{uuid.uuid4().hex}"
-                    connection.read_parquet(str(key_path)).create_view(key_view)
+                    connection.read_parquet(str(key_path)).create_view(
+                        key_view
+                    )
                     order = "destination_local, source_local"
                     if context["edge_descriptor"] is not None:
                         edge_order = (
@@ -929,9 +935,8 @@ class TypedGraphRelationWriter:
                             batch.column(0),
                             context="canonical source positions",
                         )
-                        if (
-                            np.any(positions < 0)
-                            or np.any(positions >= edge_count)
+                        if np.any(positions < 0) or np.any(
+                            positions >= edge_count
                         ):
                             raise _artifact_error(
                                 "CSC-ORDER-001: canonical source position is outside the relation"
@@ -986,11 +991,17 @@ class TypedGraphRelationWriter:
             "canonical_order": [
                 "destination_local",
                 "source_local",
-                *([relation.edge_id_column] if relation.edge_id_column else []),
+                *(
+                    [relation.edge_id_column]
+                    if relation.edge_id_column
+                    else []
+                ),
             ],
             "source_files": context["source_files"],
             "source_sha256": context["source_sha256"],
-            "schema_fingerprint": context["schema_record"]["schema_fingerprint"],
+            "schema_fingerprint": context["schema_record"][
+                "schema_fingerprint"
+            ],
             "colptr": self._array_record(
                 root,
                 colptr_path,
@@ -1088,7 +1099,9 @@ class TypedGraphRelationWriter:
         source_map_view = f"relation_source_map_{internal_key}"
         destination_map_view = f"relation_destination_map_{internal_key}"
         mapped_view = f"relation_mapped_{internal_key}"
-        connection.read_parquet([str(path) for path in paths]).create_view(source_view)
+        connection.read_parquet([str(path) for path in paths]).create_view(
+            source_view
+        )
         self._require_endpoint_type(
             connection,
             source_view=source_view,
@@ -1129,7 +1142,9 @@ class TypedGraphRelationWriter:
                 code="EDGE-FIELD-SCHEMA-001",
                 context=relation.relation,
             )
-            field_descriptors[field_name] = self._field_descriptor(field.type, pa=pa)
+            field_descriptors[field_name] = self._field_descriptor(
+                field.type, pa=pa
+            )
 
         selections = [
             f"s.{_quote(relation.source_column)} AS source_external",
@@ -1233,7 +1248,10 @@ class TypedGraphRelationWriter:
                 raise _artifact_error(
                     f"EDGE-FIELD-NULL-001: relation {relation.relation!r} field {field_name!r} contains nulls"
                 )
-            if descriptor["dtype"] in _FLOAT_DTYPES and descriptor["representation"] == "scalar":
+            if (
+                descriptor["dtype"] in _FLOAT_DTYPES
+                and descriptor["representation"] == "scalar"
+            ):
                 invalid = connection.execute(
                     f"SELECT COUNT(*) FILTER (WHERE NOT isfinite({source_field})) "
                     f"FROM {_quote(source_view)}"
@@ -1295,8 +1313,12 @@ class TypedGraphRelationWriter:
         return {
             "stream_query": stream_query,
             "edge_count": edge_count,
-            "source_count": self.index_build.indexes[source_node.name].row_count,
-            "destination_count": self.index_build.indexes[destination_node.name].row_count,
+            "source_count": self.index_build.indexes[
+                source_node.name
+            ].row_count,
+            "destination_count": self.index_build.indexes[
+                destination_node.name
+            ].row_count,
             "source_internal_key": self._node_key(source_node.name),
             "destination_internal_key": self._node_key(destination_node.name),
             "source_id_dtype": source_node.id_dtype,
@@ -1326,13 +1348,17 @@ class TypedGraphRelationWriter:
         if field.type.equals(expected):
             return
         overflow = False
-        if expected_dtype == "int64" and pa.types.is_unsigned_integer(field.type):
+        if expected_dtype == "int64" and pa.types.is_unsigned_integer(
+            field.type
+        ):
             overflow = bool(
                 connection.execute(
                     f"SELECT COUNT(*) FROM {_quote(source_view)} WHERE {_quote(column)} > 9223372036854775807"
                 ).fetchone()[0]
             )
-        elif expected_dtype == "uint64" and pa.types.is_signed_integer(field.type):
+        elif expected_dtype == "uint64" and pa.types.is_signed_integer(
+            field.type
+        ):
             overflow = bool(
                 connection.execute(
                     f"SELECT COUNT(*) FROM {_quote(source_view)} WHERE {_quote(column)} < 0"
@@ -1346,9 +1372,14 @@ class TypedGraphRelationWriter:
             f"EDGE-ENDPOINT-TYPE-001: endpoint column {column!r} exact Arrow type {field.type} does not match {expected}"
         )
 
-    def _edge_id_descriptor(self, arrow_type: Any, *, pa: Any) -> dict[str, Any]:
+    def _edge_id_descriptor(
+        self, arrow_type: Any, *, pa: Any
+    ) -> dict[str, Any]:
         descriptor = self._primitive_descriptor(arrow_type, pa=pa)
-        if descriptor["dtype"] not in _INTEGER_DTYPES and descriptor["dtype"] != "string":
+        if (
+            descriptor["dtype"] not in _INTEGER_DTYPES
+            and descriptor["dtype"] != "string"
+        ):
             raise _artifact_error(
                 "EDGE-ID-SCHEMA-001: stable edge IDs must be exact integer or string scalars"
             )
@@ -1406,13 +1437,17 @@ class TypedGraphRelationWriter:
 
     def _node(self, name: str) -> Any:
         return next(
-            node for node in self.ingestor.source.spec.node_types if node.name == name
+            node
+            for node in self.ingestor.source.spec.node_types
+            if node.name == name
         )
 
     def _node_key(self, name: str) -> str:
         return next(
             f"n{ordinal:04d}"
-            for ordinal, node in enumerate(self.ingestor.source.spec.node_types)
+            for ordinal, node in enumerate(
+                self.ingestor.source.spec.node_types
+            )
             if node.name == name
         )
 
@@ -1426,14 +1461,19 @@ class TypedGraphRelationWriter:
                 "internal_key": f"n{ordinal:04d}",
                 "id_dtype": node.id_dtype,
                 "row_count": index.row_count,
-                "mapping_completion_sha256": ingestion._sha256_file(index.completion_path),
+                "mapping_completion_sha256": ingestion._sha256_file(
+                    index.completion_path
+                ),
                 "outputs": completion["outputs"],
             }
         return bindings
 
-    def _source_records(self, relatives: tuple[str, ...]) -> list[dict[str, Any]]:
+    def _source_records(
+        self, relatives: tuple[str, ...]
+    ) -> list[dict[str, Any]]:
         inventory_by_path = {
-            entry.relative_path: entry for entry in self.index_build.inventory.files
+            entry.relative_path: entry
+            for entry in self.index_build.inventory.files
         }
         return [
             {
@@ -1441,7 +1481,9 @@ class TypedGraphRelationWriter:
                 "byte_size": inventory_by_path[relative].byte_size,
                 "row_count": inventory_by_path[relative].row_count,
                 "sha256": inventory_by_path[relative].sha256,
-                "schema_fingerprint": inventory_by_path[relative].schema_fingerprint,
+                "schema_fingerprint": inventory_by_path[
+                    relative
+                ].schema_fingerprint,
             }
             for relative in relatives
         ]
@@ -1468,7 +1510,9 @@ class TypedGraphRelationWriter:
                     np.lib.format.read_array_header_2_0(stream)
                 )
             else:
-                raise ValueError(f"unsupported NumPy format version {version!r}")
+                raise ValueError(
+                    f"unsupported NumPy format version {version!r}"
+                )
         if fortran_order or actual_shape != shape:
             raise ValueError(f"unexpected NumPy payload layout at {path}")
         return {
@@ -1500,7 +1544,9 @@ class TypedGraphRelationWriter:
         context: str,
     ) -> np.ndarray[Any, Any]:
         if values.null_count:
-            raise _artifact_error(f"EDGE-FIELD-NULL-001: {context} contains nulls")
+            raise _artifact_error(
+                f"EDGE-FIELD-NULL-001: {context} contains nulls"
+            )
         if descriptor["representation"] == "fixed_size_list":
             flattened = values.flatten()
             if flattened.null_count:
@@ -1536,7 +1582,10 @@ class TypedGraphRelationWriter:
                     f"EDGE-FIELD-CAST-001: {context} yielded {block.dtype}, "
                     f"expected exact {expected_dtype}"
                 )
-        if descriptor["dtype"] in _FLOAT_DTYPES and not np.isfinite(block).all():
+        if (
+            descriptor["dtype"] in _FLOAT_DTYPES
+            and not np.isfinite(block).all()
+        ):
             raise _artifact_error(
                 f"EDGE-FIELD-FINITE-001: {context} contains NaN or infinity"
             )
@@ -1579,7 +1628,6 @@ class TypedGraphRelationWriter:
                 _close_memmap(source)
             scratch_path.unlink(missing_ok=True)
 
-
     def _observe_batch(self, rows: int) -> None:
         limit = self.ingestor.source.spec.ingestion.record_batch_rows
         if rows > limit:
@@ -1613,7 +1661,6 @@ class TypedGraphRelationWriter:
         )
         for directory in directories:
             ingestion._fsync_directory(directory)
-
 
     def _publish(self, temporary_root: Path, stage_root: Path) -> None:
         destination = stage_root / "relations"
@@ -1667,7 +1714,9 @@ class TypedGraphRelationWriter:
         ingestion._fsync_directory(stage_root)
         ingestion._fsync_directory(stage_root.parent)
 
-    def _finalize_top_completion(self, result: TypedGraphRelationBuild) -> None:
+    def _finalize_top_completion(
+        self, result: TypedGraphRelationBuild
+    ) -> None:
         ingestion = _ingestion_module()
         stage_root = self.index_build.stage_root
         previous = ingestion._read_json(stage_root / "build.complete.json")
@@ -1675,7 +1724,8 @@ class TypedGraphRelationWriter:
         array_binding_sha256 = ingestion._sha256_json(array_binding)
         if (
             previous.get("stage") == "typed_graph_relations"
-            and previous.get("relation_content_sha256") == result.content_sha256
+            and previous.get("relation_content_sha256")
+            == result.content_sha256
             and previous.get("relation_array_binding_sha256")
             == array_binding_sha256
         ):
@@ -1697,7 +1747,9 @@ class TypedGraphRelationWriter:
                     f"UNKNOWN-ARTIFACT-001: symlink in relation stage: {path}"
                 )
             if path.is_file() and path.name != "relations.complete.json":
-                outputs[path.relative_to(root).as_posix()] = ingestion._sha256_file(path)
+                outputs[path.relative_to(root).as_posix()] = (
+                    ingestion._sha256_file(path)
+                )
         return outputs
 
     def _open_validated(
@@ -1714,11 +1766,16 @@ class TypedGraphRelationWriter:
         inventory = self.index_build.inventory
         if (
             completion.get("stage") != "typed_graph_relations"
-            or completion.get("relation_behavior_version") != _RELATION_BEHAVIOR_VERSION
-            or completion.get("behavior_version") != ingestion._BEHAVIOR_VERSION
-            or completion.get("input_fingerprint") != inventory.source_fingerprint
-            or completion.get("config_fingerprint") != inventory.config_fingerprint
-            or completion.get("dependency_versions") != dict(inventory.dependency_versions)
+            or completion.get("relation_behavior_version")
+            != _RELATION_BEHAVIOR_VERSION
+            or completion.get("behavior_version")
+            != ingestion._BEHAVIOR_VERSION
+            or completion.get("input_fingerprint")
+            != inventory.source_fingerprint
+            or completion.get("config_fingerprint")
+            != inventory.config_fingerprint
+            or completion.get("dependency_versions")
+            != dict(inventory.dependency_versions)
             or completion.get("reopened_and_validated") is not True
         ):
             raise ingestion.ArtifactValidationError(
@@ -1764,7 +1821,9 @@ class TypedGraphRelationWriter:
                 "DISK-EVIDENCE-001: Task 4 completion is not bound to both preallocation admissions"
             )
         exact_requirements = exact_admission["requirements"]
-        if completion.get("prepared_relation_stage_bytes") != _tree_bytes(root):
+        if completion.get("prepared_relation_stage_bytes") != _tree_bytes(
+            root
+        ):
             raise ingestion.ArtifactValidationError(
                 "DISK-EVIDENCE-001: prepared relation stage byte evidence changed"
             )
@@ -1778,8 +1837,7 @@ class TypedGraphRelationWriter:
         resource = metadata.get("resource_evidence")
         if (
             not isinstance(resource, dict)
-            or resource.get("exact_disk_requirements")
-            != exact_requirements
+            or resource.get("exact_disk_requirements") != exact_requirements
         ):
             raise ingestion.ArtifactValidationError(
                 "DISK-EVIDENCE-001: exact relation allocation evidence changed"
@@ -1789,7 +1847,8 @@ class TypedGraphRelationWriter:
             completion.get("content_sha256") != metadata.get("content_sha256")
             or completion.get("source_schema_sha256")
             != metadata.get("source_schema_sha256")
-            or completion.get("index_bindings") != metadata.get("index_bindings")
+            or completion.get("index_bindings")
+            != metadata.get("index_bindings")
             or completion.get("array_binding") != metadata.get("array_binding")
         ):
             raise ingestion.ArtifactValidationError(
@@ -1822,10 +1881,14 @@ class TypedGraphRelationWriter:
         ingestion = _ingestion_module()
         inventory = self.index_build.inventory
         if (
-            metadata.get("relation_behavior_version") != _RELATION_BEHAVIOR_VERSION
-            or metadata.get("input_fingerprint") != inventory.source_fingerprint
-            or metadata.get("config_fingerprint") != inventory.config_fingerprint
-            or metadata.get("dependency_versions") != dict(inventory.dependency_versions)
+            metadata.get("relation_behavior_version")
+            != _RELATION_BEHAVIOR_VERSION
+            or metadata.get("input_fingerprint")
+            != inventory.source_fingerprint
+            or metadata.get("config_fingerprint")
+            != inventory.config_fingerprint
+            or metadata.get("dependency_versions")
+            != dict(inventory.dependency_versions)
             or metadata.get("record_batch_rows")
             != self.ingestor.source.spec.ingestion.record_batch_rows
         ):
@@ -1833,11 +1896,9 @@ class TypedGraphRelationWriter:
                 "COMPLETION-EVIDENCE-001: relation semantic evidence changed"
             )
         expected_bindings = self._index_bindings()
-        if (
-            metadata.get("index_bindings") != expected_bindings
-            or metadata.get("index_bindings_sha256")
-            != ingestion._sha256_json(expected_bindings)
-        ):
+        if metadata.get("index_bindings") != expected_bindings or metadata.get(
+            "index_bindings_sha256"
+        ) != ingestion._sha256_json(expected_bindings):
             raise ingestion.ArtifactValidationError(
                 "INDEX-BINDING-001: relation stage is not bound to exact Task 2 indexes"
             )
@@ -1847,11 +1908,9 @@ class TypedGraphRelationWriter:
                 "ARRAY-BINDING-001: relation stage Task 3 arrays binding changed"
             )
         expected_schema = self._expected_schema_evidence()
-        if (
-            metadata.get("source_schemas") != expected_schema
-            or metadata.get("source_schema_sha256")
-            != ingestion._sha256_json(expected_schema)
-        ):
+        if metadata.get("source_schemas") != expected_schema or metadata.get(
+            "source_schema_sha256"
+        ) != ingestion._sha256_json(expected_schema):
             raise ingestion.ArtifactValidationError(
                 "RELATION-SCHEMA-BINDING-001: source schema evidence changed"
             )
@@ -1871,9 +1930,13 @@ class TypedGraphRelationWriter:
         relations = metadata.get("relations")
         expected_relations = {
             f"r{ordinal:04d}": relation
-            for ordinal, relation in enumerate(self.ingestor.source.spec.relations)
+            for ordinal, relation in enumerate(
+                self.ingestor.source.spec.relations
+            )
         }
-        if not isinstance(relations, dict) or set(relations) != set(expected_relations):
+        if not isinstance(relations, dict) or set(relations) != set(
+            expected_relations
+        ):
             raise ingestion.ArtifactValidationError(
                 "COMPLETION-EVIDENCE-001: completed relation set changed"
             )
@@ -1887,7 +1950,9 @@ class TypedGraphRelationWriter:
                 raise ingestion.ArtifactValidationError(
                     "COMPLETION-EVIDENCE-001: malformed relation record"
                 )
-            self._validate_one_relation(root, record, relation=relation, key=key)
+            self._validate_one_relation(
+                root, record, relation=relation, key=key
+            )
             semantic = _relation_semantic_sha256(
                 root,
                 record,
@@ -1902,15 +1967,18 @@ class TypedGraphRelationWriter:
                 "semantic_sha256": semantic,
             }
         self._validate_exact_disk_evidence(resource, relations)
-        if (
-            metadata.get("content_identity") != semantic_identity
-            or metadata.get("content_sha256")
-            != ingestion._sha256_json(semantic_identity)
-        ):
+        if metadata.get(
+            "content_identity"
+        ) != semantic_identity or metadata.get(
+            "content_sha256"
+        ) != ingestion._sha256_json(semantic_identity):
             raise ingestion.ArtifactValidationError(
                 "RELATION-SEMANTIC-001: relation content identity changed"
             )
-        if check_completion and not (root / "relations.complete.json").is_file():
+        if (
+            check_completion
+            and not (root / "relations.complete.json").is_file()
+        ):
             raise ingestion.ArtifactValidationError(
                 "INCOMPLETE-RELATION-STAGE-001: relation completion is missing"
             )
@@ -1926,7 +1994,9 @@ class TypedGraphRelationWriter:
         source_node = self._node(relation.relation[0])
         destination_node = self._node(relation.relation[2])
         source_count = self.index_build.indexes[source_node.name].row_count
-        destination_count = self.index_build.indexes[destination_node.name].row_count
+        destination_count = self.index_build.indexes[
+            destination_node.name
+        ].row_count
         source_files = self._source_records(relation.paths)
         expected = {
             "internal_key": key,
@@ -1945,13 +2015,21 @@ class TypedGraphRelationWriter:
             "canonical_order": [
                 "destination_local",
                 "source_local",
-                *([relation.edge_id_column] if relation.edge_id_column else []),
+                *(
+                    [relation.edge_id_column]
+                    if relation.edge_id_column
+                    else []
+                ),
             ],
             "source_files": source_files,
             "source_sha256": _combined_source_sha(source_files),
-            "schema_fingerprint": self._expected_schema_evidence()[key]["schema_fingerprint"],
+            "schema_fingerprint": self._expected_schema_evidence()[key][
+                "schema_fingerprint"
+            ],
         }
-        if any(record.get(field) != value for field, value in expected.items()):
+        if any(
+            record.get(field) != value for field, value in expected.items()
+        ):
             raise _artifact_error(
                 f"RELATION-BINDING-001: relation {relation.relation!r} evidence changed"
             )
@@ -1967,7 +2045,9 @@ class TypedGraphRelationWriter:
             )
         colptr_record = record.get("colptr")
         row_record = record.get("row")
-        if not isinstance(colptr_record, dict) or not isinstance(row_record, dict):
+        if not isinstance(colptr_record, dict) or not isinstance(
+            row_record, dict
+        ):
             raise _artifact_error("CSC-SCHEMA-001: missing CSC array evidence")
         colptr = self._open_array(
             root,
@@ -1991,7 +2071,11 @@ class TypedGraphRelationWriter:
             root,
             row_record["relative_path"],
         )
-        if len(colptr) == 0 or int(colptr[0]) != 0 or int(colptr[-1]) != edge_count:
+        if (
+            len(colptr) == 0
+            or int(colptr[0]) != 0
+            or int(colptr[-1]) != edge_count
+        ):
             raise _artifact_error(
                 "CSC-COLPTR-001: colptr must begin at zero and end at edge count"
             )
@@ -2002,7 +2086,9 @@ class TypedGraphRelationWriter:
             if len(block) and (
                 int(block[0]) < previous or np.any(block[1:] < block[:-1])
             ):
-                raise _artifact_error("CSC-COLPTR-001: colptr is not monotonic")
+                raise _artifact_error(
+                    "CSC-COLPTR-001: colptr is not monotonic"
+                )
             if len(block):
                 previous = int(block[-1])
             del block
@@ -2036,7 +2122,9 @@ class TypedGraphRelationWriter:
                 )
         else:
             if not isinstance(edge_record, dict):
-                raise _artifact_error("EDGE-ID-ALIGNMENT-001: stable edge IDs are missing")
+                raise _artifact_error(
+                    "EDGE-ID-ALIGNMENT-001: stable edge IDs are missing"
+                )
             edge_array = self._open_array_from_record(
                 root,
                 edge_record,
@@ -2048,9 +2136,13 @@ class TypedGraphRelationWriter:
                 edge_record["relative_path"],
             )
             if edge_record.get("column") != relation.edge_id_column:
-                raise _artifact_error("RELATION-BINDING-001: edge ID role changed")
+                raise _artifact_error(
+                    "RELATION-BINDING-001: edge ID role changed"
+                )
         fields = record.get("fields")
-        if not isinstance(fields, dict) or set(fields) != set(relation.edge_fields):
+        if not isinstance(fields, dict) or set(fields) != set(
+            relation.edge_fields
+        ):
             raise _artifact_error(
                 "EDGE-FIELD-ALIGNMENT-001: declared relation field set changed"
             )
@@ -2065,7 +2157,11 @@ class TypedGraphRelationWriter:
                     f"RELATION-BINDING-001: field role changed for {field_name!r}"
                 )
             shape = field_record.get("shape")
-            if not isinstance(shape, list) or not shape or shape[0] != edge_count:
+            if (
+                not isinstance(shape, list)
+                or not shape
+                or shape[0] != edge_count
+            ):
                 raise _artifact_error(
                     f"EDGE-FIELD-ALIGNMENT-001: field {field_name!r} length differs from edge count"
                 )
@@ -2081,7 +2177,9 @@ class TypedGraphRelationWriter:
             )
             if np.issubdtype(array.dtype, np.floating):
                 for start in range(0, edge_count, batch_rows):
-                    if not np.isfinite(array[start : start + batch_rows]).all():
+                    if not np.isfinite(
+                        array[start : start + batch_rows]
+                    ).all():
                         raise _artifact_error(
                             f"EDGE-FIELD-FINITE-001: field {field_name!r} contains NaN or infinity"
                         )
@@ -2117,7 +2215,9 @@ class TypedGraphRelationWriter:
                     resident_rows += 1
                     if resident_rows >= batch_rows:
                         _close_memmap(row)
-                        row = np.load(row_path, mmap_mode="r", allow_pickle=False)
+                        row = np.load(
+                            row_path, mmap_mode="r", allow_pickle=False
+                        )
                         if edge_array is not None:
                             assert edge_path is not None
                             _close_memmap(edge_array)
@@ -2162,7 +2262,10 @@ class TypedGraphRelationWriter:
             expected_shape=expected_shape,
             alignment_code=alignment_code,
         )
-        if array.dtype != expected_dtype or record.get("storage_dtype") != expected_dtype.str:
+        if (
+            array.dtype != expected_dtype
+            or record.get("storage_dtype") != expected_dtype.str
+        ):
             raise _artifact_error(
                 f"{alignment_code}: array storage dtype is not exact little-endian {expected_dtype.str}"
             )
@@ -2182,11 +2285,15 @@ class TypedGraphRelationWriter:
             raise _artifact_error(f"{alignment_code}: array path is missing")
         path = ingestion._safe_artifact_path(root, relative)
         if path.is_symlink() or not path.is_file():
-            raise _artifact_error(f"{alignment_code}: array artifact is unsafe or missing")
+            raise _artifact_error(
+                f"{alignment_code}: array artifact is unsafe or missing"
+            )
         try:
             array = np.load(path, mmap_mode="r", allow_pickle=False)
         except (OSError, ValueError) as error:
-            raise _artifact_error(f"{alignment_code}: malformed NumPy array") from error
+            raise _artifact_error(
+                f"{alignment_code}: malformed NumPy array"
+            ) from error
         if array.shape != expected_shape:
             raise _artifact_error(
                 f"{alignment_code}: array shape {array.shape} differs from {expected_shape}"
@@ -2198,6 +2305,7 @@ class TypedGraphRelationWriter:
         ):
             raise _artifact_error(f"{alignment_code}: array evidence changed")
         return array
+
     def _validate_exact_disk_evidence(
         self,
         resource: Mapping[str, Any],
@@ -2269,14 +2377,9 @@ class TypedGraphRelationWriter:
             reorder_records = [row]
             if edge_id is not None:
                 reorder_records.append(edge_id)
-            reorder_records.extend(
-                fields[name] for name in sorted(fields)
-            )
+            reorder_records.extend(fields[name] for name in sorted(fields))
             max_reorder_file_bytes = max(
-                (
-                    int(item["file_bytes"])
-                    for item in reorder_records
-                ),
+                (int(item["file_bytes"]) for item in reorder_records),
                 default=0,
             )
             max_canonical_scratch_file_bytes = max(
@@ -2289,9 +2392,7 @@ class TypedGraphRelationWriter:
                 int(record["edge_count"]) * np.dtype(np.intp).itemsize,
             )
         coarse = resource["disk_requirements"]
-        evidence_reserve = int(
-            coarse["relation_evidence_reserve_bytes"]
-        )
+        evidence_reserve = int(coarse["relation_evidence_reserve_bytes"])
         estimated = file_bytes + evidence_reserve
         final_build_bytes = estimated + max_canonical_scratch_file_bytes
         final_peak = int(coarse["task3_final_bytes"]) + final_build_bytes
@@ -2336,8 +2437,6 @@ class TypedGraphRelationWriter:
                 "DISK-EVIDENCE-001: canonical permutation memory evidence changed"
             )
 
-
-
     def _validate_record_checksum(
         self,
         root: Path,
@@ -2360,11 +2459,16 @@ class TypedGraphRelationWriter:
 
     def _expected_schema_evidence(self) -> dict[str, dict[str, Any]]:
         inventory_by_path = {
-            entry.relative_path: entry for entry in self.index_build.inventory.files
+            entry.relative_path: entry
+            for entry in self.index_build.inventory.files
         }
         evidence: dict[str, dict[str, Any]] = {}
-        for ordinal, relation in enumerate(self.ingestor.source.spec.relations):
-            entries = [inventory_by_path[relative] for relative in relation.paths]
+        for ordinal, relation in enumerate(
+            self.ingestor.source.spec.relations
+        ):
+            entries = [
+                inventory_by_path[relative] for relative in relation.paths
+            ]
             fingerprints = {entry.schema_fingerprint for entry in entries}
             serialized = {entry.schema_serialized_hex for entry in entries}
             if len(fingerprints) != 1 or len(serialized) != 1:
@@ -2391,7 +2495,9 @@ class TypedGraphRelationWriter:
         view_prefix: str,
     ) -> None:
         prepared: dict[str, tuple[Any, Mapping[str, Any]]] = {}
-        for ordinal, relation in enumerate(self.ingestor.source.spec.relations):
+        for ordinal, relation in enumerate(
+            self.ingestor.source.spec.relations
+        ):
             key = f"r{ordinal:04d}"
             context = self._prepare_relation(
                 relation=relation,
@@ -2409,8 +2515,7 @@ class TypedGraphRelationWriter:
         resource = metadata.get("resource_evidence")
         if (
             not isinstance(resource, Mapping)
-            or resource.get("exact_disk_requirements")
-            != exact_requirements
+            or resource.get("exact_disk_requirements") != exact_requirements
         ):
             raise _artifact_error(
                 "DISK-EVIDENCE-001: exact source-derived relation allocation evidence changed"
@@ -2596,8 +2701,12 @@ class TypedGraphRelationWriter:
                 start = int(colptr[destination])
                 stop = int(colptr[destination + 1])
                 source_segment = row[start:stop]
-                left = int(np.searchsorted(source_segment, source, side="left"))
-                right = int(np.searchsorted(source_segment, source, side="right"))
+                left = int(
+                    np.searchsorted(source_segment, source, side="left")
+                )
+                right = int(
+                    np.searchsorted(source_segment, source, side="right")
+                )
                 if left == right:
                     raise _artifact_error(
                         "RELATION-SEMANTIC-001: source edge is absent from canonical CSC"
@@ -2617,7 +2726,8 @@ class TypedGraphRelationWriter:
                 )
                 if (
                     edge_offset >= len(edge_segment)
-                    or _numpy_scalar(edge_segment[edge_offset]) != expected_edge
+                    or _numpy_scalar(edge_segment[edge_offset])
+                    != expected_edge
                 ):
                     raise _artifact_error(
                         "RELATION-SEMANTIC-001: stable edge ID is absent from canonical CSC"
@@ -2746,7 +2856,9 @@ def _relation_semantic_sha256(
         separators=(",", ":"),
         ensure_ascii=False,
     ).encode("utf-8")
-    _start_digest_frame(digest, role="relation-contract", byte_length=len(contract_bytes))
+    _start_digest_frame(
+        digest, role="relation-contract", byte_length=len(contract_bytes)
+    )
     digest.update(contract_bytes)
     components: list[tuple[str, str | None, Mapping[str, Any]]] = [
         ("colptr", None, record["colptr"]),
@@ -2804,12 +2916,10 @@ def _relation_semantic_sha256(
                     np.lib.format.read_array_header_2_0(stream)
                 )
             else:
-                raise ValueError(f"unsupported NumPy format version {version!r}")
-            if (
-                fortran_order
-                or actual_shape != shape
-                or actual_dtype != dtype
-            ):
+                raise ValueError(
+                    f"unsupported NumPy format version {version!r}"
+                )
+            if fortran_order or actual_shape != shape or actual_dtype != dtype:
                 raise ValueError(f"unexpected NumPy payload layout at {path}")
             row_bytes = dtype.itemsize
             for extent in shape[1:]:
@@ -2819,10 +2929,14 @@ def _relation_semantic_sha256(
             while remaining:
                 block = stream.read(min(remaining, read_bytes))
                 if not block:
-                    raise ValueError(f"truncated NumPy array payload at {path}")
+                    raise ValueError(
+                        f"truncated NumPy array payload at {path}"
+                    )
                 digest.update(block)
                 remaining -= len(block)
     return digest.hexdigest()
+
+
 def _start_digest_frame(
     digest: Any,
     *,
@@ -2835,17 +2949,16 @@ def _start_digest_frame(
     digest.update(byte_length.to_bytes(8, "big", signed=False))
 
 
-
 def _array_content_sha256(path: Path, batch_rows: int) -> str:
     with path.open("rb") as stream:
         version = np.lib.format.read_magic(stream)
         if version == (1, 0):
-            shape, fortran_order, dtype = (
-                np.lib.format.read_array_header_1_0(stream)
+            shape, fortran_order, dtype = np.lib.format.read_array_header_1_0(
+                stream
             )
         elif version == (2, 0):
-            shape, fortran_order, dtype = (
-                np.lib.format.read_array_header_2_0(stream)
+            shape, fortran_order, dtype = np.lib.format.read_array_header_2_0(
+                stream
             )
         else:
             raise ValueError(f"unsupported NumPy format version {version!r}")
@@ -2859,7 +2972,9 @@ def _array_content_sha256(path: Path, batch_rows: int) -> str:
             while remaining:
                 block = stream.read(min(remaining, read_bytes))
                 if not block:
-                    raise ValueError(f"truncated NumPy array payload at {path}")
+                    raise ValueError(
+                        f"truncated NumPy array payload at {path}"
+                    )
                 digest.update(block)
                 remaining -= len(block)
             return digest.hexdigest()
@@ -2894,7 +3009,10 @@ def _combined_source_sha(records: list[dict[str, Any]]) -> str:
         return records[0]["sha256"]
     encoded = json.dumps(
         [
-            {"relative_path": value["relative_path"], "sha256": value["sha256"]}
+            {
+                "relative_path": value["relative_path"],
+                "sha256": value["sha256"],
+            }
             for value in records
         ],
         sort_keys=True,
@@ -2942,11 +3060,11 @@ def _numpy_dtype(dtype: str) -> np.dtype[Any]:
 def _numpy_scalar(value: Any) -> Any:
     return value.item() if isinstance(value, np.generic) else value
 
+
 def _close_memmap(array: np.ndarray[Any, Any]) -> None:
     mapping = getattr(array, "_mmap", None)
     if mapping is not None and not mapping.closed:
         mapping.close()
-
 
 
 def _quote(value: str) -> str:

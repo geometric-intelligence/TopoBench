@@ -58,7 +58,9 @@ class _HGTStepModel(torch.nn.Module):
         self.target = target
         self.project = torch.nn.ModuleDict(
             {
-                node_type: torch.nn.Linear(int(sample[node_type].x.shape[1]), 32)
+                node_type: torch.nn.Linear(
+                    int(sample[node_type].x.shape[1]), 32
+                )
                 for node_type in sample.node_types
             }
         )
@@ -108,7 +110,9 @@ def _require_live_bundle(tmp_path: Path) -> tuple[Path, Mapping[str, Any]]:
     with zipfile.ZipFile(archive) as bundle:
         members = bundle.infolist()
         if not members or len(members) > _MAX_MEMBERS:
-            pytest.fail("live heterogeneous bundle member count is outside its bound")
+            pytest.fail(
+                "live heterogeneous bundle member count is outside its bound"
+            )
         total = 0
         for member in members:
             relative = PurePosixPath(member.filename)
@@ -117,7 +121,9 @@ def _require_live_bundle(tmp_path: Path) -> tuple[Path, Mapping[str, Any]]:
                 or not relative.parts
                 or any(part in {"", ".", ".."} for part in relative.parts)
             ):
-                pytest.fail(f"unsafe live heterogeneous member path {member.filename!r}")
+                pytest.fail(
+                    f"unsafe live heterogeneous member path {member.filename!r}"
+                )
             if stat.S_ISLNK(member.external_attr >> 16):
                 pytest.fail(
                     f"live heterogeneous bundle contains symlink {member.filename!r}"
@@ -130,27 +136,40 @@ def _require_live_bundle(tmp_path: Path) -> tuple[Path, Mapping[str, Any]]:
             if member.is_dir():
                 destination.mkdir(exist_ok=True)
                 continue
-            with bundle.open(member) as source, destination.open("xb") as target:
+            with (
+                bundle.open(member) as source,
+                destination.open("xb") as target,
+            ):
                 while chunk := source.read(1024 * 1024):
                     target.write(chunk)
     contract_path = extracted / _CONTRACT_NAME
     if not contract_path.is_file():
         pytest.fail(f"live heterogeneous bundle is missing {_CONTRACT_NAME}")
-    contract = _mapping(json.loads(contract_path.read_text(encoding="utf-8")), "root")
+    contract = _mapping(
+        json.loads(contract_path.read_text(encoding="utf-8")), "root"
+    )
     if contract.get("format_version") != _CONTRACT_VERSION:
-        pytest.fail("live heterogeneous qualification contract version is unsupported")
+        pytest.fail(
+            "live heterogeneous qualification contract version is unsupported"
+        )
     if contract.get("output_kind") != "heterogeneous":
-        pytest.fail("live heterogeneous contract must declare heterogeneous output")
+        pytest.fail(
+            "live heterogeneous contract must declare heterogeneous output"
+        )
     return extracted, contract
 
 
 def _source_from_contract(root: Path, contract: Mapping[str, Any]) -> Any:
-    parameters = dict(_mapping(contract.get("loader_parameters"), "loader_parameters"))
+    parameters = dict(
+        _mapping(contract.get("loader_parameters"), "loader_parameters")
+    )
     source_subdirectory = contract.get("source_subdirectory", "source")
     if not isinstance(source_subdirectory, str) or not source_subdirectory:
         pytest.fail("source_subdirectory must be a non-empty relative path")
     relative = PurePosixPath(source_subdirectory)
-    if relative.is_absolute() or any(part in {"", ".", ".."} for part in relative.parts):
+    if relative.is_absolute() or any(
+        part in {"", ".", ".."} for part in relative.parts
+    ):
         pytest.fail("source_subdirectory escapes the downloaded bundle")
     parameters["source_root"] = str(root.joinpath(*relative.parts))
     parameters["data_domain"] = "heterogeneous"
@@ -166,16 +185,26 @@ def _assert_source_contract(source: Any, contract: Mapping[str, Any]) -> None:
     assert spec.output_kind == "heterogeneous"
     assert spec.reproducibility.save_reproducibility_bundle is True
     if len(spec.node_types) < 2 or len(spec.relations) < 2:
-        pytest.fail("representative heterogeneous source needs multiple types/relations")
+        pytest.fail(
+            "representative heterogeneous source needs multiple types/relations"
+        )
     if len(spec.files) < 10:
-        pytest.fail("representative heterogeneous source needs multiple Parquet files")
+        pytest.fail(
+            "representative heterogeneous source needs multiple Parquet files"
+        )
     if len(spec.supervision.split_registry.sets) < 2:
-        pytest.fail("representative heterogeneous source needs several split triplets")
+        pytest.fail(
+            "representative heterogeneous source needs several split triplets"
+        )
     assert tuple(node.name for node in spec.node_types) == tuple(
         expectations["node_types"]
     )
-    declared_relations = tuple(relation.relation for relation in spec.relations)
-    expected_relations = tuple(tuple(value) for value in expectations["relations"])
+    declared_relations = tuple(
+        relation.relation for relation in spec.relations
+    )
+    expected_relations = tuple(
+        tuple(value) for value in expectations["relations"]
+    )
     assert declared_relations == expected_relations
     assert len(set(declared_relations)) == len(declared_relations)
     roles = _mapping(expectations["semantic_roles"], "semantic_roles")
@@ -195,7 +224,9 @@ def _assert_store_semantics(
 ) -> tuple[str, ...]:
     expectations = _mapping(contract["expectations"], "expectations")
     node_counts = _mapping(expectations["node_counts"], "node_counts")
-    relation_counts = _mapping(expectations["relation_counts"], "relation_counts")
+    relation_counts = _mapping(
+        expectations["relation_counts"], "relation_counts"
+    )
     assert tuple(store.node_types) == tuple(expectations["node_types"])
     assert tuple(store.relation_types) == tuple(
         tuple(value) for value in expectations["relations"]
@@ -220,7 +251,10 @@ def _assert_store_semantics(
         for sample in rows_value:
             source = int(sample["source_internal_id"])
             destination = int(sample["destination_internal_id"])
-            start, stop = int(colptr[destination]), int(colptr[destination + 1])
+            start, stop = (
+                int(colptr[destination]),
+                int(colptr[destination + 1]),
+            )
             assert source in row[start:stop].tolist()
 
     split_counts = _mapping(expectations["split_counts"], "split_counts")
@@ -234,26 +268,37 @@ def _assert_store_semantics(
             assert len(ids) == phases[phase]
             assert len(np.unique(ids)) == len(ids)
 
-    samples = _mapping(expectations["external_id_samples"], "external_id_samples")
+    samples = _mapping(
+        expectations["external_id_samples"], "external_id_samples"
+    )
     raw_sentinels: list[str] = []
     for node_type in store.node_types:
         rows_value = samples[node_type]
         if not isinstance(rows_value, list) or not rows_value:
             pytest.fail(f"external_id_samples.{node_type} must be non-empty")
-        internal = np.array([int(row["internal_id"]) for row in rows_value], dtype=np.int64)
+        internal = np.array(
+            [int(row["internal_id"]) for row in rows_value], dtype=np.int64
+        )
         expected = [row["external_id"] for row in rows_value]
         assert store.external_ids(node_type, internal) == expected
         raw_sentinels.extend(str(value) for value in expected)
         selected = store.node_features(node_type, internal)
-        assert selected.shape == (len(internal), store._node(node_type)["feature_width"])
-        assert np.isfinite(selected).all() and selected.flags.writeable is False
+        assert selected.shape == (
+            len(internal),
+            store._node(node_type)["feature_width"],
+        )
+        assert (
+            np.isfinite(selected).all() and selected.flags.writeable is False
+        )
         if node_type == target:
             labels = store.node_labels(node_type, internal)
             assert labels.dtype.kind in "iu"
             assert int(labels.min()) >= 0
             assert int(labels.max()) < _NUM_CLASSES
     if not any(len(value) >= 8 for value in raw_sentinels):
-        pytest.fail("live heterogeneous contract needs a distinctive raw-ID sentinel")
+        pytest.fail(
+            "live heterogeneous contract needs a distinctive raw-ID sentinel"
+        )
     return tuple(raw_sentinels)
 
 
@@ -301,7 +346,9 @@ def _write_aggregate_evidence(
     cluster_state: Mapping[str, object],
     neighbor_state: Mapping[str, object],
 ) -> None:
-    evidence_root_value = os.environ.get("TOPOBENCH_QUALIFICATION_EVIDENCE_DIR")
+    evidence_root_value = os.environ.get(
+        "TOPOBENCH_QUALIFICATION_EVIDENCE_DIR"
+    )
     if not evidence_root_value:
         return
     evidence_root = Path(evidence_root_value)
@@ -312,7 +359,9 @@ def _write_aggregate_evidence(
         "status": "passed",
         "dataset": contract["dataset_name"],
         "output_kind": "heterogeneous",
-        "source_fingerprint": store._manifest["source_binding"]["source_fingerprint"],
+        "source_fingerprint": store._manifest["source_binding"][
+            "source_fingerprint"
+        ],
         "store_fingerprint": store.content_sha256,
         "partition_book_identity": store.partition_book_identity,
         "schema_roles": expectations["semantic_roles"],
@@ -354,8 +403,12 @@ def test_real_multifile_parquet_heterogeneous_lifecycle(
     source = _source_from_contract(root, contract)
     _assert_source_contract(source, contract)
 
-    ingestor = ParquetTypedGraphIngestor(source, tmp_path / "stores", threads=1)
-    partition = ingestor.build_partitions(limits=PartitionQualificationLimits())
+    ingestor = ParquetTypedGraphIngestor(
+        source, tmp_path / "stores", threads=1
+    )
+    partition = ingestor.build_partitions(
+        limits=PartitionQualificationLimits()
+    )
     fresh = TypedGraphStoreWriter(ingestor, partition).build()
     assert fresh.cache_hit is False
     raw_ids = _assert_store_semantics(fresh.store, contract)
@@ -408,7 +461,9 @@ def test_real_multifile_parquet_heterogeneous_lifecycle(
     neighbor_result = _finite_hgt_step(neighbor_batch, target)
     neighbor_module.close()
 
-    replay_partition = ingestor.build_partitions(limits=PartitionQualificationLimits())
+    replay_partition = ingestor.build_partitions(
+        limits=PartitionQualificationLimits()
+    )
     replay = TypedGraphStoreWriter(ingestor, replay_partition).build()
     assert replay.cache_hit is True
     assert replay.content_sha256 == fresh.content_sha256
@@ -416,7 +471,9 @@ def test_real_multifile_parquet_heterogeneous_lifecycle(
     replay.store.close()
     with TypedGraphStore.from_state(state) as reopened:
         _assert_store_semantics(reopened, contract)
-        assert reopened.partition_book_identity == partition.book.content_identity
+        assert (
+            reopened.partition_book_identity == partition.book.content_identity
+        )
         _write_aggregate_evidence(
             reopened,
             source,
@@ -443,8 +500,10 @@ def test_real_multifile_parquet_heterogeneous_lifecycle(
     fresh.store.close()
 
     captured = capsys.readouterr()
-    emitted = captured.out + captured.err + "\n".join(
-        record.getMessage() for record in caplog.records
+    emitted = (
+        captured.out
+        + captured.err
+        + "\n".join(record.getMessage() for record in caplog.records)
     )
     for raw_id in raw_ids:
         assert raw_id not in emitted

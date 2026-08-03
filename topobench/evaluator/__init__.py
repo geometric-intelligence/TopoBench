@@ -1,6 +1,5 @@
 """TopoBench-owned evaluator contracts and lifecycle."""
 
-from .base import AbstractEvaluator, EvaluatorBackend
 from .backends import (
     ExactRankingMemoryError,
     ExactRankingMemoryEstimate,
@@ -8,7 +7,9 @@ from .backends import (
     UndefinedMetricError,
     estimate_exact_ranking_memory,
 )
+from .base import AbstractEvaluator, EvaluatorBackend
 from .evaluator import TBEvaluator
+from .prediction import PredictionIdentity, PredictionPayload
 from .registry import MetricSpec
 from .types import (
     EvaluationBatch,
@@ -31,6 +32,8 @@ __all__ = [
     "EvaluationResult",
     "EvaluationSplit",
     "EvaluationTask",
+    "PredictionIdentity",
+    "PredictionPayload",
     "EvaluatorBackend",
     "MetricScalar",
     "MetricStatus",

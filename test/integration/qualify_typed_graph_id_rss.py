@@ -38,7 +38,10 @@ def _write_sources(root: Path) -> tuple[str, ...]:
     with pq.ParquetWriter(node_path, schema, compression="snappy") as writer:
         for start in range(0, ROWS, BATCH_ROWS):
             size = min(BATCH_ROWS, ROWS - start)
-            ids = [f"{ROWS - start - offset:016x}{ID_SUFFIX}" for offset in range(size)]
+            ids = [
+                f"{ROWS - start - offset:016x}{ID_SUFFIX}"
+                for offset in range(size)
+            ]
             writer.write_batch(
                 pa.record_batch(
                     [
@@ -51,13 +54,17 @@ def _write_sources(root: Path) -> tuple[str, ...]:
             )
 
     pq.write_table(
-        pa.table({"src": [f"{1:016x}{ID_SUFFIX}"], "dst": [f"{2:016x}{ID_SUFFIX}"]}),
+        pa.table(
+            {"src": [f"{1:016x}{ID_SUFFIX}"], "dst": [f"{2:016x}{ID_SUFFIX}"]}
+        ),
         root / "edges.parquet",
     )
     split_paths = []
     for phase, value in (("train", 1), ("val", 2), ("test", 3)):
         path = root / f"{phase}.parquet"
-        pq.write_table(pa.table({"node_id": [f"{value:016x}{ID_SUFFIX}"]}), path)
+        pq.write_table(
+            pa.table({"node_id": [f"{value:016x}{ID_SUFFIX}"]}), path
+        )
         split_paths.append(path.name)
     return tuple(split_paths)
 
@@ -74,7 +81,9 @@ def _worker(root: Path) -> None:
         SplitSetSpec,
         SupervisionSpec,
     )
-    from topobench.data.stores.typed_graph_ingestion import ParquetTypedGraphIngestor
+    from topobench.data.stores.typed_graph_ingestion import (
+        ParquetTypedGraphIngestor,
+    )
 
     split = SplitSetSpec(
         tag="rss",
@@ -110,7 +119,9 @@ def _worker(root: Path) -> None:
                 target_node_type="node",
                 label_column="label",
                 label_dtype="int64",
-                split_registry=SplitRegistrySpec(active_tag="rss", sets=(split,)),
+                split_registry=SplitRegistrySpec(
+                    active_tag="rss", sets=(split,)
+                ),
             ),
             partition=PartitionSpec(strategy="cluster"),
             ingestion=IngestionLimits(
@@ -121,7 +132,9 @@ def _worker(root: Path) -> None:
         )
     )
     baseline_rss_bytes = _rss_bytes()
-    result = ParquetTypedGraphIngestor(source, root / "stores", threads=1).build()
+    result = ParquetTypedGraphIngestor(
+        source, root / "stores", threads=1
+    ).build()
     index = result.indexes["node"]
     assert len(index) == ROWS
     assert index.lookup(f"{1:016x}{ID_SUFFIX}") == 0
@@ -135,7 +148,8 @@ def _worker(root: Path) -> None:
                 "rss_delta_limit_bytes": RSS_DELTA_LIMIT_BYTES,
                 "duckdb_memory_limit_bytes": 64 * 1024**2,
                 "batch_rows": BATCH_ROWS,
-                "full_arrow_id_payload_lower_bound": ROWS * len(ID_SUFFIX.encode("utf-8")),
+                "full_arrow_id_payload_lower_bound": ROWS
+                * len(ID_SUFFIX.encode("utf-8")),
                 "lookup_backend": "DuckDB sorted disk table without a RAM-wide ART index",
             },
             sort_keys=True,
@@ -166,7 +180,10 @@ def main() -> None:
                 "RSS qualification failed: ingestion delta "
                 f"{evidence['rss_delta_bytes']} >= {RSS_DELTA_LIMIT_BYTES}"
             )
-        if evidence["full_arrow_id_payload_lower_bound"] <= RSS_DELTA_LIMIT_BYTES:
+        if (
+            evidence["full_arrow_id_payload_lower_bound"]
+            <= RSS_DELTA_LIMIT_BYTES
+        ):
             raise SystemExit(
                 "RSS fixture is too small to reject one RAM-wide Arrow ID column"
             )

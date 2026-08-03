@@ -52,7 +52,13 @@ _RESERVED_RESULT_NAMES = frozenset(
 _ALLOWED_TASKS = frozenset({"classification", "regression"})
 _ALLOWED_POLICIES = frozenset({"online", "exact", "audit"})
 _ALLOWED_VIEWS = frozenset(
-    {"hard_classes", "probabilities", "positive_probabilities", "raw", "derived"}
+    {
+        "hard_classes",
+        "probabilities",
+        "positive_probabilities",
+        "raw",
+        "derived",
+    }
 )
 
 
@@ -82,15 +88,27 @@ class MetricSpec:
         if not isinstance(self.tasks, frozenset):
             raise TypeError("MetricSpec tasks must be a frozenset")
         if not self.tasks or not self.tasks <= _ALLOWED_TASKS:
-            raise ValueError("MetricSpec tasks must contain supported evaluator tasks")
+            raise ValueError(
+                "MetricSpec tasks must contain supported evaluator tasks"
+            )
         if self.prediction_view not in _ALLOWED_VIEWS:
-            raise ValueError(f"Unsupported prediction view {self.prediction_view!r}")
+            raise ValueError(
+                f"Unsupported prediction view {self.prediction_view!r}"
+            )
         if not isinstance(self.backend_group, str) or not self.backend_group:
-            raise ValueError("MetricSpec backend_group must be a non-empty string")
+            raise ValueError(
+                "MetricSpec backend_group must be a non-empty string"
+            )
         if self.exact_factory is not None and not callable(self.exact_factory):
-            raise TypeError("MetricSpec exact_factory must be callable or None")
-        if self.online_factory is not None and not callable(self.online_factory):
-            raise TypeError("MetricSpec online_factory must be callable or None")
+            raise TypeError(
+                "MetricSpec exact_factory must be callable or None"
+            )
+        if self.online_factory is not None and not callable(
+            self.online_factory
+        ):
+            raise TypeError(
+                "MetricSpec online_factory must be callable or None"
+            )
         if not isinstance(self.scalar, bool) or not self.scalar:
             raise ValueError("MetricSpec must declare a scalar output")
         if not isinstance(self.higher_is_better, bool):
@@ -98,10 +116,14 @@ class MetricSpec:
         if not isinstance(self.undefined_reasons, frozenset):
             raise TypeError("MetricSpec undefined_reasons must be a frozenset")
         if self.derived_from is None and self.exact_factory is None:
-            raise ValueError("A non-derived MetricSpec requires an exact factory")
+            raise ValueError(
+                "A non-derived MetricSpec requires an exact factory"
+            )
         if self.derived_from is not None:
             if self.prediction_view != "derived":
-                raise ValueError("Derived metrics must use the derived prediction view")
+                raise ValueError(
+                    "Derived metrics must use the derived prediction view"
+                )
             if self.derived_transform is None:
                 raise ValueError("Derived metrics require a named transform")
 
@@ -165,7 +187,9 @@ _BUILTINS = {
         online=make_precision_backend,
         higher=True,
         aggregation="macro",
-        undefined=frozenset({"empty_evaluation", "macro_target_missing_class"}),
+        undefined=frozenset(
+            {"empty_evaluation", "macro_target_missing_class"}
+        ),
     ),
     "recall": _spec(
         "recall",
@@ -176,7 +200,9 @@ _BUILTINS = {
         online=make_recall_backend,
         higher=True,
         aggregation="macro",
-        undefined=frozenset({"empty_evaluation", "macro_target_missing_class"}),
+        undefined=frozenset(
+            {"empty_evaluation", "macro_target_missing_class"}
+        ),
     ),
     "f1": _spec(
         "f1",
@@ -187,7 +213,9 @@ _BUILTINS = {
         online=make_f1_backend,
         higher=True,
         aggregation="macro",
-        undefined=frozenset({"empty_evaluation", "macro_target_missing_class"}),
+        undefined=frozenset(
+            {"empty_evaluation", "macro_target_missing_class"}
+        ),
     ),
     "auroc": _spec(
         "auroc",
@@ -216,7 +244,9 @@ _BUILTINS = {
         online=make_online_auprc_backend,
         higher=True,
         aggregation="average_precision",
-        undefined=frozenset({"empty_evaluation", "binary_target_single_class"}),
+        undefined=frozenset(
+            {"empty_evaluation", "binary_target_single_class"}
+        ),
         positive_class=1,
         binary_only=True,
     ),
@@ -229,7 +259,9 @@ _BUILTINS = {
         online=None,
         higher=True,
         aggregation="asymmetric_rank_association",
-        undefined=frozenset({"empty_evaluation", "binary_target_single_class"}),
+        undefined=frozenset(
+            {"empty_evaluation", "binary_target_single_class"}
+        ),
         positive_class=1,
         binary_only=True,
         derived_from="auroc",
@@ -312,7 +344,9 @@ def resolve_metric_specs(
 ) -> tuple[MetricSpec, ...]:
     """Resolve constructor-local specs and reject all collisions eagerly."""
     if task not in _ALLOWED_TASKS:
-        raise ValueError("Supported tasks are exactly: classification, regression")
+        raise ValueError(
+            "Supported tasks are exactly: classification, regression"
+        )
     if policy not in _ALLOWED_POLICIES:
         raise ValueError("policy must be online, exact, or audit")
     if isinstance(names, (str, bytes)):
@@ -349,9 +383,17 @@ def resolve_metric_specs(
                 f"{name} requires classification num_classes == 2 "
                 "(num_classes=2)"
             )
-        if policy == "exact" and spec.exact_factory is None and spec.derived_from is None:
+        if (
+            policy == "exact"
+            and spec.exact_factory is None
+            and spec.derived_from is None
+        ):
             raise ValueError(f"Metric {name!r} does not support exact policy")
-        if policy == "online" and spec.online_factory is None and spec.derived_from is None:
+        if (
+            policy == "online"
+            and spec.online_factory is None
+            and spec.derived_from is None
+        ):
             raise ValueError(f"Metric {name!r} does not support online policy")
         if policy == "audit" and (
             (spec.exact_factory is None or spec.online_factory is None)
@@ -365,7 +407,9 @@ def resolve_metric_specs(
             spec.name in {"auroc", "auprc", "somers_d"} for spec in resolved
         ):
             metric_list = ", ".join(requested)
-            raise ValueError(f"Metrics {metric_list} do not support audit policy")
+            raise ValueError(
+                f"Metrics {metric_list} do not support audit policy"
+            )
         output_keys = _audit_output_keys(resolved)
         if len(set(output_keys)) != len(output_keys):
             collisions = sorted(
@@ -374,6 +418,8 @@ def resolve_metric_specs(
             raise ValueError(f"Generated audit-key collision: {collisions}")
         reserved = _RESERVED_RESULT_NAMES.intersection(output_keys)
         if reserved:
-            raise ValueError(f"Generated audit keys collide with reserved names: {sorted(reserved)}")
+            raise ValueError(
+                f"Generated audit keys collide with reserved names: {sorted(reserved)}"
+            )
 
     return tuple(resolved)

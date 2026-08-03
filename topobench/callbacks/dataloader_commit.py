@@ -1,30 +1,51 @@
 """Commit disk-sampler state only after a proven optimizer/global-step advance."""
 
-
 from __future__ import annotations
+
 import random
-
-import numpy as np
-import torch
-
 from collections.abc import Mapping
 from numbers import Integral
 from typing import Any, Protocol, runtime_checkable
 
+import numpy as np
+import torch
 from lightning import Callback
 
-_CALLBACK_FORMAT = "dataloader-commit-callback-v1"
-_CALLBACK_KEYS = frozenset({"format_version", "data_module"})
+_CALLBACK_FORMAT = "dataloader-commit-callback-v2"
+_CALLBACK_KEYS = frozenset(
+    {
+        "format_version",
+        "data_module",
+        "committed_optimizer_steps",
+        "committed_optimizer_steps_in_epoch",
+    }
+)
 _EVALUATOR_KEYS = frozenset({"sequence_id", "count", "state"})
 
 _RNG_CHECKPOINT_KEY = "topobench_dataloader_commit_rng"
-_RNG_FORMAT = "dataloader-commit-rng-v1"
+_RNG_FORMAT = "dataloader-commit-rng-v2"
+_RNG_RESTORE_BEFORE_DATA_ITERATOR = "before_data_iterator"
+_RNG_RESTORE_AFTER_DATA_ITERATOR = "after_data_iterator"
+_RNG_RESTORE_TIMINGS = frozenset(
+    {
+        _RNG_RESTORE_BEFORE_DATA_ITERATOR,
+        _RNG_RESTORE_AFTER_DATA_ITERATOR,
+    }
+)
 _RNG_KEYS = frozenset(
-    {"format_version", "python", "numpy", "torch_cpu", "torch_cuda"}
+    {
+        "format_version",
+        "restore_timing",
+        "python",
+        "numpy",
+        "torch_cpu",
+        "torch_cuda",
+    }
 )
 _METRICS_CHECKPOINT_KEY = "topobench_dataloader_commit_metrics"
 _METRICS_FORMAT = "dataloader-commit-metrics-v1"
 _METRICS_KEYS = frozenset({"format_version", "train_loss"})
+
 
 @runtime_checkable
 class _CommitDataModule(Protocol):
@@ -72,11 +93,18 @@ def _sequence_id(batch: object) -> int:
     sequence_id = getattr(batch, "sequence_id", None)
     return _integer(sequence_id, "training batch sequence_id", minimum=1)
 
-def _rng_state_dict() -> dict[str, object]:
-    """Capture process RNG state at the exact committed checkpoint boundary."""
+
+def _rng_state_dict(
+    *,
+    restore_timing: str = _RNG_RESTORE_AFTER_DATA_ITERATOR,
+) -> dict[str, object]:
+    """Capture process RNG state at one explicit iterator boundary."""
+    if restore_timing not in _RNG_RESTORE_TIMINGS:
+        raise ValueError("RNG restore timing is unsupported")
     numpy_state = np.random.get_state()
     return {
         "format_version": _RNG_FORMAT,
+        "restore_timing": restore_timing,
         "python": random.getstate(),
         "numpy": (
             numpy_state[0],
@@ -94,8 +122,7 @@ def _rng_state_dict() -> dict[str, object]:
     }
 
 
-def _restore_rng_state(state: object) -> None:
-    """Restore one strict process RNG snapshot without silent fallback."""
+def _rng_restore_timing(state: object) -> str:
     if not isinstance(state, Mapping):
         raise TypeError("checkpoint RNG state must be a mapping")
     actual = frozenset(state)
@@ -107,6 +134,16 @@ def _restore_rng_state(state: object) -> None:
         )
     if state["format_version"] != _RNG_FORMAT:
         raise ValueError("unsupported checkpoint RNG state version")
+    restore_timing = state["restore_timing"]
+    if restore_timing not in _RNG_RESTORE_TIMINGS:
+        raise ValueError("checkpoint RNG restore timing is unsupported")
+    return str(restore_timing)
+
+
+def _restore_rng_state(state: object) -> None:
+    """Restore one strict process RNG snapshot without silent fallback."""
+    _rng_restore_timing(state)
+    assert isinstance(state, Mapping)
     python_state = state["python"]
     numpy_state = state["numpy"]
     torch_cpu = state["torch_cpu"]
@@ -125,7 +162,9 @@ def _restore_rng_state(state: object) -> None:
         or torch_cpu.device.type != "cpu"
         or torch_cpu.ndim != 1
     ):
-        raise TypeError("CPU torch RNG state must be a one-dimensional byte tensor")
+        raise TypeError(
+            "CPU torch RNG state must be a one-dimensional byte tensor"
+        )
     if torch_cuda is not None and (
         not isinstance(torch_cuda, (tuple, list))
         or not all(
@@ -147,6 +186,37 @@ def _restore_rng_state(state: object) -> None:
         torch.cuda.set_rng_state_all(list(torch_cuda))
 
 
+def _checkpoint_values_equal(left: object, right: object) -> bool:
+    """Return exact equality for supported evaluator checkpoint values."""
+    if isinstance(left, torch.Tensor) or isinstance(right, torch.Tensor):
+        return (
+            isinstance(left, torch.Tensor)
+            and isinstance(right, torch.Tensor)
+            and left.dtype == right.dtype
+            and left.shape == right.shape
+            and torch.equal(left, right)
+        )
+    if isinstance(left, Mapping) or isinstance(right, Mapping):
+        return (
+            isinstance(left, Mapping)
+            and isinstance(right, Mapping)
+            and left.keys() == right.keys()
+            and all(
+                _checkpoint_values_equal(left[key], right[key]) for key in left
+            )
+        )
+    if isinstance(left, (tuple, list)) or isinstance(right, (tuple, list)):
+        return (
+            type(left) is type(right)
+            and len(left) == len(right)
+            and all(
+                _checkpoint_values_equal(first, second)
+                for first, second in zip(left, right, strict=True)
+            )
+        )
+    return type(left) is type(right) and left == right
+
+
 class DataloaderCommitCallback(Callback):
     """Coordinate one commit boundary after Lightning finishes a train batch."""
 
@@ -161,8 +231,15 @@ class DataloaderCommitCallback(Callback):
         self._model: _CommitModel | None = None
         self._resume_rng_state: Mapping[str, object] | None = None
         self._active_batch_rng_state: Mapping[str, object] | None = None
+        self._active_batch_evaluator_snapshot: Mapping[str, object] | None = (
+            None
+        )
         self._resume_train_loss: torch.Tensor | None = None
         self._resumed_committed_epoch_end = False
+        self._committed_optimizer_steps = 0
+        self._committed_optimizer_steps_in_epoch = 0
+        self._committed_optimizer_epoch = 0
+        self._non_resumable_reason: str | None = None
 
     def _bind(self, trainer: Any, pl_module: Any) -> None:
         duplicates = sum(
@@ -209,14 +286,13 @@ class DataloaderCommitCallback(Callback):
         checkpoint: Mapping[str, Any],
     ) -> None:
         """Stage exact RNG and metric restoration for resumed phases."""
-        del trainer, pl_module
+        del pl_module
         state = checkpoint.get(_RNG_CHECKPOINT_KEY)
         if state is None:
             raise ValueError(
                 "disk training checkpoint lacks committed process RNG state"
             )
-        if not isinstance(state, Mapping):
-            raise TypeError("checkpoint RNG state must be a mapping")
+        restore_timing = _rng_restore_timing(state)
         metrics = checkpoint.get(_METRICS_CHECKPOINT_KEY)
         if not isinstance(metrics, Mapping):
             raise TypeError("checkpoint metric state must be a mapping")
@@ -226,12 +302,23 @@ class DataloaderCommitCallback(Callback):
             raise ValueError("checkpoint metric state version is unsupported")
         train_loss = metrics["train_loss"]
         if train_loss is not None and (
-            not isinstance(train_loss, torch.Tensor)
-            or train_loss.numel() != 1
+            not isinstance(train_loss, torch.Tensor) or train_loss.numel() != 1
         ):
             raise TypeError("checkpoint train loss must be a scalar tensor")
         self._resume_rng_state = state
         self._resume_train_loss = train_loss
+        if (
+            restore_timing == _RNG_RESTORE_BEFORE_DATA_ITERATOR
+            and trainer.strategy.restore_checkpoint_after_setup
+        ):
+            self._restore_process_rng_if_needed(
+                _RNG_RESTORE_BEFORE_DATA_ITERATOR
+            )
+
+    def on_fit_start(self, trainer: Any, pl_module: Any) -> None:
+        """Restore epoch-boundary RNG before Lightning creates train iterators."""
+        del trainer, pl_module
+        self._restore_process_rng_if_needed(_RNG_RESTORE_BEFORE_DATA_ITERATOR)
 
     def on_train_start(self, trainer: Any, pl_module: Any) -> None:
         """Restore committed train metrics after Lightning resets its cache."""
@@ -243,37 +330,203 @@ class DataloaderCommitCallback(Callback):
             )
             self._resume_train_loss = None
 
-
-    def _restore_process_rng_if_needed(self) -> None:
+    def on_train_epoch_start(self, trainer: Any, pl_module: Any) -> None:
+        """Restore pending-validation RNG after the restart train iterator."""
+        del trainer, pl_module
         state = self._resume_rng_state
-        if state is not None:
+        if (
+            state is None
+            or _rng_restore_timing(state) != _RNG_RESTORE_AFTER_DATA_ITERATOR
+        ):
+            return
+        self._require_resumable()
+        if self._data_module is None:
+            raise RuntimeError("callback participants are not bound")
+        if self._epoch_completion_pending(self._data_module.sequence_state):
+            self._restore_process_rng_if_needed(
+                _RNG_RESTORE_AFTER_DATA_ITERATOR
+            )
+
+    def _restore_process_rng_if_needed(self, restore_timing: str) -> None:
+        state = self._resume_rng_state
+        if state is not None and _rng_restore_timing(state) == restore_timing:
             _restore_rng_state(state)
             self._resume_rng_state = None
 
-    def _checkpoint_rng_state(self) -> Mapping[str, object]:
+    def _has_pristine_consumed_boundary(self) -> bool:
+        if (
+            self._data_module is None
+            or self._model is None
+            or self._trainer is None
+            or self._optimizer_token is None
+            or self._active_batch_rng_state is None
+            or self._active_batch_evaluator_snapshot is None
+        ):
+            return False
+        sequence_state = self._data_module.sequence_state
+        if (
+            len(sequence_state.consumed) != 1
+            or sequence_state.consumed != sequence_state.pending_group
+            or sequence_state.consumed[0]
+            != sequence_state.committed_cursor + 1
+        ):
+            return False
+        snapshot = self._model.dataloader_evaluator_snapshot()
+        if frozenset(snapshot) != _EVALUATOR_KEYS:
+            raise ValueError(
+                "model evaluator snapshot keys must be sequence_id, count, and state"
+            )
+        return (
+            _integer(
+                self._trainer.global_step,
+                "trainer.global_step",
+            )
+            == sequence_state.committed_global_step
+            and _integer(
+                self._model.dataloader_optimizer_success_token,
+                "dataloader_optimizer_success_token",
+            )
+            == self._optimizer_token
+            and _checkpoint_values_equal(
+                snapshot,
+                self._active_batch_evaluator_snapshot,
+            )
+        )
+
+    def _require_resumable(self) -> None:
+        reason = self._non_resumable_reason
+        if reason is not None:
+            raise RuntimeError(f"training is non-resumable: {reason}")
+
+    def _require_optimizer_progress_consistent(self) -> None:
         if self._data_module is None:
             raise RuntimeError("callback participants are not bound")
-        consumed = self._data_module.sequence_state.consumed
-        if not consumed:
-            return _rng_state_dict()
-        if self._active_batch_rng_state is None:
-            raise RuntimeError(
-                "consumed sequence lacks its pre-model RNG boundary"
+        sequence_state = self._data_module.sequence_state
+        committed_global_step = _integer(
+            sequence_state.committed_global_step,
+            "committed_global_step",
+        )
+        if self._committed_optimizer_steps != committed_global_step:
+            raise ValueError(
+                "committed optimizer step count disagrees with the data boundary"
             )
-        return self._active_batch_rng_state
+        if (
+            self._committed_optimizer_steps_in_epoch
+            > self._committed_optimizer_steps
+        ):
+            raise ValueError(
+                "committed optimizer step count in epoch exceeds total steps"
+            )
+        cursor = _integer(sequence_state.committed_cursor, "committed_cursor")
+        if (cursor == 0) != (self._committed_optimizer_steps_in_epoch == 0):
+            raise ValueError(
+                "committed optimizer step count in epoch disagrees with "
+                "the data boundary"
+            )
+        committed_epoch = _integer(
+            sequence_state.committed_epoch,
+            "committed_epoch",
+        )
+        if cursor > 0 and self._committed_optimizer_epoch != committed_epoch:
+            raise ValueError(
+                "committed optimizer step epoch disagrees with the data boundary"
+            )
 
+    def _require_committed_checkpoint_boundary(self) -> None:
+        self._require_resumable()
+        if self._data_module is None:
+            raise RuntimeError("callback participants are not bound")
+        self._require_optimizer_progress_consistent()
+        sequence_state = self._data_module.sequence_state
+        if (
+            sequence_state.consumed or sequence_state.pending_group
+        ) and not self._has_pristine_consumed_boundary():
+            raise RuntimeError(
+                "checkpoint rejected: uncommitted training work may have "
+                "mutated model state"
+            )
+
+    def _epoch_completion_pending(self, sequence_state: Any) -> bool:
+        descriptor_count = len(sequence_state.identity.phase_descriptor_order)
+        if descriptor_count <= 0:
+            raise ValueError("training descriptor order must not be empty")
+        cursor = _integer(sequence_state.committed_cursor, "committed_cursor")
+        if cursor == 0 or cursor % descriptor_count != 0:
+            return False
+        committed_epoch = _integer(
+            sequence_state.committed_epoch,
+            "committed_epoch",
+        )
+        if self._trainer is None:
+            raise RuntimeError("callback participants are not bound")
+        fit_loop = getattr(self._trainer, "fit_loop", None)
+        epoch_progress = getattr(fit_loop, "epoch_progress", None)
+        current = getattr(epoch_progress, "current", None)
+        processed = _integer(
+            getattr(current, "processed", None),
+            "trainer epoch processed progress",
+        )
+        completed_epochs = committed_epoch + 1
+        if processed not in {committed_epoch, completed_epochs}:
+            raise ValueError(
+                "trainer epoch progress is inconsistent with the committed "
+                "epoch boundary"
+            )
+        return processed == committed_epoch
+
+    def _checkpoint_rng_state(self) -> Mapping[str, object]:
+        self._require_committed_checkpoint_boundary()
+        if self._data_module is None:
+            raise RuntimeError("callback participants are not bound")
+        sequence_state = self._data_module.sequence_state
+        if sequence_state.consumed or sequence_state.pending_group:
+            assert self._active_batch_rng_state is not None
+            return self._active_batch_rng_state
+        if (
+            sequence_state.issued
+            or sequence_state.prepared
+            or sequence_state.delivered
+        ):
+            return _rng_state_dict(
+                restore_timing=_RNG_RESTORE_AFTER_DATA_ITERATOR
+            )
+        descriptor_count = len(sequence_state.identity.phase_descriptor_order)
+        if descriptor_count <= 0:
+            raise ValueError("training descriptor order must not be empty")
+        cursor = _integer(sequence_state.committed_cursor, "committed_cursor")
+        epoch_completion_pending = self._epoch_completion_pending(
+            sequence_state
+        )
+        restore_timing = (
+            _RNG_RESTORE_AFTER_DATA_ITERATOR
+            if epoch_completion_pending
+            else (
+                _RNG_RESTORE_BEFORE_DATA_ITERATOR
+                if cursor > 0 and cursor % descriptor_count == 0
+                else _RNG_RESTORE_AFTER_DATA_ITERATOR
+            )
+        )
+        return _rng_state_dict(restore_timing=restore_timing)
 
     def state_dict(self) -> dict[str, object]:
-        """Publish only the data module's durable committed boundary."""
+        """Publish the exact durable data and optimizer progress boundary."""
         if self._data_module is None:
             if self._deferred_state is not None:
                 return dict(self._deferred_state)
-            return {"format_version": _CALLBACK_FORMAT, "data_module": {}}
-        if self._trainer is not None and self._model is not None:
-            self._commit_advanced_boundary(self._trainer, self._model)
+            return {
+                "format_version": _CALLBACK_FORMAT,
+                "data_module": {},
+                "committed_optimizer_steps": 0,
+                "committed_optimizer_steps_in_epoch": 0,
+            }
+        self._require_committed_checkpoint_boundary()
         return {
             "format_version": _CALLBACK_FORMAT,
             "data_module": self._data_module.state_dict(),
+            "committed_optimizer_steps": self._committed_optimizer_steps,
+            "committed_optimizer_steps_in_epoch": (
+                self._committed_optimizer_steps_in_epoch
+            ),
         }
 
     def load_state_dict(self, state_dict: Mapping[str, object]) -> None:
@@ -294,31 +547,64 @@ class DataloaderCommitCallback(Callback):
         module_state = state_dict["data_module"]
         if not isinstance(module_state, Mapping):
             raise TypeError("callback data_module state must be a mapping")
+        committed_optimizer_steps = _integer(
+            state_dict["committed_optimizer_steps"],
+            "committed_optimizer_steps",
+        )
+        committed_optimizer_steps_in_epoch = _integer(
+            state_dict["committed_optimizer_steps_in_epoch"],
+            "committed_optimizer_steps_in_epoch",
+        )
         if self._data_module is None:
             self._deferred_state = dict(state_dict)
             return
         self._data_module.load_state_dict(module_state)
-        self._observed_global_step = None
         sequence_state = self._data_module.sequence_state
+        self._committed_optimizer_steps = committed_optimizer_steps
+        self._committed_optimizer_steps_in_epoch = (
+            committed_optimizer_steps_in_epoch
+        )
+        self._committed_optimizer_epoch = _integer(
+            sequence_state.committed_epoch,
+            "committed_epoch",
+        )
+        self._require_optimizer_progress_consistent()
+        self._non_resumable_reason = None
+        self._observed_global_step = None
+        if self._model is not None:
+            self._optimizer_token = _integer(
+                self._model.dataloader_optimizer_success_token,
+                "dataloader optimizer success token",
+            )
         self._restore_snapshot = {
             "sequence_id": sequence_state.committed_evaluator_sequence,
             "count": sequence_state.committed_evaluator_count,
             "state": sequence_state.committed_evaluator_state,
         }
 
-
     def _restore_evaluator_if_needed(
         self,
-        trainer: Any,
         pl_module: _CommitModel,
+        *,
+        preserve_committed_epoch_state: bool = False,
     ) -> None:
         snapshot = self._restore_snapshot
         if snapshot is None:
             return
         self._restore_snapshot = None
         sequence_state = self._data_module.sequence_state
-        current_epoch = _integer(trainer.current_epoch, "trainer.current_epoch")
-        if current_epoch > sequence_state.committed_epoch:
+        descriptor_count = len(sequence_state.identity.phase_descriptor_order)
+        if descriptor_count <= 0:
+            raise ValueError("training descriptor order must not be empty")
+        cursor = _integer(
+            sequence_state.committed_cursor,
+            "committed_cursor",
+        )
+        if (
+            cursor > 0
+            and cursor % descriptor_count == 0
+            and not preserve_committed_epoch_state
+        ):
             current = pl_module.dataloader_evaluator_snapshot()
             if frozenset(current) != _EVALUATOR_KEYS:
                 raise ValueError("model evaluator snapshot keys are invalid")
@@ -329,6 +615,21 @@ class DataloaderCommitCallback(Callback):
             }
         pl_module.dataloader_restore_evaluator(snapshot)
 
+    def _observe_restored_global_step(self, trainer: Any) -> None:
+        if self._observed_global_step is not None:
+            return
+        restored_global_step = _integer(
+            trainer.global_step,
+            "trainer.global_step",
+        )
+        if restored_global_step != self._committed_optimizer_steps:
+            self._non_resumable_reason = (
+                "restored trainer global_step disagrees with committed "
+                "optimizer advances"
+            )
+            self._require_resumable()
+        self._observed_global_step = restored_global_step
+
     def on_train_batch_start(
         self,
         trainer: Any,
@@ -337,17 +638,21 @@ class DataloaderCommitCallback(Callback):
         batch_idx: int,
     ) -> None:
         """Consume one already delivered sequence before model/evaluator work."""
-        if self._data_module is None or not isinstance(pl_module, _CommitModel):
+        if self._data_module is None or not isinstance(
+            pl_module, _CommitModel
+        ):
             raise RuntimeError("callback participants are not bound")
-        if self._observed_global_step is None:
-            self._observed_global_step = _integer(
-                trainer.global_step,
-                "trainer.global_step",
+        self._require_resumable()
+        self._observe_restored_global_step(trainer)
+        self._restore_process_rng_if_needed(_RNG_RESTORE_AFTER_DATA_ITERATOR)
+        self._restore_evaluator_if_needed(pl_module)
+        evaluator_snapshot = pl_module.dataloader_evaluator_snapshot()
+        if frozenset(evaluator_snapshot) != _EVALUATOR_KEYS:
+            raise ValueError(
+                "model evaluator snapshot keys must be sequence_id, count, and state"
             )
-        self._restore_process_rng_if_needed()
-        if not self._data_module.sequence_state.consumed:
-            self._active_batch_rng_state = _rng_state_dict()
-        self._restore_evaluator_if_needed(trainer, pl_module)
+        self._active_batch_evaluator_snapshot = evaluator_snapshot
+        self._active_batch_rng_state = _rng_state_dict()
         self._data_module.consume_sequence(_sequence_id(batch))
 
     def on_validation_epoch_start(
@@ -358,35 +663,60 @@ class DataloaderCommitCallback(Callback):
         """Restore a committed last-batch evaluator before train finalization."""
         if not isinstance(pl_module, _CommitModel):
             raise TypeError("model no longer satisfies commit participation")
-        if self._observed_global_step is None:
-            self._observed_global_step = _integer(
-                trainer.global_step,
-                "trainer.global_step",
-            )
-        self._restore_process_rng_if_needed()
+        self._require_resumable()
+        self._observe_restored_global_step(trainer)
+        self._restore_process_rng_if_needed(_RNG_RESTORE_AFTER_DATA_ITERATOR)
         self._resumed_committed_epoch_end = self._restore_snapshot is not None
-        self._restore_evaluator_if_needed(trainer, pl_module)
+        if self._data_module is None:
+            raise RuntimeError("callback participants are not bound")
+        replay_pending_validation = self._epoch_completion_pending(
+            self._data_module.sequence_state
+        )
+        self._restore_evaluator_if_needed(
+            pl_module,
+            preserve_committed_epoch_state=replay_pending_validation,
+        )
 
     def on_train_epoch_end(self, trainer: Any, pl_module: Any) -> None:
-        """Suppress an already-applied epoch scheduler step after resume."""
+        """Dispatch only the pending plateau scheduler step after replay."""
         del pl_module
         if self._resumed_committed_epoch_end:
-            trainer.fit_loop.epoch_loop.batch_progress.is_last_batch = False
+            fit_loop = trainer.fit_loop
+            batch_progress = fit_loop.epoch_loop.batch_progress
+            num_training_batches = _integer(
+                trainer.num_training_batches,
+                "trainer.num_training_batches",
+                minimum=1,
+            )
+            current_ready = _integer(
+                batch_progress.current.ready,
+                "training batch current.ready",
+            )
+            if current_ready != num_training_batches:
+                raise RuntimeError(
+                    "replayed validation requires a fully processed train epoch"
+                )
+            if not fit_loop.restarting:
+                raise RuntimeError(
+                    "replayed validation requires Lightning restart state"
+                )
+            fit_loop.restarting = False
             self._resumed_committed_epoch_end = False
-
 
     def _commit_advanced_boundary(
         self,
         trainer: Any,
         pl_module: _CommitModel,
     ) -> None:
-        """Commit one optimizer advance before checkpoint serialization."""
+        """Commit one proven optimizer advance at the batch-end boundary."""
+        self._require_resumable()
         if (
             self._data_module is None
             or self._optimizer_token is None
             or self._observed_global_step is None
         ):
             raise RuntimeError("callback participants are not bound")
+        self._require_optimizer_progress_consistent()
         token = _integer(
             pl_module.dataloader_optimizer_success_token,
             "dataloader optimizer success token",
@@ -403,48 +733,55 @@ class DataloaderCommitCallback(Callback):
         step_advanced = global_step == self._observed_global_step + 1
         if token == self._optimizer_token:
             if step_advanced:
-                self._observed_global_step = global_step
+                self._non_resumable_reason = (
+                    "trainer global_step advanced without a proven raw "
+                    "optimizer advance; pending gradients cannot be proven "
+                    "to survive for a later commit"
+                )
+                self._require_resumable()
             return
         if token != self._optimizer_token + 1:
             raise ValueError(
                 "optimizer success token must advance exactly once per boundary"
             )
         if not step_advanced:
-            raise RuntimeError(
+            self._non_resumable_reason = (
                 "optimizer success token advanced without global_step advance"
             )
+            self._require_resumable()
+        next_optimizer_step = self._committed_optimizer_steps + 1
+        if global_step != next_optimizer_step:
+            self._non_resumable_reason = (
+                "trainer global_step disagrees with committed optimizer "
+                "advance count"
+            )
+            self._require_resumable()
         snapshot = pl_module.dataloader_evaluator_snapshot()
         if frozenset(snapshot) != _EVALUATOR_KEYS:
             raise ValueError(
                 "model evaluator snapshot keys must be sequence_id, count, and state"
             )
-        sequence_state = self._data_module.sequence_state
-        already_committed = (
-            sequence_state.committed_global_step == global_step
+        epoch = _integer(trainer.current_epoch, "trainer.current_epoch")
+        committed = self._data_module.commit_optimizer_step(
+            optimizer_succeeded=True,
+            model_global_step=next_optimizer_step,
+            evaluator_snapshot=snapshot,
+            epoch=epoch,
         )
-        if already_committed:
-            if (
-                sequence_state.committed_evaluator_sequence
-                != snapshot["sequence_id"]
-                or sequence_state.committed_evaluator_count
-                != snapshot["count"]
-            ):
-                raise RuntimeError(
-                    "committed evaluator boundary disagrees with model snapshot"
-                )
-        else:
-            committed = self._data_module.commit_optimizer_step(
-                optimizer_succeeded=True,
-                model_global_step=global_step,
-                evaluator_snapshot=snapshot,
-                epoch=_integer(trainer.current_epoch, "trainer.current_epoch"),
+        if not committed:
+            raise RuntimeError(
+                "successful observed optimizer boundary was not committed"
             )
-            if not committed:
-                raise RuntimeError(
-                    "successful observed optimizer boundary was not committed"
-                )
+        if epoch != self._committed_optimizer_epoch:
+            self._committed_optimizer_epoch = epoch
+            self._committed_optimizer_steps_in_epoch = 0
+        self._committed_optimizer_steps = next_optimizer_step
+        self._committed_optimizer_steps_in_epoch += 1
+        self._require_optimizer_progress_consistent()
         self._optimizer_token = token
+        self._active_batch_evaluator_snapshot = None
         self._observed_global_step = global_step
+        self._active_batch_rng_state = None
 
     def on_train_batch_end(
         self,
@@ -467,9 +804,11 @@ class DataloaderCommitCallback(Callback):
         checkpoint: dict[str, Any],
     ) -> None:
         """Normalize Lightning loop progress to the committed data boundary."""
-        del pl_module
-        if self._data_module is None:
+        if self._data_module is None or not isinstance(
+            pl_module, _CommitModel
+        ):
             raise RuntimeError("callback participants are not bound")
+        self._require_committed_checkpoint_boundary()
         sequence_state = self._data_module.sequence_state
         cursor = _integer(
             sequence_state.committed_cursor,
@@ -479,22 +818,13 @@ class DataloaderCommitCallback(Callback):
             sequence_state.committed_epoch,
             "committed_epoch",
         )
-        global_step = _integer(
-            sequence_state.committed_global_step,
-            "committed_global_step",
-        )
-        descriptor_count = len(
-            sequence_state.identity.phase_descriptor_order
-        )
+        optimizer_steps = self._committed_optimizer_steps
+        descriptor_count = len(sequence_state.identity.phase_descriptor_order)
         if descriptor_count <= 0:
             raise ValueError("training descriptor order must not be empty")
         current_epoch = _integer(
             trainer.current_epoch,
             "trainer.current_epoch",
-        )
-        active_committed_epoch = current_epoch == committed_epoch
-        completed_epochs = (
-            committed_epoch if active_committed_epoch else committed_epoch + 1
         )
         minimum_cursor = committed_epoch * descriptor_count
         maximum_cursor = minimum_cursor + descriptor_count
@@ -502,13 +832,41 @@ class DataloaderCommitCallback(Callback):
             raise ValueError(
                 "committed cursor is inconsistent with descriptor order and epoch"
             )
-        current_batches = cursor % descriptor_count
+        epoch_complete = cursor > 0 and cursor == maximum_cursor
+        completed_epochs = committed_epoch + int(epoch_complete)
+        active_epochs = completed_epochs + int(not epoch_complete)
+        epoch_completion_pending = self._epoch_completion_pending(
+            sequence_state
+        )
+        restored_completed_epochs = (
+            committed_epoch if epoch_completion_pending else completed_epochs
+        )
+        current_batches = (
+            descriptor_count
+            if epoch_completion_pending
+            else cursor % descriptor_count
+        )
+        current_optimizer_steps = (
+            0
+            if epoch_complete and not epoch_completion_pending
+            else self._committed_optimizer_steps_in_epoch
+        )
+        if current_epoch not in {
+            committed_epoch,
+            completed_epochs,
+        }:
+            raise ValueError(
+                "trainer epoch is inconsistent with committed data boundary"
+            )
         loops = checkpoint.get("loops")
-        fit_loop = loops.get("fit_loop") if isinstance(loops, Mapping) else None
+        fit_loop = (
+            loops.get("fit_loop") if isinstance(loops, Mapping) else None
+        )
         if not isinstance(fit_loop, dict):
             raise ValueError(
                 "Lightning checkpoint lacks mutable fit-loop progress"
             )
+        checkpoint["global_step"] = optimizer_steps
 
         epoch_progress = fit_loop.get("epoch_progress")
         batch_progress = fit_loop.get("epoch_loop.batch_progress")
@@ -528,7 +886,6 @@ class DataloaderCommitCallback(Callback):
             raise ValueError(
                 "Lightning checkpoint loop progress schema is unsupported"
             )
-        active_epochs = completed_epochs + int(active_committed_epoch)
         for scope in ("total", "current"):
             progress = epoch_progress.get(scope)
             if not isinstance(progress, dict):
@@ -539,8 +896,8 @@ class DataloaderCommitCallback(Callback):
                 {
                     "ready": active_epochs,
                     "started": active_epochs,
-                    "processed": completed_epochs,
-                    "completed": completed_epochs,
+                    "processed": restored_completed_epochs,
+                    "completed": restored_completed_epochs,
                 }
             )
         for scope, batches in (
@@ -560,11 +917,7 @@ class DataloaderCommitCallback(Callback):
                     "completed": batches,
                 }
             )
-        batch_progress["is_last_batch"] = (
-            active_committed_epoch
-            and cursor > 0
-            and current_batches == 0
-        )
+        batch_progress["is_last_batch"] = epoch_complete
         optimizer = optimization.get("optimizer")
         if not isinstance(optimizer, dict):
             raise ValueError(
@@ -577,8 +930,8 @@ class DataloaderCommitCallback(Callback):
                     "Lightning optimizer progress schema is unsupported"
                 )
             for scope, steps in (
-                ("total", global_step),
-                ("current", current_batches),
+                ("total", optimizer_steps),
+                ("current", current_optimizer_steps),
             ):
                 progress = operation_progress.get(scope)
                 if not isinstance(progress, dict):
@@ -600,7 +953,7 @@ class DataloaderCommitCallback(Callback):
             raise ValueError(
                 "Lightning epoch loop state schema is unsupported"
             )
-        state["_batches_that_stepped"] = current_batches
+        state["_batches_that_stepped"] = optimizer_steps
         if _RNG_CHECKPOINT_KEY in checkpoint:
             raise ValueError("checkpoint RNG state key is already occupied")
         checkpoint[_RNG_CHECKPOINT_KEY] = self._checkpoint_rng_state()

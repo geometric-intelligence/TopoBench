@@ -13,7 +13,12 @@ from lightning import LightningModule
 from omegaconf import DictConfig, ListConfig, OmegaConf
 
 from topobench.data import HeterogeneousDataSpec
-from topobench.nn.capabilities import validate_graph_composition
+from topobench.nn.capabilities import CapabilityValidation
+from topobench.utils.instantiators import (
+    ExecutionProfileRecord,
+    validate_execution_profile,
+    validate_profile_capability,
+)
 
 _HETEROGENEOUS_DOMAIN = "heterogeneous"
 _SAMPLING_MODES = {"full_batch", "neighbor"}
@@ -389,6 +394,8 @@ def instantiate_model(
     cfg: DictConfig,
     *,
     data_spec: HeterogeneousDataSpec | None,
+    capability_validation: CapabilityValidation | None = None,
+    profile_record: ExecutionProfileRecord | None = None,
 ) -> LightningModule:
     """Instantiate a homogeneous or runtime-configured heterogeneous model.
 
@@ -404,14 +411,60 @@ def instantiate_model(
     ):
         raise TypeError("data_spec must be a HeterogeneousDataSpec or None")
 
-    model_domain = _model_domain(cfg)
-    if model_domain == "graph":
-        dataset_cfg = _require_dict_config(
-            _required_child(cfg, "dataset", parent_path="cfg"),
-            path="cfg.dataset",
+    current_profile_record = validate_execution_profile(cfg)
+    if profile_record is None:
+        profile_record = current_profile_record
+    elif not isinstance(profile_record, ExecutionProfileRecord):
+        raise TypeError("profile_record must be an ExecutionProfileRecord")
+    elif profile_record != current_profile_record:
+        raise ValueError("profile_record is stale for the current config")
+
+    if capability_validation is None:
+        validate_profile_capability(
+            cfg,
+            profile_record=profile_record,
         )
-        model_cfg = _require_dict_config(cfg.model, path="cfg.model")
-        validate_graph_composition(dataset_cfg, model_cfg)
+        raise ValueError(
+            "model construction requires an observed runtime capability"
+        )
+    if not isinstance(capability_validation, CapabilityValidation):
+        raise TypeError("capability_validation must be a CapabilityValidation")
+    if capability_validation.observed is None:
+        validate_profile_capability(
+            cfg,
+            profile_record=profile_record,
+        )
+        raise ValueError(
+            "model construction requires an observed runtime capability"
+        )
+    capability_validation = validate_profile_capability(
+        cfg,
+        profile_record=profile_record,
+        observed=capability_validation.observed,
+    )
+    if data_spec is not None:
+        observed = capability_validation.observed
+        if data_spec.input_channels != observed.feature_widths:
+            raise ValueError(
+                "data_spec.input_channels must match "
+                f"observed.feature_widths={observed.feature_widths!r}, got "
+                f"{data_spec.input_channels!r}"
+            )
+        if data_spec.num_classes != observed.num_classes:
+            raise ValueError(
+                "data_spec.num_classes must match "
+                f"observed.num_classes={observed.num_classes!r}, got "
+                f"{data_spec.num_classes!r}"
+            )
+        if data_spec.target_node_type != observed.target_node_type:
+            raise ValueError(
+                "data_spec.target_node_type must match "
+                "observed.target_node_type="
+                f"{observed.target_node_type!r}, got "
+                f"{data_spec.target_node_type!r}"
+            )
+
+    model_domain = _model_domain(cfg)
     if data_spec is None:
         if model_domain == _HETEROGENEOUS_DOMAIN:
             raise ValueError(

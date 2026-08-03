@@ -5,19 +5,19 @@ from __future__ import annotations
 import importlib
 import inspect
 import json
-from pathlib import Path
 import subprocess
 import sys
 import tomllib
+from pathlib import Path
 from typing import Any
 
 import hydra
+import pytest
 from omegaconf import DictConfig, OmegaConf
 from omegaconf.errors import InterpolationResolutionError
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import Version
-import pytest
 
 from topobench.evaluator import TBEvaluator
 from topobench.utils.config_resolvers import register_all_resolvers
@@ -99,7 +99,9 @@ def test_every_evaluator_selector_has_the_authoritative_policy_surface(
     assert cfg.preflight.enabled is True
 
 
-def test_evaluator_uses_authoritative_resource_defaults_without_aliases() -> None:
+def test_evaluator_uses_authoritative_resource_defaults_without_aliases() -> (
+    None
+):
     evaluator = TBEvaluator(
         "classification",
         num_classes=2,
@@ -130,7 +132,9 @@ def test_evaluator_rejects_explicit_legacy_resource_aliases(
         )
 
 
-def test_dataset_metric_override_is_resolved_through_the_active_registry() -> None:
+def test_dataset_metric_override_is_resolved_through_the_active_registry() -> (
+    None
+):
     cfg = _compose(
         "dataset=graph/SyntheticGraph",
         "+dataset.parameters.metrics=[accuracy,auprc,somers_d]",
@@ -223,9 +227,12 @@ def test_torchmetrics_is_a_direct_constrained_locked_dependency() -> None:
         if canonicalize_name(requirement["name"]) == "torchmetrics"
     )
     assert locked_requirement["specifier"]
-    assert Version(locked_torchmetrics["version"]) in Requirement(
-        f"torchmetrics{locked_requirement['specifier']}"
-    ).specifier
+    assert (
+        Version(locked_torchmetrics["version"])
+        in Requirement(
+            f"torchmetrics{locked_requirement['specifier']}"
+        ).specifier
+    )
     assert str(requirements["torch"].specifier) == "==2.3.0"
     assert str(requirements["lightning"].specifier) == "==2.4.0"
 

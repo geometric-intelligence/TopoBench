@@ -138,4 +138,3 @@ The implementation is ready for ZINC when:
 - there is no per-graph loop in `CellHGT.forward`;
 - the ZINC configuration composes and a one-batch forward/backward probe
   succeeds.
-

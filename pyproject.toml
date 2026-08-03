@@ -38,7 +38,6 @@ dependencies=[
     "hydra-colorlog==1.2.0",
     "hydra-optuna-sweeper==1.2.0",
     "wandb",
-    "tensorboard",
     "rich",
     "ogb",
     "rootutils",
@@ -67,7 +66,9 @@ doc = [
     "myst_parser"
 ]
 lint = [
+    "numpydoc",
     "pre-commit",
+    "pre-commit-hooks==5.0.0",
     "ruff"
 ]
 test = [
@@ -109,7 +110,7 @@ name = "pytorch-cu121"
 url = "https://download.pytorch.org/whl/cu121"
 explicit = true
 
-# Default find-links (will be overwritten by bash script)
+# Locked PyG wheels for the supported CUDA 12.1 environment
 [tool.uv]
 find-links = ["https://data.pyg.org/whl/torch-2.3.0+cu121.html"]
 
@@ -184,5 +185,7 @@ markers = [
 ]
 
 [tool.numpydoc_validation]
-checks = ["all", "GL01", "ES01", "EX01", "SA01"]
+# Validate that existing API docstrings describe their signatures accurately
+# without forcing boilerplate sections onto private helpers or framework hooks.
+checks = ["SS05", "PR02", "PR03"]
 exclude = ['\.undocumented_method$', '\.__init__$', '\.__repr__$']

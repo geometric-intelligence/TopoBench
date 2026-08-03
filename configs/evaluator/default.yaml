@@ -15,4 +15,3 @@ exact:
   max_ranking_bytes: 536870912
   buffer_device: cpu
 undefined_metric_policy: error
-

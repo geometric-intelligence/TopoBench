@@ -1,10 +1,10 @@
 """Behavioral tests for bounded, ordinal-aligned typed feature arrays."""
 
 from __future__ import annotations
-from dataclasses import replace
 
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +13,8 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
+import topobench.data.stores.typed_graph_arrays as arrays_module
+import topobench.data.stores.typed_graph_ingestion as ingestion_module
 from topobench.data.loaders.parquet import (
     IngestionLimits,
     NodeTypeSpec,
@@ -24,8 +26,6 @@ from topobench.data.loaders.parquet import (
     SplitSetSpec,
     SupervisionSpec,
 )
-import topobench.data.stores.typed_graph_arrays as arrays_module
-import topobench.data.stores.typed_graph_ingestion as ingestion_module
 from topobench.data.stores.typed_graph_ingestion import (
     ArtifactValidationError,
     DiskAdmissionError,
@@ -497,9 +497,11 @@ def test_array_stage_resumes_only_after_reopen_and_checksum_validation(
         stream.seek(-1, 2)
         stream.write(bytes([last[0] ^ 1]))
 
-    with pytest.raises(ArtifactValidationError, match="CHECKSUM-001"):
-        ingestor.build_arrays()
-    assert not first.stage_root.exists()
+    rebuilt = ingestor.build_arrays()
+    assert rebuilt.resumed is False
+    assert rebuilt.stage_root == first.stage_root
+    assert rebuilt.content_sha256 == first.content_sha256
+    assert rebuilt.stage_root.exists()
     assert list(first.stage_root.parent.glob(f".{first.stage_root.name}.quarantine-*"))
 
 

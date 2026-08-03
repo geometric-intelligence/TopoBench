@@ -1,6 +1,6 @@
 """Checkpoint-safe evaluator metric-state round trips."""
-import copy
 
+import copy
 from collections.abc import Mapping
 
 import pytest
@@ -10,7 +10,9 @@ from topobench.evaluator import EvaluationBatch, EvaluationContext, TBEvaluator
 from topobench.evaluator.registry import MetricSpec
 
 
-def _context(*, task: str, num_classes: int, expected: int) -> EvaluationContext:
+def _context(
+    *, task: str, num_classes: int, expected: int
+) -> EvaluationContext:
     return EvaluationContext(
         split="train",
         pass_kind="fit_epoch",
@@ -21,7 +23,9 @@ def _context(*, task: str, num_classes: int, expected: int) -> EvaluationContext
     )
 
 
-def _batch(outputs: list[list[float]], targets: list[object]) -> EvaluationBatch:
+def _batch(
+    outputs: list[list[float]], targets: list[object]
+) -> EvaluationBatch:
     return EvaluationBatch(
         outputs=torch.tensor(outputs),
         targets=torch.tensor(targets),
@@ -139,7 +143,9 @@ def test_mid_context_round_trip_preserves_all_builtin_scalar_state_and_count(
         )
 
 
-def test_mid_context_round_trip_preserves_bounded_online_ranking_state() -> None:
+def test_mid_context_round_trip_preserves_bounded_online_ranking_state() -> (
+    None
+):
     metrics = ("auroc", "auprc", "somers_d")
     context = _context(task="classification", num_classes=2, expected=4)
     first = _batch([[5.0, 0.0], [0.0, 5.0]], [0, 1])
@@ -215,7 +221,8 @@ class CheckpointableMeanPredictionBackend:
     @property
     def retained_bytes(self) -> int:
         return sum(
-            value.untyped_storage().nbytes() for value in (self.total, self.count)
+            value.untyped_storage().nbytes()
+            for value in (self.total, self.count)
         )
 
     def state_dict(self) -> dict[str, torch.Tensor]:
@@ -231,7 +238,9 @@ class CheckpointableMeanPredictionBackend:
             raise ValueError("invalid custom metric state")
         total = state_dict["total"]
         count = state_dict["count"]
-        if not isinstance(total, torch.Tensor) or not isinstance(count, torch.Tensor):
+        if not isinstance(total, torch.Tensor) or not isinstance(
+            count, torch.Tensor
+        ):
             raise TypeError("custom metric state values must be tensors")
         device = self.total.device
         self.total = total.detach().to(device).clone()
@@ -261,7 +270,9 @@ def _checkpointable_custom_spec(
     )
 
 
-def test_mid_context_round_trip_supports_explicit_custom_backend_state() -> None:
+def test_mid_context_round_trip_supports_explicit_custom_backend_state() -> (
+    None
+):
     context = _context(task="regression", num_classes=1, expected=4)
     spec = _checkpointable_custom_spec()
     first = _batch([[1.0], [3.0]], [[0.0], [0.0]])

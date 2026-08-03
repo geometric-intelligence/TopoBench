@@ -223,7 +223,6 @@ def test_batch_flushes_increment_summary_without_replaying_local_log(
     callback.teardown(trainer, model, "fit")
 
 
-
 def test_summary_matches_authoritative_retained_window_after_byte_eviction(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -269,7 +268,6 @@ def test_summary_matches_authoritative_retained_window_after_byte_eviction(
     callback.teardown(trainer, model, "fit")
 
 
-
 def test_system_metrics_are_prohibited_as_checkpoint_scientific_selector(
     tmp_path: Path,
 ) -> None:
@@ -283,7 +281,9 @@ def test_system_metrics_are_prohibited_as_checkpoint_scientific_selector(
 
 def test_callback_config_is_selectable_without_default_composition() -> None:
     root = Path(__file__).parents[2]
-    config = OmegaConf.load(root / "configs" / "callbacks" / "input_pipeline.yaml")
+    config = OmegaConf.load(
+        root / "configs" / "callbacks" / "input_pipeline.yaml"
+    )
     assert config.input_pipeline._target_ == (
         "topobench.callbacks.input_pipeline.InputPipelineCallback"
     )
@@ -294,6 +294,7 @@ def test_callback_config_is_selectable_without_default_composition() -> None:
     assert config.input_pipeline.patience_windows == 2
     assert config.input_pipeline.stall_action == "warn"
     defaults = OmegaConf.load(root / "configs" / "callbacks" / "default.yaml")
-    assert "input_pipeline" not in OmegaConf.to_container(defaults, resolve=False)[
-        "defaults"
-    ]
+    assert (
+        "input_pipeline"
+        not in OmegaConf.to_container(defaults, resolve=False)["defaults"]
+    )

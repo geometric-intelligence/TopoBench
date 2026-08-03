@@ -3,6 +3,7 @@
 import pytest
 import torch
 from torch_geometric.data import Data
+
 from topobench.transforms.data_manipulations import CombinedPSEs
 
 
@@ -28,26 +29,36 @@ class TestCombinedPSEs:
         assert transform.parameters == {}
 
         # Test with all supported encodings
-        transform = CombinedPSEs(encodings=["LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE", "HKFE"])
-        assert transform.encodings == ["LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE", "HKFE"]
+        transform = CombinedPSEs(
+            encodings=["LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE", "HKFE"]
+        )
+        assert transform.encodings == [
+            "LapPE",
+            "RWSE",
+            "ElectrostaticPE",
+            "HKdiagSE",
+            "HKFE",
+        ]
         assert transform.parameters == {}
 
         # Test with parameters
         params = {
             "LapPE": {"max_pe_dim": 8, "concat_to_x": False},
-            "RWSE": {"max_pe_dim": 4, "concat_to_x": False}
+            "RWSE": {"max_pe_dim": 4, "concat_to_x": False},
         }
-        transform = CombinedPSEs(encodings=["LapPE", "RWSE"], parameters=params)
+        transform = CombinedPSEs(
+            encodings=["LapPE", "RWSE"], parameters=params
+        )
         assert transform.encodings == ["LapPE", "RWSE"]
         assert transform.parameters == params
 
     def test_single_lappe_encoding(self):
         """Test transform with only LapPE encoding."""
-        params = {
-            "LapPE": {"max_pe_dim": 8, "concat_to_x": True}
-        }
+        params = {"LapPE": {"max_pe_dim": 8, "concat_to_x": True}}
         transform = CombinedPSEs(encodings=["LapPE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -61,11 +72,11 @@ class TestCombinedPSEs:
 
     def test_single_rwse_encoding(self):
         """Test transform with only RWSE encoding."""
-        params = {
-            "RWSE": {"max_pe_dim": 8, "concat_to_x": True}
-        }
+        params = {"RWSE": {"max_pe_dim": 8, "concat_to_x": True}}
         transform = CombinedPSEs(encodings=["RWSE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -81,10 +92,14 @@ class TestCombinedPSEs:
         """Test transform with both LapPE and RWSE encodings."""
         params = {
             "LapPE": {"max_pe_dim": 4, "concat_to_x": True},
-            "RWSE": {"max_pe_dim": 4, "concat_to_x": True}
+            "RWSE": {"max_pe_dim": 4, "concat_to_x": True},
         }
-        transform = CombinedPSEs(encodings=["LapPE", "RWSE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        transform = CombinedPSEs(
+            encodings=["LapPE", "RWSE"], parameters=params
+        )
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -100,10 +115,14 @@ class TestCombinedPSEs:
         """Test transform with separate storage (concat_to_x=False)."""
         params = {
             "LapPE": {"max_pe_dim": 4, "concat_to_x": False},
-            "RWSE": {"max_pe_dim": 4, "concat_to_x": False}
+            "RWSE": {"max_pe_dim": 4, "concat_to_x": False},
         }
-        transform = CombinedPSEs(encodings=["LapPE", "RWSE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        transform = CombinedPSEs(
+            encodings=["LapPE", "RWSE"], parameters=params
+        )
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -120,17 +139,29 @@ class TestCombinedPSEs:
         """Test that encodings are applied in the specified order."""
         params = {
             "LapPE": {"max_pe_dim": 2, "concat_to_x": True},
-            "RWSE": {"max_pe_dim": 3, "concat_to_x": True}
+            "RWSE": {"max_pe_dim": 3, "concat_to_x": True},
         }
 
         # Test LapPE first, then RWSE
-        transform1 = CombinedPSEs(encodings=["LapPE", "RWSE"], parameters=params)
-        data1 = Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
+        transform1 = CombinedPSEs(
+            encodings=["LapPE", "RWSE"], parameters=params
+        )
+        data1 = Data(
+            x=self.x.clone(),
+            edge_index=self.edge_index,
+            num_nodes=self.num_nodes,
+        )
         transformed1 = transform1(data1)
 
         # Test RWSE first, then LapPE
-        transform2 = CombinedPSEs(encodings=["RWSE", "LapPE"], parameters=params)
-        data2 = Data(x=self.x.clone(), edge_index=self.edge_index, num_nodes=self.num_nodes)
+        transform2 = CombinedPSEs(
+            encodings=["RWSE", "LapPE"], parameters=params
+        )
+        data2 = Data(
+            x=self.x.clone(),
+            edge_index=self.edge_index,
+            num_nodes=self.num_nodes,
+        )
         transformed2 = transform2(data2)
 
         # Both should have the same final shape
@@ -145,7 +176,9 @@ class TestCombinedPSEs:
     def test_empty_encodings_list(self):
         """Test transform with empty encodings list."""
         transform = CombinedPSEs(encodings=[])
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -155,7 +188,9 @@ class TestCombinedPSEs:
     def test_invalid_encoding_type(self):
         """Test transform with invalid encoding type raises error."""
         transform = CombinedPSEs(encodings=["InvalidEncoding"])
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         with pytest.raises(ValueError, match="Unsupported encoding type"):
             transform(data)
@@ -164,20 +199,31 @@ class TestCombinedPSEs:
         """Test transform requires parameters for encodings with required args."""
         # LapPE and RWSE both require max_pe_dim, so this should fail
         transform = CombinedPSEs(encodings=["LapPE"])
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         # Should raise TypeError because max_pe_dim is required
-        with pytest.raises(TypeError, match="missing 1 required positional argument"):
+        with pytest.raises(
+            TypeError, match="missing 1 required positional argument"
+        ):
             transform(data)
 
     def test_partial_parameters(self):
         """Test transform with parameters for only some encodings."""
         params = {
             "LapPE": {"max_pe_dim": 4, "concat_to_x": True},
-            "RWSE": {"max_pe_dim": 4, "concat_to_x": True}  # Must provide required params
+            "RWSE": {
+                "max_pe_dim": 4,
+                "concat_to_x": True,
+            },  # Must provide required params
         }
-        transform = CombinedPSEs(encodings=["LapPE", "RWSE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        transform = CombinedPSEs(
+            encodings=["LapPE", "RWSE"], parameters=params
+        )
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -190,9 +236,11 @@ class TestCombinedPSEs:
         """Test transform when data.x is None."""
         params = {
             "LapPE": {"max_pe_dim": 4, "concat_to_x": True},
-            "RWSE": {"max_pe_dim": 4, "concat_to_x": True}
+            "RWSE": {"max_pe_dim": 4, "concat_to_x": True},
         }
-        transform = CombinedPSEs(encodings=["LapPE", "RWSE"], parameters=params)
+        transform = CombinedPSEs(
+            encodings=["LapPE", "RWSE"], parameters=params
+        )
         data = Data(edge_index=self.edge_index, num_nodes=self.num_nodes)
 
         transformed = transform(data)
@@ -205,9 +253,11 @@ class TestCombinedPSEs:
         """Test transform on an empty graph (no edges)."""
         params = {
             "LapPE": {"max_pe_dim": 4, "concat_to_x": True},
-            "RWSE": {"max_pe_dim": 4, "concat_to_x": True}
+            "RWSE": {"max_pe_dim": 4, "concat_to_x": True},
         }
-        transform = CombinedPSEs(encodings=["LapPE", "RWSE"], parameters=params)
+        transform = CombinedPSEs(
+            encodings=["LapPE", "RWSE"], parameters=params
+        )
         edge_index = torch.empty((2, 0), dtype=torch.long)
         data = Data(x=self.x, edge_index=edge_index, num_nodes=self.num_nodes)
 
@@ -221,9 +271,11 @@ class TestCombinedPSEs:
         """Test transform on a graph with a single node."""
         params = {
             "LapPE": {"max_pe_dim": 4, "concat_to_x": True},
-            "RWSE": {"max_pe_dim": 4, "concat_to_x": True}
+            "RWSE": {"max_pe_dim": 4, "concat_to_x": True},
         }
-        transform = CombinedPSEs(encodings=["LapPE", "RWSE"], parameters=params)
+        transform = CombinedPSEs(
+            encodings=["LapPE", "RWSE"], parameters=params
+        )
         edge_index = torch.empty((2, 0), dtype=torch.long)
         x = torch.tensor([[1.0]])
         data = Data(x=x, edge_index=edge_index, num_nodes=1)
@@ -237,9 +289,11 @@ class TestCombinedPSEs:
         """Test transform on a larger graph."""
         params = {
             "LapPE": {"max_pe_dim": 8, "concat_to_x": True},
-            "RWSE": {"max_pe_dim": 8, "concat_to_x": True}
+            "RWSE": {"max_pe_dim": 8, "concat_to_x": True},
         }
-        transform = CombinedPSEs(encodings=["LapPE", "RWSE"], parameters=params)
+        transform = CombinedPSEs(
+            encodings=["LapPE", "RWSE"], parameters=params
+        )
 
         # Create a larger graph
         num_nodes = 50
@@ -257,10 +311,14 @@ class TestCombinedPSEs:
         """Test transform with different dimensions for each encoding."""
         params = {
             "LapPE": {"max_pe_dim": 16, "concat_to_x": True},
-            "RWSE": {"max_pe_dim": 4, "concat_to_x": True}
+            "RWSE": {"max_pe_dim": 4, "concat_to_x": True},
         }
-        transform = CombinedPSEs(encodings=["LapPE", "RWSE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        transform = CombinedPSEs(
+            encodings=["LapPE", "RWSE"], parameters=params
+        )
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -273,12 +331,16 @@ class TestCombinedPSEs:
             "LapPE": {
                 "max_pe_dim": 4,
                 "include_eigenvalues": True,
-                "concat_to_x": True
+                "concat_to_x": True,
             },
-            "RWSE": {"max_pe_dim": 4, "concat_to_x": True}
+            "RWSE": {"max_pe_dim": 4, "concat_to_x": True},
         }
-        transform = CombinedPSEs(encodings=["LapPE", "RWSE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        transform = CombinedPSEs(
+            encodings=["LapPE", "RWSE"], parameters=params
+        )
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -292,12 +354,16 @@ class TestCombinedPSEs:
             "LapPE": {
                 "max_pe_dim": 4,
                 "include_first": True,
-                "concat_to_x": True
+                "concat_to_x": True,
             },
-            "RWSE": {"max_pe_dim": 4, "concat_to_x": True}
+            "RWSE": {"max_pe_dim": 4, "concat_to_x": True},
         }
-        transform = CombinedPSEs(encodings=["LapPE", "RWSE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        transform = CombinedPSEs(
+            encodings=["LapPE", "RWSE"], parameters=params
+        )
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -311,9 +377,11 @@ class TestCombinedPSEs:
 
         params = {
             "LapPE": {"max_pe_dim": 4, "concat_to_x": True},
-            "RWSE": {"max_pe_dim": 4, "concat_to_x": True}
+            "RWSE": {"max_pe_dim": 4, "concat_to_x": True},
         }
-        transform = CombinedPSEs(encodings=["LapPE", "RWSE"], parameters=params)
+        transform = CombinedPSEs(
+            encodings=["LapPE", "RWSE"], parameters=params
+        )
 
         edge_index = self.edge_index.cuda()
         x = self.x.cuda()
@@ -329,9 +397,11 @@ class TestCombinedPSEs:
         """Test that all original data attributes are preserved."""
         params = {
             "LapPE": {"max_pe_dim": 4, "concat_to_x": True},
-            "RWSE": {"max_pe_dim": 4, "concat_to_x": True}
+            "RWSE": {"max_pe_dim": 4, "concat_to_x": True},
         }
-        transform = CombinedPSEs(encodings=["LapPE", "RWSE"], parameters=params)
+        transform = CombinedPSEs(
+            encodings=["LapPE", "RWSE"], parameters=params
+        )
 
         y = torch.tensor([0, 1, 0])
         custom_attr = torch.tensor([10, 20, 30])
@@ -340,7 +410,7 @@ class TestCombinedPSEs:
             edge_index=self.edge_index,
             y=y,
             custom_attr=custom_attr,
-            num_nodes=self.num_nodes
+            num_nodes=self.num_nodes,
         )
 
         transformed = transform(data)
@@ -356,10 +426,14 @@ class TestCombinedPSEs:
         """Test applying the same transform multiple times."""
         params = {
             "LapPE": {"max_pe_dim": 4, "concat_to_x": False},
-            "RWSE": {"max_pe_dim": 4, "concat_to_x": False}
+            "RWSE": {"max_pe_dim": 4, "concat_to_x": False},
         }
-        transform = CombinedPSEs(encodings=["LapPE", "RWSE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        transform = CombinedPSEs(
+            encodings=["LapPE", "RWSE"], parameters=params
+        )
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         # Apply transform twice
         transformed1 = transform(data)
@@ -379,11 +453,11 @@ class TestCombinedPSEs:
 
     def test_only_lappe_in_list(self):
         """Test with only LapPE in the encodings list."""
-        params = {
-            "LapPE": {"max_pe_dim": 8, "concat_to_x": False}
-        }
+        params = {"LapPE": {"max_pe_dim": 8, "concat_to_x": False}}
         transform = CombinedPSEs(encodings=["LapPE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -393,11 +467,11 @@ class TestCombinedPSEs:
 
     def test_only_rwse_in_list(self):
         """Test with only RWSE in the encodings list."""
-        params = {
-            "RWSE": {"max_pe_dim": 8, "concat_to_x": False}
-        }
+        params = {"RWSE": {"max_pe_dim": 8, "concat_to_x": False}}
         transform = CombinedPSEs(encodings=["RWSE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -409,10 +483,14 @@ class TestCombinedPSEs:
         """Test with one encoding concatenated and one stored separately."""
         params = {
             "LapPE": {"max_pe_dim": 4, "concat_to_x": True},
-            "RWSE": {"max_pe_dim": 4, "concat_to_x": False}
+            "RWSE": {"max_pe_dim": 4, "concat_to_x": False},
         }
-        transform = CombinedPSEs(encodings=["LapPE", "RWSE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        transform = CombinedPSEs(
+            encodings=["LapPE", "RWSE"], parameters=params
+        )
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -427,10 +505,14 @@ class TestCombinedPSEs:
         """Test that combined encodings don't produce NaN or Inf."""
         params = {
             "LapPE": {"max_pe_dim": 8, "concat_to_x": True},
-            "RWSE": {"max_pe_dim": 8, "concat_to_x": True}
+            "RWSE": {"max_pe_dim": 8, "concat_to_x": True},
         }
-        transform = CombinedPSEs(encodings=["LapPE", "RWSE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        transform = CombinedPSEs(
+            encodings=["LapPE", "RWSE"], parameters=params
+        )
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -441,19 +523,30 @@ class TestCombinedPSEs:
     def test_case_sensitive_encoding_names(self):
         """Test that encoding names are case-sensitive."""
         transform = CombinedPSEs(encodings=["lappe"])  # lowercase
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         # Should raise error for incorrect case
         with pytest.raises(ValueError, match="Unsupported encoding type"):
             transform(data)
 
-    @pytest.mark.parametrize("encoding,params,expected_dim", [
-        ("LapPE", {"max_pe_dim": 4, "concat_to_x": False}, 4),
-        ("RWSE", {"max_pe_dim": 4, "concat_to_x": False}, 4),
-        ("ElectrostaticPE", {"concat_to_x": False}, 7),
-        ("HKdiagSE", {"kernel_param_HKdiagSE": (1, 5), "concat_to_x": False}, 4),
-    ])
-    def test_parametrized_single_encodings(self, encoding, params, expected_dim):
+    @pytest.mark.parametrize(
+        "encoding,params,expected_dim",
+        [
+            ("LapPE", {"max_pe_dim": 4, "concat_to_x": False}, 4),
+            ("RWSE", {"max_pe_dim": 4, "concat_to_x": False}, 4),
+            ("ElectrostaticPE", {"concat_to_x": False}, 7),
+            (
+                "HKdiagSE",
+                {"kernel_param_HKdiagSE": (1, 5), "concat_to_x": False},
+                4,
+            ),
+        ],
+    )
+    def test_parametrized_single_encodings(
+        self, encoding, params, expected_dim
+    ):
         """Parametrized test for single encodings.
 
         Parameters
@@ -465,8 +558,12 @@ class TestCombinedPSEs:
         expected_dim : int
             Expected output dimension.
         """
-        transform = CombinedPSEs(encodings=[encoding], parameters={encoding: params})
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        transform = CombinedPSEs(
+            encodings=[encoding], parameters={encoding: params}
+        )
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -484,10 +581,14 @@ class TestCombinedPSEs:
         """
         params = {
             "LapPE": {"max_pe_dim": max_pe_dim, "concat_to_x": True},
-            "RWSE": {"max_pe_dim": max_pe_dim, "concat_to_x": True}
+            "RWSE": {"max_pe_dim": max_pe_dim, "concat_to_x": True},
         }
-        transform = CombinedPSEs(encodings=["LapPE", "RWSE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        transform = CombinedPSEs(
+            encodings=["LapPE", "RWSE"], parameters=params
+        )
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -495,34 +596,39 @@ class TestCombinedPSEs:
 
     def test_duplicate_encodings_in_list(self):
         """Test behavior when the same encoding appears multiple times."""
-        params = {
-            "LapPE": {"max_pe_dim": 4, "concat_to_x": True}
-        }
+        params = {"LapPE": {"max_pe_dim": 4, "concat_to_x": True}}
         # Apply LapPE twice
-        transform = CombinedPSEs(encodings=["LapPE", "LapPE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        transform = CombinedPSEs(
+            encodings=["LapPE", "LapPE"], parameters=params
+        )
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
         # Both applications should concatenate
-        assert transformed.x.shape == (3, 1 + 4 + 4)  # original + LapPE + LapPE
+        assert transformed.x.shape == (
+            3,
+            1 + 4 + 4,
+        )  # original + LapPE + LapPE
 
     def test_complete_graph(self):
         """Test combined encodings on a complete graph."""
         # Complete graph on 4 nodes
         edges = []
         for i in range(4):
-            for j in range(4):
-                if i != j:
-                    edges.append([i, j])
+            edges.extend([[i, j] for j in range(4) if i != j])
         edge_index = torch.tensor(edges).t()
         x = torch.randn(4, 2)
 
         params = {
             "LapPE": {"max_pe_dim": 4, "concat_to_x": True},
-            "RWSE": {"max_pe_dim": 4, "concat_to_x": True}
+            "RWSE": {"max_pe_dim": 4, "concat_to_x": True},
         }
-        transform = CombinedPSEs(encodings=["LapPE", "RWSE"], parameters=params)
+        transform = CombinedPSEs(
+            encodings=["LapPE", "RWSE"], parameters=params
+        )
         data = Data(x=x, edge_index=edge_index, num_nodes=4)
 
         transformed = transform(data)
@@ -532,11 +638,13 @@ class TestCombinedPSEs:
 
     def test_single_electrostatic_pe_encoding(self):
         """Test transform with only ElectrostaticPE encoding."""
-        params = {
-            "ElectrostaticPE": {"concat_to_x": True}
-        }
-        transform = CombinedPSEs(encodings=["ElectrostaticPE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        params = {"ElectrostaticPE": {"concat_to_x": True}}
+        transform = CombinedPSEs(
+            encodings=["ElectrostaticPE"], parameters=params
+        )
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -552,7 +660,9 @@ class TestCombinedPSEs:
             "HKdiagSE": {"kernel_param_HKdiagSE": (1, 5), "concat_to_x": True}
         }
         transform = CombinedPSEs(encodings=["HKdiagSE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -564,11 +674,13 @@ class TestCombinedPSEs:
 
     def test_electrostatic_pe_separate_storage(self):
         """Test ElectrostaticPE with separate storage."""
-        params = {
-            "ElectrostaticPE": {"concat_to_x": False}
-        }
-        transform = CombinedPSEs(encodings=["ElectrostaticPE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        params = {"ElectrostaticPE": {"concat_to_x": False}}
+        transform = CombinedPSEs(
+            encodings=["ElectrostaticPE"], parameters=params
+        )
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -582,7 +694,9 @@ class TestCombinedPSEs:
             "HKdiagSE": {"kernel_param_HKdiagSE": (1, 5), "concat_to_x": False}
         }
         transform = CombinedPSEs(encodings=["HKdiagSE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -602,7 +716,9 @@ class TestCombinedPSEs:
             encodings=["LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE"],
             parameters=params,
         )
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -619,13 +735,18 @@ class TestCombinedPSEs:
             "LapPE": {"max_pe_dim": 4, "concat_to_x": False},
             "RWSE": {"max_pe_dim": 4, "concat_to_x": False},
             "ElectrostaticPE": {"concat_to_x": False},
-            "HKdiagSE": {"kernel_param_HKdiagSE": (1, 4), "concat_to_x": False},
+            "HKdiagSE": {
+                "kernel_param_HKdiagSE": (1, 4),
+                "concat_to_x": False,
+            },
         }
         transform = CombinedPSEs(
             encodings=["LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE"],
             parameters=params,
         )
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -641,10 +762,10 @@ class TestCombinedPSEs:
 
     def test_electrostatic_pe_no_features(self):
         """Test ElectrostaticPE when data.x is None."""
-        params = {
-            "ElectrostaticPE": {"concat_to_x": True}
-        }
-        transform = CombinedPSEs(encodings=["ElectrostaticPE"], parameters=params)
+        params = {"ElectrostaticPE": {"concat_to_x": True}}
+        transform = CombinedPSEs(
+            encodings=["ElectrostaticPE"], parameters=params
+        )
         data = Data(edge_index=self.edge_index, num_nodes=self.num_nodes)
 
         transformed = transform(data)
@@ -674,7 +795,9 @@ class TestCombinedPSEs:
             "HKdiagSE": {"kernel_param_HKdiagSE": (1, 9), "concat_to_x": True}
         }
         transform = CombinedPSEs(encodings=["HKdiagSE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -683,11 +806,13 @@ class TestCombinedPSEs:
 
     def test_electrostatic_pe_numerical_stability(self):
         """Test ElectrostaticPE doesn't produce NaN or Inf."""
-        params = {
-            "ElectrostaticPE": {"concat_to_x": True}
-        }
-        transform = CombinedPSEs(encodings=["ElectrostaticPE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        params = {"ElectrostaticPE": {"concat_to_x": True}}
+        transform = CombinedPSEs(
+            encodings=["ElectrostaticPE"], parameters=params
+        )
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -700,7 +825,9 @@ class TestCombinedPSEs:
             "HKdiagSE": {"kernel_param_HKdiagSE": (1, 5), "concat_to_x": True}
         }
         transform = CombinedPSEs(encodings=["HKdiagSE"], parameters=params)
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -711,16 +838,14 @@ class TestCombinedPSEs:
         """Test ElectrostaticPE on a complete graph."""
         edges = []
         for i in range(4):
-            for j in range(4):
-                if i != j:
-                    edges.append([i, j])
+            edges.extend([[i, j] for j in range(4) if i != j])
         edge_index = torch.tensor(edges).t()
         x = torch.randn(4, 2)
 
-        params = {
-            "ElectrostaticPE": {"concat_to_x": True}
-        }
-        transform = CombinedPSEs(encodings=["ElectrostaticPE"], parameters=params)
+        params = {"ElectrostaticPE": {"concat_to_x": True}}
+        transform = CombinedPSEs(
+            encodings=["ElectrostaticPE"], parameters=params
+        )
         data = Data(x=x, edge_index=edge_index, num_nodes=4)
 
         transformed = transform(data)
@@ -732,9 +857,7 @@ class TestCombinedPSEs:
         """Test HKdiagSE on a complete graph."""
         edges = []
         for i in range(4):
-            for j in range(4):
-                if i != j:
-                    edges.append([i, j])
+            edges.extend([[i, j] for j in range(4) if i != j])
         edge_index = torch.tensor(edges).t()
         x = torch.randn(4, 2)
 
@@ -755,13 +878,18 @@ class TestCombinedPSEs:
             "LapPE": {"max_pe_dim": 4, "concat_to_x": False},
             "RWSE": {"max_pe_dim": 4, "concat_to_x": False},
             "ElectrostaticPE": {"concat_to_x": False},
-            "HKdiagSE": {"kernel_param_HKdiagSE": (1, 5), "concat_to_x": False},
+            "HKdiagSE": {
+                "kernel_param_HKdiagSE": (1, 5),
+                "concat_to_x": False,
+            },
         }
         transform = CombinedPSEs(
             encodings=["LapPE", "RWSE", "ElectrostaticPE", "HKdiagSE"],
             parameters=params,
         )
-        data = Data(x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes)
+        data = Data(
+            x=self.x, edge_index=self.edge_index, num_nodes=self.num_nodes
+        )
 
         transformed = transform(data)
 
@@ -787,7 +915,9 @@ class TestCombinedPSEsEdgeCases:
 
     def test_cuda_unavailable_falls_back_to_cpu(self):
         """When CUDA is requested but unavailable, target_device falls back to CPU."""
-        params = {"LapPE": {"max_pe_dim": 4, "concat_to_x": True, "device": "cuda"}}
+        params = {
+            "LapPE": {"max_pe_dim": 4, "concat_to_x": True, "device": "cuda"}
+        }
         transform = CombinedPSEs(encodings=["LapPE"], parameters=params)
         data = Data(
             x=torch.randn(3, 1),

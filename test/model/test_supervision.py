@@ -1,16 +1,19 @@
 """Tests for typed homogeneous and heterogeneous supervision selection."""
 
 from dataclasses import FrozenInstanceError
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 import torch
 from torch_geometric.data import Data, HeteroData
 
+from topobench.evaluator import PredictionIdentity, PredictionPayload
 from topobench.model import (
     DefaultSupervisionAdapter,
     HeterogeneousNodeSupervisionAdapter,
     SupervisedBatch,
+    TBModel,
 )
 
 
@@ -162,8 +165,16 @@ class TestDefaultSupervisionAdapter:
     @pytest.mark.parametrize(
         ("logits", "labels", "message"),
         [
-            (torch.randn(3, 4), torch.zeros(3, 1, dtype=torch.long), "classification"),
-            (torch.randn(3, 4), torch.zeros(3, 1, 1, dtype=torch.long), "classification"),
+            (
+                torch.randn(3, 4),
+                torch.zeros(3, 1, dtype=torch.long),
+                "classification",
+            ),
+            (
+                torch.randn(3, 4),
+                torch.zeros(3, 1, 1, dtype=torch.long),
+                "classification",
+            ),
             (torch.randn(3, 1), torch.zeros(3, 1, 1), "regression"),
             (torch.randn(3, 1), torch.zeros(3, dtype=torch.long), "floating"),
             (
@@ -278,6 +289,7 @@ class TestDefaultSupervisionAdapter:
                 Data(),
                 "Training",
             )
+
 
 class TestHeterogeneousNodeSupervisionAdapter:
     """Test target-store masks and strict seed-only neighbor semantics."""
@@ -524,7 +536,9 @@ class TestHeterogeneousNodeSupervisionAdapter:
             )
 
 
-def test_graph_selection_returns_loss_owning_tensor_aliases_without_copy() -> None:
+def test_graph_selection_returns_loss_owning_tensor_aliases_without_copy() -> (
+    None
+):
     """Graph supervision preserves the exact prediction and target objects."""
     logits = torch.randn(3, 2, requires_grad=True)
     targets = torch.tensor([0, 1, 0])
@@ -537,3 +551,144 @@ def test_graph_selection_returns_loss_owning_tensor_aliases_without_copy() -> No
     assert selected.logits is logits
     assert selected.targets is targets
     assert selected.num_examples == 3
+
+
+def test_graph_selection_returns_exact_row_indices_for_payload_alignment() -> (
+    None
+):
+    """Graph identities use the adapter's one authoritative selection."""
+    selected = DefaultSupervisionAdapter("graph").select(
+        {
+            "logits": torch.randn(3, 2),
+            "labels": torch.tensor([0, 1, 0]),
+        },
+        Data(),
+        "Test",
+    )
+
+    assert torch.equal(selected.row_indices, torch.tensor([0, 1, 2]))
+
+
+@pytest.mark.parametrize(
+    ("phase", "expected"),
+    [
+        ("Training", [0, 1]),
+        ("Validation", [2]),
+        ("Test", [3, 4, 5]),
+    ],
+)
+def test_homogeneous_selection_returns_mask_rows_once_for_payload_alignment(
+    phase: str, expected: list[int]
+) -> None:
+    """Prediction identity consumes selected rows without masking again."""
+    selected = DefaultSupervisionAdapter("node").select(
+        _model_out(),
+        _homogeneous_batch(),
+        phase,
+    )
+
+    assert torch.equal(selected.row_indices, torch.tensor(expected))
+    assert selected.num_examples == len(expected)
+
+
+def test_heterogeneous_neighbor_selection_returns_only_seed_row_indices() -> (
+    None
+):
+    """The returned selector excludes context nodes without a second prefix."""
+    batch = _heterogeneous_batch()
+    batch["paper"].batch_size = 2
+
+    selected = HeterogeneousNodeSupervisionAdapter("paper", "neighbor").select(
+        _model_out(), batch, "Test"
+    )
+
+    assert torch.equal(selected.row_indices, torch.tensor([0, 1]))
+    assert selected.num_examples == 2
+
+
+def test_heterogeneous_full_selection_returns_exact_target_mask_rows() -> None:
+    """Full hetero identity reuses the target-store supervision selection."""
+    selected = HeterogeneousNodeSupervisionAdapter(
+        "paper", "full_batch"
+    ).select(_model_out(), _heterogeneous_batch(), "Test")
+
+    assert torch.equal(selected.row_indices, torch.tensor([3, 4, 5]))
+
+
+def test_selected_capture_reuses_one_forward_and_one_supervision_result() -> (
+    None
+):
+    """Prediction capture receives the exact loss-owning selection once."""
+    raw_logits = torch.tensor([[2.0, -1.0], [-1.0, 2.0]])
+    targets = torch.tensor([0, 1])
+    selected = SupervisedBatch(
+        raw_logits,
+        targets,
+        2,
+        row_indices=torch.tensor([0, 1]),
+    )
+    supervision = MagicMock()
+    supervision.select.return_value = selected
+    evaluator = MagicMock(
+        task="classification",
+        num_classes=2,
+        policy={"train": "online", "val": "exact", "test": "exact"},
+        state="idle",
+    )
+    model = TBModel(
+        backbone=MagicMock(),
+        readout=MagicMock(task_level="graph"),
+        loss=MagicMock(),
+        evaluator=evaluator,
+        supervision_adapter=supervision,
+    )
+    model.forward = MagicMock(
+        return_value={
+            "logits": torch.randn(2, 2),
+            "labels": torch.tensor([1, 0]),
+        }
+    )
+    model.loss.side_effect = lambda *, model_out, batch: {
+        **model_out,
+        "loss": model_out["logits"].sum(),
+    }
+    identity = PredictionIdentity(
+        columns={"sample_id": torch.tensor([17, 4])},
+        key=("sample_id",),
+    )
+    payload = PredictionPayload(
+        identity=identity,
+        prediction=torch.softmax(raw_logits, dim=-1),
+        columns={"target": targets, "raw_output": raw_logits},
+        column_metadata={
+            "target": {"role": "target"},
+            "raw_output": {"role": "raw_output"},
+            "prediction": {"role": "prediction"},
+        },
+        output_semantics={
+            "task": "classification",
+            "class_vocabulary": ("negative", "positive"),
+        },
+    )
+    row_adapter = MagicMock()
+    row_adapter.adapt.return_value = payload
+    sink = MagicMock()
+    model.configure_prediction_artifact_capture(
+        row_adapter,
+        sink,
+        expected_num_examples={"val": 2, "test": 2},
+    )
+    model.set_selected_checkpoint_id("a" * 64)
+    model.set_next_test_pass_kind("selected_checkpoint")
+    model.on_test_epoch_start()
+
+    model.model_step(Data(sample_id=torch.tensor([17, 4])))
+
+    model.forward.assert_called_once()
+    supervision.select.assert_called_once()
+    row_adapter.adapt.assert_called_once()
+    assert row_adapter.adapt.call_args.args[1] is selected
+    captured = sink.update.call_args.args[0]
+    assert captured.outputs is selected.logits
+    assert captured.targets is selected.targets
+    assert captured.prediction_payload is payload

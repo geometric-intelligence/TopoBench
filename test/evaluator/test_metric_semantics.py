@@ -18,7 +18,9 @@ from sklearn.metrics import (
 from topobench.evaluator import EvaluationBatch, EvaluationContext, TBEvaluator
 
 
-def _context(task: str, num_classes: int, count: int, policy: str = "exact") -> EvaluationContext:
+def _context(
+    task: str, num_classes: int, count: int, policy: str = "exact"
+) -> EvaluationContext:
     return EvaluationContext(
         split="val",
         pass_kind="fit_epoch",
@@ -85,17 +87,27 @@ def test_multiclass_known_values_match_sklearn():
     probabilities = logits.softmax(dim=1).numpy()
     expected = {
         "accuracy": accuracy_score(targets.numpy(), hard),
-        "precision": precision_score(targets.numpy(), hard, average="macro", zero_division=0),
-        "recall": recall_score(targets.numpy(), hard, average="macro", zero_division=0),
-        "f1": f1_score(targets.numpy(), hard, average="macro", zero_division=0),
-        "auroc": roc_auc_score(targets.numpy(), probabilities, average="macro", multi_class="ovr"),
+        "precision": precision_score(
+            targets.numpy(), hard, average="macro", zero_division=0
+        ),
+        "recall": recall_score(
+            targets.numpy(), hard, average="macro", zero_division=0
+        ),
+        "f1": f1_score(
+            targets.numpy(), hard, average="macro", zero_division=0
+        ),
+        "auroc": roc_auc_score(
+            targets.numpy(), probabilities, average="macro", multi_class="ovr"
+        ),
     }
     assert result == pytest.approx(expected, abs=1e-6)
 
 
 def test_binary_average_precision_and_somers_d_match_reference_libraries():
     positive_scores = torch.tensor([0.05, 0.25, 0.25, 0.70, 0.80, 0.95])
-    logits = torch.stack((torch.log1p(-positive_scores), torch.log(positive_scores)), dim=1)
+    logits = torch.stack(
+        (torch.log1p(-positive_scores), torch.log(positive_scores)), dim=1
+    )
     targets = torch.tensor([0, 1, 0, 1, 0, 1])
     result = _values(
         _evaluate(
@@ -110,9 +122,12 @@ def test_binary_average_precision_and_somers_d_match_reference_libraries():
     expected_auc = roc_auc_score(targets.numpy(), positive_scores.numpy())
     assert result["auroc"] == pytest.approx(expected_auc, abs=1e-6)
     assert result["auprc"] == pytest.approx(
-        average_precision_score(targets.numpy(), positive_scores.numpy()), abs=1e-6
+        average_precision_score(targets.numpy(), positive_scores.numpy()),
+        abs=1e-6,
     )
-    assert result["somers_d"] == pytest.approx(2.0 * expected_auc - 1.0, abs=1e-6)
+    assert result["somers_d"] == pytest.approx(
+        2.0 * expected_auc - 1.0, abs=1e-6
+    )
     assert result["somers_d"] == pytest.approx(
         somersd(targets.numpy(), positive_scores.numpy()).statistic, abs=1e-6
     )
@@ -155,7 +170,9 @@ def test_binary_positive_class_and_label_reversal_semantics():
         )
     )
     assert flipped == pytest.approx(original, abs=1e-6)
-    assert same_scores_reversed_labels["auroc"] == pytest.approx(1.0 - original["auroc"], abs=1e-6)
+    assert same_scores_reversed_labels["auroc"] == pytest.approx(
+        1.0 - original["auroc"], abs=1e-6
+    )
 
 
 def test_regression_known_values_match_sklearn():
@@ -189,9 +206,25 @@ def test_regression_known_values_match_sklearn():
         (
             "classification",
             2,
-            ["accuracy", "precision", "recall", "f1", "auroc", "auprc", "somers_d"],
+            [
+                "accuracy",
+                "precision",
+                "recall",
+                "f1",
+                "auroc",
+                "auprc",
+                "somers_d",
+            ],
             torch.tensor(
-                [[2.0, -1.0], [-1.0, 2.0], [0.7, 0.6], [0.2, 1.3], [1.5, 0.0], [0.4, 0.9], [1.0, 1.0]]
+                [
+                    [2.0, -1.0],
+                    [-1.0, 2.0],
+                    [0.7, 0.6],
+                    [0.2, 1.3],
+                    [1.5, 0.0],
+                    [0.4, 0.9],
+                    [1.0, 1.0],
+                ]
             ),
             torch.tensor([0, 1, 1, 1, 0, 0, 1]),
         ),
@@ -200,7 +233,15 @@ def test_regression_known_values_match_sklearn():
             3,
             ["accuracy", "precision", "recall", "f1", "auroc"],
             torch.tensor(
-                [[2.0, 0.0, -1.0], [0.0, 2.0, 0.1], [0.1, 0.2, 2.0], [1.0, 0.9, 0.0], [0.0, 1.2, 1.1], [0.4, 0.0, 1.3], [1.4, 0.3, 0.2]]
+                [
+                    [2.0, 0.0, -1.0],
+                    [0.0, 2.0, 0.1],
+                    [0.1, 0.2, 2.0],
+                    [1.0, 0.9, 0.0],
+                    [0.0, 1.2, 1.1],
+                    [0.4, 0.0, 1.3],
+                    [1.4, 0.3, 0.2],
+                ]
             ),
             torch.tensor([0, 1, 2, 1, 2, 0, 0]),
         ),
@@ -213,7 +254,9 @@ def test_regression_known_values_match_sklearn():
         ),
     ],
 )
-def test_every_metric_is_partition_invariant(task, num_classes, metrics, outputs, targets):
+def test_every_metric_is_partition_invariant(
+    task, num_classes, metrics, outputs, targets
+):
     all_at_once = _values(
         _evaluate(
             task=task,

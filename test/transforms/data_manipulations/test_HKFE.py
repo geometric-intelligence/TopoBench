@@ -45,7 +45,11 @@ class TestHKFE:
     def test_forward_requires_x(self):
         t = HKFE(kernel_param_HKFE=(1, 3))
         with pytest.raises(ValueError, match="HKFE requires node features"):
-            t(Data(edge_index=torch.empty(2, 0, dtype=torch.long), num_nodes=2))
+            t(
+                Data(
+                    edge_index=torch.empty(2, 0, dtype=torch.long), num_nodes=2
+                )
+            )
 
     def test_forward_returns_concatenated_features(self, small_graph):
         n_feat = small_graph.x.shape[1]
@@ -74,4 +78,7 @@ class TestHKFE:
         out = t(small_graph)
         captured = capsys.readouterr()
         assert "HKFE Debug Report" in captured.out
-        assert out.x.shape == (small_graph.num_nodes, small_graph.x.shape[1] + t.fe_dim)
+        assert out.x.shape == (
+            small_graph.num_nodes,
+            small_graph.x.shape[1] + t.fe_dim,
+        )

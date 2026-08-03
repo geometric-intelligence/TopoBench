@@ -67,7 +67,9 @@ class ExternalNodeIndex:
         if self._connection is None:
             import duckdb
 
-            self._connection = duckdb.connect(str(self.lookup_path), read_only=True)
+            self._connection = duckdb.connect(
+                str(self.lookup_path), read_only=True
+            )
         return self._connection
 
     def close(self) -> None:
@@ -80,10 +82,14 @@ class ExternalNodeIndex:
     def lookup(self, external_id: int | str) -> int:
         """Resolve one exact external ID to its type-local dense ordinal."""
         value = self._validated_external_id(external_id)
-        row = self._connect().execute(
-            "SELECT local_ordinal FROM mapping WHERE external_id = ?",
-            [value],
-        ).fetchone()
+        row = (
+            self._connect()
+            .execute(
+                "SELECT local_ordinal FROM mapping WHERE external_id = ?",
+                [value],
+            )
+            .fetchone()
+        )
         if row is None:
             raise KeyError(external_id)
         return int(row[0])
@@ -97,10 +103,14 @@ class ExternalNodeIndex:
             or local_ordinal >= self.row_count
         ):
             raise IndexError(local_ordinal)
-        row = self._connect().execute(
-            "SELECT external_id FROM mapping WHERE local_ordinal = ?",
-            [local_ordinal],
-        ).fetchone()
+        row = (
+            self._connect()
+            .execute(
+                "SELECT external_id FROM mapping WHERE local_ordinal = ?",
+                [local_ordinal],
+            )
+            .fetchone()
+        )
         if row is None:
             raise IndexError(local_ordinal)
         return row[0]

@@ -2,7 +2,11 @@
 
 import pytest
 import torch
-from torchmetrics.classification import BinaryAUROC, BinaryAveragePrecision, MulticlassAUROC
+from torchmetrics.classification import (
+    BinaryAUROC,
+    BinaryAveragePrecision,
+    MulticlassAUROC,
+)
 
 from topobench.evaluator import EvaluationBatch, EvaluationContext
 from topobench.evaluator.backends import (
@@ -13,7 +17,9 @@ from topobench.evaluator.backends import (
 from topobench.evaluator.registry import resolve_evaluation_policy
 
 
-def _context(policy: str, *, split: str = "val", classes: int = 2) -> EvaluationContext:
+def _context(
+    policy: str, *, split: str = "val", classes: int = 2
+) -> EvaluationContext:
     return EvaluationContext(
         split=split,
         pass_kind="fit_epoch",
@@ -27,9 +33,20 @@ def _batch(classes: int = 2) -> EvaluationBatch:
     outputs = (
         torch.tensor([[2.0, -0.5], [-1.0, 2.0], [0.2, 1.0], [1.5, 0.0]])
         if classes == 2
-        else torch.tensor([[2.0, 0.0, -1.0], [0.0, 2.0, 0.1], [0.1, 0.2, 2.0], [1.0, 0.9, 0.0]])
+        else torch.tensor(
+            [
+                [2.0, 0.0, -1.0],
+                [0.0, 2.0, 0.1],
+                [0.1, 0.2, 2.0],
+                [1.0, 0.9, 0.0],
+            ]
+        )
     )
-    targets = torch.tensor([0, 1, 1, 0]) if classes == 2 else torch.tensor([0, 1, 2, 1])
+    targets = (
+        torch.tensor([0, 1, 1, 0])
+        if classes == 2
+        else torch.tensor([0, 1, 2, 1])
+    )
     return EvaluationBatch(outputs=outputs, targets=targets, num_examples=4)
 
 
@@ -56,8 +73,12 @@ def test_binary_audit_constructs_one_exact_group_and_thresholded_online_modules(
     backend.begin(_context("audit"))
     assert isinstance(backend.exact_ranking_backend, ExactRankingBackend)
     assert set(backend.exact_ranking_backend.metrics) == {"auroc", "auprc"}
-    assert isinstance(backend.online_ranking_backend.metrics["auroc"], BinaryAUROC)
-    assert isinstance(backend.online_ranking_backend.metrics["auprc"], BinaryAveragePrecision)
+    assert isinstance(
+        backend.online_ranking_backend.metrics["auroc"], BinaryAUROC
+    )
+    assert isinstance(
+        backend.online_ranking_backend.metrics["auprc"], BinaryAveragePrecision
+    )
     assert "somers_d" not in backend.online_ranking_backend.metrics
 
 
@@ -92,7 +113,9 @@ def test_exact_binary_metrics_retain_one_shared_positive_score_target_buffer():
 
 
 def test_exact_multiclass_auroc_retains_one_probability_target_buffer():
-    backend = MetricPolicyBackend(task="classification", num_classes=3, metrics=["auroc"])
+    backend = MetricPolicyBackend(
+        task="classification", num_classes=3, metrics=["auroc"]
+    )
     backend.begin(_context("exact", classes=3))
     backend.update(_batch(classes=3))
     exact = backend.exact_ranking_backend
@@ -102,16 +125,25 @@ def test_exact_multiclass_auroc_retains_one_probability_target_buffer():
 
 def test_no_stateful_exact_torchmetrics_ranking_module_is_reachable():
     backend = MetricPolicyBackend(
-        task="classification", num_classes=2, metrics=["auroc", "auprc", "somers_d"]
+        task="classification",
+        num_classes=2,
+        metrics=["auroc", "auprc", "somers_d"],
     )
     backend.begin(_context("exact"))
     backend.update(_batch())
     reachable = backend.reachable_objects()
-    assert not any(isinstance(value, (BinaryAUROC, BinaryAveragePrecision, MulticlassAUROC)) for value in reachable)
+    assert not any(
+        isinstance(
+            value, (BinaryAUROC, BinaryAveragePrecision, MulticlassAUROC)
+        )
+        for value in reachable
+    )
 
 
 def test_exact_snapshot_records_exact_status_without_threshold_grid():
-    backend = MetricPolicyBackend(task="classification", num_classes=2, metrics=["auroc", "auprc"])
+    backend = MetricPolicyBackend(
+        task="classification", num_classes=2, metrics=["auroc", "auprc"]
+    )
     backend.begin(_context("exact"))
     backend.update(_batch())
     snapshot = backend.compute()
@@ -121,7 +153,9 @@ def test_exact_snapshot_records_exact_status_without_threshold_grid():
 
 def test_binary_audit_keys_and_derived_somers_d_are_exactly_expanded():
     backend = MetricPolicyBackend(
-        task="classification", num_classes=2, metrics=["auroc", "auprc", "somers_d"]
+        task="classification",
+        num_classes=2,
+        metrics=["auroc", "auprc", "somers_d"],
     )
     backend.begin(_context("audit"))
     backend.update(_batch())
@@ -137,8 +171,12 @@ def test_binary_audit_keys_and_derived_somers_d_are_exactly_expanded():
         "somers_d_online",
         "somers_d_online_abs_error",
     )
-    assert float(snapshot["somers_d"]) == pytest.approx(2 * float(snapshot["auroc"]) - 1)
-    assert float(snapshot["somers_d_online"]) == pytest.approx(2 * float(snapshot["auroc_online"]) - 1)
+    assert float(snapshot["somers_d"]) == pytest.approx(
+        2 * float(snapshot["auroc"]) - 1
+    )
+    assert float(snapshot["somers_d_online"]) == pytest.approx(
+        2 * float(snapshot["auroc_online"]) - 1
+    )
     for metric in ("auroc", "auprc", "somers_d"):
         assert float(snapshot[f"{metric}_online_abs_error"]) == pytest.approx(
             abs(float(snapshot[metric]) - float(snapshot[f"{metric}_online"]))
@@ -147,7 +185,9 @@ def test_binary_audit_keys_and_derived_somers_d_are_exactly_expanded():
 
 def test_multiclass_audit_expands_only_auroc():
     backend = MetricPolicyBackend(
-        task="classification", num_classes=3, metrics=["accuracy", "f1", "auroc"]
+        task="classification",
+        num_classes=3,
+        metrics=["accuracy", "f1", "auroc"],
     )
     backend.begin(_context("audit", classes=3))
     backend.update(_batch(classes=3))
@@ -192,7 +232,15 @@ def test_required_prediction_views_are_derived_at_most_once_per_update():
     backend = MetricPolicyBackend(
         task="classification",
         num_classes=2,
-        metrics=["accuracy", "precision", "recall", "f1", "auroc", "auprc", "somers_d"],
+        metrics=[
+            "accuracy",
+            "precision",
+            "recall",
+            "f1",
+            "auroc",
+            "auprc",
+            "somers_d",
+        ],
         prediction_views_factory=CountingPredictionViews,
     )
     backend.begin(_context("audit"))
@@ -218,7 +266,9 @@ def test_softmax_is_not_computed_without_probability_metric():
 
 
 def test_policy_cannot_change_during_an_active_context():
-    backend = MetricPolicyBackend(task="classification", num_classes=2, metrics=["auroc"])
+    backend = MetricPolicyBackend(
+        task="classification", num_classes=2, metrics=["auroc"]
+    )
     backend.begin(_context("online", split="train"))
     with pytest.raises(RuntimeError, match="active.*policy"):
         backend.begin(_context("exact"))

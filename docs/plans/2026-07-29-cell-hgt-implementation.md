@@ -1468,4 +1468,3 @@ methodological contribution.
   <https://pytorch-geometric.readthedocs.io/en/latest/_modules/torch_geometric/nn/conv/hgt_conv.html>
 - Heterogeneous Graph Transformer paper:
   <https://arxiv.org/abs/2003.01332>
-

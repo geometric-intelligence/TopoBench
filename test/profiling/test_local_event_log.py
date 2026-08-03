@@ -39,7 +39,9 @@ def _event(sequence: int, *, evidence_size: int = 0) -> ExecutionEvent:
     )
 
 
-def test_frames_round_trip_with_checksum_length_and_strict_schema(tmp_path: Path) -> None:
+def test_frames_round_trip_with_checksum_length_and_strict_schema(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "evidence" / "events.jsonl"
     with LocalEventLog(
         path,
@@ -56,7 +58,12 @@ def test_frames_round_trip_with_checksum_length_and_strict_schema(tmp_path: Path
     lines = path.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 2
     frame = json.loads(lines[0])
-    assert set(frame) == {"frame_version", "payload_bytes", "payload_sha256", "record"}
+    assert set(frame) == {
+        "frame_version",
+        "payload_bytes",
+        "payload_sha256",
+        "record",
+    }
     assert len(frame["payload_sha256"]) == 64
     assert frame["payload_bytes"] > 0
 
@@ -79,17 +86,23 @@ def test_rotation_is_bounded_atomic_and_deterministic(tmp_path: Path) -> None:
     assert path.with_name("events.jsonl.2").is_file()
     assert not path.with_name("events.jsonl.3").exists()
     assert event_log.rotated_file_count == 3
-    assert [event.descriptor_sequence for event in LocalEventLog(
-        path,
-        max_bytes=4096,
-        max_records=2,
-        max_rotations=2,
-    ).load()] == [3, 4, 5, 6, 7]
-    assert all(candidate.stat().st_size <= 4096 for candidate in (
-        path,
-        path.with_name("events.jsonl.1"),
-        path.with_name("events.jsonl.2"),
-    ))
+    assert [
+        event.descriptor_sequence
+        for event in LocalEventLog(
+            path,
+            max_bytes=4096,
+            max_records=2,
+            max_rotations=2,
+        ).load()
+    ] == [3, 4, 5, 6, 7]
+    assert all(
+        candidate.stat().st_size <= 4096
+        for candidate in (
+            path,
+            path.with_name("events.jsonl.1"),
+            path.with_name("events.jsonl.2"),
+        )
+    )
 
 
 def test_reopen_recovers_only_a_truncated_tail_and_rejects_middle_corruption(
@@ -132,7 +145,9 @@ def test_threaded_append_is_serialized_without_lost_or_partial_frames(
     right.close()
 
     loaded = LocalEventLog(path, max_bytes=1_000_000, max_records=128).load()
-    assert sorted(event.descriptor_sequence for event in loaded) == list(range(1, 65))
+    assert sorted(event.descriptor_sequence for event in loaded) == list(
+        range(1, 65)
+    )
     assert len(path.read_bytes().splitlines()) == 64
 
 
@@ -172,9 +187,7 @@ def test_two_instances_refresh_same_size_rotations_once_per_change(
         max_rotations=2,
     ) as fresh:
         authoritative = fresh.load()
-    assert [
-        event.descriptor_sequence for event in authoritative
-    ] == [2, 3, 4]
+    assert [event.descriptor_sequence for event in authoritative] == [2, 3, 4]
     authoritative_summary = summarize_events(authoritative)
     for event_log in (left, right):
         retained = event_log.retained_events
@@ -210,7 +223,6 @@ def test_two_instances_refresh_same_size_rotations_once_per_change(
     assert scan_count == changed_scan_count
     left.close()
     right.close()
-
 
 
 def test_symlink_and_allowed_root_escape_are_rejected(tmp_path: Path) -> None:

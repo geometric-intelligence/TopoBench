@@ -2,6 +2,7 @@
 
 import torch
 from torch_geometric.data import Data
+
 from topobench.transforms.data_manipulations import KeepSelectedDataFields
 
 
@@ -10,11 +11,13 @@ class TestDataFieldTransforms:
 
     def setup_method(self):
         """Set up test fixtures before each test method."""
-        x = torch.tensor([
-            [2, 2],
-            [2.2, 2],
-            [2.1, 1.5],
-        ])
+        x = torch.tensor(
+            [
+                [2, 2],
+                [2.2, 2],
+                [2.1, 1.5],
+            ]
+        )
 
         self.data = Data(
             x=x,
@@ -37,7 +40,9 @@ class TestDataFieldTransforms:
         """
         data = self.keep_selected_fields(self.data.clone())
         expected_fields = set(
-            self.keep_selected_fields.parameters["base_fields"] +
-            self.keep_selected_fields.parameters["preserved_fields"]
+            self.keep_selected_fields.parameters["base_fields"]
+            + self.keep_selected_fields.parameters["preserved_fields"]
         )
-        assert set(data.keys()) == expected_fields, "Some fields are not deleted"
+        assert set(data.keys()) == expected_fields, (
+            "Some fields are not deleted"
+        )

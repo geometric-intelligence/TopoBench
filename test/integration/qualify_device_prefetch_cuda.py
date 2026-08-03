@@ -56,9 +56,9 @@ def _data(sequence_id: int, rows: int = 4096) -> Data:
 
 def _hetero(sequence_id: int, rows: int = 4096) -> HeteroData:
     batch = HeteroData()
-    batch["paper"].x = torch.arange(
-        rows * 16, dtype=torch.float32
-    ).view(rows, 16)
+    batch["paper"].x = torch.arange(rows * 16, dtype=torch.float32).view(
+        rows, 16
+    )
     batch["paper"].x_alias = batch["paper"].x[:, :4]
     batch["author"].x = torch.ones((32, 8), dtype=torch.float32)
     relation = ("author", "writes", "paper")
@@ -108,22 +108,30 @@ def _qualify_depth_and_native_kind(
     iterator = iter(loader)
     output = next(iterator)
     assert iterator.transfer_stream is not None
-    assert iterator.transfer_stream.cuda_stream != torch.cuda.current_stream(
-        device
-    ).cuda_stream
-    assert len(iterator.completion_events) == depth
-    assert iterator.max_device_queued_bytes <= loader.limits.max_device_queue_bytes
-    assert iterator.max_host_queued_bytes <= loader.limits.max_host_queue_bytes
-    allocation_bytes = (
-        torch.cuda.max_memory_allocated(device) - baseline_bytes
+    assert (
+        iterator.transfer_stream.cuda_stream
+        != torch.cuda.current_stream(device).cuda_stream
     )
+    assert len(iterator.completion_events) == depth
+    assert (
+        iterator.max_device_queued_bytes
+        <= loader.limits.max_device_queue_bytes
+    )
+    assert iterator.max_host_queued_bytes <= loader.limits.max_host_queue_bytes
+    allocation_bytes = torch.cuda.max_memory_allocated(device) - baseline_bytes
     allocation_bound = (depth + 1) * _storage_bytes(batches[0]) + _MIB
     assert allocation_bytes <= allocation_bound
     assert all(tensor.device == device for tensor in _tensors(output))
 
     # The current model stream must have waited on the slot completion event.
-    expected = batches[0].x.sum() if isinstance(batches[0], Data) else batches[0]["paper"].x.sum()
-    actual = output.x.sum() if isinstance(output, Data) else output["paper"].x.sum()
+    expected = (
+        batches[0].x.sum()
+        if isinstance(batches[0], Data)
+        else batches[0]["paper"].x.sum()
+    )
+    actual = (
+        output.x.sum() if isinstance(output, Data) else output["paper"].x.sum()
+    )
     assert torch.equal(actual.cpu(), expected.cpu())
 
     before = _pointers(output)
@@ -133,9 +141,10 @@ def _qualify_depth_and_native_kind(
     assert after == before, "Lightning performed a second device allocation"
 
     remaining = list(iterator)
-    assert [output.sequence_id, *(batch.sequence_id for batch in remaining)] == list(
-        range(1, 7)
-    )
+    assert [
+        output.sequence_id,
+        *(batch.sequence_id for batch in remaining),
+    ] == list(range(1, 7))
     assert not iterator.producer_alive
     assert iterator.closed
     loader.close()
@@ -222,8 +231,8 @@ def _descendant_kernel_names(event: object) -> set[str]:
 
 
 def _overlaps(left: object, right: object) -> bool:
-    left_range = getattr(left, "time_range")
-    right_range = getattr(right, "time_range")
+    left_range = left.time_range
+    right_range = right.time_range
     return max(left_range.start, right_range.start) < min(
         left_range.end, right_range.end
     )
@@ -257,7 +266,9 @@ def _qualify_profiler_overlap(device: torch.device) -> None:
     _run_overlap_workload(device, matrix)
     torch.cuda.synchronize(device)
 
-    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as trace:
+    with profile(
+        activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]
+    ) as trace:
         result = _run_overlap_workload(device, matrix)
     torch.cuda.synchronize(device)
     assert torch.isfinite(result).all()
@@ -287,7 +298,9 @@ def _qualify_profiler_overlap(device: torch.device) -> None:
         event for event in cuda_events if event.name in compute_kernel_names
     ]
     assert markers, "torch.profiler recorded no synthetic model marker"
-    assert compute_kernel_names, "synthetic model marker launched no CUDA kernels"
+    assert compute_kernel_names, (
+        "synthetic model marker launched no CUDA kernels"
+    )
     assert h2d, "torch.profiler recorded no CUDA H2D activity"
     assert compute, "torch.profiler recorded no synthetic model CUDA kernels"
     assert any(

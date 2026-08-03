@@ -1,8 +1,10 @@
 """This module defines the `TBModel` class."""
 
 from collections.abc import Mapping
+from contextlib import suppress
 from numbers import Integral
-from typing import Any
+from types import MappingProxyType
+from typing import Any, Protocol
 
 import torch
 from lightning import LightningModule
@@ -22,9 +24,11 @@ from topobench.evaluator import (
     EvaluationPassKind,
     EvaluationResult,
     EvaluationSplit,
+    PredictionPayload,
 )
 from topobench.model.supervision import (
     DefaultSupervisionAdapter,
+    SupervisedBatch,
     SupervisionAdapter,
 )
 from topobench.nn.wrappers.graph.gnn_wrapper import (
@@ -34,6 +38,39 @@ from topobench.nn.wrappers.graph.gnn_wrapper import (
 from topobench.profiling.execution_events import (
     ExecutionOperation,
     ExecutionStatus,
+)
+
+
+class _PredictionRowAdapter(Protocol):
+    """Structural prediction-row adapter used without a pipeline dependency."""
+
+    def adapt(
+        self,
+        batch: Data | HeteroData,
+        supervised: SupervisedBatch,
+        *,
+        phase: EvaluationSplit,
+        split_ordinal_start: int = 0,
+    ) -> PredictionPayload:
+        """Build rows from an already-selected supervised batch."""
+
+
+class _PredictionArtifactSink(Protocol):
+    """Narrow sink surface owned by selected-checkpoint orchestration."""
+
+    def update(self, batch: EvaluationBatch) -> None:
+        """Consume the same canonical batch accepted by the evaluator."""
+
+
+_SELECTED_SPLITS = frozenset({"val", "test"})
+_PROVENANCE_DIGEST_FIELDS = frozenset(
+    {
+        "source_fingerprint",
+        "dataset_fingerprint",
+        "split_fingerprint",
+        "model_fingerprint",
+        "transform_fingerprint",
+    }
 )
 
 
@@ -117,8 +154,12 @@ class TBModel(LightningModule):
             logger=False,
             ignore=[
                 "backbone",
+                "backbone_wrapper",
                 "readout",
+                "loss",
                 "feature_encoder",
+                "evaluator",
+                "optimizer",
                 "supervision_adapter",
                 "execution_monitor",
             ],
@@ -153,6 +194,18 @@ class TBModel(LightningModule):
         self._dataloader_optimizer_success_token = 0
         self._dataloader_evaluator_sequence = 0
         self._dataloader_evaluator_count = 0
+        self._prediction_row_adapter: _PredictionRowAdapter | None = None
+        self._prediction_artifact_sink: _PredictionArtifactSink | None = None
+        self._prediction_expected_num_examples: Mapping[
+            EvaluationSplit, int
+        ] = MappingProxyType({})
+        self._prediction_provenance_by_split: Mapping[
+            EvaluationSplit, Mapping[str, str]
+        ] = MappingProxyType({})
+        self._prediction_split_ordinal = 0
+        self._prepared_selected_contexts: dict[
+            EvaluationSplit, EvaluationContext
+        ] = {}
 
         # Optimizer (it also internally manages Scheduler if provided)
         self.optimizer = optimizer
@@ -286,25 +339,41 @@ class TBModel(LightningModule):
         try:
             batch["model_state"] = self.state_str
             model_out = self.forward(batch)
-            model_out = self.process_outputs(model_out=model_out, batch=batch)
+            supervised = self.supervision_adapter.select(
+                model_out=model_out,
+                batch=batch,
+                phase=self.state_str,
+            )
+            model_out = self._apply_supervision(model_out, supervised)
+            prediction_payload: PredictionPayload | None = None
+            artifact_sink: _PredictionArtifactSink | None = None
+            if self._captures_predictions_for(evaluation_context):
+                adapter = self._prediction_row_adapter
+                artifact_sink = self._prediction_artifact_sink
+                assert adapter is not None and artifact_sink is not None
+                prediction_payload = adapter.adapt(
+                    batch,
+                    supervised,
+                    phase=evaluation_context.split,
+                    split_ordinal_start=self._prediction_split_ordinal,
+                )
             evaluation_batch = EvaluationBatch(
-                outputs=model_out["logits"],
-                targets=model_out["labels"],
-                num_examples=model_out["num_supervised_examples"],
+                outputs=supervised.logits,
+                targets=supervised.targets,
+                num_examples=supervised.num_examples,
                 context=evaluation_context,
                 sequence_id=getattr(batch, "sequence_id", None),
+                prediction_payload=prediction_payload,
             )
             model_out = self.loss(model_out=model_out, batch=batch)
         except BaseException:
             if monitor is not None and compute_token is not None:
-                try:
+                with suppress(Exception):
                     monitor.finish_model_compute(
                         compute_token,
                         status=ExecutionStatus.ERROR,
                         evidence={"failure_stage": "model_compute"},
                     )
-                except Exception:
-                    pass
             self._abort_after_failure()
             raise
         if monitor is not None and compute_token is not None:
@@ -336,18 +405,20 @@ class TBModel(LightningModule):
             )
         try:
             self.evaluator.update(evaluation_batch)
+            if artifact_sink is not None:
+                artifact_sink.update(evaluation_batch)
         except BaseException:
             if monitor is not None and evaluator_token is not None:
-                try:
+                with suppress(Exception):
                     monitor.finish(
                         evaluator_token,
                         status=ExecutionStatus.ERROR,
                         evidence={"failure_stage": "evaluator_update"},
                     )
-                except Exception:
-                    pass
             self._abort_after_failure()
             raise
+        if artifact_sink is not None:
+            self._prediction_split_ordinal += supervised.num_examples
         if monitor is not None and evaluator_token is not None:
             monitor.finish(evaluator_token)
         return model_out
@@ -445,10 +516,193 @@ class TBModel(LightningModule):
             batch=batch,
             phase=self.state_str,
         )
+        return self._apply_supervision(model_out, supervised)
+
+    @staticmethod
+    def _apply_supervision(
+        model_out: dict[str, Any],
+        supervised: SupervisedBatch,
+    ) -> dict[str, Any]:
+        """Apply one completed selection to the compatibility output mapping."""
         model_out["logits"] = supervised.logits
         model_out["labels"] = supervised.targets
         model_out["num_supervised_examples"] = supervised.num_examples
         return model_out
+
+    def configure_prediction_artifact_capture(
+        self,
+        adapter: _PredictionRowAdapter,
+        sink: _PredictionArtifactSink,
+        expected_num_examples: Mapping[EvaluationSplit, int],
+        provenance_by_split: (
+            Mapping[EvaluationSplit, Mapping[str, str]] | None
+        ) = None,
+    ) -> None:
+        """Bind one selected-checkpoint prediction capture while idle."""
+        self._require_capture_idle("configure prediction artifact capture")
+        if (
+            self._prediction_row_adapter is not None
+            or self._prediction_artifact_sink is not None
+        ):
+            raise RuntimeError(
+                "prediction artifact capture is already configured"
+            )
+        if not callable(getattr(adapter, "adapt", None)):
+            raise TypeError("adapter must expose a callable adapt method")
+        if not callable(getattr(sink, "update", None)):
+            raise TypeError("sink must expose a callable update method")
+        if (
+            not isinstance(expected_num_examples, Mapping)
+            or set(expected_num_examples) != _SELECTED_SPLITS
+        ):
+            raise ValueError(
+                "expected_num_examples must define exactly val and test"
+            )
+        normalized_counts: dict[EvaluationSplit, int] = {}
+        for split in ("val", "test"):
+            count = expected_num_examples[split]
+            if (
+                isinstance(count, bool)
+                or not isinstance(count, Integral)
+                or count <= 0
+            ):
+                raise ValueError(
+                    f"expected_num_examples[{split!r}] must be positive"
+                )
+            normalized_counts[split] = int(count)
+
+        normalized_provenance: dict[EvaluationSplit, Mapping[str, str]] = {}
+        if provenance_by_split is not None:
+            if (
+                not isinstance(provenance_by_split, Mapping)
+                or set(provenance_by_split) != _SELECTED_SPLITS
+            ):
+                raise ValueError(
+                    "provenance_by_split must define exactly val and test"
+                )
+            setter = getattr(
+                self.evaluator,
+                "configure_selected_result_provenance",
+                None,
+            )
+            if not callable(setter):
+                raise TypeError(
+                    "evaluator does not support selected-result provenance"
+                )
+            for split in ("val", "test"):
+                values = provenance_by_split[split]
+                if (
+                    not isinstance(values, Mapping)
+                    or set(values) != _PROVENANCE_DIGEST_FIELDS
+                ):
+                    raise ValueError(
+                        f"provenance_by_split[{split!r}] must define exactly "
+                        "the selected-result fingerprint fields"
+                    )
+                normalized_values: dict[str, str] = {}
+                for name, value in values.items():
+                    if (
+                        not isinstance(value, str)
+                        or len(value) != 64
+                        or any(
+                            character not in "0123456789abcdef"
+                            for character in value
+                        )
+                    ):
+                        raise ValueError(
+                            f"provenance {name!r} must be a lowercase SHA-256 "
+                            "hex digest"
+                        )
+                    normalized_values[name] = value
+                normalized_provenance[split] = MappingProxyType(
+                    normalized_values
+                )
+
+        self._prediction_row_adapter = adapter
+        self._prediction_artifact_sink = sink
+        self._prediction_expected_num_examples = MappingProxyType(
+            normalized_counts
+        )
+        self._prediction_provenance_by_split = MappingProxyType(
+            normalized_provenance
+        )
+        self._prediction_split_ordinal = 0
+        self._prepared_selected_contexts.clear()
+
+    def clear_prediction_artifact_capture(self) -> None:
+        """Idempotently unbind selected-checkpoint capture while idle."""
+        self._require_capture_idle("clear prediction artifact capture")
+        setter = getattr(
+            self.evaluator,
+            "configure_selected_result_provenance",
+            None,
+        )
+        if callable(setter):
+            setter(None)
+        self._clear_prediction_artifact_capture_state()
+
+    def selected_checkpoint_context(
+        self,
+        split: EvaluationSplit,
+    ) -> EvaluationContext:
+        """Return the exact context reserved for the next selected pass."""
+        if split not in _SELECTED_SPLITS:
+            raise ValueError(
+                "selected checkpoint context split must be val or test"
+            )
+        active = self._active_evaluation_context
+        if active is not None:
+            if (
+                active.split == split
+                and active.pass_kind == "selected_checkpoint"
+            ):
+                return active
+            raise RuntimeError(
+                "selected checkpoint context cannot be prepared during "
+                "another active phase"
+            )
+        if self._selected_checkpoint_id is None:
+            raise RuntimeError(
+                "selected-checkpoint evaluation requires a bound "
+                "SHA-256 checkpoint digest"
+            )
+        context = self._prepared_selected_contexts.get(split)
+        if context is None:
+            context = self._evaluation_context(split, "selected_checkpoint")
+            self._prepared_selected_contexts[split] = context
+        return context
+
+    def _require_capture_idle(self, operation: str) -> None:
+        state = getattr(self.evaluator, "state", None)
+        if self._active_evaluation_context is not None or state in {
+            "active",
+            "failed",
+        }:
+            raise RuntimeError(f"{operation} requires an idle evaluator")
+
+    def _captures_predictions_for(
+        self,
+        context: EvaluationContext,
+    ) -> bool:
+        adapter_bound = self._prediction_row_adapter is not None
+        sink_bound = self._prediction_artifact_sink is not None
+        if adapter_bound != sink_bound:
+            raise RuntimeError(
+                "prediction artifact capture binding is incomplete"
+            )
+        return (
+            adapter_bound
+            and context.pass_kind == "selected_checkpoint"
+            and context.split in _SELECTED_SPLITS
+        )
+
+    def _clear_prediction_artifact_capture_state(self) -> None:
+        self._prediction_row_adapter = None
+        self._prediction_artifact_sink = None
+        self._prediction_expected_num_examples = MappingProxyType({})
+        self._prediction_provenance_by_split = MappingProxyType({})
+        self._prediction_split_ordinal = 0
+        self._prepared_selected_contexts.clear()
 
     def _evaluation_context(
         self,
@@ -482,12 +736,19 @@ class TBModel(LightningModule):
                     "evaluator.policy values must be online, exact, or audit"
                 )
             selected_policy = configured_policy[split]
+        expected_num_examples = (
+            self._prediction_expected_num_examples.get(split)
+            if pass_kind == "selected_checkpoint"
+            and self._prediction_row_adapter is not None
+            else None
+        )
         return EvaluationContext(
             split=split,
             pass_kind=pass_kind,
             policy=selected_policy,
             task=task,
             num_classes=num_classes,
+            expected_num_examples=expected_num_examples,
             checkpoint_id=(
                 self._selected_checkpoint_id
                 if pass_kind == "selected_checkpoint"
@@ -521,9 +782,31 @@ class TBModel(LightningModule):
                 f"selected-checkpoint {split} result must be consumed "
                 "before starting another pass"
             )
-        context = self._evaluation_context(split, pass_kind)
+        context = (
+            self._prepared_selected_contexts.pop(split, None)
+            if pass_kind == "selected_checkpoint"
+            else None
+        )
+        if context is None:
+            context = self._evaluation_context(split, pass_kind)
         self._active_evaluation_context = context
         try:
+            if self._captures_predictions_for(context):
+                self._prediction_split_ordinal = 0
+                provenance_setter = getattr(
+                    self.evaluator,
+                    "configure_selected_result_provenance",
+                    None,
+                )
+                provenance = self._prediction_provenance_by_split.get(split)
+                if provenance is not None:
+                    if not callable(provenance_setter):
+                        raise TypeError(
+                            "evaluator does not support selected-result provenance"
+                        )
+                    provenance_setter(provenance)
+                elif callable(provenance_setter):
+                    provenance_setter(None)
             self.evaluator.begin(context)
         except BaseException:
             self._abort_after_failure()
@@ -574,23 +857,44 @@ class TBModel(LightningModule):
         if context.pass_kind == "selected_checkpoint":
             self._pending_selected_results[split] = result
 
-    def _abort_after_failure(self, *, force: bool = False) -> None:
-        """Clear evaluator and model phase state while preserving root errors."""
+    def _abort_after_failure(
+        self,
+        *,
+        force: bool = False,
+        preserve_root_error: bool = True,
+    ) -> None:
+        """Clear evaluator and capture state without masking root errors."""
         context = self._active_evaluation_context
         state = getattr(self.evaluator, "state", None)
         if not force and context is None and state not in {"active", "failed"}:
             return
+        abort_error: BaseException | None = None
         try:
             self.evaluator.abort()
-        except RuntimeError:
-            if not force and context is not None:
-                raise
+        except BaseException as error:
+            abort_error = error
         finally:
             self._active_evaluation_context = None
+            self._prediction_split_ordinal = 0
+            self._prepared_selected_contexts.clear()
+            provenance_setter = getattr(
+                self.evaluator,
+                "configure_selected_result_provenance",
+                None,
+            )
+            if callable(provenance_setter):
+                try:
+                    provenance_setter(None)
+                except BaseException as error:
+                    if abort_error is None:
+                        abort_error = error
+            self._clear_prediction_artifact_capture_state()
+        if abort_error is not None and not preserve_root_error:
+            raise abort_error
 
     def abort_evaluation(self) -> None:
         """Abort an active evaluator phase, including throwaway probes."""
-        self._abort_after_failure()
+        self._abort_after_failure(preserve_root_error=False)
 
     def set_selected_checkpoint_id(self, checkpoint_id: str) -> None:
         """Bind one validated checkpoint identity to final val/test contexts."""
@@ -614,6 +918,7 @@ class TBModel(LightningModule):
                 "checkpoint identity cannot change with unconsumed results"
             )
         self._selected_checkpoint_id = checkpoint_id
+        self._prepared_selected_contexts.clear()
 
     def take_selected_checkpoint_result(
         self,
@@ -779,14 +1084,12 @@ class TBModel(LightningModule):
             )
         except BaseException:
             if monitor_token is not None:
-                try:
+                with suppress(Exception):
                     monitor.finish(
                         monitor_token,
                         status=ExecutionStatus.ERROR,
                         evidence={"failure_stage": "optimizer"},
                     )
-                except Exception:
-                    pass
             raise
         finally:
             handle.remove()
