@@ -608,6 +608,7 @@ class _RecordingEvaluator:
 
     task: str = "classification"
     num_classes: int = 2
+    policy: dict[str, str] | None = None
     fail_update: bool = False
     contexts: list[EvaluationContext] = field(default_factory=list)
     batches: list[EvaluationBatch] = field(default_factory=list)
@@ -685,6 +686,20 @@ def _boundary_model(
     model.loss.side_effect = loss_side_effect
     model.log = MagicMock()
     return model, configured_adapter, configured_evaluator
+
+
+def test_model_dispatches_the_evaluator_configured_split_policy() -> None:
+    evaluator = _RecordingEvaluator(
+        policy={"train": "online", "val": "audit", "test": "exact"}
+    )
+    model, _, _ = _boundary_model(evaluator=evaluator)
+
+    model.on_validation_epoch_start()
+
+    assert evaluator.active_context is not None
+    assert evaluator.active_context.split == "val"
+    assert evaluator.active_context.policy == "audit"
+    model.abort_evaluation()
 
 
 def test_phase_contexts_finalize_once_and_do_not_leak() -> None:

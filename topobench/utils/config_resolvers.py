@@ -224,15 +224,9 @@ def get_monitor_metric(task, metric):
     ValueError
         If the task is invalid.
     """
-    if (
-        task == "classification"
-        or task == "regression"
-        or task == "multioutput classification"
-        or task == "multilabel classification"
-    ):
+    if task in ("classification", "regression"):
         return f"val/{metric}"
-    else:
-        raise ValueError(f"Invalid task {task}")
+    raise ValueError(f"Invalid task {task}")
 
 
 def get_monitor_mode(task):
@@ -253,14 +247,11 @@ def get_monitor_mode(task):
     ValueError
         If the task is invalid.
     """
-    if task == "classification" or task == "multilabel classification":
+    if task == "classification":
         return "max"
-
-    elif task == "regression" or task == "multioutput classification":
+    if task == "regression":
         return "min"
-
-    else:
-        raise ValueError(f"Invalid task {task}")
+    raise ValueError(f"Invalid task {task}")
 
 
 def get_pse_dimensions(encodings, parameters):
@@ -688,7 +679,9 @@ def infer_list_length_plus_one(list):
 
 
 def get_default_metrics(task, num_classes, metrics=None):
-    """Return validated metrics for the reduced evaluator vocabulary."""
+    """Return metrics validated against the authoritative evaluator registry."""
+    from topobench.evaluator.registry import BUILTIN_METRIC_SPECS
+
     supported_tasks = {"classification", "regression"}
     if task not in supported_tasks:
         raise ValueError(
@@ -701,51 +694,32 @@ def get_default_metrics(task, num_classes, metrics=None):
     if task == "regression" and num_classes != 1:
         raise ValueError("regression num_classes must be 1")
 
-    classification_metrics = {
-        "accuracy",
-        "precision",
-        "recall",
-        "f1",
-        "auroc",
-        "auprc",
-        "somers_d",
-    }
-    regression_metrics = {"mae", "mse", "rmse", "r2"}
-    binary_only_metrics = {"auprc", "somers_d"}
-
     if metrics is None:
-        if task == "classification":
-            defaults = ["accuracy", "precision", "recall", "f1", "auroc"]
-            if num_classes == 2:
-                defaults.extend(["auprc", "somers_d"])
-            return defaults
-        return ["mae", "mse", "rmse", "r2"]
+        return [
+            name
+            for name, spec in BUILTIN_METRIC_SPECS.items()
+            if task in spec.tasks
+            and (not spec.binary_only or num_classes == 2)
+        ]
 
     selected = list(metrics)
     if len(set(selected)) != len(selected):
         raise ValueError("Duplicate metric names are not allowed")
     for metric in selected:
-        if metric in binary_only_metrics and num_classes != 2:
+        if metric not in BUILTIN_METRIC_SPECS:
+            raise ValueError(
+                f"Unsupported metric {metric!r} for {task}"
+            )
+        spec = BUILTIN_METRIC_SPECS[metric]
+        if task not in spec.tasks:
+            registry_task = "/".join(sorted(spec.tasks))
+            raise ValueError(
+                f"{metric} is a {registry_task} metric, not a {task} metric"
+            )
+        if spec.binary_only and num_classes != 2:
             raise ValueError(
                 f"metric {metric!r} is available only for binary "
                 "classification"
-            )
-        if task == "classification" and metric in regression_metrics:
-            raise ValueError(
-                f"{metric} is a regression metric, not a classification metric"
-            )
-        if task == "regression" and metric in classification_metrics:
-            raise ValueError(
-                f"{metric} is a classification metric, not a regression metric"
-            )
-        active_metrics = (
-            classification_metrics
-            if task == "classification"
-            else regression_metrics
-        )
-        if metric not in active_metrics:
-            raise ValueError(
-                f"Unsupported metric {metric!r} for {task}"
             )
     return selected
 

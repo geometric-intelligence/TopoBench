@@ -4,5 +4,15 @@ num_classes: ${dataset.parameters.num_classes}
 
 # Automatically selects the approved metrics for the reduced task contract.
 metrics: ${get_default_metrics:${evaluator.task},${dataset.parameters.num_classes},${oc.select:dataset.parameters.metrics,null}}
-# Select classification/regression config files to manually define the metrics
+
+policy:
+  train: online
+  val: exact
+  test: exact
+online:
+  ranking_thresholds: 512
+exact:
+  max_ranking_bytes: 536870912
+  buffer_device: cpu
+undefined_metric_policy: error
 

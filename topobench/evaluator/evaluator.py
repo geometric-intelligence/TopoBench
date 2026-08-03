@@ -27,6 +27,80 @@ from .types import (
 _SUPPORTED_TASKS = frozenset({"classification", "regression"})
 
 
+def _validate_policy_config(
+    policy: Mapping[str, str] | None,
+) -> dict[str, str] | None:
+    if policy is None:
+        return None
+    if not isinstance(policy, Mapping):
+        raise TypeError("policy must be a mapping")
+    required_splits = {"train", "val", "test"}
+    if set(policy) != required_splits:
+        raise ValueError("policy must define exactly train, val, and test")
+    normalized = dict(policy)
+    allowed = {"online", "exact", "audit"}
+    if any(value not in allowed for value in normalized.values()):
+        raise ValueError("policy values must be online, exact, or audit")
+    return normalized
+
+
+def _resolve_online_config(
+    online: Mapping[str, Any] | None,
+    ranking_thresholds: int | None,
+) -> int:
+    if ranking_thresholds is not None:
+        raise ValueError(
+            "ranking_thresholds is removed; use online.ranking_thresholds"
+        )
+    if online is None:
+        return ONLINE_RANKING_THRESHOLDS
+    if not isinstance(online, Mapping):
+        raise TypeError("online must be a mapping")
+    if set(online) != {"ranking_thresholds"}:
+        raise ValueError("online must define exactly ranking_thresholds")
+    threshold_count = online["ranking_thresholds"]
+    if (
+        isinstance(threshold_count, bool)
+        or not isinstance(threshold_count, int)
+        or threshold_count < 2
+    ):
+        raise ValueError(
+            "online.ranking_thresholds must be an integer of at least 2"
+        )
+    return threshold_count
+
+
+def _resolve_exact_config(
+    exact: Mapping[str, Any] | None,
+    max_exact_ranking_bytes: int | None,
+) -> int:
+    if max_exact_ranking_bytes is not None:
+        raise ValueError(
+            "max_exact_ranking_bytes is removed; "
+            "use exact.max_ranking_bytes"
+        )
+    if exact is None:
+        return DEFAULT_MAX_EXACT_RANKING_BYTES
+    if not isinstance(exact, Mapping):
+        raise TypeError("exact must be a mapping")
+    if set(exact) != {"max_ranking_bytes", "buffer_device"}:
+        raise ValueError(
+            "exact must define exactly max_ranking_bytes and buffer_device"
+        )
+    if exact["buffer_device"] != "cpu":
+        raise ValueError("exact.buffer_device must be cpu")
+    byte_limit = exact["max_ranking_bytes"]
+    if (
+        isinstance(byte_limit, bool)
+        or not isinstance(byte_limit, int)
+        or byte_limit <= 0
+    ):
+        raise ValueError(
+            "exact.max_ranking_bytes must be a positive integer"
+        )
+    return byte_limit
+
+
 class TBEvaluator(AbstractEvaluator):
     """Evaluate one reduced task through an explicit lifecycle."""
 
@@ -38,8 +112,11 @@ class TBEvaluator(AbstractEvaluator):
         metrics: Sequence[str],
         backends: Mapping[str, EvaluatorBackend] | None = None,
         custom_specs: Sequence[MetricSpec] = (),
-        ranking_thresholds: int = ONLINE_RANKING_THRESHOLDS,
-        max_exact_ranking_bytes: int = DEFAULT_MAX_EXACT_RANKING_BYTES,
+        policy: Mapping[str, str] | None = None,
+        online: Mapping[str, Any] | None = None,
+        exact: Mapping[str, Any] | None = None,
+        ranking_thresholds: int | None = None,
+        max_exact_ranking_bytes: int | None = None,
         undefined_metric_policy: str = "error",
         device: torch.device | str | None = None,
     ) -> None:
@@ -61,6 +138,16 @@ class TBEvaluator(AbstractEvaluator):
             raise ValueError("Metric names must be non-empty strings")
         if len(set(metric_names)) != len(metric_names):
             raise ValueError("Duplicate metric names are not allowed")
+
+        configured_policy = _validate_policy_config(policy)
+        configured_ranking_thresholds = _resolve_online_config(
+            online,
+            ranking_thresholds,
+        )
+        configured_max_ranking_bytes = _resolve_exact_config(
+            exact,
+            max_exact_ranking_bytes,
+        )
 
         metric_backend: MetricPolicyBackend | None = None
         if backends is None:
@@ -93,8 +180,8 @@ class TBEvaluator(AbstractEvaluator):
                 num_classes=num_classes,
                 metrics=metric_names,
                 custom_specs=custom_specs,
-                ranking_thresholds=ranking_thresholds,
-                max_exact_ranking_bytes=max_exact_ranking_bytes,
+                ranking_thresholds=configured_ranking_thresholds,
+                max_exact_ranking_bytes=configured_max_ranking_bytes,
                 undefined_metric_policy=undefined_metric_policy,
                 device=device,
             )
@@ -120,6 +207,7 @@ class TBEvaluator(AbstractEvaluator):
         self.task = task
         self.num_classes = num_classes
         self.metric_names = metric_names
+        self._policy = configured_policy
         self._metric_backend = metric_backend
         self._backends = mutable_backends
         self._state: Literal["idle", "active", "failed"] = "idle"
@@ -138,6 +226,12 @@ class TBEvaluator(AbstractEvaluator):
     @property
     def context(self) -> EvaluationContext | None:
         return self._context
+
+    @property
+    def policy(self) -> Mapping[str, str] | None:
+        if self._policy is None:
+            return None
+        return MappingProxyType(self._policy)
 
     @property
     def backends(self) -> Mapping[str, EvaluatorBackend]:
@@ -165,6 +259,13 @@ class TBEvaluator(AbstractEvaluator):
         if context.task != self.task or context.num_classes != self.num_classes:
             raise ValueError(
                 "EvaluationContext task and vocabulary must match construction"
+            )
+        if (
+            self.policy is not None
+            and self.policy[context.split] != context.policy
+        ):
+            raise ValueError(
+                "EvaluationContext policy must match configured split policy"
             )
 
         self._context = context

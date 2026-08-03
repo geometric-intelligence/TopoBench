@@ -118,8 +118,12 @@ class TestConfigResolvers:
         out = get_monitor_metric("classification", "F1")
         assert out == "val/F1"
 
-        assert get_monitor_metric("multioutput classification", "accuracy") == "val/accuracy"
-        assert get_monitor_metric("multilabel classification", "f1") == "val/f1"
+        for removed_task in (
+            "multioutput classification",
+            "multilabel classification",
+        ):
+            with pytest.raises(ValueError, match="Invalid task"):
+                get_monitor_metric(removed_task, "accuracy")
 
         with pytest.raises(ValueError, match="Invalid task") as e:
             get_monitor_metric("mix", "F1")
@@ -132,8 +136,12 @@ class TestConfigResolvers:
         out = get_monitor_mode("classification")
         assert out == "max"
 
-        assert get_monitor_mode("multilabel classification") == "max"
-        assert get_monitor_mode("multioutput classification") == "min"
+        for removed_task in (
+            "multilabel classification",
+            "multioutput classification",
+        ):
+            with pytest.raises(ValueError, match="Invalid task"):
+                get_monitor_mode(removed_task)
 
         with pytest.raises(ValueError, match="Invalid task") as e:
             get_monitor_mode("mix")
@@ -191,19 +199,45 @@ class TestConfigResolvers:
 
 
 
-    def test_get_default_metrics_with_params(self):
-        """Explicit metrics are validated against the active vocabulary."""
-        out = get_default_metrics(
-            "classification", 10, ["accuracy", "precision"]
-        )
-        assert out == ["accuracy", "precision"]
+    def test_explicit_metrics_are_validated_against_active_registry(self):
+        """Dataset metric overrides preserve registered names and order."""
+        selected = ["accuracy", "precision", "auroc"]
+        assert get_default_metrics("classification", 10, selected) == selected
 
+    @pytest.mark.parametrize("metric", ["auprc", "somers_d"])
+    def test_binary_only_metric_overrides_reject_multiclass_vocabularies(
+        self, metric
+    ):
         with pytest.raises(ValueError, match="binary classification"):
-            get_default_metrics("classification", 3, ["auprc"])
-        with pytest.raises(ValueError, match="classification metric"):
-            get_default_metrics("regression", 1, ["accuracy"])
-        with pytest.raises(ValueError, match="regression metric"):
-            get_default_metrics("classification", 3, ["mae"])
+            get_default_metrics("classification", 3, [metric])
+
+    @pytest.mark.parametrize(
+        ("task", "num_classes", "metric", "foreign_task"),
+        [
+            ("regression", 1, "accuracy", "classification"),
+            ("classification", 3, "mae", "regression"),
+        ],
+    )
+    def test_metric_overrides_reject_names_from_another_registry(
+        self, task, num_classes, metric, foreign_task
+    ):
+        with pytest.raises(ValueError, match=f"{foreign_task} metric"):
+            get_default_metrics(task, num_classes, [metric])
+
+    @pytest.mark.parametrize(
+        "metric",
+        [
+            "example",
+            "confusion_matrix",
+            "f1_macro",
+            "f1_weighted",
+            "accuracy-0",
+            "accuracy_0",
+        ],
+    )
+    def test_metric_overrides_reject_removed_names(self, metric):
+        with pytest.raises(ValueError, match="Unsupported metric"):
+            get_default_metrics("classification", 3, [metric])
 
     def test_set_preserve_edge_attr(self):
         """Surviving graph models retain the dataset's declared default."""

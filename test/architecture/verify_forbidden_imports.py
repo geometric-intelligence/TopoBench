@@ -27,6 +27,7 @@ SUPPORTED_PUBLIC_MODULES = (
     "topobench",
     "topobench.data",
     "topobench.data.loaders",
+    "topobench.evaluator",
     "topobench.transforms",
     "topobench.nn.backbones",
     "topobench.nn.wrappers",

@@ -450,10 +450,30 @@ class TBModel(LightningModule):
             raise TypeError("evaluator must expose a supported task")
         if isinstance(num_classes, bool) or not isinstance(num_classes, int):
             raise TypeError("evaluator must expose an integer num_classes")
+        if split not in {"train", "val", "test"}:
+            raise ValueError("split must be train, val, or test")
+        configured_policy = getattr(self.evaluator, "policy", None)
+        if configured_policy is None:
+            selected_policy = "online" if split == "train" else "exact"
+        else:
+            if not isinstance(configured_policy, Mapping):
+                raise TypeError("evaluator.policy must be a mapping")
+            if set(configured_policy) != {"train", "val", "test"}:
+                raise ValueError(
+                    "evaluator.policy must define exactly train, val, and test"
+                )
+            if any(
+                policy not in {"online", "exact", "audit"}
+                for policy in configured_policy.values()
+            ):
+                raise ValueError(
+                    "evaluator.policy values must be online, exact, or audit"
+                )
+            selected_policy = configured_policy[split]
         return EvaluationContext(
             split=split,
             pass_kind=pass_kind,
-            policy="online" if split == "train" else "exact",
+            policy=selected_policy,
             task=task,
             num_classes=num_classes,
         )

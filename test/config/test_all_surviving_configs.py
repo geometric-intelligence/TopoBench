@@ -173,6 +173,21 @@ REQUIRED_QUALIFICATION_FIELDS = frozenset(
         "evidence_test",
     }
 )
+EXPECTED_EVALUATOR_POLICY: Mapping[str, str] = {
+    "train": "online",
+    "val": "exact",
+    "test": "exact",
+}
+EXPECTED_ONLINE_RESOURCES: Mapping[str, int] = {
+    "ranking_thresholds": 512,
+}
+EXPECTED_EXACT_RESOURCES: Mapping[str, int | str] = {
+    "max_ranking_bytes": 536870912,
+    "buffer_device": "cpu",
+}
+REMOVED_EVALUATOR_FIELDS = frozenset(
+    {"multioutput_classes", "auroc_thresholds", "max_auroc_bytes"}
+)
 
 
 def _is_runnable_graph_dataset(dataset: Any) -> bool:
@@ -293,6 +308,37 @@ def _fully_resolve(cfg: DictConfig) -> dict[str, Any]:
     )
     assert isinstance(resolved, dict)
     return resolved
+
+
+def _nested_mapping_keys(value: Any) -> frozenset[str]:
+    if isinstance(value, Mapping):
+        return frozenset(value) | frozenset(
+            key
+            for child in value.values()
+            for key in _nested_mapping_keys(child)
+        )
+    if isinstance(value, list):
+        return frozenset(
+            key for child in value for key in _nested_mapping_keys(child)
+        )
+    return frozenset()
+
+
+def _assert_authoritative_evaluator_config(cfg: DictConfig) -> None:
+    evaluator = OmegaConf.to_container(
+        cfg.evaluator,
+        resolve=True,
+        throw_on_missing=True,
+    )
+    assert isinstance(evaluator, dict)
+    assert evaluator.get("policy") == EXPECTED_EVALUATOR_POLICY
+    assert evaluator.get("online") == EXPECTED_ONLINE_RESOURCES
+    assert evaluator.get("exact") == EXPECTED_EXACT_RESOURCES
+    assert evaluator.get("undefined_metric_policy") == "error"
+    assert REMOVED_EVALUATOR_FIELDS.isdisjoint(
+        _nested_mapping_keys(evaluator)
+    )
+    assert cfg.preflight.enabled is True
 
 
 def _pytest_node_prefixes(path: Path) -> frozenset[str]:
@@ -578,6 +624,7 @@ def test_every_declared_pair_composes_resolves_validates_and_builds_models(
     model_selector: str,
 ) -> None:
     cfg = _compose_pair(dataset_selector, model_selector)
+    _assert_authoritative_evaluator_config(cfg)
 
     validate_domain_composition(cfg)
     _fully_resolve(cfg)
@@ -755,6 +802,7 @@ def test_every_experiment_composes_resolves_and_references_existing_selectors(
     monkeypatch.setenv("WANDB_MODE", "disabled")
     monkeypatch.setenv("WANDB_DISABLED", "true")
     cfg = _compose(f"experiment={experiment}")
+    _assert_authoritative_evaluator_config(cfg)
     choices = cfg.hydra.runtime.choices
     expected_dataset, expected_model, expected_pipeline = EXPECTED_EXPERIMENTS[
         experiment
