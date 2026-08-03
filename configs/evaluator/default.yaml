@@ -1,12 +1,8 @@
 _target_: topobench.evaluator.evaluator.TBEvaluator
 task: ${dataset.parameters.task}
-task_level: ${dataset.parameters.task_level}
 num_classes: ${dataset.parameters.num_classes}
 
-# Automatically selects the default metrics depending on the task
-# Classification: [accuracy, precision, recall, auroc]
-# Regression: [mae, mse]
+# Automatically selects the approved metrics for the reduced task contract.
 metrics: ${get_default_metrics:${evaluator.task},${dataset.parameters.num_classes},${oc.select:dataset.parameters.metrics,null}}
 # Select classification/regression config files to manually define the metrics
 
-multioutput_classes: ${oc.select:dataset.parameters.multioutput_classes,null}  # Only for multi-output tasks

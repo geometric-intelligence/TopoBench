@@ -45,24 +45,43 @@ class TestConfigResolvers:
         out = get_default_trainer()
         assert isinstance(out, str)
 
-    def test_get_default_metrics(self):
-        """Test get_default_metrics."""
-        out = get_default_metrics("classification", 10)
-        assert out == ["accuracy", "precision", "recall", "auroc", "f1"]
+    @pytest.mark.parametrize(
+        ("task", "num_classes", "expected"),
+        [
+            (
+                "classification",
+                3,
+                ["accuracy", "precision", "recall", "f1", "auroc"],
+            ),
+            (
+                "classification",
+                2,
+                [
+                    "accuracy",
+                    "precision",
+                    "recall",
+                    "f1",
+                    "auroc",
+                    "auprc",
+                    "somers_d",
+                ],
+            ),
+            ("regression", 1, ["mae", "mse", "rmse", "r2"]),
+        ],
+    )
+    def test_get_default_metrics(
+        self, task, num_classes, expected
+    ):
+        """Default metrics use the reduced task and metric vocabulary."""
+        assert get_default_metrics(task, num_classes) == expected
 
-        out = get_default_metrics("regression", 1)
-        assert out == ["mse", "mae"]
-
-        # Test for multioutput and multilabel classification
-        out = get_default_metrics("multioutput classification", 2)
-        expected = ["accuracy-0", "precision-0", "recall-0", "f1-0", "accuracy-1", "precision-1", "recall-1", "f1-1"]
-        assert out == expected
-
-        out = get_default_metrics("multilabel classification", 2)
-        assert out == expected
-
-        with pytest.raises(ValueError, match="Invalid task") as e:
-            get_default_metrics("some_task", 2)
+    @pytest.mark.parametrize(
+        "task",
+        ["multioutput classification", "multilabel classification", "other"],
+    )
+    def test_get_default_metrics_rejects_removed_tasks(self, task):
+        with pytest.raises(ValueError, match="Supported tasks"):
+            get_default_metrics(task, 2)
 
     def test_get_default_transform(self):
         """Choose only same-domain dataset/model defaults."""
@@ -173,18 +192,18 @@ class TestConfigResolvers:
 
 
     def test_get_default_metrics_with_params(self):
-        """Test get_default_metrics with explicit metrics."""
-        out = get_default_metrics("classification", 10, ["accuracy", "precision"])
+        """Explicit metrics are validated against the active vocabulary."""
+        out = get_default_metrics(
+            "classification", 10, ["accuracy", "precision"]
+        )
         assert out == ["accuracy", "precision"]
 
-        out = get_default_metrics("classification", 10)
-        assert out == ["accuracy", "precision", "recall", "auroc", "f1"]
-
-        out = get_default_metrics("regression", 1)
-        assert out == ["mse", "mae"]
-
-        with pytest.raises(ValueError, match="Invalid task") as e:
-            get_default_metrics("some_task", 2)
+        with pytest.raises(ValueError, match="binary classification"):
+            get_default_metrics("classification", 3, ["auprc"])
+        with pytest.raises(ValueError, match="classification metric"):
+            get_default_metrics("regression", 1, ["accuracy"])
+        with pytest.raises(ValueError, match="regression metric"):
+            get_default_metrics("classification", 3, ["mae"])
 
     def test_set_preserve_edge_attr(self):
         """Surviving graph models retain the dataset's declared default."""

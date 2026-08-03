@@ -1,364 +1,183 @@
-"""Test the TBEvaluator class."""
+"""Tests for the reduced evaluator construction surface."""
+
+from collections import OrderedDict
+
 import pytest
 import torch
-from topobench.evaluator import TBEvaluator
+
+from topobench.evaluator import EvaluationBatch, EvaluationContext, TBEvaluator
 
 
-class TestTBEvaluator:
-    """Test the TBEvaluator class."""
+@pytest.mark.parametrize(
+    "task",
+    ["multilabel classification", "multioutput classification", "wrong_task"],
+)
+def test_unsupported_tasks_fail_during_construction(task: str) -> None:
+    with pytest.raises(ValueError, match="Supported tasks"):
+        TBEvaluator(task=task, num_classes=3, metrics=["accuracy"])
 
-    def setup_method(self):
-        """Setup the test."""
-        self.classification_metrics = ["accuracy", "precision", "recall", "auroc"]
-        self.evaluator_classification = TBEvaluator(
+
+@pytest.mark.parametrize("metric", ["auprc", "somers_d"])
+def test_binary_only_metrics_reject_nonbinary_vocabularies(metric: str) -> None:
+    with pytest.raises(ValueError, match="num_classes == 2"):
+        TBEvaluator(
+            task="classification", num_classes=3, metrics=[metric]
+        )
+
+
+@pytest.mark.parametrize(
+    "metric",
+    [
+        "example",
+        "confusion_matrix",
+        "f1_macro",
+        "f1_weighted",
+        "accuracy-0",
+        "f1_1",
+    ],
+)
+def test_removed_metric_names_fail_during_construction(metric: str) -> None:
+    with pytest.raises(ValueError, match="Unsupported metric"):
+        TBEvaluator(
+            task="classification", num_classes=3, metrics=[metric]
+        )
+
+
+def test_duplicate_metrics_fail_during_construction() -> None:
+    with pytest.raises(ValueError, match="Duplicate metric"):
+        TBEvaluator(
             task="classification",
             num_classes=3,
-            metrics=self.classification_metrics
-        )
-        self.regression_metrics = ["example", "mae", "mse", "rmse", "r2"]
-        self.evaluator_regression = TBEvaluator(
-            task="regression",
-            num_classes=1,
-            metrics=self.regression_metrics
+            metrics=["accuracy", "accuracy"],
         )
 
-    def test_repr(self):
-        """Test the __repr__ method."""
-        repr_str = self.evaluator_classification.__repr__()
-        assert "TBEvaluator" in repr_str
-        assert "classification" in repr_str
 
-        repr_str = self.evaluator_regression.__repr__()
-        assert "TBEvaluator" in repr_str
-        assert "regression" in repr_str
-
-    def test_classification_update_and_compute(self):
-        """Test the update and compute methods for classification."""
-        # Create deterministic data for testing
-        logits = torch.tensor([[2.0, 0.1, 0.1], [0.1, 2.0, 0.1], [0.1, 0.1, 2.0]])
-        labels = torch.tensor([0, 1, 2])
-
-        self.evaluator_classification.update({"logits": logits, "labels": labels})
-        out = self.evaluator_classification.compute()
-
-        # Check all metrics are present
-        for metric in self.classification_metrics:
-            assert metric in out, f"Metric {metric} not found in output"
-
-        # Check accuracy is 1.0 (perfect prediction)
-        assert out["accuracy"] == pytest.approx(1.0, abs=0.01)
-
-    def test_regression_update_and_compute(self):
-        """Test the update and compute methods for regression."""
-        # Create deterministic data
-        logits = torch.tensor([[1.0], [2.0], [3.0]])
-        labels = torch.tensor([[1.1], [2.1], [3.1]])
-
-        self.evaluator_regression.update({"logits": logits, "labels": labels})
-        out = self.evaluator_regression.compute()
-
-        # Check all metrics are present
-        for metric in self.regression_metrics:
-            assert metric in out, f"Metric {metric} not found in output"
-
-        # MAE should be approximately 0.1
-        assert out["mae"] < 0.2
-
-    def test_regression_with_different_shapes(self):
-        """Test regression with different tensor shapes."""
-        # Test with 2D predictions (required shape for regression)
-        logits = torch.randn(10, 1)
-        labels = torch.randn(10, 1)
-
-        self.evaluator_regression.update({"logits": logits, "labels": labels})
-        out = self.evaluator_regression.compute()
-        assert "mae" in out
-
-    def test_binary_classification(self):
-        """Test binary classification (num_classes=2)."""
-        evaluator = TBEvaluator(
-            task="classification",
-            num_classes=2,
-            metrics=["accuracy", "f1", "precision", "recall"]
+def test_classification_round_trip_uses_typed_lifecycle() -> None:
+    evaluator = TBEvaluator(
+        task="classification", num_classes=3, metrics=["accuracy"]
+    )
+    context = EvaluationContext(
+        split="val",
+        pass_kind="fit_epoch",
+        policy="exact",
+        task="classification",
+        num_classes=3,
+        expected_num_examples=3,
+    )
+    evaluator.begin(context)
+    evaluator.update(
+        EvaluationBatch(
+            outputs=torch.tensor(
+                [[9.0, 0.0, 0.0], [0.0, 8.0, 0.0], [0.0, 0.0, 7.0]]
+            ),
+            targets=torch.tensor([0, 1, 2], dtype=torch.long),
+            num_examples=3,
         )
+    )
 
-        logits = torch.tensor([[2.0, 0.1], [0.1, 2.0], [2.0, 0.1]])
-        labels = torch.tensor([0, 1, 0])
+    result = evaluator.finalize()
 
-        evaluator.update({"logits": logits, "labels": labels})
-        out = evaluator.compute()
+    assert tuple(result.metrics) == ("accuracy",)
+    assert result.metrics["accuracy"] == pytest.approx(1.0)
+    assert result.num_examples == 3
+    assert evaluator.state == "idle"
 
-        assert out["accuracy"] == pytest.approx(1.0, abs=0.01)
 
-    def test_multiclass_classification(self):
-        """Test multiclass classification with more classes."""
-        evaluator = TBEvaluator(
-            task="classification",
-            num_classes=5,
-            metrics=["accuracy", "f1_macro", "f1_weighted"]
+def test_regression_round_trip_preserves_metric_order() -> None:
+    evaluator = TBEvaluator(
+        task="regression",
+        num_classes=1,
+        metrics=OrderedDict.fromkeys(["mae", "mse", "rmse", "r2"]),
+    )
+    context = EvaluationContext(
+        split="test",
+        pass_kind="selected_checkpoint",
+        policy="exact",
+        task="regression",
+        num_classes=1,
+        expected_num_examples=3,
+    )
+    evaluator.begin(context)
+    evaluator.update(
+        EvaluationBatch(
+            outputs=torch.tensor([[0.0], [2.0], [5.0]]),
+            targets=torch.tensor([[0.0], [1.0], [4.0]]),
+            num_examples=3,
         )
+    )
 
-        logits = torch.randn(20, 5)
-        labels = torch.randint(0, 5, (20,))
+    result = evaluator.finalize()
 
-        evaluator.update({"logits": logits, "labels": labels})
-        out = evaluator.compute()
+    assert tuple(result.metrics) == ("mae", "mse", "rmse", "r2")
 
-        assert "accuracy" in out
-        assert "f1_macro" in out
-        assert "f1_weighted" in out
 
-    def test_confusion_matrix_metric(self):
-        """Test that confusion matrix metric works."""
-        evaluator = TBEvaluator(
-            task="classification",
-            num_classes=3,
-            metrics=["accuracy", "confusion_matrix"]
+def test_repr_names_task_and_configured_metric_order() -> None:
+    evaluator = TBEvaluator(
+        task="classification",
+        num_classes=3,
+        metrics=["accuracy", "f1"],
+    )
+
+    assert repr(evaluator) == (
+        "TBEvaluator(task='classification', num_classes=3, "
+        "metrics=('accuracy', 'f1'))"
+    )
+
+
+def test_audit_result_integrates_expanded_metric_keys_and_metadata() -> None:
+    evaluator = TBEvaluator(
+        task="classification",
+        num_classes=2,
+        metrics=["accuracy", "auroc", "auprc", "somers_d"],
+    )
+    context = EvaluationContext(
+        split="val",
+        pass_kind="fit_epoch",
+        policy="audit",
+        task="classification",
+        num_classes=2,
+        expected_num_examples=4,
+    )
+    evaluator.begin(context)
+    evaluator.update(
+        EvaluationBatch(
+            outputs=torch.tensor(
+                [[3.0, 0.0], [0.0, 3.0], [1.2, 0.4], [0.1, 1.7]]
+            ),
+            targets=torch.tensor([0, 1, 0, 1]),
+            num_examples=4,
         )
+    )
 
-        logits = torch.tensor([[2.0, 0.1, 0.1], [0.1, 2.0, 0.1], [0.1, 0.1, 2.0]])
-        labels = torch.tensor([0, 1, 2])
+    result = evaluator.finalize()
 
-        evaluator.update({"logits": logits, "labels": labels})
-        out = evaluator.compute()
-
-        assert "confusion_matrix" in out
-        # Should be identity matrix for perfect prediction
-        cm = out["confusion_matrix"]
-        assert cm.shape == (3, 3)
-
-    def test_not_implemented_task(self):
-        """Test error handling for invalid tasks."""
-        with pytest.raises(ValueError, match="Invalid task"):
-            TBEvaluator(task="wrong_task", num_classes=2, metrics=["accuracy"])
-
-    def test_multilabel_not_implemented(self):
-        """Test that multilabel classification raises NotImplementedError."""
-        evaluator = TBEvaluator(
-            task="multilabel classification",
-            num_classes=3,
-            metrics=["accuracy"]
-        )
-
-        with pytest.raises(NotImplementedError, match="Multilabel classification"):
-            evaluator.update({
-                "logits": torch.tensor([[1, 0, 0], [0, 1, 1]]),
-                "labels": torch.tensor([[1, 1, 0], [0, 1, 1]])
-            })
-
-    def test_multioutput_classification(self):
-        """Test the update and compute methods for multioutput classification."""
-        multioutput_classes = [3, 2]
-        metrics = ["accuracy-0", "f1-0", "accuracy-1", "f1-1"]
-        evaluator = TBEvaluator(
-            task="multioutput classification",
-            multioutput_classes=multioutput_classes,
-            metrics=metrics
-        )
-
-        # Predictions for 2 outputs.
-        # dim 0 has 3 classes, dim 1 has 2 classes.
-        # Evaluator rounds and clamps predictions.
-        logits = torch.tensor([
-            [0.1, 1.1], # rounded: 0, 1
-            [0.9, 0.2], # rounded: 1, 0
-            [2.4, 0.7], # rounded: 2, 1
-        ])
-        labels = torch.tensor([
-            [0, 1],
-            [1, 0],
-            [2, 1],
-        ])
-
-        evaluator.update({"logits": logits, "labels": labels})
-        out = evaluator.compute()
-
-        # Check all metrics are present
-        for metric in metrics:
-            assert metric in out, f"Metric {metric} not found in output"
-
-        # Accuracy should be 1.0 for both dimensions
-        assert out["accuracy-0"] == pytest.approx(1.0, abs=0.01)
-        assert out["accuracy-1"] == pytest.approx(1.0, abs=0.01)
-
-    def test_multioutput_clamping(self):
-        """Test that multioutput classification correctly clamps predictions."""
-        multioutput_classes = [2]
-        evaluator = TBEvaluator(
-            task="multioutput classification",
-            multioutput_classes=multioutput_classes,
-            metrics=["accuracy-0"]
-        )
-
-        # Predictions outside range [0, num_classes-1]
-        logits = torch.tensor([[-1.0], [5.0]]) # Should be clamped to 0 and 1
-        labels = torch.tensor([[0], [1]])
-
-        evaluator.update({"logits": logits, "labels": labels})
-        out = evaluator.compute()
-
-        assert out["accuracy-0"] == pytest.approx(1.0, abs=0.01)
-
-    def test_reset(self):
-        """Test the reset method."""
-        # Update with some data
-        self.evaluator_regression.update({
-            "logits": torch.randn(10, 1),
-            "labels": torch.randn(10, 1)
-        })
-        out_before = self.evaluator_regression.compute()
-
-        # Reset
-        self.evaluator_regression.reset()
-
-        # Update with new data
-        self.evaluator_regression.update({
-            "logits": torch.randn(10, 1),
-            "labels": torch.randn(10, 1)
-        })
-        out_after = self.evaluator_regression.compute()
-
-        # Results should be different (computed on different data)
-        assert out_before["mae"] != out_after["mae"]
-
-    def test_rmse_configuration(self):
-        """Test that RMSE is correctly configured with squared=False."""
-        """Test that RMSE is correctly configured with squared=False."""
-        evaluator = TBEvaluator(
-            task="regression",
-            num_classes=1,
-            metrics=["mse", "rmse"]
-        )
-
-        # Create data where we know MSE and RMSE
-        # If predictions = [1, 2, 3] and labels = [1, 2, 3], both should be 0
-        logits = torch.tensor([[1.0], [2.0], [3.0]])
-        labels = torch.tensor([[1.0], [2.0], [3.0]])
-
-        evaluator.update({"logits": logits, "labels": labels})
-        out = evaluator.compute()
-
-        # Both should be very close to 0
-        assert out["mse"] < 0.01
-        assert out["rmse"] < 0.01
-
-        # For non-perfect predictions
-        evaluator.reset()
-        logits = torch.tensor([[1.0], [2.0]])
-        labels = torch.tensor([[2.0], [3.0]])  # Off by 1 each
-
-        evaluator.update({"logits": logits, "labels": labels})
-        out = evaluator.compute()
-
-        # MSE should be 1.0, RMSE should also be 1.0
-        assert out["mse"] == pytest.approx(1.0, abs=0.01)
-        assert out["rmse"] == pytest.approx(1.0, abs=0.01)
-
-    def test_f1_variants(self):
-        """Test different F1 score variants (macro, weighted)."""
-        evaluator = TBEvaluator(
-            task="classification",
-            num_classes=3,
-            metrics=["f1", "f1_macro", "f1_weighted"]
-        )
-
-        logits = torch.randn(30, 3)
-        labels = torch.randint(0, 3, (30,))
-
-        evaluator.update({"logits": logits, "labels": labels})
-        out = evaluator.compute()
-
-        assert "f1" in out
-        assert "f1_macro" in out
-        assert "f1_weighted" in out
-
-    def test_multiple_updates_before_compute(self):
-        """Test multiple updates before computing metrics."""
-        evaluator = TBEvaluator(
-            task="classification",
-            num_classes=2,
-            metrics=["accuracy"]
-        )
-
-        # Multiple updates (accumulating)
-        for _ in range(5):
-            logits = torch.randn(10, 2)
-            labels = torch.randint(0, 2, (10,))
-            evaluator.update({"logits": logits, "labels": labels})
-
-        # Compute accumulated metrics
-        out = evaluator.compute()
-        assert "accuracy" in out
-        assert 0 <= out["accuracy"] <= 1
+    assert tuple(result.metrics) == (
+        "accuracy",
+        "auroc",
+        "auroc_online",
+        "auroc_online_abs_error",
+        "auprc",
+        "auprc_online",
+        "auprc_online_abs_error",
+        "somers_d",
+        "somers_d_online",
+        "somers_d_online_abs_error",
+    )
+    assert result.status["accuracy"] == "exact"
+    assert result.status["auroc"] == "exact"
+    assert result.status["auroc_online"] == "approximate"
+    assert result.provenance["exact_ranking_memory"]["binary_state_shared"] is True
 
 
-class TestTBEvaluatorMultioutput:
-    """Test the multioutput classification task branch of TBEvaluator."""
+def test_evaluator_exposes_only_topobench_composite_backend_state() -> None:
+    evaluator = TBEvaluator(
+        task="classification",
+        num_classes=2,
+        metrics=["auroc", "auprc", "somers_d"],
+    )
 
-    def test_init_multioutput(self):
-        """TBEvaluator initialises correctly for multioutput classification."""
-        ev = TBEvaluator(
-            task="multioutput classification",
-            multioutput_classes=[3, 4],
-            metrics=["accuracy-0", "accuracy-1"],
-        )
-        assert ev.task == "multioutput classification"
-        assert ev.multioutput_classes == [3, 4]
-        assert "accuracy-0" in ev.metrics
-        assert "accuracy-1" in ev.metrics
-
-    def test_update_and_compute(self):
-        """update/compute round-trip produces bounded accuracy per output."""
-        ev = TBEvaluator(
-            task="multioutput classification",
-            multioutput_classes=[3, 4],
-            metrics=["accuracy-0", "accuracy-1"],
-        )
-        # 5 samples, 2 outputs; logits shape [5, max(classes)]
-        logits = torch.zeros(5, 4)
-        # Perfect predictions for first output (class 0), random for second
-        labels = torch.zeros(5, 2, dtype=torch.long)
-
-        ev.update({"logits": logits, "labels": labels})
-        out = ev.compute()
-
-        assert "accuracy-0" in out
-        assert "accuracy-1" in out
-        assert 0.0 <= float(out["accuracy-0"]) <= 1.0
-        assert 0.0 <= float(out["accuracy-1"]) <= 1.0
-
-    def test_perfect_predictions(self):
-        """All-correct predictions yield accuracy=1.0 for each output."""
-        n_classes_0, n_classes_1 = 3, 2
-        ev = TBEvaluator(
-            task="multioutput classification",
-            multioutput_classes=[n_classes_0, n_classes_1],
-            metrics=["accuracy-0", "accuracy-1"],
-        )
-        n = 6
-        labels = torch.stack(
-            [torch.arange(n) % n_classes_0, torch.arange(n) % n_classes_1], dim=1
-        )
-        # Make logits that round to the correct label for each output
-        logits = labels.float()
-
-        ev.update({"logits": logits, "labels": labels})
-        out = ev.compute()
-
-        assert float(out["accuracy-0"]) == pytest.approx(1.0, abs=1e-4)
-        assert float(out["accuracy-1"]) == pytest.approx(1.0, abs=1e-4)
-
-    def test_reset_clears_state(self):
-        """reset() clears accumulated state so next compute starts fresh."""
-        ev = TBEvaluator(
-            task="multioutput classification",
-            multioutput_classes=[3, 4],
-            metrics=["accuracy-0", "accuracy-1"],
-        )
-        logits = torch.zeros(4, 4)
-        labels = torch.zeros(4, 2, dtype=torch.long)
-        ev.update({"logits": logits, "labels": labels})
-        ev.reset()
-        ev.update({"logits": logits, "labels": labels})
-        out = ev.compute()
-        assert "accuracy-0" in out
+    assert tuple(evaluator.backends) == ("metrics",)
+    assert evaluator.metric_backend is evaluator.backends["metrics"]
+    assert evaluator.metric_backend.__class__.__module__ == (
+        "topobench.evaluator.backends"
+    )

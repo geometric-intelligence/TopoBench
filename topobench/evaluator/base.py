@@ -1,30 +1,55 @@
-"""Abstract class for the evaluator class."""
+"""TopoBench-owned evaluator lifecycle and backend contracts."""
+
+from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
+from typing import Protocol, runtime_checkable
+
+from .types import (
+    EvaluationBatch,
+    EvaluationContext,
+    EvaluationResult,
+    MetricScalar,
+)
+
+
+@runtime_checkable
+class EvaluatorBackend(Protocol):
+    """Minimal injected state backend, independent of any metric library."""
+
+    def begin(self, context: EvaluationContext) -> None:
+        """Prepare backend state for one context."""
+
+    def update(self, batch: EvaluationBatch) -> None:
+        """Accumulate one already-validated batch."""
+
+    def compute(self) -> MetricScalar | Mapping[str, MetricScalar]:
+        """Compute scalar state without resetting it."""
+
+    def reset(self) -> None:
+        """Clear all mutable state for the active context."""
 
 
 class AbstractEvaluator(ABC):
-    r"""Abstract class for the evaluator class."""
-
-    def __init__(
-        self,
-    ):
-        super().__init__()
+    """Explicit lifecycle implemented by every TopoBench evaluator."""
 
     @abstractmethod
-    def update(self, model_out: dict):
-        r"""Update the metrics with the model output.
-
-        Parameters
-        ----------
-        model_out : dict
-            The model output.
-        """
+    def begin(self, context: EvaluationContext) -> None:
+        """Open one otherwise idle evaluation context."""
 
     @abstractmethod
-    def compute(self):
-        r"""Compute the metrics."""
+    def update(self, batch: EvaluationBatch) -> None:
+        """Jointly commit one supervised batch to every backend."""
 
     @abstractmethod
-    def reset(self):
-        """Reset the metrics."""
+    def snapshot(self) -> EvaluationResult:
+        """Return current immutable results without resetting state."""
+
+    @abstractmethod
+    def finalize(self) -> EvaluationResult:
+        """Return final immutable results and clear mutable state."""
+
+    @abstractmethod
+    def abort(self) -> None:
+        """Clear the active or recorded-failure context without results."""

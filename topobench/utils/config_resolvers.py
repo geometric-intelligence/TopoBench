@@ -688,43 +688,66 @@ def infer_list_length_plus_one(list):
 
 
 def get_default_metrics(task, num_classes, metrics=None):
-    r"""Get default metrics for a given task.
+    """Return validated metrics for the reduced evaluator vocabulary."""
+    supported_tasks = {"classification", "regression"}
+    if task not in supported_tasks:
+        raise ValueError(
+            "Supported tasks are exactly: classification, regression"
+        )
+    if isinstance(num_classes, bool) or not isinstance(num_classes, int):
+        raise TypeError("num_classes must be an integer, not a boolean")
+    if task == "classification" and num_classes < 2:
+        raise ValueError("classification num_classes must be at least 2")
+    if task == "regression" and num_classes != 1:
+        raise ValueError("regression num_classes must be 1")
 
-    Parameters
-    ----------
-    task : str
-        Task, either "classification" or "regression".
-    num_classes : int
-        Number of classes, relevant for multilabel and multioutput tasks.
-    metrics : list, optional
-        List of metrics to be used. If None, the default metrics will be used.
+    classification_metrics = {
+        "accuracy",
+        "precision",
+        "recall",
+        "f1",
+        "auroc",
+        "auprc",
+        "somers_d",
+    }
+    regression_metrics = {"mae", "mse", "rmse", "r2"}
+    binary_only_metrics = {"auprc", "somers_d"}
 
-    Returns
-    -------
-    list
-        List of default metrics.
+    if metrics is None:
+        if task == "classification":
+            defaults = ["accuracy", "precision", "recall", "f1", "auroc"]
+            if num_classes == 2:
+                defaults.extend(["auprc", "somers_d"])
+            return defaults
+        return ["mae", "mse", "rmse", "r2"]
 
-    Raises
-    ------
-    ValueError
-        If the task is invalid.
-    """
-    if metrics is not None:
-        return metrics
-    else:
-        if task in ["multioutput classification", "multilabel classification"]:
-            metric_names = ["accuracy", "precision", "recall", "f1"]
-            metrics = []
-            for dim in range(num_classes):
-                for name in metric_names:
-                    metrics.append(f"{name}-{dim}")
-            return metrics
-        elif "classification" in task:
-            return ["accuracy", "precision", "recall", "auroc", "f1"]
-        elif "regression" in task:
-            return ["mse", "mae"]
-        else:
-            raise ValueError(f"Invalid task {task}")
+    selected = list(metrics)
+    if len(set(selected)) != len(selected):
+        raise ValueError("Duplicate metric names are not allowed")
+    for metric in selected:
+        if metric in binary_only_metrics and num_classes != 2:
+            raise ValueError(
+                f"metric {metric!r} is available only for binary "
+                "classification"
+            )
+        if task == "classification" and metric in regression_metrics:
+            raise ValueError(
+                f"{metric} is a regression metric, not a classification metric"
+            )
+        if task == "regression" and metric in classification_metrics:
+            raise ValueError(
+                f"{metric} is a classification metric, not a regression metric"
+            )
+        active_metrics = (
+            classification_metrics
+            if task == "classification"
+            else regression_metrics
+        )
+        if metric not in active_metrics:
+            raise ValueError(
+                f"Unsupported metric {metric!r} for {task}"
+            )
+    return selected
 
 
 def get_list_element(list, index):
