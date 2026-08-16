@@ -20,6 +20,7 @@ the touchstone that anyone reading this file can re-derive on paper.
 from __future__ import annotations
 
 import math
+from unittest.mock import Mock
 
 import pytest
 import torch
@@ -593,6 +594,108 @@ class TestBatching:
             batched = model(batched_features, batched_edges, batch=batch)[:5]
 
         assert torch.allclose(single, batched, atol=1e-6)
+
+    def test_connection_is_preprocessed_once_per_raw_graph(self, monkeypatch):
+        """Repeated optimizer steps reuse the fixed Algorithm 1 connection.
+
+        Parameters
+        ----------
+        monkeypatch : pytest.MonkeyPatch
+            Patch fixture used to count Algorithm 1 executions.
+        """
+        torch.manual_seed(0)
+        model = ConnNSDEncoder(
+            input_dim=5,
+            hidden_dim=8,
+            stalk_dim=2,
+            num_layers=1,
+            dropout=0.0,
+            input_dropout=0.0,
+        ).eval()
+        raw_features = torch.randn(5, 5)
+        edge_index = torch.tensor(
+            [
+                [0, 1, 1, 2, 2, 3, 3, 4, 4, 0],
+                [1, 0, 2, 1, 3, 2, 4, 3, 0, 4],
+            ],
+            dtype=torch.long,
+        )
+
+        counted_build_connection = Mock(wraps=build_connection)
+
+        monkeypatch.setattr(
+            "topobench.nn.backbones.graph.conn_nsd.build_connection",
+            counted_build_connection,
+        )
+
+        batch = torch.zeros(5, dtype=torch.long)
+        with torch.no_grad():
+            model(
+                raw_features,
+                edge_index,
+                batch=batch,
+                connection_x=raw_features,
+            )
+            model(
+                raw_features + 0.1,
+                edge_index,
+                batch=batch,
+                connection_x=raw_features,
+            )
+
+        assert counted_build_connection.call_count == 1
+
+    def test_connection_cache_survives_minibatch_reshuffling(self, monkeypatch):
+        """Each graph is cached independently of its mini-batch position.
+
+        Parameters
+        ----------
+        monkeypatch : pytest.MonkeyPatch
+            Patch fixture used to count Algorithm 1 executions.
+        """
+        torch.manual_seed(0)
+        model = ConnNSDEncoder(
+            input_dim=5,
+            hidden_dim=8,
+            stalk_dim=2,
+            num_layers=1,
+            dropout=0.0,
+            input_dropout=0.0,
+        ).eval()
+        graph_a = torch.randn(3, 5)
+        graph_b = torch.randn(3, 5)
+        triangle_edges = torch.tensor(
+            [[0, 1, 1, 2, 2, 0], [1, 0, 2, 1, 0, 2]], dtype=torch.long
+        )
+        features = torch.cat((graph_a, graph_b))
+        edges = torch.cat((triangle_edges, triangle_edges + 3), dim=1)
+        batch = torch.tensor([0, 0, 0, 1, 1, 1], dtype=torch.long)
+
+        counted_build_connection = Mock(wraps=build_connection)
+
+        monkeypatch.setattr(
+            "topobench.nn.backbones.graph.conn_nsd.build_connection",
+            counted_build_connection,
+        )
+
+        with torch.no_grad():
+            model(features, edges, batch=batch, connection_x=features)
+        assert counted_build_connection.call_count == 2
+
+        permutation = torch.tensor([3, 4, 5, 0, 1, 2])
+        inverse = torch.empty_like(permutation)
+        inverse[permutation] = torch.arange(6)
+        shuffled_features = features[permutation]
+        shuffled_edges = inverse[edges]
+        with torch.no_grad():
+            model(
+                shuffled_features,
+                shuffled_edges,
+                batch=batch,
+                connection_x=shuffled_features,
+            )
+
+        assert counted_build_connection.call_count == 2
 
 
 # ---------------------------------------------------------------------------

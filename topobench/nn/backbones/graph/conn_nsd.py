@@ -43,6 +43,9 @@ References
 
 from __future__ import annotations
 
+import hashlib
+from collections import OrderedDict
+
 import torch
 import torch.nn.functional as F
 import torch_sparse
@@ -98,6 +101,9 @@ class ConnNSDEncoder(nn.Module):
         training step recovers a pure diffusion step).
     """
 
+    uses_fixed_connection = True
+    _connection_cache_size = 4096
+
     def __init__(
         self,
         input_dim: int,
@@ -131,6 +137,7 @@ class ConnNSDEncoder(nn.Module):
         self.dropout = dropout
         self.input_dropout = input_dropout
         self.connection_features = connection_features
+        self._connection_cache: OrderedDict[bytes, Tensor] = OrderedDict()
 
         # Input lift / output projection.
         self.lin1 = nn.Linear(input_dim, hidden_dim)
@@ -167,6 +174,7 @@ class ConnNSDEncoder(nn.Module):
         edge_attr: Tensor | None = None,
         edge_weight: Tensor | None = None,
         batch: Tensor | None = None,
+        connection_x: Tensor | None = None,
         **kwargs,
     ) -> Tensor:
         """Run Conn-NSD on a single graph (or a PyG-batched union of graphs).
@@ -183,6 +191,10 @@ class ConnNSDEncoder(nn.Module):
         batch : torch.Tensor, optional
             PyG batch vector. Used to keep the local-PCA fallback inside each
             graph of a mini-batch.
+        connection_x : torch.Tensor, optional
+            Raw, pre-feature-encoder node features used by Algorithm 1. When
+            supplied, the resulting fixed connection is cached by graph
+            content and reused across optimizer steps.
         **kwargs : dict
             Ignored. Present for forward-call compatibility with the
             generic ``GNNWrapper`` signature.
@@ -198,15 +210,25 @@ class ConnNSDEncoder(nn.Module):
         # ---- Step 1. Build the deterministic connection (Algorithm 1). ----
         # Detached by construction; see conn_nsd_utils.connection.
         if self.connection_features == "raw":
-            features_for_connection = x
+            features_for_connection = (
+                connection_x if connection_x is not None else x
+            )
         else:  # "lifted"
             features_for_connection = self.lin1(x).detach()
-        restriction_maps = build_connection(
-            features_for_connection,
-            edge_index,
-            stalk_dim=self.stalk_dim,
-            batch=batch,
-        )  # [E, d, d]
+
+        if self.connection_features == "raw" and connection_x is not None:
+            restriction_maps = self._cached_batched_connection(
+                features_for_connection,
+                edge_index,
+                batch,
+            )
+        else:
+            restriction_maps = build_connection(
+                features_for_connection,
+                edge_index,
+                stalk_dim=self.stalk_dim,
+                batch=batch,
+            )  # [E, d, d]
 
         # ---- Step 2. Assemble the normalised Δ_F once. -------------------
         laplacian_builder = FixedConnectionLaplacianBuilder(
@@ -245,6 +267,115 @@ class ConnNSDEncoder(nn.Module):
 
         h = h.reshape(num_nodes, self.hidden_dim)
         return self.lin2(h)
+
+    @staticmethod
+    def _connection_key(
+        node_features: Tensor,
+        edge_index: Tensor,
+    ) -> bytes:
+        """Return a stable content key for a preprocessed graph batch.
+
+        Parameters
+        ----------
+        node_features : torch.Tensor
+            Raw node features for one graph.
+        edge_index : torch.Tensor
+            Relabelled edge index for that graph.
+
+        Returns
+        -------
+        bytes
+            Content digest including tensor shapes, dtypes, and device.
+        """
+        digest = hashlib.blake2b(digest_size=20)
+        for tensor in (node_features, edge_index):
+            value = tensor.detach().contiguous().cpu()
+            digest.update(str(value.dtype).encode())
+            digest.update(str(tuple(value.shape)).encode())
+            digest.update(value.numpy().tobytes())
+        digest.update(str(node_features.device).encode())
+        return digest.digest()
+
+    def _cached_graph_connection(
+        self,
+        node_features: Tensor,
+        edge_index: Tensor,
+    ) -> Tensor:
+        """Build or retrieve Algorithm 1 maps for one graph.
+
+        Parameters
+        ----------
+        node_features : torch.Tensor
+            Raw node features for one graph.
+        edge_index : torch.Tensor
+            Relabelled edge index for that graph.
+
+        Returns
+        -------
+        torch.Tensor
+            Oriented transport maps for every edge.
+        """
+        cache_key = self._connection_key(node_features, edge_index)
+        restriction_maps = self._connection_cache.get(cache_key)
+        if restriction_maps is not None:
+            self._connection_cache.move_to_end(cache_key)
+            return restriction_maps
+
+        restriction_maps = build_connection(
+            node_features,
+            edge_index,
+            stalk_dim=self.stalk_dim,
+        )
+        self._connection_cache[cache_key] = restriction_maps
+        self._connection_cache.move_to_end(cache_key)
+        while len(self._connection_cache) > self._connection_cache_size:
+            self._connection_cache.popitem(last=False)
+        return restriction_maps
+
+    def _cached_batched_connection(
+        self,
+        node_features: Tensor,
+        edge_index: Tensor,
+        batch: Tensor | None,
+    ) -> Tensor:
+        """Assemble cached per-graph maps in the current mini-batch order.
+
+        Parameters
+        ----------
+        node_features : torch.Tensor
+            Raw features for all nodes in the mini-batch.
+        edge_index : torch.Tensor
+            Batched edge index.
+        batch : torch.Tensor, optional
+            Assignment from nodes to graphs.
+
+        Returns
+        -------
+        torch.Tensor
+            Transport maps aligned with ``edge_index``.
+        """
+        if batch is None:
+            return self._cached_graph_connection(node_features, edge_index)
+
+        restriction_maps = node_features.new_empty(
+            edge_index.size(1), self.stalk_dim, self.stalk_dim
+        )
+        local_index = torch.empty(
+            node_features.size(0), dtype=torch.long, device=edge_index.device
+        )
+        for graph_id in torch.unique(batch, sorted=True):
+            node_idx = torch.where(batch == graph_id)[0]
+            local_index[node_idx] = torch.arange(
+                node_idx.numel(), device=edge_index.device
+            )
+            edge_mask = batch.index_select(0, edge_index[0]) == graph_id
+            local_edges = local_index[edge_index[:, edge_mask]]
+            local_maps = self._cached_graph_connection(
+                node_features.index_select(0, node_idx),
+                local_edges,
+            )
+            restriction_maps[edge_mask] = local_maps
+        return restriction_maps
 
     # ------------------------------------------------------------------
     # Internals
