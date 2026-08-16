@@ -697,6 +697,39 @@ class TestBatching:
 
         assert counted_build_connection.call_count == 2
 
+    def test_connection_cache_is_shared_across_training_seeds(self, monkeypatch):
+        """Repeated model instances reuse identical graph preprocessing.
+
+        Parameters
+        ----------
+        monkeypatch : pytest.MonkeyPatch
+            Patch fixture used to count Algorithm 1 executions.
+        """
+        torch.manual_seed(0)
+        model_a = ConnNSDEncoder(
+            input_dim=5, hidden_dim=8, stalk_dim=2, num_layers=1
+        ).eval()
+        model_b = ConnNSDEncoder(
+            input_dim=5, hidden_dim=8, stalk_dim=2, num_layers=1
+        ).eval()
+        model_a._connection_cache.clear()
+        features = torch.randn(3, 5)
+        edges = torch.tensor(
+            [[0, 1, 1, 2, 2, 0], [1, 0, 2, 1, 0, 2]], dtype=torch.long
+        )
+        batch = torch.zeros(3, dtype=torch.long)
+        counted_build_connection = Mock(wraps=build_connection)
+        monkeypatch.setattr(
+            "topobench.nn.backbones.graph.conn_nsd.build_connection",
+            counted_build_connection,
+        )
+
+        with torch.no_grad():
+            model_a(features, edges, batch=batch, connection_x=features)
+            model_b(features, edges, batch=batch, connection_x=features)
+
+        assert counted_build_connection.call_count == 1
+
 
 # ---------------------------------------------------------------------------
 # API-level shape / dtype contracts.

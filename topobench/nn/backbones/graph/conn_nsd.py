@@ -57,6 +57,8 @@ from topobench.nn.backbones.graph.conn_nsd_utils.fixed_laplacian_builder import 
     FixedConnectionLaplacianBuilder,
 )
 
+_CONNECTION_CACHE: OrderedDict[bytes, Tensor] = OrderedDict()
+
 
 class ConnNSDEncoder(nn.Module):
     """Inductive Conn-NSD encoder for graph-level and node-level tasks.
@@ -137,7 +139,10 @@ class ConnNSDEncoder(nn.Module):
         self.dropout = dropout
         self.input_dropout = input_dropout
         self.connection_features = connection_features
-        self._connection_cache: OrderedDict[bytes, Tensor] = OrderedDict()
+        # Algorithm 1 depends only on raw graph content, so the bounded cache
+        # is shared across model instances (for example the challenge's three
+        # optimizer seeds) within one evaluation process.
+        self._connection_cache = _CONNECTION_CACHE
 
         # Input lift / output projection.
         self.lin1 = nn.Linear(input_dim, hidden_dim)
