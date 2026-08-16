@@ -30,6 +30,9 @@ from topobench.nn.backbones.graph.conn_nsd_utils.connection import (
     build_connection,
     local_tangent_basis,
 )
+from topobench.nn.backbones.graph.conn_nsd_utils.fixed_laplacian_builder import (
+    FixedConnectionLaplacianBuilder,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -223,6 +226,36 @@ class TestTriangle:
 # ---------------------------------------------------------------------------
 # Algebraic invariants on a randomly generated 5-node graph.
 # ---------------------------------------------------------------------------
+
+
+def test_fixed_laplacian_uses_algorithm_transport_directly():
+    """The off-diagonal block is the Algorithm 1 transport, not its square.
+
+    ``build_connection`` returns ``O_ij`` and ``O_ji = O_ij.T`` for the two
+    orientations of an edge.  For the block at row ``i``, column ``j``, the
+    connection Laplacian therefore contains ``-O_ij``.  Treating ``O_ij``
+    and ``O_ji`` as independent endpoint-to-edge restriction maps would
+    instead form ``-O_ij.T @ O_ji`` and incorrectly square the transport.
+    """
+    edge_index = torch.tensor([[0, 1], [1, 0]], dtype=torch.long)
+    transport_01 = torch.tensor(
+        [[0.0, -1.0], [1.0, 0.0]], dtype=torch.float64
+    )
+    transports = torch.stack((transport_01, transport_01.T))
+
+    builder = FixedConnectionLaplacianBuilder(2, edge_index, d=2)
+    (indices, values), _ = builder(transports)
+    actual = torch.sparse_coo_tensor(indices, values, (4, 4)).to_dense()
+
+    # The inherited NSD normalisation uses deg + 1, hence every block has
+    # scale 1/2 for this single-edge graph.
+    expected = torch.zeros((4, 4), dtype=torch.float64)
+    expected[:2, :2] = 0.5 * torch.eye(2, dtype=torch.float64)
+    expected[2:, 2:] = 0.5 * torch.eye(2, dtype=torch.float64)
+    expected[:2, 2:] = -0.5 * transport_01
+    expected[2:, :2] = -0.5 * transport_01.T
+
+    assert torch.allclose(actual, expected, atol=1e-12)
 
 
 def _dense_sheaf_laplacian(

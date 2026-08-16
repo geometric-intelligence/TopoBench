@@ -12,7 +12,7 @@ upstream default (``num_layers=2``, ``hidden_dim=64``, etc.).
 Output mirrors the conn_nsd_full layout::
 
     2026_tdl_challenge/outputs/nsd_bundle_full/
-        results.json
+        ablation_results.json
         heatmap_community_detection_accuracy.png
         heatmap_triangle_mse_over_triangles.png
         OOD/
@@ -78,6 +78,13 @@ def main() -> None:
         model_config=MODEL_CONFIG,
         study_id=study_id,
     )
+    # The challenge leaderboard discovers submission files named
+    # ``results.json``. Keep this baseline as supporting ablation evidence,
+    # not as a second submission that can shadow Conn-NSD.
+    results_path = Path(out["json"])
+    ablation_path = results_path.with_name("ablation_results.json")
+    results_path.replace(ablation_path)
+    out["json"] = ablation_path
     print("Artefacts:")
     for k, v in out.items():
         print(f"  {k}: {v}", flush=True)

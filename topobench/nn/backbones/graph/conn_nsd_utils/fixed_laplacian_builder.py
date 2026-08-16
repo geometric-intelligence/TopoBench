@@ -15,7 +15,8 @@ The math is the *normalised* sheaf Laplacian of an ``O(d)``-bundle:
 where ``δ`` is the coboundary acting on 0-cochains, the diagonal block
 ``D_{vv}`` equals ``deg(v) · I_d`` (every restriction map is orthogonal, so
 ``F^⊤ F = I`` and each edge contributes ``I`` to the diagonal accumulator),
-and the off-diagonal block ``Δ_F[v, u] = − F_{vu}^⊤ F_{uv}`` for ``v ≠ u``.
+and the off-diagonal block is the negative parallel transport supplied by
+Algorithm 1 for that oriented edge.
 """
 
 from __future__ import annotations
@@ -47,14 +48,10 @@ class FixedConnectionLaplacianBuilder(LaplacianBuilder):
 
     Notes
     -----
-    The off-diagonal block formula
-
-        Δ_F[v, u]  =  − F_{vu}^⊤ F_{uv}
-
-    matches Definition 2.4 of Barbero et al. for orthogonal ``F`` and is
-    bit-for-bit identical to the assembly used by
-    :class:`NormConnectionLaplacianBuilder` once the parameters have been
-    Cayley-transformed; we simply skip the parametrisation.
+    Unlike a pair of independently learned endpoint restriction maps, the
+    supplied matrices are already the edge transports produced by Algorithm
+    1 of Barbero et al. They must therefore be inserted directly rather than
+    composed with their reverse orientation.
     """
 
     def __init__(self, size: int, edge_index: Tensor, d: int):
@@ -84,7 +81,7 @@ class FixedConnectionLaplacianBuilder(LaplacianBuilder):
             ``(indices, values)`` representation of the ``Nd × Nd`` block
             sparse Laplacian, ready for ``torch_sparse.spmm``.
         saved_tril_maps : torch.Tensor
-            Lower-triangular transport maps ``−F_{vu}^⊤ F_{uv}`` (for
+            Lower-triangular negative transport maps (for
             diagnostics; matches the contract of the learnable builder).
         """
         assert restriction_maps.dim() == 3, (
@@ -100,19 +97,17 @@ class FixedConnectionLaplacianBuilder(LaplacianBuilder):
             f"d={self.d}, got {restriction_maps.size(-2)}"
         )
 
-        left_idx, right_idx = self.left_right_idx
+        left_idx, _ = self.left_right_idx
         tril_indices, diag_indices = self.tril_indices, self.diag_indices
 
         # Diagonal:  D_{vv} = deg(v) · I_d  for orthogonal F. No SVD or
         # accumulation needed — see the discussion above.
         diag_maps = self.deg.unsqueeze(-1)  # [N, 1]
 
-        # Off-diagonal (lower triangle):  − F_{vu}^⊤ F_{uv}.
-        # ``left_idx`` selects F_{vu} and ``right_idx`` selects F_{uv} for
-        # each tril entry; both index into ``restriction_maps``.
-        f_vu = restriction_maps.index_select(0, left_idx)  # [|tril|, d, d]
-        f_uv = restriction_maps.index_select(0, right_idx)  # [|tril|, d, d]
-        tril_maps = -(f_vu.transpose(-1, -2) @ f_uv)
+        # Algorithm 1 already returns the oriented parallel transport. Using
+        # both directions here would compose O_ij with O_ji and erase/square
+        # the connection information.
+        tril_maps = -restriction_maps.index_select(0, left_idx)
         saved_tril_maps = tril_maps.detach().clone()
 
         # Symmetric normalisation: D^{-1/2} L D^{-1/2}.
