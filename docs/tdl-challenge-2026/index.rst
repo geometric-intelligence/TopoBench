@@ -1,8 +1,8 @@
 TDL Challenge 2026
 -------------------
 
-Welcome to the **Topological Deep Learning Challenge 2026: Bridging the Gap**, 
-sponsored by `Arlequin AI <https://www.arlq.ai/>`__ and `New Theory <https://www.newtheory.ai/>`__, 
+Welcome to the **Topological Deep Learning Challenge 2026: Bridging the Gap**,
+sponsored by `Arlequin AI <https://www.arlq.ai/>`__ and `New Theory <https://www.newtheory.ai/>`__,
 and hosted at the second `Topology, Algebra, and Geometry in Data Science (TAG-DS) Conference <https://www.tagds.com/events/tag-ds-2026>`__.
 
 *Organizers:* Guillermo Bernárdez, Lev Telyatnikov, Mathilde Papillon, Marco Montagna, Louisa Cornelis, Louis Van Langendonck, Olga Fink, Nina Miolane.
@@ -118,11 +118,11 @@ methods and applications of GNNs and TDL. Travel costs will be reimbursed and fi
 assistance for lodging will be provided. [2]_
 
 🏔️ **Research internship — IMOS Lab, EPFL (Switzerland):**
-A team, pending evaluation results and interest, will be invited for a research 
-internship at the **Intelligent Maintenance and Operations Systems (IMOS) Lab** 
-at EPFL in Lausanne, Switzerland. Winners will perform research in a world-class 
-academic environment. **MSc enrollment** at the time of the internship is required. 
-Financial assistance for lodging will be provided; winners will likely need to 
+A team, pending evaluation results and interest, will be invited for a research
+internship at the **Intelligent Maintenance and Operations Systems (IMOS) Lab**
+at EPFL in Lausanne, Switzerland. Winners will perform research in a world-class
+academic environment. **MSc enrollment** at the time of the internship is required.
+Financial assistance for lodging will be provided; winners will likely need to
 secure a **visa** and **work authorization**.
 
 .. note::
@@ -142,7 +142,7 @@ secure a **visa** and **work authorization**.
 Deadline
 --------
 
-The final submission deadline is **August 12th, 2026 (AoE)**. Participants may
+The final submission deadline is **August 1st, 2026 (AoE)**. Participants may
 continue modifying their PRs until this time.
 
 
