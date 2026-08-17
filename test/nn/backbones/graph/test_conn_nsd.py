@@ -60,7 +60,9 @@ def _is_orthogonal(matrix: Tensor, atol: float = 1e-5) -> bool:
     d = matrix.size(-1)
     identity = torch.eye(d, dtype=matrix.dtype, device=matrix.device)
     return torch.allclose(
-        matrix.transpose(-1, -2) @ matrix, identity.expand_as(matrix), atol=atol
+        matrix.transpose(-1, -2) @ matrix,
+        identity.expand_as(matrix),
+        atol=atol,
     )
 
 
@@ -239,22 +241,21 @@ def test_fixed_laplacian_uses_algorithm_transport_directly():
     instead form ``-O_ij.T @ O_ji`` and incorrectly square the transport.
     """
     edge_index = torch.tensor([[0, 1], [1, 0]], dtype=torch.long)
-    transport_01 = torch.tensor(
-        [[0.0, -1.0], [1.0, 0.0]], dtype=torch.float64
-    )
+    transport_01 = torch.tensor([[0.0, -1.0], [1.0, 0.0]], dtype=torch.float64)
     transports = torch.stack((transport_01, transport_01.T))
 
     builder = FixedConnectionLaplacianBuilder(2, edge_index, d=2)
     (indices, values), _ = builder(transports)
     actual = torch.sparse_coo_tensor(indices, values, (4, 4)).to_dense()
 
-    # The inherited NSD normalisation uses deg + 1, hence every block has
-    # scale 1/2 for this single-edge graph.
+    # Paper Definition 2.5 uses D = diag(L_F), with no added self-loop.
+    # Both vertices have degree one, so normalisation leaves these blocks
+    # unchanged.
     expected = torch.zeros((4, 4), dtype=torch.float64)
-    expected[:2, :2] = 0.5 * torch.eye(2, dtype=torch.float64)
-    expected[2:, 2:] = 0.5 * torch.eye(2, dtype=torch.float64)
-    expected[:2, 2:] = -0.5 * transport_01
-    expected[2:, :2] = -0.5 * transport_01.T
+    expected[:2, :2] = torch.eye(2, dtype=torch.float64)
+    expected[2:, 2:] = torch.eye(2, dtype=torch.float64)
+    expected[:2, 2:] = -transport_01
+    expected[2:, :2] = -transport_01.T
 
     assert torch.allclose(actual, expected, atol=1e-12)
 
@@ -267,10 +268,11 @@ def _dense_sheaf_laplacian(
 ) -> Tensor:
     """Assemble the un-normalised sheaf Laplacian ``L_F = δ^⊤ δ`` densely.
 
-    For an orthogonal sheaf this is the block matrix:
+    For the connection representation used by Algorithm 1 this is the block
+    matrix:
 
         L[v, v] = deg(v) · I_d
-        L[v, u] = − F_{vu}^⊤ F_{uv}    (for v ≠ u, when edge (v,u) ∈ E)
+        L[v, u] = − O_{vu}              (for v ≠ u, when edge (v,u) ∈ E)
 
     Used only in tests, where transparency beats efficiency.
 
@@ -317,7 +319,7 @@ def _dense_sheaf_laplacian(
         e_bwd = directed.get((u, v))
         if e_bwd is None:
             continue
-        block = -(restriction_maps[e_fwd].T @ restriction_maps[e_bwd])
+        block = -restriction_maps[e_fwd]
         rv = slice(v * d, (v + 1) * d)
         ru = slice(u * d, (u + 1) * d)
         laplacian[rv, ru] = block
@@ -343,8 +345,13 @@ def small_random_graph():
     node_features = torch.randn(5, 8, dtype=torch.float64)
     # A pentagon-with-chords graph; every node has degree ≥ 3.
     edges = [
-        (0, 1), (1, 2), (2, 3), (3, 4), (4, 0),
-        (0, 2), (1, 3),
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 4),
+        (4, 0),
+        (0, 2),
+        (1, 3),
     ]
     src = [u for (u, _) in edges] + [v for (_, v) in edges]
     dst = [v for (_, v) in edges] + [u for (u, _) in edges]
@@ -397,25 +404,17 @@ class TestAlgebraicInvariants:
                 maps[e_fwd] @ maps[e_bwd], identity, atol=1e-8
             ), f"edges ({src}->{dst}) and ({dst}->{src}) are not inverses"
 
-    def test_permutation_invariance_of_laplacian_spectrum(self, small_random_graph):
+    def test_permutation_invariance_of_laplacian_spectrum(
+        self, small_random_graph
+    ):
         """The sheaf-Laplacian spectrum is invariant under node relabelling.
 
         Subtlety
         --------
-        ``torch.linalg.svd`` does not fix the sign convention on the
-        left singular vectors. Two PCA basis matrices spanning the same
-        subspace can differ by a per-node signed diagonal ``S_v``, so the
-        alignment matrices ``F_{vu}`` acquire gauges ``S_v F_{vu} S_u``.
-        Generically this gauge does **not** compose into a single
-        block-diagonal conjugation of the sheaf Laplacian, so the
-        spectrum can shift slightly. We therefore test for *near-equality*
-        with a loose tolerance, not exact invariance.
-
-        The Conn-NSD paper inherits this same gauge issue from the
-        underlying SVD-based vector-diffusion-maps construction
-        (Singer & Wu 2012). Removing it would require canonicalising the
-        SVD signs at every node — out of scope for a faithful
-        re-implementation of Algorithm 1.
+        Local PCA bases can differ by node-wise orthogonal gauges ``Q_v``.
+        Algorithm 1 then transforms ``O_vu`` to ``Q_v^T O_vu Q_u``, which
+        is a block-diagonal orthogonal conjugation of the connection
+        Laplacian. Its entries are gauge-dependent, but its spectrum is not.
 
         Parameters
         ----------
@@ -433,19 +432,41 @@ class TestAlgebraicInvariants:
         permuted_edges = inv[edge_index]
 
         maps_orig = build_connection(node_features, edge_index, stalk_dim=d)
-        maps_perm = build_connection(permuted_features, permuted_edges, stalk_dim=d)
+        maps_perm = build_connection(
+            permuted_features, permuted_edges, stalk_dim=d
+        )
 
         l_orig = _dense_sheaf_laplacian(maps_orig, edge_index, n, d)
         l_perm = _dense_sheaf_laplacian(maps_perm, permuted_edges, n, d)
 
         eig_orig = torch.linalg.eigvalsh(l_orig).sort().values
         eig_perm = torch.linalg.eigvalsh(l_perm).sort().values
-        # Loose tolerance accommodates the SVD sign gauge (see docstring).
-        # In practice the spectrum shifts by ≤ a few percent of its scale.
-        assert torch.allclose(eig_orig, eig_perm, atol=0.5), (
-            "Sheaf-Laplacian spectrum changed substantially under node "
-            "relabelling — beyond the expected SVD sign-gauge perturbation."
+        assert torch.allclose(eig_orig, eig_perm, atol=1e-8), (
+            "Connection-Laplacian spectrum changed under node relabelling."
         )
+
+    def test_fixed_normalised_laplacian_is_symmetric_psd(
+        self, small_random_graph
+    ):
+        """Paper Definition 2.5 yields a symmetric PSD matrix.
+
+        Parameters
+        ----------
+        small_random_graph : tuple[torch.Tensor, torch.Tensor]
+            Test fixture supplying ``(node_features, edge_index)``.
+        """
+        node_features, edge_index = small_random_graph
+        maps = build_connection(node_features, edge_index, stalk_dim=3)
+        builder = FixedConnectionLaplacianBuilder(
+            node_features.size(0), edge_index, d=3
+        )
+        (indices, values), _ = builder(maps)
+        laplacian = torch.sparse_coo_tensor(
+            indices, values, (15, 15)
+        ).to_dense()
+
+        assert torch.allclose(laplacian, laplacian.T, atol=1e-12)
+        assert torch.linalg.eigvalsh(laplacian).min() >= -1e-8
 
     def test_determinism(self, small_random_graph):
         """Algorithm 1 is deterministic: same input → same output.
@@ -528,7 +549,9 @@ class TestFallback:
             dtype=torch.long,
         )
         second_graph_features = node_features + 0.01
-        batched_features = torch.cat([node_features, second_graph_features], dim=0)
+        batched_features = torch.cat(
+            [node_features, second_graph_features], dim=0
+        )
         batched_edges = torch.cat([edge_index, edge_index + 5], dim=1)
         batch = torch.tensor([0, 0, 0, 0, 0, 1, 1, 1, 1, 1], dtype=torch.long)
 
@@ -581,7 +604,9 @@ class TestBatching:
             dtype=torch.long,
         )
         second_graph_features = node_features + 0.01
-        batched_features = torch.cat([node_features, second_graph_features], dim=0)
+        batched_features = torch.cat(
+            [node_features, second_graph_features], dim=0
+        )
         batched_edges = torch.cat([edge_index, edge_index + 5], dim=1)
         batch = torch.tensor([0, 0, 0, 0, 0, 1, 1, 1, 1, 1], dtype=torch.long)
 
@@ -645,7 +670,9 @@ class TestBatching:
 
         assert counted_build_connection.call_count == 1
 
-    def test_connection_cache_survives_minibatch_reshuffling(self, monkeypatch):
+    def test_connection_cache_survives_minibatch_reshuffling(
+        self, monkeypatch
+    ):
         """Each graph is cached independently of its mini-batch position.
 
         Parameters
@@ -697,7 +724,9 @@ class TestBatching:
 
         assert counted_build_connection.call_count == 2
 
-    def test_connection_cache_is_shared_across_training_seeds(self, monkeypatch):
+    def test_connection_cache_is_shared_across_training_seeds(
+        self, monkeypatch
+    ):
         """Repeated model instances reuse identical graph preprocessing.
 
         Parameters
@@ -730,6 +759,43 @@ class TestBatching:
 
         assert counted_build_connection.call_count == 1
 
+    def test_connection_cache_isolated_by_stalk_dimension(self, monkeypatch):
+        """Paper variants with different ``d`` never share cached maps.
+
+        Parameters
+        ----------
+        monkeypatch : pytest.MonkeyPatch
+            Patch fixture used to count Algorithm 1 executions.
+        """
+        torch.manual_seed(0)
+        model_d2 = ConnNSDEncoder(
+            input_dim=5, hidden_dim=8, stalk_dim=2, num_layers=1
+        ).eval()
+        model_d3 = ConnNSDEncoder(
+            input_dim=5, hidden_dim=9, stalk_dim=3, num_layers=1
+        ).eval()
+        model_d2._connection_cache.clear()
+        features = torch.randn(4, 5)
+        edges = torch.tensor(
+            [
+                [0, 1, 1, 2, 2, 3, 3, 0, 0, 2],
+                [1, 0, 2, 1, 3, 2, 0, 3, 2, 0],
+            ],
+            dtype=torch.long,
+        )
+        batch = torch.zeros(4, dtype=torch.long)
+        counted_build_connection = Mock(wraps=build_connection)
+        monkeypatch.setattr(
+            "topobench.nn.backbones.graph.conn_nsd.build_connection",
+            counted_build_connection,
+        )
+
+        with torch.no_grad():
+            model_d2(features, edges, batch=batch, connection_x=features)
+            model_d3(features, edges, batch=batch, connection_x=features)
+
+        assert counted_build_connection.call_count == 2
+
 
 # ---------------------------------------------------------------------------
 # API-level shape / dtype contracts.
@@ -761,3 +827,13 @@ class TestApiContract:
         edge_index = torch.tensor([[0, 1], [1, 0]], dtype=torch.long)
         with pytest.raises(AssertionError, match="stalk_dim must be positive"):
             local_tangent_basis(node_features, edge_index, stalk_dim=0)
+
+    def test_rejects_ambient_dimension_below_stalk_dimension(self):
+        """Algorithm 1 requires ambient feature dimension ``p >= d``."""
+        node_features = torch.randn(4, 2)
+        edge_index = torch.tensor(
+            [[0, 1, 1, 2, 2, 3, 3, 0], [1, 0, 2, 1, 3, 2, 0, 3]],
+            dtype=torch.long,
+        )
+        with pytest.raises(ValueError, match="ambient feature dimension"):
+            local_tangent_basis(node_features, edge_index, stalk_dim=3)

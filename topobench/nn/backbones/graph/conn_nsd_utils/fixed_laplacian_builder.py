@@ -102,7 +102,9 @@ class FixedConnectionLaplacianBuilder(LaplacianBuilder):
 
         # Diagonal:  D_{vv} = deg(v) · I_d  for orthogonal F. No SVD or
         # accumulation needed — see the discussion above.
-        diag_maps = self.deg.unsqueeze(-1)  # [N, 1]
+        diag_maps = self.deg.to(dtype=restriction_maps.dtype).unsqueeze(
+            -1
+        )  # [N, 1]
 
         # Algorithm 1 already returns the oriented parallel transport. Using
         # both directions here would compose O_ij with O_ji and erase/square
@@ -110,10 +112,21 @@ class FixedConnectionLaplacianBuilder(LaplacianBuilder):
         tril_maps = -restriction_maps.index_select(0, left_idx)
         saved_tril_maps = tril_maps.detach().clone()
 
-        # Symmetric normalisation: D^{-1/2} L D^{-1/2}.
-        diag_maps, tril_maps = self.scalar_normalise(
-            diag_maps, tril_maps, *self.vertex_tril_idx
+        # Paper Definition 2.5: Δ_F = D^{-1/2} L_F D^{-1/2}, where D
+        # is exactly the block diagonal of L_F. The generic NSD helper uses
+        # ``diag + 1`` (an unreported self-loop renormalisation), so Conn-NSD
+        # performs the paper's normalization explicitly here.
+        row, col = self.vertex_tril_idx
+        diag_sqrt_inv = diag_maps.rsqrt()
+        diag_sqrt_inv = diag_sqrt_inv.masked_fill(
+            ~diag_sqrt_inv.isfinite(), 0.0
         )
+        tril_maps = (
+            diag_sqrt_inv[row].unsqueeze(-1)
+            * tril_maps
+            * diag_sqrt_inv[col].unsqueeze(-1)
+        )
+        diag_maps = diag_sqrt_inv.square() * diag_maps
         tril_flat = tril_maps.reshape(-1)
         diag_flat = diag_maps.expand(-1, self.d).reshape(-1)
 

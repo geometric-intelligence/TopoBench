@@ -28,30 +28,15 @@ at the unoriented edge ``{v,u}``. The discrete ``O(d)``-bundle laplacian
 from the sibling package — same formula as Bodnar's NSD-O(d), but with
 ``F`` fixed instead of learned.
 
-**Sign gauge — known limitation inherited from Singer & Wu.**
-The local PCA basis ``O_v`` and the alignment ``F_{vu}`` are both unique
-only up to a per-node signed-diagonal "gauge" ``S_v ∈ {±1}^d``, because
-the SVD's column signs are not canonicalised by ``torch.linalg.svd``.
-Concretely:
-
-* if PCA returns ``O_v`` for one input and ``O_v · S_v`` for an
-  arithmetically-equivalent input (e.g. after a rotation of features),
-  then the alignment matrix transforms as ``F_{vu} ↦ S_v F_{vu} S_u``.
-* this gauge does **not** compose into a single block-diagonal
-  conjugation of the sheaf Laplacian, so the Laplacian's spectrum and
-  the diffusion's behaviour are not strictly invariant to feature
-  rotations or node relabellings — they are equal up to a small,
-  numerically-driven perturbation.
-
-Algorithm 1 of the paper inherits this from the underlying VDM
-construction. Removing it would require a canonicalisation step
-(e.g. force the first nonzero entry of each PCA column to be positive),
-which is *out of scope* for a faithful re-implementation of the paper.
-We document and test for it explicitly rather than pretend it doesn't
-exist. See ``test_conn_nsd.py``'s
-``test_permutation_invariance_of_laplacian_spectrum`` for the
-loose-tolerance invariance check and ``test_determinism`` for the strict
-same-input-same-output reproducibility we *do* guarantee.
+**Local-frame gauge.**
+The local PCA basis ``O_v`` is only defined up to a node-wise orthogonal
+change of frame ``Q_v ∈ O(d)``. Under ``O_v ↦ O_v Q_v``, Algorithm 1's
+transport transforms as ``F_{vu} ↦ Q_v^⊤ F_{vu} Q_u``. This is precisely
+a block-diagonal orthogonal conjugation of the connection Laplacian:
+matrix entries depend on the selected local frames, while its spectrum
+and the represented diffusion are gauge-equivalent. The tests therefore
+check strict same-input determinism and spectral invariance under node
+relabeling, without imposing a non-paper sign canonicalisation.
 
 **Shape contract.**
 All shapes are documented in NumPy style. Notation:
@@ -140,6 +125,11 @@ def local_tangent_basis(
     assert stalk_dim > 0, f"stalk_dim must be positive, got {stalk_dim}"
 
     num_nodes, ambient_dim = node_features.shape
+    if ambient_dim < stalk_dim:
+        raise ValueError(
+            f"ambient feature dimension p={ambient_dim} must satisfy "
+            f"p >= stalk_dim d={stalk_dim} for Algorithm 1"
+        )
     device = node_features.device
     dtype = node_features.dtype
     if batch is None:
@@ -214,13 +204,7 @@ def local_tangent_basis(
         # we ensured |N| ≥ d above and we assume p ≥ d (the manifold
         # assumption).
         u, _, _ = torch.linalg.svd(centred, full_matrices=False)
-        # If p < d the manifold assumption fails; we still take the first d
-        # columns, padding with zeros — but in practice the AllCellFeature
-        # encoder lifts the input to p = hidden_dim ≫ d.
-        if u.size(1) >= stalk_dim:
-            tangent_basis[v] = u[:, :stalk_dim]
-        else:
-            tangent_basis[v, :, : u.size(1)] = u
+        tangent_basis[v] = u[:, :stalk_dim]
 
     return tangent_basis.detach()
 

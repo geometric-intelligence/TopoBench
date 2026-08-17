@@ -9,11 +9,11 @@ Notes
 **Scientific delta vs. Bodnar et al.'s NSD-O(d).**
 NSD-O(d) learns the orthogonal restriction maps ``F_{vu}`` jointly with
 the diffusion weights, recomputing them every layer from
-``Φ(x_v, x_u)``. Conn-NSD instead *computes them once* at the start of
-the forward pass — deterministically — from a local-PCA-plus-alignment
-procedure on the raw node features (see :mod:`conn_nsd_utils.connection`,
-Algorithm 1 of the paper). The diffusion equation (paper §2.3, Eq. 5)
-is otherwise identical::
+``Φ(x_v, x_u)``. Conn-NSD instead computes them deterministically as a
+preprocessing step from a local-PCA-plus-alignment procedure on the raw
+input node features (see :mod:`conn_nsd_utils.connection`, Algorithm 1 of
+the paper). The diffusion equation (paper §2.3, Eq. 5) is otherwise
+identical::
 
     X_{t+1}  =  X_t  −  σ( Δ_F (I_n ⊗ W₁) X_t W₂ )
 
@@ -82,9 +82,8 @@ class ConnNSDEncoder(nn.Module):
         Dropout on the initial feature lift.
     connection_features : str, default ``"raw"``
         Which features to feed Algorithm 1.
-        - ``"raw"``: features as received by this backbone, before ``lin1``.
-          In the standard TopoBench composition this is post-feature-encoder
-          data, because ``AllCellFeatureEncoder`` runs before every backbone.
+        - ``"raw"``: the input feature matrix preserved before TopoBench's
+          trainable feature encoder, when supplied as ``connection_x``.
         - ``"lifted"``: the post-``lin1`` encoded features. Off-spec — kept
           as an ablation knob but not the default behaviour.
     **kwargs : dict
@@ -277,6 +276,7 @@ class ConnNSDEncoder(nn.Module):
     def _connection_key(
         node_features: Tensor,
         edge_index: Tensor,
+        stalk_dim: int,
     ) -> bytes:
         """Return a stable content key for a preprocessed graph batch.
 
@@ -286,6 +286,9 @@ class ConnNSDEncoder(nn.Module):
             Raw node features for one graph.
         edge_index : torch.Tensor
             Relabelled edge index for that graph.
+        stalk_dim : int
+            Paper tangent-space dimension ``d``. It is part of the cache
+            identity because Algorithm 1 returns ``d × d`` maps.
 
         Returns
         -------
@@ -299,6 +302,7 @@ class ConnNSDEncoder(nn.Module):
             digest.update(str(tuple(value.shape)).encode())
             digest.update(value.numpy().tobytes())
         digest.update(str(node_features.device).encode())
+        digest.update(str(stalk_dim).encode())
         return digest.digest()
 
     def _cached_graph_connection(
@@ -320,7 +324,9 @@ class ConnNSDEncoder(nn.Module):
         torch.Tensor
             Oriented transport maps for every edge.
         """
-        cache_key = self._connection_key(node_features, edge_index)
+        cache_key = self._connection_key(
+            node_features, edge_index, self.stalk_dim
+        )
         restriction_maps = self._connection_cache.get(cache_key)
         if restriction_maps is not None:
             self._connection_cache.move_to_end(cache_key)
