@@ -805,6 +805,24 @@ class TestBatching:
 class TestApiContract:
     """Type and dtype contracts at the module boundary."""
 
+    def test_diffusion_has_only_paper_equation_parameters(self):
+        """Equation 5 has learnable ``W1`` and ``W2``, but no residual gate."""
+        model = ConnNSDEncoder(
+            input_dim=4, hidden_dim=4, stalk_dim=2, num_layers=2
+        )
+
+        parameter_names = set(dict(model.named_parameters()))
+        assert parameter_names == {
+            "lin1.weight",
+            "lin1.bias",
+            "lin2.weight",
+            "lin2.bias",
+            "lin_left_weights.0.weight",
+            "lin_left_weights.1.weight",
+            "lin_right_weights.0.weight",
+            "lin_right_weights.1.weight",
+        }
+
     def test_float32_inputs_produce_float32_outputs(self):
         """No silent dtype upcasting — surprises matter at scale."""
         node_features = torch.randn(6, 7, dtype=torch.float32)

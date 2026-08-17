@@ -24,13 +24,12 @@ node-classification tasks (paper Table 1) and yields a noticeable
 wall-clock speedup (paper Table 2).
 
 **Architectural notes.**
-The class deliberately mirrors :class:`NSDEncoder` so a reader switching
-between Bodnar's and Barbero's models is comparing exactly the parts
-that differ: the construction of ``restriction_maps`` and the absence
-of ``sheaf_learners``. We reuse the linear-channel left/right
-transformations ``W₁``, ``W₂`` and the diffusion residual structure
-``x_0 ← (1 + tanh(ε)) x_0 − x`` verbatim from the Bodnar code path;
-both are part of the *diffusion* layer, not the *sheaf*.
+The class deliberately mirrors :class:`NSDEncoder` while following the
+paper's diffusion update exactly. Each layer applies the learnable
+left/right transformations ``W₁``, ``W₂`` and then updates
+``X_{t+1} = X_t - σ(Δ_F (I_n ⊗ W₁) X_t W₂)``. In particular, Conn-NSD
+does not inherit Bodnar's additional trainable residual gate, which is
+absent from Equation 5.
 
 References
 ----------
@@ -97,9 +96,6 @@ class ConnNSDEncoder(nn.Module):
     lin_left_weights, lin_right_weights : nn.ModuleList
         Per-layer ``W₁`` (acts on stalk dimension) and ``W₂`` (acts on
         hidden channels) of paper Eq. 5.
-    epsilons : nn.ParameterList
-        Per-layer residual gates initialised to zero (so the first
-        training step recovers a pure diffusion step).
     """
 
     uses_fixed_connection = True
@@ -159,13 +155,6 @@ class ConnNSDEncoder(nn.Module):
             )
             nn.init.orthogonal_(right.weight.data)
             self.lin_right_weights.append(right)
-
-        # Residual gate ε per layer; tanh(0) = 0 so the initial step is a
-        # pure diffusion step.
-        self.epsilons = nn.ParameterList(
-            nn.Parameter(torch.zeros((stalk_dim, 1)))
-            for _ in range(num_layers)
-        )
 
     # ------------------------------------------------------------------
     # Forward — Algorithm 1 (pre-process) ∘ paper Eq. 5 (diffusion).
@@ -261,12 +250,8 @@ class ConnNSDEncoder(nn.Module):
             h = torch_sparse.spmm(l_indices, l_values, h.size(0), h.size(0), h)
             h = F.elu(h)
 
-            # Residual gate, same form as Bodnar's bundle diffusion:
-            #     x0 ← (1 + tanh(ε)) ⊙ x0  −  x
-            gate = 1.0 + torch.tanh(self.epsilons[layer_idx]).tile(
-                num_nodes, 1
-            )
-            residual = gate * residual - h
+            # Paper Equation 5: X_{t+1} = X_t - sigma(...).
+            residual = residual - h
             h = residual
 
         h = h.reshape(num_nodes, self.hidden_dim)

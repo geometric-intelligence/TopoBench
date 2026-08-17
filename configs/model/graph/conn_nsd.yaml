@@ -7,8 +7,7 @@
 # local PCA over each node's 1-hop neighbourhood gives an orthonormal
 # tangent basis O_v; the restriction map F_{vu} = U V^T is the orthogonal
 # Procrustes solution from the SVD of O_v^T O_u. There are no learnable
-# sheaf parameters — only the diffusion weights W_1, W_2 (left/right) and
-# the residual gates epsilon.
+# sheaf parameters — only the diffusion weights W_1 and W_2 (left/right).
 
 _target_: topobench.model.TBModel
 
