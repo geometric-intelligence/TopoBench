@@ -22,6 +22,8 @@ does not complete acceptance of the commercial grant.
    for your identified contribution. The acceptance record must include
    the information required by clause 2 of the agreement. It can be electronic;
    do not put private recipient or contributor details in public PR comments.
+   You can use the [acceptance form](docs/legal/templates/acceptance-form.txt)
+   and return it privately with your own acceptance evidence.
 3. Check the contributor-agreement box in your PR only after that acceptance.
    Identify third-party material and preserve its notices. If other rights
    holders are involved, their permission or an authorised acceptance must

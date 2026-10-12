@@ -1,0 +1,50 @@
+TOPOBENCH CONTRIBUTOR AGREEMENT — ACCEPTANCE FORM
+
+This is an unsigned form. The contributor or an authorised representative
+must complete and accept it personally. A maintainer must not accept for
+someone else without authority. Keep the completed form and original
+acceptance evidence in private storage, not in a public issue or PR.
+
+ACCEPTING PERSON AND RIGHTS HOLDER
+
+Full legal name:
+Contact used for acceptance:
+Rights holder (yourself, employer, university or other organisation):
+Capacity (own rights or authorised representative):
+Authority evidence, if representing someone else:
+
+CONTRIBUTION
+
+Repository: https://github.com/geometric-intelligence/topobench
+Pull request URL:
+Covered commit SHA(s) or equally precise contribution scope:
+Excluded material and separately licensed material:
+Other rights holders and their permissions, where applicable:
+
+DOCUMENTS RECEIVED BEFORE ACCEPTANCE
+
+Agreement: TopoBench Contributor Agreement 1.0
+Exact agreement attachment/file and SHA-256:
+Recipient statement version:
+Exact recipient statement attachment/file and SHA-256:
+Date and method by which you received both complete documents:
+
+DECLARATION TO BE MADE BY THE ACCEPTING PERSON
+
+I received and read the complete TopoBench Contributor Agreement 1.0 and
+the recipient statement identified above before accepting. I accept both
+for the contribution identified above. I confirm that I control the rights
+granted or am authorised by the identified rights holder to grant them.
+
+Acceptance date and time, including time zone:
+Full name or signature, with the original acceptance message/evidence:
+
+RETURN AND RECORDS
+
+Return your completed acceptance through the private channel used to supply
+the documents, or contact topological.intelligence@gmail.com for instructions.
+Retain your copy. The project must preserve the exact documents supplied,
+delivery evidence and original acceptance evidence, such as the complete
+email reply with its headers. A filled-in template without authentic assent
+is not a completed acceptance. A hash detects file changes; it does not
+authenticate the accepting person or prove their authority.
