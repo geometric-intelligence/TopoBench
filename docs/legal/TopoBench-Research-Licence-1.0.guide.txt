@@ -109,8 +109,11 @@ HOW DO CONTRIBUTIONS TO TOPOBENCH WORK?
 Contributions are welcome. CONTRIBUTING.md explains how to submit them and
 accept CLA.md, the TopoBench Contributor Agreement. Contributors retain
 ownership. The agreement provides research permissions and an additional
-royalty-free commercial licensing grant to the recipients identified to the
-contributor before acceptance. Read the agreement before contributing.
+royalty-free commercial licensing grant to the recipients identified in the
+agreement. Read the version linked in the PR template and personally select its
+acceptance checkbox. No separate email or form is required. The PR records the
+acceptance; the automated check checks for the acknowledgement, not ownership
+or authority. Each new PR requires its own acceptance.
 
 OTHER TERMS TO KNOW
 

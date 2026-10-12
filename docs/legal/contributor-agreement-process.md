@@ -1,174 +1,100 @@
-# Contributor agreement records and verification
+# Contributor agreement: acknowledgement and merge check
 
-The [TopoBench Contributor Agreement 1.0](../../CLA.md) is the agreement.
-This page explains how to collect and verify acceptance; it does not itself
-grant rights or identify the recipients.
+The [TopoBench Contributor Agreement 1.0](https://github.com/geometric-intelligence/topobench/blob/7258fccaa938ed35cbf84f8a88f705996afde511/CLA.md)
+is the agreement. This page explains the PR workflow and its limitations.
 
-## Recipient statement
+## Contributor experience
 
-Topological Intelligence is currently an informal project name. Before collecting
-acceptances, supply each contributor with a versioned statement identifying the
-actual persons or organisation receiving the commercial grant. Include enough
-information to distinguish them, their legal capacity and a contact address.
-An internal list, an email address or an opaque reference alone is insufficient.
-Do not describe the project name as an incorporated entity unless that is true.
+Contributors read the complete agreement linked from the PR template and
+personally select its single acceptance checkbox. The agreement identifies the
+recipients and the commercial grant. No separate acceptance email, form,
+signature service or maintainer verification marker is required.
 
-Give the contributor the complete statement before acceptance. Retain the exact
-statement with the accepted agreement version. Changing its recipients requires
-new acceptance for the expanded grant; adding a repository administrator does
-not add a commercial grant recipient.
+The acceptance covers the person's authorised contributions to that PR,
+including subsequent updates they intentionally submit under the agreement.
+Pushing another commit does not require another acceptance while the same
+acknowledgement remains selected. Each separate PR requires its own acceptance.
+Other rights holders' material requires their permission or an acceptance by
+someone authorised to grant those rights; one submitter cannot automatically
+bind every coauthor.
 
-Keep the actual statement in private storage outside the repository and its
-worktrees. Give each contributor the complete statement and exact agreement
-before asking them to accept. Identifying recipients is separate from accepting
-on behalf of a contributor; publishing the project documents creates no assent.
+## Agreement version and acceptance record
 
-## Acceptance record
+The checkbox links to a specific commit containing the complete agreement.
+Retain that commit and the PR with its acknowledgement, available history and
+contribution commits. The PR serves as the acceptance record; this workflow
+does not create a separate acceptance database or collect private forms.
 
-Keep the following together in an access-controlled record available to the parties:
+Maintainers must not select the checkbox for contributors without authority.
+A passing check only confirms the acknowledgement's presence. It does not prove
+who selected it, authenticate a legal identity, determine ownership or establish
+an employer's or university's authorisation. Resolve disclosed rights issues
+through ordinary contribution review before relying on the grant.
 
-- The full agreement text and version that the contributor accepted.
-- The full recipient statement, its version and evidence it was supplied first.
-- The accepting person's identity, represented rights holder and authority.
-- The repository, PR and commits or other precise contribution scope covered.
-- The affirmative acceptance, its date and the evidence authenticating it.
-- Any other rights holders' permissions and identified third-party material.
+GitHub permits removal of revision contents and limits edit history. An
+independent export or backup can help preserve evidence, but is not an additional
+contributor step or a condition of this CLA. Retain the PR and referenced
+agreement for as long as the project relies on that grant. A Git clone alone
+does not include PR descriptions or their edit history.
 
-A PDF signature is not the only possible acceptance method. An appropriately
-recorded electronic acceptance may be used, but a checkbox without the recipient
-information or a maintainer's own assertion is not a substitute for actual assent.
-A PR with several rights holders needs coverage for each, directly or through
-an authorised representative. Existing records may cover later changes only when
-their accepted scope actually includes those changes.
+When changing agreement terms or recipients, issue a new version, retain the
+accepted revision, and update the template, check and documentation together.
+The new version requires fresh express acceptance; a changed file on `main`
+does not alter an earlier accepted agreement. Editing or removing a checkbox
+does not itself undo rights already validly granted.
 
-Use the [acceptance form](templates/acceptance-form.txt) and
-[record template](templates/acceptance-record.json) to prepare a private packet.
-The templates are blank and do not constitute acceptance or verification.
-For each contribution:
+## What the automated check does
 
-1. Create a private folder with a random opaque record ID. Copy the exact
-   agreement, research licence and recipient statement into it; record their
-   versions and SHA-256 hashes. Never put identities into the record ID.
-2. Supply the complete documents to the contributor through a private channel.
-   Keep delivery evidence and the actual date supplied.
-3. Retain the contributor's original acceptance and authority evidence. For
-   email acceptance, preserve the complete message with its headers and
-   attachments. A maintainer must not manufacture or backdate acceptance.
-4. Complete the record's contribution scope and evidence references. Keep its
-   state as `draft`, `supplied` or `acceptance_received` until a maintainer checks
-   the evidence. A template, hash or checked PR box alone does not prove assent.
-5. Append verification decisions, including the reviewer, date, covered PR head
-   and reason. Keep earlier evidence and decisions when correcting or extending
-   a record. Only an actual review of complete records can mark it `verified`.
+`Contributor agreement` passes when exactly one visible, checked acknowledgement
+matches the required wording and pinned agreement link in the PR description.
+Missing, unchecked, altered or duplicate acknowledgements fail. Text hidden in
+comments or code examples is not an acknowledgement.
 
-Keep a private index of record IDs, packet locations and states. Restrict access
-to authorised record custodians, use encrypted storage and backups, and test
-recovery. Folder permissions alone do not provide encryption or backup. Review
-retention needs periodically under applicable law while preserving the evidence
-needed for grants the project relies on. Supply parties their applicable records
-through a private channel; do not publish the private index or packets.
+GitHub commit statuses belong to a SHA, so every open PR targeting `main` with
+that head commit must satisfy the check before the shared commit passes. A
+failure identifies the blocking PR. Every run reconciles all open PRs to `main`;
+closing, retargeting or updating a PR refreshes those groups. Runs are serialized
+and membership and descriptions are checked again before publishing results.
+Unchanged results for unrelated commits are not republished.
 
-Use an opaque record identifier in public, without names, emails or other private
-details encoded in it. Keep the associated records for as long as the project
-relies on the grant; an identifier without its underlying evidence is insufficient.
+The workflow runs trusted default-branch code and never executes PR code with
+its status token. It reads PRs and statuses and publishes a status; it does not
+send messages or inspect acceptance records, identities, comments or collaborator
+permissions. Manual dispatch accepts a PR number for rechecking.
 
-## Maintainer verification
+Checks are asynchronous. An edit after the final read is handled by the next
+run. API or status-publication failures can leave an older result visible;
+inspect workflow errors and rerun before relying on it. One reconciliation run
+can report failure for one commit and success for another; inspect the current
+PR head's status and the run's errors.
 
-Before verification, check the PR's current commit, contribution scope, actual
-rights holders, disclosed recipient statement and recorded affirmative acceptance.
-Confirm separately licensed material is identified and its conditions are met.
-Do not verify an incomplete record. The CLA does not clear rights in other code.
+## Enabling protection after deployment
 
-After verification, a maintainer with repository write, maintain or admin
-permission posts a PR comment containing only this line:
+1. Confirm the reviewed workflow and checker are on `main`, and that repository
+   Actions policy permits the triggers and token permissions. A workflow file
+   alone does not make its status a merge requirement.
+2. Dispatch `contributor-agreement.yml` on `main` with an open PR number. Confirm
+   a fresh `Contributor agreement` failure for a missing acknowledgement on the
+   expected head commit. Do not check acceptance on someone else's behalf merely
+   to test a successful result.
+3. Re-read branch protection. Add `Contributor agreement` as a required check
+   bound to the GitHub Actions app, resolving its ID through
+   `GET /apps/github-actions`. Preserve existing required checks and the current
+   strict/up-to-date setting.
+4. Use `PATCH /repos/{owner}/{repo}/branches/main/protection/required_status_checks`
+   with an authorised administrator's credentials. Read back protection and
+   confirm review requirements, restrictions and bypass settings are preserved.
+   Existing administrator or role bypasses remain unless separately changed.
+5. Inspect the required-check display on an unacknowledged PR without attempting
+   a test merge. With an actual contributor's acceptance, verify success and that
+   a subsequent commit in the same PR passes without another acceptance. The
+   unit tests cover checkbox removal and other negative cases without creating
+   real acceptance.
 
-```text
-CLA-VERIFIED: <full-40-character-head-commit> <opaque-record-id>
-```
+Until protection is enabled, maintainers must check for acknowledgement before
+merging. Earlier contributions retain their existing rights basis; the workflow
+does not manufacture consent or fill missing commercial grants.
 
-The record identifier uses letters, digits, dots, underscores or hyphens, starts
-with a letter or digit and contains at most 80 characters. Replace the angle-bracket
-placeholders. A PR can have one record that collects all required acceptances.
-
-To revoke the public verification, post:
-
-```text
-CLA-REVOKED: <full-40-character-head-commit>
-```
-
-The latest applicable trusted decision, ordered by comment update time and then
-comment ID, controls the result. Editing a decision is a new verification event.
-Only the current head commit is covered. New commits require a fresh verification;
-this does not necessarily require a new agreement if the existing acceptance
-already covers the changes. Deleting or editing away a decision removes that
-decision; use an explicit revocation when earlier verification comments remain.
-
-## Automated check and deployment
-
-The `Contributor agreement` status verifies PR acceptance checkboxes and trusted
-maintainers' current-commit verification. GitHub statuses belong to commits, so
-all open PRs targeting `main` with the same head commit must pass before that
-commit receives success. Every run reconciles all open PRs to `main`; closing,
-retargeting or updating one PR can change which others share its status.
-When a PR blocks a shared commit, the failure description identifies its number.
-The workflow serializes reconciliation runs and checks for PR changes before
-publishing success. It uses GitHub's authenticated comment authors and repository
-permissions. It does not inspect private records, prove legal ownership, assess
-contractual enforceability or replace review.
-
-Checks are asynchronous: a comment edited after it was read is checked by the
-next queued run. Unchanged results for unrelated commits are not republished.
-A run can report failure for one commit and success for another; inspect the
-status on the PR's current head and the run's error messages.
-
-The workflow runs trusted default-branch code and never checks out or executes PR
-code. It reads the PR, comments and permissions, then publishes a commit status.
-It does not send messages, collect identities or modify the acceptance records.
-Use its manual workflow dispatch with the PR number to recheck after a permission
-change or another event that did not trigger a run. Revocation affects the public
-verification status; it does not itself withdraw a validly granted legal licence.
-If GitHub's API or status publication fails, a previous status may remain visible,
-especially for comment or manual runs that cannot discover the current commit.
-Check the workflow run's health and rerun failed verification before merging;
-do not rely on an old successful status during an outage.
-
-The workflow must first be merged into the default branch, and the repository's
-Actions policy must permit its triggers and token permissions. After deployment,
-configure `Contributor agreement` as a required status check for `main` and review
-any administrator or other bypass permissions. A workflow file alone does not
-make its status a merge requirement; repository settings must require it.
-Until that protection is active, maintainers must enforce the record requirement
-manually. Test with a real PR before relying on the automated merge gate.
-
-### Enabling protection after deployment
-
-1. Confirm the reviewed workflow and checker are present on `main`. A workflow
-   introduced in an unmerged PR cannot be dispatched from the default branch.
-2. Dispatch `contributor-agreement.yml` on `main`, supplying an open PR number.
-   Confirm a fresh `Contributor agreement` result on the expected commit and
-   inspect the linked workflow run. An unacknowledged or unverified PR must fail.
-3. Re-read the existing branch protection. Add `Contributor agreement` to the
-   required checks, binding its source to the GitHub Actions app. Resolve the
-   app ID through `GET /apps/github-actions`; do not use a bot user ID. Preserve
-   existing required checks and the current strict/up-to-date setting.
-4. Use the targeted `PATCH /repos/{owner}/{repo}/branches/main/protection/required_status_checks`
-   endpoint rather than replacing the full branch-protection configuration.
-   This requires an authorised administrator; the checker's `GITHUB_TOKEN`
-   is not an administration token. Read back the settings and confirm other
-   review requirements, restrictions and bypass settings were preserved.
-5. Inspect an unverified PR's required-check display without trying to merge
-   it as a test. Confirm the new requirement is active. Existing administrator
-   or role bypasses remain unless separately changed; required status checks
-   do not themselves remove those bypasses.
-6. Test success only with a genuinely accepted contribution and reviewed
-   evidence. Confirm success after the real maintainer verification, failure
-   after revocation, and fresh verification after a new commit. Synthetic
-   unit-test fixtures are not production acceptance records. Report positive
-   live testing as pending until valid records exist; do not manufacture a
-   contributor declaration or record to make the check pass.
-
-Reference: [GitHub status-check protection API](https://docs.github.com/en/rest/branches/branch-protection#update-status-check-protection).
-
-Publishing the agreement and workflow does not itself establish a recipient
-statement or create contributor acceptance. Earlier contributions keep their existing rights basis;
-missing commercial rights require an additional valid grant.
+References: [GitHub permanent file links](https://docs.github.com/en/repositories/working-with-files/using-files/getting-permanent-links-to-files),
+[GitHub edit history](https://docs.github.com/en/communities/moderating-comments-and-conversations/tracking-changes-in-a-comment),
+[status-check protection API](https://docs.github.com/en/rest/branches/branch-protection#update-status-check-protection).

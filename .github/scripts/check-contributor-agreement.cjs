@@ -1,11 +1,12 @@
-const STATEMENT = 'I have read and accept the TopoBench Contributor Agreement 1.0 and the recipient statement supplied to me. I confirm authority to grant its rights for my contributions.';
+const AGREEMENT_URL = 'https://github.com/geometric-intelligence/topobench/blob/7258fccaa938ed35cbf84f8a88f705996afde511/CLA.md';
+const STATEMENT = `I have read and accept the [TopoBench Contributor Agreement 1.0](${AGREEMENT_URL}) for my contributions to this pull request. I confirm that I control the rights granted or am authorised to grant them.`;
 const STATUS = 'Contributor agreement';
 
 function hasAcceptance(body) {
   let fence = null;
   let htmlCode = null;
   const statements = [];
-  // Examples and HTML comments are not an administrative acknowledgement.
+  // Examples and HTML comments are not a contributor acknowledgement.
   for (const line of (body || '').replace(/<!--[\s\S]*?(?:-->|$)/g, '').split(/\r?\n/)) {
     if (!fence) {
       const wasHtmlCode = Boolean(htmlCode);
@@ -29,18 +30,11 @@ function hasAcceptance(body) {
   return statements.length === 1 && statements[0];
 }
 
-function parseDecision(comment, sha) {
-  const marker = (comment.body || '').trim().match(/^(?:CLA-VERIFIED: ([a-fA-F0-9]{40}) ([A-Za-z0-9][A-Za-z0-9._-]{0,79})|CLA-REVOKED: ([a-fA-F0-9]{40}))$/);
-  if (!marker || (marker[1] || marker[3]).toLowerCase() !== sha.toLowerCase()) return null;
-  if (marker[2] && /^(?:todo|tbd|placeholder|(?:opaque[-_]|your[-_])?record[-_]?id)$/i.test(marker[2])) return null;
-  return { comment, verified: Boolean(marker[1]) };
-}
-
 module.exports = async function checkContributorAgreement({ github, context, core }) {
   const repository = context.repo;
   const knownHeads = new Set();
   const pendingHeads = new Set();
-  const unavailable = 'Unable to verify contributor agreement records; a maintainer must rerun the check.';
+  const unavailable = 'Unable to check the contributor acknowledgement; a maintainer must rerun the check.';
   const status = async (sha, state, description) => {
     knownHeads.add(sha);
     if (state !== 'pending') {
@@ -78,7 +72,7 @@ module.exports = async function checkContributorAgreement({ github, context, cor
   };
   const pending = async (sha) => {
     if (!pendingHeads.has(sha)) {
-      await status(sha, 'pending', 'Checking acknowledgement and maintainer record verification.');
+      await status(sha, 'pending', 'Checking the contributor agreement acknowledgement.');
       pendingHeads.add(sha);
     }
   };
@@ -99,36 +93,11 @@ module.exports = async function checkContributorAgreement({ github, context, cor
   const snapshot = (prs = []) => JSON.stringify(prs
     .map(({ number, body }) => [number, body])
     .sort((a, b) => a[0] - b[0]));
-  const permissions = new Map();
-  const verify = async (pr) => {
-    if (!hasAcceptance(pr.body)) return 'Check the exact contributor agreement acknowledgement in the PR description.';
-    const comments = await github.paginate(github.rest.issues.listComments, { ...repository, issue_number: pr.number, per_page: 100 });
-    const decisions = comments.map((comment) => parseDecision(comment, pr.head.sha)).filter(Boolean)
-      .sort((a, b) => Date.parse(b.comment.updated_at) - Date.parse(a.comment.updated_at) || b.comment.id - a.comment.id);
-    for (const decision of decisions) {
-      const username = decision.comment.user?.login;
-      if (!username) continue;
-      if (!permissions.has(username)) {
-        try {
-          const { data } = await github.rest.repos.getCollaboratorPermissionLevel({ ...repository, username });
-          permissions.set(username, ['admin', 'maintain', 'write'].includes(data.permission));
-        } catch (error) {
-          if (error.status !== 404) throw error;
-          permissions.set(username, false);
-        }
-      }
-      if (permissions.get(username)) {
-        return decision.verified ? null : 'Maintainer verification was revoked for this commit.';
-      }
-    }
-    return 'A maintainer must verify the contributor agreement record for this commit.';
-  };
 
   try {
     const payload = context.payload;
-    if (context.eventName === 'issue_comment' && !payload.issue?.pull_request) return;
     const value = context.eventName === 'workflow_dispatch' ? payload.inputs?.pull_request_number
-      : payload.pull_request?.number || payload.issue?.number;
+      : payload.pull_request?.number;
     if (!/^[1-9]\d*$/.test(String(value)) || !Number.isSafeInteger(Number(value))) throw new Error('Invalid PR number');
     const pull_number = Number(value);
     const eventSha = context.eventName === 'pull_request_target' && payload.pull_request?.head?.sha;
@@ -143,8 +112,10 @@ module.exports = async function checkContributorAgreement({ github, context, cor
     const results = new Map();
     for (const [sha, prs] of groups) {
       for (const candidate of prs) {
-        const failure = await verify(candidate);
-        if (failure) { results.set(sha, `PR #${candidate.number}: ${failure}`); break; }
+        if (!hasAcceptance(candidate.body)) {
+          results.set(sha, `PR #${candidate.number}: Check the exact contributor agreement acknowledgement in the PR description.`);
+          break;
+        }
       }
     }
 
@@ -157,8 +128,8 @@ module.exports = async function checkContributorAgreement({ github, context, cor
       } else if (results.has(sha)) {
         await status(sha, 'failure', results.get(sha));
       } else {
-        // Private records hold the actual assent and authority evidence.
-        await status(sha, 'success', 'Every open PR to main on this commit has acknowledgement and maintainer record verification.');
+        // This checks presence only; it does not establish identity or authority.
+        await status(sha, 'success', 'The exact contributor acknowledgement is present in every open PR to main on this commit.');
       }
     }
   } catch {

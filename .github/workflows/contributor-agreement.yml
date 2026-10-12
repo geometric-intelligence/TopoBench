@@ -4,8 +4,6 @@ on:
   pull_request_target:
     # Retargeting away from main must refresh other PRs sharing the old commit.
     types: [opened, reopened, closed, edited, synchronize, ready_for_review]
-  issue_comment:
-    types: [created, edited, deleted]
   workflow_dispatch:
     inputs:
       pull_request_number:
@@ -16,12 +14,10 @@ on:
 permissions:
   contents: read
   pull-requests: read
-  issues: read
   statuses: write
 
 jobs:
   verify:
-    if: github.event_name != 'issue_comment' || github.event.issue.pull_request
     # Each surviving run reconciles every open PR, including coalesced events.
     concurrency:
       group: contributor-agreement
@@ -33,7 +29,7 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
-      - name: Verify contributor agreement record
+      - name: Check contributor acknowledgement
         uses: actions/github-script@v7
         with:
           script: |

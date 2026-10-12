@@ -4,35 +4,33 @@ See the [contribution guide](https://geometric-intelligence.github.io/topobench/
 
 ## Contribution agreement
 
-Read the [TopoBench Contributor Agreement 1.0](CLA.md) before contributing.
-It preserves your ownership, offers your contribution under the
-[TopoBench Research Licence 1.0](LICENSE), and grants the identified
-Topological Intelligence recipients additional rights to use, modify,
-distribute and sublicense it under commercial terms without owing you
-royalties for those authorised uses. Those recipients may charge customers.
+Read the [TopoBench Contributor Agreement 1.0](https://github.com/geometric-intelligence/topobench/blob/7258fccaa938ed35cbf84f8a88f705996afde511/CLA.md),
+then personally select its checkbox in your pull request description. That is
+all the routine acceptance process requires. The agreement and its recipients
+are identified in the linked text; no separate email, form or maintainer
+verification comment is required.
 
-Acceptance is required before merging contributions. Merely opening a PR
-does not complete acceptance of the commercial grant.
+You retain ownership. The agreement offers your contribution under the
+[TopoBench Research Licence 1.0](LICENSE) and grants the identified recipients
+rights to use, modify, distribute and sublicense it under commercial terms
+without owing you royalties for those authorised uses. They may charge customers.
 
-1. Request the recipient statement from
-   [topological.intelligence@gmail.com](mailto:topological.intelligence@gmail.com).
-   It must identify the actual recipients before you accept; the informal
-   project name and email address alone are not a substitute.
-2. Read and affirmatively accept the exact agreement and recipient statement
-   for your identified contribution. The acceptance record must include
-   the information required by clause 2 of the agreement. It can be electronic;
-   do not put private recipient or contributor details in public PR comments.
-   You can use the [acceptance form](docs/legal/templates/acceptance-form.txt)
-   and return it privately with your own acceptance evidence.
-3. Check the contributor-agreement box in your PR only after that acceptance.
-   Identify third-party material and preserve its notices. If other rights
-   holders are involved, their permission or an authorised acceptance must
-   cover the relevant contribution as well.
-4. A maintainer verifies the records and confirms coverage for the current
-   PR commit. Further commits require verification again, but records may
-   be reused when their accepted scope already covers the changes.
+The `Contributor agreement` check requires the exact acknowledgement, including
+its link to the agreement's fixed revision. Keep the template wording and select
+the box only after you agree. New commits in the same PR do not require you to
+repeat acceptance while that acknowledgement remains selected; each new PR has
+its own checkbox. A missing or unchecked acknowledgement prevents the check
+from passing. The check becomes a merge requirement once configured in branch
+protection.
 
-Prior submissions are not automatically covered. GitHub access, a checked
-box or a passing status check does not establish ownership or authority.
-See the [record and verification process](docs/legal/contributor-agreement-process.md)
-for the maintainer procedure and the check's limitations.
+Accept only for rights you control or are authorised to grant. Identify other
+rights holders and separately licensed material in the PR, and preserve its
+notices. If your employer, university or a coauthor owns relevant rights, obtain
+permission that covers the grant before accepting for that material. Do not
+publish confidential supporting documents in the PR. Earlier submissions are
+not automatically covered.
+
+The PR is the acceptance record. A checked box or passing status alone does not
+prove who checked it, ownership or authority. See the
+[maintainer guide](docs/legal/contributor-agreement-process.md) for the check's
+scope, record retention and deployment instructions.

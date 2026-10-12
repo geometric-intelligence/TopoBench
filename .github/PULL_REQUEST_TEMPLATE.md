@@ -4,17 +4,17 @@ Thank you for opening this pull request!
 
 ## Contributor agreement
 
-Read the [TopoBench Contributor Agreement 1.0](https://github.com/geometric-intelligence/topobench/blob/main/CLA.md)
-and [acceptance instructions](https://github.com/geometric-intelligence/topobench/blob/main/CONTRIBUTING.md).
-The agreement preserves your ownership and grants the identified Topological
-Intelligence recipients royalty-free commercial sublicensing rights.
-Obtain the recipient statement and record your acceptance before checking the box.
-Contact topological.intelligence@gmail.com; do not publish private identity details here.
+Read the agreement linked below, then personally check the box to accept it.
+You retain ownership and grant the recipients identified in the agreement
+royalty-free commercial sublicensing rights for your contributions to this PR.
+No separate acceptance email or form is needed.
 
-- [ ] I have read and accept the TopoBench Contributor Agreement 1.0 and the recipient statement supplied to me. I confirm authority to grant its rights for my contributions.
+- [ ] I have read and accept the [TopoBench Contributor Agreement 1.0](https://github.com/geometric-intelligence/topobench/blob/7258fccaa938ed35cbf84f8a88f705996afde511/CLA.md) for my contributions to this pull request. I confirm that I control the rights granted or am authorised to grant them.
 
-The `Contributor agreement` check also requires a maintainer to verify the
-acceptance records for this PR's current commit. Opening a PR alone is not acceptance.
+Identify other rights holders and separately licensed material in the description.
+The `Contributor agreement` check requires this exact acknowledgement. Opening a
+PR alone is not acceptance; do not check the box on someone else's behalf without
+authority. See the [contribution instructions](https://github.com/geometric-intelligence/topobench/blob/main/CONTRIBUTING.md).
 
 ## Checklist
 
