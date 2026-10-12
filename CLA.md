@@ -6,8 +6,8 @@ Contact: [topological.intelligence@gmail.com](mailto:topological.intelligence@gm
 
 This agreement provides a research licence for contributions and an additional
 commercial licensing grant to specifically identified recipients. Contributors
-retain ownership. Read the complete agreement and the recipient statement before
-accepting it.
+retain ownership. Read the complete agreement before accepting it through the
+checkbox in Your pull request.
 
 ## 1. Parties and contribution
 
@@ -15,37 +15,41 @@ accepting it.
 holder may accept personally or through a person expressly authorised to act on
 its behalf.
 
-**Topological Intelligence** is the project's public name. It does not, by itself,
-identify a separate legal entity. **Recipients** means only the persons or
-organisation expressly identified as grant recipients in a versioned recipient
-statement supplied to You before acceptance and included in Your acceptance
-record. That statement must identify the actual recipients; a team name, email
-address or undisclosed list alone is insufficient. Repository administration,
-team membership or access to the contact inbox does not make someone a Recipient.
+**Recipients** means **Lev Telyatnikov** and **Guillermo Bernardez Gil**, acting
+in their individual capacities under the project name **Topological Intelligence**.
+They may be contacted at topological.intelligence@gmail.com. Topological
+Intelligence is an informal project name, not a separate legal entity.
+Repository administration, team membership or access to the contact inbox does
+not make another person a Recipient.
 
 **Contribution** means the original code, documentation or other copyrightable
-material that You intentionally submit for inclusion in TopoBench and that is
-identified in Your acceptance record by repository, pull request and commit(s),
-or an equally specific description. It excludes material whose rights You do not
-control and material expressly identified as outside this agreement.
+material that You intentionally submit for inclusion in TopoBench through the
+pull request in which You accept this agreement. It includes subsequent updates
+You intentionally submit to that pull request under this agreement. It excludes
+material whose rights You do not control or have authority to license, and
+material expressly identified as outside this agreement.
 
-## 2. Acceptance and records
+## 2. Acceptance through a pull request
 
-This agreement takes effect for a Contribution only after You have received its
-complete text and the recipient statement, and affirmatively accepted both.
-Opening a pull request, checking a box without the recipient statement, or merely
-using or forking TopoBench does not by itself complete that acceptance.
+You accept this agreement by personally selecting the contributor-agreement
+checkbox in the pull request description using Your GitHub account, after reading
+the complete agreement linked from that checkbox. The checkbox identifies the
+agreement version and links to its exact repository revision. By selecting it,
+You expressly accept that agreement for Your Contribution and confirm Your
+authority to grant its rights. Opening, using or forking the repository without
+that affirmative acceptance does not by itself constitute acceptance.
 
-The acceptance record must preserve the accepting person's identity and authority,
-the rights holder represented, the actual recipient statement, the exact agreement
-version, the covered Contribution, the affirmative acceptance and its date.
-Electronic acceptance may be used. The PR checkbox is part of the contribution
-workflow; it does not replace missing recipient information or authority.
+The pull request, its acknowledgement and available history, the referenced
+agreement revision and the submitted contributions form the acceptance record.
+No separate acceptance email, form, signature service or maintainer verification
+comment is required by this agreement. Acceptance is required in each separate
+pull request; it need not be repeated for subsequent updates covered by the
+Contribution definition while the same acknowledgement remains selected.
 
-Private recipient and contributor details need not be published in the repository,
-but must be disclosed to the parties and retained with their acceptance record.
-An opaque public record reference is for verification only; it does not substitute
-for supplying the recipient statement to You.
+A person must not select the checkbox on another rights holder's behalf without
+authority. Acceptance covers only rights You control or are authorised to grant.
+The checkbox and an automated check do not establish ownership, authenticate a
+legal identity or grant rights in another person's material without authority.
 
 ## 3. Research licence
 
@@ -103,10 +107,12 @@ the Contribution and does not establish the Recipients' internal approval rules.
 
 This agreement does not automatically cover earlier submissions, other people's
 work or later agreement versions. Earlier material requires its own valid rights
-basis or express acceptance identifying it. Additional contributions require a
-record showing that their scope is covered by valid acceptance.
+basis or express acceptance identifying it. A separate pull request requires its
+own acceptance.
 
-Changes to this agreement or to the identified Recipients require fresh express
-acceptance for any expanded grant. Rights already validly granted remain subject
-to their accepted terms and mandatory law. No governing law or exclusive court
-is selected; applicable-law and jurisdiction rules apply.
+Changes to this agreement or to the identified Recipients require a new version
+and fresh express acceptance for any expanded grant. The accepted text remains
+identified by its repository revision. Rights already validly granted remain
+subject to their accepted terms and mandatory law; editing or removing a checkbox
+does not by itself undo such a grant. No governing law or exclusive court is
+selected; applicable-law and jurisdiction rules apply.
