@@ -93,10 +93,10 @@ The workflow must first be merged into the default branch, and the repository's
 Actions policy must permit its triggers and token permissions. After deployment,
 configure `Contributor agreement` as a required status check for `main` and review
 any administrator or other bypass permissions. A workflow file alone does not
-make its status a merge requirement. This PR does not change repository settings.
+make its status a merge requirement; repository settings must require it.
 Until that protection is active, maintainers must enforce the record requirement
 manually. Test with a real PR before relying on the automated merge gate.
 
-The adopting PR does not itself establish a recipient statement or create any
-contributor acceptance. Earlier contributions keep their existing rights basis;
+Publishing the agreement and workflow does not itself establish a recipient
+statement or create contributor acceptance. Earlier contributions keep their existing rights basis;
 missing commercial rights require an additional valid grant.

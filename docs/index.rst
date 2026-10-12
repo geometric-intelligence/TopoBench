@@ -72,6 +72,10 @@ and the
 where applicable. The complete terms are in
 `LICENSE <https://github.com/geometric-intelligence/TopoBench/blob/main/LICENSE>`__.
 
+Read the
+`plain-language licence guide <https://github.com/geometric-intelligence/topobench/blob/main/docs/legal/TopoBench-Research-Licence-1.0.guide.txt>`__
+for examples of research, sharing and infrastructure use.
+
 🧩 Get Started
 --------------
 
@@ -903,12 +907,10 @@ Under clause 4 of the TopoBench Research Licence 1.0, when publishing or
 publicly distributing a paper, thesis, report, presentation or other
 research output describing work performed using the software, you must
 acknowledge TopoBench, identify the version or commit used, and cite the
-principal publication designated in the citation instructions accompanying
-that version. Use the References section of the README supplied with your
-copy. Later changes to these instructions do not apply to that work. This
-requirement does not oblige you to publish private work.
+principal publication. This requirement does not oblige you to publish
+private work.
 
-For this documentation version, the designated publication is
+The principal publication is
 `TopoBench: A Framework for Benchmarking Topological Deep Learning <https://openreview.net/forum?id=07sTzyEVtY>`__.
 Copy its BibTeX entry below, or find it in the
 :download:`accompanying README <../README.md>`.

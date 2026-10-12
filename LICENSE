@@ -113,11 +113,9 @@ As a condition of this Licence's permissions, when publishing or publicly
 distributing a paper, thesis, report, presentation or other research output
 describing work performed using the Software, You must acknowledge
 TopoBench, identify the version or commit used, and cite the principal
-TopoBench publication designated in the citation instructions accompanying
-that version, whether in its README or a citation file. Venue citation
-styles are acceptable. If no publication is designated, cite the TopoBench
-project name, repository URL and version or commit instead. Later changes
-to citation instructions do not apply to work using earlier versions.
+publication, "TopoBench: A Framework for Benchmarking Topological Deep
+Learning" (https://openreview.net/forum?id=07sTzyEVtY). The README provides
+its BibTeX entry. Venue citation styles are acceptable.
 This requirement does not oblige You to publish private work.
 
 5. LIMITED INFRASTRUCTURE PERMISSION

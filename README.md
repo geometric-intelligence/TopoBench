@@ -59,6 +59,8 @@ TopoBench is distributed under the [TopoBench Research Licence 1.0](LICENSE), a 
 
 Company use, including internal benchmarking, is excluded from the permissions granted by this research licence. Separate written commercial agreements are available from the relevant rights holders or their authorised representatives. For enquiries, contact [topological.intelligence@gmail.com](mailto:topological.intelligence@gmail.com). Separately licensed material retains its own terms; see [NOTICE](NOTICE) and [third-party notices](third_party_licenses.txt). The complete terms are in [LICENSE](LICENSE).
 
+Read the [plain-language licence guide](docs/legal/TopoBench-Research-Licence-1.0.guide.txt) for examples of research, sharing and infrastructure use.
+
 ## :jigsaw: Get Started
 
 ### 🚀 Quick Install (Recommended)
@@ -422,7 +424,7 @@ Specially useful in pre-processing steps, these are the general data manipulatio
 
 ## :mag: References ##
 
-The following paper is the principal TopoBench publication designated for this version. Under clause 4 of the [TopoBench Research Licence 1.0](LICENSE), when publishing or publicly distributing a paper, thesis, report, presentation or other research output describing work performed using the software, you must acknowledge TopoBench, identify the version or commit used, and cite this publication. Follow the citation instructions accompanying the version you used; later changes to these instructions do not apply to that work. This requirement does not oblige you to publish private work.
+The following paper is the principal TopoBench publication. Under clause 4 of the [TopoBench Research Licence 1.0](LICENSE), when publishing or publicly distributing a paper, thesis, report, presentation or other research output describing work performed using the software, you must acknowledge TopoBench, identify the version or commit used, and cite this publication. This requirement does not oblige you to publish private work.
 
 Read the paper on [OpenReview](https://openreview.net/forum?id=07sTzyEVtY), or copy its BibTeX entry below:
 

@@ -12,7 +12,7 @@ authors = [
 readme = "README.md"
 description = "Topological Deep Learning"
 license = "LicenseRef-TopoBench-Research-1.0"
-# Ship the applicable notices and version-specific citation instructions.
+# Ship the applicable notices and citation instructions.
 license-files = ["LICENSE", "NOTICE", "LICENSES/*.txt", "third_party_licenses.txt", "README.md"]
 classifiers = [
     "Development Status :: 4 - Beta",
