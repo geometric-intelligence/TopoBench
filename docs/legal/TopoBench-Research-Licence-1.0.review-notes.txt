@@ -1,0 +1,174 @@
+TOPOBENCH RESEARCH LICENCE 1.0 — REVIEW NOTES
+Prepared 9 October 2026; revised 12 October 2026
+
+Companion draft: TopoBench-Research-Licence-1.0.draft.txt
+These notes are not part of the proposed licence.
+
+STATUS
+
+The draft is proposed wording for legal review, not an adopted licence.
+The repository's active LICENSE remains MIT. No release, package metadata,
+copyright notice, existing third-party terms, or contribution process has
+been changed.
+
+The wording is newly drafted in ten clauses. Its concise structure draws
+on the EPFL/Picid example supplied by the user, while retaining TopoBench's
+specific rules. Oxford's academic licence informed research sharing;
+Stanford's licence supplied a precedent for excluding company research.
+No institutional endorsement is implied, and those institutions' terms
+have not been copied wholesale.
+
+CONFIRMED POLICY
+
+- Research, education, reproducibility and publication are permitted free
+  of licence fees for eligible researchers.
+- Publications and publicly distributed research outputs reporting work
+  performed using the Covered Software must acknowledge TopoBench, identify
+  the version or commit, and provide the required citation under clause 4.
+- Distribution of covered code and covered modifications requires the
+  same TopoBench Research Licence 1.0 and corresponding source. This does
+  not impose that licence on independent papers, measurements or programs.
+- Company use, including internal benchmarks, evaluation and research,
+  requires a separate commercial agreement, even if the work is published.
+- Independent company grants remain eligible. Company-directed or
+  commissioned research, private company deliverables and exclusive
+  sponsor results fall outside the public research grant.
+- The Original Licensors named in the draft are Lev Telyatnikov and
+  Guillermo Bernardez Gil. The supplied contact is
+  topological.intelligence@gmail.com. The public commercial clause now
+  uses the user's approved wording requiring a separate written agreement
+  with the relevant rights holders or their authorised representatives.
+
+DRAFTING ASSUMPTION
+
+At the user's direction, this draft proceeds on the assumption that Lev
+Telyatnikov and Guillermo Bernardez Gil have the rights and permissions
+needed to offer the proposed research and commercial licences. This is the
+agreed basis for drafting, rather than the result of an independent rights
+audit. No further authority investigation is part of this drafting task.
+
+DRAFTING CHOICES TO REVIEW
+
+1. Infrastructure exception (clause 5): PROPOSED; user decision pending.
+   The draft permits ordinary hosting, package distribution and rented
+   compute solely for an eligible researcher's permitted activities.
+   Providers gain no right to conduct their own research, train models
+   from the code, or offer a TopoBench-based managed application. This
+   narrow exception is intended to make ordinary public distribution and
+   academic cloud use workable without exempting company benchmarking.
+
+2. Contributions: the draft does not take ownership of modifications or
+   automatically give the maintainers unrestricted commercial rights in
+   them. A sufficient separate contributor authorisation is needed where
+   those rights are not already available. It can be a licence rather than
+   a copyright assignment. Existing valid MIT permissions must be considered
+   before deciding whose further permission is actually necessary.
+
+3. Research continuity: compliant grants last for the copyright term,
+   subject to law and the stated termination rules. A limited first-breach
+   remedy applies to notice and source-delivery failures, not company use.
+   Later licence versions do not automatically replace version 1.0.
+
+4. Publications: scientific citation is mandatory under clause 4, as
+   requested by the user. The obligation uses the citation instructions
+   accompanying the version used; later instructions do not apply
+   retroactively. The current project reference is in the README's
+   References section. Redistributors must preserve citation instructions.
+   Citation format may follow the venue's style, and private work need not
+   be published. A missing required citation triggers termination and
+   requires written restoration under clause 9. Its automatic remedy
+   remains limited to the specified clause 3 failures; the shorter draft
+   makes the citation exclusion explicit without changing that policy.
+   Outputs do not inherit the software licence merely because they were
+   generated with TopoBench. Publishing through a commercial journal is
+   allowed. Publishing does not excuse excluded company use.
+
+5. Governing law and courts: no contractual selection has been inserted.
+   Default legal rules apply. A lawyer should decide whether a specific
+   clause is appropriate for these licensors and their intended markets.
+   The draft also avoids a blanket user indemnity and preserves mandatory
+   legal exceptions and non-excludable liability.
+
+6. Earlier MIT releases: the explanatory paragraph about earlier MIT
+   permissions was removed from clause 6 at the user's request. Removing
+   that optional explanation does not withdraw existing permissions or
+   make previously MIT-licensed material require payment. Required notice
+   provisions and separately licensed material remain addressed. The
+   repository's active MIT licence and existing notices are unchanged.
+
+7. Commercial approvals: the named two-person approval and signature rules
+   have been removed from the public licence, including its heading and
+   redistribution clause. The preference for approval by both Lev and
+   Guillermo is to be implemented through separate governance and
+   licensing-authority arrangements and the customer contracts. This draft
+   does not create those arrangements. If both signatures are required,
+   each commercial contract should expressly make them a condition of
+   effectiveness. The contracts should also specify the customer, software
+   and versions, authorised uses, fees, payment timing and duration. They
+   must cover the necessary rights and leave other recipients' research
+   permissions unaffected.
+
+BEFORE ADOPTION
+
+- Retain the records supporting the assumed licensing authority: relevant
+  authorship history, institutional, employment, scholarship and sponsorship
+  terms, existing licences and any additional contributor permissions.
+- Make the two-approval rule effective in the licensors' actual governance
+  and licensing authority. The public licence alone cannot remove an
+  owner's independent rights or substitute for an agreement between owners.
+  Obtain suitable contributor permissions for future commercial licensing.
+- Identify the first release and the specific material offered under the
+  new terms. Preserve and distinguish the MIT baseline and other licensed
+  material. Merely changing a licence file does not remove existing MIT
+  permissions or create exclusive commercial rights in unchanged MIT code.
+- Confirm the infrastructure decision and obtain an IP lawyer's review of
+  scope, assent, remedies, liability and commercial licensing authority.
+  The public research draft does not itself supply the customer contract,
+  contributor authorisation or founders' governance agreement.
+- When a licence change is actually authorised, update the release notices,
+  documentation, contribution terms and package metadata consistently.
+  The current pyproject.toml identifies MIT and references LICENSE.txt,
+  while this checkout's actual active licence file is LICENSE. Neither
+  item was edited for this drafting task.
+
+REFERENCE SOURCES
+
+EPFL/Picid Non-Commercial License Agreement:
+Text supplied by the user in this conversation. Its compact structure
+informed the revision. Its restrictions on code reuse, alternative tests
+for noncommercial use, institutional ownership, contribution provisions,
+Swiss law and Lausanne courts were not adopted.
+
+Oxford Academic Use Licence, as published for CanPredict-ED:
+https://canpredict.org/ED/academic-use-source-code/
+Sections 1.1 and 1.2 illustrate an academic grant and conditioned sharing.
+The institution-wide ownership statement, broad modification grant-back,
+access controls, indemnity and choice of English courts were not adopted
+automatically.
+
+Stanford Non-Commercial Software License Agreement, Spatial EcoTyper:
+https://github.com/digitalcytometry/spatialecotyper/blob/main/LICENSE.md
+Its company-research exclusion is a policy precedent. Its service-focused
+grant does not supply TopoBench's modification and redistribution rules.
+
+MIT licence:
+https://opensource.org/license/mit
+The existing licence permits commercial use and requires preservation of
+its notices. The draft retains notice requirements; the earlier-release
+explanation is recorded in these review notes rather than in the licence.
+
+GitHub's Open Source Guide, changing licences and contributor agreements:
+https://opensource.guide/legal/
+Discusses permissive-licence compatibility, retention of notices, ownership
+and when additional contributor agreements may be useful.
+
+US Copyright Act, Chapter 2, especially sections 201 and 204:
+https://www.copyright.gov/title17/92chap2.html
+Addresses ownership and transfers. Repository roles do not establish the
+rights needed to license all contributions.
+
+Local materials inspected:
+- LICENSE: MIT, Copyright (c) 2024 TopoBench Team.
+- third_party_licenses.txt: a separately licensed dataset, BSD-style terms.
+- pyproject.toml: existing MIT package metadata.
+This was not a complete contributor, dependency or dataset rights audit.
