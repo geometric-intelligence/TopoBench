@@ -1,6 +1,6 @@
 TOPOBENCH RESEARCH LICENCE 1.0
 
-Original Licensors: Lev Telyatnikov and Guillermo Bernardez Gil.
+Project: Topological Intelligence (TopoBench).
 Licensing contact: topological.intelligence@gmail.com
 
 "Software" means TopoBench code and accompanying materials expressly
@@ -11,6 +11,10 @@ or organisation exercising these permissions; anyone accepting for an
 organisation must have authority to do so. By relying on these permissions,
 You accept their conditions. Independent rights under clause 6 remain
 unaffected.
+
+Topological Intelligence is the public project name. The name and contact
+address do not themselves identify a separate legal entity or transfer
+rights; the permissions below are granted by each Licensor as defined above.
 
 1. RESEARCH PERMISSION
 
@@ -70,7 +74,7 @@ Funding gives the sponsor no permission to use the Software.
 
 You may distribute the Software, including modifications, for Permitted
 Research only if You:
-(a) include this complete, unchanged Licence, its named licensors
+(a) include this complete, unchanged Licence, its project identification
     and contact; retain copyright, attribution, third-party
     notices and accompanying citation instructions; and identify Your
     changes and their dates;
@@ -131,9 +135,10 @@ customers, or provide a TopoBench-based service. Those uses require clause 7.
 6. OWNERSHIP AND EXISTING RIGHTS
 
 Copyright remains with its respective holders. No ownership is assigned.
-Contributions under this Licence do not automatically give the Original
-Licensors commercial licensing rights in them; broader contributor
-authorisation must be established separately.
+Contributions under this Licence alone do not grant the project maintainers
+commercial licensing rights in them. Additional authority may be granted
+through an expressly accepted TopoBench Contributor Agreement or another
+valid agreement with the relevant rights holders.
 
 Required notices must remain. Dependencies, datasets, models and other
 separately licensed material retain their own terms; this Licence supplies

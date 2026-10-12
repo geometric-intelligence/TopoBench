@@ -14,15 +14,27 @@ Contribution Licence
 --------------------
 
 Before submitting a contribution, read the repository's
-`contribution licence terms
+`contribution instructions
 <https://github.com/geometric-intelligence/topobench/blob/main/CONTRIBUTING.md>`__.
-Original contributions intentionally submitted for inclusion are offered
-under TopoBench Research Licence 1.0 unless a different arrangement has
-been expressly agreed in writing with the relevant rights holders.
-Contributors retain ownership and must have authority to offer their work.
-Separately licensed material must be identified and its notices preserved.
-Commercial relicensing rights require a separate agreement; they are not
-automatically granted by submitting a contribution under the research licence.
+The `TopoBench Contributor Agreement 1.0
+<https://github.com/geometric-intelligence/topobench/blob/main/CLA.md>`__
+preserves contributor ownership, offers contributions under TopoBench Research
+Licence 1.0 and grants the identified Topological Intelligence recipients
+additional commercial sublicensing rights without contributor royalties for
+authorised uses. Those recipients may charge customers.
+
+Before accepting, obtain the statement identifying the actual grant recipients
+from topological.intelligence@gmail.com. Record affirmative acceptance of the
+agreement and that statement for your contribution, then check the PR's agreement
+box. Opening a PR alone does not complete acceptance. Contributors must have
+authority to grant the rights, identify separately licensed material and preserve
+its notices. Earlier submissions are not automatically covered.
+
+A maintainer verifies the records for the current PR commit before the
+``Contributor agreement`` check can pass. Read the
+`record and verification process
+<https://github.com/geometric-intelligence/topobench/blob/main/docs/legal/contributor-agreement-process.md>`__
+for details. Private identity information should not be posted in public PRs.
 
 Making Changes
 --------------

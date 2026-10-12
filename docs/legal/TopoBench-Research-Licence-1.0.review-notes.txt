@@ -50,10 +50,11 @@ benchmarking, model training or TopoBench-based services.
 
 LICENSING AUTHORITY AND COMMERCIAL ARRANGEMENTS
 
-This change proceeds on the agreed assumption that Lev Telyatnikov and
-Guillermo Bernardez Gil have the rights and permissions needed to offer
-the research and commercial licences. It does not record an independent
-rights audit.
+This change proceeds on the agreed assumption that the relevant rights
+holders have the rights and permissions needed to offer the research
+and commercial licences. It does not record an independent rights audit.
+Topological Intelligence is the public project name and the email is its
+contact. They do not themselves establish a legal entity or rights holder.
 
 The public licence intentionally contains no named two-person approval
 or signature requirement. The desired rule that both approve commercial
@@ -66,12 +67,38 @@ Customer agreements should specify the customer, covered software and
 versions, authorised uses, fees, payment timing and duration. They cover
 only rights their grantors may license and do not change other recipients'
 research permissions. Contributions under the research licence alone do
-not automatically grant the maintainers commercial relicensing rights;
-broader contributor authorisation must be obtained separately where needed.
+not automatically grant commercial relicensing rights. CLA.md now provides
+a separate research and royalty-free commercial contribution agreement.
+Its commercial recipients must be identified in a statement disclosed to
+the contributor before express acceptance. Personal identities can be kept
+out of the public repository, but cannot be hidden from the contributor
+whose grant is sought. No recipient statement or acceptance is created by
+this PR, and earlier submissions are not automatically covered.
+
+CONTRIBUTING.md and docs/legal/contributor-agreement-process.md explain the
+record requirements. The PR template includes explicit acceptance. A new
+Contributor agreement status check requires that checkbox plus a trusted
+maintainer's verification of the records for the current PR commit. It
+does not determine ownership or enforceability or inspect private records.
+Its workflow runs from the default branch once deployed; requiring this
+status in branch protection is a separate repository setting. The adopting
+PR does not configure that setting or make the check a required merge gate.
+
+BUILD METADATA
+
+The setuptools>=77.0.0 build requirement supports the PEP 639 licence
+expression and project.license-files metadata. It is separate from the
+existing runtime setuptools dependency. Runtime requirements are unchanged.
 
 REVIEW BEFORE MERGING
 
 - Resolve the infrastructure decision.
+- Review CLA.md and establish the actual recipient statement before
+  collecting acceptance or relying on its commercial grant. Keep complete
+  records for all relevant rights holders and covered contributions.
+- Deploy and exercise the verification workflow, then require the
+  Contributor agreement status in branch protection and review bypasses.
+  Until protection is active, enforce record review manually.
 - Review the licence's scope, assent, remedies and liability provisions
   with appropriate legal counsel. No governing law or exclusive court is
   selected in the public licence.
@@ -96,6 +123,15 @@ https://opensource.guide/legal/
 
 US Copyright Act, Chapter 2:
 https://www.copyright.gov/title17/92chap2.html
+
+GitHub contribution terms:
+https://docs.github.com/en/site-policy/github-terms/github-terms-of-service
+
+Apache contributor agreement (structural reference, not adopted text):
+https://www.apache.org/licenses/icla.pdf
+
+Setuptools PEP 639 support:
+https://setuptools.pypa.io/en/stable/userguide/license_migration.html
 
 The licence uses original wording informed by the EPFL/Picid example
 provided during drafting, Oxford's academic-use sharing structure and

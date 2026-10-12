@@ -2,20 +2,35 @@
 
 See the [contribution guide](https://geometric-intelligence.github.io/topobench/contributing/index.html) for the development workflow.
 
-## Contribution licence
+## Contribution agreement
 
-When you intentionally submit an original contribution for inclusion in
-TopoBench, you offer that contribution under the
-[TopoBench Research Licence 1.0](LICENSE), unless a different arrangement
-has been expressly agreed in writing with the relevant rights holders.
-You retain ownership of your contribution and must have authority to
-offer it under those terms.
+Read the [TopoBench Contributor Agreement 1.0](CLA.md) before contributing.
+It preserves your ownership, offers your contribution under the
+[TopoBench Research Licence 1.0](LICENSE), and grants the identified
+Topological Intelligence recipients additional rights to use, modify,
+distribute and sublicense it under commercial terms without owing you
+royalties for those authorised uses. Those recipients may charge customers.
 
-Identify any separately licensed material you include and preserve its
-copyright and licence notices. Do not remove existing third-party notices.
+Acceptance is required before merging contributions. Merely opening a PR
+does not complete acceptance of the commercial grant.
 
-Submitting a contribution under the research licence does not assign its
-copyright or automatically grant the maintainers commercial relicensing
-rights. Any broader authorisation must be agreed separately in writing.
-Contact [topological.intelligence@gmail.com](mailto:topological.intelligence@gmail.com)
-to discuss a separate contribution agreement.
+1. Request the recipient statement from
+   [topological.intelligence@gmail.com](mailto:topological.intelligence@gmail.com).
+   It must identify the actual recipients before you accept; the informal
+   project name and email address alone are not a substitute.
+2. Read and affirmatively accept the exact agreement and recipient statement
+   for your identified contribution. The acceptance record must include
+   the information required by clause 2 of the agreement. It can be electronic;
+   do not put private recipient or contributor details in public PR comments.
+3. Check the contributor-agreement box in your PR only after that acceptance.
+   Identify third-party material and preserve its notices. If other rights
+   holders are involved, their permission or an authorised acceptance must
+   cover the relevant contribution as well.
+4. A maintainer verifies the records and confirms coverage for the current
+   PR commit. Further commits require verification again, but records may
+   be reused when their accepted scope already covers the changes.
+
+Prior submissions are not automatically covered. GitHub access, a checked
+box or a passing status check does not establish ownership or authority.
+See the [record and verification process](docs/legal/contributor-agreement-process.md)
+for the maintainer procedure and the check's limitations.
