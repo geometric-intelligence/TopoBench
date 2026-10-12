@@ -10,6 +10,20 @@ process for both novice and experienced contributors.
 `TopoBenchX <https://github.com/pyt-team/TopoBenchX>`_ is a
 community effort, and everyone is welcome to contribute.
 
+Contribution Licence
+--------------------
+
+Before submitting a contribution, read the repository's
+`contribution licence terms
+<https://github.com/geometric-intelligence/topobench/blob/main/CONTRIBUTING.md>`__.
+Original contributions intentionally submitted for inclusion are offered
+under TopoBench Research Licence 1.0 unless a different arrangement has
+been expressly agreed in writing with the relevant rights holders.
+Contributors retain ownership and must have authority to offer their work.
+Separately licensed material must be identified and its notices preserved.
+Commercial relicensing rights require a separate agreement; they are not
+automatically granted by submitting a contribution under the research licence.
+
 Making Changes
 --------------
 
