@@ -422,7 +422,9 @@ Specially useful in pre-processing steps, these are the general data manipulatio
 
 The following paper is the principal TopoBench publication designated for this version. Under clause 4 of the [TopoBench Research Licence 1.0](LICENSE), when publishing or publicly distributing a paper, thesis, report, presentation or other research output describing work performed using the software, you must acknowledge TopoBench, identify the version or commit used, and cite this publication. Follow the citation instructions accompanying the version you used; later changes to these instructions do not apply to that work. This requirement does not oblige you to publish private work.
 
-```
+Read the paper on [OpenReview](https://openreview.net/forum?id=07sTzyEVtY), or copy its BibTeX entry below:
+
+```bibtex
 @article{
 telyatnikov2025topobench,
 title={TopoBench: A Framework for Benchmarking Topological Deep Learning},

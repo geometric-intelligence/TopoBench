@@ -908,8 +908,14 @@ requirement does not oblige you to publish private work.
 
 For this documentation version, the designated publication is
 `TopoBench: A Framework for Benchmarking Topological Deep Learning <https://openreview.net/forum?id=07sTzyEVtY>`__.
-The :download:`accompanying README <../README.md>` includes its BibTeX
-entry. You may use the citation format required by your publication or venue.
+Copy its BibTeX entry below, or find it in the
+:download:`accompanying README <../README.md>`.
+You may use the citation format required by your publication or venue.
+
+.. literalinclude:: ../README.md
+   :language: bibtex
+   :start-after: ```bibtex
+   :end-before: ```
 
 Additional Details
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
