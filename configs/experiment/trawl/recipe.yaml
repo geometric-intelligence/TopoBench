@@ -20,12 +20,6 @@ transforms:
   lifting:
     # Cycles up to six nodes cover the 5- and 6-rings of molecules.
     max_cell_length: 6
-  trawl:
-    encodings:
-      rw_samples: 8
-      heat_times: [0.05, 0.1, 0.2, 0.5, 1.0]
-      electrostatic_betas: [0.1, 0.5, 1.0]
-      laplacian_dim: 8
 trainer:
   accumulate_grad_batches: 4
   max_epochs: 300

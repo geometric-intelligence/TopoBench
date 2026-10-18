@@ -11,9 +11,74 @@ import re
 import numpy as np
 import scipy.sparse as sp
 import torch
+from torch_geometric.data import Data
 from torch_geometric.transforms import BaseTransform
 
-from topobench.data.utils.trawl.encodings import positional_encodings
+from topobench.transforms.data_manipulations.combined_positional_and_structural_encodings import (
+    CombinedPSEs,
+)
+
+
+def hopse_encodings(matrix, local=True, **parameters):
+    """HOPSE PSEs of one relation, computed on its active states.
+
+    Edge weights and direction are dropped: the HOPSE encodings read an
+    unweighted ``edge_index``. Inactive states receive zeros.
+
+    Parameters
+    ----------
+    matrix : scipy.sparse.spmatrix
+        Square weighted adjacency matrix of one relation.
+    local : bool, optional
+        Whether to include log-degree and neighbor-count channels
+        (default: True).
+    **parameters : dict
+        Keyword arguments per HOPSE encoding, keyed by its name (``LapPE``,
+        ``RWSE``, ``ElectrostaticPE``, ``HKdiagSE``), in output order.
+
+    Returns
+    -------
+    np.ndarray
+        Float32 array of shape ``(n, d)``.
+    """
+    matrix = matrix.tocsr()
+    n = matrix.shape[0]
+    active = np.flatnonzero(
+        np.asarray((matrix + matrix.T).sum(axis=1)).ravel() > 0
+    )
+    parts = []
+    if local:
+        degree = np.asarray(matrix.sum(axis=1)).ravel()
+        parts.append(
+            np.stack(
+                (np.log1p(degree), matrix.getnnz(axis=1).astype(float)), axis=1
+            )
+        )
+    if parameters:
+        sub = matrix[active][:, active].tocoo()
+        data = CombinedPSEs(
+            encodings=list(parameters),
+            parameters={
+                name: {**dict(options or {}), "concat_to_x": False}
+                for name, options in parameters.items()
+            },
+        )(
+            Data(
+                edge_index=torch.tensor(
+                    np.stack((sub.row, sub.col)), dtype=torch.long
+                ),
+                num_nodes=len(active),
+            )
+        )
+        encoded = torch.cat(
+            [data[name].double().cpu() for name in parameters], dim=1
+        ).numpy()
+        full = np.zeros((n, encoded.shape[1]))
+        full[active] = encoded
+        parts.append(full)
+    result = np.concatenate(parts, axis=1) if parts else np.zeros((n, 0))
+    result[np.setdiff1d(np.arange(n), active)] = 0
+    return np.nan_to_num(result).astype(np.float32)
 
 
 def as_csr(value):
@@ -124,8 +189,8 @@ class TRAWLTransform(BaseTransform):
         Ranks included in the ``"cell_overlap"`` graph; defaults to
         ``1..max_rank`` (default: None).
     encodings : dict, optional
-        Keyword arguments for ``positional_encodings`` (default: None,
-        meaning ``{"local": True, "rw_steps": 8}``).
+        Keyword arguments for ``hopse_encodings`` (default: None, meaning
+        local channels only).
     encoding_scope : str, optional
         Compute encodings per relation (``"separate"``) or on their union
         (``"union"``) (default: "separate").
@@ -137,8 +202,6 @@ class TRAWLTransform(BaseTransform):
         (default: False).
     num_colors : int, optional
         Number of color IDs; defaults to ``max_rank + 1`` (default: None).
-    seed : int, optional
-        Seed passed to ``positional_encodings`` (default: 0).
     **kwargs : dict
         Ignored extra options.
     """
@@ -155,7 +218,6 @@ class TRAWLTransform(BaseTransform):
         color_key=None,
         color_refinement=False,
         num_colors=None,
-        seed=0,
         **kwargs,
     ):
         if graph not in {"hasse", "augmented_hasse", "cell_overlap"}:
@@ -173,12 +235,11 @@ class TRAWLTransform(BaseTransform):
         )
         self.bidirectional = bidirectional
         self.overlap_ranks = list(overlap_ranks or range(1, self.max_rank + 1))
-        self.encodings = dict(encodings or {"local": True, "rw_steps": 8})
+        self.encodings = dict(encodings or {"local": True})
         self.encoding_scope = encoding_scope
         self.color_key = color_key
         self.color_refinement = color_refinement
         self.num_colors = int(num_colors or (self.max_rank + 1))
-        self.seed = int(seed)
 
     def finalize_dataset(self, data_list):
         """Give absent ranks the same empty feature shape as populated ranks.
@@ -365,9 +426,7 @@ class TRAWLTransform(BaseTransform):
         data.trawl_pe = torch.from_numpy(
             np.concatenate(
                 [
-                    positional_encodings(
-                        matrix, seed=self.seed, **self.encodings
-                    )
+                    hopse_encodings(matrix, **self.encodings)
                     for matrix in enc_matrices
                 ],
                 axis=1,

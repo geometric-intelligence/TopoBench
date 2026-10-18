@@ -8,12 +8,9 @@ import pytest
 import scipy.sparse as sp
 import torch
 
-from topobench.data.utils.trawl.encodings import (
-    guided_transition,
-    positional_encodings,
-)
-from topobench.data.utils.trawl.sampling import WalkSampler
+from topobench.data.utils.trawl.sampling import WalkSampler, guided_transition
 from topobench.nn.backbones.combinatorial.trawl import TRAWL, make_layer
+from topobench.transforms.data_manipulations.trawl import hopse_encodings
 
 from .test_trawl import collate, prepare
 
@@ -101,14 +98,12 @@ def test_large_sparse_graph_and_spectral_limit():
         ),
         shape=(n, n),
     ).tocsr()
-    encoding = positional_encodings(matrix, rw_steps=2, rw_samples=2)
+    encoding = hopse_encodings(matrix, RWSE={"max_pe_dim": 2})
     assert encoding.shape == (n, 4)
     assert np.isfinite(encoding).all()
     paths = WalkSampler(0)(matrix, k=32, length=32)
     assert paths.shape == (32, 32)
     assert ((paths >= 0) & (paths < n)).all()
-    with pytest.raises(ValueError, match="dense_limit"):
-        positional_encodings(matrix, rw_steps=0, laplacian_dim=8)
     with pytest.raises(ValueError, match="dense_limit"):
         guided_transition(matrix)
 

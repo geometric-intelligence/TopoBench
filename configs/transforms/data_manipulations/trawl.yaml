@@ -1,5 +1,5 @@
 transform_name: TRAWLTransform
-schema_version: 1
+schema_version: 2
 transform_type: data_manipulation
 max_rank: ${model.backbone.max_rank}
 graph: augmented_hasse
@@ -9,12 +9,13 @@ overlap_ranks: [1, 2]
 encoding_scope: separate
 color_key: null
 color_refinement: false
-seed: ${seed}
+# HOPSE positional/structural encodings per relation, plus local degree channels.
 encodings:
   local: true
-  rw_steps: 8
-  rw_samples: 32
-  heat_times: []
-  electrostatic_betas: []
-  laplacian_dim: 0
-  dense_limit: 2048
+  LapPE:
+    max_pe_dim: 8
+  RWSE:
+    max_pe_dim: 8
+  ElectrostaticPE: {}
+  HKdiagSE:
+    kernel_param_HKdiagSE: [1, 6]

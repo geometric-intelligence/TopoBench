@@ -7,8 +7,114 @@ from collections import OrderedDict
 from itertools import accumulate
 
 import numpy as np
+import scipy.linalg
+import scipy.sparse as sp
 
 from topobench.data.utils.trawl import fast_walks
+
+
+def transition(matrix):
+    """Row-normalize positive weights, retaining isolated states.
+
+    Non-finite and nonpositive weights are dropped; empty rows receive a
+    self-loop.
+
+    Parameters
+    ----------
+    matrix : scipy.sparse.spmatrix
+        Square weighted adjacency matrix.
+
+    Returns
+    -------
+    scipy.sparse.spmatrix
+        Row-stochastic transition matrix.
+    """
+    matrix = matrix.astype(np.float64).tocsr(copy=True)
+    matrix.data = np.where(
+        np.isfinite(matrix.data) & (matrix.data > 0), matrix.data, 0
+    )
+    matrix.eliminate_zeros()
+    empty = np.asarray(matrix.sum(axis=1)).ravel() == 0
+    matrix = matrix + sp.diags(empty.astype(float))
+    return sp.diags(1 / np.asarray(matrix.sum(axis=1)).ravel()) @ matrix
+
+
+def chung_laplacian(matrix):
+    """Symmetric directed Laplacian with a power-iterated stationary measure.
+
+    Laziness makes iteration converge on bipartite Hasse graphs. Disconnected
+    components retain their uniform-initialization mass.
+
+    Parameters
+    ----------
+    matrix : scipy.sparse.spmatrix
+        Square weighted adjacency matrix.
+
+    Returns
+    -------
+    scipy.sparse.spmatrix
+        Symmetric Chung Laplacian of shape ``(n, n)``.
+    """
+    p = transition(matrix)
+    n = p.shape[0]
+    pi = np.full(n, 1 / n)
+    for _ in range(1000):
+        updated = (pi + p.T @ pi) / 2
+        if np.max(np.abs(updated - pi)) < 1e-12:
+            pi = updated
+            break
+        pi = updated
+    pi = np.maximum(pi, 1e-15)
+    normalized = sp.diags(np.sqrt(pi)) @ p @ sp.diags(1 / np.sqrt(pi))
+    return sp.eye(n) - (normalized + normalized.T) / 2
+
+
+def guided_transition(matrix, gamma=0.2, diffusion_t=0.1, dense_limit=2048):
+    """Heat-kernel-guided weights on existing transitions only.
+
+    Exact dense decomposition is deliberately bounded: never silently change
+    an experiment to an approximation when its graph exceeds the limit.
+
+    Parameters
+    ----------
+    matrix : scipy.sparse.spmatrix
+        Square weighted adjacency matrix.
+    gamma : float, optional
+        Nonnegative exponent on the heat-kernel magnitude; 0 disables
+        guidance (default: 0.2).
+    diffusion_t : float, optional
+        Nonnegative heat-kernel diffusion time (default: 0.1).
+    dense_limit : int, optional
+        Maximum number of states for the dense eigendecomposition
+        (default: 2048).
+
+    Returns
+    -------
+    scipy.sparse.csr_matrix
+        Row-stochastic guided transition matrix.
+
+    Raises
+    ------
+    ValueError
+        If ``gamma`` or ``diffusion_t`` is negative, or guidance is enabled
+        and the matrix exceeds ``dense_limit``.
+    """
+    if gamma < 0 or diffusion_t < 0:
+        raise ValueError(
+            "Guidance gamma and diffusion time must be nonnegative"
+        )
+    p = transition(matrix).tocsr()
+    if gamma == 0:
+        return p
+    if matrix.shape[0] > dense_limit:
+        raise ValueError(
+            "Heat guidance exceeds dense_limit; disable guidance or explicitly raise the limit"
+        )
+    eigenvalues, vectors = scipy.linalg.eigh(chung_laplacian(matrix).toarray())
+    heat = (vectors * np.exp(-diffusion_t * eigenvalues)) @ vectors.T
+    coo = p.tocoo()
+    coo.data *= np.abs(heat[coo.row, coo.col]) ** gamma
+    return transition(coo.tocsr())
 
 
 def walk_seed(*parts):
@@ -70,11 +176,6 @@ class WalkSampler:
         numpy.ndarray
             Walks of graph-local state IDs with shape ``(num_walks, length)``.
         """
-        from topobench.data.utils.trawl.encodings import (
-            guided_transition,
-            transition,
-        )
-
         matrix = matrix.tocsr()
         digest = hashlib.sha256()
         for value in (matrix.data, matrix.indices, matrix.indptr):

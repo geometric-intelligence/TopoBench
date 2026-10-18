@@ -12,8 +12,9 @@ Every behavior is selected by configuration; no code branches on dataset names.
   sequence layers (Mamba, SISA, GRU, transformer, MLP, graph adapters) and
   `TRAWL`.
 - `transforms/data_manipulations/trawl.py`: builds walk states, relations and
-  positional/structural encodings after any lifting.
-- `data/utils/trawl/`: CPU encodings and walk sampling (optional `numba` kernel).
+  TopoBench's HOPSE positional/structural encodings after any lifting.
+- `data/utils/trawl/`: CPU walk sampling and walk guidance (optional `numba`
+  kernel).
 - `nn/encoders/trawl.py`, `nn/readouts/trawl.py`: feature adapter and task head.
 - `model/trawl_pretraining.py`, `evaluator/checkpoint.py`,
   `callbacks/model_checkpoint.py`, `utils/trawl_provenance.py`: optional
@@ -70,21 +71,26 @@ state has no other exit.
 ## Encodings
 
 `transforms.trawl.encodings` adds per-state positional/structural encodings
-computed on each relation's matrix A (or on their union with
-`encoding_scope=union`). With L the symmetric random-walk Laplacian and
-(λ_j, φ_j) its eigenpairs:
+computed on each relation's graph (or on the union of relations with
+`encoding_scope=union`). Apart from `local` (`log(1 + degree)` and neighbor
+count), every key names one of TopoBench's HOPSE encodings and holds its
+arguments: `LapPE`, `RWSE`, `ElectrostaticPE` and `HKdiagSE`. They are computed
+on the unweighted, active part of each relation; states outside a relation get
+zeros. The default is
 
-| Setting | Encoding |
-|---|---|
-| `local` | `log(1 + degree)` and neighbor count |
-| `rw_steps`, `rw_samples` | RWSE: probability that a non-backtracking walk returns after 1..K steps |
-| `heat_times` | heat-kernel diagonal `Σ_j φ_j(i)² exp(-t λ_j)` |
-| `electrostatic_betas` | potential `(L + β)^-1 q` of degree charges q |
-| `laplacian_dim` | first nontrivial eigenvectors of L, sign-fixed |
+```yaml
+encodings:
+  local: true
+  LapPE: {max_pe_dim: 8}
+  RWSE: {max_pe_dim: 8}
+  ElectrostaticPE: {}
+  HKdiagSE: {kernel_param_HKdiagSE: [1, 6]}
+```
 
-`walks.guidance` reweights transitions by `|exp(-tL)_ij|^γ`. Spectral
-quantities use an exact dense eigendecomposition limited by `dense_limit=2048`;
-exceeding it raises an error rather than switching to an approximation.
+`walks.guidance` reweights transitions by `|exp(-tL)_ij|^γ`, with L the
+symmetric Chung Laplacian of the weighted relation. It uses an exact dense
+eigendecomposition limited by `dense_limit=2048`; exceeding it raises an error
+rather than switching to an approximation.
 
 Optional categorical colors come from `color_key` (set `model.backbone.num_colors`
 to cover them); `color_refinement=true` adds encodings for color-pair subgraphs.
@@ -138,7 +144,7 @@ python -m topobench -m experiment=trawl/proteins_hybrid seed=40,41,42,43,44
 ```
 
 `recipe.yaml` holds the shared PROTEINS/NCI1 settings: cycles up to six nodes,
-RWSE plus heat, electrostatic and Laplacian encodings, hidden width 224,
+the default HOPSE encodings, hidden width 224,
 one-logit BCE with walk-logit averaging, seeded 50/25/25 stratified splits,
 batch 2 with gradient accumulation, SSL pretraining, three evaluation views and
 `deterministic=strict`. `proteins_hybrid` adds top-5 checkpoint weight

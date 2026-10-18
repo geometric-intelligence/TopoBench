@@ -120,7 +120,7 @@ def test_native_runner(
                 "model.backbone.walks.k=2",
                 "model.backbone.walks.length=4",
                 "model.backbone.walks.guidance=null",
-                "transforms.trawl.encodings.rw_samples=2",
+                "transforms.trawl.encodings.RWSE.max_pe_dim=2",
                 f"trainer={'gpu' if accelerator == 'gpu_ddp' else accelerator}",
                 "trainer.max_epochs=2",
                 f"trainer.check_val_every_n_epoch={check_val}",
