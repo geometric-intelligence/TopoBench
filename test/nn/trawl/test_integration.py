@@ -154,7 +154,6 @@ def test_native_runner(
         )
         assert "test_best_rerun/accuracy" in header
         assert objects["callbacks"][0] is not None
-        assert (tmp_path / "output/trawl_manifest.json").is_file()
         if pretrain:
             assert (tmp_path / "output/pretraining/last.ckpt").is_file()
             assert list(
@@ -177,21 +176,6 @@ def test_native_runner(
             resumed = torch.load(cfg.pretraining.ckpt_path, weights_only=False)
             assert resumed["epoch"] == 1
             assert datamodule.order_seed == original_seed
-        manifest = json.loads(
-            (tmp_path / "output/trawl_manifest.json").read_text()
-        )
-        assert (
-            "nn/backbones/combinatorial/trawl.py"
-            in manifest["implementation_sha256"]
-        )
-        assert (
-            "data/utils/trawl/sampling.py" in manifest["implementation_sha256"]
-        )
-        assert (
-            "callbacks/model_checkpoint.py"
-            in manifest["implementation_sha256"]
-        )
-        assert "evaluator/evaluator.py" in manifest["implementation_sha256"]
         if accelerator == "cpu":
             checkpoint = next(
                 item

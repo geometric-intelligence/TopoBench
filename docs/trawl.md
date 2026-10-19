@@ -13,13 +13,12 @@ Every behavior is selected by configuration; no code branches on dataset names.
   `TRAWL`.
 - `transforms/data_manipulations/trawl.py`: builds walk states, relations and
   TopoBench's HOPSE positional/structural encodings after any lifting.
-- `data/utils/trawl/`: CPU walk sampling and walk guidance (optional `numba`
-  kernel).
-- `nn/encoders/trawl.py`: feature adapter. The task head `TRAWLReadout` lives in
-  the backbone module.
+- The backbone module also holds CPU walk sampling and guidance (with an
+  optional `numba` kernel), the feature adapter `TRAWLFeatureEncoder` and the
+  task head `TRAWLReadout`.
 - `model/trawl_pretraining.py`, `evaluator/checkpoint.py`,
-  `callbacks/model_checkpoint.py`, `utils/trawl_provenance.py`: optional
-  pretraining, top-K checkpoint evaluation and run manifests.
+  `callbacks/model_checkpoint.py`: optional pretraining and top-K checkpoint
+  evaluation.
 - Configs: `configs/model/combinatorial/trawl.yaml`, `configs/model/graph/trawl.yaml`,
   `configs/transforms/trawl_*.yaml`, `configs/experiment/trawl/`.
 
@@ -115,7 +114,8 @@ tasks with `aggregation=embedding` (head on the pooled graph embedding) or
 walk states become cell and graph embeddings.
 
 Input widths are inferred from the training data before the optimizer is built.
-To use a native feature encoder, wrap it in `TRAWLFeatureEncoder` and set
+To use a native feature encoder, wrap it in
+`topobench.nn.backbones.combinatorial.trawl.TRAWLFeatureEncoder` and set
 `model.backbone.in_channels`.
 
 ## Pretraining
@@ -169,7 +169,7 @@ cached transition distributions and evaluation walks, host-side walk bookkeeping
 with non-blocking batch transfer (`TBModel` stashes the backbone's `host_fields`),
 pinned memory and `evaluator.validate_args=false`.
 
-## Splits, evaluation and provenance
+## Splits and evaluation
 
 - `split_type=seeded_stratified` performs two stratified splits with
   `random_state=data_seed`; `split_type=imported` reads `train`/`valid`/`test`
@@ -181,9 +181,7 @@ pinned memory and `evaluator.validate_args=false`.
 - One-logit binary outputs are scored as two-class probabilities, so AUROC does
   not depend on the evaluation batch size. Plateau schedulers step only on
   validated epochs.
-- Each run writes `trawl_manifest.json` (resolved config, input/split and
-  implementation hashes, package versions) and, after evaluation,
-  `trawl_evaluation.json`.
+- After evaluation each run writes `trawl_evaluation.json`.
 
 ## Development checks
 
@@ -192,6 +190,5 @@ python -m pytest test/nn/trawl -q
 python -m ruff check topobench test/nn/trawl
 ```
 
-`test/fixtures/reference.npz` holds SISA outputs from the original
-implementation; regenerate it with
-`python scripts/trawl/build_reference_fixture.py --source-root /path/to/trawl`.
+`test/nn/trawl/fixtures/reference.npz` holds SISA outputs from the original
+implementation.

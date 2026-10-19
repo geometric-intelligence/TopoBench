@@ -463,7 +463,9 @@ def run_pretraining(
         raise ValueError(
             "The TRAWL pretraining config requires a TRAWL backbone"
         )
-    from topobench.nn.encoders.trawl import TRAWLFeatureEncoder
+    from topobench.nn.backbones.combinatorial.trawl import (
+        TRAWLFeatureEncoder,
+    )
 
     encoder = model.feature_encoder
     if not isinstance(encoder, (nn.Identity, TRAWLFeatureEncoder)):

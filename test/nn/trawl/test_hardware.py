@@ -8,8 +8,12 @@ import pytest
 import scipy.sparse as sp
 import torch
 
-from topobench.data.utils.trawl.sampling import WalkSampler, guided_transition
-from topobench.nn.backbones.combinatorial.trawl import TRAWL, make_layer
+from topobench.nn.backbones.combinatorial.trawl import (
+    TRAWL,
+    WalkSampler,
+    guided_transition,
+    make_layer,
+)
 from topobench.transforms.data_manipulations.trawl import hopse_encodings
 
 from .test_trawl import collate, prepare

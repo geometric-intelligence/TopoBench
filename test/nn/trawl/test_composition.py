@@ -6,10 +6,12 @@ import scipy.sparse as sp
 import torch
 from torch import nn
 
-from topobench.data.utils.trawl.sampling import WalkSampler
 from topobench.model.trawl_pretraining import TRAWLPretrainer
-from topobench.nn.backbones.combinatorial.trawl import TRAWLReadout
-from topobench.nn.encoders.trawl import TRAWLFeatureEncoder
+from topobench.nn.backbones.combinatorial.trawl import (
+    TRAWLFeatureEncoder,
+    TRAWLReadout,
+    WalkSampler,
+)
 from topobench.transforms.data_manipulations.trawl import TRAWLTransform
 
 from .test_trawl import collate, complex_data, model, prepare
@@ -32,7 +34,8 @@ def test_native_component_registration():
     assert BACKBONE_CLASSES["TRAWL"] is TRAWL
     assert "NeighborhoodFusion" not in MODEL_CLASSES
     assert "PureTorchMambaBlock" not in MODEL_CLASSES
-    assert FEATURE_ENCODERS["TRAWLFeatureEncoder"] is TRAWLFeatureEncoder
+    assert "TRAWLFeatureEncoder" not in FEATURE_ENCODERS
+    assert "TRAWLFeatureEncoder" not in BACKBONE_CLASSES
     assert "TRAWLReadout" not in BACKBONE_CLASSES
     assert TRANSFORMS["TRAWLTransform"] is DATA_MANIPULATIONS["TRAWLTransform"]
 

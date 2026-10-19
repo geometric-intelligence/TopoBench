@@ -289,12 +289,6 @@ def run(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
         "trainer": trainer,
     }
 
-    if cfg.model.get("model_name") == "trawl":
-        from topobench.utils.trawl_provenance import write_run_manifest
-
-        if rank_zero_only.rank == 0:
-            write_run_manifest(cfg, model, datamodule)
-
     if logger:
         log.info("Logging hyperparameters!")
         log_hyperparameters(object_dict)

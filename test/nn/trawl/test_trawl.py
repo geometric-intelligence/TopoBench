@@ -11,7 +11,6 @@ from hydra import compose, initialize_config_dir
 from hydra.utils import instantiate
 from torch_geometric.data import Data
 
-from topobench.data.utils.trawl.sampling import WalkSampler
 from topobench.dataloader import DataloadDataset
 from topobench.dataloader.utils import collate_fn
 from topobench.evaluator import TBEvaluator
@@ -21,6 +20,7 @@ from topobench.nn.backbones.combinatorial.trawl import (
     TRAWL,
     PureTorchMambaBlock,
     TRAWLReadout,
+    WalkSampler,
 )
 from topobench.transforms.data_manipulations.trawl import (
     TRAWLTransform,

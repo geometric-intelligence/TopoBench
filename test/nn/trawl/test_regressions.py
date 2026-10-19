@@ -8,7 +8,6 @@ from sklearn.metrics import roc_auc_score
 from torch import nn
 
 from topobench.callbacks.model_checkpoint import RankedModelCheckpoint
-from topobench.data.utils.trawl.sampling import walk_seed
 from topobench.dataloader.samplers import (
     EpochRandomSampler,
     UnpaddedDistributedSampler,
@@ -18,7 +17,11 @@ from topobench.model.trawl_pretraining import (
     PretrainingCheckpoint,
     validation_frequency,
 )
-from topobench.nn.backbones.combinatorial.trawl import SISALayer, TRAWLReadout
+from topobench.nn.backbones.combinatorial.trawl import (
+    SISALayer,
+    TRAWLReadout,
+    walk_seed,
+)
 from topobench.optimizer import TBOptimizer
 from topobench.run import enable_unused_parameter_detection
 
@@ -346,7 +349,7 @@ def test_sequence_cumsum_matches_cumsum():
 
 
 def test_fast_walk_sum_matches_numpy():
-    from topobench.data.utils.trawl.sampling import _numpy_sum
+    from topobench.nn.backbones.combinatorial.trawl import _numpy_sum
 
     generator = np.random.default_rng(0)
     for _ in range(5000):
@@ -356,7 +359,7 @@ def test_fast_walk_sum_matches_numpy():
 
 
 def test_fast_walks_match_generator_choice():
-    from topobench.data.utils.trawl.sampling import simulate_nbrw_sparse
+    from topobench.nn.backbones.combinatorial.trawl import simulate_nbrw_sparse
 
     def reference(neighbors, weights, start, length, rng):
         # The original per-step implementation using Generator.choice.
@@ -409,13 +412,13 @@ def test_fast_walks_match_generator_choice():
 
 
 def test_compiled_walks_match_pure_python():
-    from topobench.data.utils.trawl import fast_walks
-    from topobench.data.utils.trawl.sampling import (
+    from topobench.nn.backbones.combinatorial.trawl import (
+        _numba_available,
         prepare_walk_rows,
         simulate_nbrw_sparse,
     )
 
-    if not fast_walks.available:
+    if not _numba_available:
         pytest.skip("numba is not installed")
     generator = np.random.default_rng(3)
     for _ in range(300):
