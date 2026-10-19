@@ -174,10 +174,20 @@ pinned memory and `evaluator.validate_args=false`.
 - `split_type=seeded_stratified` performs two stratified splits with
   `random_state=data_seed`; `split_type=imported` reads `train`/`valid`/`test`
   index arrays from `split_file`.
-- `evaluation.checkpoint` is `best`, `weight_average` or `logit_ensemble`; the
-  latter two combine the `evaluation.top_k` best checkpoints saved by
-  `RankedModelCheckpoint`, which indexes them in `checkpoint_index.json` so a
-  run directory can be moved and replayed with `train=false ckpt_path=...`.
+- `dataset.dataloader_params.order_seed` shuffles the training set with
+  `EpochRandomSampler` (`dataloader/samplers.py`): epoch `e` uses a permutation
+  seeded by `order_seed + e + 1`, independent of other random draws. Without
+  it, the usual seeded shuffle is used. Under several processes, evaluation
+  uses `UnpaddedDistributedSampler`, which visits every sample exactly once
+  instead of padding uneven shards with repeats.
+- `evaluation.checkpoint` is `best`, `weight_average` or `logit_ensemble`
+  (`evaluator/checkpoint.py`): the latter two average the weights, or the
+  logits, of the `evaluation.top_k` best checkpoints. They are ranked by
+  `RankedModelCheckpoint` (`callbacks/model_checkpoint.py`), which evicts the
+  latest of tied checkpoints and indexes the top K in `checkpoint_index.json`,
+  so a run directory can be moved and replayed with
+  `train=false ckpt_path=...`. With `save_top_k: 1` it behaves like
+  Lightning's `ModelCheckpoint`.
 - One-logit binary outputs are scored as two-class probabilities, so AUROC does
   not depend on the evaluation batch size. Plateau schedulers step only on
   validated epochs.
