@@ -2,7 +2,7 @@
 
 import torch
 
-from topobench.nn.readouts.trawl import TRAWLReadout
+from topobench.nn.backbones.combinatorial.trawl import TRAWLReadout
 
 
 def test_walk_readout_matches_single_head_call_rng():

@@ -18,8 +18,7 @@ from topobench.model.trawl_pretraining import (
     PretrainingCheckpoint,
     validation_frequency,
 )
-from topobench.nn.backbones.combinatorial.trawl import SISALayer
-from topobench.nn.readouts.trawl import TRAWLReadout
+from topobench.nn.backbones.combinatorial.trawl import SISALayer, TRAWLReadout
 from topobench.optimizer import TBOptimizer
 from topobench.run import enable_unused_parameter_detection
 

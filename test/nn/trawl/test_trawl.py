@@ -20,8 +20,8 @@ from topobench.model.trawl_pretraining import TRAWLPretrainer
 from topobench.nn.backbones.combinatorial.trawl import (
     TRAWL,
     PureTorchMambaBlock,
+    TRAWLReadout,
 )
-from topobench.nn.readouts.trawl import TRAWLReadout
 from topobench.transforms.data_manipulations.trawl import (
     TRAWLTransform,
     hopse_encodings,

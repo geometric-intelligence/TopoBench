@@ -187,7 +187,6 @@ def test_native_runner(
         assert (
             "data/utils/trawl/sampling.py" in manifest["implementation_sha256"]
         )
-        assert "nn/readouts/trawl.py" in manifest["implementation_sha256"]
         assert (
             "callbacks/model_checkpoint.py"
             in manifest["implementation_sha256"]

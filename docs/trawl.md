@@ -15,7 +15,8 @@ Every behavior is selected by configuration; no code branches on dataset names.
   TopoBench's HOPSE positional/structural encodings after any lifting.
 - `data/utils/trawl/`: CPU walk sampling and walk guidance (optional `numba`
   kernel).
-- `nn/encoders/trawl.py`, `nn/readouts/trawl.py`: feature adapter and task head.
+- `nn/encoders/trawl.py`: feature adapter. The task head `TRAWLReadout` lives in
+  the backbone module.
 - `model/trawl_pretraining.py`, `evaluator/checkpoint.py`,
   `callbacks/model_checkpoint.py`, `utils/trawl_provenance.py`: optional
   pretraining, top-K checkpoint evaluation and run manifests.

@@ -54,7 +54,7 @@ backbone:
       diffusion_t: 0.1
       dense_limit: 2048
 readout:
-  _target_: topobench.nn.readouts.trawl.TRAWLReadout
+  _target_: topobench.nn.backbones.combinatorial.trawl.TRAWLReadout
   hidden_dim: ${model.backbone.hidden_dim}
   graph_dim: ${trawl_output_dim:${model.backbone.hidden_dim},${model.backbone.pooling}}
   out_channels: ${dataset.parameters.num_classes}
